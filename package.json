@@ -54,7 +54,7 @@
     "viewsWelcome": [
       {
         "view": "claudeConfigTree",
-        "contents": "Configure Claude Code for this project.\n\n[$(sparkle) Smart Setup](command:thinkube.smartSetup)\nAnalyze project and suggest configurations\n\n[$(folder-library) Browse Templates](command:thinkube.browseTemplates)\nPre-built configs for common scenarios\n\n[$(gear) Manual Setup](command:thinkube.initializeConfig)\nCreate empty .claude folder",
+        "contents": "Configure Claude Code for this project.\n\nUse the **Claude Assistant** panel above to chat with Claude about your configuration needs.\n\n[$(gear) Manual Setup](command:thinkube.initializeConfig)\nCreate empty .claude folder",
         "when": "!thinkube.hasClaudeConfig"
       }
     ],
@@ -203,22 +203,16 @@
         "icon": "$(new-folder)"
       },
       {
-        "command": "thinkube.smartSetup",
-        "title": "Smart Setup",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
-      },
-      {
-        "command": "thinkube.browseTemplates",
-        "title": "Browse Templates",
-        "category": "Thinkube AI",
-        "icon": "$(folder-library)"
-      },
-      {
         "command": "thinkube.switchScope",
         "title": "Switch Scope (Global/Project)",
         "category": "Thinkube AI",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "thinkube.switchProject",
+        "title": "Switch Project",
+        "category": "Thinkube AI",
+        "icon": "$(folder)"
       }
     ],
     "menus": {
@@ -229,19 +223,9 @@
           "group": "navigation@0"
         },
         {
-          "command": "thinkube.smartSetup",
-          "when": "view == claudeConfigTree",
-          "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.browseTemplates",
-          "when": "view == claudeConfigTree",
-          "group": "navigation@2"
-        },
-        {
           "command": "thinkube.refreshConfig",
           "when": "view == claudeConfigTree && thinkube.hasClaudeConfig",
-          "group": "navigation@3"
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [

@@ -3,9 +3,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as appCommands from './commands/app';
 import { ClaudeConfigService } from './services/ClaudeConfigService';
+import { PluginService, PluginInfo } from './services/PluginService';
 import { ProjectAnalyzer, ConfigSuggestion } from './services/ProjectAnalyzer';
 import { ConfigTreeProvider, ConfigTreeItem } from './views/sidebar/ConfigTreeProvider';
 import { ChatPanel } from './views/sidebar/ChatPanel';
+import { PluginCreationWizard, quickCreatePlugin } from './views/wizards/PluginCreationWizard';
 import { Command } from './models/Command';
 import { Skill } from './models/Skill';
 import { Agent } from './models/Agent';
@@ -152,13 +154,14 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(treeView);
 
         // Register chat panel
+        console.log('[Extension] Registering ChatPanel with viewType:', ChatPanel.viewType);
         chatPanel = new ChatPanel(context.extensionUri, configService);
-        context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider(
-                ChatPanel.viewType,
-                chatPanel
-            )
+        const chatPanelProvider = vscode.window.registerWebviewViewProvider(
+            ChatPanel.viewType,
+            chatPanel
         );
+        context.subscriptions.push(chatPanelProvider);
+        console.log('[Extension] ChatPanel registered successfully');
 
         // Update context and refresh when config changes
         configService.onConfigChanged(() => {
@@ -722,6 +725,89 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
         })
     );
 
+    // Switch Project - scan for actual projects with Claude config
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.switchProject', async (projectPath?: string) => {
+            if (!projectPath) {
+                // Helper to check if a directory is a git repo
+                const isGitRepo = (dir: string): boolean => {
+                    return fs.existsSync(path.join(dir, '.git'));
+                };
+
+                // Helper to check if a directory has Claude config
+                const hasClaudeConfig = (dir: string): boolean => {
+                    return fs.existsSync(path.join(dir, '.claude')) ||
+                           fs.existsSync(path.join(dir, 'CLAUDE.md'));
+                };
+
+                // Collect git repos from a parent directory
+                const getGitRepos = (parentDir: string, prefix: string): vscode.QuickPickItem[] => {
+                    const items: vscode.QuickPickItem[] = [];
+                    try {
+                        const entries = fs.readdirSync(parentDir, { withFileTypes: true });
+                        for (const entry of entries) {
+                            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                                const fullPath = path.join(parentDir, entry.name);
+                                if (isGitRepo(fullPath)) {
+                                    const configured = hasClaudeConfig(fullPath);
+                                    items.push({
+                                        label: `${prefix}: ${entry.name}`,
+                                        description: configured ? '$(check)' : '(no config)',
+                                        detail: fullPath,
+                                    });
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        // Ignore read errors
+                    }
+                    return items;
+                };
+
+                // Get platform projects (inside thinkube-platform)
+                const platformItems = getGitRepos('/home/thinkube/thinkube-platform', 'Platform');
+
+                // Get app projects (direct children of /home/thinkube, excluding thinkube-platform)
+                const appItems = getGitRepos('/home/thinkube', 'Apps')
+                    .filter(item => !item.detail?.includes('thinkube-platform'));
+
+                // Combine and sort by label
+                const items = [...platformItems, ...appItems].sort((a, b) =>
+                    a.label.localeCompare(b.label)
+                );
+
+                if (items.length === 0) {
+                    vscode.window.showWarningMessage('No git repositories found.');
+                    return;
+                }
+
+                const choice = await vscode.window.showQuickPick(items, {
+                    placeHolder: 'Select a project to configure',
+                    title: 'Switch Project',
+                    matchOnDetail: true
+                });
+
+                if (choice && choice.detail) {
+                    projectPath = choice.detail;
+                } else {
+                    return;
+                }
+            }
+
+            // Switch to the chosen project
+            currentActiveContext = projectPath;
+            configService = new ClaudeConfigService(projectPath);
+            if (treeProvider) {
+                treeProvider.setConfigService(configService);
+            }
+            if (chatPanel) {
+                chatPanel.updateConfigService(configService);
+            }
+            await updateConfigContext();
+            vscode.window.showInformationMessage(`Switched to project: ${path.basename(projectPath)}`);
+        })
+    );
+
     // Initialize Claude Config
     context.subscriptions.push(
         vscode.commands.registerCommand('thinkube.initializeConfig', async () => {
@@ -736,132 +822,6 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 treeProvider?.refresh();
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to initialize config: ${error}`);
-            }
-        })
-    );
-
-    // Smart Setup - Analyze project and suggest configurations
-    context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.smartSetup', async () => {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || !configService) {
-                vscode.window.showErrorMessage('No workspace folder open');
-                return;
-            }
-
-            // Ask user which scope to configure
-            const currentContext = currentActiveContext || workspaceFolders[0].uri.fsPath;
-            const contextName = path.basename(currentContext);
-            const isGlobalContext = currentContext === '/home/thinkube';
-
-            const scopeChoice = await vscode.window.showQuickPick([
-                {
-                    label: '$(home) Global Configuration',
-                    description: 'Apply to all projects (/home/thinkube/.claude/)',
-                    detail: 'Settings will apply across all apps and repos',
-                    scope: 'global'
-                },
-                {
-                    label: `$(folder) Project Configuration (${contextName})`,
-                    description: `Apply to ${currentContext}/.claude/`,
-                    detail: 'Settings will only apply to this specific project',
-                    scope: 'project'
-                }
-            ], {
-                placeHolder: 'Where should these configurations be applied?',
-                title: 'Choose Configuration Scope'
-            });
-
-            if (!scopeChoice) {
-                return;
-            }
-
-            // Determine which config service to use
-            const targetPath = scopeChoice.scope === 'global' ? '/home/thinkube' : currentContext;
-            const targetService = new ClaudeConfigService(targetPath);
-
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Analyzing project...',
-                cancellable: false
-            }, async () => {
-                const analyzer = new ProjectAnalyzer(currentContext);
-                const projectInfo = await analyzer.analyze();
-
-                if (projectInfo.suggestions.length === 0) {
-                    vscode.window.showInformationMessage('No specific suggestions for this project type. You can use manual setup or describe what you need.');
-                    return;
-                }
-
-                // Show suggestions in a quick pick
-                const items = projectInfo.suggestions.map(s => ({
-                    label: `$(${getIconForType(s.type)}) ${s.name}`,
-                    description: s.description,
-                    detail: `${s.reason} → ${scopeChoice.label}`,
-                    suggestion: s,
-                    picked: true
-                }));
-
-                const selected = await vscode.window.showQuickPick(items, {
-                    canPickMany: true,
-                    placeHolder: `Found ${projectInfo.tools.length} tools. Select configurations to apply:`,
-                    title: `Smart Setup for ${projectInfo.name} (${projectInfo.type})`
-                });
-
-                if (selected && selected.length > 0) {
-                    // Initialize config if needed
-                    const hasConfig = await targetService.hasClaudeConfig();
-                    if (!hasConfig) {
-                        await targetService.initializeClaudeConfig();
-                    }
-
-                    // Apply selected suggestions
-                    for (const item of selected) {
-                        await applySuggestion(targetService, item.suggestion);
-                    }
-
-                    await updateConfigContext();
-                    treeProvider?.refresh();
-                    vscode.window.showInformationMessage(`Applied ${selected.length} configuration(s) to ${scopeChoice.scope} scope`);
-                }
-            });
-        })
-    );
-
-    // Browse Templates
-    context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.browseTemplates', async () => {
-            if (!configService) {
-                vscode.window.showErrorMessage('No workspace folder open');
-                return;
-            }
-
-            const templates = getTemplates();
-            const items = templates.map(t => ({
-                label: `$(${t.icon}) ${t.name}`,
-                description: t.description,
-                detail: `Includes: ${t.includes.join(', ')}`,
-                template: t
-            }));
-
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: 'Select a template to apply',
-                title: 'Configuration Templates'
-            });
-
-            if (selected) {
-                const hasConfig = await configService.hasClaudeConfig();
-                if (!hasConfig) {
-                    await configService.initializeClaudeConfig();
-                }
-
-                for (const suggestion of selected.template.suggestions) {
-                    await applySuggestion(configService, suggestion);
-                }
-
-                await updateConfigContext();
-                treeProvider?.refresh();
-                vscode.window.showInformationMessage(`Applied template: ${selected.template.name}`);
             }
         })
     );
@@ -1250,6 +1210,201 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 treeProvider?.refresh();
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to update permissions: ${error}`);
+            }
+        })
+    );
+
+    // ========== Plugin Commands ==========
+
+    // Browse Plugins (marketplace browser)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.browsePlugins', async () => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService) {
+                vscode.window.showErrorMessage('Plugin service not available');
+                return;
+            }
+
+            try {
+                const availablePlugins = await pluginService.getAvailablePlugins();
+
+                if (availablePlugins.length === 0) {
+                    vscode.window.showInformationMessage('No plugins available in marketplaces');
+                    return;
+                }
+
+                const items = availablePlugins.map(({ plugin, marketplace }) => ({
+                    label: `$(extensions) ${plugin.name}`,
+                    description: `@${marketplace}`,
+                    detail: plugin.description,
+                    plugin,
+                    marketplace
+                }));
+
+                const selected = await vscode.window.showQuickPick(items, {
+                    placeHolder: 'Select a plugin to install',
+                    title: 'Browse Marketplace Plugins'
+                });
+
+                if (selected) {
+                    await pluginService.installPlugin(selected.plugin.name, selected.marketplace);
+                    vscode.window.showInformationMessage(`Plugin ${selected.plugin.name} installed!`);
+                    treeProvider?.refresh();
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to browse plugins: ${error}`);
+            }
+        })
+    );
+
+    // Install Plugin
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.installPlugin', async (pluginName?: string, marketplace?: string) => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService) {
+                vscode.window.showErrorMessage('Plugin service not available');
+                return;
+            }
+
+            if (!pluginName || !marketplace) {
+                // Show browse dialog if not provided
+                await vscode.commands.executeCommand('thinkube.browsePlugins');
+                return;
+            }
+
+            try {
+                await pluginService.installPlugin(pluginName, marketplace);
+                vscode.window.showInformationMessage(`Plugin ${pluginName} installed!`);
+                treeProvider?.refresh();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to install plugin: ${error}`);
+            }
+        })
+    );
+
+    // Enable/Disable Plugin
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.togglePlugin', async (item: ConfigTreeItem) => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService || !item.data) {
+                return;
+            }
+
+            const plugin = item.data as { name: string; marketplace: string; enabled: boolean };
+
+            try {
+                await pluginService.setPluginEnabled(plugin.name, plugin.marketplace, !plugin.enabled);
+                vscode.window.showInformationMessage(`Plugin ${plugin.name} ${plugin.enabled ? 'disabled' : 'enabled'}`);
+                treeProvider?.refresh();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to toggle plugin: ${error}`);
+            }
+        })
+    );
+
+    // Create Plugin (wizard)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.createPlugin', async () => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService) {
+                vscode.window.showErrorMessage('Plugin service not available');
+                return;
+            }
+
+            const wizard = new PluginCreationWizard(pluginService);
+            const pluginPath = await wizard.run();
+
+            if (pluginPath) {
+                treeProvider?.refresh();
+            }
+        })
+    );
+
+    // Quick Create Plugin
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.quickCreatePlugin', async () => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService) {
+                vscode.window.showErrorMessage('Plugin service not available');
+                return;
+            }
+
+            const pluginPath = await quickCreatePlugin(pluginService);
+
+            if (pluginPath) {
+                treeProvider?.refresh();
+            }
+        })
+    );
+
+    // Suggest Plugins (analyze project and suggest)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.suggestPlugins', async () => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService) {
+                vscode.window.showErrorMessage('Plugin service not available');
+                return;
+            }
+
+            try {
+                const suggestions = await pluginService.suggestPlugins();
+
+                if (suggestions.length === 0) {
+                    vscode.window.showInformationMessage('No plugin suggestions for this project');
+                    return;
+                }
+
+                const items = suggestions.map(({ plugin, marketplace, reason }) => ({
+                    label: `$(extensions) ${plugin.name}`,
+                    description: reason,
+                    detail: plugin.description,
+                    plugin,
+                    marketplace
+                }));
+
+                const selected = await vscode.window.showQuickPick(items, {
+                    placeHolder: 'Select plugins to install',
+                    canPickMany: true,
+                    title: 'Suggested Plugins for Your Project'
+                });
+
+                if (selected && selected.length > 0) {
+                    for (const item of selected) {
+                        await pluginService.installPlugin(item.plugin.name, item.marketplace);
+                    }
+                    vscode.window.showInformationMessage(`Installed ${selected.length} plugin(s)`);
+                    treeProvider?.refresh();
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to suggest plugins: ${error}`);
+            }
+        })
+    );
+
+    // Uninstall Plugin
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.uninstallPlugin', async (item: ConfigTreeItem) => {
+            const pluginService = treeProvider?.getPluginService();
+            if (!pluginService || !item.data) {
+                return;
+            }
+
+            const plugin = item.data as { name: string; marketplace: string };
+
+            const confirm = await vscode.window.showWarningMessage(
+                `Uninstall plugin "${plugin.name}"?`,
+                { modal: true },
+                'Uninstall'
+            );
+
+            if (confirm === 'Uninstall') {
+                try {
+                    await pluginService.uninstallPlugin(plugin.name, plugin.marketplace);
+                    vscode.window.showInformationMessage(`Plugin ${plugin.name} uninstalled`);
+                    treeProvider?.refresh();
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to uninstall plugin: ${error}`);
+                }
             }
         })
     );

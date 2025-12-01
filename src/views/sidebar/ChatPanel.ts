@@ -2,27 +2,41 @@
  * ChatPanel - Embedded chat interface for Natural Language Setup
  *
  * Replaces floating input boxes with a persistent sidebar chat panel
+ * Now includes plugin suggestions alongside config suggestions
  */
 
 import * as vscode from 'vscode';
 import { ClaudeAnalyzer } from '../../services/ClaudeAnalyzer';
 import { ClaudeConfigService } from '../../services/ClaudeConfigService';
+import { PluginService, PluginInfo } from '../../services/PluginService';
 import type { ConfigSuggestion } from '../../services/ProjectAnalyzer';
+
+// Plugin suggestion type
+interface PluginSuggestion {
+    plugin: PluginInfo;
+    marketplace: string;
+    reason: string;
+}
 
 export class ChatPanel implements vscode.WebviewViewProvider {
     public static readonly viewType = 'thinkube.chatPanel';
     private _view?: vscode.WebviewView;
+    private pluginService: PluginService;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
         private configService: ClaudeConfigService
-    ) {}
+    ) {
+        // Initialize plugin service
+        this.pluginService = new PluginService((configService as any).basePath || '/home/thinkube');
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ) {
+        console.log('[ChatPanel] resolveWebviewView called');
         this._view = webviewView;
 
         webviewView.webview.options = {
@@ -30,7 +44,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        const html = this._getHtmlForWebview(webviewView.webview);
+        console.log('[ChatPanel] HTML generated, length:', html.length);
+        webviewView.webview.html = html;
+        console.log('[ChatPanel] HTML set on webview');
 
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -40,6 +57,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                     break;
                 case 'applySuggestion':
                     await this.applySuggestion(data.suggestion);
+                    break;
+                case 'installPlugin':
+                    await this.installPlugin(data.plugin, data.marketplace);
                     break;
             }
         });
@@ -59,15 +79,14 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         });
 
         try {
-            // Get current workspace path
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) {
-                throw new Error('No workspace folder open');
-            }
+            // Get the current project path from the configService
+            // This respects the scope selection (global vs project-specific)
+            const projectPath = (this.configService as any).basePath || '/home/thinkube';
 
-            const projectPath = workspaceFolders[0].uri.fsPath;
+            // Get plugin suggestions based on project analysis
+            const pluginSuggestions = await this.pluginService.suggestPlugins(projectPath);
 
-            // Ask Claude via Agent SDK
+            // Ask Claude via Agent SDK for config suggestions
             const analyzer = new ClaudeAnalyzer();
             const result = await analyzer.analyzeProject(projectPath);
 
@@ -77,11 +96,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 show: false
             });
 
-            // Show Claude's response with suggestions
+            // Show Claude's response with both plugin and config suggestions
             this._view?.webview.postMessage({
                 type: 'claudeResponse',
                 summary: result.summary,
-                suggestions: result.suggestions
+                suggestions: result.suggestions,
+                pluginSuggestions: pluginSuggestions
             });
 
         } catch (error) {
@@ -97,9 +117,31 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         }
     }
 
+    /**
+     * Install a plugin from the marketplace
+     */
+    private async installPlugin(pluginName: string, marketplaceName: string) {
+        try {
+            await this.pluginService.installPlugin(pluginName, marketplaceName);
+
+            this._view?.webview.postMessage({
+                type: 'pluginInstalled',
+                plugin: pluginName
+            });
+
+            vscode.window.showInformationMessage(`Plugin ${pluginName} installed successfully!`);
+        } catch (error) {
+            this._view?.webview.postMessage({
+                type: 'error',
+                message: `Failed to install plugin: ${error instanceof Error ? error.message : 'Unknown error'}`
+            });
+        }
+    }
+
     private async applySuggestion(suggestion: ConfigSuggestion) {
         try {
             const config = suggestion.config as any;
+            let filePath: string | undefined;
 
             switch (suggestion.type) {
                 case 'hook':
@@ -107,29 +149,35 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                         config.event,
                         { matcher: config.matcher, command: config.command }
                     );
+                    // For hooks, open settings.json
+                    const hookConfig = await this.configService.getConfig('project');
+                    filePath = hookConfig.settingsPath;
                     break;
                 case 'command':
-                    await this.configService.createCommand(
+                    const command = await this.configService.createCommand(
                         config.name,
                         config.description,
                         config.content
                     );
+                    filePath = command.filePath;
                     break;
                 case 'skill':
-                    await this.configService.createSkill(
+                    const skill = await this.configService.createSkill(
                         config.name,
                         config.description,
                         config.content
                     );
+                    filePath = skill.filePath;
                     break;
                 case 'agent':
-                    await this.configService.createAgent(
+                    const agent = await this.configService.createAgent(
                         config.name,
                         config.description,
                         config.content,
                         config.tools,
                         config.model
                     );
+                    filePath = agent.filePath;
                     break;
                 case 'mcp-server':
                     await this.configService.addMcpServer(
@@ -140,10 +188,19 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                             env: config.env
                         }
                     );
+                    // For MCP servers, open settings.json
+                    const mcpConfig = await this.configService.getConfig('project');
+                    filePath = mcpConfig.settingsPath;
                     break;
             }
 
-            // Notify success
+            // Open the created/modified file in editor
+            if (filePath) {
+                const uri = vscode.Uri.file(filePath);
+                await vscode.window.showTextDocument(uri, { preview: false });
+            }
+
+            // Notify success and remove from list
             this._view?.webview.postMessage({
                 type: 'suggestionApplied',
                 suggestion: suggestion.name
@@ -158,6 +215,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
+        // Generate nonce for CSP
+        const nonce = getNonce();
+
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -336,16 +396,33 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                     }
                     break;
                 case 'claudeResponse':
-                    addClaudeResponse(message.summary, message.suggestions);
+                    addClaudeResponse(message.summary, message.suggestions, message.pluginSuggestions);
                     break;
                 case 'error':
                     addError(message.message);
                     break;
                 case 'suggestionApplied':
+                    removeSuggestion(message.suggestion);
                     showSuccess(\`Applied: \${message.suggestion}\`);
+                    break;
+                case 'pluginInstalled':
+                    removePluginSuggestion(message.plugin);
+                    showSuccess(\`Installed plugin: \${message.plugin}\`);
                     break;
             }
         });
+
+        function removePluginSuggestion(pluginName) {
+            // Find and remove the plugin suggestion from the DOM
+            const plugins = window.currentPluginSuggestions || [];
+            const index = plugins.findIndex(p => p.plugin.name === pluginName);
+            if (index >= 0) {
+                const elem = document.getElementById(\`plugin-\${index}\`);
+                if (elem) {
+                    elem.remove();
+                }
+            }
+        }
 
         function addUserMessage(text) {
             const div = document.createElement('div');
@@ -371,17 +448,42 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             }
         }
 
-        function addClaudeResponse(summary, suggestions) {
+        function addClaudeResponse(summary, suggestions, pluginSuggestions) {
             const div = document.createElement('div');
             div.className = 'message claude-message';
+            div.id = 'suggestions-container';
 
             let html = \`<strong>Claude:</strong><p>\${escapeHtml(summary)}</p>\`;
 
+            // Plugin suggestions section (shown first)
+            if (pluginSuggestions && pluginSuggestions.length > 0) {
+                html += '<div style="margin-top: 12px; margin-bottom: 16px; padding: 8px; background: var(--vscode-badge-background); border-radius: 4px;">';
+                html += '<strong style="color: var(--vscode-badge-foreground);">Recommended Plugins:</strong>';
+                html += '<div style="margin-top: 8px;">';
+                pluginSuggestions.forEach((plugSug, index) => {
+                    html += \`
+                        <div class="suggestion" id="plugin-\${index}" style="background: var(--vscode-editor-background);">
+                            <div class="suggestion-header">
+                                <span><strong>\${escapeHtml(plugSug.plugin.name)}</strong></span>
+                                <button onclick="installPlugin('\${escapeHtml(plugSug.plugin.name)}', '\${escapeHtml(plugSug.marketplace)}')">Install</button>
+                            </div>
+                            <p style="margin: 4px 0; font-size: 0.9em;">\${escapeHtml(plugSug.plugin.description || '')}</p>
+                            <p style="margin: 4px 0; font-size: 0.85em; opacity: 0.7;">\${escapeHtml(plugSug.reason)}</p>
+                        </div>
+                    \`;
+                });
+                html += '</div></div>';
+            }
+
+            // Config suggestions section
             if (suggestions && suggestions.length > 0) {
                 html += '<div style="margin-top: 12px;">';
+                html += '<strong>Configuration Suggestions:</strong>';
+                html += '<button id="apply-all-btn" onclick="applyAll()" style="width: 100%; margin: 8px 0;">Apply All Config Suggestions</button>';
+                html += '<div id="suggestions-list">';
                 suggestions.forEach((sug, index) => {
                     html += \`
-                        <div class="suggestion">
+                        <div class="suggestion" id="suggestion-\${index}">
                             <div class="suggestion-header">
                                 <span><strong>\${escapeHtml(sug.name)}</strong> <span class="suggestion-type">(\${sug.type})</span></span>
                                 <button onclick="applySuggestion(\${index})">Apply</button>
@@ -391,16 +493,26 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                         </div>
                     \`;
                 });
-                html += '</div>';
+                html += '</div></div>';
             }
 
             div.innerHTML = html;
             messagesDiv.appendChild(div);
 
             // Store suggestions for apply buttons
-            window.currentSuggestions = suggestions;
+            window.currentSuggestions = suggestions || [];
+            window.currentPluginSuggestions = pluginSuggestions || [];
+            window.appliedCount = 0;
 
             scrollToBottom();
+        }
+
+        function installPlugin(pluginName, marketplace) {
+            vscode.postMessage({
+                type: 'installPlugin',
+                plugin: pluginName,
+                marketplace: marketplace
+            });
         }
 
         function applySuggestion(index) {
@@ -436,6 +548,41 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             div.textContent = text;
             return div.innerHTML;
         }
+
+        function removeSuggestion(suggestionName) {
+            // Find and remove the suggestion from the DOM
+            const suggestions = window.currentSuggestions;
+            const index = suggestions.findIndex(s => s.name === suggestionName);
+            if (index >= 0) {
+                const elem = document.getElementById(\`suggestion-\${index}\`);
+                if (elem) {
+                    elem.remove();
+                }
+                window.appliedCount++;
+
+                // Hide Apply All button if all suggestions are applied
+                const remainingCount = suggestions.length - window.appliedCount;
+                if (remainingCount === 0) {
+                    const applyAllBtn = document.getElementById('apply-all-btn');
+                    if (applyAllBtn) {
+                        applyAllBtn.style.display = 'none';
+                    }
+                }
+            }
+        }
+
+        function applyAll() {
+            const suggestions = window.currentSuggestions;
+            if (!suggestions) return;
+
+            // Apply all suggestions sequentially
+            suggestions.forEach((suggestion, index) => {
+                const elem = document.getElementById(\`suggestion-\${index}\`);
+                if (elem && elem.style.display !== 'none') {
+                    applySuggestion(index);
+                }
+            });
+        }
     </script>
 </body>
 </html>`;
@@ -443,5 +590,16 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
     public updateConfigService(newService: ClaudeConfigService) {
         this.configService = newService;
+        // Update plugin service with new base path
+        this.pluginService.setBasePath((newService as any).basePath || '/home/thinkube');
     }
+}
+
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
 }

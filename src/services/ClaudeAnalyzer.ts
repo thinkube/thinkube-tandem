@@ -37,11 +37,30 @@ export class ClaudeAnalyzer {
 
         // Collect all messages from the stream
         let finalResponse = '';
-        for await (const message of queryResult) {
-            // Extract text content from assistant messages
-            if (message.type === 'assistant' && 'text' in message) {
-                finalResponse += message.text;
+        let messageCount = 0;
+        try {
+            for await (const message of queryResult) {
+                messageCount++;
+                console.log('[ClaudeAnalyzer] Received message:', JSON.stringify(message).substring(0, 500));
+
+                // Extract text content from assistant messages
+                if (message.type === 'assistant') {
+                    const msg = (message as any).message;
+                    if (msg && msg.content && Array.isArray(msg.content)) {
+                        for (const block of msg.content) {
+                            if (block.type === 'text' && block.text) {
+                                console.log('[ClaudeAnalyzer] Extracted text:', block.text.substring(0, 200));
+                                finalResponse += block.text + '\n';
+                            }
+                        }
+                    }
+                }
             }
+            console.log('[ClaudeAnalyzer] Total messages received:', messageCount);
+            console.log('[ClaudeAnalyzer] Final response length:', finalResponse.length);
+        } catch (error) {
+            console.error('[ClaudeAnalyzer] Error during query:', error);
+            throw error;
         }
 
         // Parse Claude's response

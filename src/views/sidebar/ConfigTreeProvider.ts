@@ -2,6 +2,8 @@
  * ConfigTreeProvider - TreeDataProvider for Claude Code Configuration sidebar
  *
  * Displays a tree view of:
+ * - Installed Plugins (from marketplace)
+ * - Project Config (CLAUDE.md, settings.json)
  * - Hooks (PreToolUse, PostToolUse)
  * - Commands (slash commands)
  * - Skills
@@ -11,7 +13,10 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { ClaudeConfigService } from '../../services/ClaudeConfigService';
+import { PluginService, InstalledPlugin } from '../../services/PluginService';
 import { Hook } from '../../models/Hook';
 import { Command } from '../../models/Command';
 import { Skill } from '../../models/Skill';
@@ -20,6 +25,13 @@ import { McpServer } from '../../models/McpServer';
 
 export type ConfigItemType =
     | 'root'
+    | 'project-header'
+    | 'plugins-section'
+    | 'plugin'
+    | 'browse-marketplace'
+    | 'project-config-section'
+    | 'claude-md'
+    | 'settings-json'
     | 'hooks-section'
     | 'commands-section'
     | 'skills-section'
@@ -42,7 +54,7 @@ export class ConfigTreeItem extends vscode.TreeItem {
         public readonly label: string,
         public readonly itemType: ConfigItemType,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly data?: Hook | Command | Skill | Agent | McpServer | string,
+        public readonly data?: Hook | Command | Skill | Agent | McpServer | InstalledPlugin | string,
         public readonly parentType?: ConfigItemType
     ) {
         super(label, collapsibleState);
@@ -52,6 +64,44 @@ export class ConfigTreeItem extends vscode.TreeItem {
 
     private setIconAndTooltip(): void {
         switch (this.itemType) {
+            case 'plugins-section':
+                this.iconPath = new vscode.ThemeIcon('extensions');
+                this.tooltip = 'Installed Claude Code plugins';
+                break;
+            case 'plugin':
+                if (this.data) {
+                    const plugin = this.data as InstalledPlugin;
+                    this.iconPath = new vscode.ThemeIcon(
+                        plugin.enabled ? 'check' : 'circle-outline'
+                    );
+                    this.tooltip = `${plugin.name}@${plugin.marketplace}\nEnabled: ${plugin.enabled}`;
+                    this.description = plugin.enabled ? 'enabled' : 'disabled';
+                }
+                break;
+            case 'browse-marketplace':
+                this.iconPath = new vscode.ThemeIcon('add');
+                this.tooltip = 'Browse and install plugins from marketplace';
+                this.command = {
+                    command: 'thinkube.browsePlugins',
+                    title: 'Browse Marketplace'
+                };
+                break;
+            case 'project-header':
+                this.iconPath = new vscode.ThemeIcon('folder-opened');
+                this.tooltip = 'Current project - click to switch';
+                break;
+            case 'project-config-section':
+                this.iconPath = new vscode.ThemeIcon('file-code');
+                this.tooltip = 'Project configuration files';
+                break;
+            case 'claude-md':
+                this.iconPath = new vscode.ThemeIcon('markdown');
+                this.tooltip = 'Project instructions for Claude';
+                break;
+            case 'settings-json':
+                this.iconPath = new vscode.ThemeIcon('settings-gear');
+                this.tooltip = 'Claude Code settings';
+                break;
             case 'hooks-section':
                 this.iconPath = new vscode.ThemeIcon('zap');
                 this.tooltip = 'Event hooks for tool execution';
@@ -157,9 +207,19 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     private _onDidChangeTreeData = new vscode.EventEmitter<ConfigTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+    private pluginService: PluginService;
+
     constructor(private configService: ClaudeConfigService) {
+        // Initialize plugin service with same base path
+        this.pluginService = new PluginService((configService as any).basePath || '/home/thinkube');
+
         // Refresh tree when config changes
         configService.onConfigChanged(() => {
+            this.refresh();
+        });
+
+        // Refresh tree when plugins change
+        this.pluginService.onPluginsChanged(() => {
             this.refresh();
         });
     }
@@ -170,6 +230,9 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     setConfigService(newService: ClaudeConfigService): void {
         this.configService = newService;
 
+        // Update plugin service base path
+        this.pluginService.setBasePath((newService as any).basePath || '/home/thinkube');
+
         // Re-subscribe to config changes
         newService.onConfigChanged(() => {
             this.refresh();
@@ -177,6 +240,13 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
 
         // Refresh tree to show new context
         this.refresh();
+    }
+
+    /**
+     * Get the plugin service
+     */
+    getPluginService(): PluginService {
+        return this.pluginService;
     }
 
     refresh(): void {
@@ -194,6 +264,10 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
         }
 
         switch (element.itemType) {
+            case 'plugins-section':
+                return this.getPluginsChildren();
+            case 'project-config-section':
+                return this.getProjectConfigChildren();
             case 'hooks-section':
                 return this.getHooksChildren();
             case 'hook-event':
@@ -224,23 +298,35 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
             return [];
         }
 
-        // Get current scope info
+        // Get current context info
         const basePath = (this.configService as any).basePath || '/home/thinkube';
-        const isGlobal = basePath === '/home/thinkube';
-        const scopeName = isGlobal ? 'Global (All Projects)' : `Project: ${require('path').basename(basePath)}`;
-        const scopeIcon = isGlobal ? 'home' : 'folder';
+        const projectName = path.basename(basePath);
 
-        // Create scope indicator item
-        const scopeItem = new ConfigTreeItem(
-            `📍 ${scopeName}`,
-            'root',
-            vscode.TreeItemCollapsibleState.None
+        // Check if this is a plugin folder
+        const isPluginFolder = this.pluginService.isPluginFolder(basePath);
+        if (isPluginFolder) {
+            // Show plugin development view
+            return this.getPluginDevRootChildren(basePath);
+        }
+
+        // Create project header - always non-collapsible, click to switch via picker
+        const projectHeader = new ConfigTreeItem(
+            projectName,
+            'project-header',
+            vscode.TreeItemCollapsibleState.None,
+            basePath
         );
-        scopeItem.tooltip = `Configuration location: ${basePath}/.claude/`;
-        scopeItem.description = basePath;
+        projectHeader.tooltip = `Configuring: ${basePath}\nClick to switch project`;
+        projectHeader.command = {
+            command: 'thinkube.switchProject',
+            title: 'Switch Project'
+        };
 
+        // Standard project view with project header first
         return [
-            scopeItem,
+            projectHeader,
+            new ConfigTreeItem('Installed Plugins', 'plugins-section', vscode.TreeItemCollapsibleState.Expanded),
+            new ConfigTreeItem('Project Config', 'project-config-section', vscode.TreeItemCollapsibleState.Collapsed),
             new ConfigTreeItem('Hooks', 'hooks-section', vscode.TreeItemCollapsibleState.Collapsed),
             new ConfigTreeItem('Commands', 'commands-section', vscode.TreeItemCollapsibleState.Collapsed),
             new ConfigTreeItem('Skills', 'skills-section', vscode.TreeItemCollapsibleState.Collapsed),
@@ -248,6 +334,111 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
             new ConfigTreeItem('MCP Servers', 'mcp-section', vscode.TreeItemCollapsibleState.Collapsed),
             new ConfigTreeItem('Permissions', 'permissions-section', vscode.TreeItemCollapsibleState.Collapsed),
         ];
+    }
+
+    /**
+     * Get root children for plugin development view
+     */
+    private async getPluginDevRootChildren(pluginPath: string): Promise<ConfigTreeItem[]> {
+        const pluginInfo = this.pluginService.getPluginInfo(pluginPath);
+        const pluginName = pluginInfo?.name || path.basename(pluginPath);
+
+        const items: ConfigTreeItem[] = [];
+
+        // Plugin info header
+        const headerItem = new ConfigTreeItem(
+            `Plugin: ${pluginName}`,
+            'root',
+            vscode.TreeItemCollapsibleState.None
+        );
+        headerItem.iconPath = new vscode.ThemeIcon('package');
+        headerItem.description = pluginInfo?.version || '';
+        items.push(headerItem);
+
+        // Plugin components
+        if (fs.existsSync(path.join(pluginPath, 'commands'))) {
+            items.push(new ConfigTreeItem('Commands', 'commands-section', vscode.TreeItemCollapsibleState.Collapsed));
+        }
+        if (fs.existsSync(path.join(pluginPath, 'hooks'))) {
+            items.push(new ConfigTreeItem('Hooks', 'hooks-section', vscode.TreeItemCollapsibleState.Collapsed));
+        }
+        if (fs.existsSync(path.join(pluginPath, 'skills'))) {
+            items.push(new ConfigTreeItem('Skills', 'skills-section', vscode.TreeItemCollapsibleState.Collapsed));
+        }
+        if (fs.existsSync(path.join(pluginPath, 'agents'))) {
+            items.push(new ConfigTreeItem('Agents', 'agents-section', vscode.TreeItemCollapsibleState.Collapsed));
+        }
+
+        return items;
+    }
+
+    /**
+     * Get installed plugins children
+     */
+    private async getPluginsChildren(): Promise<ConfigTreeItem[]> {
+        const plugins = await this.pluginService.getInstalledPlugins();
+        const items: ConfigTreeItem[] = [];
+
+        for (const plugin of plugins) {
+            const item = new ConfigTreeItem(
+                plugin.name,
+                'plugin',
+                vscode.TreeItemCollapsibleState.None,
+                plugin
+            );
+            items.push(item);
+        }
+
+        // Add "Browse Marketplace" action
+        items.push(new ConfigTreeItem(
+            '+ Browse Marketplace...',
+            'browse-marketplace',
+            vscode.TreeItemCollapsibleState.None
+        ));
+
+        return items;
+    }
+
+    /**
+     * Get project config children
+     */
+    private async getProjectConfigChildren(): Promise<ConfigTreeItem[]> {
+        const basePath = (this.configService as any).basePath || '/home/thinkube';
+        const items: ConfigTreeItem[] = [];
+
+        // CLAUDE.md
+        const claudeMdPath = path.join(basePath, 'CLAUDE.md');
+        if (fs.existsSync(claudeMdPath)) {
+            const claudeMdItem = new ConfigTreeItem(
+                'CLAUDE.md',
+                'claude-md',
+                vscode.TreeItemCollapsibleState.None
+            );
+            claudeMdItem.command = {
+                command: 'vscode.open',
+                title: 'Open CLAUDE.md',
+                arguments: [vscode.Uri.file(claudeMdPath)]
+            };
+            items.push(claudeMdItem);
+        }
+
+        // settings.json
+        const settingsPath = path.join(basePath, '.claude', 'settings.json');
+        if (fs.existsSync(settingsPath)) {
+            const settingsItem = new ConfigTreeItem(
+                'settings.json',
+                'settings-json',
+                vscode.TreeItemCollapsibleState.None
+            );
+            settingsItem.command = {
+                command: 'vscode.open',
+                title: 'Open settings.json',
+                arguments: [vscode.Uri.file(settingsPath)]
+            };
+            items.push(settingsItem);
+        }
+
+        return items;
     }
 
     private async getHooksChildren(): Promise<ConfigTreeItem[]> {
