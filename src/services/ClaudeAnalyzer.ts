@@ -1,10 +1,10 @@
 /**
- * ClaudeAnalyzer - Uses Agent SDK to invoke Claude for intelligent project analysis
+ * ClaudeAnalyzer - Uses Claude CLI (`claude --print`) for intelligent project analysis
  *
- * This replaces the dumb file-detection logic with actual AI-powered analysis
+ * Replaces the Agent SDK with a direct CLI invocation.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { spawn } from 'child_process';
 import type { ConfigSuggestion } from './ProjectAnalyzer';
 import * as path from 'path';
 
@@ -17,63 +17,87 @@ export interface ClaudeAnalysisResult {
 
 export class ClaudeAnalyzer {
     /**
-     * Analyze a project using Claude and return intelligent configuration suggestions
+     * Analyze a project using Claude CLI and return intelligent configuration suggestions.
+     * Passes the user's actual message into the prompt so Claude answers the real question.
      */
-    async analyzeProject(projectPath: string): Promise<ClaudeAnalysisResult> {
-        // Build the prompt for Claude
-        const prompt = this.buildAnalysisPrompt(projectPath);
+    async analyzeProject(projectPath: string, userMessage?: string): Promise<ClaudeAnalysisResult> {
+        const prompt = this.buildAnalysisPrompt(projectPath, userMessage);
 
-        // Invoke Claude via Agent SDK
-        // This automatically uses the same API key as Claude Code (from user settings)
-        const queryResult = query({
-            prompt,
-            options: {
-                model: 'claude-sonnet-4-5-20250929',
-                cwd: projectPath, // Set working directory to project
-                settingSources: ['user', 'project'], // Load API key from user settings, .claude config from project
-                allowedTools: ['Read', 'Grep', 'Glob'], // Limit to read-only tools
-            }
+        const output = await this.runClaudeCli(prompt, projectPath);
+
+        return this.parseResponse(output, projectPath);
+    }
+
+    /**
+     * Check if `claude` CLI is available.
+     */
+    static async isAvailable(): Promise<boolean> {
+        return new Promise((resolve) => {
+            const proc = spawn('claude', ['--version'], { timeout: 5000 });
+            proc.on('error', () => resolve(false));
+            proc.on('close', (code) => resolve(code === 0));
         });
+    }
 
-        // Collect all messages from the stream
-        let finalResponse = '';
-        let messageCount = 0;
-        try {
-            for await (const message of queryResult) {
-                messageCount++;
-                console.log('[ClaudeAnalyzer] Received message:', JSON.stringify(message).substring(0, 500));
+    /**
+     * Run `claude --print` and collect JSON output.
+     */
+    private runClaudeCli(prompt: string, cwd: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const args = [
+                '--print',
+                '--output-format', 'json',
+                '--max-turns', '3',
+                '--allowedTools', 'Read,Grep,Glob',
+                '-p', prompt
+            ];
 
-                // Extract text content from assistant messages
-                if (message.type === 'assistant') {
-                    const msg = (message as any).message;
-                    if (msg && msg.content && Array.isArray(msg.content)) {
-                        for (const block of msg.content) {
-                            if (block.type === 'text' && block.text) {
-                                console.log('[ClaudeAnalyzer] Extracted text:', block.text.substring(0, 200));
-                                finalResponse += block.text + '\n';
-                            }
-                        }
-                    }
+            const proc = spawn('claude', args, {
+                cwd,
+                timeout: 60000,
+                env: { ...process.env }
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            proc.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+            proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+            proc.on('error', (err) => {
+                reject(new Error(`Claude CLI not found. Install Claude Code CLI to use analysis features. (${err.message})`));
+            });
+
+            proc.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Claude CLI exited with code ${code}: ${stderr}`));
+                    return;
                 }
-            }
-            console.log('[ClaudeAnalyzer] Total messages received:', messageCount);
-            console.log('[ClaudeAnalyzer] Final response length:', finalResponse.length);
-        } catch (error) {
-            console.error('[ClaudeAnalyzer] Error during query:', error);
-            throw error;
-        }
 
-        // Parse Claude's response
-        return this.parseResponse(finalResponse, projectPath);
+                // Extract the result text from the JSON output
+                try {
+                    const parsed = JSON.parse(stdout);
+                    // claude --print --output-format json returns { result: "...", ... }
+                    resolve(parsed.result || stdout);
+                } catch {
+                    // If not JSON, use raw output
+                    resolve(stdout);
+                }
+            });
+        });
     }
 
     /**
      * Build the analysis prompt for Claude
      */
-    private buildAnalysisPrompt(projectPath: string): string {
+    private buildAnalysisPrompt(projectPath: string, userMessage?: string): string {
         const projectName = path.basename(projectPath);
 
-        return `Analyze the project at "${projectPath}" and suggest appropriate Claude Code configurations.
+        const userPart = userMessage
+            ? `\n\nThe user asked: "${userMessage}"\nIncorporate their question into your analysis and answer it directly.\n`
+            : '';
+
+        return `Analyze the project at "${projectPath}" and suggest appropriate Claude Code configurations.${userPart}
 
 Your task:
 1. Examine the project structure, dependencies, and tooling
@@ -98,11 +122,11 @@ Return your response as JSON in this exact format:
       "reason": "Why this is recommended",
       "config": {
         // Type-specific configuration
-        // For hook: { event, matcher, command }
+        // For hook: { event, matcher, type, command }
         // For command: { name, description, content }
         // For skill: { name, description, content }
         // For agent: { name, description, content, tools, model }
-        // For mcp-server: { id, command, args, env }
+        // For mcp-server: { id, type, command, args } or { id, type: "http", url }
       }
     }
   ]
@@ -134,15 +158,12 @@ Analyze now:`;
                 summary: parsed.summary || 'No summary provided',
                 suggestions: parsed.suggestions || []
             };
-        } catch (error) {
-            console.error('Failed to parse Claude response:', error);
-            console.error('Response was:', response);
-
-            // Return empty result on parse error
+        } catch {
+            // Return the raw text as summary if not parseable as JSON
             return {
                 projectType: 'unknown',
                 projectName: path.basename(projectPath),
-                summary: 'Failed to parse analysis',
+                summary: response || 'Failed to parse analysis',
                 suggestions: []
             };
         }

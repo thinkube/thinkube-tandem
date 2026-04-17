@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as appCommands from './commands/app';
 import { ClaudeConfigService } from './services/ClaudeConfigService';
+import { ClaudeLauncher } from './services/ClaudeLauncher';
+import { QuickSetup } from './services/QuickSetup';
 import { PluginService, PluginInfo } from './services/PluginService';
 import { ProjectAnalyzer, ConfigSuggestion } from './services/ProjectAnalyzer';
 import { ConfigTreeProvider, ConfigTreeItem } from './views/sidebar/ConfigTreeProvider';
@@ -20,8 +22,24 @@ interface ClaudeConfig {
 let configService: ClaudeConfigService | undefined;
 let treeProvider: ConfigTreeProvider | undefined;
 let chatPanel: ChatPanel | undefined;
+let claudeLauncher: ClaudeLauncher | undefined;
 let currentActiveContext: string | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
+
+/**
+ * Schedule a tree refresh after Claude CLI finishes (terminal close).
+ * Shows a notification with a refresh button since we can't detect terminal exit.
+ */
+function scheduleTreeRefresh(): void {
+    vscode.window.showInformationMessage(
+        'Claude is generating config in the terminal. Refresh when done.',
+        'Refresh Tree'
+    ).then(action => {
+        if (action === 'Refresh Tree') {
+            treeProvider?.refresh();
+        }
+    });
+}
 
 /**
  * Get the active project path based on current editor or workspace
@@ -84,34 +102,30 @@ function findProjectRoot(startPath: string): string | undefined {
 }
 
 /**
- * Update config service to point to the active project
+ * Update the active project context. In multi-root mode, this only affects
+ * the ChatPanel target and status bar — the tree always shows all projects.
  */
-async function updateActiveContext(): Promise<void> {
-    const activePath = getActiveProjectPath();
+async function updateActiveContext(newPath?: string): Promise<void> {
+    const activePath = newPath || getActiveProjectPath();
 
-    // Only update if context changed
     if (activePath === currentActiveContext) {
         return;
     }
 
     currentActiveContext = activePath;
 
-    if (activePath) {
-        configService = new ClaudeConfigService(activePath);
-        if (treeProvider) {
-            treeProvider.setConfigService(configService);
-        }
+    if (activePath && configService) {
+        configService.setActiveProject(activePath);
         if (chatPanel) {
             chatPanel.updateConfigService(configService);
         }
 
         await updateConfigContext();
 
-        // Update status bar to show active context
         const contextName = path.basename(activePath);
         if (statusBarItem) {
             statusBarItem.text = `$(folder) ${contextName}`;
-            statusBarItem.tooltip = `Claude Code context: ${activePath}`;
+            statusBarItem.tooltip = `Active project: ${activePath}`;
             statusBarItem.show();
         }
 
@@ -134,60 +148,71 @@ async function updateConfigContext(): Promise<void> {
 export function activate(context: vscode.ExtensionContext) {
     console.log('Thinkube AI Integration is now active!');
 
-    // Create status bar item to show active context
+    // Check Claude CLI availability (non-blocking)
+    import('./services/ClaudeAnalyzer').then(({ ClaudeAnalyzer }) => {
+        ClaudeAnalyzer.isAvailable().then(available => {
+            if (!available) {
+                vscode.window.showWarningMessage(
+                    'Claude Code CLI not found. Chat analysis features require the Claude CLI to be installed.'
+                );
+            }
+        });
+    });
+
+    // Create status bar item to show active project
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.command = 'thinkube.refreshConfig';
+    statusBarItem.command = 'thinkube.switchProject';
     context.subscriptions.push(statusBarItem);
 
-    // Initialize ClaudeConfigService with workspace folder
+    // Initialize with first workspace folder or home
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders && workspaceFolders.length > 0) {
-        const initialPath = workspaceFolders[0].uri.fsPath;
-        configService = new ClaudeConfigService(initialPath);
-        treeProvider = new ConfigTreeProvider(configService);
+    const initialPath = workspaceFolders?.[0]?.uri.fsPath || '/home/thinkube';
+    configService = new ClaudeConfigService(initialPath);
+    treeProvider = new ConfigTreeProvider(configService);
+    claudeLauncher = new ClaudeLauncher();
 
-        // Register tree view
-        const treeView = vscode.window.createTreeView('claudeConfigTree', {
-            treeDataProvider: treeProvider,
-            showCollapseAll: true
-        });
-        context.subscriptions.push(treeView);
+    // Register tree view
+    const treeView = vscode.window.createTreeView('claudeConfigTree', {
+        treeDataProvider: treeProvider,
+        showCollapseAll: true
+    });
+    context.subscriptions.push(treeView);
 
-        // Register chat panel
-        console.log('[Extension] Registering ChatPanel with viewType:', ChatPanel.viewType);
-        chatPanel = new ChatPanel(context.extensionUri, configService);
-        const chatPanelProvider = vscode.window.registerWebviewViewProvider(
-            ChatPanel.viewType,
-            chatPanel
-        );
-        context.subscriptions.push(chatPanelProvider);
-        console.log('[Extension] ChatPanel registered successfully');
+    // Track active project from tree selection
+    context.subscriptions.push(
+        treeView.onDidChangeSelection(e => {
+            const item = e.selection[0];
+            if (item?.projectPath && item.projectPath !== currentActiveContext) {
+                updateActiveContext(item.projectPath);
+            }
+        })
+    );
 
-        // Update context and refresh when config changes
-        configService.onConfigChanged(() => {
-            updateConfigContext();
-        });
+    // Register chat panel
+    chatPanel = new ChatPanel(context.extensionUri, configService);
+    const chatPanelProvider = vscode.window.registerWebviewViewProvider(
+        ChatPanel.viewType,
+        chatPanel
+    );
+    context.subscriptions.push(chatPanelProvider);
 
-        // Initial context update
-        updateActiveContext();
+    // Update context and refresh when config changes
+    configService.onConfigChanged(() => {
+        updateConfigContext();
+    });
 
-        // Update context when active editor changes
-        context.subscriptions.push(
-            vscode.window.onDidChangeActiveTextEditor(() => {
-                updateActiveContext();
-            })
-        );
+    // Initial context update
+    updateActiveContext();
 
-        // Update context when workspace folders change
-        context.subscriptions.push(
-            vscode.workspace.onDidChangeWorkspaceFolders(() => {
-                updateActiveContext();
-            })
-        );
-    } else {
-        // No workspace - set context to false
-        vscode.commands.executeCommand('setContext', 'thinkube.hasClaudeConfig', false);
-    }
+    // Update active project when editor changes
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(() => {
+            updateActiveContext();
+        })
+    );
+
+    // Always show config tree (multi-root always has content)
+    vscode.commands.executeCommand('setContext', 'thinkube.hasClaudeConfig', true);
 
     // Register Claude Config sidebar commands
     registerConfigCommands(context);
@@ -630,8 +655,15 @@ async function applySuggestion(service: ClaudeConfigService, suggestion: ConfigS
     switch (suggestion.type) {
         case 'hook':
             await service.addHook(
-                config.event as 'PreToolUse' | 'PostToolUse',
-                { matcher: config.matcher as string, command: config.command as string }
+                config.event as any,
+                {
+                    matcher: config.matcher as string,
+                    type: (config.type as any) || 'command',
+                    command: config.command as string,
+                    url: config.url as string | undefined,
+                    prompt: config.prompt as string | undefined,
+                    agent: config.agent as string | undefined
+                }
             );
             break;
         case 'command':
@@ -654,18 +686,29 @@ async function applySuggestion(service: ClaudeConfigService, suggestion: ConfigS
                 config.description as string,
                 config.content as string,
                 config.tools as string[] | undefined,
-                config.model as 'inherit' | 'haiku' | 'sonnet' | 'opus' | undefined
+                config.model as string | undefined
             );
             break;
         case 'mcp-server':
-            await service.addMcpServer(
-                config.id as string,
-                {
-                    command: config.command as string,
-                    args: config.args as string[],
-                    env: config.env as Record<string, string> | undefined
-                }
-            );
+            if (config.type === 'http') {
+                await service.addMcpServer(
+                    config.id as string,
+                    {
+                        type: 'http',
+                        url: config.url as string,
+                        headers: config.headers as Record<string, string> | undefined
+                    }
+                );
+            } else {
+                await service.addMcpServer(
+                    config.id as string,
+                    {
+                        command: config.command as string,
+                        args: config.args as string[],
+                        env: config.env as Record<string, string> | undefined
+                    }
+                );
+            }
             break;
     }
 }
@@ -679,146 +722,131 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
         })
     );
 
-    // Switch Scope (Global vs Project)
+    // Switch Project — sets active project for ChatPanel
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.switchScope', async () => {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) {
-                vscode.window.showErrorMessage('No workspace folder open');
+        vscode.commands.registerCommand('thinkube.switchProject', async (projectPath?: string) => {
+            if (projectPath) {
+                await updateActiveContext(projectPath);
                 return;
             }
 
-            const currentContext = currentActiveContext || workspaceFolders[0].uri.fsPath;
-            const contextName = path.basename(currentContext);
+            // Show quick pick of all projects
+            const sections = [
+                { path: '/home/thinkube/thinkube-platform', prefix: 'Platform' },
+                { path: '/home/thinkube/apps', prefix: 'Apps' },
+                { path: '/home/thinkube/user-templates', prefix: 'Templates' },
+            ];
+
+            const items: vscode.QuickPickItem[] = [];
+            for (const section of sections) {
+                try {
+                    const entries = fs.readdirSync(section.path, { withFileTypes: true });
+                    for (const entry of entries) {
+                        if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                            const fullPath = path.join(section.path, entry.name);
+                            if (fs.existsSync(path.join(fullPath, '.git'))) {
+                                const configured = fs.existsSync(path.join(fullPath, '.claude')) ||
+                                                   fs.existsSync(path.join(fullPath, 'CLAUDE.md'));
+                                items.push({
+                                    label: `${section.prefix}: ${entry.name}`,
+                                    description: configured ? '$(check)' : '(no config)',
+                                    detail: fullPath,
+                                });
+                            }
+                        }
+                    }
+                } catch { /* ignore */ }
+            }
+
+            const choice = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Set active project (for chat analysis)',
+                title: 'Switch Active Project',
+                matchOnDetail: true
+            });
+
+            if (choice?.detail) {
+                await updateActiveContext(choice.detail);
+                vscode.window.showInformationMessage(`Active project: ${path.basename(choice.detail)}`);
+            }
+        })
+    );
+
+    // Initialize Claude Config — accepts optional projectPath
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.initializeConfig', async (projectPath?: string) => {
+            if (!configService) {
+                return;
+            }
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) {
+                vscode.window.showErrorMessage('No project selected');
+                return;
+            }
 
             const choice = await vscode.window.showQuickPick([
                 {
-                    label: '$(home) Global Configuration',
-                    description: '/home/thinkube/.claude/',
-                    detail: 'Apply to all projects and apps',
-                    path: '/home/thinkube'
+                    label: '$(play) Claude Init',
+                    description: 'Run claude init to create CLAUDE.md',
+                    detail: 'Interactive CLI session — Claude analyzes your project and generates CLAUDE.md',
+                    id: 'init'
                 },
                 {
-                    label: `$(folder) Current Project (${contextName})`,
-                    description: `${currentContext}/.claude/`,
-                    detail: 'Only this project',
-                    path: currentContext
+                    label: '$(sparkle) Quick Setup',
+                    description: 'Detect tools and generate starter config',
+                    detail: 'Creates hooks, commands, and permissions based on detected tooling, then runs claude init for CLAUDE.md',
+                    id: 'quick'
+                },
+                {
+                    label: '$(sparkle) Full Setup with Claude',
+                    description: 'Use Claude CLI for intelligent setup',
+                    detail: 'Opens Claude in terminal to analyze your project and create comprehensive config',
+                    id: 'claude'
+                },
+                {
+                    label: '$(new-folder) Empty Config',
+                    description: 'Create empty .claude/ folder',
+                    detail: 'For manual configuration',
+                    id: 'empty'
                 }
             ], {
-                placeHolder: 'Switch to which configuration scope?',
-                title: 'Switch Configuration Scope'
+                placeHolder: `Set up Claude Code for ${path.basename(targetPath)}`,
+                title: 'Initialize Configuration'
             });
 
-            if (choice && choice.path !== currentContext) {
-                // Switch to the chosen scope
-                currentActiveContext = choice.path;
-                configService = new ClaudeConfigService(choice.path);
-                if (treeProvider) {
-                    treeProvider.setConfigService(configService);
-                }
-                if (chatPanel) {
-                    chatPanel.updateConfigService(configService);
-                }
-                await updateConfigContext();
-                vscode.window.showInformationMessage(`Switched to ${choice.label}`);
-            }
-        })
-    );
+            if (!choice) return;
 
-    // Switch Project - scan for actual projects with Claude config
-    context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.switchProject', async (projectPath?: string) => {
-            if (!projectPath) {
-                // Helper to check if a directory is a git repo
-                const isGitRepo = (dir: string): boolean => {
-                    return fs.existsSync(path.join(dir, '.git'));
-                };
-
-                // Helper to check if a directory has Claude config
-                const hasClaudeConfig = (dir: string): boolean => {
-                    return fs.existsSync(path.join(dir, '.claude')) ||
-                           fs.existsSync(path.join(dir, 'CLAUDE.md'));
-                };
-
-                // Collect git repos from a parent directory
-                const getGitRepos = (parentDir: string, prefix: string): vscode.QuickPickItem[] => {
-                    const items: vscode.QuickPickItem[] = [];
-                    try {
-                        const entries = fs.readdirSync(parentDir, { withFileTypes: true });
-                        for (const entry of entries) {
-                            if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                                const fullPath = path.join(parentDir, entry.name);
-                                if (isGitRepo(fullPath)) {
-                                    const configured = hasClaudeConfig(fullPath);
-                                    items.push({
-                                        label: `${prefix}: ${entry.name}`,
-                                        description: configured ? '$(check)' : '(no config)',
-                                        detail: fullPath,
-                                    });
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        // Ignore read errors
-                    }
-                    return items;
-                };
-
-                // Get platform projects (inside thinkube-platform)
-                const platformItems = getGitRepos('/home/thinkube/thinkube-platform', 'Platform');
-
-                // Get app projects (direct children of /home/thinkube, excluding thinkube-platform)
-                const appItems = getGitRepos('/home/thinkube', 'Apps')
-                    .filter(item => !item.detail?.includes('thinkube-platform'));
-
-                // Combine and sort by label
-                const items = [...platformItems, ...appItems].sort((a, b) =>
-                    a.label.localeCompare(b.label)
-                );
-
-                if (items.length === 0) {
-                    vscode.window.showWarningMessage('No git repositories found.');
-                    return;
-                }
-
-                const choice = await vscode.window.showQuickPick(items, {
-                    placeHolder: 'Select a project to configure',
-                    title: 'Switch Project',
-                    matchOnDetail: true
-                });
-
-                if (choice && choice.detail) {
-                    projectPath = choice.detail;
-                } else {
-                    return;
-                }
-            }
-
-            // Switch to the chosen project
-            currentActiveContext = projectPath;
-            configService = new ClaudeConfigService(projectPath);
-            if (treeProvider) {
-                treeProvider.setConfigService(configService);
-            }
-            if (chatPanel) {
-                chatPanel.updateConfigService(configService);
-            }
-            await updateConfigContext();
-            vscode.window.showInformationMessage(`Switched to project: ${path.basename(projectPath)}`);
-        })
-    );
-
-    // Initialize Claude Config
-    context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.initializeConfig', async () => {
-            if (!configService) {
-                vscode.window.showErrorMessage('No workspace folder open');
-                return;
-            }
             try {
-                await configService.initializeClaudeConfig();
-                await updateConfigContext();
-                vscode.window.showInformationMessage('Claude Code configuration initialized');
+                if (choice.id === 'quick') {
+                    const quickSetup = new QuickSetup();
+                    const result = await quickSetup.setup(targetPath);
+                    vscode.window.showInformationMessage(result.summary, { modal: true });
+                    if (result.needsInit) {
+                        const terminal = vscode.window.createTerminal({
+                            name: `Claude Init: ${path.basename(targetPath)}`,
+                            cwd: targetPath,
+                        });
+                        terminal.show();
+                        terminal.sendText('claude init');
+                    } else {
+                        const settingsPath = path.join(targetPath, '.claude', 'settings.json');
+                        if (fs.existsSync(settingsPath)) {
+                            const doc = await vscode.workspace.openTextDocument(settingsPath);
+                            await vscode.window.showTextDocument(doc);
+                        }
+                    }
+                } else if (choice.id === 'init') {
+                    const terminal = vscode.window.createTerminal({
+                        name: `Claude Init: ${path.basename(targetPath)}`,
+                        cwd: targetPath,
+                    });
+                    terminal.show();
+                    terminal.sendText('claude init');
+                } else if (choice.id === 'claude') {
+                    await claudeLauncher?.launchFullSetup(targetPath);
+                } else {
+                    await configService.initializeClaudeConfig(targetPath);
+                    vscode.window.showInformationMessage(`Empty Claude config created in ${path.basename(targetPath)}`);
+                }
                 treeProvider?.refresh();
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to initialize config: ${error}`);
@@ -826,41 +854,95 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
         })
     );
 
+    // Run claude init
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.runClaudeInit', async (projectPath?: string) => {
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) {
+                vscode.window.showErrorMessage('No project selected');
+                return;
+            }
+            const terminal = vscode.window.createTerminal({
+                name: `Claude Init: ${path.basename(targetPath)}`,
+                cwd: targetPath,
+            });
+            terminal.show();
+            terminal.sendText('claude init');
+        })
+    );
+
     // Add Hook
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.addHook', async () => {
+        vscode.commands.registerCommand('thinkube.addHook', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
+            if (!projectPath) { vscode.window.showErrorMessage('No project selected'); return; }
 
-            const event = await vscode.window.showQuickPick(['PreToolUse', 'PostToolUse'], {
-                placeHolder: 'Select hook event type'
-            });
+            const { HOOK_EVENTS } = await import('./models/Hook');
+
+            const event = await vscode.window.showQuickPick(
+                [...HOOK_EVENTS],
+                { placeHolder: 'Select hook event' }
+            );
             if (!event) {
                 return;
             }
 
-            const matcher = await vscode.window.showInputBox({
-                prompt: 'Enter tool matcher pattern (e.g., "Bash", "Edit", "*")',
-                value: '*'
-            });
-            if (!matcher) {
+            const hookType = await vscode.window.showQuickPick(
+                [
+                    { label: 'command', description: 'Run a shell command' },
+                    { label: 'http', description: 'Send HTTP request' },
+                    { label: 'prompt', description: 'Inject a prompt' },
+                    { label: 'agent', description: 'Invoke an agent' }
+                ],
+                { placeHolder: 'Select hook type' }
+            );
+            if (!hookType) {
                 return;
             }
 
-            const command = await vscode.window.showInputBox({
-                prompt: 'Enter command to execute',
-                placeHolder: 'e.g., ./scripts/validate.sh'
+            const matcher = await vscode.window.showInputBox({
+                prompt: 'Enter tool matcher pattern (e.g., "Bash", "Edit", "*", or empty for non-tool events)',
+                value: ''
             });
-            if (!command) {
+            if (matcher === undefined) {
                 return;
             }
 
             try {
-                await configService.addHook(event as 'PreToolUse' | 'PostToolUse', {
-                    matcher,
-                    command
-                });
+                const type = hookType.label as 'command' | 'http' | 'prompt' | 'agent';
+                if (type === 'command') {
+                    const command = await vscode.window.showInputBox({
+                        prompt: 'Enter command to execute',
+                        placeHolder: 'e.g., ./scripts/validate.sh'
+                    });
+                    if (!command) { return; }
+                    await configService.addHook(event as any, { matcher, type: 'command', command }, projectPath);
+                } else if (type === 'http') {
+                    const url = await vscode.window.showInputBox({
+                        prompt: 'Enter URL to call',
+                        placeHolder: 'e.g., https://example.com/webhook'
+                    });
+                    if (!url) { return; }
+                    await configService.addHook(event as any, { matcher, type: 'http', url }, projectPath);
+                } else if (type === 'prompt') {
+                    const prompt = await vscode.window.showInputBox({
+                        prompt: 'Enter prompt text to inject',
+                        placeHolder: 'e.g., Always check for security issues'
+                    });
+                    if (!prompt) { return; }
+                    await configService.addHook(event as any, { matcher, type: 'prompt', prompt }, projectPath);
+                } else if (type === 'agent') {
+                    const agent = await vscode.window.showInputBox({
+                        prompt: 'Enter agent name',
+                        placeHolder: 'e.g., code-reviewer'
+                    });
+                    if (!agent) { return; }
+                    await configService.addHook(event as any, { matcher, type: 'agent', agent }, projectPath);
+                }
+
                 vscode.window.showInformationMessage('Hook added');
                 treeProvider?.refresh();
             } catch (error) {
@@ -877,7 +959,7 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
             }
             const hook = item.data as { id: string; event: string };
             try {
-                await configService.deleteHook(hook.event as 'PreToolUse' | 'PostToolUse', hook.id);
+                await configService.deleteHook(hook.event as any, hook.id, item.projectPath);
                 vscode.window.showInformationMessage('Hook deleted');
                 treeProvider?.refresh();
             } catch (error) {
@@ -888,10 +970,12 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
 
     // Add Command
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.addCommand', async () => {
+        vscode.commands.registerCommand('thinkube.addCommand', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
+            if (!projectPath) { vscode.window.showErrorMessage('No project selected'); return; }
 
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter command name (without /)',
@@ -910,7 +994,9 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 const command = await configService.createCommand(
                     name,
                     description || '',
-                    '# Add your prompt here\n\nDescribe what Claude should do when this command is invoked.'
+                    '# Add your prompt here\n\nDescribe what Claude should do when this command is invoked.',
+                    undefined,
+                    projectPath
                 );
                 // Open the created file
                 const doc = await vscode.workspace.openTextDocument(command.filePath);
@@ -946,7 +1032,7 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
             );
             if (confirm === 'Delete') {
                 try {
-                    await configService.deleteCommand(cmd.name);
+                    await configService.deleteCommand(cmd.name, item.projectPath);
                     vscode.window.showInformationMessage('Command deleted');
                     treeProvider?.refresh();
                 } catch (error) {
@@ -958,10 +1044,12 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
 
     // Add Skill
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.addSkill', async () => {
+        vscode.commands.registerCommand('thinkube.addSkill', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
+            if (!projectPath) { vscode.window.showErrorMessage('No project selected'); return; }
 
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter skill name',
@@ -980,7 +1068,10 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 const skill = await configService.createSkill(
                     name,
                     description || '',
-                    '# Skill Instructions\n\nDescribe what this skill does and how it should behave.'
+                    '# Skill Instructions\n\nDescribe what this skill does and how it should behave.',
+                    [],
+                    undefined,
+                    projectPath
                 );
                 const doc = await vscode.workspace.openTextDocument(skill.filePath);
                 await vscode.window.showTextDocument(doc);
@@ -1015,7 +1106,7 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
             );
             if (confirm === 'Delete') {
                 try {
-                    await configService.deleteSkill(skill.name);
+                    await configService.deleteSkill(skill.name, item.projectPath);
                     vscode.window.showInformationMessage('Skill deleted');
                     treeProvider?.refresh();
                 } catch (error) {
@@ -1027,10 +1118,12 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
 
     // Add Agent
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.addAgent', async () => {
+        vscode.commands.registerCommand('thinkube.addAgent', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
+            if (!projectPath) { vscode.window.showErrorMessage('No project selected'); return; }
 
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter agent name',
@@ -1049,7 +1142,10 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 const agent = await configService.createAgent(
                     name,
                     description || '',
-                    '# Agent Instructions\n\nDescribe what this agent does and how it should behave.'
+                    '# Agent Instructions\n\nDescribe what this agent does and how it should behave.',
+                    [],
+                    undefined,
+                    projectPath
                 );
                 const doc = await vscode.workspace.openTextDocument(agent.filePath);
                 await vscode.window.showTextDocument(doc);
@@ -1084,7 +1180,7 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
             );
             if (confirm === 'Delete') {
                 try {
-                    await configService.deleteAgent(agent.name);
+                    await configService.deleteAgent(agent.name, item.projectPath);
                     vscode.window.showInformationMessage('Agent deleted');
                     treeProvider?.refresh();
                 } catch (error) {
@@ -1096,10 +1192,12 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
 
     // Add MCP Server
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.addMcpServer', async () => {
+        vscode.commands.registerCommand('thinkube.addMcpServer', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
+            if (!projectPath) { vscode.window.showErrorMessage('No project selected'); return; }
 
             const id = await vscode.window.showInputBox({
                 prompt: 'Enter server ID',
@@ -1109,26 +1207,42 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 return;
             }
 
-            const command = await vscode.window.showInputBox({
-                prompt: 'Enter command to run the server',
-                placeHolder: 'e.g., npx, node, python3'
-            });
-            if (!command) {
+            const serverType = await vscode.window.showQuickPick(
+                [
+                    { label: 'stdio', description: 'Local process (command + args)' },
+                    { label: 'http', description: 'Remote HTTP/SSE server (URL)' }
+                ],
+                { placeHolder: 'Select server transport type' }
+            );
+            if (!serverType) {
                 return;
             }
 
-            const argsStr = await vscode.window.showInputBox({
-                prompt: 'Enter command arguments (comma-separated)',
-                placeHolder: 'e.g., -y, @modelcontextprotocol/server-github'
-            });
-
-            const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
-
             try {
-                await configService.addMcpServer(id, {
-                    command,
-                    args
-                });
+                if (serverType.label === 'http') {
+                    const url = await vscode.window.showInputBox({
+                        prompt: 'Enter server URL',
+                        placeHolder: 'e.g., https://example.com/mcp'
+                    });
+                    if (!url) { return; }
+
+                    await configService.addMcpServer(id, { type: 'http', url }, projectPath);
+                } else {
+                    const command = await vscode.window.showInputBox({
+                        prompt: 'Enter command to run the server',
+                        placeHolder: 'e.g., npx, node, python3'
+                    });
+                    if (!command) { return; }
+
+                    const argsStr = await vscode.window.showInputBox({
+                        prompt: 'Enter command arguments (comma-separated)',
+                        placeHolder: 'e.g., -y, @modelcontextprotocol/server-github'
+                    });
+                    const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
+
+                    await configService.addMcpServer(id, { command, args }, projectPath);
+                }
+
                 vscode.window.showInformationMessage(`MCP Server "${id}" added`);
                 treeProvider?.refresh();
             } catch (error) {
@@ -1151,7 +1265,7 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
             );
             if (confirm === 'Remove') {
                 try {
-                    await configService.removeMcpServer(server.id);
+                    await configService.removeMcpServer(server.id, item.projectPath);
                     vscode.window.showInformationMessage('MCP Server removed');
                     treeProvider?.refresh();
                 } catch (error) {
@@ -1163,12 +1277,13 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
 
     // Edit Permissions
     context.subscriptions.push(
-        vscode.commands.registerCommand('thinkube.editPermissions', async () => {
+        vscode.commands.registerCommand('thinkube.editPermissions', async (item?: ConfigTreeItem) => {
             if (!configService) {
                 return;
             }
+            const projectPath = item?.projectPath || currentActiveContext;
 
-            const permissions = await configService.getPermissions();
+            const permissions = await configService.getPermissions(projectPath);
             const action = await vscode.window.showQuickPick(
                 ['Add to Allow', 'Add to Deny', 'Add to Ask', 'View Current'],
                 { placeHolder: 'Select action' }
@@ -1205,12 +1320,86 @@ function registerConfigCommands(context: vscode.ExtensionContext): void {
                 } else {
                     permissions.ask.push(pattern);
                 }
-                await configService.setPermissions(permissions);
+                await configService.setPermissions(permissions, projectPath);
                 vscode.window.showInformationMessage('Permissions updated');
                 treeProvider?.refresh();
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to update permissions: ${error}`);
             }
+        })
+    );
+
+    // ========== Generate with Claude Commands ==========
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateHook', async (event?: string, projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            const { HOOK_EVENTS } = await import('./models/Hook');
+            const hookEvent = event && HOOK_EVENTS.includes(event as any) ? event : undefined;
+            if (!hookEvent) { vscode.window.showErrorMessage('Invalid hook event'); return; }
+            await claudeLauncher.launch(targetPath, { kind: 'hook', event: hookEvent as any });
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateCommand', async (projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            await claudeLauncher.launch(targetPath, { kind: 'command' });
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateSkill', async (projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            await claudeLauncher.launch(targetPath, { kind: 'skill' });
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateAgent', async (projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            await claudeLauncher.launch(targetPath, { kind: 'agent' });
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateMcpServer', async (projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            await claudeLauncher.launch(targetPath, { kind: 'mcp-server' });
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateFullSetup', async (projectPath?: string) => {
+            if (!claudeLauncher) return;
+            const targetPath = projectPath || currentActiveContext;
+            if (!targetPath) { vscode.window.showErrorMessage('No project selected'); return; }
+            await claudeLauncher.launchFullSetup(targetPath);
+            scheduleTreeRefresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('thinkube.generateWorkspaceConfig', async (workspacePath?: string) => {
+            if (!claudeLauncher) return;
+            if (!workspacePath) { vscode.window.showErrorMessage('No workspace path provided'); return; }
+            await claudeLauncher.launch(workspacePath, { kind: 'workspace-config' });
+            scheduleTreeRefresh();
         })
     );
 

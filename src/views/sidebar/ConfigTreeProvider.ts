@@ -1,15 +1,25 @@
 /**
- * ConfigTreeProvider - TreeDataProvider for Claude Code Configuration sidebar
+ * ConfigTreeProvider - Multi-root tree for Claude Code Configuration
  *
- * Displays a tree view of:
- * - Installed Plugins (from marketplace)
- * - Project Config (CLAUDE.md, settings.json)
- * - Hooks (PreToolUse, PostToolUse)
- * - Commands (slash commands)
- * - Skills
- * - Agents
- * - MCP Servers
- * - Permissions
+ * Tree structure:
+ *   Global (~/.claude)
+ *     ├── Settings (opens file)
+ *     ├── Installed Plugins
+ *     ├── MCP Servers (from settings.json mcpServers)
+ *     ├── Hooks
+ *     └── Permissions
+ *   Platform
+ *     ├── project-a ✓
+ *     │   ├── Project Config
+ *     │   ├── Hooks (N)
+ *     │   ├── Commands / Skills / Agents
+ *     │   ├── MCP Servers (from .mcp.json)
+ *     │   └── Permissions
+ *     └── project-b (no config)
+ *   Apps
+ *     └── ...
+ *   Templates
+ *     └── ...
  */
 
 import * as vscode from 'vscode';
@@ -17,15 +27,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ClaudeConfigService } from '../../services/ClaudeConfigService';
 import { PluginService, InstalledPlugin } from '../../services/PluginService';
-import { Hook } from '../../models/Hook';
+import { Hook, HookEvent, HOOK_EVENTS } from '../../models/Hook';
 import { Command } from '../../models/Command';
 import { Skill } from '../../models/Skill';
 import { Agent } from '../../models/Agent';
-import { McpServer } from '../../models/McpServer';
+import { McpServer, isHttpServer } from '../../models/McpServer';
 
 export type ConfigItemType =
-    | 'root'
-    | 'project-header'
+    | 'scope-section'
+    | 'project-node'
+    | 'project-node-unconfigured'
     | 'plugins-section'
     | 'plugin'
     | 'browse-marketplace'
@@ -39,6 +50,7 @@ export type ConfigItemType =
     | 'mcp-section'
     | 'permissions-section'
     | 'hook-event'
+    | 'hook-event-empty'
     | 'hook'
     | 'command'
     | 'skill'
@@ -47,15 +59,31 @@ export type ConfigItemType =
     | 'permission-allow'
     | 'permission-deny'
     | 'permission-ask'
-    | 'permission-item';
+    | 'permission-item'
+    | 'init-action';
+
+interface WorkspaceSection {
+    label: string;
+    rootPath: string;
+    icon: string;
+}
+
+const WORKSPACE_SECTIONS: WorkspaceSection[] = [
+    { label: 'Platform', rootPath: '/home/thinkube/thinkube-platform', icon: 'server' },
+    { label: 'Apps', rootPath: '/home/thinkube/apps', icon: 'code' },
+    { label: 'Templates', rootPath: '/home/thinkube/user-templates', icon: 'file-symlink-directory' },
+];
+
+const GLOBAL_HOME = process.env.HOME || '/home/thinkube';
 
 export class ConfigTreeItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly itemType: ConfigItemType,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly data?: Hook | Command | Skill | Agent | McpServer | InstalledPlugin | string,
-        public readonly parentType?: ConfigItemType
+        public readonly data?: Hook | Command | Skill | Agent | McpServer | InstalledPlugin | string | WorkspaceSection,
+        public readonly parentType?: ConfigItemType,
+        public readonly projectPath?: string
     ) {
         super(label, collapsibleState);
         this.contextValue = itemType;
@@ -64,6 +92,29 @@ export class ConfigTreeItem extends vscode.TreeItem {
 
     private setIconAndTooltip(): void {
         switch (this.itemType) {
+            case 'scope-section':
+                if (this.data && typeof this.data === 'object' && 'rootPath' in this.data) {
+                    const section = this.data as WorkspaceSection;
+                    this.iconPath = new vscode.ThemeIcon(section.icon);
+                    this.tooltip = section.rootPath;
+                } else {
+                    this.iconPath = new vscode.ThemeIcon('home');
+                    this.tooltip = 'Global Claude Code configuration';
+                }
+                break;
+            case 'project-node':
+                this.iconPath = new vscode.ThemeIcon('folder-opened');
+                this.tooltip = this.projectPath || '';
+                break;
+            case 'project-node-unconfigured':
+                this.iconPath = new vscode.ThemeIcon('folder');
+                this.tooltip = `${this.projectPath}\n(no Claude config)`;
+                this.description = '(no config)';
+                break;
+            case 'init-action':
+                this.iconPath = new vscode.ThemeIcon('add');
+                this.tooltip = 'Initialize Claude configuration for this project';
+                break;
             case 'plugins-section':
                 this.iconPath = new vscode.ThemeIcon('extensions');
                 this.tooltip = 'Installed Claude Code plugins';
@@ -85,10 +136,6 @@ export class ConfigTreeItem extends vscode.TreeItem {
                     command: 'thinkube.browsePlugins',
                     title: 'Browse Marketplace'
                 };
-                break;
-            case 'project-header':
-                this.iconPath = new vscode.ThemeIcon('folder-opened');
-                this.tooltip = 'Current project - click to switch';
                 break;
             case 'project-config-section':
                 this.iconPath = new vscode.ThemeIcon('file-code');
@@ -129,11 +176,34 @@ export class ConfigTreeItem extends vscode.TreeItem {
             case 'hook-event':
                 this.iconPath = new vscode.ThemeIcon('symbol-event');
                 break;
+            case 'hook-event-empty':
+                this.iconPath = new vscode.ThemeIcon('symbol-event');
+                this.description = '(click to generate)';
+                this.tooltip = `No hooks configured for ${this.label}. Click to generate with Claude.`;
+                break;
             case 'hook':
-                this.iconPath = new vscode.ThemeIcon('symbol-function');
                 if (this.data) {
                     const hook = this.data as Hook;
-                    this.tooltip = `Matcher: ${hook.matcher}\nCommand: ${hook.command}`;
+                    const typeIcons: Record<string, string> = {
+                        command: 'terminal',
+                        http: 'cloud',
+                        prompt: 'comment',
+                        agent: 'robot'
+                    };
+                    this.iconPath = new vscode.ThemeIcon(typeIcons[hook.hookType] || 'symbol-function');
+                    const detail = hook.command || hook.url || hook.prompt || hook.agent || '';
+                    this.tooltip = `Type: ${hook.hookType}\nMatcher: ${hook.matcher}\nDetail: ${detail}\n\nClick to open settings.json`;
+                    // Open settings.json on click
+                    if (this.projectPath) {
+                        const settingsPath = path.join(this.projectPath, '.claude', 'settings.json');
+                        this.command = {
+                            command: 'vscode.open',
+                            title: 'Open Settings',
+                            arguments: [vscode.Uri.file(settingsPath)]
+                        };
+                    }
+                } else {
+                    this.iconPath = new vscode.ThemeIcon('symbol-function');
                 }
                 break;
             case 'command':
@@ -175,11 +245,25 @@ export class ConfigTreeItem extends vscode.TreeItem {
             case 'mcp-server':
                 if (this.data) {
                     const server = this.data as McpServer;
-                    this.iconPath = new vscode.ThemeIcon(
-                        server.status === 'running' ? 'circle-filled' :
-                        server.status === 'error' ? 'error' : 'circle-outline'
-                    );
-                    this.tooltip = `Command: ${server.config.command}\nStatus: ${server.status || 'unknown'}`;
+                    if (isHttpServer(server.config)) {
+                        this.iconPath = new vscode.ThemeIcon('cloud');
+                        this.tooltip = `Type: HTTP\nURL: ${server.config.url}\n\nClick to open config`;
+                    } else {
+                        this.iconPath = new vscode.ThemeIcon('terminal');
+                        this.tooltip = `Type: stdio\nCommand: ${server.config.command}${server.config.args?.length ? '\nArgs: ' + server.config.args.join(' ') : ''}\n\nClick to open config`;
+                    }
+                    // Open the relevant config file on click
+                    if (this.projectPath) {
+                        const GLOBAL = process.env.HOME || '/home/thinkube';
+                        const configFile = this.projectPath === GLOBAL
+                            ? path.join(GLOBAL, '.claude', 'settings.json')
+                            : path.join(this.projectPath, '.mcp.json');
+                        this.command = {
+                            command: 'vscode.open',
+                            title: 'Open Config',
+                            arguments: [vscode.Uri.file(configFile)]
+                        };
+                    }
                 } else {
                     this.iconPath = new vscode.ThemeIcon('circle-outline');
                 }
@@ -208,48 +292,36 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private pluginService: PluginService;
+    private projectCache: Map<string, { name: string; path: string; hasConfig: boolean }[]> = new Map();
 
     constructor(private configService: ClaudeConfigService) {
-        // Initialize plugin service with same base path
-        this.pluginService = new PluginService((configService as any).basePath || '/home/thinkube');
+        this.pluginService = new PluginService(GLOBAL_HOME);
 
-        // Refresh tree when config changes
         configService.onConfigChanged(() => {
             this.refresh();
         });
 
-        // Refresh tree when plugins change
         this.pluginService.onPluginsChanged(() => {
             this.refresh();
         });
     }
 
-    /**
-     * Update the config service (used when switching workspace context)
-     */
-    setConfigService(newService: ClaudeConfigService): void {
+    updateConfigService(newService: ClaudeConfigService): void {
         this.configService = newService;
 
-        // Update plugin service base path
-        this.pluginService.setBasePath((newService as any).basePath || '/home/thinkube');
-
-        // Re-subscribe to config changes
         newService.onConfigChanged(() => {
             this.refresh();
         });
 
-        // Refresh tree to show new context
         this.refresh();
     }
 
-    /**
-     * Get the plugin service
-     */
     getPluginService(): PluginService {
         return this.pluginService;
     }
 
     refresh(): void {
+        this.projectCache.clear();
         this._onDidChangeTreeData.fire();
     }
 
@@ -259,137 +331,359 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
 
     async getChildren(element?: ConfigTreeItem): Promise<ConfigTreeItem[]> {
         if (!element) {
-            // Root level - show main sections (or empty for welcome view)
             return this.getRootChildren();
         }
 
         switch (element.itemType) {
+            case 'scope-section':
+                if (element.data && typeof element.data === 'object' && 'rootPath' in element.data) {
+                    return this.getWorkspaceSectionChildren(element.data as WorkspaceSection);
+                }
+                return this.getGlobalChildren();
+
+            case 'project-node':
+                return this.getProjectNodeChildren(element.projectPath!);
+            case 'project-node-unconfigured':
+                return this.getUnconfiguredProjectChildren(element.projectPath!);
+
             case 'plugins-section':
                 return this.getPluginsChildren();
             case 'project-config-section':
-                return this.getProjectConfigChildren();
+                return this.getProjectConfigChildren(element.projectPath!);
             case 'hooks-section':
-                return this.getHooksChildren();
+                return this.getHooksChildren(element.projectPath!);
             case 'hook-event':
-                return this.getHookEventChildren(element.label as 'PreToolUse' | 'PostToolUse');
+                return this.getHookEventChildren(element.label as HookEvent, element.projectPath!);
             case 'commands-section':
-                return this.getCommandsChildren();
+                return this.getCommandsChildren(element.projectPath!);
             case 'skills-section':
-                return this.getSkillsChildren();
+                return this.getSkillsChildren(element.projectPath!);
             case 'agents-section':
-                return this.getAgentsChildren();
+                return this.getAgentsChildren(element.projectPath!);
             case 'mcp-section':
-                return this.getMcpChildren();
+                return this.getMcpChildren(element.projectPath!);
             case 'permissions-section':
-                return this.getPermissionsChildren();
+                return this.getPermissionsChildren(element.projectPath!);
             case 'permission-allow':
             case 'permission-deny':
             case 'permission-ask':
-                return this.getPermissionItemsChildren(element.itemType);
+                return this.getPermissionItemsChildren(element.itemType, element.projectPath!);
             default:
                 return [];
         }
     }
 
-    private async getRootChildren(): Promise<ConfigTreeItem[]> {
-        // Return empty array if no config exists - this shows the welcome view
-        const hasConfig = await this.configService.hasClaudeConfig();
-        if (!hasConfig) {
-            return [];
-        }
+    // ========== Root ==========
 
-        // Get current context info
-        const basePath = (this.configService as any).basePath || '/home/thinkube';
-        const projectName = path.basename(basePath);
-
-        // Check if this is a plugin folder
-        const isPluginFolder = this.pluginService.isPluginFolder(basePath);
-        if (isPluginFolder) {
-            // Show plugin development view
-            return this.getPluginDevRootChildren(basePath);
-        }
-
-        // Create project header - always non-collapsible, click to switch via picker
-        const projectHeader = new ConfigTreeItem(
-            projectName,
-            'project-header',
-            vscode.TreeItemCollapsibleState.None,
-            basePath
-        );
-        projectHeader.tooltip = `Configuring: ${basePath}\nClick to switch project`;
-        projectHeader.command = {
-            command: 'thinkube.switchProject',
-            title: 'Switch Project'
-        };
-
-        // Standard project view with project header first
-        return [
-            projectHeader,
-            new ConfigTreeItem('Installed Plugins', 'plugins-section', vscode.TreeItemCollapsibleState.Expanded),
-            new ConfigTreeItem('Project Config', 'project-config-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Hooks', 'hooks-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Commands', 'commands-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Skills', 'skills-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Agents', 'agents-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('MCP Servers', 'mcp-section', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Permissions', 'permissions-section', vscode.TreeItemCollapsibleState.Collapsed),
-        ];
-    }
-
-    /**
-     * Get root children for plugin development view
-     */
-    private async getPluginDevRootChildren(pluginPath: string): Promise<ConfigTreeItem[]> {
-        const pluginInfo = this.pluginService.getPluginInfo(pluginPath);
-        const pluginName = pluginInfo?.name || path.basename(pluginPath);
-
+    private getRootChildren(): ConfigTreeItem[] {
         const items: ConfigTreeItem[] = [];
 
-        // Plugin info header
-        const headerItem = new ConfigTreeItem(
-            `Plugin: ${pluginName}`,
-            'root',
-            vscode.TreeItemCollapsibleState.None
+        // Global scope
+        const globalItem = new ConfigTreeItem(
+            'Global',
+            'scope-section',
+            vscode.TreeItemCollapsibleState.Collapsed
         );
-        headerItem.iconPath = new vscode.ThemeIcon('package');
-        headerItem.description = pluginInfo?.version || '';
-        items.push(headerItem);
+        globalItem.description = '~/.claude';
+        items.push(globalItem);
 
-        // Plugin components
-        if (fs.existsSync(path.join(pluginPath, 'commands'))) {
-            items.push(new ConfigTreeItem('Commands', 'commands-section', vscode.TreeItemCollapsibleState.Collapsed));
-        }
-        if (fs.existsSync(path.join(pluginPath, 'hooks'))) {
-            items.push(new ConfigTreeItem('Hooks', 'hooks-section', vscode.TreeItemCollapsibleState.Collapsed));
-        }
-        if (fs.existsSync(path.join(pluginPath, 'skills'))) {
-            items.push(new ConfigTreeItem('Skills', 'skills-section', vscode.TreeItemCollapsibleState.Collapsed));
-        }
-        if (fs.existsSync(path.join(pluginPath, 'agents'))) {
-            items.push(new ConfigTreeItem('Agents', 'agents-section', vscode.TreeItemCollapsibleState.Collapsed));
+        // Workspace sections
+        for (const section of WORKSPACE_SECTIONS) {
+            if (fs.existsSync(section.rootPath)) {
+                const item = new ConfigTreeItem(
+                    section.label,
+                    'scope-section',
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    section
+                );
+                items.push(item);
+            }
         }
 
         return items;
     }
 
-    /**
-     * Get installed plugins children
-     */
+    // ========== Global scope ==========
+
+    private async getGlobalChildren(): Promise<ConfigTreeItem[]> {
+        const globalPath = GLOBAL_HOME;
+        const settingsPath = path.join(globalPath, '.claude', 'settings.json');
+        const items: ConfigTreeItem[] = [];
+
+        // Settings file link
+        if (fs.existsSync(settingsPath)) {
+            const settingsItem = new ConfigTreeItem(
+                'settings.json',
+                'settings-json',
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                undefined,
+                globalPath
+            );
+            settingsItem.command = {
+                command: 'vscode.open',
+                title: 'Open Global Settings',
+                arguments: [vscode.Uri.file(settingsPath)]
+            };
+            items.push(settingsItem);
+        }
+
+        // Plugins
+        items.push(new ConfigTreeItem(
+            'Installed Plugins',
+            'plugins-section',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            undefined,
+            globalPath
+        ));
+
+        // Global MCP Servers (from settings.json mcpServers)
+        const mcpItem = new ConfigTreeItem(
+            'MCP Servers',
+            'mcp-section',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            undefined,
+            globalPath
+        );
+        items.push(mcpItem);
+
+        // Global Hooks
+        const hooksItem = new ConfigTreeItem(
+            'Hooks',
+            'hooks-section',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            undefined,
+            globalPath
+        );
+        items.push(hooksItem);
+
+        // Global Permissions
+        items.push(new ConfigTreeItem(
+            'Permissions',
+            'permissions-section',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            undefined,
+            globalPath
+        ));
+
+        return items;
+    }
+
+    // ========== Workspace sections ==========
+
+    private getWorkspaceSectionChildren(section: WorkspaceSection): ConfigTreeItem[] {
+        const items: ConfigTreeItem[] = [];
+        const rootPath = section.rootPath;
+
+        // Workspace-level config (shared across all repos in this section)
+        const hasWorkspaceClaudeMd = fs.existsSync(path.join(rootPath, 'CLAUDE.md'));
+        const hasWorkspaceSettings = fs.existsSync(path.join(rootPath, '.claude', 'settings.json'));
+        if (hasWorkspaceClaudeMd || hasWorkspaceSettings) {
+            const wsConfig = new ConfigTreeItem(
+                'Workspace Config',
+                'project-config-section',
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                undefined,
+                rootPath
+            );
+            wsConfig.description = 'shared across repos';
+            wsConfig.tooltip = `Inherited by all projects under ${rootPath}`;
+            wsConfig.iconPath = new vscode.ThemeIcon('library');
+            items.push(wsConfig);
+        } else {
+            const createWs = new ConfigTreeItem(
+                'Create Workspace Config',
+                'init-action',
+                vscode.TreeItemCollapsibleState.None,
+                rootPath,
+                undefined,
+                rootPath
+            );
+            createWs.command = {
+                command: 'thinkube.generateWorkspaceConfig',
+                title: 'Create Workspace Config',
+                arguments: [rootPath]
+            };
+            createWs.tooltip = 'Create a shared CLAUDE.md describing how repos in this section relate to each other';
+            createWs.iconPath = new vscode.ThemeIcon('library');
+            items.push(createWs);
+        }
+
+        // Individual projects
+        const projects = this.scanProjects(section.rootPath);
+        for (const proj of projects) {
+            const itemType = proj.hasConfig ? 'project-node' : 'project-node-unconfigured';
+            const item = new ConfigTreeItem(
+                proj.name,
+                itemType,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                undefined,
+                proj.path
+            );
+            if (proj.hasConfig) {
+                item.description = '✓';
+            }
+            items.push(item);
+        }
+
+        if (projects.length === 0) {
+            items.push(new ConfigTreeItem(
+                'No projects found',
+                'init-action',
+                vscode.TreeItemCollapsibleState.None
+            ));
+        }
+
+        return items;
+    }
+
+    private scanProjects(rootPath: string): { name: string; path: string; hasConfig: boolean }[] {
+        const cached = this.projectCache.get(rootPath);
+        if (cached) return cached;
+
+        const results: { name: string; path: string; hasConfig: boolean }[] = [];
+        try {
+            const entries = fs.readdirSync(rootPath, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                    const fullPath = path.join(rootPath, entry.name);
+                    if (fs.existsSync(path.join(fullPath, '.git'))) {
+                        const hasConfig = fs.existsSync(path.join(fullPath, '.claude')) ||
+                                          fs.existsSync(path.join(fullPath, 'CLAUDE.md'));
+                        results.push({ name: entry.name, path: fullPath, hasConfig });
+                    }
+                }
+            }
+        } catch {
+            // ignore read errors
+        }
+
+        results.sort((a, b) => {
+            if (a.hasConfig !== b.hasConfig) return a.hasConfig ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        this.projectCache.set(rootPath, results);
+        return results;
+    }
+
+    // ========== Project node ==========
+
+    private async getProjectNodeChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        const items: ConfigTreeItem[] = [];
+        const pp = projectPath;
+
+        items.push(new ConfigTreeItem('Project Config', 'project-config-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp));
+
+        // Hooks with count
+        const hooks = await this.configService.getHooks(undefined, pp);
+        const hooksItem = new ConfigTreeItem('Hooks', 'hooks-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp);
+        if (hooks.length > 0) hooksItem.description = `(${hooks.length})`;
+        items.push(hooksItem);
+
+        // Commands with count
+        const commands = await this.configService.getCommands(pp);
+        const cmdsItem = new ConfigTreeItem('Commands', 'commands-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp);
+        if (commands.length > 0) cmdsItem.description = `(${commands.length})`;
+        items.push(cmdsItem);
+
+        // Skills with count
+        const skills = await this.configService.getSkills(pp);
+        const skillsItem = new ConfigTreeItem('Skills', 'skills-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp);
+        if (skills.length > 0) skillsItem.description = `(${skills.length})`;
+        items.push(skillsItem);
+
+        // Agents with count
+        const agents = await this.configService.getAgents(pp);
+        const agentsItem = new ConfigTreeItem('Agents', 'agents-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp);
+        if (agents.length > 0) agentsItem.description = `(${agents.length})`;
+        items.push(agentsItem);
+
+        // MCP Servers with count
+        const servers = await this.configService.getMcpServers(pp);
+        const mcpItem = new ConfigTreeItem('MCP Servers', 'mcp-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp);
+        if (servers.length > 0) mcpItem.description = `(${servers.length})`;
+        items.push(mcpItem);
+
+        // Permissions
+        items.push(new ConfigTreeItem('Permissions', 'permissions-section', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, pp));
+
+        return items;
+    }
+
+    private getUnconfiguredProjectChildren(projectPath: string): ConfigTreeItem[] {
+        const initItem = new ConfigTreeItem(
+            'Run claude init',
+            'init-action',
+            vscode.TreeItemCollapsibleState.None,
+            projectPath,
+            undefined,
+            projectPath
+        );
+        initItem.description = 'Create CLAUDE.md';
+        initItem.command = {
+            command: 'thinkube.runClaudeInit',
+            title: 'Run claude init',
+            arguments: [projectPath]
+        };
+        initItem.tooltip = 'Run claude init to generate CLAUDE.md for this project';
+
+        const setupItem = new ConfigTreeItem(
+            'Set Up with Claude',
+            'init-action',
+            vscode.TreeItemCollapsibleState.None,
+            projectPath,
+            undefined,
+            projectPath
+        );
+        setupItem.description = 'Full config generation';
+        setupItem.command = {
+            command: 'thinkube.generateFullSetup',
+            title: 'Set Up Project',
+            arguments: [projectPath]
+        };
+        setupItem.tooltip = 'Generate hooks, commands, and permissions with Claude';
+
+        const moreItem = new ConfigTreeItem(
+            'More Options...',
+            'init-action',
+            vscode.TreeItemCollapsibleState.None,
+            projectPath,
+            undefined,
+            projectPath
+        );
+        moreItem.description = 'Quick setup, empty config';
+        moreItem.command = {
+            command: 'thinkube.initializeConfig',
+            title: 'Initialize Config',
+            arguments: [projectPath]
+        };
+        moreItem.tooltip = 'Quick setup (detect tools), empty config, or full Claude setup';
+
+        return [initItem, setupItem, moreItem];
+    }
+
+    // ========== Plugins ==========
+
     private async getPluginsChildren(): Promise<ConfigTreeItem[]> {
         const plugins = await this.pluginService.getInstalledPlugins();
         const items: ConfigTreeItem[] = [];
 
         for (const plugin of plugins) {
-            const item = new ConfigTreeItem(
+            items.push(new ConfigTreeItem(
                 plugin.name,
                 'plugin',
                 vscode.TreeItemCollapsibleState.None,
                 plugin
-            );
-            items.push(item);
+            ));
         }
 
-        // Add "Browse Marketplace" action
         items.push(new ConfigTreeItem(
             '+ Browse Marketplace...',
             'browse-marketplace',
@@ -399,166 +693,185 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
         return items;
     }
 
-    /**
-     * Get project config children
-     */
-    private async getProjectConfigChildren(): Promise<ConfigTreeItem[]> {
-        const basePath = (this.configService as any).basePath || '/home/thinkube';
+    // ========== Project Config files ==========
+
+    private getProjectConfigChildren(projectPath: string): ConfigTreeItem[] {
         const items: ConfigTreeItem[] = [];
 
-        // CLAUDE.md
-        const claudeMdPath = path.join(basePath, 'CLAUDE.md');
-        if (fs.existsSync(claudeMdPath)) {
-            const claudeMdItem = new ConfigTreeItem(
-                'CLAUDE.md',
-                'claude-md',
-                vscode.TreeItemCollapsibleState.None
-            );
-            claudeMdItem.command = {
-                command: 'vscode.open',
-                title: 'Open CLAUDE.md',
-                arguments: [vscode.Uri.file(claudeMdPath)]
+        const addFileEntry = (label: string, filePath: string, itemType: ConfigItemType) => {
+            if (fs.existsSync(filePath)) {
+                const item = new ConfigTreeItem(label, itemType, vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+                item.command = {
+                    command: 'vscode.open',
+                    title: `Open ${label}`,
+                    arguments: [vscode.Uri.file(filePath)]
+                };
+                items.push(item);
+            }
+        };
+
+        const claudeMdExists = fs.existsSync(path.join(projectPath, 'CLAUDE.md'));
+        if (claudeMdExists) {
+            addFileEntry('CLAUDE.md', path.join(projectPath, 'CLAUDE.md'), 'claude-md');
+        } else {
+            const initItem = new ConfigTreeItem('Run claude init', 'init-action', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+            initItem.description = 'Create CLAUDE.md';
+            initItem.command = {
+                command: 'thinkube.runClaudeInit',
+                title: 'Run claude init',
+                arguments: [projectPath]
             };
-            items.push(claudeMdItem);
+            initItem.tooltip = 'Run claude init to generate CLAUDE.md for this project';
+            items.push(initItem);
+        }
+        addFileEntry('CLAUDE.local.md', path.join(projectPath, 'CLAUDE.local.md'), 'claude-md');
+        addFileEntry('settings.json', path.join(projectPath, '.claude', 'settings.json'), 'settings-json');
+        addFileEntry('settings.local.json', path.join(projectPath, '.claude', 'settings.local.json'), 'settings-json');
+        addFileEntry('.mcp.json', path.join(projectPath, '.mcp.json'), 'settings-json');
+
+        return items;
+    }
+
+    // ========== Hooks ==========
+
+    private async getHooksChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        const allHooks = await this.configService.getHooks(undefined, projectPath);
+        const eventsWithHooks = new Set(allHooks.map(h => h.event));
+
+        const items: ConfigTreeItem[] = [];
+
+        for (const event of HOOK_EVENTS) {
+            if (eventsWithHooks.has(event)) {
+                items.push(new ConfigTreeItem(event, 'hook-event', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, projectPath));
+            }
         }
 
-        // settings.json
-        const settingsPath = path.join(basePath, '.claude', 'settings.json');
-        if (fs.existsSync(settingsPath)) {
-            const settingsItem = new ConfigTreeItem(
-                'settings.json',
-                'settings-json',
-                vscode.TreeItemCollapsibleState.None
-            );
-            settingsItem.command = {
-                command: 'vscode.open',
-                title: 'Open settings.json',
-                arguments: [vscode.Uri.file(settingsPath)]
-            };
-            items.push(settingsItem);
+        for (const event of HOOK_EVENTS) {
+            if (!eventsWithHooks.has(event)) {
+                const item = new ConfigTreeItem(event, 'hook-event-empty', vscode.TreeItemCollapsibleState.None, event, undefined, projectPath);
+                item.command = {
+                    command: 'thinkube.generateHook',
+                    title: 'Generate Hook',
+                    arguments: [event, projectPath]
+                };
+                items.push(item);
+            }
         }
 
         return items;
     }
 
-    private async getHooksChildren(): Promise<ConfigTreeItem[]> {
-        return [
-            new ConfigTreeItem('PreToolUse', 'hook-event', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('PostToolUse', 'hook-event', vscode.TreeItemCollapsibleState.Collapsed),
-        ];
-    }
-
-    private async getHookEventChildren(event: 'PreToolUse' | 'PostToolUse'): Promise<ConfigTreeItem[]> {
-        const hooks = await this.configService.getHooks(event);
+    private async getHookEventChildren(event: HookEvent, projectPath: string): Promise<ConfigTreeItem[]> {
+        const hooks = await this.configService.getHooks(event, projectPath);
         if (hooks.length === 0) {
-            return [new ConfigTreeItem('No hooks configured', 'hook', vscode.TreeItemCollapsibleState.None)];
+            return [new ConfigTreeItem('No hooks configured', 'hook', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath)];
         }
-        return hooks.map(hook =>
-            new ConfigTreeItem(
+        return hooks.map(hook => {
+            const item = new ConfigTreeItem(
                 hook.matcher || '*',
                 'hook',
                 vscode.TreeItemCollapsibleState.None,
-                hook
-            )
-        );
+                hook,
+                undefined,
+                projectPath
+            );
+            item.description = `[${hook.hookType}]`;
+            return item;
+        });
     }
 
-    private async getCommandsChildren(): Promise<ConfigTreeItem[]> {
-        const commands = await this.configService.getCommands();
+    // ========== Commands ==========
+
+    private async getCommandsChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        const commands = await this.configService.getCommands(projectPath);
         if (commands.length === 0) {
-            return [new ConfigTreeItem('No commands configured', 'command', vscode.TreeItemCollapsibleState.None)];
+            const item = new ConfigTreeItem('Generate with Claude...', 'init-action', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+            item.command = { command: 'thinkube.generateCommand', title: 'Generate Command', arguments: [projectPath] };
+            return [item];
         }
         return commands.map(cmd =>
-            new ConfigTreeItem(
-                `/${cmd.name}`,
-                'command',
-                vscode.TreeItemCollapsibleState.None,
-                cmd
-            )
+            new ConfigTreeItem(`/${cmd.name}`, 'command', vscode.TreeItemCollapsibleState.None, cmd, undefined, projectPath)
         );
     }
 
-    private async getSkillsChildren(): Promise<ConfigTreeItem[]> {
-        const skills = await this.configService.getSkills();
+    // ========== Skills ==========
+
+    private async getSkillsChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        const skills = await this.configService.getSkills(projectPath);
         if (skills.length === 0) {
-            return [new ConfigTreeItem('No skills configured', 'skill', vscode.TreeItemCollapsibleState.None)];
+            const item = new ConfigTreeItem('Generate with Claude...', 'init-action', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+            item.command = { command: 'thinkube.generateSkill', title: 'Generate Skill', arguments: [projectPath] };
+            return [item];
         }
         return skills.map(skill =>
-            new ConfigTreeItem(
-                skill.name,
-                'skill',
-                vscode.TreeItemCollapsibleState.None,
-                skill
-            )
+            new ConfigTreeItem(skill.name, 'skill', vscode.TreeItemCollapsibleState.None, skill, undefined, projectPath)
         );
     }
 
-    private async getAgentsChildren(): Promise<ConfigTreeItem[]> {
-        const agents = await this.configService.getAgents();
+    // ========== Agents ==========
+
+    private async getAgentsChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        const agents = await this.configService.getAgents(projectPath);
         if (agents.length === 0) {
-            return [new ConfigTreeItem('No agents configured', 'agent', vscode.TreeItemCollapsibleState.None)];
+            const item = new ConfigTreeItem('Generate with Claude...', 'init-action', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+            item.command = { command: 'thinkube.generateAgent', title: 'Generate Agent', arguments: [projectPath] };
+            return [item];
         }
         return agents.map(agent =>
-            new ConfigTreeItem(
-                agent.name,
-                'agent',
-                vscode.TreeItemCollapsibleState.None,
-                agent
-            )
+            new ConfigTreeItem(agent.name, 'agent', vscode.TreeItemCollapsibleState.None, agent, undefined, projectPath)
         );
     }
 
-    private async getMcpChildren(): Promise<ConfigTreeItem[]> {
-        const servers = await this.configService.getMcpServers();
+    // ========== MCP Servers ==========
+
+    private async getMcpChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+        let servers: McpServer[];
+
+        if (projectPath === GLOBAL_HOME) {
+            servers = await this.configService.getGlobalMcpServers();
+        } else {
+            servers = await this.configService.getMcpServers(projectPath);
+        }
+
         if (servers.length === 0) {
-            return [new ConfigTreeItem('No MCP servers configured', 'mcp-server', vscode.TreeItemCollapsibleState.None)];
+            if (projectPath === GLOBAL_HOME) {
+                return [new ConfigTreeItem('No MCP servers configured', 'mcp-server', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath)];
+            }
+            const item = new ConfigTreeItem('Generate with Claude...', 'init-action', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath);
+            item.command = { command: 'thinkube.generateMcpServer', title: 'Generate MCP Server', arguments: [projectPath] };
+            return [item];
         }
         return servers.map(server =>
-            new ConfigTreeItem(
-                server.name,
-                'mcp-server',
-                vscode.TreeItemCollapsibleState.None,
-                server
-            )
+            new ConfigTreeItem(server.name, 'mcp-server', vscode.TreeItemCollapsibleState.None, server, undefined, projectPath)
         );
     }
 
-    private getPermissionsChildren(): ConfigTreeItem[] {
+    // ========== Permissions ==========
+
+    private getPermissionsChildren(projectPath: string): ConfigTreeItem[] {
         return [
-            new ConfigTreeItem('Allow', 'permission-allow', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Deny', 'permission-deny', vscode.TreeItemCollapsibleState.Collapsed),
-            new ConfigTreeItem('Ask', 'permission-ask', vscode.TreeItemCollapsibleState.Collapsed),
+            new ConfigTreeItem('Allow', 'permission-allow', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, projectPath),
+            new ConfigTreeItem('Deny', 'permission-deny', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, projectPath),
+            new ConfigTreeItem('Ask', 'permission-ask', vscode.TreeItemCollapsibleState.Collapsed, undefined, undefined, projectPath),
         ];
     }
 
-    private async getPermissionItemsChildren(type: 'permission-allow' | 'permission-deny' | 'permission-ask'): Promise<ConfigTreeItem[]> {
-        const permissions = await this.configService.getPermissions();
+    private async getPermissionItemsChildren(type: 'permission-allow' | 'permission-deny' | 'permission-ask', projectPath: string): Promise<ConfigTreeItem[]> {
+        const permissions = await this.configService.getPermissions(projectPath);
         let items: string[] = [];
 
         switch (type) {
-            case 'permission-allow':
-                items = permissions.allow;
-                break;
-            case 'permission-deny':
-                items = permissions.deny;
-                break;
-            case 'permission-ask':
-                items = permissions.ask;
-                break;
+            case 'permission-allow': items = permissions.allow; break;
+            case 'permission-deny': items = permissions.deny; break;
+            case 'permission-ask': items = permissions.ask; break;
         }
 
         if (items.length === 0) {
-            return [new ConfigTreeItem('(empty)', 'permission-item', vscode.TreeItemCollapsibleState.None)];
+            return [new ConfigTreeItem('(empty)', 'permission-item', vscode.TreeItemCollapsibleState.None, undefined, undefined, projectPath)];
         }
 
         return items.map(item =>
-            new ConfigTreeItem(
-                item,
-                'permission-item',
-                vscode.TreeItemCollapsibleState.None,
-                item,
-                type
-            )
+            new ConfigTreeItem(item, 'permission-item', vscode.TreeItemCollapsibleState.None, item, type, projectPath)
         );
     }
 }

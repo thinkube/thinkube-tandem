@@ -20,11 +20,11 @@ import {
     createDefaultConfig,
     createDefaultSettings
 } from '../models/ClaudeConfig';
-import { Hook, HookEvent, HookMatcher, createHook } from '../models/Hook';
+import { Hook, HookEvent, HookDefinition, HookMatcher, createHook } from '../models/Hook';
 import { Command, parseCommandMarkdown, commandToMarkdown } from '../models/Command';
 import { Skill, parseSkillMarkdown, skillToMarkdown } from '../models/Skill';
 import { Agent, parseAgentMarkdown, agentToMarkdown } from '../models/Agent';
-import { McpServer, McpServerConfig } from '../models/McpServer';
+import { McpServer, McpServerConfig, isHttpServer } from '../models/McpServer';
 
 export type ConfigScope = 'project' | 'global';
 
@@ -32,7 +32,19 @@ export class ClaudeConfigService {
     private _onConfigChanged = new vscode.EventEmitter<ClaudeConfig>();
     readonly onConfigChanged = this._onConfigChanged.event;
 
-    constructor(private basePath: string) {}
+    private _basePath: string;
+
+    constructor(basePath: string) {
+        this._basePath = basePath;
+    }
+
+    get basePath(): string {
+        return this._basePath;
+    }
+
+    setActiveProject(projectPath: string): void {
+        this._basePath = projectPath;
+    }
 
     // ========== Configuration Loading ==========
 
@@ -41,7 +53,7 @@ export class ClaudeConfigService {
      */
     async getConfig(scope: ConfigScope, projectPath?: string): Promise<ClaudeConfig> {
         const basePath = scope === 'global'
-            ? path.join(process.env.HOME || '', '.claude')
+            ? (process.env.HOME || '/home/thinkube')
             : projectPath || this.getWorkspacePath();
 
         if (!basePath) {
@@ -80,9 +92,11 @@ export class ClaudeConfigService {
     }
 
     /**
-     * Save settings to settings.json
+     * Save settings to settings.json using read-modify-write to preserve unknown fields.
+     * Only the fields present in the `updates` object are merged; all other fields
+     * in the existing file are left untouched (e.g., model, enabledPlugins, sandbox, etc.).
      */
-    async saveSettings(settings: ClaudeSettings, projectPath?: string): Promise<void> {
+    async saveSettings(updates: Partial<ClaudeSettings>, projectPath?: string): Promise<void> {
         const basePath = projectPath || this.getWorkspacePath();
         if (!basePath) {
             throw new Error('No workspace folder open');
@@ -96,7 +110,20 @@ export class ClaudeConfigService {
             fs.mkdirSync(claudeDir, { recursive: true });
         }
 
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        // Read existing settings to preserve unknown fields
+        let existing: Record<string, unknown> = {};
+        if (fs.existsSync(settingsPath)) {
+            try {
+                existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+            } catch (error) {
+                console.error('Error reading existing settings.json:', error);
+            }
+        }
+
+        // Merge: updates overwrite known fields, unknown fields preserved
+        const merged = { ...existing, ...updates };
+
+        fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2));
 
         // Emit change event
         const config = await this.loadConfig(basePath);
@@ -106,32 +133,39 @@ export class ClaudeConfigService {
     // ========== Hooks ==========
 
     /**
-     * Get hooks from settings, optionally filtered by event type
+     * Get hooks from settings, optionally filtered by event type.
+     * Iterates all event keys dynamically to support all Claude Code hook events.
      */
     async getHooks(eventFilter?: HookEvent, projectPath?: string): Promise<Hook[]> {
         const config = await this.getConfig('project', projectPath);
         const hooks: Hook[] = [];
 
+        const hooksConfig = config.settings.hooks;
+        if (!hooksConfig) return hooks;
+
         const processHooks = (event: HookEvent, matchers?: HookMatcher[]) => {
             if (!matchers) return;
             for (const matcher of matchers) {
                 for (const hookDef of matcher.hooks) {
+                    const hookType = hookDef.type || 'command';
                     hooks.push({
-                        id: `${event}-${matcher.matcher}-${hookDef.command}`,
+                        id: `${event}-${matcher.matcher}-${hookDef.command || hookDef.url || hookDef.prompt || hookDef.agent || ''}`,
                         event,
                         matcher: matcher.matcher,
+                        hookType,
                         command: hookDef.command,
+                        url: hookDef.url,
+                        prompt: hookDef.prompt,
+                        agent: hookDef.agent,
                         timeout: hookDef.timeout
                     });
                 }
             }
         };
 
-        if (!eventFilter || eventFilter === 'PreToolUse') {
-            processHooks('PreToolUse', config.settings.hooks?.PreToolUse);
-        }
-        if (!eventFilter || eventFilter === 'PostToolUse') {
-            processHooks('PostToolUse', config.settings.hooks?.PostToolUse);
+        for (const [event, matchers] of Object.entries(hooksConfig)) {
+            if (eventFilter && event !== eventFilter) continue;
+            processHooks(event as HookEvent, matchers as HookMatcher[]);
         }
 
         return hooks;
@@ -142,43 +176,37 @@ export class ClaudeConfigService {
      */
     async addHook(
         event: HookEvent,
-        hookDef: { matcher: string; command: string; timeout?: number },
+        hookDef: { matcher: string } & HookDefinition,
         projectPath?: string
     ): Promise<Hook> {
         const config = await this.getConfig('project', projectPath);
-        const newHook = createHook(event, hookDef.matcher, hookDef.command, hookDef.timeout);
+        const { matcher, ...definition } = hookDef;
+        const newHook = createHook(event, matcher, definition);
 
         // Ensure hooks structure exists
         if (!config.settings.hooks) {
-            config.settings.hooks = { PreToolUse: [], PostToolUse: [] };
+            config.settings.hooks = {};
         }
         if (!config.settings.hooks[event]) {
             config.settings.hooks[event] = [];
         }
 
         // Check if matcher already exists
-        const existingMatcher = config.settings.hooks[event]!.find(
-            m => m.matcher === hookDef.matcher
+        const eventHooks = config.settings.hooks[event]!;
+        const existingMatcher = eventHooks.find(
+            m => m.matcher === matcher
         );
 
         if (existingMatcher) {
-            existingMatcher.hooks.push({
-                type: 'command',
-                command: hookDef.command,
-                ...(hookDef.timeout && { timeout: hookDef.timeout })
-            });
+            existingMatcher.hooks.push(definition);
         } else {
-            config.settings.hooks[event]!.push({
-                matcher: hookDef.matcher,
-                hooks: [{
-                    type: 'command',
-                    command: hookDef.command,
-                    ...(hookDef.timeout && { timeout: hookDef.timeout })
-                }]
+            eventHooks.push({
+                matcher,
+                hooks: [definition]
             });
         }
 
-        await this.saveSettings(config.settings, projectPath);
+        await this.saveSettings({ hooks: config.settings.hooks }, projectPath);
         return newHook;
     }
 
@@ -197,14 +225,23 @@ export class ClaudeConfigService {
 
         for (const matcher of matchers) {
             if (matcher.matcher === hookToDelete.matcher) {
-                matcher.hooks = matcher.hooks.filter(h => h.command !== hookToDelete.command);
+                matcher.hooks = matcher.hooks.filter(h => {
+                    // Match by the type-specific identifier
+                    switch (h.type) {
+                        case 'command': return h.command !== hookToDelete.command;
+                        case 'http': return h.url !== hookToDelete.url;
+                        case 'prompt': return h.prompt !== hookToDelete.prompt;
+                        case 'agent': return h.agent !== hookToDelete.agent;
+                        default: return h.command !== hookToDelete.command;
+                    }
+                });
             }
         }
 
         // Remove empty matchers
         config.settings.hooks[event] = matchers.filter(m => m.hooks.length > 0);
 
-        await this.saveSettings(config.settings, projectPath);
+        await this.saveSettings({ hooks: config.settings.hooks }, projectPath);
     }
 
     // ========== Permissions ==========
@@ -221,9 +258,7 @@ export class ClaudeConfigService {
      * Set permissions
      */
     async setPermissions(permissions: Permissions, projectPath?: string): Promise<void> {
-        const config = await this.getConfig('project', projectPath);
-        config.settings.permissions = permissions;
-        await this.saveSettings(config.settings, projectPath);
+        await this.saveSettings({ permissions }, projectPath);
     }
 
     /**
@@ -234,14 +269,11 @@ export class ClaudeConfigService {
         rule: string,
         projectPath?: string
     ): Promise<void> {
-        const config = await this.getConfig('project', projectPath);
-        if (!config.settings.permissions) {
-            config.settings.permissions = { allow: [], deny: [], ask: [] };
+        const permissions = await this.getPermissions(projectPath);
+        if (!permissions[type].includes(rule)) {
+            permissions[type].push(rule);
         }
-        if (!config.settings.permissions[type].includes(rule)) {
-            config.settings.permissions[type].push(rule);
-        }
-        await this.saveSettings(config.settings, projectPath);
+        await this.saveSettings({ permissions }, projectPath);
     }
 
     /**
@@ -252,13 +284,9 @@ export class ClaudeConfigService {
         rule: string,
         projectPath?: string
     ): Promise<void> {
-        const config = await this.getConfig('project', projectPath);
-        if (config.settings.permissions) {
-            config.settings.permissions[type] = config.settings.permissions[type].filter(
-                r => r !== rule
-            );
-        }
-        await this.saveSettings(config.settings, projectPath);
+        const permissions = await this.getPermissions(projectPath);
+        permissions[type] = permissions[type].filter(r => r !== rule);
+        await this.saveSettings({ permissions }, projectPath);
     }
 
     // ========== Commands ==========
@@ -403,14 +431,13 @@ export class ClaudeConfigService {
         name: string,
         description: string,
         content: string,
-        tools: string[] = [],
-        model: 'inherit' | 'haiku' | 'sonnet' | 'opus' = 'inherit',
+        allowedTools: string[] = [],
+        model?: string,
         projectPath?: string
     ): Promise<Skill> {
         const config = await this.getConfig('project', projectPath);
         const skillDir = path.join(config.skillsDir, name);
 
-        // Ensure skill directory exists
         if (!fs.existsSync(skillDir)) {
             fs.mkdirSync(skillDir, { recursive: true });
         }
@@ -419,7 +446,7 @@ export class ClaudeConfigService {
             name,
             description,
             content,
-            tools,
+            allowedTools,
             model
         };
 
@@ -490,13 +517,12 @@ export class ClaudeConfigService {
         name: string,
         description: string,
         content: string,
-        tools: string[] = [],
-        model: 'inherit' | 'haiku' | 'sonnet' | 'opus' = 'inherit',
+        allowedTools: string[] = [],
+        model?: string,
         projectPath?: string
     ): Promise<Agent> {
         const config = await this.getConfig('project', projectPath);
 
-        // Ensure agents directory exists
         if (!fs.existsSync(config.agentsDir)) {
             fs.mkdirSync(config.agentsDir, { recursive: true });
         }
@@ -505,7 +531,8 @@ export class ClaudeConfigService {
             name,
             description,
             content,
-            tools,
+            allowedTools,
+            deniedTools: [],
             model
         };
 
@@ -534,54 +561,107 @@ export class ClaudeConfigService {
         }
     }
 
-    // ========== MCP Servers ==========
+    // ========== MCP Servers (.mcp.json) ==========
 
     /**
-     * Get all MCP servers
+     * Read .mcp.json from project root (read-modify-write safe).
+     */
+    private readMcpJson(projectPath?: string): Record<string, unknown> {
+        const basePath = projectPath || this.getWorkspacePath();
+        if (!basePath) { return {}; }
+        const mcpPath = path.join(basePath, '.mcp.json');
+        if (!fs.existsSync(mcpPath)) { return {}; }
+        try {
+            return JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+        } catch {
+            return {};
+        }
+    }
+
+    /**
+     * Write .mcp.json preserving unknown top-level keys.
+     */
+    private writeMcpJson(data: Record<string, unknown>, projectPath?: string): void {
+        const basePath = projectPath || this.getWorkspacePath();
+        if (!basePath) {
+            throw new Error('No workspace folder open');
+        }
+        const mcpPath = path.join(basePath, '.mcp.json');
+        fs.writeFileSync(mcpPath, JSON.stringify(data, null, 2));
+    }
+
+    /**
+     * Get all MCP servers from .mcp.json
      */
     async getMcpServers(projectPath?: string): Promise<McpServer[]> {
-        const config = await this.getConfig('project', projectPath);
-        const servers: McpServer[] = [];
-
-        if (!config.settings.mcpServers) {
-            return servers;
+        const mcpData = this.readMcpJson(projectPath);
+        const mcpServers = mcpData.mcpServers as Record<string, unknown> | undefined;
+        if (!mcpServers || typeof mcpServers !== 'object') {
+            return [];
         }
 
-        for (const [id, serverConfig] of Object.entries(config.settings.mcpServers)) {
+        const servers: McpServer[] = [];
+        for (const [id, serverConfig] of Object.entries(mcpServers)) {
             servers.push({
                 id,
                 name: id,
                 config: serverConfig as McpServerConfig
             });
         }
-
         return servers;
     }
 
     /**
-     * Add an MCP server
+     * Add an MCP server to .mcp.json
      */
     async addMcpServer(id: string, serverConfig: McpServerConfig, projectPath?: string): Promise<void> {
-        const config = await this.getConfig('project', projectPath);
-
-        if (!config.settings.mcpServers) {
-            config.settings.mcpServers = {};
+        const mcpData = this.readMcpJson(projectPath);
+        if (!mcpData.mcpServers || typeof mcpData.mcpServers !== 'object') {
+            mcpData.mcpServers = {};
         }
+        (mcpData.mcpServers as Record<string, unknown>)[id] = serverConfig;
+        this.writeMcpJson(mcpData, projectPath);
 
-        config.settings.mcpServers[id] = serverConfig;
-        await this.saveSettings(config.settings, projectPath);
+        const config = await this.getConfig('project', projectPath);
+        this._onConfigChanged.fire(config);
     }
 
     /**
-     * Remove an MCP server
+     * Remove an MCP server from .mcp.json
      */
     async removeMcpServer(id: string, projectPath?: string): Promise<void> {
-        const config = await this.getConfig('project', projectPath);
+        const mcpData = this.readMcpJson(projectPath);
+        const mcpServers = mcpData.mcpServers as Record<string, unknown> | undefined;
+        if (mcpServers && mcpServers[id]) {
+            delete mcpServers[id];
+            this.writeMcpJson(mcpData, projectPath);
 
-        if (config.settings.mcpServers && config.settings.mcpServers[id]) {
-            delete config.settings.mcpServers[id];
-            await this.saveSettings(config.settings, projectPath);
+            const config = await this.getConfig('project', projectPath);
+            this._onConfigChanged.fire(config);
         }
+    }
+
+    // ========== Global MCP Servers (from ~/.claude/settings.json) ==========
+
+    /**
+     * Get MCP servers from global settings.json (not .mcp.json).
+     */
+    async getGlobalMcpServers(): Promise<McpServer[]> {
+        const config = await this.getConfig('global');
+        const mcpServers = config.settings.mcpServers as Record<string, unknown> | undefined;
+        if (!mcpServers || typeof mcpServers !== 'object') {
+            return [];
+        }
+
+        const servers: McpServer[] = [];
+        for (const [id, serverConfig] of Object.entries(mcpServers)) {
+            servers.push({
+                id,
+                name: id,
+                config: serverConfig as McpServerConfig
+            });
+        }
+        return servers;
     }
 
     // ========== CLAUDE.md ==========
@@ -646,7 +726,8 @@ export class ClaudeConfigService {
             path.dirname(config.settingsPath),
             config.commandsDir,
             config.skillsDir,
-            config.agentsDir
+            config.agentsDir,
+            config.rulesDir
         ];
 
         for (const dir of dirs) {
@@ -655,12 +736,9 @@ export class ClaudeConfigService {
             }
         }
 
-        // Create default settings.json if it doesn't exist
+        // Create empty settings.json if it doesn't exist (preserves existing files)
         if (!fs.existsSync(config.settingsPath)) {
-            fs.writeFileSync(
-                config.settingsPath,
-                JSON.stringify(createDefaultSettings(), null, 2)
-            );
+            fs.writeFileSync(config.settingsPath, '{}');
         }
 
         this._onConfigChanged.fire(config);

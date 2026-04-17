@@ -1,42 +1,35 @@
 /**
- * ChatPanel - Embedded chat interface for Natural Language Setup
+ * ChatPanel - Quick Actions panel for Claude Code configuration
  *
- * Replaces floating input boxes with a persistent sidebar chat panel
- * Now includes plugin suggestions alongside config suggestions
+ * Replaces the old chat interface with targeted action buttons that launch
+ * Claude CLI with contextual, pre-filled prompts. The user provides their
+ * intent, and Claude generates the config in an interactive terminal session.
  */
 
 import * as vscode from 'vscode';
-import { ClaudeAnalyzer } from '../../services/ClaudeAnalyzer';
+import * as path from 'path';
 import { ClaudeConfigService } from '../../services/ClaudeConfigService';
-import { PluginService, PluginInfo } from '../../services/PluginService';
-import type { ConfigSuggestion } from '../../services/ProjectAnalyzer';
-
-// Plugin suggestion type
-interface PluginSuggestion {
-    plugin: PluginInfo;
-    marketplace: string;
-    reason: string;
-}
+import { ClaudeLauncher, GenerateTarget } from '../../services/ClaudeLauncher';
+import { ProjectAnalyzer } from '../../services/ProjectAnalyzer';
+import { HOOK_EVENTS, HookEvent } from '../../models/Hook';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
     public static readonly viewType = 'thinkube.chatPanel';
     private _view?: vscode.WebviewView;
-    private pluginService: PluginService;
+    private launcher: ClaudeLauncher;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
         private configService: ClaudeConfigService
     ) {
-        // Initialize plugin service
-        this.pluginService = new PluginService((configService as any).basePath || '/home/thinkube');
+        this.launcher = new ClaudeLauncher();
     }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
+        _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ) {
-        console.log('[ChatPanel] resolveWebviewView called');
         this._view = webviewView;
 
         webviewView.webview.options = {
@@ -44,186 +37,120 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
 
-        const html = this._getHtmlForWebview(webviewView.webview);
-        console.log('[ChatPanel] HTML generated, length:', html.length);
-        webviewView.webview.html = html;
-        console.log('[ChatPanel] HTML set on webview');
+        this.updateContent();
 
-        // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
-                case 'askClaude':
-                    await this.handleUserQuery(data.message);
+                case 'generate':
+                    await this.handleGenerate(data.target);
                     break;
-                case 'applySuggestion':
-                    await this.applySuggestion(data.suggestion);
+                case 'generateHook':
+                    await this.handleGenerate({ kind: 'hook', event: data.event });
                     break;
-                case 'installPlugin':
-                    await this.installPlugin(data.plugin, data.marketplace);
+                case 'fullSetup':
+                    await this.handleFullSetup();
+                    break;
+                case 'openFile':
+                    await this.openConfigFile(data.filePath);
+                    break;
+                case 'switchProject':
+                    await vscode.commands.executeCommand('thinkube.switchProject');
+                    break;
+                case 'refresh':
+                    await this.updateContent();
                     break;
             }
         });
     }
 
-    private async handleUserQuery(userMessage: string) {
-        // Show user message in chat
-        this._view?.webview.postMessage({
-            type: 'userMessage',
-            message: userMessage
-        });
-
-        // Show thinking indicator
-        this._view?.webview.postMessage({
-            type: 'thinking',
-            show: true
-        });
-
+    private async handleGenerate(target: GenerateTarget) {
+        const projectPath = this.configService.basePath;
         try {
-            // Get the current project path from the configService
-            // This respects the scope selection (global vs project-specific)
-            const projectPath = (this.configService as any).basePath || '/home/thinkube';
-
-            // Get plugin suggestions based on project analysis
-            const pluginSuggestions = await this.pluginService.suggestPlugins(projectPath);
-
-            // Ask Claude via Agent SDK for config suggestions
-            const analyzer = new ClaudeAnalyzer();
-            const result = await analyzer.analyzeProject(projectPath);
-
-            // Hide thinking indicator
-            this._view?.webview.postMessage({
-                type: 'thinking',
-                show: false
-            });
-
-            // Show Claude's response with both plugin and config suggestions
-            this._view?.webview.postMessage({
-                type: 'claudeResponse',
-                summary: result.summary,
-                suggestions: result.suggestions,
-                pluginSuggestions: pluginSuggestions
-            });
-
-        } catch (error) {
-            this._view?.webview.postMessage({
-                type: 'thinking',
-                show: false
-            });
-
-            this._view?.webview.postMessage({
-                type: 'error',
-                message: error instanceof Error ? error.message : 'Unknown error occurred'
-            });
-        }
-    }
-
-    /**
-     * Install a plugin from the marketplace
-     */
-    private async installPlugin(pluginName: string, marketplaceName: string) {
-        try {
-            await this.pluginService.installPlugin(pluginName, marketplaceName);
-
-            this._view?.webview.postMessage({
-                type: 'pluginInstalled',
-                plugin: pluginName
-            });
-
-            vscode.window.showInformationMessage(`Plugin ${pluginName} installed successfully!`);
-        } catch (error) {
-            this._view?.webview.postMessage({
-                type: 'error',
-                message: `Failed to install plugin: ${error instanceof Error ? error.message : 'Unknown error'}`
-            });
-        }
-    }
-
-    private async applySuggestion(suggestion: ConfigSuggestion) {
-        try {
-            const config = suggestion.config as any;
-            let filePath: string | undefined;
-
-            switch (suggestion.type) {
-                case 'hook':
-                    await this.configService.addHook(
-                        config.event,
-                        { matcher: config.matcher, command: config.command }
-                    );
-                    // For hooks, open settings.json
-                    const hookConfig = await this.configService.getConfig('project');
-                    filePath = hookConfig.settingsPath;
-                    break;
-                case 'command':
-                    const command = await this.configService.createCommand(
-                        config.name,
-                        config.description,
-                        config.content
-                    );
-                    filePath = command.filePath;
-                    break;
-                case 'skill':
-                    const skill = await this.configService.createSkill(
-                        config.name,
-                        config.description,
-                        config.content
-                    );
-                    filePath = skill.filePath;
-                    break;
-                case 'agent':
-                    const agent = await this.configService.createAgent(
-                        config.name,
-                        config.description,
-                        config.content,
-                        config.tools,
-                        config.model
-                    );
-                    filePath = agent.filePath;
-                    break;
-                case 'mcp-server':
-                    await this.configService.addMcpServer(
-                        config.id,
-                        {
-                            command: config.command,
-                            args: config.args,
-                            env: config.env
-                        }
-                    );
-                    // For MCP servers, open settings.json
-                    const mcpConfig = await this.configService.getConfig('project');
-                    filePath = mcpConfig.settingsPath;
-                    break;
+            await this.launcher.launch(projectPath, target);
+            // Show a message to refresh tree after terminal closes
+            const action = await vscode.window.showInformationMessage(
+                'Claude is generating config in the terminal. Refresh the tree when done.',
+                'Refresh Tree'
+            );
+            if (action === 'Refresh Tree') {
+                vscode.commands.executeCommand('thinkube.refreshConfig');
             }
-
-            // Open the created/modified file in editor
-            if (filePath) {
-                const uri = vscode.Uri.file(filePath);
-                await vscode.window.showTextDocument(uri, { preview: false });
-            }
-
-            // Notify success and remove from list
-            this._view?.webview.postMessage({
-                type: 'suggestionApplied',
-                suggestion: suggestion.name
-            });
-
         } catch (error) {
-            this._view?.webview.postMessage({
-                type: 'error',
-                message: `Failed to apply: ${error instanceof Error ? error.message : 'Unknown error'}`
-            });
+            vscode.window.showErrorMessage(`Failed to launch Claude: ${error}`);
         }
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        // Generate nonce for CSP
-        const nonce = getNonce();
+    private async handleFullSetup() {
+        const projectPath = this.configService.basePath;
+        try {
+            await this.launcher.launchFullSetup(projectPath);
+            const action = await vscode.window.showInformationMessage(
+                'Claude is setting up your project config. Refresh the tree when done.',
+                'Refresh Tree'
+            );
+            if (action === 'Refresh Tree') {
+                vscode.commands.executeCommand('thinkube.refreshConfig');
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to launch Claude: ${error}`);
+        }
+    }
+
+    private async openConfigFile(filePath: string) {
+        try {
+            const uri = vscode.Uri.file(filePath);
+            await vscode.window.showTextDocument(uri, { preview: false });
+        } catch {
+            vscode.window.showErrorMessage(`File not found: ${filePath}`);
+        }
+    }
+
+    private async updateContent() {
+        if (!this._view) return;
+
+        const projectPath = this.configService.basePath;
+        const projectName = path.basename(projectPath);
+
+        // Detect project info for contextual display
+        let projectType = 'unknown';
+        let detectedTools: string[] = [];
+        try {
+            const analyzer = new ProjectAnalyzer(projectPath);
+            const info = await analyzer.analyze();
+            projectType = info.type;
+            detectedTools = info.tools.map(t => t.name);
+        } catch {
+            // ignore detection errors
+        }
+
+        this._view.webview.html = this.getHtml(projectName, projectPath, projectType, detectedTools);
+    }
+
+    private getHtml(projectName: string, projectPath: string, projectType: string, tools: string[]): string {
+        const toolsBadges = tools.length > 0
+            ? tools.map(t => `<span class="badge">${this.escapeHtml(t)}</span>`).join(' ')
+            : '<span class="muted">No tools detected</span>';
+
+        // Determine which workspace section this project belongs to
+        let sectionLabel = '';
+        if (projectPath.startsWith('/home/thinkube/thinkube-platform')) {
+            sectionLabel = 'Platform';
+        } else if (projectPath.startsWith('/home/thinkube/apps')) {
+            sectionLabel = 'Apps';
+        } else if (projectPath.startsWith('/home/thinkube/user-templates')) {
+            sectionLabel = 'Templates';
+        }
+        const sectionPrefix = sectionLabel ? `${sectionLabel} / ` : '';
+
+        const settingsPath = path.join(projectPath, '.claude', 'settings.json');
+        const claudeMdPath = path.join(projectPath, 'CLAUDE.md');
+        const mcpJsonPath = path.join(projectPath, '.mcp.json');
 
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Assistant</title>
     <style>
         body {
             padding: 0;
@@ -233,373 +160,268 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             color: var(--vscode-foreground);
             background: var(--vscode-editor-background);
         }
-
-        #chat-container {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        #messages {
-            flex: 1;
-            overflow-y: auto;
+        .panel {
             padding: 12px;
         }
-
-        .message {
+        .project-header {
             margin-bottom: 16px;
             padding: 8px 12px;
-            border-radius: 4px;
-        }
-
-        .user-message {
-            background: var(--vscode-input-background);
-            border-left: 3px solid var(--vscode-inputOption-activeBorder);
-        }
-
-        .claude-message {
             background: var(--vscode-textBlockQuote-background);
             border-left: 3px solid var(--vscode-textLink-foreground);
-        }
-
-        .suggestion {
-            margin: 8px 0;
-            padding: 8px;
-            background: var(--vscode-editor-inactiveSelectionBackground);
             border-radius: 4px;
-            border: 1px solid var(--vscode-panel-border);
         }
-
-        .suggestion-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-
-        .suggestion-type {
-            font-size: 0.9em;
-            opacity: 0.8;
+        .project-section {
+            font-size: 0.8em;
+            opacity: 0.6;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-
-        button {
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+        .project-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .project-type {
+            opacity: 0.7;
+            font-size: 0.9em;
+        }
+        .switch-btn {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
             border: none;
-            padding: 4px 12px;
+            padding: 4px 8px;
+            border-radius: 3px;
             cursor: pointer;
-            border-radius: 2px;
+            font-size: 0.9em;
+        }
+        .switch-btn:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
+        .tools-row {
+            margin-top: 6px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 1px 6px;
+            margin: 2px 2px;
+            background: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+        .muted {
+            opacity: 0.5;
             font-size: 0.9em;
         }
 
-        button:hover {
-            background: var(--vscode-button-hoverBackground);
+        .section {
+            margin-bottom: 16px;
         }
-
-        #input-container {
-            padding: 12px;
-            background: var(--vscode-sideBar-background);
-            border-top: 1px solid var(--vscode-panel-border);
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-
-        #user-input {
-            width: 100%;
-            padding: 8px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 4px;
-            font-family: inherit;
-            font-size: inherit;
-            resize: vertical;
-            min-height: 60px;
-        }
-
-        #user-input:focus {
-            outline: 1px solid var(--vscode-focusBorder);
-        }
-
-        #send-button {
-            margin-top: 8px;
-            width: 100%;
-            padding: 8px;
-        }
-
-        .thinking {
-            padding: 8px 12px;
-            font-style: italic;
+        .section-title .icon {
             opacity: 0.7;
         }
 
-        .error {
+        .action-btn {
+            display: block;
+            width: 100%;
             padding: 8px 12px;
-            background: var(--vscode-inputValidation-errorBackground);
-            border-left: 3px solid var(--vscode-inputValidation-errorBorder);
+            margin: 4px 0;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
             border-radius: 4px;
-            margin: 8px 0;
+            cursor: pointer;
+            font-size: inherit;
+            font-family: inherit;
+            text-align: left;
+        }
+        .action-btn:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+        .action-btn.secondary {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+        }
+        .action-btn.secondary:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
+        .action-btn.primary-large {
+            padding: 10px 12px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .action-btn .btn-desc {
+            display: block;
+            font-size: 0.85em;
+            opacity: 0.8;
+            margin-top: 2px;
+        }
+
+        .hook-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        .hook-btn {
+            padding: 6px 8px;
+            font-size: 0.9em;
+            text-align: center;
+        }
+
+        .file-links {
+            margin-top: 8px;
+        }
+        .file-link {
+            display: inline-block;
+            padding: 2px 8px;
+            margin: 2px;
+            background: var(--vscode-editor-inactiveSelectionBackground);
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.85em;
+            border: 1px solid var(--vscode-panel-border);
+        }
+        .file-link:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid var(--vscode-panel-border);
+            margin: 12px 0;
         }
     </style>
 </head>
 <body>
-    <div id="chat-container">
-        <div id="messages">
-            <div class="message claude-message">
-                <strong>Claude Assistant</strong>
-                <p>Hello! I can help you configure Claude Code for your project. Describe what you want to set up, and I'll analyze your codebase to suggest the right hooks, commands, skills, subagents, and MCP servers.</p>
-                <p style="font-size: 0.9em; opacity: 0.8;">Example: "Set up code quality checks and testing workflows"</p>
+    <div class="panel">
+        <div class="project-header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div class="project-section">${this.escapeHtml(sectionPrefix)}</div>
+                    <div class="project-name">${this.escapeHtml(projectName)}</div>
+                </div>
+                <button class="switch-btn" onclick="switchProject()" title="Switch active project">$(folder)</button>
+            </div>
+            <div class="project-type">${this.escapeHtml(projectType)}</div>
+            <div class="tools-row">${toolsBadges}</div>
+        </div>
+
+        <!-- Full Setup -->
+        <div class="section">
+            <button class="action-btn primary-large" onclick="fullSetup()">
+                Set Up Project with Claude
+                <span class="btn-desc">Generate CLAUDE.md, hooks, commands, and permissions</span>
+            </button>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Generate by section -->
+        <div class="section">
+            <div class="section-title"><span class="icon">&#9889;</span> Generate Hooks</div>
+            <div class="hook-grid">
+                ${HOOK_EVENTS.map(event => `
+                    <button class="action-btn secondary hook-btn" onclick="generateHook('${event}')" title="${this.escapeHtml(this.getHookTooltip(event))}">
+                        ${event}
+                    </button>
+                `).join('')}
             </div>
         </div>
-        <div id="input-container">
-            <textarea id="user-input" placeholder="Describe what you want Claude to do..."></textarea>
-            <button id="send-button">Ask Claude</button>
+
+        <div class="section">
+            <div class="section-title"><span class="icon">&#62;&gt;</span> Generate</div>
+            <button class="action-btn secondary" onclick="generate('command')">
+                Slash Command
+                <span class="btn-desc">User-invoked workflow (e.g., /test, /review)</span>
+            </button>
+            <button class="action-btn secondary" onclick="generate('skill')">
+                Skill
+                <span class="btn-desc">Reusable knowledge or behavior pattern</span>
+            </button>
+            <button class="action-btn secondary" onclick="generate('agent')">
+                Subagent
+                <span class="btn-desc">Isolated task with its own context</span>
+            </button>
+            <button class="action-btn secondary" onclick="generate('mcp-server')">
+                MCP Server
+                <span class="btn-desc">External tool integration</span>
+            </button>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Quick file access -->
+        <div class="section">
+            <div class="section-title"><span class="icon">&#128196;</span> Config Files</div>
+            <div class="file-links">
+                <span class="file-link" onclick="openFile('${this.escapeJs(claudeMdPath)}')">CLAUDE.md</span>
+                <span class="file-link" onclick="openFile('${this.escapeJs(settingsPath)}')">settings.json</span>
+                <span class="file-link" onclick="openFile('${this.escapeJs(mcpJsonPath)}')">.mcp.json</span>
+            </div>
         </div>
     </div>
 
     <script>
         const vscode = acquireVsCodeApi();
-        const messagesDiv = document.getElementById('messages');
-        const userInput = document.getElementById('user-input');
-        const sendButton = document.getElementById('send-button');
 
-        sendButton.addEventListener('click', sendMessage);
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                sendMessage();
-            }
-        });
-
-        function sendMessage() {
-            const message = userInput.value.trim();
-            if (!message) return;
-
-            vscode.postMessage({
-                type: 'askClaude',
-                message: message
-            });
-
-            userInput.value = '';
+        function fullSetup() {
+            vscode.postMessage({ type: 'fullSetup' });
         }
 
-        window.addEventListener('message', event => {
-            const message = event.data;
-
-            switch (message.type) {
-                case 'userMessage':
-                    addUserMessage(message.message);
-                    break;
-                case 'thinking':
-                    if (message.show) {
-                        addThinking();
-                    } else {
-                        removeThinking();
-                    }
-                    break;
-                case 'claudeResponse':
-                    addClaudeResponse(message.summary, message.suggestions, message.pluginSuggestions);
-                    break;
-                case 'error':
-                    addError(message.message);
-                    break;
-                case 'suggestionApplied':
-                    removeSuggestion(message.suggestion);
-                    showSuccess(\`Applied: \${message.suggestion}\`);
-                    break;
-                case 'pluginInstalled':
-                    removePluginSuggestion(message.plugin);
-                    showSuccess(\`Installed plugin: \${message.plugin}\`);
-                    break;
-            }
-        });
-
-        function removePluginSuggestion(pluginName) {
-            // Find and remove the plugin suggestion from the DOM
-            const plugins = window.currentPluginSuggestions || [];
-            const index = plugins.findIndex(p => p.plugin.name === pluginName);
-            if (index >= 0) {
-                const elem = document.getElementById(\`plugin-\${index}\`);
-                if (elem) {
-                    elem.remove();
-                }
-            }
+        function generate(kind) {
+            vscode.postMessage({ type: 'generate', target: { kind: kind } });
         }
 
-        function addUserMessage(text) {
-            const div = document.createElement('div');
-            div.className = 'message user-message';
-            div.innerHTML = \`<strong>You:</strong><p>\${escapeHtml(text)}</p>\`;
-            messagesDiv.appendChild(div);
-            scrollToBottom();
+        function generateHook(event) {
+            vscode.postMessage({ type: 'generateHook', event: event });
         }
 
-        function addThinking() {
-            const div = document.createElement('div');
-            div.className = 'thinking';
-            div.id = 'thinking-indicator';
-            div.textContent = 'Claude is analyzing your project...';
-            messagesDiv.appendChild(div);
-            scrollToBottom();
+        function openFile(filePath) {
+            vscode.postMessage({ type: 'openFile', filePath: filePath });
         }
 
-        function removeThinking() {
-            const thinking = document.getElementById('thinking-indicator');
-            if (thinking) {
-                thinking.remove();
-            }
-        }
-
-        function addClaudeResponse(summary, suggestions, pluginSuggestions) {
-            const div = document.createElement('div');
-            div.className = 'message claude-message';
-            div.id = 'suggestions-container';
-
-            let html = \`<strong>Claude:</strong><p>\${escapeHtml(summary)}</p>\`;
-
-            // Plugin suggestions section (shown first)
-            if (pluginSuggestions && pluginSuggestions.length > 0) {
-                html += '<div style="margin-top: 12px; margin-bottom: 16px; padding: 8px; background: var(--vscode-badge-background); border-radius: 4px;">';
-                html += '<strong style="color: var(--vscode-badge-foreground);">Recommended Plugins:</strong>';
-                html += '<div style="margin-top: 8px;">';
-                pluginSuggestions.forEach((plugSug, index) => {
-                    html += \`
-                        <div class="suggestion" id="plugin-\${index}" style="background: var(--vscode-editor-background);">
-                            <div class="suggestion-header">
-                                <span><strong>\${escapeHtml(plugSug.plugin.name)}</strong></span>
-                                <button onclick="installPlugin('\${escapeHtml(plugSug.plugin.name)}', '\${escapeHtml(plugSug.marketplace)}')">Install</button>
-                            </div>
-                            <p style="margin: 4px 0; font-size: 0.9em;">\${escapeHtml(plugSug.plugin.description || '')}</p>
-                            <p style="margin: 4px 0; font-size: 0.85em; opacity: 0.7;">\${escapeHtml(plugSug.reason)}</p>
-                        </div>
-                    \`;
-                });
-                html += '</div></div>';
-            }
-
-            // Config suggestions section
-            if (suggestions && suggestions.length > 0) {
-                html += '<div style="margin-top: 12px;">';
-                html += '<strong>Configuration Suggestions:</strong>';
-                html += '<button id="apply-all-btn" onclick="applyAll()" style="width: 100%; margin: 8px 0;">Apply All Config Suggestions</button>';
-                html += '<div id="suggestions-list">';
-                suggestions.forEach((sug, index) => {
-                    html += \`
-                        <div class="suggestion" id="suggestion-\${index}">
-                            <div class="suggestion-header">
-                                <span><strong>\${escapeHtml(sug.name)}</strong> <span class="suggestion-type">(\${sug.type})</span></span>
-                                <button onclick="applySuggestion(\${index})">Apply</button>
-                            </div>
-                            <p style="margin: 4px 0; font-size: 0.9em;">\${escapeHtml(sug.description)}</p>
-                            <p style="margin: 4px 0; font-size: 0.85em; opacity: 0.7;">\${escapeHtml(sug.reason)}</p>
-                        </div>
-                    \`;
-                });
-                html += '</div></div>';
-            }
-
-            div.innerHTML = html;
-            messagesDiv.appendChild(div);
-
-            // Store suggestions for apply buttons
-            window.currentSuggestions = suggestions || [];
-            window.currentPluginSuggestions = pluginSuggestions || [];
-            window.appliedCount = 0;
-
-            scrollToBottom();
-        }
-
-        function installPlugin(pluginName, marketplace) {
-            vscode.postMessage({
-                type: 'installPlugin',
-                plugin: pluginName,
-                marketplace: marketplace
-            });
-        }
-
-        function applySuggestion(index) {
-            const suggestion = window.currentSuggestions[index];
-            vscode.postMessage({
-                type: 'applySuggestion',
-                suggestion: suggestion
-            });
-        }
-
-        function addError(text) {
-            const div = document.createElement('div');
-            div.className = 'error';
-            div.innerHTML = \`<strong>Error:</strong> \${escapeHtml(text)}\`;
-            messagesDiv.appendChild(div);
-            scrollToBottom();
-        }
-
-        function showSuccess(text) {
-            const div = document.createElement('div');
-            div.className = 'message claude-message';
-            div.innerHTML = \`<p>✓ \${escapeHtml(text)}</p>\`;
-            messagesDiv.appendChild(div);
-            scrollToBottom();
-        }
-
-        function scrollToBottom() {
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function removeSuggestion(suggestionName) {
-            // Find and remove the suggestion from the DOM
-            const suggestions = window.currentSuggestions;
-            const index = suggestions.findIndex(s => s.name === suggestionName);
-            if (index >= 0) {
-                const elem = document.getElementById(\`suggestion-\${index}\`);
-                if (elem) {
-                    elem.remove();
-                }
-                window.appliedCount++;
-
-                // Hide Apply All button if all suggestions are applied
-                const remainingCount = suggestions.length - window.appliedCount;
-                if (remainingCount === 0) {
-                    const applyAllBtn = document.getElementById('apply-all-btn');
-                    if (applyAllBtn) {
-                        applyAllBtn.style.display = 'none';
-                    }
-                }
-            }
-        }
-
-        function applyAll() {
-            const suggestions = window.currentSuggestions;
-            if (!suggestions) return;
-
-            // Apply all suggestions sequentially
-            suggestions.forEach((suggestion, index) => {
-                const elem = document.getElementById(\`suggestion-\${index}\`);
-                if (elem && elem.style.display !== 'none') {
-                    applySuggestion(index);
-                }
-            });
+        function switchProject() {
+            vscode.postMessage({ type: 'switchProject' });
         }
     </script>
 </body>
 </html>`;
     }
 
+    private getHookTooltip(event: string): string {
+        const descriptions: Record<string, string> = {
+            PreToolUse: 'Before tool execution - validate, block',
+            PostToolUse: 'After tool execution - format, lint, test',
+            SessionStart: 'Session begins - env check, status',
+            SessionEnd: 'Session ends - cleanup, summary',
+            Stop: 'Response complete - validate output',
+            StopFailure: 'Error stop - logging, alerts',
+            UserPromptSubmit: 'Prompt submitted - enrich, route',
+            PermissionRequest: 'Permission asked - auto-approve, log',
+            PermissionDenied: 'Permission denied - log, suggest',
+            CwdChanged: 'Directory changed - reload context',
+            FileChanged: 'File modified - rebuild, reindex',
+            WorktreeCreate: 'Worktree created - setup deps',
+        };
+        return descriptions[event] || event;
+    }
+
+    private escapeHtml(text: string): string {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    private escapeJs(text: string): string {
+        return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
     public updateConfigService(newService: ClaudeConfigService) {
         this.configService = newService;
-        // Update plugin service with new base path
-        this.pluginService.setBasePath((newService as any).basePath || '/home/thinkube');
+        this.updateContent();
     }
-}
-
-function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
 }

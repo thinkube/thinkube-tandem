@@ -3,37 +3,36 @@
  *
  * Agents are markdown files with YAML frontmatter
  * stored in .claude/agents/{agent-name}.md
+ *
+ * Frontmatter fields (all optional except description):
+ *   description, allowed-tools, denied-tools, model,
+ *   effort, memory, hooks
  */
-
-export type AgentModel = 'inherit' | 'haiku' | 'sonnet' | 'opus';
-
-export interface AgentMetadata {
-    name: string;
-    description: string;
-    tools?: string;       // Comma-separated: "Task, Skill, Read"
-    model?: AgentModel;
-}
 
 export interface Agent {
     name: string;
     description: string;
-    tools: string[];
-    model: AgentModel;
-    content: string;      // Markdown instructions
-    filePath: string;     // Full path to the .md file
+    allowedTools: string[];
+    deniedTools: string[];
+    model?: string;               // full model ID or omit to inherit
+    content: string;
+    filePath: string;
+    effort?: string;
+    memory?: boolean;
 }
 
 export function createAgent(
     name: string,
     description: string,
     content: string,
-    tools: string[] = [],
-    model: AgentModel = 'inherit'
+    allowedTools: string[] = [],
+    model?: string
 ): Omit<Agent, 'filePath'> {
     return {
         name: normalizeAgentName(name),
         description,
-        tools,
+        allowedTools,
+        deniedTools: [],
         model,
         content
     };
@@ -44,17 +43,17 @@ export function normalizeAgentName(name: string): string {
 }
 
 export function agentToMarkdown(agent: Agent | Omit<Agent, 'filePath'>): string {
-    const frontmatter = [
-        '---',
-        `name: ${agent.name}`,
-        `description: ${agent.description}`,
-        ...(agent.tools.length > 0 ? [`tools: ${agent.tools.join(', ')}`] : []),
-        ...(agent.model !== 'inherit' ? [`model: ${agent.model}`] : []),
-        '---',
-        ''
-    ].join('\n');
+    const lines = ['---', `description: ${agent.description}`];
 
-    return frontmatter + agent.content;
+    if (agent.allowedTools.length > 0) { lines.push(`allowed-tools: ${agent.allowedTools.join(', ')}`); }
+    if (agent.deniedTools.length > 0) { lines.push(`denied-tools: ${agent.deniedTools.join(', ')}`); }
+    if (agent.model) { lines.push(`model: ${agent.model}`); }
+    if (agent.effort) { lines.push(`effort: ${agent.effort}`); }
+    if (agent.memory !== undefined) { lines.push(`memory: ${agent.memory}`); }
+
+    lines.push('---', '');
+
+    return lines.join('\n') + agent.content;
 }
 
 export function parseAgentMarkdown(content: string, filePath: string): Agent | null {
@@ -75,12 +74,26 @@ export function parseAgentMarkdown(content: string, filePath: string): Agent | n
 
     const name = metadata['name'] || filePath.split('/').pop()?.replace('.md', '') || '';
 
+    const toolsStr = metadata['allowed-tools'] || metadata['tools'] || '';
+    const allowedTools = toolsStr ? toolsStr.split(',').map(t => t.trim()) : [];
+
+    const deniedStr = metadata['denied-tools'] || '';
+    const deniedTools = deniedStr ? deniedStr.split(',').map(t => t.trim()) : [];
+
+    const parseBool = (v: string | undefined): boolean | undefined => {
+        if (v === undefined) return undefined;
+        return v === 'true';
+    };
+
     return {
         name,
         description: metadata['description'] || '',
-        tools: metadata['tools'] ? metadata['tools'].split(',').map(t => t.trim()) : [],
-        model: (metadata['model'] as AgentModel) || 'inherit',
+        allowedTools,
+        deniedTools,
+        model: metadata['model'] || undefined,
         content: body.trim(),
-        filePath
+        filePath,
+        effort: metadata['effort'],
+        memory: parseBool(metadata['memory'])
     };
 }

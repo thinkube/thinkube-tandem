@@ -23,9 +23,13 @@ export interface ConfigSuggestion {
 }
 
 interface HookConfig {
-    event: 'PreToolUse' | 'PostToolUse';
+    event: string;   // any HookEvent
     matcher: string;
-    command: string;
+    type?: 'command' | 'http' | 'prompt' | 'agent';
+    command?: string;
+    url?: string;
+    prompt?: string;
+    agent?: string;
 }
 
 interface CommandConfig {
@@ -45,7 +49,7 @@ interface AgentConfig {
     description: string;
     content: string;
     tools?: string[];
-    model?: 'inherit' | 'haiku' | 'sonnet' | 'opus';
+    model?: string;
 }
 
 interface McpServerConfig {

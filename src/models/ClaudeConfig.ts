@@ -1,11 +1,13 @@
 /**
- * ClaudeConfig - Main configuration structure for .claude/settings.json
+ * ClaudeConfig - Main configuration structure for Claude Code
  *
- * This represents the complete Claude Code configuration for a project.
+ * settings.json may contain many fields (model, sandbox, env, enabledPlugins, etc.)
+ * beyond what this extension directly manages. We use Record<string, unknown> as the
+ * base type and provide typed accessors for known fields, preserving unknown fields
+ * during read-modify-write operations.
  */
 
-import { HookMatcher, HookEvent } from './Hook';
-import { McpServerConfig } from './McpServer';
+import { HookMatcher } from './Hook';
 
 export interface Permissions {
     allow: string[];
@@ -13,38 +15,37 @@ export interface Permissions {
     ask: string[];
 }
 
+/**
+ * ClaudeSettings is the raw content of settings.json.
+ * We only type the fields we actively manage; everything else is preserved as-is.
+ */
 export interface ClaudeSettings {
-    hooks?: {
-        PreToolUse?: HookMatcher[];
-        PostToolUse?: HookMatcher[];
-    };
+    hooks?: Record<string, HookMatcher[]>;
     permissions?: Permissions;
-    mcpServers?: Record<string, McpServerConfig>;
+    [key: string]: unknown;
 }
 
 export interface ClaudeConfig {
     settings: ClaudeSettings;
-    settingsPath: string;         // Path to settings.json
-    claudeMdPath?: string;        // Path to CLAUDE.md
-    claudeMdContent?: string;     // Content of CLAUDE.md
-    commandsDir: string;          // Path to commands/
-    skillsDir: string;            // Path to skills/
-    agentsDir: string;            // Path to agents/
+    settingsPath: string;           // .claude/settings.json
+    settingsLocalPath: string;      // .claude/settings.local.json
+    mcpJsonPath: string;            // .mcp.json (project root)
+    claudeMdPath?: string;          // CLAUDE.md
+    claudeLocalMdPath?: string;     // CLAUDE.local.md
+    claudeMdContent?: string;
+    commandsDir: string;            // .claude/commands/
+    skillsDir: string;              // .claude/skills/
+    agentsDir: string;              // .claude/agents/
+    rulesDir: string;               // .claude/rules/
+    outputStylesDir: string;        // .claude/output-styles/
 }
 
+/**
+ * Create default settings — intentionally empty so we don't
+ * generate fields that don't belong (e.g., mcpServers).
+ */
 export function createDefaultSettings(): ClaudeSettings {
-    return {
-        hooks: {
-            PreToolUse: [],
-            PostToolUse: []
-        },
-        permissions: {
-            allow: [],
-            deny: [],
-            ask: []
-        },
-        mcpServers: {}
-    };
+    return {};
 }
 
 export function createDefaultConfig(basePath: string): ClaudeConfig {
@@ -52,10 +53,15 @@ export function createDefaultConfig(basePath: string): ClaudeConfig {
     return {
         settings: createDefaultSettings(),
         settingsPath: `${claudeDir}/settings.json`,
+        settingsLocalPath: `${claudeDir}/settings.local.json`,
+        mcpJsonPath: `${basePath}/.mcp.json`,
         claudeMdPath: `${basePath}/CLAUDE.md`,
+        claudeLocalMdPath: `${basePath}/CLAUDE.local.md`,
         commandsDir: `${claudeDir}/commands`,
         skillsDir: `${claudeDir}/skills`,
-        agentsDir: `${claudeDir}/agents`
+        agentsDir: `${claudeDir}/agents`,
+        rulesDir: `${claudeDir}/rules`,
+        outputStylesDir: `${claudeDir}/output-styles`
     };
 }
 

@@ -3,19 +3,28 @@
  *
  * Custom slash commands are markdown files with YAML frontmatter
  * stored in .claude/commands/
+ *
+ * Commands share the same frontmatter format as skills in Claude Code.
+ * Frontmatter fields (all optional except description):
+ *   description, argument-hint, user-invocable, allowed-tools,
+ *   model, effort, paths, context, agent, shell
  */
 
-export interface CommandMetadata {
+export interface Command {
+    name: string;
     description: string;
     argumentHint?: string;
-}
-
-export interface Command {
-    name: string;              // Command name without slash, e.g., "review-pr"
-    description: string;
-    argumentHint?: string;     // e.g., "<pr-number>"
-    content: string;           // Markdown content
-    filePath: string;          // Full path to the .md file
+    content: string;
+    filePath: string;
+    // Extended frontmatter
+    userInvocable?: boolean;
+    allowedTools?: string[];
+    model?: string;
+    effort?: string;
+    paths?: string[];
+    context?: string;
+    agent?: string;
+    shell?: string;
 }
 
 export function createCommand(
@@ -33,24 +42,28 @@ export function createCommand(
 }
 
 export function normalizeCommandName(name: string): string {
-    // Remove leading slash if present
     if (name.startsWith('/')) {
         name = name.slice(1);
     }
-    // Convert to lowercase kebab-case
     return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
 }
 
 export function commandToMarkdown(command: Command | Omit<Command, 'filePath'>): string {
-    const frontmatter = [
-        '---',
-        `description: ${command.description}`,
-        ...(command.argumentHint ? [`argument-hint: ${command.argumentHint}`] : []),
-        '---',
-        ''
-    ].join('\n');
+    const lines = ['---', `description: ${command.description}`];
 
-    return frontmatter + command.content;
+    if (command.argumentHint) { lines.push(`argument-hint: ${command.argumentHint}`); }
+    if (command.userInvocable !== undefined) { lines.push(`user-invocable: ${command.userInvocable}`); }
+    if (command.allowedTools && command.allowedTools.length > 0) { lines.push(`allowed-tools: ${command.allowedTools.join(', ')}`); }
+    if (command.model) { lines.push(`model: ${command.model}`); }
+    if (command.effort) { lines.push(`effort: ${command.effort}`); }
+    if (command.paths && command.paths.length > 0) { lines.push(`paths: ${command.paths.join(', ')}`); }
+    if (command.context) { lines.push(`context: ${command.context}`); }
+    if (command.agent) { lines.push(`agent: ${command.agent}`); }
+    if (command.shell) { lines.push(`shell: ${command.shell}`); }
+
+    lines.push('---', '');
+
+    return lines.join('\n') + command.content;
 }
 
 export function parseCommandMarkdown(content: string, filePath: string): Command | null {
@@ -71,11 +84,27 @@ export function parseCommandMarkdown(content: string, filePath: string): Command
 
     const name = filePath.split('/').pop()?.replace('.md', '') || '';
 
+    const parseBool = (v: string | undefined): boolean | undefined => {
+        if (v === undefined) return undefined;
+        return v === 'true';
+    };
+
+    const toolsStr = metadata['allowed-tools'] || '';
+    const pathsStr = metadata['paths'] || '';
+
     return {
         name,
         description: metadata['description'] || '',
         argumentHint: metadata['argument-hint'],
         content: body.trim(),
-        filePath
+        filePath,
+        userInvocable: parseBool(metadata['user-invocable']),
+        allowedTools: toolsStr ? toolsStr.split(',').map(t => t.trim()) : undefined,
+        model: metadata['model'],
+        effort: metadata['effort'],
+        paths: pathsStr ? pathsStr.split(',').map(p => p.trim()) : undefined,
+        context: metadata['context'],
+        agent: metadata['agent'],
+        shell: metadata['shell']
     };
 }
