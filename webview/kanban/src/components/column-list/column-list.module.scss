@@ -1,0 +1,96 @@
+/* Vendored from upstream src/components/column-list/column-list.module.scss.
+ * Column colour/borders use VS Code theme vars; addColumn dropped (fixed cols). */
+.columnList {
+  display: flex;
+  align-items: start;
+  flex-grow: 1;
+  gap: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.columnContainer {
+  height: 100%;
+}
+.columnDropzone {
+  padding: 6px;
+  height: 100%;
+}
+.column {
+  min-width: 300px;
+  max-width: 300px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--vscode-widget-border, gray);
+  border-top: 3px solid var(--accent, var(--vscode-descriptionForeground));
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+  background: var(--vscode-sideBar-background, var(--bg));
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  padding: 0 2px 6px;
+}
+.count {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--vscode-badge-background, rgba(127, 127, 127, 0.25));
+  color: var(--vscode-badge-foreground, inherit);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.addTask {
+  margin: 6px 0 0;
+  width: 100%;
+  cursor: pointer;
+  padding: 4px 6px;
+  border: 1px dashed var(--vscode-widget-border, rgba(128, 128, 128, 0.4));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font: inherit;
+}
+.addTask:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.12));
+}
+.textarea {
+  margin-top: 6px;
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-focusBorder, var(--vscode-input-border, #888));
+}
+.taskList {
+  list-style: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 30px;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.empty {
+  margin: 4px 0;
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  border: 1px dashed var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
+  border-radius: 6px;
+}

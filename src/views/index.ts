@@ -2,4 +2,4 @@
  * Views barrel export
  */
 
-export * from './sidebar';
+export * from "./sidebar";

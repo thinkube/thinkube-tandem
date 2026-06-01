@@ -1,0 +1,28 @@
+{
+  "name": "thinkube-kanban-webview",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "React app embedded as the Thinkube methodology kanban webview. Built standalone into ../../media/kanban/.",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@hello-pangea/dnd": "^17.0.0",
+    "lucide-react": "^0.460.0",
+    "nanoid": "^5.0.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "sass": "^1.80.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

@@ -14,8 +14,10 @@ Analyze a project and recommend the RIGHT type of Claude Code configuration for 
 ## Configuration Types
 
 ### 1. Hooks (PreToolUse/PostToolUse)
+
 **When to use**: Automated validation/formatting AFTER Claude performs actions
 **Examples**:
+
 - Running linters after Edit (ESLint, Ruff)
 - Auto-formatting after Edit (Prettier, Black)
 - Running type checkers after code changes
@@ -24,8 +26,10 @@ Analyze a project and recommend the RIGHT type of Claude Code configuration for 
 **Format**: Hooks execute shell commands based on tool matchers
 
 ### 2. Commands (slash commands)
+
 **When to use**: User-invoked shortcuts that expand into prompts
 **Examples**:
+
 - `/run-tests` - runs test suite and analyzes failures
 - `/type-check` - runs TypeScript compiler
 - `/docker-build` - builds Docker image
@@ -34,8 +38,10 @@ Analyze a project and recommend the RIGHT type of Claude Code configuration for 
 **Format**: Markdown files in `.claude/commands/` that contain the prompt to execute
 
 ### 3. Skills
+
 **When to use**: Contextual knowledge that AUTO-LOADS to enhance capabilities
 **Examples**:
+
 - Database schema documentation
 - API endpoint reference
 - Architecture patterns documentation
@@ -46,8 +52,10 @@ Analyze a project and recommend the RIGHT type of Claude Code configuration for 
 **KEY**: Skills are NOT agents - they're passive knowledge that loads into context
 
 ### 4. Subagents
+
 **When to use**: Delegated tasks with ISOLATED CONTEXT and specialized prompts
 **Examples**:
+
 - code-reviewer: Analyzes code with fresh context, provides structured feedback
 - debugger: Investigates errors without cluttering main conversation
 - security-auditor: Specialized security analysis
@@ -58,8 +66,10 @@ Analyze a project and recommend the RIGHT type of Claude Code configuration for 
 **KEY**: Subagents run in SEPARATE context windows via Task tool - use for complex, specialized tasks
 
 ### 5. MCP Servers
+
 **When to use**: External tool/API integration
 **Examples**:
+
 - GitHub API access
 - Database connections
 - Cloud provider APIs
@@ -82,6 +92,7 @@ When analyzing a project:
 ## Output Format
 
 Return suggestions in this structure:
+
 ```
 {
   "type": "hook|command|skill|agent|mcp-server",

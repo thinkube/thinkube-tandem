@@ -14,6 +14,7 @@ model: inherit
 **Invocation**: Automatic when tool matchers match
 
 **Structure**:
+
 ```json
 {
   "hooks": {
@@ -42,6 +43,7 @@ model: inherit
 **Invocation**: User types `/command-name` in chat
 
 **Structure**:
+
 ```markdown
 ---
 name: run-tests
@@ -61,6 +63,7 @@ Analyze any failures and suggest fixes.
 **Invocation**: Automatic based on context/project
 
 **Structure**:
+
 ```markdown
 ---
 name: api-reference
@@ -70,6 +73,7 @@ description: REST API endpoint documentation
 # API Endpoints
 
 ## POST /api/users
+
 Creates a new user...
 ```
 
@@ -84,6 +88,7 @@ Creates a new user...
 **Invocation**: Task tool (explicit or proactive)
 
 **Structure**:
+
 ```markdown
 ---
 name: code-reviewer
@@ -106,6 +111,7 @@ You are a senior code reviewer ensuring high standards...
 **Invocation**: Claude uses MCP tools automatically
 
 **Structure**:
+
 ```json
 {
   "mcpServers": {
@@ -128,6 +134,7 @@ You are a senior code reviewer ensuring high standards...
 **Location**: `.claude/settings.json` under `permissions`
 
 **Structure**:
+
 ```json
 {
   "permissions": {
@@ -140,14 +147,14 @@ You are a senior code reviewer ensuring high standards...
 
 ## Decision Matrix
 
-| Need | Use |
-|------|-----|
-| Auto-format after edits | Hook (PostToolUse) |
-| User workflow shortcut | Command |
-| Project documentation | Skill |
-| Isolated specialized task | Subagent |
-| External API access | MCP Server |
-| Security control | Permission |
+| Need                      | Use                |
+| ------------------------- | ------------------ |
+| Auto-format after edits   | Hook (PostToolUse) |
+| User workflow shortcut    | Command            |
+| Project documentation     | Skill              |
+| Isolated specialized task | Subagent           |
+| External API access       | MCP Server         |
+| Security control          | Permission         |
 
 ## Common Mistakes
 

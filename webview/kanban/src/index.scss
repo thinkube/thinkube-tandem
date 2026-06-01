@@ -1,0 +1,105 @@
+/* Vendored from mayank1513/vscode-extension-trello-kanban-board (src/index.scss),
+ * minus the nextjs-themes import and browser/theme gimmicks. --bg/--fg map to
+ * the VS Code editor theme so the board tracks light/dark. */
+
+:root {
+  font-family: var(--vscode-font-family, Inter, system-ui, sans-serif);
+  line-height: 1.5;
+  font-weight: 400;
+  --bg: var(--vscode-editor-background, #242424);
+  --fg: var(--vscode-editor-foreground, rgba(255, 255, 255, 0.87));
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  color: var(--fg);
+  background-color: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, inherit);
+  outline: none;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+}
+
+a {
+  text-decoration: none;
+  color: var(--vscode-textLink-foreground);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.grow {
+  flex-grow: 1;
+}
+
+.mode-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.mode-navigator {
+  color: var(--vscode-charts-yellow, #e0a020);
+}
+.mode-driver {
+  color: var(--vscode-charts-blue, #3a8fd6);
+}
+.mode-both {
+  color: var(--vscode-charts-green, #7cc440);
+}
+
+.selection-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: var(--vscode-editorWidget-background, #2a2a2a);
+  color: var(--vscode-editorWidget-foreground, inherit);
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.4));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    padding: 3px 12px;
+    border: 0;
+    border-radius: 4px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+  button:hover {
+    background: var(--vscode-button-hoverBackground);
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+  }
+}

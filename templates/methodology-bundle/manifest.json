@@ -1,0 +1,101 @@
+{
+  "version": "0.0.3",
+  "_comment": "List of files the bundle owns. BundleInstaller reads this to know what to copy on install, hashes each file at install time, and records the hashes in .thinkube/.bundle-version for drift detection. Edit this file in lockstep with the bundle contents — files not listed here won't be installed.",
+  "files": [
+    {
+      "source": "VERSION",
+      "target": ".thinkube/.bundle-version.txt",
+      "kind": "stamp"
+    },
+    {
+      "source": "settings.json",
+      "target": ".claude/settings.json",
+      "kind": "settings-merge"
+    },
+    {
+      "source": "mcp.json",
+      "target": ".mcp.json",
+      "kind": "mcp-merge"
+    },
+    {
+      "source": "CLAUDE.md",
+      "target": "CLAUDE.md",
+      "kind": "claudemd-block"
+    },
+    {
+      "source": "skills/epic-new/SKILL.md",
+      "target": ".claude/skills/epic-new/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/story-new/SKILL.md",
+      "target": ".claude/skills/story-new/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/spec-prepare/SKILL.md",
+      "target": ".claude/skills/spec-prepare/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/tasks-decompose/SKILL.md",
+      "target": ".claude/skills/tasks-decompose/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/tasks-materialize/SKILL.md",
+      "target": ".claude/skills/tasks-materialize/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/pair-start/SKILL.md",
+      "target": ".claude/skills/pair-start/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/pair-next/SKILL.md",
+      "target": ".claude/skills/pair-next/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/pair-start-quick/SKILL.md",
+      "target": ".claude/skills/pair-start-quick/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/board/SKILL.md",
+      "target": ".claude/skills/board/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/retro/SKILL.md",
+      "target": ".claude/skills/retro/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/methodology-context/SKILL.md",
+      "target": ".claude/skills/methodology-context/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "skills/repo-conventions/SKILL.md",
+      "target": ".claude/skills/repo-conventions/SKILL.md",
+      "kind": "copy"
+    },
+    {
+      "source": "agents/explorer.md",
+      "target": ".claude/agents/explorer.md",
+      "kind": "copy"
+    },
+    {
+      "source": "agents/reviewer.md",
+      "target": ".claude/agents/reviewer.md",
+      "kind": "copy"
+    },
+    {
+      "source": "agents/verifier.md",
+      "target": ".claude/agents/verifier.md",
+      "kind": "copy"
+    }
+  ]
+}

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "thinkube",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other",
@@ -30,19 +30,23 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "claude-config",
-          "title": "Thinkube AI",
+          "id": "thinkube",
+          "title": "Thinkube",
           "icon": "resources/tk_ai.svg"
         }
       ]
     },
     "views": {
-      "claude-config": [
+      "thinkube": [
         {
-          "id": "thinkube.chatPanel",
-          "name": "Claude Assistant",
-          "type": "webview",
-          "contextualTitle": "Chat with Claude"
+          "id": "thinkubeBundleTree",
+          "name": "Project",
+          "contextualTitle": "Thinkube Project"
+        },
+        {
+          "id": "thinkubeRoadmap",
+          "name": "Roadmap",
+          "contextualTitle": "Thinkube Roadmap"
         },
         {
           "id": "claudeConfigTree",
@@ -53,9 +57,14 @@
     },
     "viewsWelcome": [
       {
-        "view": "claudeConfigTree",
-        "contents": "Configure Claude Code for this project.\n\nUse the **Claude Assistant** panel above to chat with Claude about your configuration needs.\n\n[$(gear) Manual Setup](command:thinkube.initializeConfig)\nCreate empty .claude folder",
-        "when": "!thinkube.hasClaudeConfig"
+        "view": "thinkubeBundleTree",
+        "contents": "Set up this project for the Thinkube methodology:\n\n[$(gear) Configure Project](command:thinkube.kanban.configureProject)\nLink a GitHub repo + Projects v2 board.\n\n[$(package) Install Methodology Bundle](command:thinkube.kanban.installBundle)\nDrop the skills, agents, and settings into .claude/.",
+        "when": "!thinkube.roadmap.repoConfigured"
+      },
+      {
+        "view": "thinkubeRoadmap",
+        "contents": "No repository configured.\n\n[$(gear) Configure Project](command:thinkube.kanban.configureProject)\nLink a GitHub repo + Projects v2 board to load Epics, Stories, and Specs.",
+        "when": "!thinkube.roadmap.repoConfigured"
       }
     ],
     "commands": [
@@ -63,57 +72,6 @@
         "command": "thinkube-ai.claude.openHere",
         "title": "Open Here",
         "category": "Claude Code"
-      },
-      {
-        "command": "thinkube-ai.claude.continueHere",
-        "title": "Continue Session",
-        "category": "Claude Code"
-      },
-      {
-        "command": "thinkube-ai.claude.addDirectory",
-        "title": "Add Reference Directory",
-        "category": "Claude Code"
-      },
-      {
-        "command": "thinkube-ai.claude.configureProject",
-        "title": "Configure Project",
-        "category": "Claude Code"
-      },
-      {
-        "command": "thinkube-ai.claude.showConfiguration",
-        "title": "Show Configuration",
-        "category": "Claude Code"
-      },
-      {
-        "command": "thinkube-ai.app.createFromTemplate",
-        "title": "Create from Template",
-        "category": "Thinkube App"
-      },
-      {
-        "command": "thinkube-ai.app.addService",
-        "title": "Add Service",
-        "category": "Thinkube App"
-      },
-      {
-        "command": "thinkube-ai.app.generateComponent",
-        "title": "Generate Component",
-        "category": "Thinkube App"
-      },
-      {
-        "command": "thinkube-ai.app.generateAPI",
-        "title": "Generate API",
-        "category": "Thinkube App"
-      },
-      {
-        "command": "thinkube-ai.deploy.preview",
-        "title": "Deploy to Preview",
-        "category": "Thinkube Deploy"
-      },
-      {
-        "command": "thinkube.runClaudeInit",
-        "title": "Run claude init",
-        "category": "Thinkube AI",
-        "icon": "$(play)"
       },
       {
         "command": "thinkube.refreshConfig",
@@ -215,46 +173,91 @@
         "icon": "$(folder)"
       },
       {
-        "command": "thinkube.generateHook",
-        "title": "Generate Hook with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.dumpRoadmap",
+        "title": "Dump Roadmap (Smoke Test)",
+        "category": "Thinkube Kanban"
       },
       {
-        "command": "thinkube.generateCommand",
-        "title": "Generate Command with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.smokeStore",
+        "title": "Smoke Test Thinkube Store",
+        "category": "Thinkube Kanban"
       },
       {
-        "command": "thinkube.generateSkill",
-        "title": "Generate Skill with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.openKanban",
+        "title": "Open Kanban",
+        "category": "Thinkube Kanban",
+        "icon": "$(layout-panel)"
       },
       {
-        "command": "thinkube.generateAgent",
-        "title": "Generate Agent with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.configureProject",
+        "title": "Configure Project",
+        "category": "Thinkube Kanban",
+        "icon": "$(gear)"
       },
       {
-        "command": "thinkube.generateMcpServer",
-        "title": "Generate MCP Server with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.materializeTasks",
+        "title": "Materialise Tasks",
+        "category": "Thinkube Kanban",
+        "icon": "$(rocket)"
       },
       {
-        "command": "thinkube.generateFullSetup",
-        "title": "Set Up Project with Claude",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.refreshFromGitHub",
+        "title": "Refresh from GitHub",
+        "category": "Thinkube Kanban",
+        "icon": "$(sync)"
       },
       {
-        "command": "thinkube.generateWorkspaceConfig",
-        "title": "Create Workspace Config",
-        "category": "Thinkube AI",
-        "icon": "$(sparkle)"
+        "command": "thinkube.kanban.installBundle",
+        "title": "Install Methodology Bundle",
+        "category": "Thinkube Kanban",
+        "icon": "$(package)"
+      },
+      {
+        "command": "thinkube.kanban.statusBundle",
+        "title": "Methodology Bundle Status",
+        "category": "Thinkube Kanban",
+        "icon": "$(info)"
+      },
+      {
+        "command": "thinkube.kanban.diffBundle",
+        "title": "Methodology Bundle Diff",
+        "category": "Thinkube Kanban",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "thinkube.kanban.refreshBundleTree",
+        "title": "Refresh Methodology Bundle Tree",
+        "category": "Thinkube Kanban",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.roadmap.refresh",
+        "title": "Refresh Roadmap",
+        "category": "Thinkube Roadmap",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.roadmap.openCard",
+        "title": "Open Card",
+        "category": "Thinkube Roadmap"
+      },
+      {
+        "command": "thinkube.roadmap.newEpic",
+        "title": "New Epic",
+        "category": "Thinkube Roadmap",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.roadmap.newStory",
+        "title": "New Story",
+        "category": "Thinkube Roadmap",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.roadmap.newSpec",
+        "title": "New Spec",
+        "category": "Thinkube Roadmap",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -268,6 +271,61 @@
           "command": "thinkube.switchProject",
           "when": "view == claudeConfigTree",
           "group": "navigation@1"
+        },
+        {
+          "command": "thinkube.kanban.configureProject",
+          "when": "view == thinkubeBundleTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube.kanban.installBundle",
+          "when": "view == thinkubeBundleTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "thinkube.kanban.statusBundle",
+          "when": "view == thinkubeBundleTree",
+          "group": "navigation@2"
+        },
+        {
+          "command": "thinkube.kanban.diffBundle",
+          "when": "view == thinkubeBundleTree",
+          "group": "navigation@3"
+        },
+        {
+          "command": "thinkube.kanban.refreshBundleTree",
+          "when": "view == thinkubeBundleTree",
+          "group": "navigation@4"
+        },
+        {
+          "command": "thinkube.kanban.refreshFromGitHub",
+          "when": "view == thinkubeRoadmap",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube.kanban.openKanban",
+          "when": "view == thinkubeRoadmap",
+          "group": "navigation@1"
+        },
+        {
+          "command": "thinkube.kanban.materializeTasks",
+          "when": "view == thinkubeRoadmap",
+          "group": "navigation@2"
+        },
+        {
+          "command": "thinkube.roadmap.newEpic",
+          "when": "view == thinkubeRoadmap",
+          "group": "navigation@3"
+        },
+        {
+          "command": "thinkube.roadmap.newStory",
+          "when": "view == thinkubeRoadmap && thinkube.roadmap.selectedKind == epic",
+          "group": "navigation@4"
+        },
+        {
+          "command": "thinkube.roadmap.newSpec",
+          "when": "view == thinkubeRoadmap && thinkube.roadmap.selectedKind == story",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -282,11 +340,6 @@
           "group": "inline"
         },
         {
-          "command": "thinkube.generateCommand",
-          "when": "view == claudeConfigTree && viewItem == commands-section",
-          "group": "inline@0"
-        },
-        {
           "command": "thinkube.addCommand",
           "when": "view == claudeConfigTree && viewItem == commands-section",
           "group": "inline@1"
@@ -295,11 +348,6 @@
           "command": "thinkube.deleteCommand",
           "when": "view == claudeConfigTree && viewItem == command",
           "group": "inline"
-        },
-        {
-          "command": "thinkube.generateSkill",
-          "when": "view == claudeConfigTree && viewItem == skills-section",
-          "group": "inline@0"
         },
         {
           "command": "thinkube.addSkill",
@@ -312,11 +360,6 @@
           "group": "inline"
         },
         {
-          "command": "thinkube.generateAgent",
-          "when": "view == claudeConfigTree && viewItem == agents-section",
-          "group": "inline@0"
-        },
-        {
           "command": "thinkube.addAgent",
           "when": "view == claudeConfigTree && viewItem == agents-section",
           "group": "inline@1"
@@ -325,11 +368,6 @@
           "command": "thinkube.deleteAgent",
           "when": "view == claudeConfigTree && viewItem == agent",
           "group": "inline"
-        },
-        {
-          "command": "thinkube.generateMcpServer",
-          "when": "view == claudeConfigTree && viewItem == mcp-section",
-          "group": "inline@0"
         },
         {
           "command": "thinkube.addMcpServer",
@@ -358,64 +396,6 @@
         {
           "command": "thinkube-ai.claude.openHere",
           "group": "1_session@1"
-        },
-        {
-          "command": "thinkube-ai.claude.continueHere",
-          "group": "1_session@2"
-        },
-        {
-          "command": "thinkube-ai.claude.addDirectory",
-          "group": "2_config@1"
-        },
-        {
-          "command": "thinkube-ai.claude.configureProject",
-          "group": "2_config@2"
-        },
-        {
-          "command": "thinkube-ai.claude.showConfiguration",
-          "group": "2_config@3"
-        },
-        {
-          "submenu": "claude.code.quickactions",
-          "group": "3_quickactions@1"
-        }
-      ],
-      "claude.code.quickactions": [
-        {
-          "command": "thinkube-ai.app.createFromTemplate",
-          "group": "1_create@1"
-        },
-        {
-          "command": "thinkube-ai.app.generateComponent",
-          "group": "2_generate@1"
-        },
-        {
-          "command": "thinkube-ai.app.generateAPI",
-          "group": "2_generate@2"
-        },
-        {
-          "command": "thinkube-ai.app.addService",
-          "group": "3_services@1"
-        },
-        {
-          "command": "thinkube-ai.deploy.preview",
-          "group": "4_deploy@1"
-        }
-      ],
-      "editor/context": [
-        {
-          "submenu": "claude.code.editor.submenu",
-          "group": "claude@1"
-        }
-      ],
-      "claude.code.editor.submenu": [
-        {
-          "command": "thinkube-ai.claude.openHere",
-          "group": "1_session@1"
-        },
-        {
-          "command": "thinkube-ai.claude.continueHere",
-          "group": "1_session@2"
         }
       ],
       "commandPalette": [
@@ -424,40 +404,39 @@
           "when": "workspaceFolderCount > 0"
         },
         {
-          "command": "thinkube-ai.claude.continueHere",
+          "command": "thinkube.kanban.dumpRoadmap",
           "when": "workspaceFolderCount > 0"
         },
         {
-          "command": "thinkube-ai.claude.addDirectory",
+          "command": "thinkube.kanban.smokeStore",
           "when": "workspaceFolderCount > 0"
         },
         {
-          "command": "thinkube-ai.claude.configureProject",
+          "command": "thinkube.kanban.openKanban"
+        },
+        {
+          "command": "thinkube.kanban.configureProject"
+        },
+        {
+          "command": "thinkube.kanban.materializeTasks",
           "when": "workspaceFolderCount > 0"
         },
         {
-          "command": "thinkube-ai.claude.showConfiguration",
-          "when": "workspaceFolderCount > 0"
+          "command": "thinkube.kanban.refreshFromGitHub"
         },
         {
-          "command": "thinkube-ai.app.createFromTemplate",
-          "when": "workspaceFolderCount > 0"
+          "command": "thinkube.roadmap.refresh"
         },
         {
-          "command": "thinkube-ai.app.addService",
-          "when": "workspaceFolderCount > 0"
+          "command": "thinkube.roadmap.newEpic"
         },
         {
-          "command": "thinkube-ai.app.generateComponent",
-          "when": "workspaceFolderCount > 0"
+          "command": "thinkube.roadmap.newStory",
+          "when": "thinkube.roadmap.selectedKind == epic"
         },
         {
-          "command": "thinkube-ai.app.generateAPI",
-          "when": "workspaceFolderCount > 0"
-        },
-        {
-          "command": "thinkube-ai.deploy.preview",
-          "when": "workspaceFolderCount > 0"
+          "command": "thinkube.roadmap.newSpec",
+          "when": "thinkube.roadmap.selectedKind == story"
         }
       ]
     },
@@ -465,58 +444,51 @@
       {
         "id": "claude.code.submenu",
         "label": "Claude Code"
-      },
-      {
-        "id": "claude.code.quickactions",
-        "label": "Quick Actions"
-      },
-      {
-        "id": "claude.code.editor.submenu",
-        "label": "Claude Code"
       }
     ],
-    "keybindings": [
+    "mcpServerDefinitionProviders": [
       {
-        "command": "thinkube-ai.claude.openHere",
-        "key": "ctrl+shift+c",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "thinkube-ai.claude.continueHere",
-        "key": "ctrl+shift+alt+c",
-        "when": "editorTextFocus"
+        "id": "thinkube.kanban",
+        "label": "Thinkube Kanban"
       }
     ],
     "configuration": {
-      "title": "Thinkube AI Integration",
+      "title": "Thinkube Kanban",
       "properties": {
-        "thinkube-ai.claude.defaultReferenceDirectories": {
-          "type": "array",
-          "default": [],
-          "description": "Default directories to add as references for all Claude sessions"
+        "thinkube.kanban.repo": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub repository backing the kanban, as 'owner/repo'."
         },
-        "thinkube-ai.claude.showNotifications": {
+        "thinkube.kanban.projectNumber": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "GitHub Projects v2 project number (the number in the project URL). Leave 0 to disable Projects-v2 read/write."
+        },
+        "thinkube.kanban.allowAIWrites": {
           "type": "boolean",
           "default": true,
-          "description": "Show notifications when adding/removing directories"
+          "description": "Allow the Thinkube Kanban MCP server's mutating tools (create_*, move_task, update_issue, …). Set to false for navigator mode — AI can read and propose but cannot write. Overridden to false by `thinkube.kanban.mode = navigator`."
         },
-        "thinkube-ai.controlDomain": {
+        "thinkube.kanban.mode": {
           "type": "string",
-          "default": "",
-          "description": "Your Thinkube domain (e.g., thinkube.com)"
-        },
-        "thinkube-ai.apiToken": {
-          "type": "string",
-          "default": "",
-          "description": "Thinkube Control API token for deployments",
-          "markdownDescription": "Get your API token from Thinkube Control settings"
+          "enum": [
+            "navigator",
+            "driver",
+            "both"
+          ],
+          "default": "both",
+          "description": "Pair-programming role assignment. `navigator`: AI reads and proposes only (writes are blocked). `driver`: AI can write (typical when AI is leading implementation). `both`: either party can write at will (default)."
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/build-assets.mjs && npm run compile:webview",
+    "compile:webview": "npm --prefix webview/kanban run build",
+    "install:webview": "npm --prefix webview/kanban install",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "test": "node ./dist/test/runTest.js",
@@ -530,5 +502,10 @@
     "ovsx": "^0.8.3",
     "typescript": "^5.8.3"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@octokit/graphql": "^5.0.6",
+    "@octokit/rest": "^19.0.13",
+    "yaml": "^2.9.0"
+  }
 }

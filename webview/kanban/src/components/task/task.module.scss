@@ -1,0 +1,185 @@
+/* Vendored from upstream src/components/task/task.module.scss; surfaces/borders
+ * mapped to VS Code theme vars, left-accent from the per-epic palette. */
+.task {
+  display: block;
+  position: relative;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-widget-border, gray);
+  border-left: 4px solid var(--accent, var(--vscode-descriptionForeground));
+  background: var(--vscode-editor-background, var(--bg));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition:
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+.task:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+}
+.task.active {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #3a8fd6);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 5px;
+  button {
+    all: unset;
+    display: none;
+    cursor: pointer;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  &:hover button {
+    display: inline-flex;
+  }
+  button:hover {
+    color: var(--vscode-foreground);
+    background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+  }
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+.issue {
+  opacity: 0.75;
+}
+.selectBox {
+  margin: 0 4px 0 0;
+  cursor: pointer;
+}
+.epic {
+  font-weight: 600;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.body {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  max-height: 220px;
+  overflow-y: auto;
+  p {
+    margin: 4px 0;
+  }
+  ul,
+  ol {
+    margin: 4px 0;
+    padding-left: 18px;
+  }
+  code {
+    font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+    background: var(
+      --vscode-textCodeBlock-background,
+      rgba(127, 127, 127, 0.18)
+    );
+    padding: 0 3px;
+    border-radius: 3px;
+  }
+  a {
+    color: var(--vscode-textLink-foreground);
+  }
+}
+.time {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+}
+.deps {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vscode-errorForeground, #e06a6a);
+}
+.stale {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-editorWarning-foreground, #e0a020);
+}
+.stale.staleMuted {
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground);
+}
+.due {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.due.overdue {
+  color: var(--vscode-errorForeground, #e06a6a);
+  font-weight: 600;
+}
+.dateRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.dateInput {
+  font: inherit;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid
+    var(--vscode-input-border, var(--vscode-widget-border, #888));
+}
+
+.titleInput {
+  width: 100%;
+  font-weight: 600;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+.textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 5px 6px;
+}
+.editRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  button {
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 10px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+  button.secondary {
+    background: var(
+      --vscode-button-secondaryBackground,
+      rgba(127, 127, 127, 0.25)
+    );
+    color: var(--vscode-button-secondaryForeground, inherit);
+  }
+  .hint {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground);
+  }
+}
+.placeholder {
+  opacity: 0.5;
+}

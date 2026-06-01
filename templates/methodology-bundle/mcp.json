@@ -1,0 +1,10 @@
+{
+  "_comment": "MCP server fragment merged into the project's .mcp.json by BundleInstaller. Pre-registers the Thinkube Kanban MCP server so Claude Code discovers its tools without manual config. The extension also registers this server in-process via vscode.lm.registerMcpServerDefinitionProvider — this .mcp.json entry is the fallback for Claude Code sessions running outside the VS Code MCP discovery path.",
+  "mcpServers": {
+    "thinkube-kanban": {
+      "command": "node",
+      "args": ["${extensionPath}/dist/mcp/kanbanMcpServer.js"],
+      "env": {}
+    }
+  }
+}

@@ -9,8 +9,8 @@ A VS Code extension (`thinkube-ai-integration`) that wraps the Claude Code CLI a
 ## Commands
 
 ```bash
-npm run compile        # tsc -p ./  (outputs to dist/)
-npm run watch          # tsc -watch -p ./
+npm run compile        # tsc -p ./ && node scripts/build-assets.mjs  (TS + wrapper assets → dist/)
+npm run watch          # tsc -watch -p ./  (TS only — re-run compile to refresh wrapper/*)
 npm run package        # vsce package → .vsix
 npm test               # node ./dist/test/runTest.js (no tests wired up yet)
 npm run publish:ovsx   # compile + package + ovsx publish
@@ -22,10 +22,18 @@ There is no linter and no test suite configured. `main` in `package.json` points
 
 The extension has two largely independent concerns, both rooted in `src/extension.ts` (`activate()`):
 
-### 1. Claude launcher (the original feature)
-Explorer context-menu and keybindings (`Ctrl+Shift+C` / `Ctrl+Shift+Alt+C`) that open a terminal and run `claude` (or `claude --continue`) in a selected folder. Reference directories are stored per-project in `.thinkube/claude-config` (a simple `add-dir: <path>` line format, **not** the Claude Code standard), and appended as `--add-dir` flags when launching. See `launchClaude`, `loadClaudeConfig`, `saveClaudeConfig` in `extension.ts`, plus `src/integration/claude.ts`.
+### 1. Claude launcher (process-wrapper)
+
+Explorer-only context menu (`Open Here`) that opens a new Claude Code conversation rooted in the clicked folder. There is **no terminal** and **no `--add-dir` injection** anymore — we patch the spawn cwd of the real `claude` binary by registering a wrapper script at `claudeCode.claudeProcessWrapper`. Flow:
+
+1. `LauncherService.activate()` (`src/services/LauncherService.ts`) writes the absolute path of `dist/wrapper/claude-cwd-wrapper.{sh,cmd}` into the `claudeCode.claudeProcessWrapper` user setting, mkdir's `globalStorageUri`, and exports its path as `CLAUDE_CWD_PROXY_DIR` so the wrapper can find the handoff files.
+2. `openHere(uri)` writes `<stateDir>/.target-cwd` (the clicked folder) and `.target-prefix` (a `[repo/sub] ` tab-title hint), then invokes `claude-vscode.editor.open` — claude-vscode spawns the CLI, our wrapper intercepts, `cd`s to `.target-cwd`, and `exec`s the real binary.
+3. On `--resume` / `--continue`, the wrapper instead reads the session's original cwd from `~/.claude/projects/*<uuid>.jsonl` — `.target-cwd` is only the seed for fresh sessions.
+
+Wrappers live at `wrapper/` in the repo and are copied to `dist/wrapper/` by `scripts/build-assets.mjs` (run after `tsc` via `npm run compile`). Wrapper-takeover policy: register only if the setting is empty or already points at one of our installed paths; unknown third-party wrappers trigger a one-time confirmation toast.
 
 ### 2. Claude Code configuration manager (the larger feature)
+
 A sidebar ("Thinkube AI" activity-bar view) with two panels:
 
 - **`thinkube.chatPanel`** — `ChatPanel` webview (`src/views/sidebar/ChatPanel.ts`) for conversing with Claude about configuration.
@@ -46,9 +54,11 @@ The data model lives in `src/models/` — one file per entity (`Hook`, `Command`
 `ClaudeSettings` is typed as `Record<string, unknown>` with typed accessors for known fields — **any unknown fields in `settings.json` must be preserved during read-modify-write**. Do not replace the file wholesale; merge.
 
 ### Active-project model
-The extension supports multi-root workspaces and treats any directory (not only workspace folders) as a potential Claude project. `currentActiveContext` in `extension.ts` is the one project the ChatPanel and status bar target; it's updated from (a) tree selection, (b) active editor changes (walks up looking for `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), or (c) the `thinkube.switchProject` quick-pick. The tree always shows **all** projects regardless of active context.
+
+The extension supports multi-root workspaces and treats any directory (not only workspace folders) as a potential Claude project. Active-project state lives in `src/context/active.ts` (`currentActiveContext`, accessed via `getCurrentActiveContext` / `updateActiveContext`); `extension.ts` seeds it once at activation via `initActiveContext`. It's updated from (a) tree selection, (b) active editor changes (walks up looking for `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), or (c) the `thinkube.switchProject` quick-pick. The tree always shows **all** projects regardless of active context.
 
 ### Services
+
 - **`ClaudeConfigService`** — the single source of truth for reading/writing `.claude/*`. All tree/command handlers route through it. Emits `onConfigChanged` for the tree to refresh.
 - **`ClaudeAnalyzer`** (`src/services/ClaudeAnalyzer.ts`) — spawns the `claude` CLI for chat/analysis. Extension startup shows a warning toast if `claude` isn't on PATH.
 - **`ClaudeLauncher`** (`src/services/ClaudeLauncher.ts`) — opens a terminal and drives `claude` with pre-built prompts to generate hooks/commands/skills/agents/MCP servers or a full project setup. Because we can't detect CLI exit, after launching we show a "Refresh Tree" notification (`scheduleTreeRefresh`) rather than auto-refreshing.
@@ -57,11 +67,15 @@ The extension supports multi-root workspaces and treats any directory (not only 
 - **`PluginService` / `PluginTemplates`** — browse/install/create Claude Code plugins from marketplaces; UI in `src/views/wizards/PluginCreationWizard.ts`. Marked "WIP" in recent commits.
 
 ### Command registration
-All user-facing commands are declared in `package.json` → `contributes.commands` and registered in `extension.ts`. Two namespaces:
-- `thinkube-ai.*` — launcher and app-scaffolding commands (handlers in `extension.ts` and `src/commands/app.ts`)
-- `thinkube.*` — config-manager commands (all registered in `registerConfigCommands()`)
 
-When adding a command, update **both** `package.json` (declaration + menu/keybinding bindings) and `extension.ts` (handler registration). Context keys used in `when` clauses: `thinkube.hasClaudeConfig`, `thinkube.activeContext`, and `viewItem == <kind>-section | <kind>` on tree nodes.
+All user-facing commands are declared in `package.json` → `contributes.commands`. `extension.ts` is intentionally thin (~115 lines) — it only wires services and delegates registration to two groups:
+
+- `thinkube-ai.claude.openHere` — the single launcher command, registered by `registerLauncherCommands` in `src/commands/launcher.ts` (delegates to `LauncherService`)
+- `thinkube.*` — config-manager commands, registered by `registerConfigCommands` in `src/commands/config.ts` (handlers receive a deps object with `configService`, `treeProvider`, `claudeLauncher`, and the active-context accessors)
+
+The previous `thinkube-ai.app.*` / `thinkube-ai.deploy.preview` scaffolding commands and the `claude.continueHere` / `claude.addDirectory` / `claude.configureProject` / `claude.showConfiguration` legacy launcher commands were removed in chunk 2 (along with the `.thinkube/claude-config` `add-dir:` format) when the launcher switched to the process-wrapper approach.
+
+When adding a command, update **both** `package.json` (declaration + menu bindings) and the appropriate `register*` function. Context keys used in `when` clauses: `thinkube.hasClaudeConfig`, `thinkube.activeContext`, and `viewItem == <kind>-section | <kind>` on tree nodes.
 
 ## Thinkube deployment context
 

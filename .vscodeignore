@@ -8,6 +8,16 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
-node_modules/**
 *.vsix
 .github/**
+thinkube-ai-integration
+docs/**
+wrapper/**
+scripts/**
+webview/**
+!media/kanban/**
+.claude/**
+CLAUDE.md
+# Don't add `node_modules/**` here — vsce auto-walks production deps and
+# anything matched by this glob is excluded, breaking runtime requires
+# (@octokit/*, @modelcontextprotocol/sdk, yaml). vsce already drops devDeps.
