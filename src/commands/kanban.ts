@@ -358,6 +358,42 @@ async function configureProject(deps: KanbanDeps): Promise<void> {
       }
       if (!chosen) return;
 
+      // 3b. Enforce the methodology schema (Issue Types + Priority field)
+      //     BEFORE persisting — fail fast (no partial config) when the token
+      //     can't create org Issue Types.
+      try {
+        const schema = await deps.github.enforceSchema(coords, chosen.id);
+        deps.output.appendLine(
+          `[configureProject] schema: issue types created=${schema.issueTypesCreated.join(", ") || "(none)"}; ` +
+            `Priority field ${schema.priorityField.created ? "created" : "verified"}` +
+            `${schema.priorityField.optionsAdded.length ? ` (+${schema.priorityField.optionsAdded.join(", ")})` : ""}`,
+        );
+      } catch (err) {
+        deps.output.appendLine(
+          `[configureProject] enforceSchema failed: ${(err as Error).message}`,
+        );
+        vscode.window.showErrorMessage(
+          `Configure aborted — couldn't enforce the methodology schema: ${(err as Error).message}`,
+        );
+        return;
+      }
+
+      // 3c. Migrate existing label-based issues to the new Issue Types
+      //     (non-fatal: the schema is in place even if a migration row fails).
+      try {
+        const mig = await deps.github.migrateLabelKindsToTypes(coords);
+        deps.output.appendLine(
+          `[configureProject] migrated ${mig.migrated} issue(s) to Issue Types (` +
+            `${Object.entries(mig.perKind)
+              .map(([k, n]) => `${k}:${n}`)
+              .join(", ") || "none"})`,
+        );
+      } catch (err) {
+        deps.output.appendLine(
+          `[configureProject] migrate labels→types failed (non-fatal): ${(err as Error).message}`,
+        );
+      }
+
       // 4. Persist the folder + derived repo + board.
       await cfg.update("folder", folder, vscode.ConfigurationTarget.Workspace);
       await cfg.update("repo", repo, vscode.ConfigurationTarget.Workspace);

@@ -256,7 +256,7 @@ const TOOL_DEFS = [
   {
     name: "list_board",
     description:
-      "Current kanban state from Projects v2. Returns items grouped by Status column.",
+      "Current kanban state from Projects v2. Returns items grouped by Status column, plus an \"Inbox\" group of open repo issues not yet triaged onto the board (untracked, non-roadmap issues).",
     inputSchema: {
       type: "object",
       properties: {},
@@ -585,6 +585,38 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
       url: it.issue.url,
     });
   }
+
+  // Inbox: open repo issues not yet on the board and not roadmap-level
+  // (Epic/Story/Spec) — i.e. untriaged work. Mirrors the panel adapter's
+  // fetchInbox so the MCP surface and the kanban panel agree on what's
+  // waiting to be triaged onto the board.
+  const onBoard = new Set(
+    items.map((i) => i.issue?.number).filter((n): n is number => !!n),
+  );
+  try {
+    const open = await ctx.github.listIssues(ctx.env.coords, {
+      state: "open",
+    });
+    const inbox = open.filter(
+      (i) =>
+        !onBoard.has(i.number) &&
+        i.kind !== "epic" &&
+        i.kind !== "story" &&
+        i.kind !== "spec",
+    );
+    if (inbox.length > 0) {
+      groups["Inbox"] = inbox.map((i) => ({
+        number: i.number,
+        title: i.title,
+        url: i.url,
+      }));
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[thinkube-mcp] listBoard inbox fetch failed: ${(err as Error).message}\n`,
+    );
+  }
+
   return {
     project: { id: project.id, number: project.number, title: project.title },
     groups,
@@ -751,7 +783,8 @@ const RESOURCE_DEFS = [
   {
     uri: "thinkube://board_state",
     name: "Board state",
-    description: "Current Projects v2 board: items grouped by Status column.",
+    description:
+      "Current Projects v2 board: items grouped by Status column, plus an \"Inbox\" group of untriaged open repo issues.",
     mimeType: "application/json",
   },
   {

@@ -93,28 +93,36 @@ export class IssueClassifier {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
-    let info: RepoIssueTypeInfo;
+    let nodes: Array<{ id: string; name: string }>;
     try {
       const data = await this.graphql<ProbeResult>(ISSUE_TYPES_PROBE, {
         owner,
         name,
       });
-      const nodes = data?.repository?.issueTypes?.nodes ?? [];
-      const typeIds: Partial<Record<Kind, string>> = {};
-      for (const node of nodes) {
-        const k = normalizeKind(node.name);
-        if (k && !typeIds[k]) {
-          typeIds[k] = node.id;
-        }
-      }
-      const allFour = KINDS.every((k) => typeIds[k]);
-      info = allFour
-        ? { mode: "issue-types", typeIds }
-        : { mode: "labels", typeIds: {} };
-    } catch {
-      info = { mode: "labels", typeIds: {} };
+      nodes = data?.repository?.issueTypes?.nodes ?? [];
+    } catch (err) {
+      throw new Error(
+        `Couldn't read Issue Types for ${owner}/${name}: ${(err as Error).message}. ` +
+          'The methodology requires native GitHub Issue Types — run "Thinkube: Configure Project".',
+      );
     }
 
+    const typeIds: Partial<Record<Kind, string>> = {};
+    for (const node of nodes) {
+      const k = normalizeKind(node.name);
+      if (k && !typeIds[k]) {
+        typeIds[k] = node.id;
+      }
+    }
+    // No silent label fallback: the methodology requires all four Issue Types.
+    if (!KINDS.every((k) => typeIds[k])) {
+      throw new Error(
+        `${owner}/${name} is missing the methodology Issue Types (Epic/Story/Spec/Task). ` +
+          'Run "Thinkube: Configure Project" (needs org-admin) to create them.',
+      );
+    }
+
+    const info: RepoIssueTypeInfo = { mode: "issue-types", typeIds };
     this.cache.set(key, info);
     return info;
   }
@@ -132,18 +140,9 @@ export class IssueClassifier {
    * Classify an issue without re-probing — caller already has `mode`.
    * Returns undefined when nothing matches (issue isn't part of our model).
    */
-  classify(issue: ClassifiableIssue, mode: ClassifierMode): Kind | undefined {
-    if (mode === "issue-types") {
-      const k = normalizeKind(issue.issueType?.name ?? undefined);
-      if (k) return k;
-      // Issue Types repos may still have legacy unlabeled/unlinked issues;
-      // try the label fallback so we don't silently lose those.
-    }
-    for (const label of issue.labels ?? []) {
-      const k = normalizeKind(label?.name ?? undefined);
-      if (k) return k;
-    }
-    return undefined;
+  classify(issue: ClassifiableIssue, _mode?: ClassifierMode): Kind | undefined {
+    // Issue Types only — kind is read from the issue's assigned type.
+    return normalizeKind(issue.issueType?.name ?? undefined);
   }
 }
 
@@ -158,14 +157,6 @@ export function normalizeKind(
   const n = raw.trim().toLowerCase().replace(/s$/, "");
   if (n === "epic" || n === "story" || n === "spec" || n === "task") return n;
   return undefined;
-}
-
-/**
- * The label we apply when operating in `labels` mode — singular, lowercase,
- * matches the convention in §Appendix C.
- */
-export function labelFor(kind: Kind): string {
-  return kind;
 }
 
 /**

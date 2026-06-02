@@ -32,7 +32,6 @@ import {
   IssueClassifier,
   Kind,
   KINDS,
-  labelFor,
   normalizeKind,
   parseTasklistChildren,
 } from "./issueTypes";
@@ -148,6 +147,24 @@ const ISSUE_FIELDS = /* GraphQL */ `
   }
 `;
 
+export interface IssueTypeSummary {
+  id: number;
+  nodeId: string;
+  name: string;
+  description?: string;
+  color?: string;
+  isEnabled: boolean;
+}
+
+interface RawIssueType {
+  id: number;
+  node_id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  is_enabled?: boolean;
+}
+
 export class GitHubService {
   private readonly classifier: IssueClassifier;
   private restClient: Octokit | undefined;
@@ -234,21 +251,18 @@ export class GitHubService {
     const info = await this.classifier.modeFor(coords.owner, coords.name);
     const stateFilter = opts.state ?? "open";
 
-    // Issue Types mode: filter via GraphQL `issueTypes` query argument.
-    if (opts.type && info.mode === "issue-types" && info.typeIds[opts.type]) {
-      return this.listIssuesByType(
-        coords,
-        info.typeIds[opts.type]!,
-        stateFilter,
-        limit,
-      );
+    // Filter by Issue Type. GitHub's `IssueFilters` input has no issue-type
+    // field, so the `issues` connection can't be filtered by type server-side
+    // — paginate and match each issue's assigned type client-side.
+    if (opts.type) {
+      return this.listIssuesByType(coords, opts.type, stateFilter, limit);
     }
 
-    // Labels mode (or "list all" in either mode): use REST listForRepo
-    // because GraphQL `issues` doesn't expose a label-filter argument.
+    // "List all": REST listForRepo. Kind is resolved from each issue's
+    // assigned Issue Type (`issue.type`), not from labels.
     return this.listIssuesByLabel(
       coords,
-      opts.type ? labelFor(opts.type) : undefined,
+      undefined,
       stateFilter,
       limit,
       info.mode,
@@ -470,7 +484,7 @@ export class GitHubService {
 
   private async listIssuesByType(
     coords: RepoCoords,
-    typeId: string,
+    kind: Kind,
     state: "open" | "closed" | "all",
     limit: number,
   ): Promise<IssueSummary[]> {
@@ -485,6 +499,9 @@ export class GitHubService {
         };
       };
     };
+    // GitHub's `IssueFilters` input has no issue-type field, so the `issues`
+    // connection can't be filtered by type server-side. Paginate every issue
+    // and keep the ones whose assigned type maps to `kind`.
     while (out.length < limit) {
       const data: IssuesPage = await this.runGraphQL<IssuesPage>(
         /* GraphQL */ `
@@ -495,14 +512,12 @@ export class GitHubService {
             $first: Int!
             $after: String
             $states: [IssueState!]
-            $issueTypes: [ID!]
           ) {
             repository(owner: $owner, name: $name) {
               issues(
                 first: $first
                 after: $after
                 states: $states
-                filterBy: { issueType: $issueTypes }
                 orderBy: { field: CREATED_AT, direction: DESC }
               ) {
                 nodes {
@@ -518,14 +533,16 @@ export class GitHubService {
         `,
         {
           ...coords,
-          first: Math.min(limit - out.length, 100),
+          first: 100,
           after: cursor,
           states: stateArg ? [stateArg] : null,
-          issueTypes: [typeId],
         },
       );
-      for (const n of data.repository.issues.nodes)
-        out.push(this.toSummary(n, "issue-types"));
+      for (const n of data.repository.issues.nodes) {
+        const summary = this.toSummary(n, "issue-types");
+        if (summary.kind === kind) out.push(summary);
+        if (out.length >= limit) break;
+      }
       if (!data.repository.issues.pageInfo.hasNextPage) break;
       cursor = data.repository.issues.pageInfo.endCursor;
     }
@@ -562,6 +579,7 @@ export class GitHubService {
         state: string;
         html_url: string;
         node_id: string;
+        type?: { name?: string | null } | null;
         labels?: Array<string | { name?: string | null }>;
         pull_request?: unknown;
       }>;
@@ -579,16 +597,14 @@ export class GitHubService {
           url: issue.html_url,
           nodeId: issue.node_id,
           labels: labelNames,
-          kind: this.classifier.classify(
-            {
-              number: issue.number,
-              body: issue.body ?? null,
-              labels: (issue.labels ?? []).map((l) => ({
-                name: typeof l === "string" ? l : (l.name ?? null),
-              })),
-            },
-            mode,
-          ),
+          kind: this.classifier.classify({
+            number: issue.number,
+            body: issue.body ?? null,
+            issueType: issue.type ?? null,
+            labels: (issue.labels ?? []).map((l) => ({
+              name: typeof l === "string" ? l : (l.name ?? null),
+            })),
+          }),
         });
         if (out.length >= limit) return out;
       }
@@ -608,13 +624,10 @@ export class GitHubService {
     const labels = [...(input.labels ?? [])];
     let issueTypeId: string | undefined;
 
+    // Always assign the native Issue Type — never a kind label. (`modeFor`
+    // throws above if the repo lacks the four types, so typeIds is complete.)
     if (input.type) {
-      if (info.mode === "issue-types" && info.typeIds[input.type]) {
-        issueTypeId = info.typeIds[input.type];
-      } else {
-        const lbl = labelFor(input.type);
-        if (!labels.includes(lbl)) labels.push(lbl);
-      }
+      issueTypeId = info.typeIds[input.type];
     }
 
     const rest = await this.rest();
@@ -723,6 +736,76 @@ export class GitHubService {
       `,
       { issueId: parentNodeId, subIssueId: childNodeId },
     );
+  }
+
+  // ─── Issue Types (org-level) ────────────────────────────────────────────
+
+  /**
+   * Whether the authenticated user can manage org-level Issue Types — i.e. is
+   * an organization owner. Issue Types are org-scoped; creating/updating them
+   * requires `admin:org` (classic) or the org-admin fine-grained permission.
+   * Read-only probe — returns false on any access error rather than throwing,
+   * so callers can fail fast cleanly.
+   */
+  async canManageOrgIssueTypes(org: string): Promise<boolean> {
+    const rest = await this.rest();
+    try {
+      const res = await rest.request("GET /user/memberships/orgs/{org}", {
+        org,
+      });
+      return (res.data as { role?: string }).role === "admin";
+    } catch {
+      return false;
+    }
+  }
+
+  /** List the org's Issue Types. */
+  async listIssueTypes(org: string): Promise<IssueTypeSummary[]> {
+    const rest = await this.rest();
+    const res = await rest.request("GET /orgs/{org}/issue-types", { org });
+    return (res.data as RawIssueType[]).map((d) => this.mapIssueType(d));
+  }
+
+  /**
+   * Create an org-level Issue Type. Requires `admin:org` (org owner). Callers
+   * should gate with `canManageOrgIssueTypes` first to fail fast; this also
+   * rethrows a clear, actionable error if the API returns 403.
+   */
+  async createIssueType(
+    org: string,
+    input: { name: string; description?: string; color?: string },
+  ): Promise<IssueTypeSummary> {
+    const rest = await this.rest();
+    try {
+      const res = await rest.request("POST /orgs/{org}/issue-types", {
+        org,
+        name: input.name,
+        description: input.description ?? null,
+        color: input.color ?? null,
+        is_enabled: true,
+      });
+      return this.mapIssueType(res.data as RawIssueType);
+    } catch (err) {
+      if ((err as { status?: number }).status === 403) {
+        throw new Error(
+          `Insufficient permission to create the "${input.name}" Issue Type in org "${org}". ` +
+            "Creating Issue Types requires the `admin:org` permission (organization owner). " +
+            "Add the scope to your token and retry.",
+        );
+      }
+      throw err;
+    }
+  }
+
+  private mapIssueType(d: RawIssueType): IssueTypeSummary {
+    return {
+      id: d.id,
+      nodeId: d.node_id,
+      name: d.name,
+      description: d.description ?? undefined,
+      color: d.color ?? undefined,
+      isEnabled: d.is_enabled ?? true,
+    };
   }
 
   // ─── Projects v2 ────────────────────────────────────────────────────────
@@ -878,6 +961,220 @@ export class GitHubService {
       { id: projectId },
     );
     return findStatusField(data.node ?? undefined);
+  }
+
+  /** Find a single-select field by name on a project (e.g. "Priority"). */
+  async getSingleSelectFieldByName(
+    projectId: string,
+    name: string,
+  ): Promise<
+    { id: string; name: string; options: { id: string; name: string }[] } | undefined
+  > {
+    const data = await this.runGraphQL<{
+      node: {
+        fields: {
+          nodes: Array<{
+            id?: string;
+            name?: string;
+            options?: Array<{ id: string; name: string }>;
+          }>;
+        };
+      } | null;
+    }>(
+      /* GraphQL */ `
+        query ($id: ID!) {
+          node(id: $id) {
+            ... on ProjectV2 {
+              fields(first: 50) {
+                nodes {
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    options {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      { id: projectId },
+    );
+    for (const f of data.node?.fields?.nodes ?? []) {
+      if (f?.id && f.name === name && Array.isArray(f.options)) {
+        return { id: f.id, name: f.name, options: f.options };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Bring the configured org + board up to the methodology schema: the four
+   * Issue Types (Epic/Story/Spec/Task) and a single-select Priority field
+   * (P0–P3). Fails fast — before mutating anything — when the token can't
+   * manage org Issue Types. Idempotent: only creates what's missing.
+   */
+  async enforceSchema(
+    coords: RepoCoords,
+    projectId: string,
+  ): Promise<{
+    issueTypesCreated: string[];
+    priorityField: { fieldId: string; created: boolean; optionsAdded: string[] };
+  }> {
+    const org = coords.owner;
+
+    // Fail fast before any change.
+    if (!(await this.canManageOrgIssueTypes(org))) {
+      throw new Error(
+        `Cannot enforce the methodology schema in "${org}": the authenticated user is not an ` +
+          "organization owner (creating org Issue Types requires the `admin:org` permission). " +
+          "Re-run configure with an org-owner token that has `admin:org`.",
+      );
+    }
+
+    // 1. Issue Types — create any of the four kinds that are missing.
+    const KIND_TYPES: ReadonlyArray<{
+      name: string;
+      description: string;
+      color: string;
+    }> = [
+      { name: "Epic", description: "A multi-week initiative", color: "purple" },
+      { name: "Story", description: "A user-observable deliverable", color: "blue" },
+      { name: "Spec", description: "The technical how for one Story slice", color: "green" },
+      { name: "Task", description: "1–3 hours of focused work", color: "gray" },
+    ];
+    const existing = new Set(
+      (await this.listIssueTypes(org)).map((t) => t.name.toLowerCase()),
+    );
+    const issueTypesCreated: string[] = [];
+    for (const t of KIND_TYPES) {
+      if (existing.has(t.name.toLowerCase())) continue;
+      await this.createIssueType(org, {
+        name: t.name,
+        description: t.description,
+        color: t.color,
+      });
+      issueTypesCreated.push(t.name);
+    }
+    // New types change the classifier mode → drop the cached probe.
+    this.classifier.invalidate(org, coords.name);
+
+    // 2. Priority field (single-select P0–P3).
+    const PRIORITY_OPTIONS = [
+      { name: "P0", color: "RED", description: "Critical" },
+      { name: "P1", color: "ORANGE", description: "High" },
+      { name: "P2", color: "YELLOW", description: "Normal" },
+      { name: "P3", color: "GRAY", description: "Low" },
+    ];
+    const field = await this.getSingleSelectFieldByName(projectId, "Priority");
+    let priorityField: {
+      fieldId: string;
+      created: boolean;
+      optionsAdded: string[];
+    };
+    if (!field) {
+      const made = await this.createSingleSelectField(
+        projectId,
+        "Priority",
+        PRIORITY_OPTIONS,
+      );
+      priorityField = {
+        fieldId: made.fieldId,
+        created: true,
+        optionsAdded: PRIORITY_OPTIONS.map((o) => o.name),
+      };
+    } else {
+      const added = await this.ensureSingleSelectOptions(
+        field.id,
+        PRIORITY_OPTIONS,
+      );
+      priorityField = { fieldId: field.id, created: false, optionsAdded: added };
+    }
+
+    return { issueTypesCreated, priorityField };
+  }
+
+  // ─── Schema migration ───────────────────────────────────────────────────
+
+  /** Assign an existing Issue Type (by node id) to an issue. */
+  private async assignIssueType(
+    issueNodeId: string,
+    typeNodeId: string,
+  ): Promise<void> {
+    await this.runGraphQL(
+      /* GraphQL */ `
+        mutation ($issueId: ID!, $typeId: ID!) {
+          updateIssueIssueType(
+            input: { issueId: $issueId, issueTypeId: $typeId }
+          ) {
+            issue {
+              id
+            }
+          }
+        }
+      `,
+      { issueId: issueNodeId, typeId: typeNodeId },
+    );
+  }
+
+  /** Remove a label from an issue; a 404 (label absent) is treated as success. */
+  private async removeLabel(
+    coords: RepoCoords,
+    issueNumber: number,
+    name: string,
+  ): Promise<void> {
+    const rest = await this.rest();
+    try {
+      await rest.rest.issues.removeLabel({
+        owner: coords.owner,
+        repo: coords.name,
+        issue_number: issueNumber,
+        name,
+      });
+    } catch (err) {
+      if ((err as { status?: number }).status !== 404) throw err;
+    }
+  }
+
+  /**
+   * Migrate label-based methodology issues to native Issue Types: for every
+   * issue carrying an `epic`/`story`/`spec`/`task` label, assign the matching
+   * Issue Type and strip the now-redundant kind label. Idempotent — re-running
+   * only touches issues that still carry a kind label. Requires the four Issue
+   * Types to already exist (run `enforceSchema` first).
+   */
+  async migrateLabelKindsToTypes(
+    coords: RepoCoords,
+  ): Promise<{ migrated: number; perKind: Record<string, number> }> {
+    const typeIdByKind = new Map<Kind, string>();
+    for (const t of await this.listIssueTypes(coords.owner)) {
+      const k = normalizeKind(t.name);
+      if (k) typeIdByKind.set(k, t.nodeId);
+    }
+
+    const all = await this.listIssues(coords, { state: "all", limit: 1000 });
+    const perKind: Record<string, number> = {};
+    let migrated = 0;
+    for (const issue of all) {
+      const kind = issue.labels
+        .map((l) => normalizeKind(l))
+        .find((k): k is Kind => !!k);
+      if (!kind) continue;
+      const typeId = typeIdByKind.get(kind);
+      if (!typeId) continue;
+
+      if (normalizeKind(issue.issueTypeName) !== kind) {
+        await this.assignIssueType(issue.nodeId, typeId);
+      }
+      await this.removeLabel(coords, issue.number, kind);
+      perKind[kind] = (perKind[kind] ?? 0) + 1;
+      migrated += 1;
+    }
+    this.classifier.invalidate(coords.owner, coords.name);
+    return { migrated, perKind };
   }
 
   async listProjectItems(
@@ -1063,6 +1360,26 @@ export class GitHubService {
     fieldId: string,
     optionId: string,
   ): Promise<void> {
+    await this.setSingleSelectValue(projectId, itemId, fieldId, optionId);
+  }
+
+  /** Set an item's Priority (or any single-select field) option. */
+  async setPriority(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    optionId: string,
+  ): Promise<void> {
+    await this.setSingleSelectValue(projectId, itemId, fieldId, optionId);
+  }
+
+  /** Set a single-select field value on a project item. */
+  private async setSingleSelectValue(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    optionId: string,
+  ): Promise<void> {
     await this.runGraphQL(
       /* GraphQL */ `
         mutation ($project: ID!, $item: ID!, $field: ID!, $optionId: String!) {
@@ -1149,6 +1466,75 @@ export class GitHubService {
    * token's `project` scope; throws on permission errors so callers can fall
    * back to asking the user to add the options by hand.
    */
+  /**
+   * Create a single-select field on a Projects v2 board with the given
+   * options (via the `createProjectV2Field` mutation). Returns the new field
+   * id and its option ids keyed by name. Topping up options on an existing
+   * field is `ensureSingleSelectOptions`.
+   */
+  async createSingleSelectField(
+    projectId: string,
+    name: string,
+    options: ReadonlyArray<{
+      name: string;
+      color?: string;
+      description?: string;
+    }>,
+  ): Promise<{ fieldId: string; optionsByName: Record<string, string> }> {
+    const data = await this.runGraphQL<{
+      createProjectV2Field: {
+        projectV2Field:
+          | { id: string; options?: { id: string; name: string }[] }
+          | null;
+      } | null;
+    }>(
+      /* GraphQL */ `
+        mutation (
+          $project: ID!
+          $name: String!
+          $options: [ProjectV2SingleSelectFieldOptionInput!]
+        ) {
+          createProjectV2Field(
+            input: {
+              projectId: $project
+              dataType: SINGLE_SELECT
+              name: $name
+              singleSelectOptions: $options
+            }
+          ) {
+            projectV2Field {
+              ... on ProjectV2SingleSelectField {
+                id
+                options {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        project: projectId,
+        name,
+        options: options.map((o) => ({
+          name: o.name,
+          color: o.color ?? "GRAY",
+          description: o.description ?? "",
+        })),
+      },
+    );
+    const field = data.createProjectV2Field?.projectV2Field;
+    if (!field) {
+      throw new Error(
+        `createSingleSelectField: server returned no field for "${name}"`,
+      );
+    }
+    const optionsByName: Record<string, string> = {};
+    for (const o of field.options ?? []) optionsByName[o.name] = o.id;
+    return { fieldId: field.id, optionsByName };
+  }
+
   async ensureSingleSelectOptions(
     fieldId: string,
     desired: ReadonlyArray<{
