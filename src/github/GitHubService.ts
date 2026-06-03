@@ -35,6 +35,7 @@ import {
   normalizeKind,
   parseTasklistChildren,
 } from "./issueTypes";
+import { requirementHash } from "../methodology/specChange";
 
 export interface RepoCoords {
   owner: string;
@@ -295,6 +296,22 @@ export class GitHubService {
     }
     const info = await this.classifier.modeFor(coords.owner, coords.name);
     return this.toSummary(node, info.mode);
+  }
+
+  /**
+   * Requirement-hash of a Spec, for task staleness (SP-86). Fetches the Spec
+   * issue's body and hashes only its requirement sections (Acceptance Criteria
+   * / Design / Constraints; checkbox state ignored — see {@link requirementHash}).
+   * Returns `undefined` when the Spec has no body, so callers never false-flag a
+   * task on an unreadable source.
+   */
+  async getSpecRequirementHash(
+    coords: RepoCoords,
+    specNumber: number,
+  ): Promise<string | undefined> {
+    const spec = await this.getIssue(coords, specNumber);
+    if (!spec.body) return undefined;
+    return requirementHash(spec.body);
   }
 
   /**
