@@ -431,6 +431,35 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "add_to_board",
+    description:
+      "Add an issue's item to the Projects v2 board at `status` (default Ready). Mode-gated write.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        issue_number: { type: "integer" },
+        status: {
+          type: "string",
+          enum: ["Spec", "Ready", "In Progress", "Review", "Verify", "Done"],
+          description: "Board column (default Ready)",
+        },
+      },
+      required: ["issue_number"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "remove_from_board",
+    description:
+      "Remove an issue's item from the Projects v2 board (leaves the issue, its type, and its parent link intact). Mode-gated write.",
+    inputSchema: {
+      type: "object",
+      properties: { issue_number: { type: "integer" } },
+      required: ["issue_number"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "update_issue",
     description: "Update title / body / labels / state on any issue.",
     inputSchema: {
@@ -604,6 +633,16 @@ async function dispatchTool(
         asInt(args, "issue_number"),
         asString(args, "kind"),
       );
+    case "add_to_board":
+      writeGate(name);
+      return addToBoard(
+        ctx,
+        asInt(args, "issue_number"),
+        optString(args, "status"),
+      );
+    case "remove_from_board":
+      writeGate(name);
+      return removeFromBoard(ctx, asInt(args, "issue_number"));
     case "update_issue":
       writeGate(name);
       return ctx.github.updateIssue(ctx.env.coords, asInt(args, "number"), {
@@ -1074,6 +1113,57 @@ async function setIssueKind(
   }
   await ctx.github.setIssueType(ctx.env.coords, issueNumber, kind);
   return { ok: true, issue: issueNumber, kind };
+}
+
+/** Add an issue's item to the board at `status` (default Ready). */
+async function addToBoard(
+  ctx: HandlerContext,
+  issueNumber: number,
+  status: string | undefined,
+): Promise<unknown> {
+  if (ctx.env.projectNumber === 0) {
+    throw new Error(
+      "No Projects v2 project configured (thinkube.kanban.projectNumber=0).",
+    );
+  }
+  const issue = await ctx.github.getIssue(ctx.env.coords, issueNumber);
+  const project = await ctx.github.getProject(
+    ctx.env.coords.owner,
+    ctx.env.projectNumber,
+  );
+  const { itemId } = await ctx.github.addItemToProject(project.id, issue.nodeId);
+  const col = status ?? "Ready";
+  const option = project.statusField?.options.find((o) => o.name === col);
+  if (project.statusField && option) {
+    await ctx.github.setStatus(
+      project.id,
+      itemId,
+      project.statusField.id,
+      option.id,
+    );
+  }
+  return { ok: true, issue: issueNumber, itemId, status: col };
+}
+
+/** Remove an issue's item from the board (leaves type/parent intact). */
+async function removeFromBoard(
+  ctx: HandlerContext,
+  issueNumber: number,
+): Promise<unknown> {
+  if (ctx.env.projectNumber === 0) {
+    throw new Error(
+      "No Projects v2 project configured (thinkube.kanban.projectNumber=0).",
+    );
+  }
+  const project = await ctx.github.getProject(
+    ctx.env.coords.owner,
+    ctx.env.projectNumber,
+  );
+  const items = await ctx.github.listProjectItems(project.id);
+  const item = items.find((i) => i.issue?.number === issueNumber);
+  if (!item) return { ok: true, issue: issueNumber, removed: false };
+  await ctx.github.removeProjectItem(project.id, item.id);
+  return { ok: true, issue: issueNumber, removed: true };
 }
 
 async function writeDecision(
