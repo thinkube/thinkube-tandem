@@ -496,7 +496,8 @@
     "install:webview": "npm --prefix webview/kanban install",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
-    "test": "node ./dist/test/runTest.js",
+    "test": "tsc -p tsconfig.test.json && node --test out-test/",
+    "test:vscode": "node ./dist/test/runTest.js",
     "publish:ovsx": "ovsx publish",
     "prepublish:ovsx": "npm run compile && npm run package"
   },
