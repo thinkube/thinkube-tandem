@@ -31,7 +31,12 @@ import "./installVscodeStub";
 import * as vscode from "vscode";
 
 import { AuthService } from "../github/AuthService";
-import { GitHubService, RepoCoords } from "../github/GitHubService";
+import {
+  GitHubService,
+  ProjectItem,
+  RepoCoords,
+} from "../github/GitHubService";
+import { classifySpecChange, SpecChangeKind } from "../methodology/specChange";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { TasksMaterializer } from "../methodology/TasksMaterializer";
 
@@ -462,10 +467,7 @@ async function dispatchTool(
         asInt(args, "story_number"),
       );
     case "list_tasks_in_spec":
-      return ctx.github.listSubIssues(
-        ctx.env.coords,
-        asInt(args, "spec_number"),
-      );
+      return listTasksInSpec(ctx, asInt(args, "spec_number"));
     case "list_board":
       return listBoard(ctx);
     case "get_issue":
@@ -572,9 +574,16 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
     ctx.env.projectNumber,
   );
   const items = await ctx.github.listProjectItems(project.id);
+  const stale = await stalenessByNumber(ctx, items);
   const groups: Record<
     string,
-    Array<{ number: number; title: string; url: string }>
+    Array<{
+      number: number;
+      title: string;
+      url: string;
+      specStale?: boolean;
+      specChange?: SpecChangeKind;
+    }>
   > = {};
   for (const it of items) {
     if (!it.issue) continue;
@@ -583,6 +592,7 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
       number: it.issue.number,
       title: it.issue.title,
       url: it.issue.url,
+      ...(stale.get(it.issue.number) ?? {}),
     });
   }
 
@@ -621,6 +631,90 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
     project: { id: project.id, number: project.number, title: project.title },
     groups,
   };
+}
+
+/**
+ * Compute {specStale, specChange} per task issue-number for a set of board
+ * items (SP-86), fetching each relevant parent Spec's requirement-hash once.
+ * Pass `forSpec` to restrict to a single Spec's tasks (so `list_tasks_in_spec`
+ * fetches only that Spec's hash). Mirrors the panel adapter's load-time
+ * computation so the MCP surface and the kanban panel agree on staleness.
+ */
+async function stalenessByNumber(
+  ctx: HandlerContext,
+  items: ProjectItem[],
+  forSpec?: number,
+): Promise<Map<number, { specStale: boolean; specChange: SpecChangeKind }>> {
+  const relevant =
+    forSpec != null
+      ? items.filter((it) => it.issue?.parentNumber === forSpec)
+      : items;
+  const parents = new Set<number>();
+  for (const it of relevant) {
+    const p = it.issue?.parentNumber;
+    if (p != null && p > 0 && it.specBaseline) parents.add(p);
+  }
+  const hashes = new Map<number, string | undefined>();
+  await Promise.all(
+    [...parents].map(async (n) => {
+      try {
+        hashes.set(
+          n,
+          await ctx.github.getSpecRequirementHash(ctx.env.coords, n),
+        );
+      } catch {
+        hashes.set(n, undefined);
+      }
+    }),
+  );
+  const out = new Map<
+    number,
+    { specStale: boolean; specChange: SpecChangeKind }
+  >();
+  for (const it of relevant) {
+    if (!it.issue) continue;
+    const change = classifySpecChange({
+      parentUpdatedAt: it.issue.parentUpdatedAt,
+      taskUpdatedAt: it.issue.updatedAt,
+      currentReqHash:
+        it.issue.parentNumber != null
+          ? hashes.get(it.issue.parentNumber)
+          : undefined,
+      stampedReqHash: it.specBaseline,
+    });
+    out.set(it.issue.number, {
+      specStale: change === "requirements",
+      specChange: change,
+    });
+  }
+  return out;
+}
+
+/**
+ * Sub-issues of a Spec, enriched with SP-86 staleness ({specStale, specChange})
+ * from the board. Falls back to the bare sub-issue list if no project is
+ * configured or the board read fails.
+ */
+async function listTasksInSpec(
+  ctx: HandlerContext,
+  specNumber: number,
+): Promise<unknown> {
+  const subs = await ctx.github.listSubIssues(ctx.env.coords, specNumber);
+  if (ctx.env.projectNumber === 0) return subs;
+  try {
+    const project = await ctx.github.getProject(
+      ctx.env.coords.owner,
+      ctx.env.projectNumber,
+    );
+    const items = await ctx.github.listProjectItems(project.id);
+    const stale = await stalenessByNumber(ctx, items, specNumber);
+    return subs.map((s) => ({ ...s, ...(stale.get(s.number) ?? {}) }));
+  } catch (err) {
+    process.stderr.write(
+      `[thinkube-mcp] list_tasks_in_spec staleness enrich failed: ${(err as Error).message}\n`,
+    );
+    return subs;
+  }
 }
 
 async function getIssue(ctx: HandlerContext, number: number): Promise<unknown> {
@@ -721,7 +815,34 @@ async function moveTask(
     project.statusField.id,
     option.id,
   );
-  return { ok: true, taskNumber, status };
+
+  // SP-86: record the verification baseline when a task reaches Verify (or
+  // Done) — stamp the parent Spec's current requirement-hash so a later
+  // requirement edit flags the task stale. Best-effort: a failure here never
+  // fails the move.
+  let baselineStamped = false;
+  if (status === "Verify" || status === "Done") {
+    const specNumber = item.issue?.parentNumber;
+    if (specNumber != null && specNumber > 0) {
+      try {
+        const hash = await ctx.github.getSpecRequirementHash(
+          ctx.env.coords,
+          specNumber,
+        );
+        if (hash) {
+          const fieldId = await ctx.github.ensureSpecBaselineField(project.id);
+          await ctx.github.setSpecBaseline(project.id, item.id, fieldId, hash);
+          baselineStamped = true;
+        }
+      } catch (err) {
+        process.stderr.write(
+          `[thinkube-mcp] move_task: baseline stamp for #${taskNumber} failed: ${(err as Error).message}\n`,
+        );
+      }
+    }
+  }
+
+  return { ok: true, taskNumber, status, baselineStamped };
 }
 
 async function writeDecision(

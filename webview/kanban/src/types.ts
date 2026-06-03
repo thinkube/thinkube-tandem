@@ -40,6 +40,8 @@ export interface TaskCard {
   dueDate?: string;
   /** Board "Priority" single-select value (P0–P3) — shown as a chip. */
   priority?: string;
+  /** How the parent Spec last changed relative to this task (SP-86). */
+  specChange?: "none" | "metadata" | "requirements";
 }
 
 export interface BoardColumn {

@@ -62,6 +62,22 @@ Gates are enforced by the kanban panel — drag a card across a gate boundary wi
 
 The gate names + their reasons live in `src/methodology/qualityGates.ts`. They're pure functions — easy to call from a skill (`/pair-next`'s verifier delegation walks the same code path).
 
+### Spec staleness — when a Task needs re-verification
+
+A Task that's already past In Progress can be invalidated by a change to its parent Spec. The kanban surfaces this as a **`⚠ spec changed — re-verify`** badge (the MCP exposes it per Task as `specStale: bool` plus `specChange: none | metadata | requirements`). The point of the badge is to catch the case where a Task was verified against one set of requirements and the requirements then moved underneath it.
+
+Not every edit to a Spec counts. Staleness fires **only on substantive changes** — edits to the Spec's _requirement_ sections: the `## Acceptance Criteria` text, `## Design`, or `## Constraints`. Those are the parts a Task was built and verified against, so changing them warrants re-verification of the children.
+
+These do **not** mark Tasks stale (classified as `metadata`):
+
+- issue-type assignment, label add/remove, sub-issue link changes;
+- status / column moves and comments;
+- **toggling an AC checkbox** (`- [ ]` ↔ `- [x]`). Checking a box records _completion_, not a change to the requirement — so it never invalidates a Task.
+
+Mechanically, staleness is a normalized hash of the Spec's requirement sections with checkbox state stripped (so box toggles don't perturb it). `/pair-next` stamps each Task with the spec-hash it was verified against; a Task is stale when the Spec's current requirement-hash differs from the stamped one. A Task with no recorded baseline is never flagged.
+
+`/pair-next` resolves staleness as part of its loop: after advancing the finished Task and **before** picking the next one, it sweeps the active Story for substantively-stale Tasks, re-runs the `verifier` against the current Spec, and (if a Task is past In Progress) moves it back / re-opens its acceptance criteria. The sweep completes before any new Task starts, so you never begin work alongside a stale sibling. `/pair-start` likewise surfaces substantively-stale Tasks when it loads a Story's context.
+
 ---
 
 ## 4. Day-in-the-life

@@ -69,6 +69,19 @@ The four section headers are load-bearing — chunk-11 quality gates and MCP too
 | In Progress → Review | At least one comment on the issue (work summary).             |
 | Review → Verify      | All acceptance criteria in the parent Spec checked.           |
 
+## Spec staleness (re-verify semantics)
+
+A Task past In Progress goes **stale** when its parent Spec changes _substantively_. The MCP exposes `specStale` (bool) and `specChange` (`none | metadata | requirements`) per Task; the kanban shows a `⚠ spec changed — re-verify` badge.
+
+The substantive-vs-metadata distinction governs staleness:
+
+- **`requirements` (substantive — marks Tasks stale):** edits to the Spec's `## Acceptance Criteria` text, `## Design`, or `## Constraints`.
+- **`metadata` (non-substantive — never marks Tasks stale):** issue-type assignment, label add/remove, sub-issue link, status/column move, comments — **and AC checkbox toggles** (`- [ ]` ↔ `- [x]`), which record completion, not a requirement change.
+
+Staleness is a normalized hash of the Spec's requirement sections with checkbox state stripped. `/pair-next` stamps each Task with the spec-hash it verified against; a Task is stale when the current requirement-hash differs. A Task with no baseline is never flagged.
+
+`/pair-next` resolves substantively-stale Tasks **before** starting the next Task: after advancing the finished Task, it sweeps the active Story, re-runs the `verifier` against the current Spec, and moves any stale Task back / re-opens its ACs. `/pair-start` surfaces substantively-stale Tasks when loading a Story.
+
 ## Pair modes
 
 - `navigator`: AI reads + proposes only. Human is the driver; MCP write tools refuse.

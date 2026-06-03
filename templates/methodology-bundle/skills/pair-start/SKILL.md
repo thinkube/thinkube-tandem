@@ -28,6 +28,7 @@ After `/pair-start <story-number>`, the conversation context should contain:
 - The Story title + body + parent Epic for situational awareness.
 - Every Spec under the Story with its acceptance criteria already parsed.
 - A clear pick of the next Ready Task with rationale (top of column, dependencies satisfied, parallel-eligible vs. blocking).
+- Any **substantively-stale** Tasks flagged up front (parent Spec's requirements changed since they were verified), so they're re-verified before new work.
 - An explicit acknowledgment of the current mode (`navigator` / `driver` / `both`) and what that means for Claude's write authority in this session.
 
 ## Inputs
@@ -39,18 +40,19 @@ After `/pair-start <story-number>`, the conversation context should contain:
 1. **Read methodology context** + `repo-conventions` (load both into session if not already).
 2. **Load Story + ancestry.** `mcp__thinkube-kanban__get_issue <story-number>`. Then `get_issue` on the parent Epic for the higher-level context.
 3. **Load Specs.** `mcp__thinkube-kanban__list_specs_in_story <story-number>`. For each Spec, `mcp__thinkube-kanban__get_thinkube_file specs/SP-{n}.md` to surface acceptance criteria.
-4. **Load board.** `mcp__thinkube-kanban__list_board` to see what's in Ready / In Progress / Review for this Story's tasks. Cross-reference with `list_tasks_in_spec` per spec.
+4. **Load board.** `mcp__thinkube-kanban__list_board` to see what's in Ready / In Progress / Review for this Story's tasks. Cross-reference with `list_tasks_in_spec` per spec — which also carries each Task's `specStale` / `specChange` (SP-86); note any with `specChange: "requirements"` for step 7.
 5. **Pick next task.** Apply this priority:
    1. Tasks already In Progress under this Story (resume in-flight work first).
    2. Top of Ready under the Spec with the most unblocked dependencies.
    3. Parallel-eligible Tasks if multiple humans are available — surface that, don't pick for them.
 6. **Surface the picked Task.** Show: title, parent Spec, the AC line(s) it satisfies, the dependencies satisfied or pending.
-7. **State the mode.** Echo the current `thinkube.kanban.mode` value and what it means:
+7. **Flag stale Tasks (SP-86).** If any Task under this Story has `specChange: "requirements"` — its parent Spec's `## Acceptance Criteria` / `## Design` / `## Constraints` changed since it was verified — surface it prominently: it likely needs re-verification (handled by `/pair-next`'s stale-spec sweep) before new work proceeds. Ignore `metadata`-only staleness (type/label/status/checkbox — not a real change).
+8. **State the mode.** Echo the current `thinkube.kanban.mode` value and what it means:
    - `navigator`: Claude reads + proposes; cannot write the board.
    - `driver`: Claude is leading; will move cards, edit files, push.
    - `both`: either side can write.
-8. **Tell the user** to open the Kanban panel from the Activity Bar (`Thinkube Board` → `Roadmap`, toolbar button **Open Kanban**) or via the command palette so they can see drag-and-drop reflect the work.
-9. **Wait.** Don't auto-move the picked Task to In Progress. That's `/pair-next`'s job, and the user may want to revise the pick first.
+9. **Tell the user** to open the Kanban panel from the Activity Bar (`Thinkube Board` → `Roadmap`, toolbar button **Open Kanban**) or via the command palette so they can see drag-and-drop reflect the work.
+10. **Wait.** Don't auto-move the picked Task to In Progress. That's `/pair-next`'s job, and the user may want to revise the pick first.
 
 ## Constraints
 
@@ -78,6 +80,8 @@ A briefing in chat:
    satisfies: AC #2 ("Endpoint returns 401 when token expired")
    blocked by: none
    parallel-eligible: yes (sibling tasks 143, 144)
+
+⚠ Stale (re-verify before new work): #138 — SP-50 requirements changed since it was verified
 
 Mode: DRIVER — Claude can move cards and edit files.
 

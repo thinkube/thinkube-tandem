@@ -35,6 +35,10 @@ import {
   normalizeKind,
   parseTasklistChildren,
 } from "./issueTypes";
+import { requirementHash } from "../methodology/specChange";
+
+/** Projects v2 TEXT field storing each task's verified Spec requirement-hash (SP-86). */
+const SPEC_BASELINE_FIELD = "SpecBaseline";
 
 export interface RepoCoords {
   owner: string;
@@ -96,6 +100,8 @@ export interface ProjectItem {
   dueDate?: string;
   /** Current value of the "Priority" single-select (P0–P3), if set. */
   priority?: string;
+  /** Requirement-hash the task was last verified against (SP-86 baseline). */
+  specBaseline?: string;
 }
 
 export interface CreateIssueInput {
@@ -295,6 +301,22 @@ export class GitHubService {
     }
     const info = await this.classifier.modeFor(coords.owner, coords.name);
     return this.toSummary(node, info.mode);
+  }
+
+  /**
+   * Requirement-hash of a Spec, for task staleness (SP-86). Fetches the Spec
+   * issue's body and hashes only its requirement sections (Acceptance Criteria
+   * / Design / Constraints; checkbox state ignored — see {@link requirementHash}).
+   * Returns `undefined` when the Spec has no body, so callers never false-flag a
+   * task on an unreadable source.
+   */
+  async getSpecRequirementHash(
+    coords: RepoCoords,
+    specNumber: number,
+  ): Promise<string | undefined> {
+    const spec = await this.getIssue(coords, specNumber);
+    if (!spec.body) return undefined;
+    return requirementHash(spec.body);
   }
 
   /**
@@ -1189,6 +1211,7 @@ export class GitHubService {
       __typename?: string;
       name?: string;
       date?: string;
+      text?: string;
       field?: { __typename?: string; name?: string } | null;
     } | null;
     type ProjectItemsPage = {
@@ -1259,6 +1282,14 @@ export class GitHubService {
                             }
                           }
                         }
+                        ... on ProjectV2ItemFieldTextValue {
+                          text
+                          field {
+                            ... on ProjectV2FieldCommon {
+                              name
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -1297,6 +1328,12 @@ export class GitHubService {
             v.__typename === "ProjectV2ItemFieldSingleSelectValue" &&
             v.field?.name === "Priority",
         );
+        const baselineValue = values.find(
+          (v: FieldValueNode) =>
+            !!v &&
+            v.__typename === "ProjectV2ItemFieldTextValue" &&
+            v.field?.name === SPEC_BASELINE_FIELD,
+        );
         out.push({
           id: it.id,
           issue: issueContent
@@ -1314,6 +1351,7 @@ export class GitHubService {
           status: statusValue?.name,
           dueDate: dateValue?.date,
           priority: priorityValue?.name,
+          specBaseline: baselineValue?.text,
         });
         if (out.length >= limit) break;
       }
@@ -1460,6 +1498,112 @@ export class GitHubService {
         }
       `,
       { project: projectId, item: itemId, field: fieldId, date },
+    );
+  }
+
+  /** Find any project field by name (TEXT, NUMBER, DATE, single-select, …). */
+  private async getProjectFieldByName(
+    projectId: string,
+    name: string,
+  ): Promise<{ id: string; dataType?: string } | undefined> {
+    const data = await this.runGraphQL<{
+      node: {
+        fields: {
+          nodes: Array<{ id?: string; name?: string; dataType?: string }>;
+        };
+      } | null;
+    }>(
+      /* GraphQL */ `
+        query ($id: ID!) {
+          node(id: $id) {
+            ... on ProjectV2 {
+              fields(first: 50) {
+                nodes {
+                  ... on ProjectV2FieldCommon {
+                    id
+                    name
+                    dataType
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      { id: projectId },
+    );
+    for (const f of data.node?.fields?.nodes ?? []) {
+      if (f?.id && f.name === name) return { id: f.id, dataType: f.dataType };
+    }
+    return undefined;
+  }
+
+  /**
+   * Ensure the per-task verification-baseline field exists on the board — a
+   * TEXT field holding the Spec requirement-hash a task was last verified
+   * against (SP-86). Idempotent: returns the existing field id, else creates a
+   * TEXT field and returns its id. Requires the token's `project` scope.
+   */
+  async ensureSpecBaselineField(projectId: string): Promise<string> {
+    const existing = await this.getProjectFieldByName(
+      projectId,
+      SPEC_BASELINE_FIELD,
+    );
+    if (existing) return existing.id;
+    const data = await this.runGraphQL<{
+      createProjectV2Field: {
+        projectV2Field: { id: string } | null;
+      } | null;
+    }>(
+      /* GraphQL */ `
+        mutation ($project: ID!, $name: String!) {
+          createProjectV2Field(
+            input: { projectId: $project, dataType: TEXT, name: $name }
+          ) {
+            projectV2Field {
+              ... on ProjectV2FieldCommon {
+                id
+              }
+            }
+          }
+        }
+      `,
+      { project: projectId, name: SPEC_BASELINE_FIELD },
+    );
+    const id = data.createProjectV2Field?.projectV2Field?.id;
+    if (!id) {
+      throw new Error(
+        `Failed to create the "${SPEC_BASELINE_FIELD}" field on the project`,
+      );
+    }
+    return id;
+  }
+
+  /** Stamp a task item with the Spec requirement-hash it was verified against. */
+  async setSpecBaseline(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    hash: string,
+  ): Promise<void> {
+    await this.runGraphQL(
+      /* GraphQL */ `
+        mutation ($project: ID!, $item: ID!, $field: ID!, $text: String!) {
+          updateProjectV2ItemFieldValue(
+            input: {
+              projectId: $project
+              itemId: $item
+              fieldId: $field
+              value: { text: $text }
+            }
+          ) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+      `,
+      { project: projectId, item: itemId, field: fieldId, text: hash },
     );
   }
 

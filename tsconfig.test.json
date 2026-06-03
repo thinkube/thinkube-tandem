@@ -1,0 +1,12 @@
+{
+  "//": "Compiles unit tests (and only their sources) to out-test/ so the built-in node:test runner can execute them. Kept separate from the main build (tsconfig.json), which excludes *.test.ts so test code never ships in dist/.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "out-test"
+  },
+  "include": [
+    "src/methodology/specChange.ts",
+    "src/methodology/specChange.test.ts"
+  ],
+  "exclude": ["node_modules"]
+}
