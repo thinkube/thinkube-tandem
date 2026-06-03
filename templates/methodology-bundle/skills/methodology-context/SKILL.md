@@ -1,30 +1,65 @@
 ---
-description: Thinkube methodology vocabulary, hierarchy, and workflow. Loaded on demand by other bundle skills; not user-invocable.
+description: Tandem methodology vocabulary, hierarchy, and workflow. Loaded on demand by other bundle skills; not user-invocable.
 disable-model-invocation: true
 allowed-tools: []
 thinkube-bundle: 0.0.1
 ---
 
-# Thinkube methodology context
+# Tandem methodology context
 
-This is a reference document loaded by other bundle skills (`/epic-new`, `/spec-prepare`, `/pair-start`, etc.) when they need to ground themselves in the shared vocabulary. Don't invoke directly.
+A reference document loaded by other bundle skills (`/spec-prepare`, `/slice`, `/pair-start`, `/pair-next`, `/board`, `/retro`) when they need to ground themselves in the shared vocabulary. Don't invoke directly.
 
-## Hierarchy
+**Tandem** is a development methodology designed from scratch for a single human + one AI pair on a git repo. Two axioms shape everything below:
 
-Four tiers, each backed by a GitHub issue type plus a `.thinkube/` markdown sidecar:
+1. The team is **one human (navigator) + one AI (driver)** — not a group of humans.
+2. The **committed git repo is the single source of truth _and_ the board**.
 
-| Tier  | Issue type | Sidecar                           | Purpose                                                          |
-| ----- | ---------- | --------------------------------- | ---------------------------------------------------------------- |
-| Epic  | `Epic`     | `.thinkube/epics/EP-{n}.md`       | A multi-week initiative. Outcome-shaped, not feature-shaped.     |
-| Story | `Story`    | `.thinkube/stories/ST-{n}.md`     | A single deliverable slice. User-observable acceptance criteria. |
-| Spec  | `Spec`     | `.thinkube/specs/SP-{n}.md`       | The technical "how" for one Story slice. Standard four sections. |
-| Task  | `Task`     | (no sidecar; lives as issue body) | 1–3 hours of focused work. Goes through the six-column workflow. |
+Consequences: the entire artifact set — specs, slices, decisions, retros — lives as committed `.thinkube/` markdown files, host-agnostic (Gitea, GitHub, or offline; reinstall recovery is `git clone`). There is **no external issue tracker in the core loop**, and "done" is defined by an **automated verifier**, not human sign-off.
 
-Specs additionally have a `.thinkube/specs/SP-{n}-tasks.md` sibling holding the decomposition (checkbox list → materialised Tasks).
+## Hierarchy: Spec → Slice
+
+Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an optional one-paragraph `.thinkube/roadmap.md`) — not a tier.
+
+| Tier  | Lives at                           | Card? | Purpose |
+| ----- | ---------------------------------- | ----- | ------- |
+| Spec  | `.thinkube/specs/SP-{n}/spec.md`   | No — the document | The documented unit of work: acceptance criteria, constraints, design, file plan. |
+| Slice | `.thinkube/specs/SP-{n}/SL-{m}.md` | Yes — flows the board | One coherent end-to-end change you verify-and-commit as a single "done" (one green). |
+
+- A **Slice** is sized by **coherence, not the clock**. Bounds: if you can't state a single "done" for it → it's more than one slice, split it; if it has its own distinct acceptance criteria / design → it's not a slice, it's a **Spec**.
+- A spike / investigation / "confirm X" with no verifiable output is **not a slice** (it has no single "done") — it belongs in the parent Spec's `## Design` / `## Constraints`.
+
+## Card handle
+
+The canonical handle for a slice is **`SP-{n}_SL-{m}`** — e.g. `SP-3_SL-42` — hyphen *within* each id, underscore *joins* them. Used identically in the filename, the board chip, your instructions ("work on `SP-3_SL-42`"), and my references back.
+
+- Slices are numbered **per-Spec**: `SL-1`, `SL-2`… restart within each Spec, so a new Spec starts at `SL-1` and numbers stay small.
+- Handles are **per-repo** — each repo's board has its own `SP-`/`SL-` sequences. `SP-3_SL-42` is unique within a board; across repos, qualify by repo ("`SP-3_SL-42` in the extension").
+
+## Slice file shape
+
+```
+---
+uid: <stable-internal-id>          # never changes; the board's own link key
+parent: SP-3                       # the parent Spec
+status: ready | doing | done | archived
+theme: <optional grouping tag>
+due: <optional yyyy-mm-dd>
+priority: <optional P0|P1|P2|P3>
+verified_req_hash: <stamped by /pair-next on verify>
+depends_on: [SP-3_SL-7]            # optional
+parallel: true                     # optional
+---
+
+{slice description — what the one coherent change is}
+```
+
+- `status:` **is** the board column — parsed as data, not scraped from prose.
+- **Identity is the `uid`** (stable forever; the board links on it); the **handle `SP-{n}_SL-{m}`** is the human reference. Reparenting a slice renumbers its handle but not its `uid`.
+- **Numbers are never reused.** A finished or abandoned slice is **archived** (`status: archived`, file kept) — never deleted — so the per-Spec `max+1` allocator can't collide.
 
 ## Spec body shape (canonical)
 
-The four section headers are load-bearing — chunk-11 quality gates and MCP tools look for them by name:
+The four section headers are load-bearing — the quality gates and the staleness hash look for them by name:
 
 ```
 # {spec title}
@@ -33,8 +68,8 @@ The four section headers are load-bearing — chunk-11 quality gates and MCP too
 
 ## Acceptance Criteria
 
-- [ ] technical criterion 1
-- [ ] technical criterion 2
+- [ ] criterion 1
+- [ ] criterion 2
 
 ## Constraints
 
@@ -47,62 +82,56 @@ The four section headers are load-bearing — chunk-11 quality gates and MCP too
 ## File Structure Plan
 
 - `path/to/file.ts` — why
-- `path/to/other.tsx` — why
 ```
 
-## Six-column workflow
+Acceptance criteria are elicited from the **user** during `/spec-prepare` — there is no parent Story to inherit them from.
 
-| Column      | Meaning                                                                          |
-| ----------- | -------------------------------------------------------------------------------- |
-| Spec        | Spec issue exists but body isn't ready. Run `/spec-prepare` to fill it.          |
-| Ready       | Spec is complete (gates pass); Tasks materialised, available to pull.            |
-| In Progress | A pair is actively working on this Task.                                         |
-| Review      | Code written, awaiting reviewer subagent / human review. Comment required.       |
-| Verify      | Reviewed, awaiting verifier subagent (tests + lint + typecheck). All AC checked. |
-| Done        | Shipped or merged.                                                               |
+## Three-column workflow
 
-## Quality gates (chunk-11, blocking on drag)
+| Column | Meaning |
+| ------ | ------- |
+| Ready  | The parent Spec is complete (gate passes); the slice is available to pull. |
+| Doing  | The pair is actively working this slice. Keep **one slice in flight per Spec**. |
+| Done   | Verifier green for the slice, and the AC it satisfies is checked on the Spec. |
 
-| Transition           | Gate                                                          |
-| -------------------- | ------------------------------------------------------------- |
-| Spec → Ready         | Spec body has a non-empty `## Acceptance Criteria` checklist. |
-| In Progress → Review | At least one comment on the issue (work summary).             |
-| Review → Verify      | All acceptance criteria in the parent Spec checked.           |
+A Spec still being authored (no AC yet) is pre-board; its slices don't exist until it's sliced.
+
+## Quality gates (two; file checks)
+
+| Transition       | Gate |
+| ---------------- | ---- |
+| → Ready (entry)  | The slice's parent Spec has a non-empty `## Acceptance Criteria`. |
+| → Done           | Verifier green for the slice's change, and the AC it satisfies is checked on the Spec. **Reviewer + verifier both run inside this single gate** — no Review/Verify handoff columns. |
+
+The slice **is** the verification boundary — "one green." (The old "≥1 comment" gate is gone: there is no second human to hand off to.)
 
 ## Spec staleness (re-verify semantics)
 
-A Task past In Progress goes **stale** when its parent Spec changes _substantively_. The MCP exposes `specStale` (bool) and `specChange` (`none | metadata | requirements`) per Task; the kanban shows a `⚠ spec changed — re-verify` badge.
+A `done` slice goes **stale** when its parent Spec changes **substantively**:
 
-The substantive-vs-metadata distinction governs staleness:
+- **`requirements` (substantive — marks slices stale):** edits to the Spec's `## Acceptance Criteria` text, `## Design`, or `## Constraints`.
+- **`metadata` (non-substantive — never stale):** `status:`/column moves, theme/priority/due edits, **and AC checkbox toggles** (`- [ ]` ↔ `- [x]`) — which record completion, not a requirement change.
 
-- **`requirements` (substantive — marks Tasks stale):** edits to the Spec's `## Acceptance Criteria` text, `## Design`, or `## Constraints`.
-- **`metadata` (non-substantive — never marks Tasks stale):** issue-type assignment, label add/remove, sub-issue link, status/column move, comments — **and AC checkbox toggles** (`- [ ]` ↔ `- [x]`), which record completion, not a requirement change.
+Staleness is a normalized hash of the Spec's requirement sections with checkbox state stripped. `/pair-next` stamps each verified slice with the spec requirement-hash it validated against (`verified_req_hash:` in the slice's frontmatter); a slice is stale when the current hash differs. A slice with no baseline is never flagged.
 
-Staleness is a normalized hash of the Spec's requirement sections with checkbox state stripped. `/pair-next` stamps each Task with the spec-hash it verified against; a Task is stale when the current requirement-hash differs. A Task with no baseline is never flagged.
+`/pair-next` resolves substantively-stale slices **before** starting the next one: after advancing the finished slice, it sweeps the active Spec, re-runs the `verifier` against the current Spec, and re-opens any stale slice. `/pair-start` surfaces stale slices when it loads a Spec's context.
 
-`/pair-next` resolves substantively-stale Tasks **before** starting the next Task: after advancing the finished Task, it sweeps the active Story, re-runs the `verifier` against the current Spec, and moves any stale Task back / re-opens its ACs. `/pair-start` surfaces substantively-stale Tasks when loading a Story.
+## Per-project board
+
+Each repository owns its own committed `.thinkube/` board — the **repo _is_ the project** (in our lexicon). A repo is methodology-enabled **iff it has a committed `.thinkube/` directory**: there is no settings registry, and the extension never auto-enables. The **workspace navigator** discovers the repos across the open workspace folders and lets you move between the enabled boards.
 
 ## Pair modes
 
-- `navigator`: AI reads + proposes only. Human is the driver; MCP write tools refuse.
-- `driver`: AI is leading. Both human and AI can write the board.
+- `navigator`: AI reads + proposes only; the human writes the board/files.
+- `driver`: AI is leading; both can write.
 - `both` (default): either party can write at will.
 
-## Tasks-list format (the `SP-{n}-tasks.md` file)
+## Slice creation (`/slice`)
 
-GitHub-flavoured checkboxes. One task per line.
-
-- `- [ ] <title>` — pending
-- `- [x] <title>` — already materialised or completed
-- `- [ ] (P) <title>` — parallel-eligible with siblings
-- `- [ ] <title> → depends-on: 3` — references row 3 by 1-based index
-
-The chunk-9 materialiser flips `[ ]` to `[x]` after creating each Task issue, making re-runs idempotent.
+`/slice` decomposes a Spec into coherent slices, writing individual `.thinkube/specs/SP-{n}/SL-{m}.md` files **directly** — no issue minting, no checkbox-list intermediate, no GitHub API. It allocates the next per-Spec `SL-{m}` and refuses rows that have no single verifiable "done" (those go in the Spec, not on the board).
 
 ## Subagents
 
-Three named agents the bundle ships, used by `/pair-*` skills to keep the main context lean:
-
-- **explorer** — read-only research. Use when the question is "what's currently in this codebase / how does it work today". Returns file:line references; refuses any write.
-- **reviewer** — adversarial diff review. Use during Review column to surface concerns against the Spec's acceptance criteria.
-- **verifier** — runs tests, lint, typecheck. Gates Review→Verify and is the final check before claiming a Task is done.
+- **explorer** — read-only research: "what's in this codebase / how does it work today." Returns `file:line`; refuses any write.
+- **reviewer** — adversarial diff review against the Spec's acceptance criteria.
+- **verifier** — runs the repo's verification (per `repo-conventions` — tests, or `tsc --noEmit` + build where there's no suite). Gates a slice's move to **Done**.
