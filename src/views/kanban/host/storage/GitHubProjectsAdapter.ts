@@ -38,6 +38,7 @@ import {
   gateReviewToVerify,
   gateSpecToReady,
 } from "../../../../methodology/qualityGates";
+import { classifySpecChange } from "../../../../methodology/specChange";
 import { StorageAdapter } from "../StorageAdapter";
 import { Board, BoardColumn, TaskCard } from "../types";
 
@@ -111,22 +112,6 @@ const ASSIGNABLE_SLUGS = [
   "magenta",
   "slate",
 ];
-/**
- * A task is "stale" when its parent Spec was updated more recently than the
- * task itself — the spec changed after the task was last touched, so the task
- * may no longer match it and the pair should review it. Coarse on purpose (any
- * spec edit flags its tasks); a "look again" nudge, not a hard signal.
- */
-function isSpecStale(
-  parentUpdatedAt: string | undefined,
-  taskUpdatedAt: string | undefined,
-): boolean {
-  if (!parentUpdatedAt || !taskUpdatedAt) return false;
-  const p = Date.parse(parentUpdatedAt);
-  const t = Date.parse(taskUpdatedAt);
-  return Number.isFinite(p) && Number.isFinite(t) && p > t;
-}
-
 function slugForParent(parentNumber: number | undefined): string {
   if (
     parentNumber == null ||
@@ -413,7 +398,8 @@ export class GitHubProjectsAdapter implements StorageAdapter {
 
     const items = await this.github.listProjectItems(project.id);
     const inbox = await this.fetchInbox(items);
-    const board = this.buildBoard(items, inbox);
+    const specHashes = await this.computeSpecHashes(items);
+    const board = this.buildBoard(items, inbox, specHashes);
     this.lastBoard = board;
     return cloneBoard(board);
   }
@@ -563,7 +549,40 @@ export class GitHubProjectsAdapter implements StorageAdapter {
     }
   }
 
-  private buildBoard(items: ProjectItem[], inbox: IssueSummary[] = []): Board {
+  /**
+   * Compute each relevant parent Spec's current requirement-hash, once per
+   * distinct parent (SP-86). Only Specs with at least one *stamped* (verified)
+   * child can ever be flagged stale, so we skip the rest — keeping this to a
+   * handful of API calls per load. A fetch failure resolves to `undefined`, so
+   * an unreadable Spec never false-flags its tasks.
+   */
+  private async computeSpecHashes(
+    items: ProjectItem[],
+  ): Promise<Map<number, string | undefined>> {
+    const parents = new Set<number>();
+    for (const it of items) {
+      const p = it.issue?.parentNumber;
+      if (p != null && p > 0 && it.specBaseline) parents.add(p);
+    }
+    const out = new Map<number, string | undefined>();
+    await Promise.all(
+      [...parents].map(async (n) => {
+        try {
+          out.set(n, await this.github.getSpecRequirementHash(this.coords, n));
+        } catch (err) {
+          this.log(`spec-hash(#${n}) failed: ${(err as Error).message}`);
+          out.set(n, undefined);
+        }
+      }),
+    );
+    return out;
+  }
+
+  private buildBoard(
+    items: ProjectItem[],
+    inbox: IssueSummary[] = [],
+    specHashes: Map<number, string | undefined> = new Map(),
+  ): Board {
     this.itemIdByTaskId.clear();
     this.nodeIdByTaskId.clear();
 
@@ -577,6 +596,15 @@ export class GitHubProjectsAdapter implements StorageAdapter {
       if (!item.issue) continue;
       const columnId = columnIdForStatus(item.status) ?? "column-spec";
       const taskId = `task-${item.issue.number}`;
+      const specChange = classifySpecChange({
+        parentUpdatedAt: item.issue.parentUpdatedAt,
+        taskUpdatedAt: item.issue.updatedAt,
+        currentReqHash:
+          item.issue.parentNumber != null
+            ? specHashes.get(item.issue.parentNumber)
+            : undefined,
+        stampedReqHash: item.specBaseline,
+      });
       const card: TaskCard = {
         id: taskId,
         description: item.issue.title,
@@ -586,10 +614,8 @@ export class GitHubProjectsAdapter implements StorageAdapter {
         issueNumber: item.issue.number,
         parentNumber: item.issue.parentNumber,
         updatedAt: item.issue.updatedAt,
-        specStale: isSpecStale(
-          item.issue.parentUpdatedAt,
-          item.issue.updatedAt,
-        ),
+        specStale: specChange === "requirements",
+        specChange,
         dueDate: item.dueDate,
         priority: item.priority,
       };
