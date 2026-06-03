@@ -60,6 +60,28 @@
 .epic {
   font-weight: 600;
 }
+.priority {
+  font-weight: 700;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  /* Default (P3 / unknown): muted. Levels override below. */
+  color: var(--vscode-descriptionForeground);
+}
+.priority[data-level="P0"] {
+  color: var(--vscode-errorForeground, #e06a6a);
+}
+.priority[data-level="P1"] {
+  color: var(--vscode-editorWarning-foreground, #e0a020);
+}
+.priority[data-level="P2"] {
+  color: var(--vscode-charts-yellow, #d9b500);
+}
+.priority[data-level="P3"] {
+  color: var(--vscode-descriptionForeground);
+}
 
 .title {
   font-size: 13px;

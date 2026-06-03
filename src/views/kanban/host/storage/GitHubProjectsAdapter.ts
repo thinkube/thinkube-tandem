@@ -73,6 +73,25 @@ export const METHODOLOGY_OPTIONS: ReadonlyArray<{
   color: string;
 }> = COLUMN_DEFS.map((c) => ({ name: c.status, color: c.color }));
 
+/**
+ * The methodology Priority options (P0–P3) in canonical order, with the colour
+ * + description used when an option has to be created. Kept in sync with
+ * `GitHubService.enforceSchema` (the authoritative creator at Configure time) —
+ * the adapter only tops up missing options on each board load.
+ */
+export const PRIORITY_OPTIONS: ReadonlyArray<{
+  name: string;
+  color: string;
+  description: string;
+}> = [
+  { name: "P0", color: "RED", description: "Critical" },
+  { name: "P1", color: "ORANGE", description: "High" },
+  { name: "P2", color: "YELLOW", description: "Normal" },
+  { name: "P3", color: "GRAY", description: "Low" },
+];
+
+const EXPECTED_PRIORITIES = PRIORITY_OPTIONS.map((p) => p.name);
+
 /** Synthetic, non-status column holding untracked issues awaiting triage. */
 const INBOX_COLUMN_ID = "column-inbox";
 
@@ -359,6 +378,39 @@ export class GitHubProjectsAdapter implements StorageAdapter {
       if (opt) this.optionIdByColumnId.set(def.id, opt.id);
     }
 
+    // Self-heal the Priority field options (P0–P3) too, mirroring Status.
+    // Non-fatal by design: Priority is a decorative card chip, so a missing
+    // field or options must never block board load. `enforceSchema`
+    // (Configure Project) is the authoritative creator — here we only top up
+    // missing options on an already-created field, keeping it consistent on
+    // every open. A missing field is logged, not created or thrown.
+    try {
+      const priorityField = await this.github.getSingleSelectFieldByName(
+        project.id,
+        "Priority",
+      );
+      if (!priorityField) {
+        this.log(
+          `Priority field absent; run "Thinkube Kanban: Configure Project" to create it`,
+        );
+      } else {
+        const missingPriorities = EXPECTED_PRIORITIES.filter(
+          (p) => !priorityField.options.some((o) => o.name === p),
+        );
+        if (missingPriorities.length > 0) {
+          const added = await this.github.ensureSingleSelectOptions(
+            priorityField.id,
+            PRIORITY_OPTIONS,
+          );
+          if (added.length) {
+            this.log(`created missing Priority options: ${added.join(", ")}`);
+          }
+        }
+      }
+    } catch (err) {
+      this.log(`Priority self-heal failed: ${(err as Error).message}`);
+    }
+
     const items = await this.github.listProjectItems(project.id);
     const inbox = await this.fetchInbox(items);
     const board = this.buildBoard(items, inbox);
@@ -539,6 +591,7 @@ export class GitHubProjectsAdapter implements StorageAdapter {
           item.issue.updatedAt,
         ),
         dueDate: item.dueDate,
+        priority: item.priority,
       };
       tasks[taskId] = card;
       this.itemIdByTaskId.set(taskId, item.id);

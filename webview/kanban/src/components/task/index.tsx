@@ -97,6 +97,15 @@ export function Task({
             {task.issueNumber !== undefined && (
               <span className={styles.issue}>#{task.issueNumber}</span>
             )}
+            {task.priority && (
+              <span
+                className={styles.priority}
+                data-level={task.priority}
+                title={`Priority ${task.priority}`}
+              >
+                {task.priority}
+              </span>
+            )}
             <span className="grow" />
             {canEdit && !editing && (
               <>

@@ -38,6 +38,8 @@ export interface TaskCard {
   specStale?: boolean;
   /** Board "Due" date (ISO yyyy-mm-dd), editable on the card. */
   dueDate?: string;
+  /** Board "Priority" single-select value (P0–P3) — shown as a chip. */
+  priority?: string;
 }
 
 export interface BoardColumn {

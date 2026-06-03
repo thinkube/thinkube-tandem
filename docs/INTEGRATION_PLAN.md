@@ -61,12 +61,13 @@ Each level is a **conversation between human and Claude** that produces a durabl
 
 | Concept                          | GitHub representation                                                                                                                                                                                                                               |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Epic                             | Issue with type `Epic` (or label `epic` if Issue Types not enabled).                                                                                                                                                                                |
-| Story                            | Issue with type `Story` (or label `story`), **sub-issue of** an Epic.                                                                                                                                                                               |
-| Spec                             | Issue with type `Spec` (or label `spec`), **sub-issue of** a Story.                                                                                                                                                                                 |
-| Task                             | Issue with type `Task` (or label `task`), **sub-issue of** a Spec.                                                                                                                                                                                  |
+| Epic                             | Issue with type `Epic` (enforced at init).                                                                                                                                                                                                          |
+| Story                            | Issue with type `Story`, **sub-issue of** an Epic.                                                                                                                                                                                                  |
+| Spec                             | Issue with type `Spec`, **sub-issue of** a Story.                                                                                                                                                                                                   |
+| Task                             | Issue with type `Task`, **sub-issue of** a Spec.                                                                                                                                                                                                    |
 | Sprint / Release                 | Milestone. Cards (any level) can belong to a milestone.                                                                                                                                                                                             |
 | Kanban column (Task-level)       | Projects v2 single-select field `Status` with options: Spec, Ready, In Progress, Review, Verify, Done. _(Note: the column name "Spec" here is the **status** of a Task that's awaiting its spec to be finalized — distinct from a Spec **issue**.)_ |
+| Priority (any level)             | Projects v2 single-select field `Priority` with options `P0`–`P3` (Critical/High/Normal/Low), enforced at init; shown as a colored chip on each card.                                                                                                |
 | Comments / decisions in dialogue | Issue comments.                                                                                                                                                                                                                                     |
 | Cross-cutting tags               | Labels.                                                                                                                                                                                                                                             |
 
@@ -577,7 +578,7 @@ Ship the cwd-patching wrapper scripts under `wrapper/`; build copies them to `di
   - Write methods: `createIssue({type, title, body, labels, milestone})`, `addSubIssue(parent, child)`, `setStatus(itemId, optionId)`, `updateIssue(...)`, `addComment(...)`, `closeIssue(...)`.
   - Handle pagination + rate limits centrally.
 - `src/github/AuthService.ts`: token order — `GITHUB_TOKEN` → `gh auth token` → SecretStorage.
-- `src/github/issueTypes.ts`: detect whether the target repo has Issue Types configured; if not, fall back to label-based discrimination (`epic`/`story`/`spec`/`task`).
+- `src/github/issueTypes.ts`: detect whether the target repo has Issue Types configured; if not, fall back to label-based discrimination (`epic`/`story`/`spec`/`task`). _(Superseded by SP-72: init now **enforces** the four Issue Types and the label fallback is retired — `IssueClassifier` only operates in Issue-Types mode. See Appendix C.)_
 - **Acceptance:** in a workspace with `thinkube.kanban.repo` and `thinkube.kanban.projectNumber` set, a smoke-test command `thinkube.kanban.dumpRoadmap` writes the full epic→story→spec→task tree to the output channel as JSON. No UI yet.
 - **Blocking** for chunks 4–10.
 
@@ -715,10 +716,10 @@ Same risk as before — needs verification in the target code-server build. **Mi
 
 GitHub introduced Issue Types and native Sub-issues over 2024–2025. As of 2026-05 we should assume they're GA but verify:
 
-- **Issue Types**: per-repo configured via the org/repo settings. Querying via GraphQL needs the right type fragment. Fallback: discriminate by label (`epic`, `story`, `spec`, `task`).
+- **Issue Types**: org-level, created + enforced at init (SP-72). Querying via GraphQL needs the right type fragment. _The label fallback has since been retired — the extension requires the four types._
 - **Sub-issues**: native parent/child link, queryable via GraphQL. Fallback: parse `Tasks:` blocks in issue bodies (the older tasklist convention).
 
-**Mitigation:** the `GitHubService` is built with a strategy seam (`IssueClassifier`) so we can swap between Issue Types and labels without rewriting downstream code.
+**Mitigation (resolved):** the `GitHubService` was built with a strategy seam (`IssueClassifier`) to swap between Issue Types and labels. As of SP-72 this is settled — Issue Types are GA and enforced at init; the seam operates only in Issue-Types mode (the label branch was removed).
 
 ### 7.3 GraphQL rate limits
 
@@ -769,7 +770,7 @@ We add Roadmap + Kanban + (existing) Thinkube AI container. That's three icons. 
 | Layer                   | What "well tested" means                                                                                                                                                                                 |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Launcher                | Right-click → Open Here works on macOS + Linux; resume of an existing session recovers the original cwd from the JSONL.                                                                                  |
-| GitHub stack            | All read + write methods exercised against a real repo with Issue Types **and** against a fallback repo without (label-based discrimination). Rate-limit failures land in the output channel.            |
+| GitHub stack            | All read + write methods exercised against a real repo with the enforced schema (four Issue Types + `Priority` field). Init fails fast with an actionable error when the token lacks `admin:org`. Rate-limit failures land in the output channel. |
 | `.thinkube/` store      | Smoke command writes / round-trips a sample spec; watcher fires; secret-scan refuses a token-shaped string in the body.                                                                                  |
 | Roadmap                 | Tree populates correctly when settings are missing (welcome screen) and when they're set (Epic → Story → Spec). Refresh re-fetches. Click opens CardDetailPanel.                                         |
 | Kanban                  | InMemoryAdapter renders six columns with seeded tasks. GitHubProjectsAdapter loads from a real project. Drag updates the Status field. Mode badge reflects `thinkube.kanban.mode`.                       |
@@ -872,16 +873,15 @@ created: 2026-05-19 # ISO date
 
 **Body convention:** plain markdown. The bundle's `/spec-prepare` skill writes specs with the standard sections `## Acceptance Criteria` (a checklist), `## Constraints`, `## Design`, `## File Structure Plan` — these are the sections quality gates (chunk 11) and MCP tools recognise. Hand-written specs that adopt the same section names get the same treatment; specs that don't, work too — they just won't pass the acceptance-criteria-not-empty gate until the checklist exists.
 
-## Appendix C: GitHub label / type conventions
+## Appendix C: GitHub Issue Types + Priority conventions
 
-Two-tier:
+**Issue Types (enforced).** `Configure Project` enforces the four org-level Issue Types — `Epic`, `Story`, `Spec`, `Task` — at init: it creates any that are missing and migrates older label-tagged issues (`epic`/`story`/`spec`/`task`) onto their native type, stripping the now-redundant kind label. The legacy label fallback has been **retired** — the `IssueClassifier` operates only in Issue-Types mode, and a repo without the four types is refused with a clear error. (Creating org-level Issue Types requires an org-owner token with `admin:org`; init fails fast without it.)
 
-1. **If the target repo has Issue Types configured (preferred):** use them — `Epic`, `Story`, `Spec`, `Task`.
-2. **Otherwise (fallback):** use labels — `epic`, `story`, `spec`, `task`. The extension's `IssueClassifier` reads either.
+Sub-issue links use GitHub's native sub-issue API; older repos using tasklist syntax (`- [ ] #34` in the issue body) are recognized as a legacy fallback.
 
-Sub-issue links use GitHub's native sub-issue API. Older repos using tasklist syntax (`- [ ] #34` in issue body) are also recognized as a fallback by `IssueClassifier`.
+**Status field.** The kanban column field is a Projects v2 single-select field. Default name `Status`. Options (in order): `Spec`, `Ready`, `In Progress`, `Review`, `Verify`, `Done`. The configure-project wizard creates any missing options.
 
-The kanban column field is a Projects v2 single-select field. Default name `Status`. Options (in order): `Spec`, `Ready`, `In Progress`, `Review`, `Verify`, `Done`. The configure-project wizard creates any missing options.
+**Priority field (enforced).** Init also provisions a Projects v2 single-select `Priority` field with options `P0`–`P3` (Critical / High / Normal / Low). Idempotent — the field is created if absent and missing options are topped up otherwise — and the board adapter re-verifies it on every load (`GitHubProjectsAdapter`). Cards render the priority as a colored chip.
 
 ## Appendix D: critical files for chunks 0–4
 

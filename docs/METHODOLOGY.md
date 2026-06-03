@@ -35,7 +35,9 @@ Epic    EP-12   .thinkube/epics/EP-12.md       weeks-of-work outcome
 
 Reading the column from the top: **Epic** is "the thing we're building this quarter"; **Story** is "the thing a user can do after this lands"; **Spec** is "how, technically"; **Task** is "the next 1–3 hours of my keyboard".
 
-GitHub Issue Types are the source of truth for the typing. If your repo has Issue Types configured (the preferred path), the extension reads + writes them directly. If not, it falls back to labels (`epic` / `story` / `spec` / `task`) — the `IssueClassifier` handles both transparently.
+GitHub Issue Types are the source of truth for the typing. **Configure Project** enforces the four Issue Types (`Epic`/`Story`/`Spec`/`Task`) on the org at init — creating any that are missing and migrating older label-tagged issues onto their native type — so the extension always operates in Issue-Types mode. The legacy label fallback (`epic`/`story`/`spec`/`task` labels) has been **retired**: a repo without the four types is refused with a clear error rather than silently classified by label.
+
+Init also provisions a standard **Priority** field on the board — a Projects v2 single-select with options `P0`–`P3` (Critical / High / Normal / Low) — so priority is classified consistently across every repo. Each card shows its priority as a colored chip.
 
 ### Why a sidecar plus an issue?
 

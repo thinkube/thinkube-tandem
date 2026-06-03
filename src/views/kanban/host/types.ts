@@ -22,6 +22,8 @@ export interface TaskCard {
   specStale?: boolean;
   /** Board "Due" date (ISO yyyy-mm-dd), if set. */
   dueDate?: string;
+  /** Board "Priority" single-select value (P0–P3), if set. */
+  priority?: string;
 }
 
 export interface BoardColumn {
