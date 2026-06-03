@@ -20,7 +20,7 @@ four-tier hierarchy (Epic → Story → Spec → Task). As shipped, that kanban 
 backed by **GitHub's API**: typed issues, sub-issue links for the hierarchy,
 a Projects v2 Status field for the columns, and issue comments for one of the
 quality gates. The `.thinkube/*.md` sidecars exist alongside the issues but are
-a *second* store, and mirroring the long-form body from sidecar → issue is
+a _second_ store, and mirroring the long-form body from sidecar → issue is
 **optional** (`/spec-prepare` step 6).
 
 Investigating the storage layer surfaced three problems for our actual usage —
@@ -30,12 +30,12 @@ reinstalls:
 1. **Neither store is complete on its own.** `ThinkubeStore`
    (`src/store/ThinkubeStore.ts`) is a local-filesystem layer and its own
    header calls the file layer "the source of truth." GitHub holds the
-   *skeleton* (titles, hierarchy, board status, comments); the local files hold
-   the *flesh* (Spec Design/Constraints/File-Plan, the `SP-n-tasks.md`
+   _skeleton_ (titles, hierarchy, board status, comments); the local files hold
+   the _flesh_ (Spec Design/Constraints/File-Plan, the `SP-n-tasks.md`
    decompositions, ADRs, retros). ADRs and retros are **file-only** — they have
    no GitHub copy at all. Because the mirror is optional and `.thinkube/` was
    neither tracked nor gitignored, a reinstall mid-spec silently loses the
-   un-mirrored long-form content. GitHub is *not* a complete backup.
+   un-mirrored long-form content. GitHub is _not_ a complete backup.
 
 2. **The GitHub-API spine is the heaviest, most fragile coupling.** Projects v2,
    typed issues, sub-issues, the `gh` CLI, and the `project` token scope (which
@@ -48,7 +48,7 @@ reinstalls:
    coordination-shaped columns/gates are team machinery whose cost does not pay
    back for a team of one (human + Claude).
 
-A key realisation reframed the choice: the GitHub *issue tracker* was quietly
+A key realisation reframed the choice: the GitHub _issue tracker_ was quietly
 doing double duty as both the **board** and an **inbox** (a front door for
 items filed from outside the repo — a phone, the web UI, a collaborator). A
 files-only model keeps the board but loses the inbox. However, that inbox need
@@ -69,7 +69,7 @@ GitHub-only inbox adapter at the edge.**
 - Hierarchy lives in frontmatter `parent:`; the board column lives in
   frontmatter `status:`; identity is a **local monotonic counter** (reusing the
   ADR auto-increment pattern already in the store).
-- The kanban panel renders *over* the files via a new `ThinkubeFilesAdapter`
+- The kanban panel renders _over_ the files via a new `ThinkubeFilesAdapter`
   behind the existing `StorageAdapter` interface — whose docstring already
   anticipates "future adapters (file-based, …) slot in here without touching the
   React or the Panel."
