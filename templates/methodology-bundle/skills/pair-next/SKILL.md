@@ -12,6 +12,7 @@ allowed-tools:
     "mcp__thinkube-kanban__get_thinkube_file",
     "mcp__thinkube-kanban__move_task",
     "mcp__thinkube-kanban__add_comment",
+    "mcp__thinkube-kanban__list_tasks_in_spec",
   ]
 argument-hint: "(no args; uses the current session's active Story)"
 thinkube-bundle: 0.0.1
@@ -28,9 +29,10 @@ In one invocation:
 1. Verify the previous Task — tests, lint, typecheck all green.
 2. On green: move the Task forward (In Progress → Review, or directly to Verify if the chunk-11 gate accepts).
 3. Comment on the issue with a one-paragraph summary of the change for traceability.
-4. Pick the next Ready Task under the same Story.
-5. Move the new Task to In Progress.
-6. Load the new Task's body + parent Spec section into the conversation.
+4. Sweep for stale siblings — Tasks whose parent Spec's *requirements* changed (SP-86) — and resolve them before starting new work.
+5. Pick the next Ready Task under the same Story.
+6. Move the new Task to In Progress.
+7. Load the new Task's body + parent Spec section into the conversation.
 
 ## Procedure
 
@@ -42,9 +44,13 @@ In one invocation:
 3. **Comment.** On green: leave a one-paragraph comment on the Task issue summarising what changed (key files, approach, anything reviewers should look at first). Use `mcp__thinkube-kanban__add_comment` — this also satisfies the chunk-11 In-Progress→Review gate.
 4. **Move the finished Task forward.** Default target: `Review`. Use `mcp__thinkube-kanban__move_task` with `status = "Review"`. If the user has indicated this work skips review (e.g. trivial fix), they can ask Claude to move to `Verify` directly — but the chunk-11 Review→Verify gate needs the parent Spec's AC fully checked first, so this is the exception not the rule.
 5. **Update the parent Spec's acceptance criteria.** If the completed Task satisfied a specific AC, mark that AC checked in `.thinkube/specs/SP-{n}.md` via `Edit`. The chunk-11 Review→Verify gate later in the workflow looks at these checkboxes.
-6. **Pick the next Task.** Same priority rule as `/pair-start`: top of Ready under the same Story, satisfying dependencies. If no Ready tasks remain, surface that the Story is done-ish and suggest `/retro` or progressing other Stories.
-7. **Advance and load context.** `move_task` for the picked Task → In Progress. Then `mcp__thinkube-kanban__get_issue` for it and `get_thinkube_file specs/SP-{n}.md` for the parent Spec section it implements.
-8. **Brief the user.**
+6. **Stale-spec sweep (SP-86).** Before picking the next Task, check whether any sibling Task under the active Story went stale because its parent Spec's *requirements* changed. Call `mcp__thinkube-kanban__list_tasks_in_spec` for the active Story's Spec(s) (or read `list_board`) — each Task carries `specStale` (bool) and `specChange` (`none` | `metadata` | `requirements`):
+   - **`specChange: "requirements"`** (substantively stale — the Spec's `## Acceptance Criteria` / `## Design` / `## Constraints` changed since this Task was verified): **resolve it before starting new work.** Re-run the `verifier` against the current Spec; if the Task is past `In Progress` (Review/Verify/Done) and no longer meets the new AC, move it back and re-open the affected `.thinkube/specs/SP-{n}.md` checkboxes. Tell the user what changed.
+   - **`specChange: "metadata"`** (an issue-type/label/sub-issue/status/comment change, or an AC checkbox toggle): not a real change — no re-verification; the flag clears once the Task is next touched.
+   - Handle stale siblings one at a time; finish the sweep before moving on.
+7. **Pick the next Task.** Same priority rule as `/pair-start`: top of Ready under the same Story, satisfying dependencies. If no Ready tasks remain, surface that the Story is done-ish and suggest `/retro` or progressing other Stories.
+8. **Advance and load context.** `move_task` for the picked Task → In Progress. Then `mcp__thinkube-kanban__get_issue` for it and `get_thinkube_file specs/SP-{n}.md` for the parent Spec section it implements.
+9. **Brief the user.**
 
 ## Constraints
 
@@ -52,6 +58,7 @@ In one invocation:
 - **One Task at a time.** Don't fan out into parallel In-Progress cards in a single `/pair-next` call. Parallel work is the user's choice, run separately.
 - **Don't bypass the chunk-11 gates.** If the gate refuses a move, surface the gate's reason and stop. Don't try to work around with `update_issue` to fake the underlying condition.
 - **Comment quality.** The comment exists for the future reader. One paragraph: what changed, why, what's risky. Not a diff dump.
+- **Staleness baseline (SP-86).** Moving a Task to `Verify` (or `Done`) auto-records the Spec requirement-hash it was verified against — that baseline is exactly what the step-6 sweep compares against. You don't stamp it by hand; just move the card. A Task with no baseline yet (never verified) is never flagged stale.
 
 ## Output
 

@@ -815,7 +815,34 @@ async function moveTask(
     project.statusField.id,
     option.id,
   );
-  return { ok: true, taskNumber, status };
+
+  // SP-86: record the verification baseline when a task reaches Verify (or
+  // Done) — stamp the parent Spec's current requirement-hash so a later
+  // requirement edit flags the task stale. Best-effort: a failure here never
+  // fails the move.
+  let baselineStamped = false;
+  if (status === "Verify" || status === "Done") {
+    const specNumber = item.issue?.parentNumber;
+    if (specNumber != null && specNumber > 0) {
+      try {
+        const hash = await ctx.github.getSpecRequirementHash(
+          ctx.env.coords,
+          specNumber,
+        );
+        if (hash) {
+          const fieldId = await ctx.github.ensureSpecBaselineField(project.id);
+          await ctx.github.setSpecBaseline(project.id, item.id, fieldId, hash);
+          baselineStamped = true;
+        }
+      } catch (err) {
+        process.stderr.write(
+          `[thinkube-mcp] move_task: baseline stamp for #${taskNumber} failed: ${(err as Error).message}\n`,
+        );
+      }
+    }
+  }
+
+  return { ok: true, taskNumber, status, baselineStamped };
 }
 
 async function writeDecision(
