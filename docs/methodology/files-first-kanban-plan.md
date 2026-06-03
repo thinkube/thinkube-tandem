@@ -55,9 +55,10 @@ the MCP server.
       `setStatus` path. Keep the SP-86 spec-hash baseline stamping on reaching
       Verify/Done.
 - [ ] `list_board` / `list_*_in_*` → read from the store, not the API.
-- [ ] `create_tasks_from_spec` (materialise) → simplify to file-only: tasks stay
-      as checkbox rows / lightweight task files; no issue minting. (Decide:
-      task-as-checkbox vs task-as-file; checkbox keeps it lightest.)
+- [ ] `tasks-decompose` → write **task files** (`.thinkube/tasks/T-{n}.md` with
+      `status:`/`parent:` frontmatter), not GitHub issues. Per ADR-0003 tasks are
+      file-backed cards (card = Task); the issue-minting `create_tasks_from_spec`
+      / `materialise` path is removed.
 - [ ] Remove the `project`-scope dependency and the API-failure fallbacks from
       the tool surface.
 
