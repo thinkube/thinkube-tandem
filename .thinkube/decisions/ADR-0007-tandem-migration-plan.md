@@ -52,8 +52,10 @@ ephemeral temp file; this ADR preserves its load-bearing content so it survives.
   This realizes ADR-0001 §3's "local monotonic counter" without a separate counter
   file (the files stay the single source of truth). The reusable `nextNumber(kind)`
   primitive is the one genuinely-new piece (none exists today).
-- **Files nested** — `.thinkube/specs/SP-3/SL-42.md`; the folder *is* the join, and
-  reparenting is a clean `git mv`. Adjusts ADR-0003's flat `slices/SL-{n}.md`.
+- **Files nested** — a Spec owns a folder: the Spec doc at
+  `.thinkube/specs/SP-3/spec.md` and its slices at `.thinkube/specs/SP-3/SL-42.md`.
+  The folder *is* the join; reparenting is a clean `git mv`. Adjusts ADR-0003's flat
+  `slices/SL-{n}.md`.
 - **Due date + Priority retained** — as slice frontmatter (`due:`, `priority:`),
   rewriting the set-due path to write frontmatter.
 - **"≥1 comment" gate deleted** — per ADR-0001; collapses to ADR-0003's two
@@ -65,18 +67,28 @@ ephemeral temp file; this ADR preserves its load-bearing content so it survives.
 
 ### B. Migration sequence (8 phases)
 
+**Executed as additive expand-contract, green at every phase.** The verifier gate
+(`tsc --noEmit` + webview build + tests) must stay green at each phase, so the legacy
+GitHub-backed model is *kept* until the phase that deletes its consumers: new
+machinery is added first (expand), the old removed only once nothing references it
+(contract). Concretely — **Spec is retained** as the document tier and **Slice is
+added alongside** (not "renamed"); `epic`/`story`/`issue` survive in the types until
+Phases 5–7 remove the Roadmap, wizards, and GitHub spine that use them.
+
 - **Phase 0 — decisions.** Closed by §A above.
 - **Phase 1 — rewrite the canonical docs FIRST.** `methodology-context/SKILL.md` +
   the bundle `CLAUDE.md` block hard-code everything the ADRs delete (4-tier table,
   6 columns, chunk-11 gates, `SP-{n}-tasks` materializer). They *gate* every other
   skill rewrite and the human's mental model. Cheap, unblocking.
-- **Phase 2 — shrink the kind taxonomy at the root.** `ThinkubeStore`
-  (`ListableKind`/`KIND_TO_DIR`/`KIND_TO_PREFIX`/`rebuildIndex`) drops epic+story,
-  renames spec→slice; `frontmatter.ts` `Kind` union drops epic/story and reframes
-  `parent_issue`→`parent:`; replace the GitHub-`issue:`-keyed `issueIndex`
-  (ThinkubeStore.ts:148-151,237-239,273-285) with a `parent:`-keyed lookup; lift the
-  reusable `nextNumber(kind)` allocator in (today the only `max+1` is the
-  ADR-specific one at `kanbanMcpServer.ts:853-859`).
+- **Phase 2 — extend the kind taxonomy at the root** *(done — additive)*.
+  `frontmatter.ts` `Kind` union **adds `slice`** plus the Tandem fields (`uid`,
+  `parent`, `status` ready/doing/done/archived, `theme`, `due`, `priority`,
+  `verified_req_hash`, `depends_on`); `issue`/`parent_issue` kept and `@deprecated`.
+  `ThinkubeStore` gains nested-layout helpers (`pathForSpecDoc`, `pathForSlice`,
+  `sliceHandle`, `listSpecDirs`, `listSlices`) and the monotonic allocators
+  `nextSpecNumber()` / `nextSliceNumber()` (per-Spec; archive-don't-delete). Spec is
+  retained; `epic`/`story` and the `issue:`-keyed index are removed later with their
+  consumers (Phases 5–7), not here.
 - **Phase 3 — relocate the survivors onto files.** Keep `specChange.ts` +
   `specChange.test.ts` **verbatim** (depends only on `crypto`). Re-point the
   verification-baseline stamp from the Projects-v2 `SpecBaseline` field onto slice
