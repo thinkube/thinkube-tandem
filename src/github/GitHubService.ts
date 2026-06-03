@@ -762,6 +762,39 @@ export class GitHubService {
     );
   }
 
+  /**
+   * Remove a native sub-issue link (inverse of {@link addSubIssue}). An absent
+   * link — the child isn't a sub-issue of the parent — is treated as success,
+   * so callers can reparent / un-parent idempotently.
+   */
+  async removeSubIssue(
+    parentNodeId: string,
+    childNodeId: string,
+  ): Promise<void> {
+    try {
+      await this.runGraphQL(
+        /* GraphQL */ `
+          mutation ($issueId: ID!, $subIssueId: ID!) {
+            removeSubIssue(
+              input: { issueId: $issueId, subIssueId: $subIssueId }
+            ) {
+              issue {
+                id
+              }
+            }
+          }
+        `,
+        { issueId: parentNodeId, subIssueId: childNodeId },
+      );
+    } catch (err) {
+      // Idempotent: GitHub errors when the link doesn't exist — swallow the
+      // "not a sub-issue" case, rethrow anything else.
+      const msg = (err as Error).message?.toLowerCase() ?? "";
+      if (msg.includes("sub-issue") || msg.includes("sub_issue")) return;
+      throw err;
+    }
+  }
+
   // ─── Issue Types (org-level) ────────────────────────────────────────────
 
   /**
@@ -1144,6 +1177,61 @@ export class GitHubService {
     );
   }
 
+  /**
+   * Set (or change) an issue's Issue Type to the given methodology kind. Public
+   * wrapper over {@link assignIssueType} that resolves the kind to the org's
+   * Issue Type. Throws if the org has no matching type (run Configure Project).
+   */
+  async setIssueType(
+    coords: RepoCoords,
+    issueNumber: number,
+    kind: Kind,
+  ): Promise<void> {
+    const issue = await this.getIssue(coords, issueNumber);
+    const type = (await this.listIssueTypes(coords.owner)).find(
+      (t) => normalizeKind(t.name) === kind,
+    );
+    if (!type) {
+      throw new Error(
+        `Org "${coords.owner}" has no Issue Type for kind "${kind}". ` +
+          `Run "Thinkube Kanban: Configure Project" to enforce the schema.`,
+      );
+    }
+    await this.assignIssueType(issue.nodeId, type.nodeId);
+  }
+
+  /**
+   * Attempt to clear an issue's Issue Type (used by move-to-inbox). GitHub may
+   * not support unsetting a type; if the mutation is rejected we degrade
+   * gracefully — returns `{ cleared: false }` rather than throwing — so the
+   * caller can fall back to un-board + un-parent only.
+   */
+  async clearIssueType(
+    coords: RepoCoords,
+    issueNumber: number,
+  ): Promise<{ cleared: boolean }> {
+    const issue = await this.getIssue(coords, issueNumber);
+    try {
+      await this.runGraphQL(
+        /* GraphQL */ `
+          mutation ($issueId: ID!, $typeId: ID) {
+            updateIssueIssueType(
+              input: { issueId: $issueId, issueTypeId: $typeId }
+            ) {
+              issue {
+                id
+              }
+            }
+          }
+        `,
+        { issueId: issue.nodeId, typeId: null },
+      );
+      return { cleared: true };
+    } catch {
+      return { cleared: false };
+    }
+  }
+
   /** Remove a label from an issue; a 404 (label absent) is treated as success. */
   private async removeLabel(
     coords: RepoCoords,
@@ -1398,6 +1486,33 @@ export class GitHubService {
       );
     }
     return { itemId };
+  }
+
+  /**
+   * Remove an item from a Projects v2 board (inverse of {@link addItemToProject}).
+   * An absent item is treated as success (idempotent un-boarding).
+   */
+  async removeProjectItem(projectId: string, itemId: string): Promise<void> {
+    try {
+      await this.runGraphQL(
+        /* GraphQL */ `
+          mutation ($project: ID!, $item: ID!) {
+            deleteProjectV2Item(
+              input: { projectId: $project, itemId: $item }
+            ) {
+              deletedItemId
+            }
+          }
+        `,
+        { project: projectId, item: itemId },
+      );
+    } catch (err) {
+      // Idempotent: a missing item resolves to a "could not resolve"/"not
+      // found" error — swallow those, rethrow anything else.
+      const msg = (err as Error).message?.toLowerCase() ?? "";
+      if (msg.includes("not found") || msg.includes("resolve")) return;
+      throw err;
+    }
   }
 
   /** Move an item to a different Status option. */
