@@ -1,91 +1,88 @@
 ---
-description: Advance the pair-programming loop. Verifies the previous Task (via verifier subagent), moves cards forward, picks the next Ready Task, loads its context.
+description: Advance the pair-programming loop. Verifies the in-flight (Doing) slice via the verifier subagent, moves it to Done, sweeps stale slices, picks the next Ready slice, loads its context.
 allowed-tools:
   [
     "Read",
     "Grep",
     "Glob",
     "Bash",
+    "Edit",
     "Task",
     "mcp__thinkube-kanban__list_board",
-    "mcp__thinkube-kanban__get_issue",
+    "mcp__thinkube-kanban__get_slice",
     "mcp__thinkube-kanban__get_thinkube_file",
-    "mcp__thinkube-kanban__move_task",
-    "mcp__thinkube-kanban__add_comment",
-    "mcp__thinkube-kanban__list_tasks_in_spec",
+    "mcp__thinkube-kanban__move_slice",
   ]
-argument-hint: "(no args; uses the current session's active Story)"
+argument-hint: "(no args; uses the current session's active Spec)"
 thinkube-bundle: 0.0.1
 ---
 
 # /pair-next
 
-The work-loop pulse. After finishing a Task, run `/pair-next` to: (1) verify the work via the `verifier` subagent, (2) advance the finished Task across the board, (3) pick the next Ready Task and load its context. This is the skill the user invokes most often during a session.
+The work-loop pulse. After finishing a slice, run `/pair-next` to: (1) verify the in-flight slice via the `verifier` subagent, (2) move it to **Done** and check the AC it satisfies on the Spec, (3) sweep stale slices, (4) pick the next Ready slice and load its context. This is the skill the user invokes most often during a session.
+
+It's just **Ready → Doing → Done** with one gate at Done. There is no Review/Verify handoff and no comment step — reviewer and verifier both run inside the single Done gate.
 
 ## Mission
 
 In one invocation:
 
-1. Verify the previous Task — tests, lint, typecheck all green.
-2. On green: move the Task forward (In Progress → Review, or directly to Verify if the chunk-11 gate accepts).
-3. Comment on the issue with a one-paragraph summary of the change for traceability.
-4. Sweep for stale siblings — Tasks whose parent Spec's _requirements_ changed (SP-86) — and resolve them before starting new work.
-5. Pick the next Ready Task under the same Story.
-6. Move the new Task to In Progress.
-7. Load the new Task's body + parent Spec section into the conversation.
+1. Verify the in-flight (Doing) slice — the verifier runs the repo's checks (per `repo-conventions`).
+2. On green: `move_slice` it to `Done` (this stamps `verified_req_hash` automatically) and check the AC it satisfies on the parent Spec.
+3. Sweep for stale slices — done slices whose parent Spec's _requirements_ changed — and resolve them before starting new work.
+4. Pick the next Ready slice under the same Spec, `move_slice` it to `Doing`.
+5. Load the new slice's body + the parent Spec section into the conversation.
 
 ## Procedure
 
-1. **Identify the in-flight Task.** `mcp__thinkube-kanban__list_board` and find the Task currently in `In Progress` under the active Story. If multiple, prefer the one most recently moved (or ask the user). If none, treat this as a `/pair-start` situation and tell the user.
+1. **Identify the in-flight slice.** `mcp__thinkube-kanban__list_board`; find the card in **Doing** under the active Spec. (Keep one slice in flight per Spec — if there are somehow multiple, prefer the most recently moved or ask the user.) If none, treat this as a `/pair-start` situation and tell the user.
 2. **Verify.** Delegate to the `verifier` subagent (via `Task` tool):
-   - Prompt the verifier with the project's test/lint/typecheck commands (it knows where to look via `repo-conventions`).
+   - The verifier reads `repo-conventions` for the project's verification recipe and runs it.
    - Verifier returns `{ ok: true }` or `{ ok: false, reason, evidence }`.
-   - On red: **stop**. Surface the failures to the user verbatim. Do not move the card. Suggest fixes; the user re-runs `/pair-next` after addressing them.
-3. **Comment.** On green: leave a one-paragraph comment on the Task issue summarising what changed (key files, approach, anything reviewers should look at first). Use `mcp__thinkube-kanban__add_comment` — this also satisfies the chunk-11 In-Progress→Review gate.
-4. **Move the finished Task forward.** Default target: `Review`. Use `mcp__thinkube-kanban__move_task` with `status = "Review"`. If the user has indicated this work skips review (e.g. trivial fix), they can ask Claude to move to `Verify` directly — but the chunk-11 Review→Verify gate needs the parent Spec's AC fully checked first, so this is the exception not the rule.
-5. **Update the parent Spec's acceptance criteria.** If the completed Task satisfied a specific AC, mark that AC checked in `.thinkube/specs/SP-{n}.md` via `Edit`. The chunk-11 Review→Verify gate later in the workflow looks at these checkboxes.
-6. **Stale-spec sweep (SP-86).** Before picking the next Task, check whether any sibling Task under the active Story went stale because its parent Spec's _requirements_ changed. Call `mcp__thinkube-kanban__list_tasks_in_spec` for the active Story's Spec(s) (or read `list_board`) — each Task carries `specStale` (bool) and `specChange` (`none` | `metadata` | `requirements`):
-   - **`specChange: "requirements"`** (substantively stale — the Spec's `## Acceptance Criteria` / `## Design` / `## Constraints` changed since this Task was verified): **resolve it before starting new work.** Re-run the `verifier` against the current Spec; if the Task is past `In Progress` (Review/Verify/Done) and no longer meets the new AC, move it back and re-open the affected `.thinkube/specs/SP-{n}.md` checkboxes. Tell the user what changed.
-   - **`specChange: "metadata"`** (an issue-type/label/sub-issue/status/comment change, or an AC checkbox toggle): not a real change — no re-verification; the flag clears once the Task is next touched.
-   - Handle stale siblings one at a time; finish the sweep before moving on.
-7. **Pick the next Task.** Same priority rule as `/pair-start`: top of Ready under the same Story, satisfying dependencies. If no Ready tasks remain, surface that the Story is done-ish and suggest `/retro` or progressing other Stories.
-8. **Advance and load context.** `move_task` for the picked Task → In Progress. Then `mcp__thinkube-kanban__get_issue` for it and `get_thinkube_file specs/SP-{n}.md` for the parent Spec section it implements.
-9. **Brief the user.**
+   - On red: **stop**. Surface the failures to the user **verbatim**. Do not move the card. Suggest fixes; the user re-runs `/pair-next` after addressing them.
+3. **Move the finished slice to Done.** On green: `mcp__thinkube-kanban__move_slice { slice: "SP-{n}_SL-{m}", status: "Done" }`. This sets the slice's `status: done` and **stamps `verified_req_hash`** with the Spec's current requirement-hash automatically — you don't write that field by hand.
+4. **Check the satisfied AC on the Spec.** If the completed slice satisfied a specific acceptance criterion, mark that `- [ ]` checked (`- [x]`) in `.thinkube/specs/SP-{n}/spec.md` via `Edit`. (Toggling a checkbox is a metadata change — it does not mark other slices stale.) The → Done gate wants the AC the slice satisfies checked.
+5. **Stale-spec sweep.** Before picking the next slice, check whether any **done** sibling under the active Spec went stale. From `list_board`, each card carries `specStale` (bool) and `specChange` (`none` | `metadata` | `requirements`):
+   - **`specChange: "requirements"`** (substantively stale — the Spec's `## Acceptance Criteria` text / `## Design` / `## Constraints` changed since this slice was verified, i.e. current requirement-hash ≠ the slice's `verified_req_hash`): **resolve it before starting new work.** Re-run the `verifier` against the current Spec; if the slice no longer meets the new AC, move it back to `Doing` and re-open the affected `.thinkube/specs/SP-{n}/spec.md` checkbox. Tell the user what changed.
+   - **`specChange: "metadata"`** (a status move, priority/theme/due edit, or an AC checkbox toggle): not a real change — no re-verification.
+   - Handle stale slices one at a time; finish the sweep before moving on.
+6. **Pick the next slice.** Same priority rule as `/pair-start`: top of Ready under the same Spec, `depends_on` satisfied. If no Ready slices remain, surface that the Spec is done-ish and suggest `/retro` or moving to another Spec.
+7. **Advance and load context.** `move_slice { slice, status: "Doing" }` for the picked slice. Then `get_slice` for its body and `get_thinkube_file specs/SP-{n}/spec.md` for the parent Spec section it implements.
+8. **Brief the user.**
 
 ## Constraints
 
-- **Verifier red is non-negotiable.** Don't move cards while tests are failing, ever. Suggest fixes; let the user fix; re-run.
-- **One Task at a time.** Don't fan out into parallel In-Progress cards in a single `/pair-next` call. Parallel work is the user's choice, run separately.
-- **Don't bypass the chunk-11 gates.** If the gate refuses a move, surface the gate's reason and stop. Don't try to work around with `update_issue` to fake the underlying condition.
-- **Comment quality.** The comment exists for the future reader. One paragraph: what changed, why, what's risky. Not a diff dump.
-- **Staleness baseline (SP-86).** Moving a Task to `Verify` (or `Done`) auto-records the Spec requirement-hash it was verified against — that baseline is exactly what the step-6 sweep compares against. You don't stamp it by hand; just move the card. A Task with no baseline yet (never verified) is never flagged stale.
+- **Verifier red is non-negotiable.** Don't move a slice to Done while the checks are failing, ever. Suggest fixes; let the user fix; re-run.
+- **One slice in flight per Spec.** Don't fan out into parallel Doing cards in a single `/pair-next` call.
+- **Don't fake the gate.** If `move_slice` refuses a move, surface the reason and stop. Don't try to work around it.
+- **Don't stamp `verified_req_hash` by hand.** `move_slice → Done` records the Spec requirement-hash the slice was verified against — that baseline is exactly what the step-5 sweep compares against. A slice with no baseline yet (never verified) is never flagged stale.
 
 ## Output
 
 ```
-🔬 Verify: Task #142
-   tests:    ✅ 247 passed
-   lint:     ✅ clean
-   typecheck:✅ clean
+🔬 Verify: SP-{n}_SL-3
+   tsc       ✅ clean
+   webview   ✅ built
+   tests     ✅ 18 passed
 
-✍ Comment posted on #142
-🟢 #142 → Review
+🟢 SP-{n}_SL-3 → Done   (verified_req_hash stamped)
+☑ Checked AC #2 on SP-{n}/spec.md
 
-▶ Next pick: Task #143 — <title>
-   spec: SP-50, satisfies AC #3
-🟢 #143 → In Progress
+▶ Next pick: SP-{n}_SL-4 — <title>
+   satisfies AC #3
+🟢 SP-{n}_SL-4 → Doing
 
 Loaded:
-   - Task #143 body (description above)
-   - SP-50 Design section
-   - Files in the file-plan touched by this task: src/auth/handler.ts, src/auth/handler.test.ts
+   - SP-{n}_SL-4 body (description above)
+   - SP-{n} Design section
+   - Files in the file-plan touched by this slice: src/auth/handler.ts, src/auth/handler.test.ts
 
-Ready to pair on Task #143. Tell me what you want to do first.
+Ready to pair on SP-{n}_SL-4. Tell me what you want to do first.
 ```
 
 ## Safety / fallback
 
-- **Verifier subagent missing.** If `.claude/agents/verifier.md` isn't installed, run the test/lint/typecheck commands directly via `Bash` instead. Suggest re-installing the bundle.
-- **Test command not detected.** Tell the user. Don't guess — ask for the right command and add it to `repo-conventions`.
-- **Move-card gate refuses.** Surface the reason verbatim. If it's the In-Progress→Review gate complaining about no comments, you didn't yet post one — check ordering. If Review→Verify is rejecting because parent Spec ACs aren't all checked, point the user at the unchecked items.
-- **Token lacks `project` scope.** The card move fails. The work is verified and the comment is posted; only the kanban placement is missing. Tell the user to refresh their token.
+- **Verifier subagent missing.** If `.claude/agents/verifier.md` isn't installed, run the `repo-conventions` verification recipe directly via `Bash` instead. Suggest re-installing the bundle.
+- **Verification recipe not detected.** Tell the user. Don't guess — ask for the right command and add it to `repo-conventions`.
+- **`move_slice` gate refuses.** Surface the reason verbatim. If → Done is rejecting because the satisfied AC isn't checked on the Spec, check it first (step 4) and retry.
+- **Navigator mode.** The MCP server refuses board writes from Claude. Verification still runs and the AC edit is proposed; tell the user to make the move themselves.
