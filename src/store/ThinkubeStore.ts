@@ -6,8 +6,10 @@
  *
  *   .thinkube/epics/EP-{n}.md             kind=epic
  *   .thinkube/stories/ST-{n}.md           kind=story
- *   .thinkube/specs/SP-{n}.md             kind=spec
- *   .thinkube/specs/SP-{n}-tasks.md       kind=task-decomposition
+ *   .thinkube/specs/SP-{n}/spec.md        kind=spec    (Tandem)
+ *   .thinkube/specs/SP-{n}/SL-{m}.md      kind=slice   (Tandem, per-Spec numbering)
+ *   .thinkube/specs/SP-{n}.md             kind=spec    (legacy flat)
+ *   .thinkube/specs/SP-{n}-tasks.md       kind=task-decomposition (legacy)
  *   .thinkube/decisions/ADR-{n}.md        kind=decision
  *   .thinkube/retros/{YYYY-MM-DD}.md      kind=retro
  *
@@ -76,7 +78,7 @@ export interface FileChange {
   /** Relative path under `.thinkube/`, e.g. `specs/SP-50.md`. */
   relativePath: string;
   /** Kind inferred from the path, if recognizable. */
-  kind?: ListableKind | "task-decomposition";
+  kind?: ListableKind | "task-decomposition" | "slice";
   type: "created" | "changed" | "deleted";
 }
 
@@ -204,6 +206,88 @@ export class ThinkubeStore implements vscode.Disposable {
     }
   }
 
+  // ─── Tandem: Spec → Slice (nested layout) ───────────────────────────────
+  //   .thinkube/specs/SP-{n}/spec.md      the Spec document
+  //   .thinkube/specs/SP-{n}/SL-{m}.md    its Slices (numbered per-Spec)
+
+  /** Path to a Spec's document under its folder. */
+  pathForSpecDoc(specNumber: number): string {
+    return `${KIND_TO_DIR.spec}/SP-${specNumber}/spec.md`;
+  }
+
+  /** Path to a Slice file under its parent Spec's folder. */
+  pathForSlice(specNumber: number, sliceNumber: number): string {
+    return `${KIND_TO_DIR.spec}/SP-${specNumber}/SL-${sliceNumber}.md`;
+  }
+
+  /** The canonical human handle for a slice, e.g. `SP-3_SL-42`. */
+  sliceHandle(specNumber: number, sliceNumber: number): string {
+    return `SP-${specNumber}_SL-${sliceNumber}`;
+  }
+
+  /** Spec numbers (the `SP-{n}` folders) under `specs/`, ascending. */
+  async listSpecDirs(): Promise<number[]> {
+    const dir = path.join(this.thinkubeDir, KIND_TO_DIR.spec);
+    let names: string[];
+    try {
+      names = await fs.readdir(dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+    const nums: number[] = [];
+    for (const n of names) {
+      // Folders only: a legacy `SP-{n}.md` file has the `.md` extension.
+      const m = /^SP-(\d+)$/.exec(n);
+      if (m) nums.push(Number(m[1]));
+    }
+    return nums.sort((a, b) => a - b);
+  }
+
+  /**
+   * Slice file paths (relative) under one Spec, or across all Specs when
+   * `specNumber` is omitted. Includes archived slices (their files are kept).
+   */
+  async listSlices(specNumber?: number): Promise<string[]> {
+    const specs = specNumber != null ? [specNumber] : await this.listSpecDirs();
+    const out: string[] = [];
+    for (const n of specs) {
+      const dir = path.join(this.thinkubeDir, KIND_TO_DIR.spec, `SP-${n}`);
+      let names: string[];
+      try {
+        names = await fs.readdir(dir);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw err;
+      }
+      for (const nm of names) {
+        if (/^SL-\d+\.md$/.test(nm))
+          out.push(`${KIND_TO_DIR.spec}/SP-${n}/${nm}`);
+      }
+    }
+    return out.sort();
+  }
+
+  // ── Monotonic number allocators ──
+  // Archive-don't-delete keeps every number claimed by a file, so `max + 1`
+  // can never reuse a freed number (ADR-0007).
+
+  /** Next repo-wide Spec number = highest existing `SP-{n}` folder + 1. */
+  async nextSpecNumber(): Promise<number> {
+    const nums = await this.listSpecDirs();
+    return (nums.length ? Math.max(...nums) : 0) + 1;
+  }
+
+  /** Next per-Spec Slice number = highest existing `SL-{m}` under that Spec + 1. */
+  async nextSliceNumber(specNumber: number): Promise<number> {
+    let max = 0;
+    for (const rel of await this.listSlices(specNumber)) {
+      const m = /SL-(\d+)\.md$/.exec(rel);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+    return max + 1;
+  }
+
   // ─── Write ──────────────────────────────────────────────────────────────
 
   /**
@@ -322,7 +406,9 @@ function inferKindFromPath(rel: string): FileChange["kind"] {
   if (rel.startsWith(`${KIND_TO_DIR.story}/`) && rel.endsWith(".md"))
     return "story";
   if (rel.startsWith(`${KIND_TO_DIR.spec}/`) && rel.endsWith(".md")) {
-    return /-tasks\.md$/.test(rel) ? "task-decomposition" : "spec";
+    if (/\/SL-\d+\.md$/.test(rel)) return "slice"; // nested Tandem slice
+    if (/-tasks\.md$/.test(rel)) return "task-decomposition"; // legacy
+    return "spec"; // SP-{n}/spec.md or legacy SP-{n}.md
   }
   if (rel.startsWith(`${KIND_TO_DIR.decision}/`) && rel.endsWith(".md"))
     return "decision";
