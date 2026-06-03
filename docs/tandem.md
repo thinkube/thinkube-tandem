@@ -4,7 +4,7 @@
 
 Tandem is not "agile, but lighter." It's what a methodology looks like when you
 design it from scratch for a human pairing with an AI, where the repository itself
-is the board. Most of agile's machinery exists to coordinate *people*; when the team
+is the board. Most of agile's machinery exists to coordinate _people_; when the team
 is one person and one model sharing one source of truth, that machinery isn't
 trimmed away — it never needs to exist.
 
@@ -20,13 +20,13 @@ Everything in Tandem follows from two starting assumptions:
 
 ## What follows (not pruned — derived)
 
-| A team methodology has…       | …because                              | A pair on a repo gets…                                  |
-| ----------------------------- | ------------------------------------- | ------------------------------------------------------- |
-| Epic / Story planning tiers   | you divide and align work across people | nothing extra — a pair doesn't split across people. **Spec → Task** is enough. |
-| An external issue tracker     | people need a shared place to coordinate | the repo *is* the board. Tasks are committed files.     |
-| Review → Verify handoff lanes | work passes between a reviewer and a verifier | one shared context. Columns collapse to **Ready → Doing → Done**. |
-| Sign-off comments / approvals | an async record for the next human    | no second human → dropped.                              |
-| "Done" = a human approves     | humans sign off on each other's work  | the second teammate is a machine that runs tests → **done = green**. |
+| A team methodology has…       | …because                                      | A pair on a repo gets…                                                         |
+| ----------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Epic / Story planning tiers   | you divide and align work across people       | nothing extra — a pair doesn't split across people. **Spec → Task** is enough. |
+| An external issue tracker     | people need a shared place to coordinate      | the repo _is_ the board. Tasks are committed files.                            |
+| Review → Verify handoff lanes | work passes between a reviewer and a verifier | one shared context. Columns collapse to **Ready → Doing → Done**.              |
+| Sign-off comments / approvals | an async record for the next human            | no second human → dropped.                                                     |
+| "Done" = a human approves     | humans sign off on each other's work          | the second teammate is a machine that runs tests → **done = green**.           |
 
 So nobody can say "you did scrum wrong" — Tandem never claimed to be scrum. Different
 axioms, different shape.
@@ -38,8 +38,8 @@ axioms, different shape.
 **The hierarchy is two levels:**
 
 - **Spec** — a deliverable unit. Carries the acceptance criteria, the design, and the
-  file plan. It's the *document*.
-- **Task** — a 1–3 hour piece of work under a Spec. It's a *card* on the board.
+  file plan. It's the _document_.
+- **Task** — a 1–3 hour piece of work under a Spec. It's a _card_ on the board.
 
 There are no Epics or Stories. To group related Specs (an "auth" push, a "billing"
 effort), you tag them with a `theme:` and, if you want a narrative, jot a line in
@@ -62,7 +62,7 @@ the whole board, history, and memory; there is nothing else to back up.
 **Two gates, both checked from files:**
 
 - A task can enter **Ready** only if its parent Spec has real acceptance criteria.
-- A task is **Done** only when the verifier is green *and* the acceptance criterion
+- A task is **Done** only when the verifier is green _and_ the acceptance criterion
   it satisfies is checked.
 
 **One rule above all: no green = not done.** Tests, lint, and typecheck pass before a
@@ -93,7 +93,7 @@ non-negotiable.
   comments. There's no second human to coordinate with.
 - **No invented dialect.** "Spec," "task," "acceptance criteria," "verify," "done"
   mean what you already think — which also means your AI pair understands them with
-  no instruction. The only coined word is the name on the box: *Tandem*.
+  no instruction. The only coined word is the name on the box: _Tandem_.
 
 ## Who it's for
 
