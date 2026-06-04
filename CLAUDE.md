@@ -32,6 +32,8 @@ Explorer-only context menu (`Open Here`) that opens a new Claude Code conversati
 
 Wrappers live at `wrapper/` in the repo and are copied to `dist/wrapper/` by `scripts/build-assets.mjs` (run after `tsc` via `npm run compile`). Wrapper-takeover policy: register only if the setting is empty or already points at one of our installed paths; unknown third-party wrappers trigger a one-time confirmation toast.
 
+Because the hack roots sessions outside `workspaceFolders[0]`, claude-vscode's Session History picker can't see them and a window reload orphans their tabs. `SessionLinkService` (`src/services/SessionLinkService.ts` + pure core in `sessionLinks.ts`) bridges this by symlinking their transcripts into the picker's project dir. **This and the wrapper rely on reverse-engineered claude-code behaviour — read `docs/claude-code-internals.md` before touching either**, and re-verify its findings (§7 playbook) after claude-code updates.
+
 ### 2. Claude Code configuration manager (the larger feature)
 
 A sidebar ("Thinkube AI" activity-bar view) with two panels:

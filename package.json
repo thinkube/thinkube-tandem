@@ -44,23 +44,12 @@
           "contextualTitle": "Tandem Boards"
         },
         {
-          "id": "thinkubeBundleTree",
-          "name": "Project",
-          "contextualTitle": "Thinkube Project"
-        },
-        {
           "id": "claudeConfigTree",
           "name": "Configuration",
           "contextualTitle": "Claude Code Configuration"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "thinkubeBundleTree",
-        "contents": "Set up this project for the Thinkube methodology:\n\n[$(package) Install Methodology Bundle](command:thinkube.kanban.installBundle)\nDrop the skills, agents, and settings into .claude/."
-      }
-    ],
     "commands": [
       {
         "command": "thinkube.boards.refresh",
@@ -79,6 +68,18 @@
         "title": "Enable Methodology Here",
         "category": "Thinkube Boards",
         "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.boards.newClaudeSession",
+        "title": "New Claude Session Here",
+        "category": "Thinkube Boards",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "thinkube.boards.resumeClaudeSession",
+        "title": "Resume Claude Session…",
+        "category": "Thinkube Boards",
+        "icon": "$(history)"
       },
       {
         "command": "thinkube-ai.claude.openHere",
@@ -213,12 +214,6 @@
         "title": "Methodology Bundle Diff",
         "category": "Thinkube Kanban",
         "icon": "$(diff)"
-      },
-      {
-        "command": "thinkube.kanban.refreshBundleTree",
-        "title": "Refresh Methodology Bundle Tree",
-        "category": "Thinkube Kanban",
-        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -237,26 +232,6 @@
           "command": "thinkube.switchProject",
           "when": "view == claudeConfigTree",
           "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.kanban.installBundle",
-          "when": "view == thinkubeBundleTree",
-          "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.kanban.statusBundle",
-          "when": "view == thinkubeBundleTree",
-          "group": "navigation@2"
-        },
-        {
-          "command": "thinkube.kanban.diffBundle",
-          "when": "view == thinkubeBundleTree",
-          "group": "navigation@3"
-        },
-        {
-          "command": "thinkube.kanban.refreshBundleTree",
-          "when": "view == thinkubeBundleTree",
-          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -269,6 +244,26 @@
           "command": "thinkube.boards.open",
           "when": "view == thinkubeBoards && viewItem == tandemBoardEnabled",
           "group": "inline"
+        },
+        {
+          "command": "thinkube.boards.newClaudeSession",
+          "when": "view == thinkubeBoards && viewItem =~ /tandemBoard/",
+          "group": "inline@8"
+        },
+        {
+          "command": "thinkube.boards.resumeClaudeSession",
+          "when": "view == thinkubeBoards && viewItem =~ /tandemBoard/",
+          "group": "inline@9"
+        },
+        {
+          "command": "thinkube.kanban.installBundle",
+          "when": "view == thinkubeBoards && viewItem =~ /tandemBundle/",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.kanban.diffBundle",
+          "when": "view == thinkubeBoards && viewItem =~ /tandemBundle/",
+          "group": "inline@2"
         },
         {
           "command": "thinkube.addHook",
@@ -367,11 +362,6 @@
     "configuration": {
       "title": "Thinkube Kanban",
       "properties": {
-        "thinkube.kanban.folder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional: absolute path of the git repository the methodology bundle + kanban MCP server operate on. The Boards navigator opens any repo's .thinkube/ board regardless of this; it only pins which root the MCP server serves."
-        },
         "thinkube.kanban.allowAIWrites": {
           "type": "boolean",
           "default": true,

@@ -20,12 +20,7 @@
 import { Octokit } from "@octokit/rest";
 
 import { AuthService } from "./AuthService";
-import {
-  GraphQLCaller,
-  IssueClassifier,
-  Kind,
-  KINDS,
-} from "./issueTypes";
+import { GraphQLCaller, IssueClassifier, Kind, KINDS } from "./issueTypes";
 
 export interface RepoCoords {
   owner: string;

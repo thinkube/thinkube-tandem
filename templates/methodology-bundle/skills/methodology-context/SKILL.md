@@ -20,9 +20,9 @@ Consequences: the entire artifact set — specs, slices, decisions, retros — l
 
 Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an optional one-paragraph `.thinkube/roadmap.md`) — not a tier.
 
-| Tier  | Lives at                           | Card? | Purpose |
-| ----- | ---------------------------------- | ----- | ------- |
-| Spec  | `.thinkube/specs/SP-{n}/spec.md`   | No — the document | The documented unit of work: acceptance criteria, constraints, design, file plan. |
+| Tier  | Lives at                           | Card?                 | Purpose                                                                              |
+| ----- | ---------------------------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| Spec  | `.thinkube/specs/SP-{n}/spec.md`   | No — the document     | The documented unit of work: acceptance criteria, constraints, design, file plan.    |
 | Slice | `.thinkube/specs/SP-{n}/SL-{m}.md` | Yes — flows the board | One coherent end-to-end change you verify-and-commit as a single "done" (one green). |
 
 - A **Slice** is **vertical** — a coherent end-to-end behaviour that, once green, is demonstrable on its own — **not a layer or file** ("add the Redis store" is a fragment of a slice, not a slice). A slice is **not** a renamed atomic task; slicing by layer/file recreates the tiny-task soup the unit exists to prevent.
@@ -31,7 +31,7 @@ Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an
 
 ## Card handle
 
-The canonical handle for a slice is **`SP-{n}_SL-{m}`** — e.g. `SP-3_SL-42` — hyphen *within* each id, underscore *joins* them. Used identically in the filename, the board chip, your instructions ("work on `SP-3_SL-42`"), and my references back.
+The canonical handle for a slice is **`SP-{n}_SL-{m}`** — e.g. `SP-3_SL-42` — hyphen _within_ each id, underscore _joins_ them. Used identically in the filename, the board chip, your instructions ("work on `SP-3_SL-42`"), and my references back.
 
 - Slices are numbered **per-Spec**: `SL-1`, `SL-2`… restart within each Spec, so a new Spec starts at `SL-1` and numbers stay small.
 - Handles are **per-repo** — each repo's board has its own `SP-`/`SL-` sequences. `SP-3_SL-42` is unique within a board; across repos, qualify by repo ("`SP-3_SL-42` in the extension").
@@ -89,20 +89,20 @@ Acceptance criteria are elicited from the **user** during `/spec-prepare` — th
 
 ## Three-column workflow
 
-| Column | Meaning |
-| ------ | ------- |
-| Ready  | The parent Spec is complete (gate passes); the slice is available to pull. |
+| Column | Meaning                                                                         |
+| ------ | ------------------------------------------------------------------------------- |
+| Ready  | The parent Spec is complete (gate passes); the slice is available to pull.      |
 | Doing  | The pair is actively working this slice. Keep **one slice in flight per Spec**. |
-| Done   | Verifier green for the slice, and the AC it satisfies is checked on the Spec. |
+| Done   | Verifier green for the slice, and the AC it satisfies is checked on the Spec.   |
 
 A Spec still being authored (no AC yet) is pre-board; its slices don't exist until it's sliced.
 
 ## Quality gates (two; file checks)
 
-| Transition       | Gate |
-| ---------------- | ---- |
-| → Ready (entry)  | The slice's parent Spec has a non-empty `## Acceptance Criteria`. |
-| → Done           | Verifier green for the slice's change, and the AC it satisfies is checked on the Spec. **Reviewer + verifier both run inside this single gate** — no Review/Verify handoff columns. |
+| Transition      | Gate                                                                                                                                                                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| → Ready (entry) | The slice's parent Spec has a non-empty `## Acceptance Criteria`.                                                                                                                   |
+| → Done          | Verifier green for the slice's change, and the AC it satisfies is checked on the Spec. **Reviewer + verifier both run inside this single gate** — no Review/Verify handoff columns. |
 
 The slice **is** the verification boundary — "one green." (The old "≥1 comment" gate is gone: there is no second human to hand off to.)
 

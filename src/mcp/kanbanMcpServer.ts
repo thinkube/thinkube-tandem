@@ -6,10 +6,19 @@ import "./installVscodeStub";
 /**
  * Stdio MCP server for the Thinkube methodology kanban (files-first / Tandem).
  *
- * Launched as a subprocess by `KanbanMcpProvider` via VS Code's MCP server
- * definition mechanism. Talks the standard MCP protocol over stdio so any
- * MCP client (Claude Code chat, mcp-inspector, etc.) can drive the same
- * surface the panels render.
+ * Board-independent (ADR-0007 Phase-6 decision): ONE server serves every
+ * enabled board. Each tool takes an optional `board` parameter resolved per
+ * call, so a session can work across boards and a board enabled mid-session
+ * is immediately addressable — no relaunch. When `board` is omitted the
+ * session's own repo is used (the repo containing this process's cwd; Claude
+ * Code spawns `.mcp.json` servers with the session's cwd).
+ *
+ * Board addressing: the canonical id is the repo's HOME-RELATIVE path
+ * (e.g. `apps/vllm`, `thinkube-platform/core/thinkube`). The workspace
+ * organization is semantic, so bare basenames are systemically ambiguous
+ * (template vs deployed app) and are NEVER resolved — an unknown id fails
+ * with candidate suggestions, and `list_boards` supplies the vocabulary.
+ * Absolute paths are also accepted.
  *
  * Source of truth: the committed `.thinkube/specs/SP-{n}/SL-{m}.md` slice
  * files (and the parent `SP-{n}/spec.md` documents). There is NO GitHub here —
@@ -18,15 +27,26 @@ import "./installVscodeStub";
  * surface and the kanban panel always agree.
  *
  * State plumbing: this is a separate Node process, so settings come in via
- * environment variables set by the provider:
+ * environment variables (baked into `.mcp.json` by the bundle installer, or
+ * injected by the VS Code provider):
  *
- *   THINKUBE_WORKSPACE        absolute path to the workspace root (the
- *                             `.thinkube` parent)
- *   THINKUBE_ALLOW_AI_WRITES  "true" | "false" — gates every mutating tool
+ *   THINKUBE_ROOTS            path-delimiter-separated directories scanned
+ *                             for boards (repos containing `.thinkube/`).
+ *                             Optional — defaults to the session's own repo.
+ *   THINKUBE_ALLOW_AI_WRITES  "true" | "false" — gates every mutating tool.
+ *                             One global flag: solo platform, git is the undo
+ *                             (ADR-0007 Phase-6 decision).
+ *   THINKUBE_WORKSPACE        legacy single-board binding; honoured as a
+ *                             fallback root / default board so `.mcp.json`
+ *                             files from older bundle installs keep working.
  *
  * Logging: stderr only. VS Code captures it under the MCP server's output
  * channel; never print to stdout — that channel is the protocol stream.
  */
+import * as fsSync from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
 import { requirementHash } from "../methodology/specChange";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import type { Frontmatter } from "../store/frontmatter";
@@ -37,23 +57,24 @@ import {
 } from "../views/kanban/host/storage/sliceBoard";
 
 interface ServerEnv {
-  workspace: string;
+  roots: string[];
   allowAIWrites: boolean;
+  legacyWorkspace?: string;
 }
 
 function readEnv(): ServerEnv {
-  const workspace = process.env.THINKUBE_WORKSPACE ?? "";
-  if (!workspace) die("THINKUBE_WORKSPACE not set");
-
+  const roots = (process.env.THINKUBE_ROOTS ?? "")
+    .split(path.delimiter)
+    .map((r) => r.trim())
+    .filter(Boolean);
+  const legacyWorkspace = (process.env.THINKUBE_WORKSPACE ?? "").trim();
   const allowAIWrites =
     (process.env.THINKUBE_ALLOW_AI_WRITES ?? "true").toLowerCase() === "true";
-
-  return { workspace, allowAIWrites };
-}
-
-function die(msg: string): never {
-  process.stderr.write(`[thinkube-mcp] fatal: ${msg}\n`);
-  process.exit(2);
+  return {
+    roots,
+    allowAIWrites,
+    legacyWorkspace: legacyWorkspace || undefined,
+  };
 }
 
 function log(msg: string): void {
@@ -62,9 +83,10 @@ function log(msg: string): void {
 
 async function main(): Promise<void> {
   const env = readEnv();
-  log(`booting: workspace=${env.workspace} writes=${env.allowAIWrites}`);
-
-  const store = new ThinkubeStore(env.workspace);
+  const boards = new BoardRegistry(env);
+  log(
+    `booting: roots=[${env.roots.join(", ")}] writes=${env.allowAIWrites} cwd=${process.cwd()} defaultBoard=${boards.defaultBoardPath ?? "(none)"}`,
+  );
 
   // Dynamic import: the MCP SDK is ESM-only, this entrypoint is CJS.
   const sdkServer: any =
@@ -74,11 +96,11 @@ async function main(): Promise<void> {
   const sdkTypes: any = await import("@modelcontextprotocol/sdk/types.js");
 
   const server = new sdkServer.Server(
-    { name: "thinkube-kanban", version: "0.1.0" },
+    { name: "thinkube-kanban", version: "0.2.0" },
     { capabilities: { tools: {}, resources: {} } },
   );
 
-  const ctx: HandlerContext = { env, store };
+  const ctx: HandlerContext = { env, boards };
   registerHandlers(server, sdkTypes, ctx);
 
   const transport = new sdkStdio.StdioServerTransport();
@@ -86,18 +108,193 @@ async function main(): Promise<void> {
   log("connected");
 }
 
-main().catch((err) => {
-  process.stderr.write(
-    `[thinkube-mcp] startup failed: ${(err as Error).stack ?? err}\n`,
-  );
-  process.exit(1);
-});
+// ─── Board registry ─────────────────────────────────────────────────────────
+
+export interface BoardInfo {
+  /** Canonical id: home-relative path (absolute when outside $HOME). */
+  id: string;
+  /** Basename — display only, never an address. */
+  name: string;
+  /** Absolute repo path. */
+  path: string;
+}
+
+const DISCOVERY_TTL_MS = 10_000;
+const MAX_WALK_DEPTH = 3;
+
+/**
+ * Discovers boards (repos with a committed `.thinkube/`) under the configured
+ * roots and resolves `board` arguments to `ThinkubeStore`s. Discovery mirrors
+ * the navigator's `discoverRepos`: a directory containing `.git` is a repo
+ * and a leaf; it is a board iff it also contains `.thinkube/`.
+ */
+export class BoardRegistry {
+  /** The session's own board: the enabled repo containing process.cwd(). */
+  readonly defaultBoardPath: string | undefined;
+
+  private readonly roots: string[];
+  private readonly stores = new Map<string, ThinkubeStore>();
+  private discovered: BoardInfo[] | undefined;
+  private discoveredAt = 0;
+
+  constructor(env: ServerEnv) {
+    this.defaultBoardPath =
+      findEnclosingBoard(process.cwd()) ??
+      (env.legacyWorkspace && isBoard(env.legacyWorkspace)
+        ? env.legacyWorkspace
+        : undefined);
+    const roots = [...env.roots];
+    // Always be able to discover at least the session's own board (and the
+    // legacy workspace, until its .mcp.json is re-installed with roots).
+    if (this.defaultBoardPath) roots.push(this.defaultBoardPath);
+    if (env.legacyWorkspace) roots.push(env.legacyWorkspace);
+    this.roots = [...new Set(roots)];
+  }
+
+  list(forceRefresh = false): BoardInfo[] {
+    const now = Date.now();
+    if (
+      !this.discovered ||
+      forceRefresh ||
+      now - this.discoveredAt > DISCOVERY_TTL_MS
+    ) {
+      const found = new Map<string, BoardInfo>();
+      for (const root of this.roots) {
+        walkForBoards(root, 0, found);
+      }
+      this.discovered = [...found.values()].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
+      this.discoveredAt = now;
+    }
+    return this.discovered;
+  }
+
+  /**
+   * Resolve a `board` argument to a store. Omitted → the session's own
+   * board. Canonical id or absolute path → that board. Anything else —
+   * including a bare basename, even a currently-unique one — fails with
+   * candidate suggestions ("currently unique" is one deploy away from
+   * ambiguous).
+   */
+  resolve(boardArg: string | undefined): ThinkubeStore {
+    if (boardArg === undefined || boardArg.trim() === "") {
+      if (!this.defaultBoardPath) {
+        throw new Error(
+          "No default board: this session's cwd is not inside a repo with a committed .thinkube/. Pass `board` explicitly — call list_boards for the available ids.",
+        );
+      }
+      return this.storeFor(this.defaultBoardPath);
+    }
+
+    const arg = boardArg.trim();
+    if (path.isAbsolute(arg)) {
+      if (!isBoard(arg)) {
+        throw new Error(
+          `"${arg}" is not a board — no committed .thinkube/ directory there.`,
+        );
+      }
+      return this.storeFor(arg);
+    }
+
+    const boards = this.list();
+    const exact = boards.find((b) => b.id === normalizeId(arg));
+    if (exact) return this.storeFor(exact.path);
+
+    // Never resolve fuzzy/basename matches — suggest instead.
+    const needle = arg.toLowerCase();
+    const candidates = boards
+      .filter(
+        (b) =>
+          b.name.toLowerCase() === needle ||
+          b.id.toLowerCase().includes(needle),
+      )
+      .map((b) => b.id);
+    const hint =
+      candidates.length > 0
+        ? ` Did you mean: ${candidates.join(", ")}?`
+        : " Call list_boards for the available ids.";
+    throw new Error(
+      `Unknown board "${arg}" — boards are addressed by their home-relative id (e.g. thinkube-platform/core/thinkube), never by bare name.${hint}`,
+    );
+  }
+
+  defaultBoardId(): string | undefined {
+    return this.defaultBoardPath ? boardId(this.defaultBoardPath) : undefined;
+  }
+
+  private storeFor(absPath: string): ThinkubeStore {
+    let store = this.stores.get(absPath);
+    if (!store) {
+      store = new ThinkubeStore(absPath);
+      this.stores.set(absPath, store);
+    }
+    return store;
+  }
+}
+
+function isBoard(dir: string): boolean {
+  try {
+    return fsSync.statSync(path.join(dir, ".thinkube")).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Walk up from `start` to the enclosing repo with a committed .thinkube/. */
+function findEnclosingBoard(start: string): string | undefined {
+  let dir = path.resolve(start);
+  for (;;) {
+    if (isBoard(dir)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/** Canonical board id: home-relative path (forward slashes), else absolute. */
+function boardId(absPath: string): string {
+  const rel = path.relative(os.homedir(), absPath);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return absPath;
+  return rel.split(path.sep).join("/");
+}
+
+function normalizeId(id: string): string {
+  return id.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function walkForBoards(
+  dir: string,
+  depth: number,
+  out: Map<string, BoardInfo>,
+): void {
+  let entries: fsSync.Dirent[];
+  try {
+    entries = fsSync.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const isRepo = entries.some((e) => e.isDirectory() && e.name === ".git");
+  if (isRepo || isBoard(dir)) {
+    if (isBoard(dir)) {
+      const abs = path.resolve(dir);
+      out.set(abs, { id: boardId(abs), name: path.basename(abs), path: abs });
+    }
+    return; // a repo is a leaf — no nested boards
+  }
+  if (depth >= MAX_WALK_DEPTH) return;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+    walkForBoards(path.join(dir, e.name), depth + 1, out);
+  }
+}
 
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 interface HandlerContext {
   env: ServerEnv;
-  store: ThinkubeStore;
+  boards: BoardRegistry;
 }
 
 function registerHandlers(server: any, types: any, ctx: HandlerContext): void {
@@ -166,14 +363,35 @@ function registerHandlers(server: any, types: any, ctx: HandlerContext): void {
 
 // ─── Tool definitions + dispatcher ──────────────────────────────────────────
 
+/**
+ * The optional `board` parameter shared by every board-scoped tool.
+ */
+const BOARD_PARAM = {
+  board: {
+    type: "string",
+    description:
+      "Board id — the repo's home-relative path (e.g. `thinkube-platform/core/thinkube`), or an absolute path. Omit for the current session's own board. Bare repo names are not accepted (ambiguous: the workspace layout is semantic) — call `list_boards` for the ids.",
+  },
+} as const;
+
 const TOOL_DEFS = [
+  {
+    name: "list_boards",
+    description:
+      "Discover every Tandem board: repos with a committed `.thinkube/` across the configured roots. Returns each board's canonical id (home-relative path — the value to pass as `board` to the other tools), name, and absolute path, plus which board is this session's default. The semantic location is part of the id (`apps/…` = deployed app, `user-templates/…` = template, `thinkube-platform/…` = platform code).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
   {
     name: "list_board",
     description:
       "Current Tandem board, projected from the committed `.thinkube/specs/SP-{n}/SL-{m}.md` slice files. Returns the Ready / Doing / Done columns; each card carries its slice handle (`id`, e.g. `SP-3_SL-42`), title (`description`), and `specStale` / `specChange` (whether the parent Spec's requirements changed since the slice was last verified).",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: { ...BOARD_PARAM },
       additionalProperties: false,
     },
   },
@@ -188,6 +406,7 @@ const TOOL_DEFS = [
           type: "string",
           description: "Slice handle, e.g. `SP-3_SL-42`.",
         },
+        ...BOARD_PARAM,
       },
       required: ["slice"],
       additionalProperties: false,
@@ -201,6 +420,7 @@ const TOOL_DEFS = [
       type: "object",
       properties: {
         relative_path: { type: "string", description: "e.g. specs/SP-50.md" },
+        ...BOARD_PARAM,
       },
       required: ["relative_path"],
       additionalProperties: false,
@@ -221,6 +441,7 @@ const TOOL_DEFS = [
           type: "string",
           enum: ["Ready", "Doing", "Done"],
         },
+        ...BOARD_PARAM,
       },
       required: ["slice", "status"],
       additionalProperties: false,
@@ -238,6 +459,7 @@ const TOOL_DEFS = [
           description: "Slice handle, e.g. `SP-3_SL-42`.",
         },
         body: { type: "string" },
+        ...BOARD_PARAM,
       },
       required: ["slice", "body"],
       additionalProperties: false,
@@ -252,6 +474,7 @@ const TOOL_DEFS = [
       properties: {
         title: { type: "string" },
         body: { type: "string" },
+        ...BOARD_PARAM,
       },
       required: ["title", "body"],
       additionalProperties: false,
@@ -263,7 +486,7 @@ const TOOL_DEFS = [
       "Append a retro note to today's `.thinkube/retros/{YYYY-MM-DD}.md`.",
     inputSchema: {
       type: "object",
-      properties: { body: { type: "string" } },
+      properties: { body: { type: "string" }, ...BOARD_PARAM },
       required: ["body"],
       additionalProperties: false,
     },
@@ -276,29 +499,41 @@ async function dispatchTool(
   ctx: HandlerContext,
   writeGate: (n: string) => void,
 ): Promise<unknown> {
+  if (name === "list_boards") return listBoards(ctx);
+
+  // Every other tool is board-scoped: resolve the store per call.
+  const store = ctx.boards.resolve(optString(args, "board"));
   switch (name) {
     case "list_board":
-      return listBoard(ctx);
+      return listBoard(store);
     case "get_slice":
-      return getSlice(ctx, asString(args, "slice"));
+      return getSlice(store, asString(args, "slice"));
     case "get_thinkube_file":
-      return getThinkubeFile(ctx, asString(args, "relative_path"));
+      return getThinkubeFile(store, asString(args, "relative_path"));
     case "move_slice":
       writeGate(name);
-      return moveSlice(ctx, asString(args, "slice"), asString(args, "status"));
+      return moveSlice(
+        store,
+        asString(args, "slice"),
+        asString(args, "status"),
+      );
     case "update_slice":
       writeGate(name);
-      return updateSlice(ctx, asString(args, "slice"), asString(args, "body"));
+      return updateSlice(
+        store,
+        asString(args, "slice"),
+        asString(args, "body"),
+      );
     case "write_decision":
       writeGate(name);
       return writeDecision(
-        ctx,
+        store,
         asString(args, "title"),
         asString(args, "body"),
       );
     case "write_retro_note":
       writeGate(name);
-      return writeRetroNote(ctx, asString(args, "body"));
+      return writeRetroNote(store, asString(args, "body"));
     default:
       throw new Error(`unknown tool: ${name}`);
   }
@@ -309,6 +544,17 @@ async function dispatchTool(
 const SLICE_PATH_RE = /specs\/SP-(\d+)\/SL-(\d+)\.md$/;
 const SLICE_HANDLE_RE = /^SP-(\d+)_SL-(\d+)$/;
 const VALID_STATUSES = ["ready", "doing", "done"] as const;
+
+function listBoards(ctx: HandlerContext): unknown {
+  return {
+    defaultBoard: ctx.boards.defaultBoardId() ?? null,
+    boards: ctx.boards.list(true).map((b) => ({
+      id: b.id,
+      name: b.name,
+      path: b.path,
+    })),
+  };
+}
 
 /** Parse a slice handle (`SP-3_SL-42`) → its (spec, slice) numbers. */
 function parseSliceHandle(handle: string): {
@@ -339,21 +585,21 @@ function sliceTitle(body: string | undefined, fallback: string): string {
  * `ThinkubeFilesAdapter.load()`'s read loop (we don't instantiate the adapter —
  * it builds a vscode EventEmitter, and this subprocess only has a vscode stub).
  */
-async function listBoard(ctx: HandlerContext): Promise<unknown> {
+async function listBoard(store: ThinkubeStore): Promise<unknown> {
   // Per-Spec requirement-hash, computed once per Spec (specs are few).
   const reqHashBySpec = new Map<number, string>();
-  for (const specNumber of await ctx.store.listSpecDirs()) {
-    const doc = await ctx.store.getFile(ctx.store.pathForSpecDoc(specNumber));
+  for (const specNumber of await store.listSpecDirs()) {
+    const doc = await store.getFile(store.pathForSpecDoc(specNumber));
     if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
   }
 
   const inputs: SliceInput[] = [];
-  for (const rel of await ctx.store.listSlices()) {
+  for (const rel of await store.listSlices()) {
     const m = SLICE_PATH_RE.exec(rel);
     if (!m) continue;
     const specNumber = Number(m[1]);
     const sliceNumber = Number(m[2]);
-    const parsed = await ctx.store.getFile(rel);
+    const parsed = await store.getFile(rel);
     const fm: Frontmatter = parsed?.frontmatter ?? {};
     inputs.push({
       specNumber,
@@ -368,7 +614,8 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
     });
   }
 
-  const scope = pathBasename(ctx.store.workspaceRoot) || "Tandem board";
+  // Scope = the board's canonical id, so cross-board output is unambiguous.
+  const scope = boardId(store.workspaceRoot);
   const board = buildSliceBoard(inputs, scope);
 
   const columns = board.columns.map((col) => ({
@@ -390,13 +637,16 @@ async function listBoard(ctx: HandlerContext): Promise<unknown> {
   return { scope: board.scope, columns };
 }
 
-async function getSlice(ctx: HandlerContext, handle: string): Promise<unknown> {
+async function getSlice(
+  store: ThinkubeStore,
+  handle: string,
+): Promise<unknown> {
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
-  const rel = ctx.store.pathForSlice(specNumber, sliceNumber);
-  const parsed = await ctx.store.getFile(rel);
+  const rel = store.pathForSlice(specNumber, sliceNumber);
+  const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
   return {
-    handle: ctx.store.sliceHandle(specNumber, sliceNumber),
+    handle: store.sliceHandle(specNumber, sliceNumber),
     relativePath: rel,
     frontmatter: parsed.frontmatter,
     body: parsed.body,
@@ -404,16 +654,16 @@ async function getSlice(ctx: HandlerContext, handle: string): Promise<unknown> {
 }
 
 async function getThinkubeFile(
-  ctx: HandlerContext,
+  store: ThinkubeStore,
   relativePath: string,
 ): Promise<unknown> {
-  const parsed = await ctx.store.getFile(relativePath);
+  const parsed = await store.getFile(relativePath);
   if (!parsed) throw new Error(`No file at .thinkube/${relativePath}`);
   return { relativePath, frontmatter: parsed.frontmatter, body: parsed.body };
 }
 
 async function moveSlice(
-  ctx: HandlerContext,
+  store: ThinkubeStore,
   handle: string,
   status: string,
 ): Promise<unknown> {
@@ -424,8 +674,8 @@ async function moveSlice(
     );
   }
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
-  const rel = ctx.store.pathForSlice(specNumber, sliceNumber);
-  const parsed = await ctx.store.getFile(rel);
+  const rel = store.pathForSlice(specNumber, sliceNumber);
+  const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
 
   const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
@@ -437,7 +687,7 @@ async function moveSlice(
   let baselineStamped = false;
   if (target === "done") {
     try {
-      const doc = await ctx.store.getFile(ctx.store.pathForSpecDoc(specNumber));
+      const doc = await store.getFile(store.pathForSpecDoc(specNumber));
       if (doc?.body) {
         fm.verified_req_hash = requirementHash(doc.body);
         baselineStamped = true;
@@ -449,62 +699,62 @@ async function moveSlice(
     }
   }
 
-  await ctx.store.writeFile(rel, fm, parsed.body);
+  await store.writeFile(rel, fm, parsed.body);
   return {
     ok: true,
-    slice: ctx.store.sliceHandle(specNumber, sliceNumber),
+    slice: store.sliceHandle(specNumber, sliceNumber),
     status: target,
     baselineStamped,
   };
 }
 
 async function updateSlice(
-  ctx: HandlerContext,
+  store: ThinkubeStore,
   handle: string,
   body: string,
 ): Promise<unknown> {
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
-  const rel = ctx.store.pathForSlice(specNumber, sliceNumber);
-  const parsed = await ctx.store.getFile(rel);
+  const rel = store.pathForSlice(specNumber, sliceNumber);
+  const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
-  await ctx.store.writeFile(rel, parsed.frontmatter, body);
+  await store.writeFile(rel, parsed.frontmatter, body);
   return {
     ok: true,
-    slice: ctx.store.sliceHandle(specNumber, sliceNumber),
+    slice: store.sliceHandle(specNumber, sliceNumber),
     relativePath: rel,
   };
 }
 
 async function writeDecision(
-  ctx: HandlerContext,
+  store: ThinkubeStore,
   title: string,
   body: string,
 ): Promise<unknown> {
   // Find the next ADR number — list existing decisions, pick max + 1.
-  const existing = await ctx.store.listKind("decision");
+  const existing = await store.listKind("decision");
   const max = existing
     .map((p) => /ADR-(\d+)\.md$/.exec(p))
     .map((m) => (m ? Number(m[1]) : 0))
     .reduce((a, b) => Math.max(a, b), 0);
   const n = max + 1;
-  const rel = ctx.store.pathFor("decision", n);
+  const rel = store.pathFor("decision", n);
   const frontmatter = {
     kind: "decision" as const,
     status: "active" as const,
     created: new Date().toISOString().slice(0, 10),
   };
   const fileBody = `# ${title}\n\n${body}\n`;
-  await ctx.store.writeFile(rel, frontmatter, fileBody);
+  await store.writeFile(rel, frontmatter, fileBody);
   return { relativePath: rel, number: n };
 }
 
 async function writeRetroNote(
-  ctx: HandlerContext,
+  store: ThinkubeStore,
   body: string,
 ): Promise<unknown> {
   const date = new Date().toISOString().slice(0, 10);
-  const rel = ctx.store.pathFor("retro", date);
-  const existing = await ctx.store.getFile(rel);
+  const rel = store.pathFor("retro", date);
+  const existing = await store.getFile(rel);
   const frontmatter = existing?.frontmatter ?? {
     kind: "retro" as const,
     status: "active" as const,
@@ -513,7 +763,7 @@ async function writeRetroNote(
   const previous = existing?.body ?? "";
   const stamp = new Date().toISOString().replace("T", " ").slice(0, 16);
   const appended = `${previous.trimEnd()}\n\n## ${stamp}\n\n${body}\n`;
-  await ctx.store.writeFile(rel, frontmatter, appended);
+  await store.writeFile(rel, frontmatter, appended);
   return { relativePath: rel };
 }
 
@@ -524,26 +774,28 @@ const RESOURCE_DEFS = [
     uri: "thinkube://board_state",
     name: "Board state",
     description:
-      "Current Tandem board: the Ready / Doing / Done columns projected from the committed slice files.",
+      "Current Tandem board of this session's own repo: the Ready / Doing / Done columns projected from the committed slice files. (Resources are bound to the default board; use the tools' `board` parameter for other boards.)",
     mimeType: "application/json",
   },
   {
     uri: "thinkube://thinkube_file/{path}",
     name: "A .thinkube file",
     description:
-      "Read a specific `.thinkube/*.md` file. Substitute `{path}` with the relative path.",
+      "Read a specific `.thinkube/*.md` file from this session's own repo. Substitute `{path}` with the relative path.",
     mimeType: "application/json",
   },
 ];
 
 async function readResource(uri: string, ctx: HandlerContext): Promise<string> {
+  // Resources can't take parameters — they are bound to the default board.
+  const store = ctx.boards.resolve(undefined);
   if (uri === "thinkube://board_state") {
-    return JSON.stringify(await listBoard(ctx), null, 2);
+    return JSON.stringify(await listBoard(store), null, 2);
   }
   const fileMatch = /^thinkube:\/\/thinkube_file\/(.+)$/.exec(uri);
   if (fileMatch) {
     return JSON.stringify(
-      await getThinkubeFile(ctx, decodeURIComponent(fileMatch[1])),
+      await getThinkubeFile(store, decodeURIComponent(fileMatch[1])),
       null,
       2,
     );
@@ -553,15 +805,30 @@ async function readResource(uri: string, ctx: HandlerContext): Promise<string> {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Last path segment, `/`- or `\`-delimited (no node:path import needed). */
-function pathBasename(p: string): string {
-  const parts = p.split(/[/\\]+/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : "";
-}
-
 function asString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
   if (typeof v !== "string")
     throw new Error(`argument ${key} must be a string`);
   return v;
 }
+
+function optString(
+  args: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string")
+    throw new Error(`argument ${key} must be a string`);
+  return v;
+}
+
+// Kick off LAST: `main()` references classes (BoardRegistry) that — unlike
+// function declarations — are not hoisted, so launching at the top of the
+// module dies in the temporal dead zone.
+main().catch((err) => {
+  process.stderr.write(
+    `[thinkube-mcp] startup failed: ${(err as Error).stack ?? err}\n`,
+  );
+  process.exit(1);
+});

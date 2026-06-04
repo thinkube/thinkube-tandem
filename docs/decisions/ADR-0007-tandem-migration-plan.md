@@ -11,7 +11,7 @@ repo: thinkube/thinkube-ai-integration
 
 ## Status
 
-Accepted — 2026-06-03. Operationalizes ADR-0001…0006. This is the *how* (the
+Accepted — 2026-06-03. Operationalizes ADR-0001…0006. This is the _how_ (the
 execution plan), grounded in a read-only multi-agent audit of the actual code;
 revisitable as phases land.
 
@@ -28,7 +28,7 @@ code with `file:line` evidence, replacing earlier hand estimates.
 feature; 4 MCP tool families; 4 skills), while the genuinely-new code is small.
 Risk concentrates in **one decision** (the card-identity model) plus relocating
 **one** verification-baseline stamp. The audit corrected several assumptions —
-recorded under *Estimate corrections* below.
+recorded under _Estimate corrections_ below.
 
 The full audit output (per-dimension findings + synthesis) was produced into an
 ephemeral temp file; this ADR preserves its load-bearing content so it survives.
@@ -37,9 +37,9 @@ ephemeral temp file; this ADR preserves its load-bearing content so it survives.
 
 ### A. Locked Phase-0 decisions
 
-- **Card handle = `SP-3_SL-42`** — hyphen *within* each id, underscore *joins* the
+- **Card handle = `SP-3_SL-42`** — hyphen _within_ each id, underscore _joins_ the
   two. The spec id renders identically standalone (`SP-3`) and in-handle; the `_`
-  makes the two-part structure visible. (Rejected alternatives in *Alternatives*.)
+  makes the two-part structure visible. (Rejected alternatives in _Alternatives_.)
 - **Slices numbered per-Spec** — `SL-1`, `SL-2`… restart within each Spec, so a
   fresh Spec starts at `SL-1` and numbers stay small at scale. Allocation is local
   to the Spec.
@@ -54,13 +54,13 @@ ephemeral temp file; this ADR preserves its load-bearing content so it survives.
   primitive is the one genuinely-new piece (none exists today).
 - **Files nested** — a Spec owns a folder: the Spec doc at
   `.thinkube/specs/SP-3/spec.md` and its slices at `.thinkube/specs/SP-3/SL-42.md`.
-  The folder *is* the join; reparenting is a clean `git mv`. Adjusts ADR-0003's flat
+  The folder _is_ the join; reparenting is a clean `git mv`. Adjusts ADR-0003's flat
   `slices/SL-{n}.md`.
 - **Due date + Priority retained** — as slice frontmatter (`due:`, `priority:`),
   rewriting the set-due path to write frontmatter.
 - **"≥1 comment" gate deleted** — per ADR-0001; collapses to ADR-0003's two
   file-checked gates.
-- **Internal ID plumbing = synthesize numeric** — the stored number *is* the slice
+- **Internal ID plumbing = synthesize numeric** — the stored number _is_ the slice
   number, keeping the existing numeric postMessage protocol; the webview chips
   relabel to the `SP-x_SL-y` handle (and the old dual `#42 / SP-42` chip collapses
   to one). A developer-side choice with no user-visible effect.
@@ -69,7 +69,7 @@ ephemeral temp file; this ADR preserves its load-bearing content so it survives.
 
 **Executed as additive expand-contract, green at every phase.** The verifier gate
 (`tsc --noEmit` + webview build + tests) must stay green at each phase, so the legacy
-GitHub-backed model is *kept* until the phase that deletes its consumers: new
+GitHub-backed model is _kept_ until the phase that deletes its consumers: new
 machinery is added first (expand), the old removed only once nothing references it
 (contract). Concretely — **Spec is retained** as the document tier and **Slice is
 added alongside** (not "renamed"); `epic`/`story`/`issue` survive in the types until
@@ -78,9 +78,9 @@ Phases 5–7 remove the Roadmap, wizards, and GitHub spine that use them.
 - **Phase 0 — decisions.** Closed by §A above.
 - **Phase 1 — rewrite the canonical docs FIRST.** `methodology-context/SKILL.md` +
   the bundle `CLAUDE.md` block hard-code everything the ADRs delete (4-tier table,
-  6 columns, chunk-11 gates, `SP-{n}-tasks` materializer). They *gate* every other
+  6 columns, chunk-11 gates, `SP-{n}-tasks` materializer). They _gate_ every other
   skill rewrite and the human's mental model. Cheap, unblocking.
-- **Phase 2 — extend the kind taxonomy at the root** *(done — additive)*.
+- **Phase 2 — extend the kind taxonomy at the root** _(done — additive)_.
   `frontmatter.ts` `Kind` union **adds `slice`** plus the Tandem fields (`uid`,
   `parent`, `status` ready/doing/done/archived, `theme`, `due`, `priority`,
   `verified_req_hash`, `depends_on`); `issue`/`parent_issue` kept and `@deprecated`.
@@ -160,13 +160,33 @@ the secret-scan on `ThinkubeStore.writeFile`.
 
 ## Open questions (deferred — captured so they aren't lost)
 
-- One MCP server per enabled repo (N processes) vs one server taking a repo arg.
+- ~~One MCP server per enabled repo (N processes) vs one server taking a repo arg.~~
+  **Decided 2026-06-04 (Phase-6 execution): one board-independent server; the
+  board is a per-call parameter.** Neither original option: per-repo servers
+  re-bind the server to a board at launch time (stale for boards enabled
+  mid-session, N definitions to manage), while board-as-parameter resolves the
+  board per tool call — running sessions see newly enabled boards immediately,
+  and one session can work across boards (the substrate for ADR-0002's deferred
+  rollup). Sub-decisions, all shaped by the platform being solo-by-design
+  (ADR-0001 context): (a) `allowAIWrites` stays one global flag — git is the
+  undo, `mode: navigator` the panic button; no per-board policy. (b) Board
+  identity = the **home-relative qualified path** (`apps/vllm`,
+  `thinkube-platform/core/thinkube`) — the workspace organization is semantic,
+  so bare basenames are systemically ambiguous (template vs deployed app) and
+  are **never resolved**, not even when currently unique; unknown ids fail with
+  candidate suggestions, and `list_boards` supplies the vocabulary. Omitted
+  `board` = the session's own repo (server cwd), so the common case names
+  nothing. (c) Discovery roots baked into `.mcp.json` env (`THINKUBE_ROOTS`)
+  at bundle install; deterministic across full reinstalls. (d) The baked server
+  path moves from the version-pinned extension dir to a stable globalStorage
+  copy refreshed on activation — extension updates no longer silently orphan
+  every repo's `.mcp.json`.
 - Does a `CardDetailPanel`-style detail view survive, or is the open `SL` file the
   only detail surface? (Decides delete vs rewrite of `CardDetailPanel.ts`.)
 - Broaden `gitRemote.ts` beyond github.com (Gitea/GitLab) now, or defer?
 - `retro`'s `write_retro_note` MCP tool: keep as a local-file helper, or use plain
   Write/Edit (already allowed)?
-- `BundleInstaller`'s settings-merge never *removes* entries — a one-time migration /
+- `BundleInstaller`'s settings-merge never _removes_ entries — a one-time migration /
   deny-list is needed to strip the retired `gh project` / `gh sub-issue` grants from
   existing installs.
 - Collapse the two hand-synced `types.ts` (host + webview) into one shared module.
@@ -185,7 +205,7 @@ the secret-scan on `ThinkubeStore.writeFile`.
 - **Flat `SL-42` global handle.** Rejected: opaque, ever-growing numbers at scale
   (`SL-3847`) with no grouping.
 - **Composite handle with global slice numbering** (`SP-3-SL-3847`). Rejected:
-  composite *and* huge — the worst of both; only per-Spec numbering keeps numbers
+  composite _and_ huge — the worst of both; only per-Spec numbering keeps numbers
   small.
 - **String internal IDs.** Rejected: a large webview/postMessage rewrite for a clean
   identity with no user-visible benefit; synthesize-numeric gets a working board

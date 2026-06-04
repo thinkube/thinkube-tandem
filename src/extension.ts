@@ -12,13 +12,15 @@ import {
 } from "./context/active";
 import { AuthService } from "./github/AuthService";
 import { GitHubService } from "./github/GitHubService";
-import { getMethodologyRootOrUndefined } from "./github/workspaceRepo";
 import { KanbanMcpProvider } from "./mcp/KanbanMcpProvider";
+import {
+  ensureStableServerLink,
+  stableServerScriptPath,
+} from "./mcp/stableServerPath";
 import { BundleInstaller } from "./methodology/BundleInstaller";
 import { ClaudeConfigService } from "./services/ClaudeConfigService";
 import { LauncherService } from "./services/LauncherService";
-import { ThinkubeStore } from "./store/ThinkubeStore";
-import { BundleTreeProvider } from "./views/sidebar/BundleTreeProvider";
+import { SessionLinkService } from "./services/SessionLinkService";
 import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
 import { registerBoardCommands } from "./commands/boards";
@@ -80,10 +82,20 @@ export function activate(context: vscode.ExtensionContext) {
   // from updateActiveContext above and on every config change). The tree lists
   // all projects independently of this key, so we must NOT pin it to a constant.
 
+  // Session-link maintenance — claude-code's Session History picker only
+  // scans the project dir keyed off workspaceFolders[0]; sessions rooted in
+  // other folders via "Open Here" are invisible to it, and a window reload
+  // orphans their tabs (claude-code respawns panels without the session id).
+  // This service mirrors their transcripts into the picker's dir via
+  // symlinks so they stay listed and natively resumable.
+  const sessionLinks = new SessionLinkService(context);
+  context.subscriptions.push(sessionLinks);
+  sessionLinks.activate();
+
   // Launcher (process-wrapper) — activate async; openHere works even if the
   // wrapper config update is still in flight because the wrapper falls back
   // to its own dir for state.
-  const launcher = new LauncherService(context);
+  const launcher = new LauncherService(context, sessionLinks);
   context.subscriptions.push(launcher);
   launcher.activate().catch((err) => {
     console.error("LauncherService activation failed:", err);
@@ -95,26 +107,18 @@ export function activate(context: vscode.ExtensionContext) {
   const kanbanOutput = vscode.window.createOutputChannel("Thinkube Kanban");
   context.subscriptions.push(kanbanOutput);
 
-  // .thinkube/ file layer — rooted at the configured methodology folder
-  // (thinkube.kanban.folder), NOT workspaceFolders[0]. If it isn't configured
-  // yet we leave the store undefined and log; we do NOT fall back to a default
-  // folder, because writing methodology files into the wrong repo is exactly
-  // the failure that silent fallback caused before.
-  const methodologyRoot = getMethodologyRootOrUndefined();
-  const thinkubeStore = methodologyRoot
-    ? new ThinkubeStore(methodologyRoot)
-    : undefined;
-  if (thinkubeStore) {
-    context.subscriptions.push(thinkubeStore);
-    thinkubeStore.activate();
+  // Version-stable MCP server path: refresh the globalStorage symlink that
+  // every repo's .mcp.json points through, so extension updates don't orphan
+  // them (ADR-0007 Phase 6). Async — nothing below depends on it landing.
+  ensureStableServerLink(context).catch((err) => {
     kanbanOutput.appendLine(
-      `[thinkube] .thinkube store rooted at ${methodologyRoot}`,
+      `[thinkube] stable server link failed: ${(err as Error).message}`,
     );
-  } else {
-    kanbanOutput.appendLine(
-      '[thinkube] .thinkube store not initialised: no methodology folder configured — run "Thinkube Kanban: Configure Project".',
-    );
-  }
+  });
+
+  // No activation-time ThinkubeStore: there is no single configured
+  // methodology root anymore (ADR-0006). Stores are built per-repo where
+  // they're used — boards.open, the kanban panel, the MCP server.
 
   // Register command groups
   registerConfigCommands(context, {
@@ -129,50 +133,36 @@ export function activate(context: vscode.ExtensionContext) {
     auth,
     github,
     output: kanbanOutput,
-    store: thinkubeStore,
     extensionUri: context.extensionUri,
   });
 
-  // MCP provider — exposes the kanban tools to any LLM client in this VS
-  // Code instance. Survives no-workspace and no-repo gracefully (provider
-  // returns an empty definitions list until both are configured).
+  // MCP provider — exposes the board-independent kanban server to VS Code-
+  // native LLM clients. (Claude Code sessions discover the same server via
+  // each repo's .mcp.json.) Returns no definitions until a board exists.
   KanbanMcpProvider.install(context, {
-    extensionUri: context.extensionUri,
-    auth,
+    context,
     output: kanbanOutput,
   });
 
-  // Methodology bundle installer + tree view.
-  const bundleInstaller = new BundleInstaller(context.extensionUri.fsPath);
+  // Methodology bundle installer — per-repo (ADR-0006); bakes the
+  // version-stable server path into each .mcp.json it writes.
+  const bundleInstaller = new BundleInstaller(
+    context.extensionUri.fsPath,
+    stableServerScriptPath(context),
+  );
   registerBundleCommands(context, {
     installer: bundleInstaller,
     output: kanbanOutput,
   });
-  const bundleTree = new BundleTreeProvider(bundleInstaller, kanbanOutput);
-  const bundleTreeView = vscode.window.createTreeView("thinkubeBundleTree", {
-    treeDataProvider: bundleTree,
-    showCollapseAll: false,
-  });
-  context.subscriptions.push(
-    bundleTreeView,
-    vscode.commands.registerCommand("thinkube.kanban.refreshBundleTree", () =>
-      bundleTree.refresh(),
-    ),
-  );
-
-  // Refresh the Project view when the configured repo changes: its setup
-  // welcome and bundle-status node depend on whether a repo is configured.
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("thinkube.kanban.folder")) {
-        bundleTree.refresh();
-      }
-    }),
-  );
 
   // Per-repo board navigator (ADR-0006): discover every repo's .thinkube/ board
   // across the open workspace folders; open enabled ones, enable disabled ones.
-  const boardNavigator = new BoardNavigatorProvider();
+  // Each enabled repo expands to its methodology-bundle status (the old
+  // "Project" view, absorbed — ADR-0007 Phase 6).
+  const boardNavigator = new BoardNavigatorProvider(
+    bundleInstaller,
+    kanbanOutput,
+  );
   context.subscriptions.push(
     vscode.window.createTreeView("thinkubeBoards", {
       treeDataProvider: boardNavigator,
@@ -182,6 +172,8 @@ export function activate(context: vscode.ExtensionContext) {
     extensionUri: context.extensionUri,
     output: kanbanOutput,
     provider: boardNavigator,
+    launcher,
+    sessionLinks,
   });
 }
 

@@ -61,8 +61,7 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
       const doc = await this.store.getFile(
         this.store.pathForSpecDoc(specNumber),
       );
-      if (doc?.body)
-        reqHashBySpec.set(specNumber, requirementHash(doc.body));
+      if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
     }
 
     const inputs: SliceInput[] = [];

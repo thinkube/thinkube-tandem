@@ -1,7 +1,7 @@
 /**
- * Methodology-bundle commands.
+ * Methodology-bundle commands — per-repo (ADR-0006 / ADR-0007 Phase 6).
  *
- * Three palette-invocable commands wrap `BundleInstaller`:
+ * Three commands wrap `BundleInstaller`, each scoped to a target repository:
  *
  *   thinkube.kanban.installBundle  — install / re-apply the bundle (asks
  *                                    "merge-modified-only" vs "reapply" if
@@ -12,18 +12,20 @@
  *   thinkube.kanban.diffBundle     — write a per-file diff to the output
  *                                    channel for review.
  *
- * The full Config-tree integration (status badge + per-file action buttons
- * inside the existing ConfigTreeProvider) is deferred to chunk-13 polish —
- * it touches the chunk-1 tree code substantively.
+ * The target repo comes from the invocation: the Boards navigator passes its
+ * node (a RepoEntry or its bundle-status child), programmatic callers pass an
+ * absolute path, and a bare palette invocation quick-picks across the
+ * discovered repos. There is no single configured methodology root anymore.
  */
+import * as path from "node:path";
 import * as vscode from "vscode";
 
-import { getMethodologyRoot } from "../github/workspaceRepo";
 import {
   BundleInstaller,
   StatusReport,
   summarizeStatus,
 } from "../methodology/BundleInstaller";
+import { discoverRepos } from "../views/boards/BoardNavigatorProvider";
 
 export interface BundleCommandDeps {
   installer: BundleInstaller;
@@ -35,26 +37,83 @@ export function registerBundleCommands(
   deps: BundleCommandDeps,
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("thinkube.kanban.installBundle", () =>
-      installBundle(deps),
+    vscode.commands.registerCommand(
+      "thinkube.kanban.installBundle",
+      (target?: unknown) => installBundle(deps, target),
     ),
-    vscode.commands.registerCommand("thinkube.kanban.statusBundle", () =>
-      statusBundle(deps),
+    vscode.commands.registerCommand(
+      "thinkube.kanban.statusBundle",
+      (target?: unknown) => statusBundle(deps, target),
     ),
-    vscode.commands.registerCommand("thinkube.kanban.diffBundle", () =>
-      diffBundle(deps),
+    vscode.commands.registerCommand(
+      "thinkube.kanban.diffBundle",
+      (target?: unknown) => diffBundle(deps, target),
     ),
   );
 }
 
-async function installBundle(deps: BundleCommandDeps): Promise<void> {
-  let workspace: string;
-  try {
-    workspace = getMethodologyRoot();
-  } catch (err) {
-    vscode.window.showErrorMessage(`Install Bundle: ${(err as Error).message}`);
-    return;
+/**
+ * Resolve the target repo path from whatever the command was invoked with:
+ * a Boards tree node (RepoEntry or its bundle-status child), an explicit
+ * absolute path, or — from the palette — a quick-pick over discovered repos.
+ */
+async function resolveTargetRepo(
+  target?: unknown,
+): Promise<string | undefined> {
+  if (typeof target === "string" && target.trim()) return target;
+  if (target && typeof target === "object") {
+    const o = target as { path?: unknown; repo?: { path?: unknown } };
+    if (typeof o.path === "string") return o.path; // RepoEntry
+    if (typeof o.repo?.path === "string") return o.repo.path; // BundleStatusNode
   }
+  const repos = discoverRepos();
+  if (repos.length === 0) {
+    vscode.window.showErrorMessage(
+      "No git repositories found in the open workspace folders.",
+    );
+    return undefined;
+  }
+  const picked = await vscode.window.showQuickPick(
+    repos.map((r) => ({
+      label: r.name,
+      description: r.enabled ? r.rel : `${r.rel} — not enabled`,
+      path: r.path,
+    })),
+    { placeHolder: "Select the repository for the methodology bundle" },
+  );
+  return picked?.path;
+}
+
+/**
+ * Non-secret env baked into the repo's `.mcp.json` so the board-independent
+ * Kanban MCP server can discover boards when Claude Code launches it.
+ * THINKUBE_ROOTS = the workspace folders (the board-discovery scan roots);
+ * the default board is NOT baked — the server derives it from the session's
+ * cwd. Never put a token here — `.mcp.json` is committed.
+ */
+function buildMcpEnv(): Record<string, string> {
+  const kanbanCfg = vscode.workspace.getConfiguration("thinkube.kanban");
+  const mode = kanbanCfg.get<string>("mode") ?? "both";
+  const allowWrites =
+    mode === "navigator"
+      ? false
+      : (kanbanCfg.get<boolean>("allowAIWrites") ?? true);
+  const roots = (vscode.workspace.workspaceFolders ?? [])
+    .map((f) => f.uri.fsPath)
+    .join(path.delimiter);
+  const env: Record<string, string> = {
+    THINKUBE_ALLOW_AI_WRITES: String(allowWrites),
+  };
+  if (roots) env.THINKUBE_ROOTS = roots;
+  return env;
+}
+
+async function installBundle(
+  deps: BundleCommandDeps,
+  target?: unknown,
+): Promise<void> {
+  const workspace = await resolveTargetRepo(target);
+  if (!workspace) return;
 
   let strategy: "reapply" | "merge-modified-only" = "reapply";
   try {
@@ -73,20 +132,6 @@ async function installBundle(deps: BundleCommandDeps): Promise<void> {
     // No status yet — first install, strategy doesn't matter.
   }
 
-  // Non-secret env baked into .mcp.json so the standalone Kanban MCP server
-  // knows which workspace (.thinkube/ root) to read/write when Claude Code
-  // launches it. Files-first: no GitHub repo/board/token is involved.
-  const kanbanCfg = vscode.workspace.getConfiguration("thinkube.kanban");
-  const mode = kanbanCfg.get<string>("mode") ?? "both";
-  const allowWrites =
-    mode === "navigator"
-      ? false
-      : (kanbanCfg.get<boolean>("allowAIWrites") ?? true);
-  const mcpEnv: Record<string, string> = {
-    THINKUBE_WORKSPACE: workspace,
-    THINKUBE_ALLOW_AI_WRITES: String(allowWrites),
-  };
-
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -96,11 +141,11 @@ async function installBundle(deps: BundleCommandDeps): Promise<void> {
       try {
         const result = await deps.installer.install(workspace, {
           strategy,
-          mcpEnv,
+          mcpEnv: buildMcpEnv(),
         });
         deps.output.show(true);
         deps.output.appendLine(
-          `[bundle] installed v${result.version} (strategy=${strategy})`,
+          `[bundle] installed v${result.version} into ${workspace} (strategy=${strategy})`,
         );
         for (const w of result.written) {
           deps.output.appendLine(`  wrote ${w}`);
@@ -123,19 +168,17 @@ async function installBundle(deps: BundleCommandDeps): Promise<void> {
   );
 }
 
-async function statusBundle(deps: BundleCommandDeps): Promise<void> {
-  let workspace: string;
-  try {
-    workspace = getMethodologyRoot();
-  } catch (err) {
-    vscode.window.showErrorMessage(`Bundle status: ${(err as Error).message}`);
-    return;
-  }
+async function statusBundle(
+  deps: BundleCommandDeps,
+  target?: unknown,
+): Promise<void> {
+  const workspace = await resolveTargetRepo(target);
+  if (!workspace) return;
   try {
     const report = await deps.installer.getStatus(workspace);
     const summary = summarizeStatus(report);
     deps.output.show(true);
-    deps.output.appendLine(`[bundle] ${summary}`);
+    deps.output.appendLine(`[bundle] ${workspace}: ${summary}`);
     appendDiffLines(deps.output, report);
     vscode.window.showInformationMessage(summary);
   } catch (err) {
@@ -145,18 +188,18 @@ async function statusBundle(deps: BundleCommandDeps): Promise<void> {
   }
 }
 
-async function diffBundle(deps: BundleCommandDeps): Promise<void> {
-  let workspace: string;
-  try {
-    workspace = getMethodologyRoot();
-  } catch (err) {
-    vscode.window.showErrorMessage(`Bundle diff: ${(err as Error).message}`);
-    return;
-  }
+async function diffBundle(
+  deps: BundleCommandDeps,
+  target?: unknown,
+): Promise<void> {
+  const workspace = await resolveTargetRepo(target);
+  if (!workspace) return;
   try {
     const report = await deps.installer.getStatus(workspace);
     deps.output.show(true);
-    deps.output.appendLine(`[bundle] diff (${summarizeStatus(report)})`);
+    deps.output.appendLine(
+      `[bundle] ${workspace}: diff (${summarizeStatus(report)})`,
+    );
     appendDiffLines(deps.output, report);
   } catch (err) {
     vscode.window.showErrorMessage(

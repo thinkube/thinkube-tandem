@@ -116,7 +116,22 @@ const CLAUDEMD_START_RE = /<!--\s*thinkube-methodology:start[^\n]*-->/i;
 const CLAUDEMD_END_RE = /<!--\s*thinkube-methodology:end\s*-->/i;
 
 export class BundleInstaller {
-  constructor(private readonly extensionPath: string) {}
+  constructor(
+    private readonly extensionPath: string,
+    /**
+     * Absolute path of the kanban MCP server script to bake into `.mcp.json`
+     * (`${serverPath}` in the template). Callers should pass the
+     * version-stable symlinked path (see `mcp/stableServerPath.ts`) — baking
+     * the raw extension dir breaks every `.mcp.json` on extension update
+     * because the install dir name carries the version.
+     */
+    private readonly serverScriptPath: string = path.join(
+      extensionPath,
+      "dist",
+      "mcp",
+      "kanbanMcpServer.js",
+    ),
+  ) {}
 
   private get bundleRoot(): string {
     return path.join(this.extensionPath, BUNDLE_SUBDIR);
@@ -357,14 +372,17 @@ export class BundleInstaller {
   }
 
   /**
-   * Recursively replace `${extensionPath}` with the real install dir anywhere
-   * it appears in an MCP server definition (command, args, env). Operates on
-   * the parsed object — not the JSON string — so paths with special characters
-   * never break JSON escaping.
+   * Recursively replace path placeholders anywhere they appear in an MCP
+   * server definition (command, args, env): `${serverPath}` → the
+   * version-stable server script, `${extensionPath}` → the install dir
+   * (legacy templates). Operates on the parsed object — not the JSON string —
+   * so paths with special characters never break JSON escaping.
    */
   private resolveExtensionPath(value: unknown): unknown {
     if (typeof value === "string") {
-      return value.replace(/\$\{extensionPath\}/g, () => this.extensionPath);
+      return value
+        .replace(/\$\{serverPath\}/g, () => this.serverScriptPath)
+        .replace(/\$\{extensionPath\}/g, () => this.extensionPath);
     }
     if (Array.isArray(value)) {
       return value.map((v) => this.resolveExtensionPath(v));

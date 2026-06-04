@@ -85,8 +85,8 @@ deferrable UX; record the rest as dropped so the reasoning isn't re-litigated.
 - **ST-66** ("source-of-truth / local-first sync; reality unclear; `.thinkube`
   is an 'overflow store'") — **resolved by ADR-0001.** Its investigation fed
   that decision. Close as resolved-by-ADR.
-- **ST-65 open thread** — *navigator mode is cooperative; a shell bypasses the
-  MCP.* Still unsolved and _more_ exposed under files-first (writes are now just
+- **ST-65 open thread** — _navigator mode is cooperative; a shell bypasses the
+  MCP._ Still unsolved and _more_ exposed under files-first (writes are now just
   file edits + commits). Logged as an open question, not scheduled.
 
 ### Drop (the spine being removed → now deletion work)

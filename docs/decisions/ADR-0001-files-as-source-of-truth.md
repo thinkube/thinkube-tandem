@@ -85,10 +85,10 @@ GitHub-only inbox adapter at the edge.**
   link to the resulting artifact.
 - Read-mostly (`list + read + close`), at the edge, and **degradable**: if the
   tracker is unreachable, the core keeps working — only inbox draining pauses.
-- **Off by default**; never wired for Gitea/solo. *"Off" is lifecycle-gated, not
-  dispensable:* the inbox is **dormant during development** (no external filers) and
+- **Off by default**; never wired for Gitea/solo. _"Off" is lifecycle-gated, not
+  dispensable:_ the inbox is **dormant during development** (no external filers) and
   becomes the **critical** external front door once the project **moves to GitHub for
-  maintenance** — that move *is* the dev→maintenance transition. (Gitea is internal
+  maintenance** — that move _is_ the dev→maintenance transition. (Gitea is internal
   CI/CD only, never an issue front door, so the inbox is inherently GitHub.)
   Optionally paired with a local append-only `.thinkube/inbox.md` for in-flow quick
   capture.

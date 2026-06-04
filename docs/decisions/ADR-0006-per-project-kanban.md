@@ -75,7 +75,7 @@ Workspace            the thinkube.code-workspace
 ```
 
 All standard words — the fix is **disambiguation**, not invention. "Project"
-means *repository*; the GitHub Projects-v2 sense is retired. ADR-0004 stays at
+means _repository_; the GitHub Projects-v2 sense is retired. ADR-0004 stays at
 exactly two coined words (Tandem, Slice).
 
 ### Opt-in enablement (the user decides)
@@ -83,7 +83,7 @@ exactly two coined words (Tandem, Slice).
 - A project gets the methodology **only when the user explicitly enables it**. The
   extension **never auto-enables** any of the discovered repos.
 - **The enable signal is the committed `.thinkube/` directory itself** — its
-  presence *is* "enabled." There is **no separate registry or settings list** of
+  presence _is_ "enabled." There is **no separate registry or settings list** of
   enabled projects (that would be uncommitted, drift-prone derived state — exactly
   what ADR-0001 forbids; the committed dir is the single truth).
 - **Enable** = scaffold + commit the `.thinkube/` skeleton (board config + the
@@ -94,7 +94,7 @@ exactly two coined words (Tandem, Slice).
 
 - With the workspace open, discover the repos across the open folders. Show the
   **enabled** ones as boards you navigate between; show **un-enabled** repos with an
-  *"Enable Thinkube methodology here"* affordance.
+  _"Enable Thinkube methodology here"_ affordance.
 - **Not a merged pane** — separate per-project boards with a navigator across them.
   A cross-repo, read-only **rollup** stays a deliberately deferred option behind
   ADR-0002's seam ("if `.thinkube/` ever becomes cross-repo memory, revisit").

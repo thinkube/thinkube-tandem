@@ -27,6 +27,8 @@ import * as vscode from "vscode";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+import { SessionLinkService } from "./SessionLinkService";
+
 const CFG_SECTION = "claudeCode";
 const CFG_KEY = "claudeProcessWrapper";
 const COMPETING_WRAPPER_TOAST_KEY =
@@ -36,7 +38,10 @@ export class LauncherService implements vscode.Disposable {
   private stateDir: string | undefined;
   private wrapperPath: string | undefined;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly sessionLinks?: SessionLinkService,
+  ) {}
 
   async activate(): Promise<void> {
     const wrapperName =
@@ -158,6 +163,11 @@ export class LauncherService implements vscode.Disposable {
       undefined,
       prefix,
     );
+
+    // Keep the new session reachable after its tab is gone: remember the
+    // target so SessionLinkService mirrors its transcript into the Session
+    // History picker's project dir once the first prompt creates it.
+    this.sessionLinks?.noteLaunch(uri.fsPath);
   }
 
   dispose(): void {
