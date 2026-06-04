@@ -8,4 +8,9 @@ priority: P2
 verified_req_hash: 26e600c5bd1cad7d90a78a91f21e059f18ab0b8a
 ---
 
-Clickable commit/PR links on the slice card — thread the recorded `commit`/`pr` through the board projection and `TaskCard` (both type mirrors) so a done card renders them as external links (commit → remote host, PR → the pull request) via the Panel open-external bridge.
+# Clickable commit/PR links on the slice card
+
+Thread the recorded `commit`/`pr` through the board projection and
+`TaskCard` (both type mirrors) so a done card renders them as external
+links — commit → remote host, PR → the pull request — via the Panel
+open-external bridge.

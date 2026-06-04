@@ -36,12 +36,12 @@ Produce a fully-shaped `.thinkube/specs/SP-{n}/spec.md` containing the four cano
 1. **Read methodology context** if not in session.
 2. **Fetch context.** Use `get_thinkube_file specs/SP-{n}/spec.md`; if the file is non-empty, treat it as a draft to refine rather than rewriting from scratch.
 3. **Explore the codebase** _only as needed_ to ground the design. Delegate to the `explorer` subagent (`Task` tool) when the question is "what's currently in this codebase" — it keeps the main context lean. Otherwise use Grep/Glob directly.
-4. **Interview the user, section by section.** For each missing section, propose a draft in chat, capture the user's correction, move on. Don't write to disk until the user confirms the whole spec.
+4. **Write the skeleton FIRST, then iterate on the file — never review in chat.** Chat is a bad reading surface (collapsed blocks, rendering that shifts between versions); the spec file is the review surface. Immediately `Write` `.thinkube/specs/SP-{n}/spec.md` in the exact shape of step 5 with placeholder bodies (`_(under discussion — see chat)_`), and tell the user to open it with **Markdown Preview to the side** (`Ctrl+K V`). Then work section by section: ask questions in chat, but land every agreed draft into the FILE with `Edit` — the user reads the rendered preview, chat only steers. The user may edit the file directly at any time and their edits are authoritative: re-`Read` the file before every `Edit` and never clobber text you didn't write.
    - **Acceptance criteria**: elicited **from the user** — there is no parent Story to inherit them from. They must be **user-observable outcomes**, framed so they can be verified, not implementation steps. Good: "A new user receives an email within 30s of submitting the form." / "Endpoint returns 401 when the token is expired and the body matches `{error: 'expired_token'}`." Bad: "Add a Redis session store" (that's work, it belongs in a slice).
    - **Constraints**: list. Performance budgets, browser support, dependency rules, deadlines.
    - **Design**: 1–3 paragraphs. Approach + key data structures + integration seams. Not pseudocode. This is also where **spikes / investigations** ("confirm X behaves like Y") land — they are not slices.
    - **File structure plan**: bullet list of files we expect to create / modify, one line of why each.
-5. **Write the spec.** Use `Write` to overwrite `.thinkube/specs/SP-{n}/spec.md` with this exact shape:
+5. **Target shape.** The file must converge to exactly this structure (the skeleton from step 4 already has it; sections fill in as agreement lands):
 
 ```
 # {title}

@@ -73,27 +73,9 @@ Slicing **by layer/file** ("the models slice", "the endpoints slice", "the Redis
    - Does it depend on another slice? Note it for `depends_on`. Can it run independently of its siblings (no shared file/state edits, no required ordering)? If so, mark `parallel: true` — _parallel-eligible_, not must-run-in-parallel.
 4. **Map back to acceptance criteria.** For each AC line, identify which slice(s) satisfy it. If an AC is unmatched, add a slice. If a slice isn't traceable to any AC, drop it (or surface the gap — the AC may be missing).
 5. **Propose in chat.** Show the proposed slice list with rationale and the SL numbers you'll allocate. Wait for user feedback.
-6. **Allocate numbers + write files.** Slices are numbered **per-Spec**. The next number is `max(existing SL-{m} under SP-{n}) + 1` — and **archived files keep their numbers**, so include them in the max. A brand-new Spec starts at `SL-1`. For each agreed slice, `Write` a file at `.thinkube/specs/SP-{n}/SL-{m}.md`:
-
-```
----
-uid: <stable-internal-id>      # e.g. a short slug or generated id; never reused
-parent: SP-{n}
-status: ready
-depends_on: [SP-{n}_SL-7]      # optional, omit if none
-parallel: true                 # optional — shares no files/state with siblings
-priority: P2                   # optional
----
-
-# <slice title — the concrete capability, short (≤ ~70 chars)>
-
-<2–4 lines of detail: what the one coherent end-to-end cut includes, and
-what the observable "done" looks like (the demo / the green check).>
-```
-
-The `# title` heading and the detail body are **separate** — the board card
-shows the heading as its title and the detail underneath. Never collapse
-them into one long line: a paragraph-as-title renders the card unreadable.
+6. **Create the files via `create_slice` — never freehand.** For each agreed slice, call `mcp__thinkube-kanban__create_slice` with `{ spec: {n}, title, body, depends_on?, parallel?, priority? }`. The **server** allocates the SL number (per-Spec, archive-aware), generates the uid, and serializes the canonical shape — you never pick numbers or format files. The tool refuses over-long titles (> 70 chars) and Specs with empty Acceptance Criteria; surface a refusal verbatim, fix the input, retry.
+   - `title`: the concrete capability, short — it becomes the card title.
+   - `body`: 2–4 lines of detail — what the coherent end-to-end cut includes and what the observable "done" looks like. Title and body are **separate**; never collapse them into one merged line.
 
 7. **Report.** Print the slice count and the next step: `/pair-start {n}` to begin working them.
 
@@ -118,6 +100,7 @@ them into one long line: a paragraph-as-title renders the card unreadable.
 
 ## Safety / fallback
 
+- **Kanban MCP tools absent in this session.** STOP and say so — do **not** fall back to freehand `Write` (freehand creation is how format drift happened). Fix: start a fresh session in the repo (`.mcp.json` loads at session start).
 - **Spec sections missing.** Refuse cleanly. Direct user to `/spec-prepare {n}`.
 - **AC unmatched by any slice.** Don't silently invent one. Surface the gap (ask whether the AC is still valid) or fold it into an existing slice with the user's blessing.
 - **A candidate has no single "done."** Reject it as a slice. Park it in the Spec's `## Design` / `## Constraints` instead.

@@ -27,7 +27,7 @@ Write one `.thinkube/specs/SP-{n}/SL-{m}.md` file per slice, where each slice:
 - Is **one coherent, vertical, end-to-end change** — a thin cut through whatever layers the change touches that, once verified green and committed, leaves the system **observably more capable** (you could demo it).
 - Has a **single statable "done"** (one green from the verifier).
 - Is titled by the **concrete capability it delivers** ("Email/password login end-to-end"), not by a vague whole-feature outcome ("Auth works") and **not by a layer or file** ("Add the Redis store").
-- Lands at `status: ready`, `parent: SP-{n}`, with a stable `uid` and a one-line title/body describing the change.
+- Lands at `status: ready`, `parent: SP-{n}`, with a stable `uid`, a **short `# title` heading** (the concrete capability, ≤ ~70 chars) and a brief detail body — title and body are separate; never one merged line.
 - Traces back to the Spec's `## Acceptance Criteria` — every AC maps to at least one slice.
 
 Slices are sized by **coherence, not the clock**. If you can't state a single "done" for a row, it's more than one slice — split it. If a row has its own distinct acceptance criteria / design, it's not a slice — it's another Spec.
@@ -85,8 +85,15 @@ parallel: true                 # optional — shares no files/state with sibling
 priority: P2                   # optional
 ---
 
-<slice title — the concrete end-to-end capability> — <one-line description of the one coherent change>
+# <slice title — the concrete capability, short (≤ ~70 chars)>
+
+<2–4 lines of detail: what the one coherent end-to-end cut includes, and
+what the observable "done" looks like (the demo / the green check).>
 ```
+
+The `# title` heading and the detail body are **separate** — the board card
+shows the heading as its title and the detail underneath. Never collapse
+them into one long line: a paragraph-as-title renders the card unreadable.
 
 7. **Report.** Print the slice count and the next step: `/pair-start {n}` to begin working them.
 
