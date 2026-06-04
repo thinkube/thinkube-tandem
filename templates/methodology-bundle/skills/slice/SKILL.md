@@ -24,12 +24,27 @@ Read a fully-shaped Spec and cut it into **coherent slices** — each one an end
 
 Write one `.thinkube/specs/SP-{n}/SL-{m}.md` file per slice, where each slice:
 
-- Is **one coherent end-to-end change** with a single statable "done" (one green from the verifier).
-- Reads as imperative work ("Wire OAuth callback handler", "Add Redis session store"), not as an outcome ("Auth works").
+- Is **one coherent, vertical, end-to-end change** — a thin cut through whatever layers the change touches that, once verified green and committed, leaves the system **observably more capable** (you could demo it).
+- Has a **single statable "done"** (one green from the verifier).
+- Is titled by the **concrete capability it delivers** ("Email/password login end-to-end"), not by a vague whole-feature outcome ("Auth works") and **not by a layer or file** ("Add the Redis store").
 - Lands at `status: ready`, `parent: SP-{n}`, with a stable `uid` and a one-line title/body describing the change.
 - Traces back to the Spec's `## Acceptance Criteria` — every AC maps to at least one slice.
 
 Slices are sized by **coherence, not the clock**. If you can't state a single "done" for a row, it's more than one slice — split it. If a row has its own distinct acceptance criteria / design, it's not a slice — it's another Spec.
+
+## What a slice is (vertical, not a layer)
+
+A slice is the unit that flows the board and is the verification boundary — _one green_. The decisive test is **vertical, demonstrable capability**, not size or layer:
+
+- **Slice (vertical — write a file):**
+  - "Email/password login end-to-end — form → `POST /session` → validate → set cookie → redirect."
+  - "A logged-in session survives a server restart."
+  - "Logout end-to-end — button → `DELETE /session` → cookie cleared."
+- **Not a slice (horizontal fragment — fold into the slice it serves):**
+  - "Add the Redis session store." · "Write the session middleware." · "Wire the OAuth callback handler."
+  - Each is one _layer_ of a slice; on its own it leaves the system half-built, demos nothing, and only makes sense once a sibling lands.
+
+Slicing **by layer/file** ("the models slice", "the endpoints slice", "the Redis slice") is the anti-pattern — it recreates the tiny-task soup the Slice unit exists to prevent (a slice is **not** a renamed atomic task). When in doubt, ask: _if I commit only this, is the system demonstrably more capable?_ If no, it's a fragment — merge it into the vertical slice it belongs to.
 
 ## Inputs
 
@@ -50,11 +65,12 @@ Slices are sized by **coherence, not the clock**. If you can't state a single "d
    - Present the keep/add/archive diff **annotated with each slice's status and the recommended action**; get the user's blessing before writing.
 1. **Read methodology context** + `repo-conventions` for branch/commit rules that may influence slice ordering.
 2. **Load the Spec.** Use `get_thinkube_file specs/SP-{n}/spec.md` for the full body. If the spec is missing the four canonical sections (Acceptance Criteria / Constraints / Design / File Structure Plan), **stop** and direct the user to `/spec-prepare {n}` first.
-3. **Brainstorm slices privately.** Working through the Design + File Structure Plan, draft candidate slices. For each, check:
+3. **Brainstorm slices privately.** Working through the Design + File Structure Plan, draft candidate slices — cut **vertically** (coherent end-to-end behaviours), not by layer/file. For each, check:
+   - **Is it demonstrable on its own?** If committing only this slice would leave the system half-built (a layer with nothing using it), it's a horizontal fragment — fold it into the vertical slice it serves.
    - Can you state a **single "done"** for it (one green)? If not, it's more than one slice — split it.
    - Does it have its own distinct AC / design? Then it's a **Spec**, not a slice — surface that to the user.
    - Is it a spike / investigation / "confirm X" with no verifiable output? Then it is **not a slice** — it belongs in the parent Spec's `## Design` / `## Constraints`. Don't write a file for it.
-   - Does it depend on another slice? Note it for `depends_on`.
+   - Does it depend on another slice? Note it for `depends_on`. Can it run independently of its siblings (no shared file/state edits, no required ordering)? If so, mark `parallel: true` — _parallel-eligible_, not must-run-in-parallel.
 4. **Map back to acceptance criteria.** For each AC line, identify which slice(s) satisfy it. If an AC is unmatched, add a slice. If a slice isn't traceable to any AC, drop it (or surface the gap — the AC may be missing).
 5. **Propose in chat.** Show the proposed slice list with rationale and the SL numbers you'll allocate. Wait for user feedback.
 6. **Allocate numbers + write files.** Slices are numbered **per-Spec**. The next number is `max(existing SL-{m} under SP-{n}) + 1` — and **archived files keep their numbers**, so include them in the max. A brand-new Spec starts at `SL-1`. For each agreed slice, `Write` a file at `.thinkube/specs/SP-{n}/SL-{m}.md`:
@@ -65,19 +81,21 @@ uid: <stable-internal-id>      # e.g. a short slug or generated id; never reused
 parent: SP-{n}
 status: ready
 depends_on: [SP-{n}_SL-7]      # optional, omit if none
+parallel: true                 # optional — shares no files/state with siblings
 priority: P2                   # optional
 ---
 
-<slice title> — <one-line description of the one coherent change>
+<slice title — the concrete end-to-end capability> — <one-line description of the one coherent change>
 ```
 
 7. **Report.** Print the slice count and the next step: `/pair-start {n}` to begin working them.
 
 ## Constraints
 
-- Slices are **work items with one statable "done"**, not outcomes. Title imperatively.
+- Slices are **vertical, demonstrable changes** with one statable "done" — cut end-to-end, never by layer/file. A slice that isn't independently demonstrable is a fragment; merge it.
+- Title by the **concrete capability delivered**, not a vague whole-feature outcome and not a layer name.
 - **Allocate `SL-{m}` as `max+1`, counting archived files.** Numbers are never reused — collisions corrupt the board's links.
-- **`depends_on` uses full handles** (`SP-{n}_SL-7`), not bare numbers.
+- **`depends_on` uses full handles** (`SP-{n}_SL-7`), not bare numbers. **`parallel: true`** marks a slice sharing no files/state with its siblings (parallel-eligible, not must-run-in-parallel).
 - **No checkbox list, no materialiser, no issue minting.** Write the slice files directly. The board reads `status:` from frontmatter.
 - A row with no single verifiable "done" is **rejected** — it goes in the Spec (`## Design` / `## Constraints`), not on the board.
 

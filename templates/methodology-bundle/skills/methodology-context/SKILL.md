@@ -25,6 +25,7 @@ Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an
 | Spec  | `.thinkube/specs/SP-{n}/spec.md`   | No — the document | The documented unit of work: acceptance criteria, constraints, design, file plan. |
 | Slice | `.thinkube/specs/SP-{n}/SL-{m}.md` | Yes — flows the board | One coherent end-to-end change you verify-and-commit as a single "done" (one green). |
 
+- A **Slice** is **vertical** — a coherent end-to-end behaviour that, once green, is demonstrable on its own — **not a layer or file** ("add the Redis store" is a fragment of a slice, not a slice). A slice is **not** a renamed atomic task; slicing by layer/file recreates the tiny-task soup the unit exists to prevent.
 - A **Slice** is sized by **coherence, not the clock**. Bounds: if you can't state a single "done" for it → it's more than one slice, split it; if it has its own distinct acceptance criteria / design → it's not a slice, it's a **Spec**.
 - A spike / investigation / "confirm X" with no verifiable output is **not a slice** (it has no single "done") — it belongs in the parent Spec's `## Design` / `## Constraints`.
 
