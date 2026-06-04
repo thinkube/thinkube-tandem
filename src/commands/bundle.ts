@@ -156,6 +156,10 @@ async function installBundle(
         vscode.window.showInformationMessage(
           `Methodology bundle v${result.version} installed (${result.written.length} files written, ${result.skipped.length} skipped).`,
         );
+        // The navigator's bundle-status node caches its report — refresh it
+        // so the icon reflects the install immediately (a stale icon reads
+        // as "install did nothing" and invites a pointless re-install).
+        await vscode.commands.executeCommand("thinkube.boards.refresh");
       } catch (err) {
         deps.output.appendLine(
           `[bundle] install failed: ${(err as Error).message}`,
