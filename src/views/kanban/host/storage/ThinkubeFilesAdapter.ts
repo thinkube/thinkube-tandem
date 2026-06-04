@@ -20,6 +20,8 @@ import { StorageAdapter } from "../StorageAdapter";
 import { ThinkubeStore } from "../../../../store/ThinkubeStore";
 import type { Frontmatter } from "../../../../store/frontmatter";
 import { requirementHash } from "../../../../methodology/specChange";
+import { stampOnEnteringDone } from "../../../../github/sliceProvenance";
+import { buildCommitUrl, detectRepoCoords } from "../../../../github/gitRemote";
 import {
   buildSliceBoard,
   columnIdToStatus,
@@ -64,6 +66,11 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
       if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
     }
 
+    // Resolve the repo coords once so a recorded commit SHA can be turned into
+    // a clickable URL. Undefined when not a GitHub remote — `commit` still
+    // renders, just without a link.
+    const coords = await detectRepoCoords(this.store.workspaceRoot);
+
     const inputs: SliceInput[] = [];
     for (const rel of await this.store.listSlices()) {
       const m = SLICE_PATH_RE.exec(rel);
@@ -86,6 +93,10 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
         priority: fm.priority,
         stampedReqHash: fm.verified_req_hash,
         currentReqHash: reqHashBySpec.get(specNumber),
+        commit: fm.commit,
+        commitUrl:
+          fm.commit && coords ? buildCommitUrl(coords, fm.commit) : undefined,
+        pr: fm.pr,
       });
     }
     return buildSliceBoard(inputs, this.scope);
@@ -103,6 +114,18 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
       const target = columnIdToStatus(card.columnId);
       if (parsed.frontmatter?.status === target) continue;
       const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
+      // Entering Done (status changed, so prior status wasn't "done"): record
+      // delivery provenance, mirroring the MCP move_slice seam. Best-effort —
+      // a git/gh failure must never block the drag.
+      if (target === "done") {
+        try {
+          await stampOnEnteringDone(fm, this.store.workspaceRoot);
+        } catch (err) {
+          console.warn(
+            `[thinkube] provenance stamp for ${rel} failed: ${(err as Error).message}`,
+          );
+        }
+      }
       await this.store.writeFile(rel, fm, parsed.body);
     }
   }

@@ -88,6 +88,39 @@
   font-weight: 600;
   line-height: 1.35;
 }
+/* Delivery provenance chips (commit / PR) — sit just under the title (SP-2). */
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.provChip {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.4));
+  color: var(--vscode-textLink-foreground);
+  svg {
+    width: 11px;
+    height: 11px;
+  }
+}
+.provChip:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+  border-color: var(--vscode-textLink-activeForeground, currentColor);
+}
+.provChip:disabled {
+  cursor: default;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.85;
+}
 .body {
   margin-top: 6px;
   font-size: 12.5px;

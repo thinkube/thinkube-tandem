@@ -205,6 +205,15 @@ export class KanbanPanel implements vscode.Disposable {
           );
         }
         break;
+      case "open-external":
+        // Commit/PR provenance links. Guard to http(s) so a crafted card body
+        // can never drive the host to open a file:// or command: URI.
+        if (/^https?:\/\//i.test(message.url)) {
+          await vscode.env.openExternal(vscode.Uri.parse(message.url));
+        } else {
+          this.log(`open-external refused non-http(s) url: ${message.url}`);
+        }
+        break;
       case "create-spec":
         if (!this.onCreateSpec) {
           this.notify("info", "New Spec isn't available on this board.");
