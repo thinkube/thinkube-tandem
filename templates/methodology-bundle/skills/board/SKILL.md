@@ -18,7 +18,7 @@ A compact chat-readable view of the project's current state, plus a pointer to t
 1. **Snapshot.** Call `mcp__thinkube-kanban__list_board`. It returns cards grouped into **Ready / Doing / Done** (read from each slice's `status:` frontmatter); each card carries its handle (`id`, e.g. `SP-3_SL-42`), `title`, `specStale`, and `specChange`.
 2. **Format.** Render as a table with one column per status (**Ready, Doing, Done** — three columns, in that order). Each cell lists `SP-{n}_SL-{m} <title>` rows. Truncate titles past ~50 chars.
 3. **Highlight staleness.** Flag any **done** card with `specChange: "requirements"` — its parent Spec's requirement sections changed since it was verified, so it needs re-verification (a `/pair-next` sweep). Ignore `metadata`-only staleness.
-4. **Point at the interactive panel.** Tell the user: "Activity Bar → Thinkube Board → toolbar **Open Kanban**", or Command Palette → **Thinkube Kanban: Open Kanban**.
+4. **Point at the interactive panel.** Tell the user: Activity Bar → **Thinkube** → **Boards** → click this repo to open its board (or Command Palette → **Thinkube Kanban: Open Kanban** for the configured root).
 
 ## Constraints
 
@@ -35,7 +35,7 @@ A compact chat-readable view of the project's current state, plus a pointer to t
    SP-3_SL-5 Cache    …                 SP-3_SL-2 Diff ⚠ stale
    (4)                (1)               (12)
 
-▶ Open the interactive board: Activity Bar → Thinkube Board → "Open Kanban".
+▶ Open the interactive board: Activity Bar → Thinkube → Boards → click this repo.
 ```
 
 ## Safety / fallback

@@ -45,7 +45,7 @@ After `/pair-start <spec-number>`, the conversation context should contain:
    - `navigator`: Claude reads + proposes; cannot write the board.
    - `driver`: Claude is leading; will move cards, edit files, push.
    - `both`: either side can write.
-8. **Tell the user** to open the Kanban panel from the Activity Bar (`Thinkube Board`, toolbar button **Open Kanban**) or via the command palette so they can see drag-and-drop reflect the work.
+8. **Tell the user** to open the board from the Activity Bar (**Thinkube** → **Boards** → click this repo), or via the command palette (**Thinkube Kanban: Open Kanban**), so they can see drag-and-drop reflect the work.
 9. **Wait.** Don't auto-move the picked slice to Doing. That's `/pair-next`'s job, and the user may want to revise the pick first.
 
 ## Constraints
