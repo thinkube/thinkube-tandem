@@ -50,6 +50,16 @@ Slicing **by layer/file** ("the models slice", "the endpoints slice", "the Redis
 
 - `$ARGUMENTS`: the Spec number `{n}` (integer).
 
+## Context discipline
+
+The parent Spec is your scope — gather only what it doesn't already give you:
+
+- **The slice shape is authoritative and enforced.** The canonical slice shape lives in this skill and is serialized by `create_slice` — **never read other slice files to learn the format.** Reading neighbours "for the format" is wasted context and copies their drift.
+- **The Spec's `## Design` and `## File Structure Plan` already name the seams.** Decompose from them (step 3); don't re-derive what `spec.md` and `CLAUDE.md` already state.
+- **`CLAUDE.md` before any codebase search.** Consult it and the docs first; search the code only for what they don't answer.
+- **Exploration validates, it doesn't re-discover.** Any codebase look exists only to check the Spec's File Structure Plan against reality — do the named files/seams exist as described? — not to re-explore the architecture. Delegate a genuine "what's in this codebase" check to the `explorer` subagent to keep the main context lean.
+- **No uninstructed reads.** Don't call tools the task didn't ask for "just in case." Load the Spec; read existing slice files only when re-slicing (step 0).
+
 ## Procedure
 
 0. **Detect re-slicing (the Spec changed under existing slices).** If `.thinkube/specs/SP-{n}/` already holds `SL-*.md` files, this is a **change-review**, not a fresh decomposition — the board flags this with a stale badge (`specStale` / `specChange: "requirements"`) on done slices whose parent Spec was edited after they were verified. Do NOT overwrite blindly:

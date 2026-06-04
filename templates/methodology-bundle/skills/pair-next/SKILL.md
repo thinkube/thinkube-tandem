@@ -28,20 +28,20 @@ It's just **Ready → Doing → Done** with one gate at Done. There is no Review
 In one invocation:
 
 1. Verify the in-flight (Doing) slice — the verifier runs the repo's checks (per `repo-conventions`).
-2. On green: `move_slice` it to `Done` (this stamps `verified_req_hash` automatically) and check the AC it satisfies on the parent Spec.
+2. On green: check the AC it satisfies on the parent Spec, then `move_slice` it to `Done` (this stamps `verified_req_hash` automatically) and report the move with evidence.
 3. Sweep for stale slices — done slices whose parent Spec's _requirements_ changed — and resolve them before starting new work.
 4. Pick the next Ready slice under the same Spec, `move_slice` it to `Doing`.
 5. Load the new slice's body + the parent Spec section into the conversation.
 
 ## Procedure
 
-1. **Identify the in-flight slice.** `mcp__thinkube-kanban__list_board`; find the card in **Doing** under the active Spec. (Keep one slice in flight per Spec — if there are somehow multiple, prefer the most recently moved or ask the user.) If none, treat this as a `/pair-start` situation and tell the user.
+1. **Identify the in-flight slice.** `mcp__thinkube-kanban__list_board`; find the card in **Doing** under the active Spec. (Keep one slice in flight per Spec — if there are somehow multiple, prefer the most recently moved or ask the user.) **If none is in Doing, this is a fresh pulse:** skip the verify/Done steps (2–5) and go straight to the pick (step 6) — take the briefed, dependency-satisfied top-of-Ready slice **directly**, then advance and load it. Ask the user only on **genuine ambiguity**: multiple equally-ranked candidates, the top pick's `depends_on` unsatisfied, or board drift. Don't bounce to `/pair-start` just to advance the mechanics.
 2. **Verify.** Delegate to the `verifier` subagent (via `Task` tool):
    - The verifier reads `repo-conventions` for the project's verification recipe and runs it.
    - Verifier returns `{ ok: true }` or `{ ok: false, reason, evidence }`.
-   - On red: **stop**. Surface the failures to the user **verbatim**. Do not move the card. Suggest fixes; the user re-runs `/pair-next` after addressing them.
-3. **Move the finished slice to Done.** On green: `mcp__thinkube-kanban__move_slice { slice: "SP-{n}_SL-{m}", status: "Done" }`. This sets the slice's `status: done` and **stamps `verified_req_hash`** with the Spec's current requirement-hash automatically — you don't write that field by hand.
-4. **Check the satisfied AC on the Spec.** If the completed slice satisfied a specific acceptance criterion, mark that `- [ ]` checked (`- [x]`) in `.thinkube/specs/SP-{n}/spec.md` via `Edit`. (Toggling a checkbox is a metadata change — it does not mark other slices stale.) The → Done gate wants the AC the slice satisfies checked.
+   - On red: **stop** — a verifier red is a gate refusal, a legitimate stop point. Surface the failures to the user **verbatim** and do not move the card. The human fixes the failing code (substance); say you'll re-verify once it's addressed. Don't instruct the user to re-run a command to advance the mechanics — resume the loop yourself.
+3. **Check the satisfied AC on the Spec — before the move.** Determine which AC ordinal(s) this slice delivers: prefer the slice's `satisfies: [<ac-ordinal>, …]` frontmatter (the 1-based AC positions it delivers); for a legacy slice without that field, fall back to the AC its body names. Mark each corresponding `- [ ]` checked (`- [x]`) in `.thinkube/specs/SP-{n}/spec.md` via `Edit`. (A checkbox toggle is a metadata change — it does not mark other slices stale.) Do this **first**: the → Done gate refuses the move while a satisfied AC is unchecked, naming the criterion. (A slice with no `satisfies` field passes that gate ungated, but still check the AC its scope covers.)
+4. **Move the finished slice to Done, then report.** On green and with the AC checked: `mcp__thinkube-kanban__move_slice { slice: "SP-{n}_SL-{m}", status: "Done" }`. This sets the slice's `status: done` and **stamps `verified_req_hash`** with the Spec's current requirement-hash automatically — you don't write that field by hand. Then report the move with evidence (the verify result + the AC you checked) — never hand the move or the checkbox off to the user.
 5. **Stale-spec sweep.** Before picking the next slice, check whether any **done** sibling under the active Spec went stale. From `list_board`, each card carries `specStale` (bool) and `specChange` (`none` | `metadata` | `requirements`):
    - **`specChange: "requirements"`** (substantively stale — the Spec's `## Acceptance Criteria` text / `## Design` / `## Constraints` changed since this slice was verified, i.e. current requirement-hash ≠ the slice's `verified_req_hash`): **resolve it before starting new work.** Re-run the `verifier` against the current Spec; if the slice no longer meets the new AC, move it back to `Doing` and re-open the affected `.thinkube/specs/SP-{n}/spec.md` checkbox. Tell the user what changed.
    - **`specChange: "metadata"`** (a status move, priority/theme/due edit, or an AC checkbox toggle): not a real change — no re-verification.
@@ -65,8 +65,8 @@ In one invocation:
    webview   ✅ built
    tests     ✅ 18 passed
 
-🟢 SP-{n}_SL-3 → Done   (verified_req_hash stamped)
 ☑ Checked AC #2 on SP-{n}/spec.md
+🟢 SP-{n}_SL-3 → Done   (verified_req_hash stamped)
 
 ▶ Next pick: SP-{n}_SL-4 — <title>
    satisfies AC #3
@@ -84,5 +84,5 @@ Ready to pair on SP-{n}_SL-4. Tell me what you want to do first.
 
 - **Verifier subagent missing.** If `.claude/agents/verifier.md` isn't installed, run the `repo-conventions` verification recipe directly via `Bash` instead. Suggest re-installing the bundle.
 - **Verification recipe not detected.** Tell the user. Don't guess — ask for the right command and add it to `repo-conventions`.
-- **`move_slice` gate refuses.** Surface the reason verbatim. If → Done is rejecting because the satisfied AC isn't checked on the Spec, check it first (step 4) and retry.
+- **`move_slice` gate refuses.** Surface the reason verbatim. If → Done is rejecting because the satisfied AC isn't checked on the Spec, check it (step 3) and retry the move.
 - **Navigator mode.** The MCP server refuses board writes from Claude. Verification still runs and the AC edit is proposed; tell the user to make the move themselves.

@@ -125,3 +125,4 @@ Rules:
 - Mode awareness: `thinkube.kanban.mode` controls AI write authority. In `navigator` mode the AI reads + proposes but can't write the board; in `driver` / `both` it can.
 
 <!-- thinkube-methodology:end -->
+
