@@ -21,6 +21,7 @@ import { LauncherService } from "../services/LauncherService";
 import { SessionLinkService } from "../services/SessionLinkService";
 import { listSessionsForFolder, SessionInfo } from "../services/sessionLinks";
 import { ThinkubeStore } from "../store/ThinkubeStore";
+import { WorktreeService } from "../services/WorktreeService";
 import { KanbanPanel } from "../views/kanban/host/Panel";
 import { ThinkubeFilesAdapter } from "../views/kanban/host/storage/ThinkubeFilesAdapter";
 import { decodeCardNumber } from "../views/kanban/host/storage/sliceBoard";
@@ -178,13 +179,24 @@ async function openBoardFor(
       );
     },
     // "New Spec" header button: allocate the next Spec number and open a
-    // Claude session rooted in this repo with /spec-prepare prefilled —
-    // spec authoring is a conversation (ADR-0003), so the button's job is
-    // only to start it in the right place with the right number.
+    // Claude session rooted in the repo with /spec-prepare prefilled — spec
+    // authoring is a conversation (ADR-0003), so the button's job is only to
+    // start it in the right place with the right number.
+    //
+    // Canonical-only minting (SP-5): if this board is a linked worktree, both
+    // the number and the authoring session must come from the canonical repo —
+    // a worktree's checkout is a possibly-stale view of `.thinkube/specs/`, so
+    // minting there risks duplicating a Spec number that already exists on
+    // main. Spec numbers are allocated, and new spec files created, only on
+    // canonical; worktrees only ever *work* an already-numbered Spec.
     onCreateSpec: async () => {
-      const n = await store.nextSpecNumber();
+      const canonical =
+        (await new WorktreeService().canonicalRepo(r.path)) ?? r.path;
+      const mintStore =
+        canonical === r.path ? store : new ThinkubeStore(canonical);
+      const n = await mintStore.nextSpecNumber();
       await deps.launcher.openHere(
-        vscode.Uri.file(r.path),
+        vscode.Uri.file(canonical),
         `/spec-prepare ${n} `,
       );
     },

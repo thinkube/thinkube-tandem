@@ -51,6 +51,7 @@ import { requirementHash } from "../methodology/specChange";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import type { Frontmatter } from "../store/frontmatter";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
+import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
   buildSliceBoard,
   SliceInput,
@@ -279,7 +280,14 @@ function walkForBoards(
   if (isRepo || isBoard(dir)) {
     if (isBoard(dir)) {
       const abs = path.resolve(dir);
-      out.set(abs, { id: boardId(abs), name: path.basename(abs), path: abs });
+      // A linked worktree (SP-5) is still addressable by its path (id), but it
+      // displays as a worktree of its canonical repo — not a rogue board named
+      // by its bare directory basename.
+      const wt = linkedWorktreeInfo(abs);
+      const name = wt
+        ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
+        : path.basename(abs);
+      out.set(abs, { id: boardId(abs), name, path: abs });
     }
     return; // a repo is a leaf — no nested boards
   }

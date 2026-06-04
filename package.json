@@ -243,6 +243,18 @@
         "title": "Refresh Specs",
         "category": "Thinkube Specs",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.specs.startWorktree",
+        "title": "Start Spec in Worktree",
+        "category": "Thinkube Specs",
+        "icon": "$(repo-clone)"
+      },
+      {
+        "command": "thinkube.specs.retireWorktree",
+        "title": "Retire Spec Worktree",
+        "category": "Thinkube Specs",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -279,6 +291,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "thinkube.specs.startWorktree",
+          "when": "view == thinkubeSpecs && viewItem == spec",
+          "group": "inline@0"
+        },
+        {
+          "command": "thinkube.specs.retireWorktree",
+          "when": "view == thinkubeSpecs && viewItem == spec",
+          "group": "inline@1"
+        },
         {
           "command": "thinkube.boards.enable",
           "when": "view == thinkubeBoards && viewItem == tandemBoardDisabled",
@@ -420,6 +442,11 @@
           ],
           "default": "both",
           "description": "Pair-programming role assignment. `navigator`: AI reads and proposes only (writes are blocked). `driver`: AI can write (typical when AI is leading implementation). `both`: either party can write at will (default)."
+        },
+        "thinkube.worktree.baseDir": {
+          "type": "string",
+          "default": "",
+          "description": "Base directory for per-Spec git worktrees created by \"Start Spec in Worktree\". Empty = a sibling `<repo>-worktrees/` directory next to the repo. Keep it outside the repo tree so board discovery doesn't list worktrees as nested boards."
         }
       }
     }

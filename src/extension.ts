@@ -25,6 +25,7 @@ import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
 import { SpecsProvider } from "./views/boards/SpecsProvider";
 import { registerBoardCommands, seedBoardsFilter } from "./commands/boards";
+import { registerWorktreeCommands } from "./commands/worktree";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Thinkube AI Integration is now active!");
@@ -204,6 +205,10 @@ export function activate(context: vscode.ExtensionContext) {
       specsProvider.refresh(),
     ),
   );
+
+  // "Start Spec in Worktree": create the Spec's git worktree and open a session
+  // rooted there, so parallel Specs never share a working tree (SP-5).
+  registerWorktreeCommands(context, { launcher });
 }
 
 export function deactivate() {

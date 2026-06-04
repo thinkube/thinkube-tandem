@@ -12,7 +12,9 @@
     "src/views/kanban/host/storage/sliceBoard.ts",
     "src/views/kanban/host/storage/sliceBoard.test.ts",
     "src/store/frontmatter.ts",
-    "src/store/frontmatter.test.ts"
+    "src/store/frontmatter.test.ts",
+    "src/services/WorktreeService.ts",
+    "src/services/WorktreeService.test.ts"
   ],
   "exclude": ["node_modules"]
 }

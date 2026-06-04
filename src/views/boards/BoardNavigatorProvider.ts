@@ -22,6 +22,7 @@ import {
   StatusReport,
   summarizeStatus,
 } from "../../methodology/BundleInstaller";
+import { linkedWorktreeInfo } from "../../services/WorktreeService";
 
 export interface RepoEntry {
   kind: "repo";
@@ -33,6 +34,12 @@ export interface RepoEntry {
   rel: string;
   /** True when the repo has a `.thinkube/` board (= methodology-enabled). */
   enabled: boolean;
+  /**
+   * Set when this entry is a linked git worktree (SP-5), not a standalone repo:
+   * the canonical repo's name and the worktree's own name, for a "worktree of
+   * its repo" label rather than a rogue top-level board.
+   */
+  worktreeOf?: { repo: string; name: string };
 }
 
 /** Child node of an enabled repo: its methodology-bundle install state. */
@@ -72,7 +79,8 @@ function walk(
   } catch {
     return;
   }
-  if (entries.some((e) => e.isDirectory() && e.name === ".git")) {
+  const dotGit = entries.find((e) => e.name === ".git");
+  if (dotGit?.isDirectory()) {
     out.set(dir, {
       kind: "repo",
       path: dir,
@@ -81,6 +89,23 @@ function walk(
       enabled: fs.existsSync(path.join(dir, ".thinkube")),
     });
     return; // a repo is a leaf in this tree
+  }
+  if (dotGit?.isFile()) {
+    // A `.git` *file* marks a linked worktree (SP-5) — also a leaf (never
+    // descend into a checkout). Surface it only if it carries a board, and
+    // label it as a worktree of its canonical repo rather than a bare repo.
+    const wt = linkedWorktreeInfo(dir);
+    if (wt && fs.existsSync(path.join(dir, ".thinkube"))) {
+      out.set(dir, {
+        kind: "repo",
+        path: dir,
+        name: path.basename(dir),
+        rel: path.relative(base, dir) || path.basename(dir),
+        enabled: true,
+        worktreeOf: { repo: path.basename(wt.canonicalRepo), name: wt.name },
+      });
+    }
+    return;
   }
   if (depth >= maxDepth) return;
   for (const e of entries) {
@@ -154,19 +179,34 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
 
   getTreeItem(node: BoardNode): vscode.TreeItem {
     if (node.kind === "bundle-status") return bundleStatusItem(node);
+    // A linked worktree reads as "<repo> · <name>" labeled a worktree, not a
+    // standalone repo (SP-5). It is still an enabled, openable board.
+    const label = node.worktreeOf
+      ? `${node.worktreeOf.repo} · ${node.worktreeOf.name}`
+      : node.name;
     const item = new vscode.TreeItem(
-      node.name,
+      label,
       node.enabled
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
-    item.description = node.enabled ? node.rel : `${node.rel} — not enabled`;
-    item.tooltip = node.path;
+    item.description = node.worktreeOf
+      ? "worktree"
+      : node.enabled
+        ? node.rel
+        : `${node.rel} — not enabled`;
+    item.tooltip = node.worktreeOf
+      ? `${node.path}\nLinked worktree of ${node.worktreeOf.repo}`
+      : node.path;
     item.contextValue = node.enabled
       ? "tandemBoardEnabled"
       : "tandemBoardDisabled";
     item.iconPath = new vscode.ThemeIcon(
-      node.enabled ? "project" : "circle-outline",
+      node.worktreeOf
+        ? "repo-clone"
+        : node.enabled
+          ? "project"
+          : "circle-outline",
     );
     if (node.enabled) {
       item.command = {
