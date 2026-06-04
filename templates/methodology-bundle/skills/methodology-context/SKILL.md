@@ -127,6 +127,10 @@ Each repository owns its own committed `.thinkube/` board — the **repo _is_ th
 - `driver`: AI is leading; both can write.
 - `both` (default): either party can write at will.
 
+## Write authority
+
+Inside an invoked skill, board bookkeeping — moving cards, checking the AC a slice satisfies, stamping provenance/verification — is the **AI's job**: it does it and **reports the result with evidence**. The human steers substance and **intervenes by exception**; the AI never asks the human to move a card or re-invoke a command merely to advance mechanics, and stops only at a marked **bless point**, a **gate refusal**, or a **failed precondition**. (In `navigator` mode this inverts per mode awareness — the AI proposes, the human writes.)
+
 ## Slice creation (`/slice`)
 
 `/slice` decomposes a Spec into coherent slices, writing individual `.thinkube/specs/SP-{n}/SL-{m}.md` files **directly** — no issue minting, no checkbox-list intermediate, no GitHub API. It allocates the next per-Spec `SL-{m}` and refuses rows that have no single verifiable "done" (those go in the Spec, not on the board).

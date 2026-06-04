@@ -13,22 +13,22 @@ already existed on disk.)
 
 ## Acceptance Criteria
 
-- [ ] The methodology master (bundle `CLAUDE.md` block + `methodology-context`)
+- [x] The methodology master (bundle `CLAUDE.md` block + `methodology-context`)
       states the write-authority rule: inside an invoked skill, board
       bookkeeping (moves, AC checkboxes, stamps) is the **AI's job**, done
       and **reported with evidence**; the human intervenes **by exception**;
       the AI never asks the human to move a card or re-invoke a command
       merely to advance mechanics; it stops only at marked bless points,
       gate refusals, or failed preconditions.
-- [ ] A `/pair-next` run on a green slice **moves it to Done and reports** —
+- [x] A `/pair-next` run on a green slice **moves it to Done and reports** —
       the transcript contains no "now you move/run X" mechanics addressed
       to the user.
-- [ ] `/pair-next` with nothing in flight takes an **unambiguous** pick
+- [x] `/pair-next` with nothing in flight takes an **unambiguous** pick
       (briefed, deps satisfied) directly; it asks only on genuine ambiguity
       (multiple candidates, failed deps, board drift).
-- [ ] `/pair-start` keeps exactly **one bless point** (the pick), phrased
+- [x] `/pair-start` keeps exactly **one bless point** (the pick), phrased
       confirm-or-object — not "run /pair-next to take it."
-- [ ] `move_slice → Done` **refuses** when the satisfied AC is not checked
+- [x] `move_slice → Done` **refuses** when the satisfied AC is not checked
       on the parent Spec — the gate's mechanical half becomes real code,
       with an error that names the unchecked criterion.
 - [ ] Ships dual-vehicle: bundle bump (skill/master text) + new vsix

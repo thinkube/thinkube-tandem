@@ -48,6 +48,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { requirementHash } from "../methodology/specChange";
+import { gateSliceSatisfiesToDone } from "../methodology/qualityGates";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import type { Frontmatter } from "../store/frontmatter";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
@@ -438,7 +439,7 @@ const TOOL_DEFS = [
   {
     name: "move_slice",
     description:
-      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done. Moving to Done stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
+      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done. Moving to Done is REFUSED unless every acceptance criterion the slice lists in `satisfies` is checked on the parent Spec (the error names the offending criterion); slices with no `satisfies` are not gated. On a successful Done it stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
     inputSchema: {
       type: "object",
       properties: {
@@ -488,6 +489,12 @@ const TOOL_DEFS = [
           type: "boolean",
           description:
             "Shares no files/state with sibling slices (parallel-eligible).",
+        },
+        satisfies: {
+          type: "array",
+          items: { type: "integer", minimum: 1 },
+          description:
+            "1-based AC ordinals this slice delivers (positions in the parent Spec's `## Acceptance Criteria`). Arms the → Done gate: the slice can't reach Done until each listed criterion is checked on the Spec.",
         },
         priority: {
           type: "string",
@@ -577,6 +584,7 @@ async function dispatchTool(
         body: asString(args, "body"),
         depends_on: optStringArray(args, "depends_on"),
         parallel: optBoolean(args, "parallel"),
+        satisfies: optNumberArray(args, "satisfies"),
         priority: optString(args, "priority"),
       });
     case "update_slice":
@@ -751,22 +759,46 @@ async function moveSlice(
 
   const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
 
-  // On move to Done, stamp the verification baseline: read the parent Spec
-  // doc, hash its requirement sections, and record it on the slice so a later
-  // requirement edit re-flags this slice stale. Best-effort — never fail the
-  // move on a hashing/read error.
   let baselineStamped = false;
+  let gateSkipped: string | undefined;
   if (target === "done") {
+    // Read the parent Spec once — both the → Done gate and the baseline stamp
+    // need its body. A read failure leaves `specBody` undefined; the gate then
+    // sees zero criteria and refuses any slice that claims to satisfy one
+    // (fail-closed for integrity), while ungated legacy slices still pass.
+    let specBody: string | undefined;
     try {
       const doc = await store.getFile(store.pathForSpecDoc(specNumber));
-      if (doc?.body) {
-        fm.verified_req_hash = requirementHash(doc.body);
-        baselineStamped = true;
-      }
+      specBody = doc?.body;
     } catch (err) {
       process.stderr.write(
-        `[thinkube-mcp] move_slice: baseline stamp for ${handle} failed: ${(err as Error).message}\n`,
+        `[thinkube-mcp] move_slice: reading parent Spec for ${handle} failed: ${(err as Error).message}\n`,
       );
+    }
+
+    // → Done gate (SP-6, mechanical half): the slice may enter Done only once
+    // every AC it claims to satisfy is checked on the parent Spec. On refusal
+    // we throw BEFORE any write — nothing is mutated and the error names the
+    // offending criterion.
+    const gate = gateSliceSatisfiesToDone({
+      specBody,
+      satisfies: parsed.frontmatter?.satisfies,
+    });
+    if (!gate.ok) throw new Error(gate.reason);
+    gateSkipped = gate.gateSkipped;
+
+    // Stamp the verification baseline so a later requirement edit re-flags this
+    // slice stale. Best-effort — never fail the (already-gated) move on a
+    // hashing error.
+    if (specBody) {
+      try {
+        fm.verified_req_hash = requirementHash(specBody);
+        baselineStamped = true;
+      } catch (err) {
+        process.stderr.write(
+          `[thinkube-mcp] move_slice: baseline stamp for ${handle} failed: ${(err as Error).message}\n`,
+        );
+      }
     }
     // Record delivery provenance (branch HEAD commit + open PR) at Done time.
     // Best-effort and isolated from the baseline stamp above — a git/gh failure
@@ -786,6 +818,7 @@ async function moveSlice(
     slice: store.sliceHandle(specNumber, sliceNumber),
     status: target,
     baselineStamped,
+    ...(gateSkipped ? { gateSkipped } : {}),
   };
 }
 
@@ -806,6 +839,7 @@ async function createSlice(
     body: string;
     depends_on?: string[];
     parallel?: boolean;
+    satisfies?: number[];
     priority?: string;
   },
 ): Promise<unknown> {
@@ -823,6 +857,13 @@ async function createSlice(
     if (!SLICE_HANDLE_RE.test(dep.trim())) {
       throw new Error(
         `depends_on entry "${dep}" is not a full slice handle (SP-{n}_SL-{m}).`,
+      );
+    }
+  }
+  for (const n of args.satisfies ?? []) {
+    if (!Number.isInteger(n) || n < 1) {
+      throw new Error(
+        `satisfies entry "${n}" is not a positive integer (a 1-based AC ordinal).`,
       );
     }
   }
@@ -849,6 +890,8 @@ async function createSlice(
   };
   if (args.depends_on?.length) fm.depends_on = args.depends_on;
   if (args.parallel) fm.parallel = true;
+  if (args.satisfies?.length)
+    fm.satisfies = [...new Set(args.satisfies)].sort((a, b) => a - b);
   if (args.priority) fm.priority = args.priority as Frontmatter["priority"];
 
   const rel = store.pathForSlice(args.spec, sliceNumber);
@@ -1051,6 +1094,17 @@ function optStringArray(
   if (!Array.isArray(v) || v.some((x) => typeof x !== "string"))
     throw new Error(`argument ${key} must be an array of strings`);
   return v as string[];
+}
+
+function optNumberArray(
+  args: Record<string, unknown>,
+  key: string,
+): number[] | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "number"))
+    throw new Error(`argument ${key} must be an array of numbers`);
+  return v as number[];
 }
 
 // Kick off LAST: `main()` references classes (BoardRegistry) that — unlike

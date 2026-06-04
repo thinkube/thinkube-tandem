@@ -51,6 +51,8 @@ export interface Frontmatter {
   pr?: string;
   /** Optional slice dependency handles, e.g. ["SP-3_SL-7"]. */
   depends_on?: string[];
+  /** 1-based AC ordinals this slice delivers; the → Done gate checks each is ticked on the parent Spec. */
+  satisfies?: number[];
   /** ISO date the file was created. */
   created?: string;
   /** `owner/name`; the repo this board belongs to. */

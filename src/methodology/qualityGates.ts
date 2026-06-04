@@ -178,6 +178,75 @@ export function runTandemGate(
   }
 }
 
+// ─── Per-slice → Done gate (SP-6: the mechanical half) ───────────────────
+//
+// The → Done gate above (`gateReviewToVerify`) is whole-Spec: it wants *every*
+// criterion checked. That can't gate a single slice on a multi-slice Spec —
+// the first slice would be stuck until the last. The mechanical half SP-6 wires
+// into `move_slice` is instead keyed by the slice's own `satisfies` ordinals:
+// a slice may enter Done only once the criteria *it* delivers are checked. This
+// is a sequencing/integrity check, not independent review — the same contract
+// that authorises the AI to check the boxes also requires Done to stay
+// unreachable while the Spec document lags the board.
+
+export interface SatisfiesGateInput {
+  /** Parent Spec body — its `## Acceptance Criteria` is read. */
+  specBody: string | null | undefined;
+  /** 1-based AC ordinals the slice delivers (frontmatter `satisfies`). */
+  satisfies: number[] | null | undefined;
+}
+
+export type SatisfiesGateResult =
+  | { ok: true; gateSkipped?: string }
+  | { ok: false; reason: string };
+
+/**
+ * Gate a slice's move to Done by its `satisfies` ordinals. Refuses (naming the
+ * offending ordinal + its text) when any listed criterion is unchecked or
+ * out-of-range on the parent Spec. Legacy-tolerant: a slice with no ordinals is
+ * not gated — `{ ok: true, gateSkipped: "no satisfies field" }` — so slices
+ * authored before this field keep moving.
+ */
+export function gateSliceSatisfiesToDone(
+  input: SatisfiesGateInput,
+): SatisfiesGateResult {
+  const raw = Array.isArray(input.satisfies) ? input.satisfies : [];
+  const ordinals = [
+    ...new Set(raw.filter((n) => Number.isInteger(n) && n > 0)),
+  ].sort((a, b) => a - b);
+  if (ordinals.length === 0) {
+    return { ok: true, gateSkipped: "no satisfies field" };
+  }
+  const items = extractAcceptanceCriteria(input.specBody ?? "");
+  const problems: string[] = [];
+  for (const ordinal of ordinals) {
+    const item = items[ordinal - 1];
+    if (!item) {
+      problems.push(
+        `#${ordinal} (the parent Spec lists ${items.length} acceptance ${items.length === 1 ? "criterion" : "criteria"})`,
+      );
+    } else if (!item.checked) {
+      problems.push(`#${ordinal} ("${clampLabel(item.label)}")`);
+    }
+  }
+  if (problems.length === 0) return { ok: true };
+  const noun =
+    problems.length === 1
+      ? "acceptance criterion is"
+      : "acceptance criteria are";
+  return {
+    ok: false,
+    reason:
+      `Cannot move to Done: this slice's satisfied ${noun} not checked on the parent Spec — AC ${problems.join(", ")}. ` +
+      `Check the box(es) under the Spec's ## Acceptance Criteria, then retry the move.`,
+  };
+}
+
+function clampLabel(label: string, max = 100): string {
+  const s = label.trim();
+  return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
 export class GateFailedError extends Error {
   constructor(
     public readonly gate: GateName,
