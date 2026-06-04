@@ -50,6 +50,7 @@ import * as path from "node:path";
 import { requirementHash } from "../methodology/specChange";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import type { Frontmatter } from "../store/frontmatter";
+import { stampOnEnteringDone } from "../github/sliceProvenance";
 import {
   buildSliceBoard,
   SliceInput,
@@ -704,6 +705,16 @@ async function moveSlice(
     } catch (err) {
       process.stderr.write(
         `[thinkube-mcp] move_slice: baseline stamp for ${handle} failed: ${(err as Error).message}\n`,
+      );
+    }
+    // Record delivery provenance (branch HEAD commit + open PR) at Done time.
+    // Best-effort and isolated from the baseline stamp above — a git/gh failure
+    // here must never block the move.
+    try {
+      await stampOnEnteringDone(fm, store.workspaceRoot);
+    } catch (err) {
+      process.stderr.write(
+        `[thinkube-mcp] move_slice: provenance stamp for ${handle} failed: ${(err as Error).message}\n`,
       );
     }
   }

@@ -61,6 +61,40 @@ test("archived slices are excluded from the board", () => {
   assert.equal(board.tasks["SP-1_SL-2"], undefined);
 });
 
+test("buildSliceBoard carries delivery provenance (commit/commitUrl/pr) onto the card", () => {
+  const board = buildSliceBoard(
+    [
+      {
+        specNumber: 2,
+        sliceNumber: 1,
+        title: "delivered",
+        status: "done",
+        commit: "ea7d4fea08878be3af577857709fac561aefda3d",
+        commitUrl:
+          "https://github.com/cmxela/thinkube-ai-integration/commit/ea7d4fea08878be3af577857709fac561aefda3d",
+        pr: "https://github.com/cmxela/thinkube-ai-integration/pull/13",
+      },
+      // A slice with no provenance leaves the fields undefined.
+      { specNumber: 2, sliceNumber: 2, title: "pending", status: "ready" },
+    ],
+    "demo",
+  );
+  const done = board.tasks["SP-2_SL-1"];
+  assert.equal(done.commit, "ea7d4fea08878be3af577857709fac561aefda3d");
+  assert.equal(
+    done.commitUrl,
+    "https://github.com/cmxela/thinkube-ai-integration/commit/ea7d4fea08878be3af577857709fac561aefda3d",
+  );
+  assert.equal(
+    done.pr,
+    "https://github.com/cmxela/thinkube-ai-integration/pull/13",
+  );
+  const pending = board.tasks["SP-2_SL-2"];
+  assert.equal(pending.commit, undefined);
+  assert.equal(pending.commitUrl, undefined);
+  assert.equal(pending.pr, undefined);
+});
+
 test("a slice whose stamped hash differs from the current Spec hash is stale", () => {
   const board = buildSliceBoard(
     [

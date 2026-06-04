@@ -8,7 +8,14 @@ import { useState } from "react";
 import { Draggable } from "@hello-pangea/dnd";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pencil, ExternalLink, Check, X } from "lucide-react";
+import {
+  Pencil,
+  ExternalLink,
+  Check,
+  X,
+  GitCommit,
+  GitPullRequest,
+} from "lucide-react";
 import styles from "./task.module.scss";
 import { lookupPalette } from "../../utils/palette";
 import { postToHost } from "../../utils/vscode";
@@ -181,6 +188,43 @@ export function Task({
               <div className={styles.title}>
                 {task.description || "(untitled)"}
               </div>
+              {(task.commitUrl || task.commit || task.pr) && (
+                <div className={styles.provenance}>
+                  {(task.commitUrl || task.commit) && (
+                    <button
+                      type="button"
+                      className={styles.provChip}
+                      disabled={!task.commitUrl}
+                      title={
+                        task.commitUrl
+                          ? `Open commit ${task.commit} on the remote`
+                          : `Commit ${task.commit}`
+                      }
+                      onClick={() =>
+                        task.commitUrl &&
+                        postToHost({
+                          kind: "open-external",
+                          url: task.commitUrl,
+                        })
+                      }
+                    >
+                      <GitCommit /> {shortSha(task.commit)}
+                    </button>
+                  )}
+                  {task.pr && (
+                    <button
+                      type="button"
+                      className={styles.provChip}
+                      title={`Open ${task.pr}`}
+                      onClick={() =>
+                        postToHost({ kind: "open-external", url: task.pr! })
+                      }
+                    >
+                      <GitPullRequest /> {prLabel(task.pr)}
+                    </button>
+                  )}
+                </div>
+              )}
               {task.specStale &&
                 (() => {
                   const note = staleNote(task.columnId);
@@ -228,6 +272,17 @@ export function Task({
       )}
     </Draggable>
   );
+}
+
+/** First 7 chars of a commit SHA for the chip label; falls back to "commit". */
+function shortSha(sha: string | undefined): string {
+  return sha ? sha.slice(0, 7) : "commit";
+}
+
+/** "PR #13" parsed from a pull-request URL, or a bare "PR" if no number. */
+function prLabel(url: string): string {
+  const m = /\/pull\/(\d+)/.exec(url);
+  return m ? `PR #${m[1]}` : "PR";
 }
 
 const DEPS_LINE = /depends on|blocked by/i;

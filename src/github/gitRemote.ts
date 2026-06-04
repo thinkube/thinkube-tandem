@@ -24,6 +24,11 @@ export interface RepoCoords {
   name: string;
 }
 
+/** Canonical GitHub commit URL for a SHA on a repo. */
+export function buildCommitUrl(coords: RepoCoords, sha: string): string {
+  return `https://github.com/${coords.owner}/${coords.name}/commit/${sha}`;
+}
+
 /** Parse `owner/repo` out of a single git remote URL, or undefined. */
 export function parseGitHubRemote(url: string): RepoCoords | undefined {
   const trimmed = url.trim();

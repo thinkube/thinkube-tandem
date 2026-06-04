@@ -45,6 +45,10 @@ export interface Frontmatter {
   priority?: "P0" | "P1" | "P2" | "P3";
   /** Spec requirement-hash a slice was last verified against (set by /pair-next). */
   verified_req_hash?: string;
+  /** Full commit SHA the slice was built on, captured when it enters Done. */
+  commit?: string;
+  /** Pull-request URL carrying the slice, captured when it enters Done. */
+  pr?: string;
   /** Optional slice dependency handles, e.g. ["SP-3_SL-7"]. */
   depends_on?: string[];
   /** ISO date the file was created. */

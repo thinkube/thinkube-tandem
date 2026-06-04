@@ -102,6 +102,12 @@ export interface SliceInput {
   currentReqHash?: string;
   parentUpdatedAt?: string;
   updatedAt?: string;
+  /** Delivery provenance captured on move-to-Done (SP-2): commit SHA. */
+  commit?: string;
+  /** Full URL to `commit` on the remote host, derived from the git remote. */
+  commitUrl?: string;
+  /** Pull-request URL carrying the slice. */
+  pr?: string;
 }
 
 /**
@@ -141,6 +147,9 @@ export function buildSliceBoard(slices: SliceInput[], scope: string): Board {
       priority: s.priority,
       specStale: specChange === "requirements",
       specChange,
+      commit: s.commit,
+      commitUrl: s.commitUrl,
+      pr: s.pr,
     };
     tasks[id] = card;
     byColumn.get(columnId)?.push(id);

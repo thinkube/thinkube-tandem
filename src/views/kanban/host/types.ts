@@ -26,6 +26,12 @@ export interface TaskCard {
   priority?: string;
   /** How the parent Spec last changed relative to this task (SP-86). */
   specChange?: "none" | "metadata" | "requirements";
+  /** Delivery provenance captured when the slice entered Done (SP-2): commit SHA. */
+  commit?: string;
+  /** Full URL to `commit` on the remote host, derived from the git remote. */
+  commitUrl?: string;
+  /** Pull-request URL carrying the slice. */
+  pr?: string;
 }
 
 export interface BoardColumn {
@@ -48,6 +54,8 @@ export type WebviewMessage =
   | { kind: "update-task"; number: number; title?: string; body?: string }
   | { kind: "set-due"; number: number; date: string | null }
   | { kind: "open-detail"; number: number }
+  /** Open a commit/PR link in the user's browser (host guards to http(s)). */
+  | { kind: "open-external"; url: string }
   /** "New Spec" header button — host opens a Claude session with /spec-prepare prefilled. */
   | { kind: "create-spec" };
 
