@@ -40,8 +40,8 @@
       "thinkube": [
         {
           "id": "thinkubeBoards",
-          "name": "Boards",
-          "contextualTitle": "Tandem Boards"
+          "name": "Thinking Spaces",
+          "contextualTitle": "Thinkube Thinking Spaces"
         },
         {
           "id": "claudeConfigTree",

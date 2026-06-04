@@ -102,6 +102,13 @@ exactly two coined words (Tandem, Slice).
   GitHub it was a clumsy "switch the one repo+project binding"; under files-first it
   is the **primary navigation**, because there is no single binding — you walk the
   workspace's boards.
+- The navigator's UI label is **"Thinking Spaces"** (decided 2026-06-04, with
+  Phase-6 execution): each row is a repo _plus_ its thinking artifacts
+  (`.thinkube/` specs, decisions, retros) _plus_ its Claude sessions — more than
+  "a board," which is one thing a thinking space _contains_. Brand language
+  (Thinkube → thinking), self-explanatory, and not workflow jargon — it doesn't
+  spend the two-coined-words budget (ADR-0004). Command IDs stay
+  `thinkube.boards.*`.
 
 ## Consequences
 
