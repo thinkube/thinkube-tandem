@@ -29,28 +29,8 @@ export interface StorageAdapter {
     issueNumber: number,
     fields: { title?: string; body?: string },
   ): Promise<void>;
-  /**
-   * Create a new Task issue and place it on the board in the given column.
-   * Optional — adapters not backed by a real issue tracker omit it.
-   */
-  createTask?(columnId: string, title: string): Promise<void>;
   /** Set/clear a card's due date (board DATE field). Optional. */
   setDueDate?(issueNumber: number, date: string | null): Promise<void>;
-  /** Candidate parent Specs to attach an issue under. Optional. */
-  listParentSpecs?(): Promise<
-    Array<{ number: number; title: string; nodeId: string }>
-  >;
-  /** Attach an issue under a parent (sub-issue link). Optional. */
-  setParent?(childNumber: number, parentNodeId: string): Promise<void>;
-  /**
-   * Promote a set of issues into a full Epic→Story→Spec chain (placeholders),
-   * link them as Tasks under the Spec, and place them on the board. Returns
-   * the created issue numbers.
-   */
-  promoteToChain?(
-    title: string,
-    childNumbers: number[],
-  ): Promise<{ epic: number; story: number; spec: number }>;
   /** Optional event for adapters that observe out-of-band changes. */
   readonly onExternalChange?: vscode.Event<Board>;
   /** Adapter-supplied label used in the panel title. */

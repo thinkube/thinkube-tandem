@@ -12,7 +12,7 @@
  *
  *   - `EventEmitter<T>` so `ThinkubeStore` can construct `_onChanged`.
  *   - `workspace.getConfiguration(...)` routed to THINKUBE_* env vars so
- *     `TasksMaterializer.materialize` reads the same settings the host has.
+ *     the subprocess reads the same settings the host has.
  *   - `workspace.createFileSystemWatcher(...)` returns a no-op watcher —
  *     the subprocess never calls `ThinkubeStore.activate()`.
  *   - `window.showXMessage / showInputBox` are no-ops — the subprocess has
@@ -50,9 +50,6 @@ class EventEmitter<T> {
 }
 
 const SETTINGS_FROM_ENV: Record<string, () => unknown> = {
-  "thinkube.kanban.repo": () => process.env.THINKUBE_REPO ?? "",
-  "thinkube.kanban.projectNumber": () =>
-    Number(process.env.THINKUBE_PROJECT_NUMBER ?? "0"),
   "thinkube.kanban.allowAIWrites": () =>
     (process.env.THINKUBE_ALLOW_AI_WRITES ?? "true") === "true",
 };

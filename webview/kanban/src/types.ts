@@ -71,14 +71,8 @@ export type WebviewMessage =
   | { kind: "notify"; level: "info" | "warn" | "error"; text: string }
   /** Inline card edit — write the issue title (and/or body) back to GitHub. */
   | { kind: "update-task"; number: number; title?: string; body?: string }
-  /** Create a new Task issue in the given column (status). */
-  | { kind: "create-task"; columnId: string; title: string }
   /** Set or clear (null) a card's due date. */
   | { kind: "set-due"; number: number; date: string | null }
-  /** Attach an issue under a parent Spec (host shows a picker). */
-  | { kind: "set-parent"; number: number }
-  /** Promote a set of Inbox issues into a new Epic→Story→Spec chain. */
-  | { kind: "group"; childNumbers: number[] }
   /** Open the full card-detail panel for an issue. */
   | { kind: "open-detail"; number: number };
 

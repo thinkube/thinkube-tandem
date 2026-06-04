@@ -6,7 +6,11 @@
   },
   "include": [
     "src/methodology/specChange.ts",
-    "src/methodology/specChange.test.ts"
+    "src/methodology/specChange.test.ts",
+    "src/methodology/qualityGates.ts",
+    "src/methodology/qualityGates.test.ts",
+    "src/views/kanban/host/storage/sliceBoard.ts",
+    "src/views/kanban/host/storage/sliceBoard.test.ts"
   ],
   "exclude": ["node_modules"]
 }

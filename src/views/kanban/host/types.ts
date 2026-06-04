@@ -46,10 +46,7 @@ export type WebviewMessage =
   | { kind: "save"; board: Board }
   | { kind: "notify"; level: "info" | "warn" | "error"; text: string }
   | { kind: "update-task"; number: number; title?: string; body?: string }
-  | { kind: "create-task"; columnId: string; title: string }
   | { kind: "set-due"; number: number; date: string | null }
-  | { kind: "set-parent"; number: number }
-  | { kind: "group"; childNumbers: number[] }
   | { kind: "open-detail"; number: number };
 
 export type ModeFlag = "navigator" | "driver" | "both";

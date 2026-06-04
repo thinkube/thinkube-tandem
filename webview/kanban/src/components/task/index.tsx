@@ -8,11 +8,10 @@ import { useState } from "react";
 import { Draggable } from "@hello-pangea/dnd";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Pencil, ExternalLink, Check, X, Link2 } from "lucide-react";
+import { Pencil, ExternalLink, Check, X } from "lucide-react";
 import styles from "./task.module.scss";
 import { lookupPalette } from "../../utils/palette";
 import { postToHost } from "../../utils/vscode";
-import { useSelection } from "../../utils/selection";
 import { TaskCard } from "../../types";
 
 export function Task({
@@ -28,8 +27,6 @@ export function Task({
   const [body, setBody] = useState(task.body ?? "");
   const [due, setDue] = useState(task.dueDate ?? "");
   const canEdit = task.issueNumber !== undefined;
-  const isInboxCard = task.columnId === "column-inbox";
-  const { selected, toggle } = useSelection();
 
   const startEdit = () => {
     setTitle(task.description);
@@ -76,16 +73,6 @@ export function Task({
           }}
         >
           <header className={styles.header}>
-            {isInboxCard && (
-              <input
-                type="checkbox"
-                className={styles.selectBox}
-                checked={selected.includes(task.id)}
-                title="Select to group into a Spec/Story/Epic"
-                onClick={(e) => e.stopPropagation()}
-                onChange={() => toggle(task.id)}
-              />
-            )}
             {task.parentNumber !== undefined && (
               <span
                 className={styles.epic}
@@ -111,21 +98,6 @@ export function Task({
               <>
                 <button title="Edit title & body" onClick={startEdit}>
                   <Pencil />
-                </button>
-                <button
-                  title={
-                    task.parentNumber
-                      ? "Re-attach under a Spec"
-                      : "Attach under a Spec (place in hierarchy)"
-                  }
-                  onClick={() =>
-                    postToHost({
-                      kind: "set-parent",
-                      number: task.issueNumber!,
-                    })
-                  }
-                >
-                  <Link2 />
                 </button>
                 <button
                   title="Open issue on GitHub"

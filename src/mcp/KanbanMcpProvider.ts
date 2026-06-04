@@ -13,8 +13,8 @@
  * Code just before launch — that way we don't burn a token lookup on
  * extension activation and we always pick up the freshest GH credentials.
  *
- * Settings drive the definition. When `thinkube.kanban.repo` is unset, we
- * provide no definitions at all (the server has nothing to talk to).
+ * Files-first: the server is provided only when a methodology root exists (a
+ * configured or discoverable `.thinkube/`). No GitHub repo/project is needed.
  * Settings changes fire `onDidChangeMcpServerDefinitions` so VS Code
  * re-fetches and re-launches as needed.
  */
@@ -22,7 +22,10 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { AuthService } from "../github/AuthService";
-import { getMethodologyRoot } from "../github/workspaceRepo";
+import {
+  getMethodologyRoot,
+  getMethodologyRootOrUndefined,
+} from "../github/workspaceRepo";
 
 const SERVER_LABEL = "Thinkube Kanban";
 
@@ -55,8 +58,7 @@ export class KanbanMcpProvider implements vscode.McpServerDefinitionProvider<vsc
 
     const settingsListener = vscode.workspace.onDidChangeConfiguration((e) => {
       if (
-        e.affectsConfiguration("thinkube.kanban.repo") ||
-        e.affectsConfiguration("thinkube.kanban.projectNumber") ||
+        e.affectsConfiguration("thinkube.kanban.folder") ||
         e.affectsConfiguration("thinkube.kanban.allowAIWrites") ||
         e.affectsConfiguration("thinkube.kanban.mode")
       ) {
@@ -118,29 +120,16 @@ export class KanbanMcpProvider implements vscode.McpServerDefinitionProvider<vsc
       throw new Error(`Thinkube Kanban MCP: ${(err as Error).message}`);
     }
 
-    // Resolve a token non-interactively — at launch time we're inside a
-    // background flow, no place to show an input box. If a token isn't
-    // available, the subprocess will fail on the first GitHub call with
-    // a clear error; we don't block startup.
-    const token = await this.deps.auth.getToken({ prompt: false });
-
-    // Mode trumps the explicit allowAIWrites flag: navigator forces
-    // read-only, regardless of the flag. driver / both leave it as set.
+    // Files-first: the server reads/writes only `.thinkube/` under the
+    // workspace. No GitHub coords or token are needed. Mode trumps the
+    // explicit allowAIWrites flag: navigator forces read-only, regardless of
+    // the flag. driver / both leave it as set.
     const effectiveAllowWrites = cfg.mode !== "navigator" && cfg.allowAIWrites;
     const env: Record<string, string | number | null> = {
       THINKUBE_WORKSPACE: workspaceFsPath,
-      THINKUBE_REPO: cfg.repo,
-      THINKUBE_PROJECT_NUMBER: String(cfg.projectNumber),
       THINKUBE_ALLOW_AI_WRITES: effectiveAllowWrites ? "true" : "false",
       THINKUBE_MODE: cfg.mode,
     };
-    if (token) {
-      env.GITHUB_TOKEN = token;
-    } else {
-      this.log(
-        "WARN: no GitHub token resolved; MCP server will fail on first call",
-      );
-    }
 
     return new vscode.McpStdioServerDefinition(
       server.label,
@@ -156,22 +145,19 @@ export class KanbanMcpProvider implements vscode.McpServerDefinitionProvider<vsc
 }
 
 interface ResolvedSettings {
-  repo: string;
-  projectNumber: number;
   allowAIWrites: boolean;
   mode: "navigator" | "driver" | "both";
 }
 
 function readSettings(): ResolvedSettings | undefined {
+  // Files-first launch gate: only provide the server when a methodology root
+  // exists (a configured/discoverable `.thinkube/`). No GitHub repo/project.
+  if (!getMethodologyRootOrUndefined()) return undefined;
   const cfg = vscode.workspace.getConfiguration("thinkube.kanban");
-  const repo = (cfg.get<string>("repo") ?? "").trim();
-  if (!repo.includes("/")) return undefined;
   const rawMode = cfg.get<string>("mode") ?? "both";
   const mode =
     rawMode === "navigator" || rawMode === "driver" ? rawMode : "both";
   return {
-    repo,
-    projectNumber: cfg.get<number>("projectNumber") ?? 0,
     allowAIWrites: cfg.get<boolean>("allowAIWrites") ?? true,
     mode,
   };

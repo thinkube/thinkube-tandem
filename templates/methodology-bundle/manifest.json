@@ -1,5 +1,5 @@
 {
-  "version": "0.0.3",
+  "version": "0.0.4",
   "_comment": "List of files the bundle owns. BundleInstaller reads this to know what to copy on install, hashes each file at install time, and records the hashes in .thinkube/.bundle-version for drift detection. Edit this file in lockstep with the bundle contents — files not listed here won't be installed.",
   "files": [
     {
@@ -23,28 +23,13 @@
       "kind": "claudemd-block"
     },
     {
-      "source": "skills/epic-new/SKILL.md",
-      "target": ".claude/skills/epic-new/SKILL.md",
-      "kind": "copy"
-    },
-    {
-      "source": "skills/story-new/SKILL.md",
-      "target": ".claude/skills/story-new/SKILL.md",
-      "kind": "copy"
-    },
-    {
       "source": "skills/spec-prepare/SKILL.md",
       "target": ".claude/skills/spec-prepare/SKILL.md",
       "kind": "copy"
     },
     {
-      "source": "skills/tasks-decompose/SKILL.md",
-      "target": ".claude/skills/tasks-decompose/SKILL.md",
-      "kind": "copy"
-    },
-    {
-      "source": "skills/tasks-materialize/SKILL.md",
-      "target": ".claude/skills/tasks-materialize/SKILL.md",
+      "source": "skills/slice/SKILL.md",
+      "target": ".claude/skills/slice/SKILL.md",
       "kind": "copy"
     },
     {
@@ -55,11 +40,6 @@
     {
       "source": "skills/pair-next/SKILL.md",
       "target": ".claude/skills/pair-next/SKILL.md",
-      "kind": "copy"
-    },
-    {
-      "source": "skills/pair-start-quick/SKILL.md",
-      "target": ".claude/skills/pair-start-quick/SKILL.md",
       "kind": "copy"
     },
     {

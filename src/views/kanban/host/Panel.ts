@@ -169,24 +169,6 @@ export class KanbanPanel implements vscode.Disposable {
         }
         break;
       }
-      case "create-task": {
-        if (!this.adapter.createTask) {
-          this.notify("warn", "This board doesn't support creating cards.");
-          break;
-        }
-        try {
-          await this.adapter.createTask(message.columnId, message.title);
-          const board = await this.adapter.load();
-          this.post({ kind: "state", board, mode: readMode() });
-        } catch (err) {
-          this.log(`create-task failed: ${(err as Error).message}`);
-          this.notify(
-            "error",
-            `Couldn't create card: ${(err as Error).message}`,
-          );
-        }
-        break;
-      }
       case "set-due": {
         if (!this.adapter.setDueDate) {
           this.notify("warn", "This board doesn't support due dates.");
@@ -204,79 +186,6 @@ export class KanbanPanel implements vscode.Disposable {
             "error",
             `Couldn't set due date: ${(err as Error).message}`,
           );
-        }
-        break;
-      }
-      case "set-parent": {
-        const adapter = this.adapter;
-        if (!adapter.listParentSpecs || !adapter.setParent) {
-          this.notify("warn", "This board doesn't support setting a parent.");
-          break;
-        }
-        try {
-          const specs = await adapter.listParentSpecs();
-          if (specs.length === 0) {
-            this.notify(
-              "warn",
-              "No open Specs to attach under. Create a Spec first (/spec-prepare).",
-            );
-            break;
-          }
-          const pick = await vscode.window.showQuickPick(
-            specs.map((s) => ({
-              label: `SP-${s.number}  ${s.title}`,
-              spec: s,
-            })),
-            { title: `Attach #${message.number} under which Spec?` },
-          );
-          if (!pick) break;
-          await adapter.setParent(message.number, pick.spec.nodeId);
-          const board = await adapter.load();
-          this.post({ kind: "state", board, mode: readMode() });
-          this.notify(
-            "info",
-            `#${message.number} is now under SP-${pick.spec.number}.`,
-          );
-        } catch (err) {
-          this.log(
-            `set-parent #${message.number} failed: ${(err as Error).message}`,
-          );
-          this.notify(
-            "error",
-            `Couldn't set parent: ${(err as Error).message}`,
-          );
-        }
-        break;
-      }
-      case "group": {
-        const adapter = this.adapter;
-        if (!adapter.promoteToChain) {
-          this.notify("warn", "This board doesn't support grouping.");
-          break;
-        }
-        if (message.childNumbers.length === 0) break;
-        try {
-          const title = await vscode.window.showInputBox({
-            title: `New work from ${message.childNumbers.length} issue(s)`,
-            prompt:
-              "Name for the new Epic → Story → Spec (placeholders you can refine later)",
-            ignoreFocusOut: true,
-            validateInput: (v) => (v.trim() ? undefined : "Enter a name."),
-          });
-          if (!title) break;
-          const ids = await adapter.promoteToChain(
-            title.trim(),
-            message.childNumbers,
-          );
-          const board = await adapter.load();
-          this.post({ kind: "state", board, mode: readMode() });
-          this.notify(
-            "info",
-            `Created EP-${ids.epic} ▸ ST-${ids.story} ▸ SP-${ids.spec}; ${message.childNumbers.length} task(s) placed in Ready.`,
-          );
-        } catch (err) {
-          this.log(`group failed: ${(err as Error).message}`);
-          this.notify("error", `Couldn't group: ${(err as Error).message}`);
         }
         break;
       }

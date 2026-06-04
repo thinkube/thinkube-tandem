@@ -39,14 +39,14 @@
     "views": {
       "thinkube": [
         {
+          "id": "thinkubeBoards",
+          "name": "Boards",
+          "contextualTitle": "Tandem Boards"
+        },
+        {
           "id": "thinkubeBundleTree",
           "name": "Project",
           "contextualTitle": "Thinkube Project"
-        },
-        {
-          "id": "thinkubeRoadmap",
-          "name": "Roadmap",
-          "contextualTitle": "Thinkube Roadmap"
         },
         {
           "id": "claudeConfigTree",
@@ -58,16 +58,28 @@
     "viewsWelcome": [
       {
         "view": "thinkubeBundleTree",
-        "contents": "Set up this project for the Thinkube methodology:\n\n[$(gear) Configure Project](command:thinkube.kanban.configureProject)\nLink a GitHub repo + Projects v2 board.\n\n[$(package) Install Methodology Bundle](command:thinkube.kanban.installBundle)\nDrop the skills, agents, and settings into .claude/.",
-        "when": "!thinkube.roadmap.repoConfigured"
-      },
-      {
-        "view": "thinkubeRoadmap",
-        "contents": "No repository configured.\n\n[$(gear) Configure Project](command:thinkube.kanban.configureProject)\nLink a GitHub repo + Projects v2 board to load Epics, Stories, and Specs.",
-        "when": "!thinkube.roadmap.repoConfigured"
+        "contents": "Set up this project for the Thinkube methodology:\n\n[$(package) Install Methodology Bundle](command:thinkube.kanban.installBundle)\nDrop the skills, agents, and settings into .claude/."
       }
     ],
     "commands": [
+      {
+        "command": "thinkube.boards.refresh",
+        "title": "Refresh Boards",
+        "category": "Thinkube Boards",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.boards.open",
+        "title": "Open Board",
+        "category": "Thinkube Boards",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "thinkube.boards.enable",
+        "title": "Enable Methodology Here",
+        "category": "Thinkube Boards",
+        "icon": "$(add)"
+      },
       {
         "command": "thinkube-ai.claude.openHere",
         "title": "Open Here",
@@ -173,32 +185,10 @@
         "icon": "$(folder)"
       },
       {
-        "command": "thinkube.kanban.dumpRoadmap",
-        "title": "Dump Roadmap (Smoke Test)",
-        "category": "Thinkube Kanban"
-      },
-      {
-        "command": "thinkube.kanban.smokeStore",
-        "title": "Smoke Test Thinkube Store",
-        "category": "Thinkube Kanban"
-      },
-      {
         "command": "thinkube.kanban.openKanban",
         "title": "Open Kanban",
         "category": "Thinkube Kanban",
         "icon": "$(layout-panel)"
-      },
-      {
-        "command": "thinkube.kanban.configureProject",
-        "title": "Configure Project",
-        "category": "Thinkube Kanban",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "thinkube.kanban.materializeTasks",
-        "title": "Materialise Tasks",
-        "category": "Thinkube Kanban",
-        "icon": "$(rocket)"
       },
       {
         "command": "thinkube.kanban.refreshFromGitHub",
@@ -229,39 +219,15 @@
         "title": "Refresh Methodology Bundle Tree",
         "category": "Thinkube Kanban",
         "icon": "$(refresh)"
-      },
-      {
-        "command": "thinkube.roadmap.refresh",
-        "title": "Refresh Roadmap",
-        "category": "Thinkube Roadmap",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "thinkube.roadmap.openCard",
-        "title": "Open Card",
-        "category": "Thinkube Roadmap"
-      },
-      {
-        "command": "thinkube.roadmap.newEpic",
-        "title": "New Epic",
-        "category": "Thinkube Roadmap",
-        "icon": "$(add)"
-      },
-      {
-        "command": "thinkube.roadmap.newStory",
-        "title": "New Story",
-        "category": "Thinkube Roadmap",
-        "icon": "$(add)"
-      },
-      {
-        "command": "thinkube.roadmap.newSpec",
-        "title": "New Spec",
-        "category": "Thinkube Roadmap",
-        "icon": "$(add)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "thinkube.boards.refresh",
+          "when": "view == thinkubeBoards",
+          "group": "navigation@0"
+        },
         {
           "command": "thinkube.refreshConfig",
           "when": "view == claudeConfigTree",
@@ -271,11 +237,6 @@
           "command": "thinkube.switchProject",
           "when": "view == claudeConfigTree",
           "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.kanban.configureProject",
-          "when": "view == thinkubeBundleTree",
-          "group": "navigation@0"
         },
         {
           "command": "thinkube.kanban.installBundle",
@@ -296,39 +257,19 @@
           "command": "thinkube.kanban.refreshBundleTree",
           "when": "view == thinkubeBundleTree",
           "group": "navigation@4"
-        },
-        {
-          "command": "thinkube.kanban.refreshFromGitHub",
-          "when": "view == thinkubeRoadmap",
-          "group": "navigation@0"
-        },
-        {
-          "command": "thinkube.kanban.openKanban",
-          "when": "view == thinkubeRoadmap",
-          "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.kanban.materializeTasks",
-          "when": "view == thinkubeRoadmap",
-          "group": "navigation@2"
-        },
-        {
-          "command": "thinkube.roadmap.newEpic",
-          "when": "view == thinkubeRoadmap",
-          "group": "navigation@3"
-        },
-        {
-          "command": "thinkube.roadmap.newStory",
-          "when": "view == thinkubeRoadmap && thinkube.roadmap.selectedKind == epic",
-          "group": "navigation@4"
-        },
-        {
-          "command": "thinkube.roadmap.newSpec",
-          "when": "view == thinkubeRoadmap && thinkube.roadmap.selectedKind == story",
-          "group": "navigation@5"
         }
       ],
       "view/item/context": [
+        {
+          "command": "thinkube.boards.enable",
+          "when": "view == thinkubeBoards && viewItem == tandemBoardDisabled",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.boards.open",
+          "when": "view == thinkubeBoards && viewItem == tandemBoardEnabled",
+          "group": "inline"
+        },
         {
           "command": "thinkube.addHook",
           "when": "view == claudeConfigTree && viewItem == hooks-section",
@@ -404,39 +345,10 @@
           "when": "workspaceFolderCount > 0"
         },
         {
-          "command": "thinkube.kanban.dumpRoadmap",
-          "when": "workspaceFolderCount > 0"
-        },
-        {
-          "command": "thinkube.kanban.smokeStore",
-          "when": "workspaceFolderCount > 0"
-        },
-        {
           "command": "thinkube.kanban.openKanban"
         },
         {
-          "command": "thinkube.kanban.configureProject"
-        },
-        {
-          "command": "thinkube.kanban.materializeTasks",
-          "when": "workspaceFolderCount > 0"
-        },
-        {
           "command": "thinkube.kanban.refreshFromGitHub"
-        },
-        {
-          "command": "thinkube.roadmap.refresh"
-        },
-        {
-          "command": "thinkube.roadmap.newEpic"
-        },
-        {
-          "command": "thinkube.roadmap.newStory",
-          "when": "thinkube.roadmap.selectedKind == epic"
-        },
-        {
-          "command": "thinkube.roadmap.newSpec",
-          "when": "thinkube.roadmap.selectedKind == story"
         }
       ]
     },
@@ -458,23 +370,12 @@
         "thinkube.kanban.folder": {
           "type": "string",
           "default": "",
-          "description": "Absolute path of the local git repository where the methodology lives (.thinkube/, CLAUDE.md, .claude/, .mcp.json). Set by 'Thinkube Kanban: Configure Project' from the folder you pick; the repo and board are derived from this folder's git remote."
-        },
-        "thinkube.kanban.repo": {
-          "type": "string",
-          "default": "",
-          "description": "GitHub repository backing the kanban, as 'owner/repo'. Derived from `thinkube.kanban.folder`'s git remote by Configure Project."
-        },
-        "thinkube.kanban.projectNumber": {
-          "type": "integer",
-          "default": 0,
-          "minimum": 0,
-          "description": "GitHub Projects v2 project number (the number in the project URL). Leave 0 to disable Projects-v2 read/write."
+          "description": "Optional: absolute path of the git repository the methodology bundle + kanban MCP server operate on. The Boards navigator opens any repo's .thinkube/ board regardless of this; it only pins which root the MCP server serves."
         },
         "thinkube.kanban.allowAIWrites": {
           "type": "boolean",
           "default": true,
-          "description": "Allow the Thinkube Kanban MCP server's mutating tools (create_*, move_task, update_issue, …). Set to false for navigator mode — AI can read and propose but cannot write. Overridden to false by `thinkube.kanban.mode = navigator`."
+          "description": "Allow the Thinkube Kanban MCP server's mutating tools (move_slice, update_slice, write_decision, …). Set to false for navigator mode — AI can read and propose but cannot write. Overridden to false by `thinkube.kanban.mode = navigator`."
         },
         "thinkube.kanban.mode": {
           "type": "string",
@@ -510,7 +411,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@octokit/graphql": "^5.0.6",
     "@octokit/rest": "^19.0.13",
     "yaml": "^2.9.0"
   }

@@ -1,95 +1,84 @@
 ---
-description: Begin a pair-programming session on a Story. Loads context (Story, Specs, Ready tasks), surfaces the next task to work, opens the Kanban panel.
+description: Begin a pair-programming session on a Spec. Loads context (Spec body, Ready slices), surfaces the next slice to work, flags stale slices.
 allowed-tools:
   [
     "Read",
     "Glob",
     "Grep",
-    "mcp__thinkube-kanban__list_stories_in_epic",
-    "mcp__thinkube-kanban__list_specs_in_story",
-    "mcp__thinkube-kanban__list_tasks_in_spec",
     "mcp__thinkube-kanban__list_board",
-    "mcp__thinkube-kanban__get_issue",
+    "mcp__thinkube-kanban__get_slice",
     "mcp__thinkube-kanban__get_thinkube_file",
     "Task",
   ]
-argument-hint: "<story-number>"
+argument-hint: "<spec-number>"
 thinkube-bundle: 0.0.1
 ---
 
 # /pair-start
 
-Start a pair-programming session on a specific Story. Loads everything Claude needs to work effectively: the Story body, all of its Specs with their acceptance criteria, all Ready Tasks under those Specs. Recommends the next Task to pull. Surfaces the navigator/driver mode.
+Start a pair-programming session on a specific **Spec**. Loads everything Claude needs to work effectively: the Spec body with its acceptance criteria, and all Ready slices under it. Recommends the next slice to pull. Surfaces the navigator/driver mode.
 
 ## Mission
 
-After `/pair-start <story-number>`, the conversation context should contain:
+After `/pair-start <spec-number>`, the conversation context should contain:
 
-- The Story title + body + parent Epic for situational awareness.
-- Every Spec under the Story with its acceptance criteria already parsed.
-- A clear pick of the next Ready Task with rationale (top of column, dependencies satisfied, parallel-eligible vs. blocking).
-- Any **substantively-stale** Tasks flagged up front (parent Spec's requirements changed since they were verified), so they're re-verified before new work.
-- An explicit acknowledgment of the current mode (`navigator` / `driver` / `both`) and what that means for Claude's write authority in this session.
+- The Spec title + body + acceptance criteria, already parsed, for situational awareness.
+- A clear pick of the next Ready slice with rationale (top of column, dependencies satisfied).
+- Any **substantively-stale** done slices flagged up front (parent Spec's requirements changed since they were verified), so they're re-verified before new work.
+- An explicit acknowledgment of the current mode (`navigator` / `driver` / `both`) and what that means for Claude's write authority this session.
 
 ## Inputs
 
-- `$ARGUMENTS`: the Story issue number. If absent, list open Stories and ask the user to pick.
+- `$ARGUMENTS`: the Spec number `{n}`. If absent, list Specs that have Ready slices (from `list_board`) and ask the user to pick.
 
 ## Procedure
 
 1. **Read methodology context** + `repo-conventions` (load both into session if not already).
-2. **Load Story + ancestry.** `mcp__thinkube-kanban__get_issue <story-number>`. Then `get_issue` on the parent Epic for the higher-level context.
-3. **Load Specs.** `mcp__thinkube-kanban__list_specs_in_story <story-number>`. For each Spec, `mcp__thinkube-kanban__get_thinkube_file specs/SP-{n}.md` to surface acceptance criteria.
-4. **Load board.** `mcp__thinkube-kanban__list_board` to see what's in Ready / In Progress / Review for this Story's tasks. Cross-reference with `list_tasks_in_spec` per spec — which also carries each Task's `specStale` / `specChange` (SP-86); note any with `specChange: "requirements"` for step 7.
-5. **Pick next task.** Apply this priority:
-   1. Tasks already In Progress under this Story (resume in-flight work first).
-   2. Top of Ready under the Spec with the most unblocked dependencies.
-   3. Parallel-eligible Tasks if multiple humans are available — surface that, don't pick for them.
-6. **Surface the picked Task.** Show: title, parent Spec, the AC line(s) it satisfies, the dependencies satisfied or pending.
-7. **Flag stale Tasks (SP-86).** If any Task under this Story has `specChange: "requirements"` — its parent Spec's `## Acceptance Criteria` / `## Design` / `## Constraints` changed since it was verified — surface it prominently: it likely needs re-verification (handled by `/pair-next`'s stale-spec sweep) before new work proceeds. Ignore `metadata`-only staleness (type/label/status/checkbox — not a real change).
-8. **State the mode.** Echo the current `thinkube.kanban.mode` value and what it means:
+2. **Load the Spec.** `get_thinkube_file specs/SP-{n}/spec.md` — surface its acceptance criteria.
+3. **Load the board.** `mcp__thinkube-kanban__list_board` returns cards grouped Ready / Doing / Done; each card carries its handle (`id`, e.g. `SP-{n}_SL-3`), title, `specStale`, and `specChange`. Filter to cards whose `parent` is `SP-{n}`. Read individual slice bodies with `get_slice { slice: "SP-{n}_SL-{m}" }` as needed.
+4. **Pick the next slice.** Apply this priority:
+   1. A slice already in **Doing** under this Spec (resume in-flight work first — keep one slice in flight per Spec).
+   2. Top of **Ready** with its `depends_on` already Done.
+5. **Surface the picked slice.** Show: handle, title, the AC line(s) it satisfies, dependencies satisfied or pending.
+6. **Flag stale slices.** If any **done** slice under this Spec has `specChange: "requirements"` — its parent Spec's `## Acceptance Criteria` / `## Design` / `## Constraints` changed since it was verified — surface it prominently: it needs re-verification (handled by `/pair-next`'s stale-spec sweep) before new work proceeds. Ignore `metadata`-only staleness (status/priority/checkbox-toggle — not a real change).
+7. **State the mode.** Echo the current `thinkube.kanban.mode` value and what it means:
    - `navigator`: Claude reads + proposes; cannot write the board.
    - `driver`: Claude is leading; will move cards, edit files, push.
    - `both`: either side can write.
-9. **Tell the user** to open the Kanban panel from the Activity Bar (`Thinkube Board` → `Roadmap`, toolbar button **Open Kanban**) or via the command palette so they can see drag-and-drop reflect the work.
-10. **Wait.** Don't auto-move the picked Task to In Progress. That's `/pair-next`'s job, and the user may want to revise the pick first.
+8. **Tell the user** to open the Kanban panel from the Activity Bar (`Thinkube Board`, toolbar button **Open Kanban**) or via the command palette so they can see drag-and-drop reflect the work.
+9. **Wait.** Don't auto-move the picked slice to Doing. That's `/pair-next`'s job, and the user may want to revise the pick first.
 
 ## Constraints
 
 - Don't write code yet. This skill is **setup** — code-writing starts after the user confirms the pick and we transition into the pair-programming loop via `/pair-next`.
-- Don't create new Tasks here — if the user wants more work surfaced, route through `/tasks-decompose` / `/tasks-materialize` for the underlying Spec.
-- If the Story has no Specs at all, **stop** and tell the user to author at least one Spec first (`/spec-prepare`).
+- Don't create new slices here — if the user wants more work surfaced, route through `/slice` for this Spec.
+- If the Spec has no slices at all, **stop** and tell the user to run `/slice {n}` first. If the Spec itself has no acceptance criteria, route to `/spec-prepare {n}`.
 
 ## Output
 
 A briefing in chat:
 
 ```
-🎯 Session: ST-{n} <story title>
-   under EP-{m} <epic title>
+🎯 Session: SP-{n} <spec title>
 
-🗒 Specs:
-   - SP-50 <title>   (AC: 3/4 satisfied)
-   - SP-51 <title>   (AC: 0/3 satisfied)
+🗒 Acceptance Criteria: 2/4 checked
 
-📋 Board for this Story:
-   Ready: 5    In Progress: 1    Review: 2    Done: 4
+📋 Board for SP-{n}:
+   Ready: 5    Doing: 1    Done: 4
 
-▶ Next pick: Task #142 — <title>
-   spec: SP-50
+▶ Next pick: SP-{n}_SL-3 — <title>
    satisfies: AC #2 ("Endpoint returns 401 when token expired")
    blocked by: none
-   parallel-eligible: yes (sibling tasks 143, 144)
 
-⚠ Stale (re-verify before new work): #138 — SP-50 requirements changed since it was verified
+⚠ Stale (re-verify before new work): SP-{n}_SL-1 — Spec requirements changed since it was verified
 
 Mode: DRIVER — Claude can move cards and edit files.
 
-Run /pair-next to take this task; reply with a different task # to pick another.
+Run /pair-next to take this slice; reply with a different slice handle to pick another.
 ```
 
 ## Safety / fallback
 
-- **Story has no Ready tasks.** Surface this. Suggest `/tasks-decompose` for a Spec that has none, or `/tasks-materialize` if a `SP-{n}-tasks.md` file already exists with unchecked rows.
-- **Acceptance criteria not all parseable.** Carry on but note in the briefing which Specs have missing/malformed AC sections; the chunk-11 gates will surface the actual blockers when moves happen.
+- **Spec has no Ready slices.** Surface this. Suggest `/slice {n}` if the Spec hasn't been sliced yet.
+- **Acceptance criteria not all parseable.** Carry on but note in the briefing that the Spec's AC section looks malformed; the → Ready gate will surface the actual blocker when a slice tries to advance.
 - **Navigator mode + user expects driving.** If `mode === "navigator"`, remind the user that moves on the board must come from them — Claude can propose moves but the MCP server will refuse them.

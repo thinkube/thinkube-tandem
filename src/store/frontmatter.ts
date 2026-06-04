@@ -19,25 +19,43 @@
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 export type Kind =
+  | "spec"
+  | "slice"
+  | "decision"
+  | "retro"
+  // legacy GitHub-backed kinds — removed once their consumers go (migration phases 5–7)
   | "epic"
   | "story"
-  | "spec"
-  | "task-decomposition"
-  | "decision"
-  | "retro";
+  | "task-decomposition";
 
 export interface Frontmatter {
   kind?: Kind;
-  /** GitHub issue this file extends. Omitted for retros / ADRs not pinned to one issue. */
-  issue?: number;
-  /** Parent issue in the hierarchy. Omitted for top-level epics. */
-  parent_issue?: number;
-  /** `owner/name`; defaults to the workspace's `thinkube.kanban.repo` setting. */
-  repo?: string;
-  /** Status for retros/decisions; ignored for issue-backed kinds. */
-  status?: "draft" | "active" | "done";
+  // ── Tandem (files-first Spec→Slice) ──
+  /** Stable internal id for a slice — the board links on this; never changes. */
+  uid?: string;
+  /** Parent Spec handle for a slice, e.g. "SP-3". Supersedes `parent_issue`. */
+  parent?: string;
+  /** Theme grouping tag (sits above the Spec; not a tier). */
+  theme?: string;
+  /** Board column / lifecycle status. */
+  status?: "ready" | "doing" | "done" | "archived" | "draft" | "active";
+  /** Optional slice due date (yyyy-mm-dd). */
+  due?: string;
+  /** Optional slice priority. */
+  priority?: "P0" | "P1" | "P2" | "P3";
+  /** Spec requirement-hash a slice was last verified against (set by /pair-next). */
+  verified_req_hash?: string;
+  /** Optional slice dependency handles, e.g. ["SP-3_SL-7"]. */
+  depends_on?: string[];
   /** ISO date the file was created. */
   created?: string;
+  /** `owner/name`; the repo this board belongs to. */
+  repo?: string;
+  // ── legacy GitHub-backed model (removed once consumers go, phases 5–7) ──
+  /** @deprecated GitHub issue this file extends. */
+  issue?: number;
+  /** @deprecated Parent issue in the hierarchy. */
+  parent_issue?: number;
   /** Anything else the user puts in the frontmatter. We preserve unknown keys. */
   [extra: string]: unknown;
 }

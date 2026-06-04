@@ -48,7 +48,7 @@ PostgreSQL JSONB columns can't be indexed via GIN without an opclass. Spent 40 m
 
 ### kept
 
-Pair-programming on the auth-callback handler — Claude caught two off-by-one cases in the state validation.
+Pair-programming on the auth-callback slice — Claude caught two off-by-one cases in the state validation.
 ```
 
 3. **Acknowledge.** One line: "✏ Logged to .thinkube/retros/2026-05-19.md".

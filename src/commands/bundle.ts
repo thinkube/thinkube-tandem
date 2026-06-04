@@ -74,12 +74,9 @@ async function installBundle(deps: BundleCommandDeps): Promise<void> {
   }
 
   // Non-secret env baked into .mcp.json so the standalone Kanban MCP server
-  // knows which repo/board/workspace to use when Claude Code launches it.
-  // (The token is resolved by the server itself via `gh auth`, never written
-  // to the committed .mcp.json.)
+  // knows which workspace (.thinkube/ root) to read/write when Claude Code
+  // launches it. Files-first: no GitHub repo/board/token is involved.
   const kanbanCfg = vscode.workspace.getConfiguration("thinkube.kanban");
-  const repo = (kanbanCfg.get<string>("repo") ?? "").trim();
-  const projectNumber = kanbanCfg.get<number>("projectNumber") ?? 0;
   const mode = kanbanCfg.get<string>("mode") ?? "both";
   const allowWrites =
     mode === "navigator"
@@ -89,13 +86,6 @@ async function installBundle(deps: BundleCommandDeps): Promise<void> {
     THINKUBE_WORKSPACE: workspace,
     THINKUBE_ALLOW_AI_WRITES: String(allowWrites),
   };
-  if (repo.includes("/")) mcpEnv.THINKUBE_REPO = repo;
-  if (projectNumber > 0) mcpEnv.THINKUBE_PROJECT_NUMBER = String(projectNumber);
-  if (!repo.includes("/") || projectNumber <= 0) {
-    deps.output.appendLine(
-      "[bundle] note: repo/board not configured yet — run Configure Project, then re-install the bundle so .mcp.json gets the connection env.",
-    );
-  }
 
   await vscode.window.withProgress(
     {

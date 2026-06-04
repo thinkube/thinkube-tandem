@@ -137,6 +137,47 @@ export function gateForTransition(
   return undefined;
 }
 
+// ─── Tandem (files-first, 3-column) gates ────────────────────────────────
+//
+// The Tandem board has three columns — Ready → Doing → Done — and two gates,
+// keyed by *destination* column (ADR-0003/0007):
+//
+//   → Ready : the slice's parent Spec has a non-empty `## Acceptance Criteria`.
+//   → Done  : every acceptance criterion on the parent Spec is checked.
+//
+// The "→ Done" gate's other half — verifier green for the slice — is a runtime
+// check enforced by `/pair-next`, not a file check. Ready→Doing and any other
+// move is ungated. These reuse the same body-reading checks as the 6-column
+// gates above; the legacy `gateForTransition` / `GateName` stay until their
+// consumers are removed (migration phases 5–7).
+
+export type TandemGateName = "to-ready" | "to-done";
+
+/**
+ * Resolve the Tandem gate for a move by its destination column. Returns
+ * `undefined` for ungated moves (e.g. → Doing); callers treat absence as ok.
+ */
+export function gateForTandemTransition(
+  toColumn: string,
+): TandemGateName | undefined {
+  if (toColumn === "Ready") return "to-ready";
+  if (toColumn === "Done") return "to-done";
+  return undefined;
+}
+
+/** Run a Tandem gate against the parent Spec's body. */
+export function runTandemGate(
+  gate: TandemGateName,
+  input: SpecBodyInput,
+): GateResult {
+  switch (gate) {
+    case "to-ready":
+      return gateSpecToReady(input);
+    case "to-done":
+      return gateReviewToVerify(input);
+  }
+}
+
 export class GateFailedError extends Error {
   constructor(
     public readonly gate: GateName,
