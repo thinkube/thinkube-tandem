@@ -44,12 +44,23 @@
           "contextualTitle": "Thinkube Thinking Spaces"
         },
         {
+          "id": "thinkubeSpecs",
+          "name": "Specs",
+          "contextualTitle": "Thinkube Specs"
+        },
+        {
           "id": "claudeConfigTree",
           "name": "Configuration",
           "contextualTitle": "Claude Code Configuration"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "thinkubeSpecs",
+        "contents": "Select a thinking space above to list its specs."
+      }
+    ],
     "commands": [
       {
         "command": "thinkube.boards.refresh",
@@ -214,6 +225,12 @@
         "title": "Methodology Bundle Diff",
         "category": "Thinkube Kanban",
         "icon": "$(diff)"
+      },
+      {
+        "command": "thinkube.specs.refresh",
+        "title": "Refresh Specs",
+        "category": "Thinkube Specs",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -232,6 +249,11 @@
           "command": "thinkube.switchProject",
           "when": "view == claudeConfigTree",
           "group": "navigation@1"
+        },
+        {
+          "command": "thinkube.specs.refresh",
+          "when": "view == thinkubeSpecs",
+          "group": "navigation@0"
         }
       ],
       "view/item/context": [

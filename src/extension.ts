@@ -23,6 +23,7 @@ import { LauncherService } from "./services/LauncherService";
 import { SessionLinkService } from "./services/SessionLinkService";
 import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
+import { SpecsProvider } from "./views/boards/SpecsProvider";
 import { registerBoardCommands } from "./commands/boards";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -163,11 +164,9 @@ export function activate(context: vscode.ExtensionContext) {
     bundleInstaller,
     kanbanOutput,
   );
-  context.subscriptions.push(
-    vscode.window.createTreeView("thinkubeBoards", {
-      treeDataProvider: boardNavigator,
-    }),
-  );
+  const boardsView = vscode.window.createTreeView("thinkubeBoards", {
+    treeDataProvider: boardNavigator,
+  });
   registerBoardCommands(context, {
     extensionUri: context.extensionUri,
     output: kanbanOutput,
@@ -175,6 +174,34 @@ export function activate(context: vscode.ExtensionContext) {
     launcher,
     sessionLinks,
   });
+
+  // Specs section (master-detail): lists the selected thinking space's
+  // .thinkube/specs/SP-{n}/spec.md files; clicking opens the document.
+  // Selecting either the repo row or its bundle-status child scopes it.
+  const specsProvider = new SpecsProvider();
+  const specsView = vscode.window.createTreeView("thinkubeSpecs", {
+    treeDataProvider: specsProvider,
+  });
+  context.subscriptions.push(
+    boardsView,
+    specsView,
+    boardsView.onDidChangeSelection((e) => {
+      const node = e.selection[0];
+      const repo =
+        node?.kind === "repo"
+          ? node
+          : node?.kind === "bundle-status"
+            ? node.repo
+            : undefined;
+      if (repo) {
+        specsProvider.setRepo(repo);
+        specsView.description = repo.name;
+      }
+    }),
+    vscode.commands.registerCommand("thinkube.specs.refresh", () =>
+      specsProvider.refresh(),
+    ),
+  );
 }
 
 export function deactivate() {
