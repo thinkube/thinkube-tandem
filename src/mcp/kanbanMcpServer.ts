@@ -457,9 +457,52 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "create_slice",
+    description:
+      "Create a new slice under a Spec in the canonical shape. The server allocates the SL number (per-Spec, archive-aware) and serializes the file (frontmatter + `# title` heading + detail body) — callers never pick numbers or format files. Refused when the parent Spec is missing or has an empty `## Acceptance Criteria` (the → Ready gate, enforced at creation). Title limit: 70 chars — detail belongs in the body.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: {
+          type: "number",
+          description:
+            "Parent Spec number {n} (the SP-{n} this slice belongs to).",
+        },
+        title: {
+          type: "string",
+          description:
+            "The concrete capability delivered, ≤ 70 chars — becomes the card title.",
+        },
+        body: {
+          type: "string",
+          description:
+            '2–4 lines of detail: what the coherent end-to-end cut includes and what the observable "done" looks like.',
+        },
+        depends_on: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Full slice handles this depends on, e.g. ["SP-4_SL-1"].',
+        },
+        parallel: {
+          type: "boolean",
+          description:
+            "Shares no files/state with sibling slices (parallel-eligible).",
+        },
+        priority: {
+          type: "string",
+          enum: ["P0", "P1", "P2", "P3"],
+        },
+        ...BOARD_PARAM,
+      },
+      required: ["spec", "title", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "update_slice",
     description:
-      "Replace a slice's markdown body (frontmatter is preserved). The slice's title is its body's first heading/line.",
+      "Replace a slice's markdown body (frontmatter is preserved). The body's first line must be the `# title` heading; if the new body lacks one, the existing title is re-attached and the input is treated as detail — a card can never become heading-less through this tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -526,6 +569,16 @@ async function dispatchTool(
         asString(args, "slice"),
         asString(args, "status"),
       );
+    case "create_slice":
+      writeGate(name);
+      return createSlice(store, {
+        spec: asNumber(args, "spec"),
+        title: asString(args, "title"),
+        body: asString(args, "body"),
+        depends_on: optStringArray(args, "depends_on"),
+        parallel: optBoolean(args, "parallel"),
+        priority: optString(args, "priority"),
+      });
     case "update_slice":
       writeGate(name);
       return updateSlice(
@@ -736,6 +789,109 @@ async function moveSlice(
   };
 }
 
+/** Card-title character limit for `create_slice` (detail belongs in the body). */
+const TITLE_MAX = 70;
+
+/**
+ * Create a slice in the canonical shape (SP-4): server-allocated per-Spec
+ * number (archive-aware), slug uid, frontmatter + `# title` + detail body.
+ * The → Ready gate is enforced at creation time: the parent Spec must exist
+ * with a non-empty `## Acceptance Criteria`.
+ */
+async function createSlice(
+  store: ThinkubeStore,
+  args: {
+    spec: number;
+    title: string;
+    body: string;
+    depends_on?: string[];
+    parallel?: boolean;
+    priority?: string;
+  },
+): Promise<unknown> {
+  const title = args.title.trim();
+  if (!title) throw new Error("title must not be empty.");
+  if (title.length > TITLE_MAX) {
+    throw new Error(
+      `Title is ${title.length} chars — the limit is ${TITLE_MAX}. Title the concrete capability; detail belongs in the body.`,
+    );
+  }
+  if (args.priority !== undefined && !/^P[0-3]$/.test(args.priority)) {
+    throw new Error(`Invalid priority "${args.priority}" — expected P0…P3.`);
+  }
+  for (const dep of args.depends_on ?? []) {
+    if (!SLICE_HANDLE_RE.test(dep.trim())) {
+      throw new Error(
+        `depends_on entry "${dep}" is not a full slice handle (SP-{n}_SL-{m}).`,
+      );
+    }
+  }
+
+  // Creation-time → Ready gate: parent Spec present with non-empty AC.
+  const specDoc = await store.getFile(store.pathForSpecDoc(args.spec));
+  if (!specDoc) {
+    throw new Error(
+      `No spec at .thinkube/specs/SP-${args.spec}/spec.md — run /spec-prepare ${args.spec} first.`,
+    );
+  }
+  if (!hasNonEmptyAcceptanceCriteria(specDoc.body)) {
+    throw new Error(
+      `SP-${args.spec} has no acceptance criteria (its slices would fail the → Ready gate) — run /spec-prepare ${args.spec} first.`,
+    );
+  }
+
+  const sliceNumber = await store.nextSliceNumber(args.spec);
+  const uid = await uniqueSlug(store, args.spec, title);
+  const fm: Frontmatter = {
+    uid,
+    parent: `SP-${args.spec}`,
+    status: "ready",
+  };
+  if (args.depends_on?.length) fm.depends_on = args.depends_on;
+  if (args.parallel) fm.parallel = true;
+  if (args.priority) fm.priority = args.priority as Frontmatter["priority"];
+
+  const rel = store.pathForSlice(args.spec, sliceNumber);
+  await store.writeFile(rel, fm, `# ${title}\n\n${args.body.trim()}\n`);
+  return {
+    ok: true,
+    slice: store.sliceHandle(args.spec, sliceNumber),
+    relativePath: rel,
+    uid,
+  };
+}
+
+/** Non-empty = the section exists and contains at least one checklist line. */
+function hasNonEmptyAcceptanceCriteria(body: string | undefined): boolean {
+  if (!body) return false;
+  const m = /##\s*Acceptance Criteria\s*\n([\s\S]*?)(?=\n##\s|$)/i.exec(body);
+  if (!m) return false;
+  return /[-*]\s*\[[ xX]\]/.test(m[1]);
+}
+
+/** Slug uid from the title, unique among the Spec's existing slice uids. */
+async function uniqueSlug(
+  store: ThinkubeStore,
+  spec: number,
+  title: string,
+): Promise<string> {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || `sp${spec}-slice`;
+  const taken = new Set<string>();
+  for (const rel of await store.listSlices(spec)) {
+    const f = await store.getFile(rel);
+    if (typeof f?.frontmatter?.uid === "string") taken.add(f.frontmatter.uid);
+  }
+  let slug = base;
+  let i = 2;
+  while (taken.has(slug)) slug = `${base}-${i++}`;
+  return slug;
+}
+
 async function updateSlice(
   store: ThinkubeStore,
   handle: string,
@@ -745,11 +901,28 @@ async function updateSlice(
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
-  await store.writeFile(rel, parsed.frontmatter, body);
+
+  // Heading guard (SP-4): a body whose first non-empty line isn't a `#`
+  // heading would regress the card to the merged-line shape — re-attach the
+  // existing title and treat the input as detail instead.
+  const firstLine = body.split(/\r?\n/).find((l) => l.trim());
+  let nextBody = body;
+  let titleReattached = false;
+  if (!firstLine || !firstLine.trim().startsWith("#")) {
+    const oldFirst = parsed.body.split(/\r?\n/).find((l) => l.trim());
+    const oldTitle = (oldFirst ?? "").replace(/^#+\s*/, "").trim();
+    if (oldTitle) {
+      nextBody = `# ${oldTitle}\n\n${body.trim()}\n`;
+      titleReattached = true;
+    }
+  }
+
+  await store.writeFile(rel, parsed.frontmatter, nextBody);
   return {
     ok: true,
     slice: store.sliceHandle(specNumber, sliceNumber),
     relativePath: rel,
+    titleReattached,
   };
 }
 
@@ -849,6 +1022,35 @@ function optString(
   if (typeof v !== "string")
     throw new Error(`argument ${key} must be a string`);
   return v;
+}
+
+function asNumber(args: Record<string, unknown>, key: string): number {
+  const v = args[key];
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1)
+    throw new Error(`argument ${key} must be a positive integer`);
+  return v;
+}
+
+function optBoolean(
+  args: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "boolean")
+    throw new Error(`argument ${key} must be a boolean`);
+  return v;
+}
+
+function optStringArray(
+  args: Record<string, unknown>,
+  key: string,
+): string[] | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string"))
+    throw new Error(`argument ${key} must be an array of strings`);
+  return v as string[];
 }
 
 // Kick off LAST: `main()` references classes (BoardRegistry) that — unlike
