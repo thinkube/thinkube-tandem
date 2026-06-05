@@ -1,7 +1,7 @@
 # Worktrees for code isolation only
 
 ADR-0008 keeps per-Spec git worktrees but refocuses them on what they are good
-at — isolating a Spec's *code* — now that SP-8 moved board state into the central
+at — isolating a Spec's _code_ — now that SP-8 moved board state into the central
 sidecar. A worktree no longer carries or forks a board; it shares its canonical
 Spec's sidecar board. This also fixes the SP-5 surface bugs: the "Start Spec in
 Worktree" button appeared on every Spec and always fired `/pair-start`, and
@@ -10,15 +10,15 @@ happen once the board is central and the action is context-aware.
 
 ## Acceptance Criteria
 
-- [ ] The "Start Spec in Worktree" action appears **only on a Spec with open
+- [x] The "Start Spec in Worktree" action appears **only on a Spec with open
       (Ready/Doing) slices** — it is hidden on a fully-done Spec.
-- [ ] Starting a worktree opens a **context-aware** session: `/pair-start N`
+- [x] Starting a worktree opens a **context-aware** session: `/pair-start N`
       only when the Spec has open work; it never drops you into `/pair-start`
       on a finished or empty Spec.
-- [ ] A worktree and its canonical repo show the **same board** — the worktree's
+- [x] A worktree and its canonical repo show the **same board** — the worktree's
       board resolves to the canonical Spec's central namespace, not a co-located
       `.thinkube/` in the worktree.
-- [ ] Retiring a worktree is a **pure code operation** — it removes the worktree
+- [x] Retiring a worktree is a **pure code operation** — it removes the worktree
       (refusing when dirty/un-pushed), and the Spec's board in the sidecar is
       untouched: no card is stranded or lost.
 
@@ -39,12 +39,12 @@ board.
 
 **Worktree boards resolve to the canonical Spec's namespace (AC #3).** Both
 discovery walks — `BoardNavigatorProvider.walk` and the MCP `walkForBoards` —
-handle a linked worktree (`.git` *file*) by resolving its board dir from the
-*worktree's own* path, which, being a sibling outside the workspace folders,
+handle a linked worktree (`.git` _file_) by resolving its board dir from the
+_worktree's own_ path, which, being a sibling outside the workspace folders,
 falls back to a co-located `.thinkube/`. SP-9 resolves it from the **canonical**
 repo instead: `linkedWorktreeInfo(dir).canonicalRepo` → `namespaceForRepo(
 canonicalRepo)` → the central namespace. So a worktree and its canonical repo
-render the *same* sidecar board (and a worktree carries no board of its own).
+render the _same_ sidecar board (and a worktree carries no board of its own).
 
 **The Start button gates on open work (AC #1); the launch is context-aware
 (AC #2).** `SpecsProvider` already iterates each Spec's slices for the delivery
@@ -56,8 +56,8 @@ and prefixes `/pair-start N` only when true (otherwise a plain session) — a
 defensive guard for a Command-Palette invocation that bypasses the menu.
 
 **The worktree is cut from the code repo, not the board.** Under central boards
-`node.file` lives in the *sidecar*, so `worktree.ts`'s
-`canonicalRepo(path.dirname(node.file))` would resolve the *board* repo. SP-9
+`node.file` lives in the _sidecar_, so `worktree.ts`'s
+`canonicalRepo(path.dirname(node.file))` would resolve the _board_ repo. SP-9
 threads the Thinking Space's repo path onto the `SpecNode` and cuts the worktree
 from there.
 

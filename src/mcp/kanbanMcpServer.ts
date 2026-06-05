@@ -294,7 +294,12 @@ function isBoard(dir: string): boolean {
  */
 function boardDirOf(repoPath: string, env: ServerEnv): string {
   if (env.boardRoot) {
-    const ns = namespaceForRepo(repoPath, env.folders);
+    // A linked worktree shares its canonical Spec's board (SP-9): map it to the
+    // canonical repo's namespace, not the worktree's own out-of-folder path. So
+    // a worktree session's default board + addressing both resolve to the same
+    // central board as the canonical repo.
+    const wt = linkedWorktreeInfo(repoPath);
+    const ns = namespaceForRepo(wt ? wt.canonicalRepo : repoPath, env.folders);
     if (ns) return boardDirForNamespace(env.boardRoot, ns);
   }
   return path.join(repoPath, ".thinkube");
@@ -343,13 +348,13 @@ function walkForBoards(
   const gitEntry = entries.find((e) => e.name === ".git");
   if (gitEntry) {
     // A repo (`.git` dir) or a linked worktree (`.git` file) — a leaf. It is a
-    // board iff its (possibly central) board dir exists. A worktree (SP-5) is
-    // addressable by its path (id) but displays as a worktree of its canonical
-    // repo — not a rogue board named by its bare basename.
+    // board iff its board dir exists. A worktree (SP-5/SP-9) carries NO board of
+    // its own: its board is the CANONICAL Spec's central namespace, and it
+    // displays as a worktree of its canonical repo.
     const abs = path.resolve(dir);
-    const boardDir = boardDirOf(abs, env);
+    const wt = gitEntry.isFile() ? linkedWorktreeInfo(abs) : undefined;
+    const boardDir = boardDirOf(abs, env); // boardDirOf maps a worktree → canonical
     if (fsSync.existsSync(boardDir)) {
-      const wt = gitEntry.isFile() ? linkedWorktreeInfo(abs) : undefined;
       const name = wt
         ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
         : path.basename(abs);

@@ -46,6 +46,10 @@ export type SpecNode =
       title: string;
       file: string;
       delivered: DeliveredSlice[];
+      /** The Thinking Space's code repo path — worktrees are cut from here (SP-9). */
+      repoPath: string;
+      /** Any ready/doing slice — gates the Start-in-Worktree action (SP-9). */
+      hasOpenWork: boolean;
     }
   | { kind: "delivered"; slice: DeliveredSlice }
   | { kind: "placeholder"; text: string };
@@ -108,33 +112,44 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     for (const n of [...numbers].sort((a, b) => a.localeCompare(b))) {
       const rel = store.pathForSpecDoc(n);
       const doc = await store.getFile(rel);
+      const { delivered, hasOpenWork } = await this.specRollup(
+        store,
+        n,
+        coords,
+      );
       nodes.push({
         kind: "spec",
         specNumber: n,
         title: firstHeading(doc?.body) ?? "(untitled)",
         file: path.join(store.thinkubeDir, rel),
-        delivered: await this.deliveredSlices(store, n, coords),
+        delivered,
+        repoPath: this.repo.path,
+        hasOpenWork,
       });
     }
     return nodes;
   }
 
-  /** Done slices under a Spec, in slice order, with their recorded commit/PR. */
-  private async deliveredSlices(
+  /** A Spec's delivery roll-up (done slices, with commit/PR) plus whether it has
+   *  any open (ready/doing) slice — both from a single slice pass (SP-9). */
+  private async specRollup(
     store: ThinkubeStore,
     specNumber: string,
     coords: RepoCoords | undefined,
-  ): Promise<DeliveredSlice[]> {
-    const out: DeliveredSlice[] = [];
+  ): Promise<{ delivered: DeliveredSlice[]; hasOpenWork: boolean }> {
+    const delivered: DeliveredSlice[] = [];
+    let hasOpenWork = false;
     for (const rel of await store.listSlices(specNumber)) {
       const m = /SL-(\d+)\.md$/.exec(rel);
       if (!m) continue;
       const parsed = await store.getFile(rel);
       const fm = parsed?.frontmatter;
-      if (fm?.status !== "done") continue;
-      const commit = typeof fm.commit === "string" ? fm.commit : undefined;
-      const pr = typeof fm.pr === "string" ? fm.pr : undefined;
-      out.push({
+      const status = (fm?.status ?? "").toLowerCase();
+      if (status === "ready" || status === "doing") hasOpenWork = true;
+      if (status !== "done") continue;
+      const commit = typeof fm?.commit === "string" ? fm.commit : undefined;
+      const pr = typeof fm?.pr === "string" ? fm.pr : undefined;
+      delivered.push({
         sliceNumber: Number(m[1]),
         title: firstHeading(parsed?.body) ?? `SL-${m[1]}`,
         commit,
@@ -144,7 +159,8 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         file: path.join(store.thinkubeDir, rel),
       });
     }
-    return out.sort((a, b) => a.sliceNumber - b.sliceNumber);
+    delivered.sort((a, b) => a.sliceNumber - b.sliceNumber);
+    return { delivered, hasOpenWork };
   }
 
   getTreeItem(node: SpecNode): vscode.TreeItem {
@@ -170,7 +186,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     item.description = node.title;
     item.tooltip = node.file;
     item.iconPath = new vscode.ThemeIcon("book");
-    item.contextValue = "spec";
+    item.contextValue = node.hasOpenWork ? "spec-open" : "spec-done";
     item.command = {
       command: "vscode.open",
       title: "Open spec",

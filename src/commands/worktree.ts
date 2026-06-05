@@ -6,7 +6,6 @@
  * an already-numbered Spec: create the Spec's git worktree and open a session
  * rooted there with `/pair-start N`, so parallel Specs never share a tree.
  */
-import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { LauncherService } from "../services/LauncherService";
@@ -36,27 +35,24 @@ export function registerWorktreeCommands(
           return;
         }
         const n = node.specNumber;
-        // The spec file lives at <repo>/.thinkube/specs/SP-{n}/spec.md; resolve
-        // the canonical repo from there so a worktree is always cut from main,
-        // even if this checkout is itself a linked worktree.
-        const specDir = path.dirname(node.file);
+        // Cut the worktree from the Thinking Space's CODE repo (SP-9). Under
+        // central boards the spec file lives in the sidecar, so node.file's dir
+        // is the board repo, not the code repo — use node.repoPath. canonicalRepo
+        // resolves main even if repoPath is itself a linked worktree.
         try {
-          const canonical = await worktrees.canonicalRepo(specDir);
-          if (!canonical) {
-            vscode.window.showErrorMessage(
-              `Start Spec SP-${n}: ${specDir} is not inside a git repository.`,
-            );
-            return;
-          }
+          const canonical =
+            (await worktrees.canonicalRepo(node.repoPath)) ?? node.repoPath;
           const baseDir =
             vscode.workspace
               .getConfiguration("thinkube")
               .get<string>("worktree.baseDir")
               ?.trim() || undefined;
           const worktreePath = await worktrees.create(canonical, n, baseDir);
+          // Context-aware (SP-9): only drop into /pair-start when there's open
+          // work; a finished Spec opens a plain session.
           await deps.launcher.openHere(
             vscode.Uri.file(worktreePath),
-            `/pair-start ${n} `,
+            node.hasOpenWork ? `/pair-start ${n} ` : undefined,
           );
         } catch (err) {
           vscode.window.showErrorMessage(
@@ -76,15 +72,9 @@ export function registerWorktreeCommands(
           return;
         }
         const n = node.specNumber;
-        const specDir = path.dirname(node.file);
         try {
-          const canonical = await worktrees.canonicalRepo(specDir);
-          if (!canonical) {
-            vscode.window.showErrorMessage(
-              `Retire SP-${n}: ${specDir} is not inside a git repository.`,
-            );
-            return;
-          }
+          const canonical =
+            (await worktrees.canonicalRepo(node.repoPath)) ?? node.repoPath;
           const removed = await worktrees.remove(canonical, n);
           vscode.window.showInformationMessage(
             `Retired SP-${n} worktree (${removed}).`,

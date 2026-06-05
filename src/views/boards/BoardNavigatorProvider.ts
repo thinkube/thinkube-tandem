@@ -112,7 +112,9 @@ interface DiscoverCtx {
  */
 function resolveBoardDir(repoPath: string, ctx: DiscoverCtx): string {
   if (ctx.boardRoot) {
-    const ns = namespaceForRepo(repoPath, ctx.folders);
+    // A linked worktree shares its canonical Spec's board (SP-9).
+    const wt = linkedWorktreeInfo(repoPath);
+    const ns = namespaceForRepo(wt ? wt.canonicalRepo : repoPath, ctx.folders);
     if (ns) return boardDirForNamespace(ctx.boardRoot, ns);
   }
   return path.join(repoPath, ".thinkube");
@@ -183,11 +185,11 @@ function walk(
     return; // a repo is a leaf in this tree
   }
   if (dotGit?.isFile()) {
-    // A `.git` *file* marks a linked worktree (SP-5) — also a leaf (never
-    // descend into a checkout). Surface it only if it carries a board, and
-    // label it as a worktree of its canonical repo rather than a bare repo.
+    // A `.git` *file* marks a linked worktree (SP-5/SP-9) — also a leaf (never
+    // descend into a checkout). It carries NO board of its own: its board is the
+    // canonical Spec's central namespace. Label it as a worktree of its repo.
     const wt = linkedWorktreeInfo(dir);
-    const boardDir = resolveBoardDir(dir, ctx);
+    const boardDir = resolveBoardDir(dir, ctx); // resolveBoardDir maps a worktree → canonical
     if (wt && fs.existsSync(boardDir)) {
       out.set(dir, {
         kind: "repo",

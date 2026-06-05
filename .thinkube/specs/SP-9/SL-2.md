@@ -1,11 +1,13 @@
 ---
 uid: start-spec-in-worktree-gated-context-aware-from-
 parent: SP-9
-status: ready
+status: done
 parallel: true
 satisfies:
   - 1
   - 2
+verified_req_hash: 34e1de85cdc6b841925ea9ae82ee3ba4c5b7c258
+commit: 1c8121cff9c8fe0513dda157dc7be159e7b43f20
 ---
 # Start Spec in Worktree: gated, context-aware, from code repo
 

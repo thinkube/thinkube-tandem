@@ -299,12 +299,12 @@
       "view/item/context": [
         {
           "command": "thinkube.specs.startWorktree",
-          "when": "view == thinkubeSpecs && viewItem == spec",
+          "when": "view == thinkubeSpecs && viewItem == spec-open",
           "group": "inline@0"
         },
         {
           "command": "thinkube.specs.retireWorktree",
-          "when": "view == thinkubeSpecs && viewItem == spec",
+          "when": "view == thinkubeSpecs && viewItem =~ /^spec-/",
           "group": "inline@1"
         },
         {
