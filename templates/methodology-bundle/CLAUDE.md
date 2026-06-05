@@ -33,7 +33,7 @@ Rules:
 
 - Verify every slice: the repo's verification must be green before Done. No green = not done.
 - One slice in flight per Spec; on board drift, disambiguate before verifying.
-- Never push to `main`; always open a PR.
+- PR ceremony matches the change: docs, ADRs, board moves, and trivial fixes may go straight to `main`; open a PR for substantive code (build/runtime changes, or anything worth a deliberate review before it's canonical). Re-tighten — required PR + CI + branch protection — once the project gains collaborators or goes public.
 - A spike / investigation is not a slice (no single "done") — it belongs in the Spec's Design/Constraints.
 - Mode awareness: `thinkube.kanban.mode` controls AI write authority. In `navigator` mode the AI reads + proposes but can't write the board; in `driver` / `both` it can.
 - **Write authority:** Inside an invoked skill, board bookkeeping — moving cards, checking the AC a slice satisfies, stamping provenance/verification — is the **AI's job**: it does it and **reports the result with evidence**. The human steers substance and **intervenes by exception**; the AI never asks the human to move a card or re-invoke a command merely to advance mechanics, and stops only at a marked **bless point**, a **gate refusal**, or a **failed precondition**. (In `navigator` mode this inverts per mode awareness — the AI proposes, the human writes.)
