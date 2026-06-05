@@ -2,7 +2,7 @@
   "name": "thinkube-ai-integration",
   "displayName": "Thinkube AI Integration",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"

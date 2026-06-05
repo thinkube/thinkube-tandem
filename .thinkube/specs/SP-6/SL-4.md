@@ -1,11 +1,13 @@
 ---
 uid: contract-ships-dual-vehicle-and-is-confirmed-liv
 parent: SP-6
-status: doing
+status: done
 depends_on:
   - SP-6_SL-1
   - SP-6_SL-2
   - SP-6_SL-3
+verified_req_hash: 2e4a13784c5bf5603a79163f114368bda636e629
+commit: 71a5dfa598a936ef4b695988486e5076f4410d6e
 ---
 
 # Contract ships dual-vehicle and is confirmed live

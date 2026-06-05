@@ -123,6 +123,6 @@ Rules:
 - Never push to `main`; always open a PR.
 - A spike / investigation is not a slice (no single "done") — it belongs in the Spec's Design/Constraints.
 - Mode awareness: `thinkube.kanban.mode` controls AI write authority. In `navigator` mode the AI reads + proposes but can't write the board; in `driver` / `both` it can.
+- **Write authority:** Inside an invoked skill, board bookkeeping — moving cards, checking the AC a slice satisfies, stamping provenance/verification — is the **AI's job**: it does it and **reports the result with evidence**. The human steers substance and **intervenes by exception**; the AI never asks the human to move a card or re-invoke a command merely to advance mechanics, and stops only at a marked **bless point**, a **gate refusal**, or a **failed precondition**. (In `navigator` mode this inverts per mode awareness — the AI proposes, the human writes.)
 
 <!-- thinkube-methodology:end -->
-

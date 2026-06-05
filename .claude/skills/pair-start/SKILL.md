@@ -46,11 +46,11 @@ After `/pair-start <spec-number>`, the conversation context should contain:
    - `driver`: Claude is leading; will move cards, edit files, push.
    - `both`: either side can write.
 8. **Tell the user** to open the board from the Activity Bar (**Thinkube** → **Boards** → click this repo), or via the command palette (**Thinkube Kanban: Open Kanban**), so they can see drag-and-drop reflect the work.
-9. **Wait.** Don't auto-move the picked slice to Doing. That's `/pair-next`'s job, and the user may want to revise the pick first.
+9. **Bless point — confirm or object.** Present the pick and stop for the human's one marked decision: confirm it, or name a different slice. This is the session's single bless point. Don't auto-advance the slice before that confirmation — and don't tell the user to "run `/pair-next` to take it"; on confirm, the loop pulls the slice into Doing.
 
 ## Constraints
 
-- Don't write code yet. This skill is **setup** — code-writing starts after the user confirms the pick and we transition into the pair-programming loop via `/pair-next`.
+- Don't write code yet. This skill is **setup** — code-writing starts after the user confirms the pick and the loop pulls the slice into Doing.
 - Don't create new slices here — if the user wants more work surfaced, route through `/slice` for this Spec.
 - If the Spec has no slices at all, **stop** and tell the user to run `/slice {n}` first. If the Spec itself has no acceptance criteria, route to `/spec-prepare {n}`.
 
@@ -74,7 +74,7 @@ A briefing in chat:
 
 Mode: DRIVER — Claude can move cards and edit files.
 
-Run /pair-next to take this slice; reply with a different slice handle to pick another.
+Confirm this pick, or name a different slice handle to pick another.
 ```
 
 ## Safety / fallback

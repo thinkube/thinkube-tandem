@@ -31,7 +31,7 @@ already existed on disk.)
 - [x] `move_slice → Done` **refuses** when the satisfied AC is not checked
       on the parent Spec — the gate's mechanical half becomes real code,
       with an error that names the unchecked criterion.
-- [ ] Ships dual-vehicle: bundle bump (skill/master text) + new vsix
+- [x] Ships dual-vehicle: bundle bump (skill/master text) + new vsix
       (server gate); both confirmed before the contract is considered live.
 
 ## Constraints
