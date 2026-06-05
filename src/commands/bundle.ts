@@ -98,13 +98,22 @@ function buildMcpEnv(): Record<string, string> {
     mode === "navigator"
       ? false
       : (kanbanCfg.get<boolean>("allowAIWrites") ?? true);
-  const roots = (vscode.workspace.workspaceFolders ?? [])
-    .map((f) => f.uri.fsPath)
-    .join(path.delimiter);
+  const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+    name: f.name,
+    path: f.uri.fsPath,
+  }));
+  const roots = folders.map((f) => f.path).join(path.delimiter);
+  const boardRoot = vscode.workspace
+    .getConfiguration("thinkube.boards")
+    .get<string>("root")
+    ?.trim();
   const env: Record<string, string> = {
     THINKUBE_ALLOW_AI_WRITES: String(allowWrites),
   };
   if (roots) env.THINKUBE_ROOTS = roots;
+  // Folder names carry the namespace container (Apps/Platform/…) for SP-8.
+  if (folders.length) env.THINKUBE_FOLDERS = JSON.stringify(folders);
+  if (boardRoot) env.THINKUBE_BOARD_ROOT = boardRoot;
   return env;
 }
 

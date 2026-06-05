@@ -91,20 +91,37 @@ export class ThinkubeStore implements vscode.Disposable {
   private readonly issueIndex = new Map<number, string>();
   private indexBuilt = false;
 
-  constructor(public readonly workspaceRoot: string) {}
+  private readonly boardDir: string;
 
-  /** Absolute path to the `.thinkube/` directory in this workspace root. */
+  /**
+   * @param workspaceRoot the Thinking Space's git repo root — still used for
+   *   provenance / git-coords, which resolve against the code repo.
+   * @param boardDir the board directory (the `.thinkube`-equivalent that holds
+   *   specs/decisions/retros). Defaults to the co-located
+   *   `<workspaceRoot>/.thinkube`; pass a central `<board-root>/<namespace>` to
+   *   read/write the board from the sidecar. Decoupling board-location from
+   *   repo-location is the spine of SP-8 — the board may live outside the repo.
+   */
+  constructor(
+    public readonly workspaceRoot: string,
+    boardDir?: string,
+  ) {
+    this.boardDir = boardDir ?? path.join(workspaceRoot, ".thinkube");
+  }
+
+  /** Absolute path to the board dir (the `.thinkube`-equivalent holding
+   * specs/decisions/retros) — co-located by default, central under SP-8. */
   get thinkubeDir(): string {
-    return path.join(this.workspaceRoot, ".thinkube");
+    return this.boardDir;
   }
 
   /** Start watching `.thinkube/**`. Idempotent. */
   activate(): void {
     if (this.watcher) return;
-    const pattern = new vscode.RelativePattern(
-      this.workspaceRoot,
-      ".thinkube/**/*.md",
-    );
+    // Watch the board dir directly (it IS the `.thinkube`-equivalent). Using
+    // the board dir as the RelativePattern base lets the watcher fire even when
+    // the board lives at a central root outside the code repo (SP-8).
+    const pattern = new vscode.RelativePattern(this.boardDir, "**/*.md");
     this.watcher = vscode.workspace.createFileSystemWatcher(pattern);
     this.watcher.onDidCreate((uri) => this.handleFsEvent(uri, "created"));
     this.watcher.onDidChange((uri) => this.handleFsEvent(uri, "changed"));

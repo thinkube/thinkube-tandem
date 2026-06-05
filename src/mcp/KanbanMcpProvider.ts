@@ -108,17 +108,28 @@ export class KanbanMcpProvider implements vscode.McpServerDefinitionProvider<vsc
     const allowWrites =
       mode !== "navigator" && (cfg.get<boolean>("allowAIWrites") ?? true);
 
-    const roots = (vscode.workspace.workspaceFolders ?? [])
-      .map((f) => f.uri.fsPath)
-      .join(path.delimiter);
+    const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+      name: f.name,
+      path: f.uri.fsPath,
+    }));
+    const roots = folders.map((f) => f.path).join(path.delimiter);
+    // The central board root (SP-8): boards live at <root>/<container>/<rel>.
+    const boardRoot = vscode.workspace
+      .getConfiguration("thinkube.boards")
+      .get<string>("root")
+      ?.trim();
     const env: Record<string, string | number | null> = {
       THINKUBE_ALLOW_AI_WRITES: allowWrites ? "true" : "false",
       THINKUBE_MODE: mode,
     };
     if (roots) env.THINKUBE_ROOTS = roots;
+    // Folder names carry the namespace container (Apps/Platform/…), so pass the
+    // full {name,path} list — not just paths.
+    if (folders.length) env.THINKUBE_FOLDERS = JSON.stringify(folders);
+    if (boardRoot) env.THINKUBE_BOARD_ROOT = boardRoot;
 
     this.log(
-      `launching board-independent server (roots=${roots || "(none)"} writes=${allowWrites})`,
+      `launching board-independent server (boardRoot=${boardRoot || "(none)"} roots=${roots || "(none)"} writes=${allowWrites})`,
     );
     return new vscode.McpStdioServerDefinition(
       server.label,
