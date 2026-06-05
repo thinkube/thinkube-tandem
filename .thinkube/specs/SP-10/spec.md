@@ -11,16 +11,16 @@ or clean yet) even though the deploy code lands in `core/thinkube`.
 
 ## Acceptance Criteria
 
-- [ ] Running the code-server config playbook **creates `thinkube-tandem` in the
+- [x] Running the code-server config playbook **creates `thinkube-tandem` in the
       org if absent** (`gh repo create`) and **clones it to
       `/home/thinkube/thinkube-tandem`** — idempotent (a second run pulls, never
       errors or duplicates).
-- [ ] `thinkube-tandem` appears as a **"Tandem" workspace root** in the generated
+- [x] `thinkube-tandem` appears as a **"Tandem" workspace root** in the generated
       `thinkube.code-workspace` (a 4th folder alongside Apps / User-Templates /
       Platform).
-- [ ] The code-server `User/settings.json` sets **`thinkube.boards.root` =
+- [x] The code-server `User/settings.json` sets **`thinkube.boards.root` =
       `/home/thinkube/thinkube-tandem`**, pointing the extension at the sidecar.
-- [ ] **`18_test.yaml` validates the provisioning** — `thinkube-tandem` cloned,
+- [x] **`18_test.yaml` validates the provisioning** — `thinkube-tandem` cloned,
       workspace root present, setting configured — and passes on a real run.
 
 ## Constraints
