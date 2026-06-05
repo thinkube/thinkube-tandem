@@ -89,7 +89,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       ];
     }
 
-    const store = new ThinkubeStore(this.repo.path);
+    const store = new ThinkubeStore(this.repo.path, this.repo.boardDir);
     const numbers = await store.listSpecDirs();
     if (numbers.length === 0) {
       return [

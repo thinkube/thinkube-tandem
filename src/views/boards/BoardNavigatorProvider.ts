@@ -23,6 +23,10 @@ import {
   summarizeStatus,
 } from "../../methodology/BundleInstaller";
 import { linkedWorktreeInfo } from "../../services/WorktreeService";
+import {
+  boardDirForNamespace,
+  namespaceForRepo,
+} from "../../store/boardNamespace";
 
 export interface RepoEntry {
   kind: "repo";
@@ -32,8 +36,15 @@ export interface RepoEntry {
   name: string;
   /** Path relative to its workspace folder, for the secondary label. */
   rel: string;
-  /** True when the repo has a `.thinkube/` board (= methodology-enabled). */
+  /** True when the repo has a board (= methodology-enabled). */
   enabled: boolean;
+  /**
+   * The resolved board dir (the `.thinkube`-equivalent holding
+   * specs/decisions/retros): the central `<board-root>/<namespace>` when
+   * `thinkube.boards.root` is set and the repo maps to a namespace, else the
+   * co-located `<repo>/.thinkube`. Construct `ThinkubeStore` with this (SP-8).
+   */
+  boardDir: string;
   /**
    * Set when this entry is a linked git worktree (SP-5), not a standalone repo:
    * the canonical repo's name and the worktree's own name, for a "worktree of
@@ -54,16 +65,68 @@ export type BoardNode = RepoEntry | BundleStatusNode;
 
 /**
  * Find git repos across the open workspace folders (depth-limited), marking
- * which have a `.thinkube/` board. A repo is a directory containing `.git`; we
- * don't descend into one (no nested repos as boards). Dedups by path.
+ * which have a board. A repo is a directory containing `.git`; we don't descend
+ * into one (no nested repos as boards). Dedups by path.
+ *
+ * The board may live at a central root (ADR-0008 / SP-8): when
+ * `thinkube.boards.root` is set, a repo's board dir is its namespace under that
+ * root (`<board-root>/<container>/<rel>`) and `enabled` reflects that central
+ * dir; otherwise it's the co-located `<repo>/.thinkube`.
  */
 export function discoverRepos(maxDepth = 3): RepoEntry[] {
+  const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+    name: f.name,
+    path: f.uri.fsPath,
+  }));
+  const boardRoot =
+    vscode.workspace
+      .getConfiguration("thinkube.boards")
+      .get<string>("root")
+      ?.trim() || undefined;
+  const ctx: DiscoverCtx = { folders, boardRoot };
   const out = new Map<string, RepoEntry>();
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root = folder.uri.fsPath;
-    walk(root, root, 0, maxDepth, out);
+  for (const folder of folders) {
+    walk(folder.path, folder.path, 0, maxDepth, out, ctx);
   }
   return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+interface DiscoverCtx {
+  folders: { name: string; path: string }[];
+  boardRoot: string | undefined;
+}
+
+/**
+ * The board dir for a repo: the central `<board-root>/<namespace>` when a board
+ * root is configured and the repo maps to a namespace, else the co-located
+ * `<repo>/.thinkube` (the legacy default and the fallback for paths outside any
+ * workspace folder, e.g. worktrees — SP-9 revisits those).
+ */
+function resolveBoardDir(repoPath: string, ctx: DiscoverCtx): string {
+  if (ctx.boardRoot) {
+    const ns = namespaceForRepo(repoPath, ctx.folders);
+    if (ns) return boardDirForNamespace(ctx.boardRoot, ns);
+  }
+  return path.join(repoPath, ".thinkube");
+}
+
+/**
+ * Board dir for a single repo path, reading the current `thinkube.boards.root`
+ * + workspace folders. Convenience over the discovery-internal resolver for
+ * callers outside the walk (e.g. constructing a `ThinkubeStore` for a repo not
+ * already enumerated, like the canonical repo behind a worktree).
+ */
+export function boardDirForRepo(repoPath: string): string {
+  const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+    name: f.name,
+    path: f.uri.fsPath,
+  }));
+  const boardRoot =
+    vscode.workspace
+      .getConfiguration("thinkube.boards")
+      .get<string>("root")
+      ?.trim() || undefined;
+  return resolveBoardDir(repoPath, { folders, boardRoot });
 }
 
 function walk(
@@ -72,6 +135,7 @@ function walk(
   depth: number,
   maxDepth: number,
   out: Map<string, RepoEntry>,
+  ctx: DiscoverCtx,
 ): void {
   let entries: fs.Dirent[];
   try {
@@ -81,12 +145,14 @@ function walk(
   }
   const dotGit = entries.find((e) => e.name === ".git");
   if (dotGit?.isDirectory()) {
+    const boardDir = resolveBoardDir(dir, ctx);
     out.set(dir, {
       kind: "repo",
       path: dir,
       name: path.basename(dir),
       rel: path.relative(base, dir) || path.basename(dir),
-      enabled: fs.existsSync(path.join(dir, ".thinkube")),
+      boardDir,
+      enabled: fs.existsSync(boardDir),
     });
     return; // a repo is a leaf in this tree
   }
@@ -95,12 +161,14 @@ function walk(
     // descend into a checkout). Surface it only if it carries a board, and
     // label it as a worktree of its canonical repo rather than a bare repo.
     const wt = linkedWorktreeInfo(dir);
-    if (wt && fs.existsSync(path.join(dir, ".thinkube"))) {
+    const boardDir = resolveBoardDir(dir, ctx);
+    if (wt && fs.existsSync(boardDir)) {
       out.set(dir, {
         kind: "repo",
         path: dir,
         name: path.basename(dir),
         rel: path.relative(base, dir) || path.basename(dir),
+        boardDir,
         enabled: true,
         worktreeOf: { repo: path.basename(wt.canonicalRepo), name: wt.name },
       });
@@ -111,7 +179,7 @@ function walk(
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     if (e.name === "node_modules" || e.name.startsWith(".")) continue;
-    walk(path.join(dir, e.name), base, depth + 1, maxDepth, out);
+    walk(path.join(dir, e.name), base, depth + 1, maxDepth, out, ctx);
   }
 }
 

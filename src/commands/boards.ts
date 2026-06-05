@@ -26,6 +26,7 @@ import { KanbanPanel } from "../views/kanban/host/Panel";
 import { ThinkubeFilesAdapter } from "../views/kanban/host/storage/ThinkubeFilesAdapter";
 import { decodeCardNumber } from "../views/kanban/host/storage/sliceBoard";
 import {
+  boardDirForRepo,
   BoardNavigatorProvider,
   RepoEntry,
 } from "../views/boards/BoardNavigatorProvider";
@@ -161,7 +162,7 @@ async function openBoardFor(
   deps: BoardDeps,
   r: RepoEntry,
 ): Promise<void> {
-  const store = new ThinkubeStore(r.path);
+  const store = new ThinkubeStore(r.path, r.boardDir);
   store.activate();
   context.subscriptions.push(store);
   const adapter = new ThinkubeFilesAdapter(store, r.name);
@@ -193,7 +194,9 @@ async function openBoardFor(
       const canonical =
         (await new WorktreeService().canonicalRepo(r.path)) ?? r.path;
       const mintStore =
-        canonical === r.path ? store : new ThinkubeStore(canonical);
+        canonical === r.path
+          ? store
+          : new ThinkubeStore(canonical, boardDirForRepo(canonical));
       const n = await mintStore.nextSpecNumber();
       await deps.launcher.openHere(
         vscode.Uri.file(canonical),
@@ -210,7 +213,10 @@ async function enableHere(deps: BoardDeps, r: RepoEntry): Promise<void> {
     );
     return;
   }
-  const base = path.join(r.path, ".thinkube");
+  // Scaffold the board at its resolved board dir — central
+  // `<board-root>/<namespace>` when configured, else co-located. The bundle
+  // (.claude/CLAUDE.md/.mcp.json) still installs into the repo below.
+  const base = r.boardDir;
   for (const sub of ["specs", "decisions", "retros"]) {
     await fs.mkdir(path.join(base, sub), { recursive: true });
     // .gitkeep so the empty dir is committable — the board is the committed tree.
