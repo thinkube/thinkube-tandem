@@ -50,13 +50,33 @@ writeFileSync(
   `---\nuid: seed-slice\nparent: SP-1\nstatus: ready\n---\n\n# Seed slice\n\nSeeded directly in the central board dir.\n`,
 );
 
+// A SECOND Thinking Space under a different container ("Apps") — proves two
+// spaces are discovered together from the one board root (AC #3), and that the
+// container is host-agnostic (Apps would be a Gitea repo in thinkube).
+const appsFolder = path.join(tmp, "apps");
+const repo2 = path.join(appsFolder, "bar");
+const specDir2 = path.join(boardRoot, "Apps", "bar", "specs", "SP-1");
+mkdirSync(path.join(repo2, ".git"), { recursive: true });
+mkdirSync(specDir2, { recursive: true });
+writeFileSync(
+  path.join(specDir2, "spec.md"),
+  `# Bar spec\n\n## Acceptance Criteria\n\n- [ ] x\n\n## Constraints\n\n- none\n\n## Design\n\n- n/a\n\n## File Structure Plan\n\n- n/a\n`,
+);
+writeFileSync(
+  path.join(specDir2, "SL-1.md"),
+  `---\nuid: bar-seed\nparent: SP-1\nstatus: ready\n---\n\n# Bar seed\n\nSeeded in the Apps/bar central board.\n`,
+);
+
 const child = spawn(process.execPath, [SERVER], {
   cwd: repo, // session cwd = the code repo → default board resolves to it
   env: {
     ...process.env,
     THINKUBE_ALLOW_AI_WRITES: "true",
-    THINKUBE_ROOTS: wsFolder,
-    THINKUBE_FOLDERS: JSON.stringify([{ name: "Platform", path: wsFolder }]),
+    THINKUBE_ROOTS: [wsFolder, appsFolder].join(path.delimiter),
+    THINKUBE_FOLDERS: JSON.stringify([
+      { name: "Platform", path: wsFolder },
+      { name: "Apps", path: appsFolder },
+    ]),
     THINKUBE_BOARD_ROOT: boardRoot,
   },
   stdio: ["pipe", "pipe", "inherit"],
@@ -92,7 +112,10 @@ function rpc(method, params) {
     child.stdin.write(
       JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n",
     );
-    setTimeout(() => reject(new Error(`timeout waiting for ${method}`)), 10_000);
+    setTimeout(
+      () => reject(new Error(`timeout waiting for ${method}`)),
+      10_000,
+    );
   });
 }
 function notify(method, params) {
@@ -127,9 +150,10 @@ try {
   const lb = await callTool("list_board", {});
   let ready = [];
   try {
-    ready = (JSON.parse(lb.text).columns ?? [])
-      .find((c) => c.id === "column-ready")
-      ?.cards.map((c) => c.id) ?? [];
+    ready =
+      (JSON.parse(lb.text).columns ?? [])
+        .find((c) => c.id === "column-ready")
+        ?.cards.map((c) => c.id) ?? [];
   } catch {
     /* leave empty → fails below */
   }
@@ -158,6 +182,18 @@ try {
     "the code repo stays clean — no .thinkube/ written into it (AC #2)",
     repoClean,
     `repo=${repo}`,
+  );
+
+  // 4. both Thinking Spaces are discovered from the single board root (AC #3).
+  const lbs = await callTool("list_boards", {});
+  const bothFound =
+    !lbs.isError &&
+    lbs.text.includes(path.resolve(repo)) &&
+    lbs.text.includes(path.resolve(repo2));
+  record(
+    "list_boards finds both spaces (Platform/extensions/foo + Apps/bar) from one root (AC #3)",
+    bothFound,
+    lbs.text.replace(/\s+/g, " ").slice(0, 200),
   );
 
   const passed = checks.filter((c) => c.pass).length;

@@ -12,14 +12,14 @@ conflict-free ID change is SP-7.
 
 ## Acceptance Criteria
 
-- [ ] With a board repo mounted at the configured central root, the navigator
+- [x] With a board repo mounted at the configured central root, the navigator
       shows each enabled Thinking Space's board read from
       `<board-root>/<thinking-space>/` — not from a co-located `.thinkube/` in
       the Thinking Space's repo.
 - [ ] Creating or moving a slice for a Thinking Space writes to that Thinking
       Space's namespace under the board root; `git status` in the Thinking
       Space's own repo shows no `.thinkube/` change.
-- [ ] Boards for two different Thinking Spaces are visible together, each
+- [x] Boards for two different Thinking Spaces are visible together, each
       labeled by its Thinking Space, from the single board root (navigated one
       at a time — no merged pane in this Spec).
 - [ ] An existing co-located `.thinkube/` board migrates into the sidecar once,

@@ -1,10 +1,12 @@
 ---
 uid: read-a-thinking-space-s-board-from-the-central-r
 parent: SP-8
-status: ready
+status: done
 satisfies:
   - 1
   - 3
+verified_req_hash: 16a0c53e9dff89d8d5a6176b12909c6a22e2ea43
+commit: 41e627bbe67666d182206e1fd14ad1bd9eba954f
 ---
 # Read a Thinking Space's board from the central root
 
