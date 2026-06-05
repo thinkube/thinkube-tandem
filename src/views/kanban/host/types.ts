@@ -13,10 +13,9 @@ export interface TaskCard {
   body?: string;
   columnId: string;
   colorSlug?: string;
-  issueNumber?: number;
   epicNumber?: number;
-  /** Parent Spec issue number (for the SP-{n} chip + colour grouping). */
-  parentNumber?: number;
+  /** Parent Spec id — the `SP-{id}` chip + colour grouping (SP-7: opaque string). */
+  parentId?: string;
   updatedAt?: string;
   /** Parent Spec changed more recently than this task → may need review. */
   specStale?: boolean;
@@ -51,9 +50,9 @@ export type WebviewMessage =
   | { kind: "load" }
   | { kind: "save"; board: Board }
   | { kind: "notify"; level: "info" | "warn" | "error"; text: string }
-  | { kind: "update-task"; number: number; title?: string; body?: string }
-  | { kind: "set-due"; number: number; date: string | null }
-  | { kind: "open-detail"; number: number }
+  | { kind: "update-task"; id: string; title?: string; body?: string }
+  | { kind: "set-due"; id: string; date: string | null }
+  | { kind: "open-detail"; id: string }
   /** Open a commit/PR link in the user's browser (host guards to http(s)). */
   | { kind: "open-external"; url: string }
   /** "New Spec" header button — host opens a Claude session with /spec-prepare prefilled. */

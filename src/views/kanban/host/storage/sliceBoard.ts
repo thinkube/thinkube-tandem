@@ -2,18 +2,11 @@
  * Pure projection: Tandem slice records → kanban Board. No vscode, no fs — the
  * ThinkubeFilesAdapter does the I/O and calls these. Unit-tested directly.
  *
- * Each slice file (`.thinkube/specs/SP-{n}/SL-{m}.md`) becomes one card. Slices
- * are numbered per-Spec, so the slice number alone isn't unique on a board; the
- * webview's numeric postMessage protocol (`issueNumber`) is satisfied by a
- * deterministic, reversible encoding of `(specNumber, sliceNumber)` — see
- * `cardNumberFor` / `decodeCardNumber`. The card's string `id` is the human
- * handle `SP-{n}_SL-{m}`. Colour and the parent chip group by the parent Spec.
- *
- * NB (ADR-0007): the locked "the stored number IS the slice number" decision
- * predates per-Spec numbering; once slices restart at SL-1 per Spec, a single
- * number can't be both unique and equal to the slice number, so `issueNumber`
- * is the (spec, slice) composite. Still numeric, so the webview protocol is
- * untouched.
+ * Each slice file (`.thinkube/specs/SP-{id}/SL-{m}.md`) becomes one card whose
+ * string `id` IS the human handle `SP-{id}_SL-{m}` — that handle is the card's
+ * identity across the host↔webview boundary (SP-7). Spec ids are opaque strings
+ * (base36-epoch for new Specs, legacy integers for old ones), so there is no
+ * numeric card encoding; colour and the parent chip group by the parent Spec id.
  */
 import { Board, BoardColumn, TaskCard } from "../types";
 import {
@@ -51,27 +44,19 @@ const PALETTE_SLUGS = [
   "slate",
 ];
 
-/** Card colour by parent Spec, so a Spec's slices share a hue. */
-export function paletteForParent(specNumber: number): string {
-  return PALETTE_SLUGS[Math.abs(Math.floor(specNumber)) % PALETTE_SLUGS.length];
+/** 32-bit FNV-1a hash → unsigned int. Stable colour key for opaque string ids. */
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
-/** Slices per Spec the composite numeric id can hold before colliding. */
-export const SLICE_NUMBER_BASE = 100000;
-
-/** Deterministic, stable, unique numeric id for the webview protocol. */
-export function cardNumberFor(specNumber: number, sliceNumber: number): number {
-  return specNumber * SLICE_NUMBER_BASE + sliceNumber;
-}
-
-export function decodeCardNumber(n: number): {
-  specNumber: number;
-  sliceNumber: number;
-} {
-  return {
-    specNumber: Math.floor(n / SLICE_NUMBER_BASE),
-    sliceNumber: n % SLICE_NUMBER_BASE,
-  };
+/** Card colour by parent Spec id, so a Spec's slices share a hue. */
+export function paletteForParent(specId: string): string {
+  return PALETTE_SLUGS[hashString(specId) % PALETTE_SLUGS.length];
 }
 
 export function statusToColumnId(status: string | undefined): string {
@@ -82,13 +67,14 @@ export function columnIdToStatus(columnId: string): "ready" | "doing" | "done" {
   return COLUMN_TO_STATUS[columnId] ?? "ready";
 }
 
-/** The canonical human handle for a slice, e.g. `SP-3_SL-42`. */
-export function sliceHandle(specNumber: number, sliceNumber: number): string {
-  return `SP-${specNumber}_SL-${sliceNumber}`;
+/** The canonical human handle for a slice, e.g. `SP-tw7n0g_SL-3`. */
+export function sliceHandle(specId: string, sliceNumber: number): string {
+  return `SP-${specId}_SL-${sliceNumber}`;
 }
 
 export interface SliceInput {
-  specNumber: number;
+  /** Parent Spec id — an opaque string (base36-epoch, or a legacy integer). */
+  specNumber: string;
   sliceNumber: number;
   title: string;
   body?: string;
@@ -121,7 +107,8 @@ export function buildSliceBoard(slices: SliceInput[], scope: string): Board {
   for (const c of TANDEM_COLUMNS) byColumn.set(c.id, []);
 
   const ordered = [...slices].sort(
-    (a, b) => a.specNumber - b.specNumber || a.sliceNumber - b.sliceNumber,
+    (a, b) =>
+      a.specNumber.localeCompare(b.specNumber) || a.sliceNumber - b.sliceNumber,
   );
 
   for (const s of ordered) {
@@ -140,8 +127,7 @@ export function buildSliceBoard(slices: SliceInput[], scope: string): Board {
       body: s.body,
       columnId,
       colorSlug: paletteForParent(s.specNumber),
-      issueNumber: cardNumberFor(s.specNumber, s.sliceNumber),
-      parentNumber: s.specNumber,
+      parentId: s.specNumber,
       updatedAt: s.updatedAt,
       dueDate: s.due,
       priority: s.priority,

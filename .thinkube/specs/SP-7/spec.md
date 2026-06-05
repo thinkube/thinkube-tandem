@@ -30,11 +30,11 @@ integer-numbered Specs keep working unchanged.
 
 - **base36 epoch-seconds, no suffix (ADR-0008).** Cross-writer same-second
   collision is accepted (rare, benign — a visible merge conflict resolved by
-  renaming); same-*writer* collision is prevented by monotonic minting.
+  renaming); same-_writer_ collision is prevented by monotonic minting.
 - **Opaque string ids, back-compat.** Existing integer-numbered Specs
   (SP-1…SP-8) keep working as string ids `"1"`…`"8"` — no migration, no rename
   (pointless churn on done work). Integers are simply a valid id subset.
-- **Slices stay `SL-<integer>`** within a Spec — only the *Spec* id changes.
+- **Slices stay `SL-<integer>`** within a Spec — only the _Spec_ id changes.
 - **Reuse, don't re-architect.** Type-propagate from the two linchpins
   (`nextSpecNumber`, `listSpecDirs`); route card resolution through the existing
   string handle rather than rework the webview's numeric protocol.
@@ -66,14 +66,17 @@ template-literals). Slice numbers stay integers (`SL-(\d+)`); frontmatter's
 The one load-bearing spot is the **numeric card encoding**
 (`sliceBoard.ts:60`): `cardNumberFor = specNumber*100000 + sliceNumber` cannot
 pack a string id, and the host↔webview protocol carries a numeric `issueNumber`.
-The card's *real* identity is already its string handle `SP-<id>_SL-<m>` (the
-card `id`), which `ThinkubeFilesAdapter.refForCard` / `boards.ts` already prefer.
-**Decision:** route all host-side card→(spec,slice) resolution through that
-string handle and make `issueNumber` an **opaque per-card surrogate** (no longer
-decodable to a spec id) — retiring `decodeCardNumber` from spec-id recovery. The
-webview keeps its numeric protocol unchanged, so no webview rebuild is needed for
-correctness. `paletteForParent` (`:55`), which colours by `specNumber %
-PALETTE.length`, swaps the modulo for a small string hash.
+The card's _real_ identity is already its string handle `SP-<id>_SL-<m>` (the
+card `id`). **Decision (revised during build):** make the **string handle the
+card identity across the host↔webview boundary**. The three webview messages
+(`update-task`/`set-due`/`open-detail`) carry that `id` instead of a number, and
+the SP-chip renders from a string `parentId` — so the numeric `issueNumber` /
+`cardNumberFor` / `decodeCardNumber` surrogate is **removed entirely** and the
+host resolves edits by parsing the handle. This touches the webview (a rebuild is
+required) but is cleaner than a hash+map. `paletteForParent` colours by a string
+hash of the id. (The `StorageAdapter.updateIssue`/`setDueDate` signatures change
+`number → id: string`, rippling to `Panel`, `InMemoryAdapter`, and the
+`sliceBoard.test.ts`.)
 
 **Spike:** confirm base36(epoch-seconds) is ≤ ~6 chars through ~2038 and
 zero-pads to a fixed width so directory/handle lexical sort matches creation
@@ -101,5 +104,14 @@ bump +1s on a same-second repeat).
   `string`; `spec/SP-<id>` branch + paths.
 - `src/store/frontmatter.ts` — verify `parent` stays `string` (no change
   expected).
+- `src/views/kanban/host/types.ts` + `webview/kanban/src/types.ts` — `TaskCard`
+  `parentNumber → parentId: string`, drop `issueNumber`; the three messages
+  carry `id: string`.
+- `src/views/kanban/host/StorageAdapter.ts` + `InMemoryAdapter.ts` +
+  `Panel.ts` — `updateIssue`/`setDueDate` take `id: string`; dispatch by id.
+- `webview/kanban/src/components/task/index.tsx` — send `id`; render the chip
+  from `parentId`; drop the `#issueNumber` display. (Webview rebuild via
+  `npm run compile`.)
+- `src/views/kanban/host/storage/sliceBoard.test.ts` — update for the new shape.
 - `templates/methodology-bundle/skills/{spec-prepare,slice}/SKILL.md` — drop the
   "(integer)" wording; the Spec id is opaque.
