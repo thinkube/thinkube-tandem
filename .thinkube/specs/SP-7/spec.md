@@ -10,13 +10,13 @@ integer-numbered Specs keep working unchanged.
 
 ## Acceptance Criteria
 
-- [ ] A newly created Spec is identified by a **base36 epoch-seconds ID**
+- [x] A newly created Spec is identified by a **base36 epoch-seconds ID**
       (`SP-<id>`, e.g. `SP-tw7n0g`) that sorts chronologically and decodes to
       its creation time — not a consecutive integer.
-- [ ] **Two Specs created independently** (two worktrees / sessions, no shared
+- [x] **Two Specs created independently** (two worktrees / sessions, no shared
       counter) receive **distinct IDs** — creating a Spec no longer resolves a
       canonical repo to allocate a number (SP-5's SL-3 minting is removed).
-- [ ] A **single writer creating Specs back-to-back** never self-collides — IDs
+- [x] A **single writer creating Specs back-to-back** never self-collides — IDs
       are monotonic per writer (it never reuses its own last second).
 - [x] **Slices remain `SL-1..n`** within their Spec; handles stay short
       (`SP-<id>_SL-<m>`).

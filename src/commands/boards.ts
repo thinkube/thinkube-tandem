@@ -22,11 +22,9 @@ import { SessionLinkService } from "../services/SessionLinkService";
 import { listSessionsForFolder, SessionInfo } from "../services/sessionLinks";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { migrateBoardDir } from "../store/boardMigration";
-import { WorktreeService } from "../services/WorktreeService";
 import { KanbanPanel } from "../views/kanban/host/Panel";
 import { ThinkubeFilesAdapter } from "../views/kanban/host/storage/ThinkubeFilesAdapter";
 import {
-  boardDirForRepo,
   BoardNavigatorProvider,
   RepoEntry,
 } from "../views/boards/BoardNavigatorProvider";
@@ -183,27 +181,16 @@ async function openBoardFor(
         vscode.Uri.file(path.join(store.thinkubeDir, rel)),
       );
     },
-    // "New Spec" header button: allocate the next Spec number and open a
-    // Claude session rooted in the repo with /spec-prepare prefilled — spec
-    // authoring is a conversation (ADR-0003), so the button's job is only to
-    // start it in the right place with the right number.
-    //
-    // Canonical-only minting (SP-5): if this board is a linked worktree, both
-    // the number and the authoring session must come from the canonical repo —
-    // a worktree's checkout is a possibly-stale view of `.thinkube/specs/`, so
-    // minting there risks duplicating a Spec number that already exists on
-    // main. Spec numbers are allocated, and new spec files created, only on
-    // canonical; worktrees only ever *work* an already-numbered Spec.
+    // "New Spec" header button: mint the next Spec id and open a Claude session
+    // rooted in the repo with /spec-prepare prefilled — spec authoring is a
+    // conversation (ADR-0003), so the button only starts it in the right place
+    // with the right id. SP-7: ids are conflict-free base36-epoch strings, so
+    // the SP-5 canonical-repo round-trip (which existed only to keep `max+1`
+    // unique across worktrees) is gone.
     onCreateSpec: async () => {
-      const canonical =
-        (await new WorktreeService().canonicalRepo(r.path)) ?? r.path;
-      const mintStore =
-        canonical === r.path
-          ? store
-          : new ThinkubeStore(canonical, boardDirForRepo(canonical));
-      const n = await mintStore.nextSpecNumber();
+      const n = await store.nextSpecNumber();
       await deps.launcher.openHere(
-        vscode.Uri.file(canonical),
+        vscode.Uri.file(r.path),
         `/spec-prepare ${n} `,
       );
     },

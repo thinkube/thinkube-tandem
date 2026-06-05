@@ -82,6 +82,10 @@ export interface FileChange {
   type: "created" | "changed" | "deleted";
 }
 
+/** Process-wide monotonic guard for base36-epoch Spec-id minting (SP-7): a
+ *  single writer never reuses its own last second. */
+let lastMintedEpoch = 0;
+
 export class ThinkubeStore implements vscode.Disposable {
   private readonly _onChanged = new vscode.EventEmitter<FileChange>();
   readonly onChanged = this._onChanged.event;
@@ -290,14 +294,15 @@ export class ThinkubeStore implements vscode.Disposable {
   // Archive-don't-delete keeps every number claimed by a file, so `max + 1`
   // can never reuse a freed number (ADR-0007).
 
-  /** Next repo-wide Spec id. SL-1 keeps `max+1` over the integer-valued ids and
-   *  returns it as a string; SP-7_SL-2 replaces this body with base36-epoch
-   *  minting (no allocator, no `listSpecDirs` read). */
+  /** Next repo-wide Spec id: a zero-padded base36 encoding of the current
+   *  epoch-seconds (SP-7 / ADR-0008). No allocator, no `listSpecDirs` read, so
+   *  independent writers never collide; the in-process monotonic guard keeps a
+   *  single writer from reusing its own last second. */
   async nextSpecNumber(): Promise<string> {
-    const nums = (await this.listSpecDirs())
-      .map((id) => Number(id))
-      .filter((n) => Number.isInteger(n));
-    return String((nums.length ? Math.max(...nums) : 0) + 1);
+    let epoch = Math.floor(Date.now() / 1000);
+    if (epoch <= lastMintedEpoch) epoch = lastMintedEpoch + 1;
+    lastMintedEpoch = epoch;
+    return epoch.toString(36).padStart(6, "0");
   }
 
   /** Next per-Spec Slice number = highest existing `SL-{m}` under that Spec + 1. */
