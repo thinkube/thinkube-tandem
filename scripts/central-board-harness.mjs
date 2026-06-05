@@ -13,11 +13,12 @@
  * Build first: `npm run compile`. Run: `node scripts/central-board-harness.mjs`.
  * Exit 0 = all behaviours held.
  */
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
   writeFileSync,
+  readFileSync,
   existsSync,
   rmSync,
 } from "node:fs";
@@ -65,6 +66,40 @@ writeFileSync(
 writeFileSync(
   path.join(specDir2, "SL-1.md"),
   `---\nuid: bar-seed\nparent: SP-1\nstatus: ready\n---\n\n# Bar seed\n\nSeeded in the Apps/bar central board.\n`,
+);
+
+// A THIRD space that is a REAL git repo with a commit — proves move→Done writes
+// status to the central board while stamping provenance from the CODE repo, and
+// leaves the code repo's working tree clean (the git-vs-board split, SL-2).
+const bazRepo = path.join(wsFolder, "extensions", "baz");
+const bazSpecDir = path.join(
+  boardRoot,
+  "Platform",
+  "extensions",
+  "baz",
+  "specs",
+  "SP-2",
+);
+mkdirSync(bazRepo, { recursive: true });
+const git = (...a) =>
+  execFileSync("git", ["-C", bazRepo, ...a], { stdio: "ignore" });
+execFileSync("git", ["init", "-q", bazRepo], { stdio: "ignore" });
+git("config", "user.email", "harness@thinkube");
+git("config", "user.name", "harness");
+writeFileSync(path.join(bazRepo, "README.md"), "baz\n");
+git("add", ".");
+git("commit", "-qm", "init");
+const bazHead = execFileSync("git", ["-C", bazRepo, "rev-parse", "HEAD"])
+  .toString()
+  .trim();
+mkdirSync(bazSpecDir, { recursive: true });
+writeFileSync(
+  path.join(bazSpecDir, "spec.md"),
+  `# Baz spec\n\n## Acceptance Criteria\n\n- [x] delivered\n\n## Constraints\n\n- none\n\n## Design\n\n- n/a\n\n## File Structure Plan\n\n- n/a\n`,
+);
+writeFileSync(
+  path.join(bazSpecDir, "SL-1.md"),
+  `---\nuid: baz-sl1\nparent: SP-2\nstatus: ready\nsatisfies:\n  - 1\n---\n\n# Baz slice\n\nMoved to Done to exercise provenance.\n`,
 );
 
 const child = spawn(process.execPath, [SERVER], {
@@ -194,6 +229,36 @@ try {
     "list_boards finds both spaces (Platform/extensions/foo + Apps/bar) from one root (AC #3)",
     bothFound,
     lbs.text.replace(/\s+/g, " ").slice(0, 200),
+  );
+
+  // 5. move→Done under central: status writes to the central board, provenance
+  //    is stamped from the CODE repo, and the code repo's tree stays clean.
+  const mv = await callTool("move_slice", {
+    slice: "SP-2_SL-1",
+    status: "Done",
+    board: bazRepo,
+  });
+  const bazSl = path.join(bazSpecDir, "SL-1.md");
+  const slText = existsSync(bazSl) ? readFileSync(bazSl, "utf8") : "";
+  record(
+    "move→Done writes status to central + stamps provenance from the CODE repo",
+    !mv.isError &&
+      /status:\s*done/.test(slText) &&
+      slText.includes(`commit: ${bazHead}`),
+    `done=${/status:\s*done/.test(slText)} commitFromCodeRepo=${slText.includes(bazHead)} head=${bazHead.slice(0, 8)}`,
+  );
+  const bazStatus = execFileSync("git", [
+    "-C",
+    bazRepo,
+    "status",
+    "--porcelain",
+  ])
+    .toString()
+    .trim();
+  record(
+    "the code repo working tree stays clean after move→Done (no .thinkube)",
+    bazStatus === "",
+    `git status: ${bazStatus || "(clean)"}`,
   );
 
   const passed = checks.filter((c) => c.pass).length;

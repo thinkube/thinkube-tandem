@@ -16,7 +16,7 @@ conflict-free ID change is SP-7.
       shows each enabled Thinking Space's board read from
       `<board-root>/<thinking-space>/` — not from a co-located `.thinkube/` in
       the Thinking Space's repo.
-- [ ] Creating or moving a slice for a Thinking Space writes to that Thinking
+- [x] Creating or moving a slice for a Thinking Space writes to that Thinking
       Space's namespace under the board root; `git status` in the Thinking
       Space's own repo shows no `.thinkube/` change.
 - [x] Boards for two different Thinking Spaces are visible together, each

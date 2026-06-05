@@ -1,11 +1,13 @@
 ---
 uid: write-slices-and-moves-to-the-central-namespace
 parent: SP-8
-status: ready
+status: done
 depends_on:
   - SP-8_SL-1
 satisfies:
   - 2
+verified_req_hash: 16a0c53e9dff89d8d5a6176b12909c6a22e2ea43
+commit: 30914022b0e04fd2e333b85ad6977169bfc9e84f
 ---
 # Write slices and moves to the central namespace
 
