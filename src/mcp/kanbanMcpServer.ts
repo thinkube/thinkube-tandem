@@ -67,8 +67,10 @@ import {
 } from "../store/boardNamespace";
 import {
   buildSliceBoard,
+  deriveSpecMeta,
   SliceInput,
   sliceHandle,
+  SpecMeta,
 } from "../views/kanban/host/storage/sliceBoard";
 
 interface ServerEnv {
@@ -781,9 +783,11 @@ function sliceTitle(body: string | undefined, fallback: string): string {
 async function listBoard(store: ThinkubeStore): Promise<unknown> {
   // Per-Spec requirement-hash, computed once per Spec (specs are few).
   const reqHashBySpec = new Map<string, string>();
+  const specMeta = new Map<string, SpecMeta>();
   for (const specNumber of await store.listSpecDirs()) {
     const doc = await store.getFile(store.pathForSpecDoc(specNumber));
     if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
+    specMeta.set(specNumber, deriveSpecMeta(doc?.frontmatter, doc?.body));
   }
 
   const inputs: SliceInput[] = [];
@@ -809,7 +813,7 @@ async function listBoard(store: ThinkubeStore): Promise<unknown> {
 
   // Scope = the board's canonical id, so cross-board output is unambiguous.
   const scope = boardId(store.workspaceRoot);
-  const board = buildSliceBoard(inputs, scope);
+  const board = buildSliceBoard(inputs, scope, specMeta);
 
   const columns = board.columns.map((col) => ({
     id: col.id,
@@ -823,6 +827,12 @@ async function listBoard(store: ThinkubeStore): Promise<unknown> {
         specChange: card.specChange,
         priority: card.priority,
         due: card.dueDate,
+        // Acceptance card (TEP-0010): present only on the auto-derived
+        // `SP-{id}_accept` card, so a reader can tell it from a slice and
+        // know whether `accept_spec` is unblocked.
+        ...(card.isAcceptance
+          ? { isAcceptance: true, acceptReady: card.acceptReady }
+          : {}),
       };
     }),
   }));

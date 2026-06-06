@@ -13,6 +13,7 @@ import {
   classifySpecChange,
   SpecChangeKind,
 } from "../../../../methodology/specChange";
+import { extractAcceptanceCriteria } from "../../../../methodology/qualityGates";
 
 export const TANDEM_COLUMNS: ReadonlyArray<{ id: string; title: string }> = [
   { id: "column-ready", title: "Ready" },
@@ -106,6 +107,25 @@ export interface SpecMeta {
   accepted: boolean;
   /** Every acceptance criterion on the Spec is checked. */
   allAcsChecked: boolean;
+}
+
+/**
+ * Derive a Spec's acceptance-card readiness from its doc. `accepted` is true
+ * when the `accepted:` stamp is present (set by `accept_spec`); `allAcsChecked`
+ * requires at least one AC and every box checked (mirrors `gateSpecAcceptance`,
+ * which refuses a Spec with no `## Acceptance Criteria`). The I/O wrappers (the
+ * adapter, the MCP `list_board`) read the doc; this keeps the rule in one place.
+ */
+export function deriveSpecMeta(
+  frontmatter: { accepted?: unknown } | undefined,
+  body: string | undefined,
+): SpecMeta {
+  const accepted = frontmatter?.accepted != null && frontmatter.accepted !== "";
+  const items = extractAcceptanceCriteria(body ?? "");
+  return {
+    accepted,
+    allAcsChecked: items.length > 0 && items.every((i) => i.checked),
+  };
 }
 
 export function buildSliceBoard(

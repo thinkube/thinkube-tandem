@@ -46,6 +46,10 @@ export interface TaskCard {
   commitUrl?: string;
   /** Pull-request URL carrying the slice. */
   pr?: string;
+  /** Spec-level acceptance card (TEP-0010), auto-derived — not a slice file. */
+  isAcceptance?: boolean;
+  /** Acceptance card only: every slice Done + every AC checked → ready to accept. */
+  acceptReady?: boolean;
 }
 
 export interface BoardColumn {
@@ -82,7 +86,9 @@ export type WebviewMessage =
   /** Open a commit/PR link in the user's browser (host guards to http(s)). */
   | { kind: "open-external"; url: string }
   /** "New Spec" header button — host opens a Claude session with /spec-prepare prefilled. */
-  | { kind: "create-spec" };
+  | { kind: "create-spec" }
+  /** Accept a Spec (TEP-0010): host runs the gate + accept_spec, then merges the PR. */
+  | { kind: "accept-spec"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 

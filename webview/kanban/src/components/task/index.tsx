@@ -66,6 +66,76 @@ export function Task({
     });
   };
 
+  // Spec-level acceptance card (TEP-0010): not a slice — it carries no body or
+  // provenance and isn't hand-dragged (the accept gate, not a drag, moves it to
+  // Done). Render a distinct card whose only action is Accept, enabled once the
+  // Spec is accept-ready (all slices Done + all ACs checked).
+  if (task.isAcceptance) {
+    const accepted = task.columnId === "column-done";
+    return (
+      <Draggable draggableId={task.id} index={index} isDragDisabled>
+        {(provided) => (
+          <li
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            {...provided.dragHandleProps}
+            className={`${styles.task} ${styles.accept}`}
+            style={{
+              ...provided.draggableProps.style,
+              ["--accent" as string]: palette.accent,
+            }}
+          >
+            <header className={styles.header}>
+              {task.parentId !== undefined && (
+                <span
+                  className={styles.epic}
+                  title={`Parent spec SP-${task.parentId}`}
+                >
+                  SP-{task.parentId}
+                </span>
+              )}
+              <span className="grow" />
+              <span className={styles.acceptTag}>acceptance</span>
+            </header>
+            <div className={styles.title}>{task.description}</div>
+            {accepted ? (
+              <div className={styles.acceptDone}>
+                <Check /> Accepted — Spec done
+              </div>
+            ) : (
+              <div className={styles.acceptRow}>
+                <button
+                  type="button"
+                  className={styles.acceptBtn}
+                  disabled={!task.acceptReady}
+                  title={
+                    task.acceptReady
+                      ? "Accept the Spec: re-verify, merge its PR, close it out"
+                      : "Blocked: every slice must be Done and every acceptance criterion checked"
+                  }
+                  onClick={() =>
+                    task.parentId !== undefined &&
+                    postToHost({
+                      kind: "accept-spec",
+                      spec: task.parentId,
+                    })
+                  }
+                >
+                  Accept Spec
+                </button>
+                {!task.acceptReady && (
+                  <span className={styles.acceptHint}>
+                    slices Done + all AC checked
+                  </span>
+                )}
+              </div>
+            )}
+          </li>
+        )}
+      </Draggable>
+    );
+  }
+
   return (
     <Draggable draggableId={task.id} index={index} isDragDisabled={editing}>
       {(provided) => (

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   buildSliceBoard,
+  deriveSpecMeta,
   sliceHandle,
   columnIdToStatus,
   statusToColumnId,
@@ -150,4 +151,29 @@ test("acceptance card appears only when accept-ready or accepted (TEP-0010)", ()
     new Map([["9", { accepted: true, allAcsChecked: true }]]),
   );
   assert.equal(accepted.tasks["SP-9_accept"].columnId, "column-done");
+});
+
+test("deriveSpecMeta reads the accepted stamp and all-ACs-checked from a Spec doc", () => {
+  const allChecked = `## Acceptance Criteria\n- [x] one\n- [x] two\n`;
+  const someUnchecked = `## Acceptance Criteria\n- [x] one\n- [ ] two\n`;
+
+  // No stamp, every box checked.
+  assert.deepEqual(deriveSpecMeta(undefined, allChecked), {
+    accepted: false,
+    allAcsChecked: true,
+  });
+  // A non-empty `accepted:` stamp flips accepted; an empty string does not.
+  assert.equal(
+    deriveSpecMeta({ accepted: "2026-06-06" }, allChecked).accepted,
+    true,
+  );
+  assert.equal(deriveSpecMeta({ accepted: "" }, allChecked).accepted, false);
+  // Any unchecked box → not all-checked.
+  assert.equal(deriveSpecMeta(undefined, someUnchecked).allAcsChecked, false);
+  // No `## Acceptance Criteria` at all → not all-checked (vacuous truth refused,
+  // mirroring gateSpecAcceptance).
+  assert.equal(
+    deriveSpecMeta(undefined, "no criteria here").allAcsChecked,
+    false,
+  );
 });

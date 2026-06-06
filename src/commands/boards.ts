@@ -22,6 +22,8 @@ import { SessionLinkService } from "../services/SessionLinkService";
 import { listSessionsForFolder, SessionInfo } from "../services/sessionLinks";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { migrateBoardDir } from "../store/boardMigration";
+import { gateSpecAcceptance } from "../methodology/qualityGates";
+import { mergeSpecPr } from "../github/specMerge";
 import { KanbanPanel } from "../views/kanban/host/Panel";
 import { ThinkubeFilesAdapter } from "../views/kanban/host/storage/ThinkubeFilesAdapter";
 import {
@@ -192,6 +194,41 @@ async function openBoardFor(
       await deps.launcher.openHere(
         vscode.Uri.file(r.path),
         `/spec-prepare ${n} `,
+      );
+    },
+    // Acceptance card's "Accept Spec" (TEP-0010): the single human gate at the
+    // end of a Spec. Re-run the acceptance gate (every slice Done + every AC
+    // checked), stamp `accepted:` on the Spec doc, then merge the Spec's one PR.
+    // Mirrors the MCP `accept_spec` tool's gate+stamp, plus the PR merge. Throws
+    // on refusal/failure — KanbanPanel surfaces the reason.
+    onAcceptSpec: async (spec: string) => {
+      const specRel = store.pathForSpecDoc(spec);
+      const specDoc = await store.getFile(specRel);
+      if (!specDoc) {
+        throw new Error(`No spec at ${specRel} — nothing to accept.`);
+      }
+      const sliceStatuses: string[] = [];
+      for (const rel of await store.listSlices(spec)) {
+        const parsed = await store.getFile(rel);
+        sliceStatuses.push(String(parsed?.frontmatter?.status ?? ""));
+      }
+      const gate = gateSpecAcceptance({
+        specBody: specDoc.body,
+        sliceStatuses,
+      });
+      if (!gate.ok) throw new Error(gate.reason);
+
+      // Merge the one PR first: if the merge is rejected we must NOT leave the
+      // Spec stamped accepted while its PR is still open. Stamp only after the
+      // branch has actually landed.
+      const { branch, output } = await mergeSpecPr(spec, store.workspaceRoot);
+      await store.writeFile(
+        specRel,
+        { ...specDoc.frontmatter, accepted: new Date().toISOString() },
+        specDoc.body,
+      );
+      vscode.window.showInformationMessage(
+        `Accepted SP-${spec} — merged ${branch}${output ? `: ${output}` : ""}.`,
       );
     },
   });

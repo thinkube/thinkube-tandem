@@ -25,8 +25,10 @@ import { buildCommitUrl, detectRepoCoords } from "../../../../github/gitRemote";
 import {
   buildSliceBoard,
   columnIdToStatus,
+  deriveSpecMeta,
   SliceInput,
   sliceHandle,
+  SpecMeta,
 } from "./sliceBoard";
 
 const SLICE_PATH_RE = /specs\/SP-([A-Za-z0-9]+)\/SL-(\d+)\.md$/;
@@ -56,13 +58,16 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
   }
 
   async load(): Promise<Board> {
-    // Per-Spec requirement-hash, computed once per Spec (specs are few).
+    // Per-Spec requirement-hash + acceptance-card readiness, computed once per
+    // Spec (specs are few).
     const reqHashBySpec = new Map<string, string>();
+    const specMeta = new Map<string, SpecMeta>();
     for (const specNumber of await this.store.listSpecDirs()) {
       const doc = await this.store.getFile(
         this.store.pathForSpecDoc(specNumber),
       );
       if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
+      specMeta.set(specNumber, deriveSpecMeta(doc?.frontmatter, doc?.body));
     }
 
     // Resolve the repo coords once so a recorded commit SHA can be turned into
@@ -98,7 +103,7 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
         pr: fm.pr,
       });
     }
-    return buildSliceBoard(inputs, this.scope);
+    return buildSliceBoard(inputs, this.scope, specMeta);
   }
 
   async save(board: Board): Promise<void> {

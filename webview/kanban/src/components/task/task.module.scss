@@ -238,3 +238,64 @@
 .placeholder {
   opacity: 0.5;
 }
+
+/* Spec-level acceptance card (TEP-0010) — visually distinct from slices: a
+ * dashed border marks it as a derived gate, not a draggable slice file. */
+.accept {
+  border-style: dashed;
+  border-left-style: solid;
+  background: var(--vscode-editorWidget-background, var(--bg));
+}
+.acceptTag {
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--accent, var(--vscode-textLink-foreground));
+}
+.acceptRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.acceptBtn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+.acceptBtn:hover:not(:disabled) {
+  background: var(
+    --vscode-button-hoverBackground,
+    var(--vscode-button-background)
+  );
+}
+.acceptBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.acceptHint {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+.acceptDone {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-charts-green, #4caf50);
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}

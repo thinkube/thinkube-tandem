@@ -35,6 +35,12 @@ interface PanelDeps {
    * prefilled. Absent on adapters with no backing repo (the demo board).
    */
   onCreateSpec?: () => void | Promise<void>;
+  /**
+   * Acceptance card's "Accept Spec" button (TEP-0010): run the acceptance gate,
+   * stamp `accepted:`, and merge the Spec's single PR. Throws (with a reason) on
+   * a gate refusal or merge failure. Absent on adapters with no backing repo.
+   */
+  onAcceptSpec?: (spec: string) => void | Promise<void>;
 }
 
 const ACTIVE_PANELS = new Map<string, KanbanPanel>();
@@ -48,6 +54,9 @@ export class KanbanPanel implements vscode.Disposable {
     | ((id: string) => void | Promise<void>)
     | undefined;
   private readonly onCreateSpec: (() => void | Promise<void>) | undefined;
+  private readonly onAcceptSpec:
+    | ((spec: string) => void | Promise<void>)
+    | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly key: string;
 
@@ -62,6 +71,7 @@ export class KanbanPanel implements vscode.Disposable {
     this.output = deps.output;
     this.openDetail = deps.openDetail;
     this.onCreateSpec = deps.onCreateSpec;
+    this.onAcceptSpec = deps.onAcceptSpec;
     this.key = key;
   }
 
@@ -226,6 +236,31 @@ export class KanbanPanel implements vscode.Disposable {
           );
         }
         break;
+      case "accept-spec": {
+        if (!this.onAcceptSpec) {
+          this.notify(
+            "info",
+            "Accepting a Spec isn't available on this board.",
+          );
+          break;
+        }
+        try {
+          await this.onAcceptSpec(message.spec);
+          // Reflect the accept: the Spec doc now carries `accepted:`, so the
+          // acceptance card derives into Done on reload.
+          const board = await this.adapter.load();
+          this.post({ kind: "state", board, mode: readMode() });
+        } catch (err) {
+          this.log(
+            `accept-spec SP-${message.spec} failed: ${(err as Error).message}`,
+          );
+          this.notify(
+            "error",
+            `Couldn't accept SP-${message.spec}: ${(err as Error).message}`,
+          );
+        }
+        break;
+      }
       case "notify":
         this.notify(message.level, message.text);
         break;
