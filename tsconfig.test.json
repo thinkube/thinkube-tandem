@@ -16,7 +16,9 @@
     "src/store/ids.ts",
     "src/store/ids.test.ts",
     "src/services/WorktreeService.ts",
-    "src/services/WorktreeService.test.ts"
+    "src/services/WorktreeService.test.ts",
+    "src/github/specMerge.ts",
+    "src/github/specMerge.test.ts"
   ],
   "exclude": ["node_modules"]
 }

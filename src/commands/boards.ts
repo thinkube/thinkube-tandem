@@ -207,17 +207,21 @@ async function openBoardFor(
       });
       if (!gate.ok) throw new Error(gate.reason);
 
-      // Merge the one PR first: if the merge is rejected we must NOT leave the
-      // Spec stamped accepted while its PR is still open. Stamp only after the
-      // branch has actually landed.
-      const { branch, output } = await mergeSpecPr(spec, store.workspaceRoot);
+      // Resolve the Spec's PR first (TEP-0010), tolerant of straight-to-main
+      // Specs with no PR (TEP-tg8dsa). A real merge failure throws, and we must
+      // NOT leave the Spec stamped accepted while its PR is still open — so stamp
+      // only after the merge call returns (it returns without merging when there
+      // is simply no PR).
+      const merge = await mergeSpecPr(spec, store.workspaceRoot);
       await store.writeFile(
         specRel,
         { ...specDoc.frontmatter, accepted: new Date().toISOString() },
         specDoc.body,
       );
       vscode.window.showInformationMessage(
-        `Accepted SP-${spec} — merged ${branch}${output ? `: ${output}` : ""}.`,
+        merge.merged
+          ? `Accepted SP-${spec} — merged ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+          : `Accepted SP-${spec} — no PR to merge (shipped straight to main).`,
       );
     },
   });
