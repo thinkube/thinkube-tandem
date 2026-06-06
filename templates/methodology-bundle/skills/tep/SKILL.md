@@ -49,7 +49,7 @@ Produce a fully-shaped `teps/TEP-{id}.md` in the canonical format, with:
    - Use **`AskUserQuestion`** for genuine forks (naming, scope, an either/or design choice) — not for things with an obvious default.
 4. **Explore only when grounding the Decision/Detailed Description** — and only what `CLAUDE.md` + docs don't answer; delegate to `explorer`.
 5. **Set status as it lands.** A TEP starts `proposed`; once the user accepts the proposal, `write_tep { tep, status: "accepted" }`.
-6. **Report.** Print the path, the id, and the suggested next step (`/spec-prepare` to cut a spec that implements it — add `implements: TEP-{id}` to that spec).
+6. **Commit, then report.** Commit **and push** the TEP file to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the path, the id, and the suggested next step (`/spec-prepare` to cut a spec that implements it — add `implements: TEP-{id}` to that spec).
 
 ## Constraints
 

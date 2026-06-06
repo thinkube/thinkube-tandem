@@ -1,5 +1,5 @@
 ---
-description: Append a structured retro note to today's .thinkube/retros/{YYYY-MM-DD}.md. Light-touch journaling for what we learned today.
+description: Append a structured retro note to today's retros/{YYYY-MM-DD}.md. Light-touch journaling for what we learned today.
 allowed-tools:
   ["Read", "Write", "Edit", "mcp__thinkube-kanban__write_retro_note"]
 argument-hint: "<freeform note>"
@@ -12,7 +12,7 @@ Append a structured retro note to today's retros file. Quick, low-ceremony — t
 
 ## Mission
 
-Add a timestamped section to `.thinkube/retros/{YYYY-MM-DD}.md` capturing one of the standard retro lenses: _kept_, _changed_, _learned_, _blocked_. The user passes a note; the skill asks one clarifying question about which lens (or infers from the note), then writes.
+Add a timestamped section to `retros/{YYYY-MM-DD}.md` capturing one of the standard retro lenses: _kept_, _changed_, _learned_, _blocked_. The user passes a note; the skill asks one clarifying question about which lens (or infers from the note), then writes.
 
 ## Procedure
 
@@ -51,7 +51,7 @@ PostgreSQL JSONB columns can't be indexed via GIN without an opclass. Spent 40 m
 Pair-programming on the auth-callback slice — Claude caught two off-by-one cases in the state validation.
 ```
 
-3. **Acknowledge.** One line: "✏ Logged to .thinkube/retros/2026-05-19.md".
+3. **Commit, then acknowledge.** Commit **and push** the retro file to the board — don't ask first (board bookkeeping, per CLAUDE.md). Then confirm in one line: "✏ Logged to retros/2026-05-19.md".
 
 ## Constraints
 
@@ -64,10 +64,10 @@ Pair-programming on the auth-callback slice — Claude caught two off-by-one cas
 A short confirmation:
 
 ```
-✏ Logged under #learned to .thinkube/retros/2026-05-19.md
+✏ Logged under #learned to retros/2026-05-19.md
 ```
 
 ## Safety / fallback
 
-- **No `.thinkube/retros/` directory.** The MCP tool creates it on demand; no special handling needed here.
+- **No `retros/` directory.** The MCP tool creates it on demand; no special handling needed here.
 - **Multi-day backlog.** If the user has a note about something that happened on a different day ("yesterday I learned…"), still log it to _today's_ file but note the original date in the body. The retro file is a journal of _when you reflected_, not _when it happened_.

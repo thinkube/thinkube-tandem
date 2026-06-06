@@ -1,5 +1,5 @@
 ---
-description: Decompose a Spec into coherent Slices, writing individual .thinkube/specs/SP-{n}/SL-{m}.md files directly. Each slice is one verifiable end-to-end change.
+description: Decompose a Spec into coherent Slices, writing individual specs/SP-{n}/SL-{m}.md files directly. Each slice is one verifiable end-to-end change.
 allowed-tools:
   [
     "Read",
@@ -18,11 +18,11 @@ thinkube-bundle: 0.0.1
 
 # /slice
 
-Read a fully-shaped Spec and cut it into **coherent slices** — each one an end-to-end change you can verify-and-commit as a single "done." Each slice is written **directly** as its own file at `.thinkube/specs/SP-{n}/SL-{m}.md` with `status: ready`. There is no checkbox-list intermediate, no materialiser, no issue minting — the files _are_ the board.
+Read a fully-shaped Spec and cut it into **coherent slices** — each one an end-to-end change you can verify-and-commit as a single "done." Each slice is written **directly** as its own file at `specs/SP-{n}/SL-{m}.md` with `status: ready`. There is no checkbox-list intermediate, no materialiser, no issue minting — the files _are_ the board.
 
 ## Mission
 
-Write one `.thinkube/specs/SP-{n}/SL-{m}.md` file per slice, where each slice:
+Write one `specs/SP-{n}/SL-{m}.md` file per slice, where each slice:
 
 - Is **one coherent, vertical, end-to-end change** — a thin cut through whatever layers the change touches that, once verified green and committed, leaves the system **observably more capable** (you could demo it).
 - Has a **single statable "done"** (one green from the verifier).
@@ -48,7 +48,7 @@ Slicing **by layer/file** ("the models slice", "the endpoints slice", "the Redis
 
 ## Inputs
 
-- `$ARGUMENTS`: the Spec number `{n}` (integer).
+- `$ARGUMENTS`: the Spec id `{n}` — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).
 
 ## Context discipline
 
@@ -62,7 +62,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
 
 ## Procedure
 
-0. **Detect re-slicing (the Spec changed under existing slices).** If `.thinkube/specs/SP-{n}/` already holds `SL-*.md` files, this is a **change-review**, not a fresh decomposition — the board flags this with a stale badge (`specStale` / `specChange: "requirements"`) on done slices whose parent Spec was edited after they were verified. Do NOT overwrite blindly:
+0. **Detect re-slicing (the Spec changed under existing slices).** If `specs/SP-{n}/` already holds `SL-*.md` files, this is a **change-review**, not a fresh decomposition — the board flags this with a stale badge (`specStale` / `specChange: "requirements"`) on done slices whose parent Spec was edited after they were verified. Do NOT overwrite blindly:
    - Read the existing slice files (`get_slice` per handle, or `get_thinkube_file specs/SP-{n}/SL-{m}.md`) and their `status:` (`ready` / `doing` / `done` / `archived`).
    - Re-derive slices from the Spec's **current** Acceptance Criteria, then diff against what exists, classifying each as **keep** (still maps to an AC), **add** (an AC has no covering slice), or **obsolete** (no longer maps to any AC).
    - **The action depends on the slice's status — never react uniformly:**
@@ -88,7 +88,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
    - `body`: 2–4 lines of detail — what the coherent end-to-end cut includes and what the observable "done" looks like. Title and body are **separate**; never collapse them into one merged line.
    - `satisfies`: the AC ordinals from step 4 (e.g. `[2, 3]`) — the 1-based positions of the criteria this slice delivers. Recording it arms the → Done gate (the slice can't reach Done until those boxes are checked on the Spec); omit it only when the slice genuinely maps to no single AC.
 
-7. **Report.** Print the slice count and the next step: `/pair-start {n}` to begin working them.
+7. **Commit, then report.** Commit **and push** the new slice files to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the slice count and the next step: `/pair-start {n}` to begin working them.
 
 ## Constraints
 
@@ -104,7 +104,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
 ```
 ✅ SP-{n} sliced
    wrote:   SP-{n}_SL-1 … SP-{n}_SL-{m}  (<count> slices, all status: ready)
-   at:      .thinkube/specs/SP-{n}/SL-*.md
+   at:      specs/SP-{n}/SL-*.md
    ac-coverage: <covered>/<total> ✔
    next:    /pair-start {n}
 ```

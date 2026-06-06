@@ -79,7 +79,7 @@ Gather the minimum, in the right order, and only after the governing document ex
 - `other/file.tsx` — <reason>
 ```
 
-7. **Report.** Print the path, AC count, and the suggested next step (`/slice {n}`).
+7. **Commit, then report.** Commit **and push** the spec file to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the path, AC count, and the suggested next step (`/slice {n}`).
 
 ## Constraints
 

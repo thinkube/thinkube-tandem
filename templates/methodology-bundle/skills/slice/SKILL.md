@@ -88,7 +88,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
    - `body`: 2–4 lines of detail — what the coherent end-to-end cut includes and what the observable "done" looks like. Title and body are **separate**; never collapse them into one merged line.
    - `satisfies`: the AC ordinals from step 4 (e.g. `[2, 3]`) — the 1-based positions of the criteria this slice delivers. Recording it arms the → Done gate (the slice can't reach Done until those boxes are checked on the Spec); omit it only when the slice genuinely maps to no single AC.
 
-7. **Report.** Print the slice count and the next step: `/pair-start {n}` to begin working them.
+7. **Commit, then report.** Commit **and push** the new slice files to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the slice count and the next step: `/pair-start {n}` to begin working them.
 
 ## Constraints
 
