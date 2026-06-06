@@ -43,12 +43,19 @@ import {
   serializeFrontmatter,
 } from "./frontmatter";
 
-export type ListableKind = "epic" | "story" | "spec" | "decision" | "retro";
+export type ListableKind =
+  | "epic"
+  | "story"
+  | "spec"
+  | "tep"
+  | "decision"
+  | "retro";
 
 const KIND_TO_DIR: Record<ListableKind, string> = {
   epic: "epics",
   story: "stories",
   spec: "specs",
+  tep: "teps",
   decision: "decisions",
   retro: "retros",
 };
@@ -57,6 +64,7 @@ const KIND_TO_PREFIX: Record<Exclude<ListableKind, "retro">, string> = {
   epic: "EP",
   story: "ST",
   spec: "SP",
+  tep: "TEP",
   decision: "ADR",
 };
 
@@ -244,6 +252,34 @@ export class ThinkubeStore implements vscode.Disposable {
   /** The canonical human handle for a slice, e.g. `SP-tw7n0g_SL-3`. */
   sliceHandle(specNumber: string, sliceNumber: number): string {
     return `SP-${specNumber}_SL-${sliceNumber}`;
+  }
+
+  // ─── Tandem: TEPs (flat files, the orthogonal *why* axis — TEP-0009) ──────
+  //   .thinkube/teps/TEP-{id}.md      one Tandem Enhancement Proposal per file
+
+  /** Path to a TEP document. Flat, like `specs/SP-{n}/spec.md` is nested. */
+  pathForTep(tepId: string): string {
+    return `${KIND_TO_DIR.tep}/TEP-${tepId}.md`;
+  }
+
+  /** TEP ids (the `TEP-{id}` files) under `teps/`, sorted. Ids are opaque
+   *  strings — base36-epoch for new TEPs, legacy sequential for the early ones.
+   *  The `TEP-TEMPLATE.md` scaffold is excluded — it isn't a proposal. */
+  async listTeps(): Promise<string[]> {
+    const dir = path.join(this.thinkubeDir, KIND_TO_DIR.tep);
+    let names: string[];
+    try {
+      names = await fs.readdir(dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+    const ids: string[] = [];
+    for (const n of names) {
+      const m = /^TEP-([A-Za-z0-9]+)\.md$/.exec(n);
+      if (m && m[1] !== "TEMPLATE") ids.push(m[1]);
+    }
+    return ids.sort((a, b) => a.localeCompare(b));
   }
 
   /** Spec ids (the `SP-{id}` folders) under `specs/`, sorted. Ids are opaque

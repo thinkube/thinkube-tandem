@@ -24,6 +24,7 @@ import { SessionLinkService } from "./services/SessionLinkService";
 import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
 import { SpecsProvider } from "./views/boards/SpecsProvider";
+import { TepsProvider } from "./views/boards/TepsProvider";
 import { registerBoardCommands, seedBoardsFilter } from "./commands/boards";
 import { registerWorktreeCommands } from "./commands/worktree";
 
@@ -185,9 +186,17 @@ export function activate(context: vscode.ExtensionContext) {
   const specsView = vscode.window.createTreeView("thinkubeSpecs", {
     treeDataProvider: specsProvider,
   });
+  // TEPs section (TEP-0009): peer to Specs, lists the selected space's
+  // teps/TEP-{id}.md; clicking opens the proposal. Scoped by the same
+  // navigator selection that scopes Specs.
+  const tepsProvider = new TepsProvider();
+  const tepsView = vscode.window.createTreeView("thinkubeTeps", {
+    treeDataProvider: tepsProvider,
+  });
   context.subscriptions.push(
     boardsView,
     specsView,
+    tepsView,
     boardsView.onDidChangeSelection((e) => {
       const node = e.selection[0];
       const repo =
@@ -199,10 +208,15 @@ export function activate(context: vscode.ExtensionContext) {
       if (repo) {
         specsProvider.setRepo(repo);
         specsView.description = repo.name;
+        tepsProvider.setRepo(repo);
+        tepsView.description = repo.name;
       }
     }),
     vscode.commands.registerCommand("thinkube.specs.refresh", () =>
       specsProvider.refresh(),
+    ),
+    vscode.commands.registerCommand("thinkube.teps.refresh", () =>
+      tepsProvider.refresh(),
     ),
   );
 

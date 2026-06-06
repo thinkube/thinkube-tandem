@@ -49,6 +49,11 @@
           "contextualTitle": "Thinkube Specs"
         },
         {
+          "id": "thinkubeTeps",
+          "name": "TEPs",
+          "contextualTitle": "Thinkube TEPs"
+        },
+        {
           "id": "claudeConfigTree",
           "name": "Configuration",
           "contextualTitle": "Claude Code Configuration"
@@ -59,6 +64,10 @@
       {
         "view": "thinkubeSpecs",
         "contents": "Select a thinking space above to list its specs."
+      },
+      {
+        "view": "thinkubeTeps",
+        "contents": "Select a thinking space above to list its TEPs."
       }
     ],
     "commands": [
@@ -251,6 +260,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "thinkube.teps.refresh",
+        "title": "Refresh TEPs",
+        "category": "Thinkube TEPs",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "thinkube.specs.startWorktree",
         "title": "Start Spec in Worktree",
         "category": "Thinkube Specs",
@@ -293,6 +308,11 @@
         {
           "command": "thinkube.specs.refresh",
           "when": "view == thinkubeSpecs",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube.teps.refresh",
+          "when": "view == thinkubeTeps",
           "group": "navigation@0"
         }
       ],
