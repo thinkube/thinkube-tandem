@@ -148,7 +148,17 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
       { specNumber: "9", sliceNumber: 2, title: "y", status: "doing" },
     ],
     "demo",
-    new Map([["9", { accepted: false, allAcsChecked: false, criteria: crit }]]),
+    new Map([
+      [
+        "9",
+        {
+          accepted: false,
+          allAcsChecked: false,
+          criteria: crit,
+          archived: false,
+        },
+      ],
+    ]),
   );
   const card = mid.tasks["SP-9_accept"];
   assert.ok(card?.isAcceptance);
@@ -169,6 +179,7 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
           accepted: false,
           allAcsChecked: true,
           criteria: [{ label: "one", checked: true }],
+          archived: false,
         },
       ],
     ]),
@@ -187,6 +198,7 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
           accepted: true,
           allAcsChecked: true,
           criteria: [{ label: "one", checked: true }],
+          archived: false,
         },
       ],
     ]),
@@ -207,6 +219,7 @@ test("deriveSpecMeta reads accepted, all-ACs-checked, and the criteria checklist
       { label: "one", checked: true },
       { label: "two", checked: true },
     ],
+    archived: false,
   });
   // A non-empty `accepted:` stamp flips accepted; an empty string does not.
   assert.equal(
@@ -227,4 +240,41 @@ test("deriveSpecMeta reads accepted, all-ACs-checked, and the criteria checklist
     false,
   );
   assert.deepEqual(deriveSpecMeta(undefined, "no criteria here").criteria, []);
+});
+
+// ── archived Specs leave the board (TEP-tg86v7 / SP-tg8f9b) ──
+
+test("an archived Spec drops its slices AND acceptance card off the board", () => {
+  const meta = (archived: boolean) => ({
+    accepted: archived,
+    allAcsChecked: true,
+    criteria: [{ label: "a", checked: true }],
+    archived,
+  });
+  const board = buildSliceBoard(
+    [
+      { specNumber: "1", sliceNumber: 1, title: "live", status: "done" },
+      { specNumber: "2", sliceNumber: 1, title: "archived", status: "done" },
+    ],
+    "demo",
+    new Map([
+      ["1", meta(false)],
+      ["2", meta(true)],
+    ]),
+  );
+  // The live Spec keeps its slice + acceptance card.
+  assert.ok(board.tasks["SP-1_SL-1"]);
+  assert.ok(board.tasks["SP-1_accept"]);
+  // The archived Spec contributes nothing — no slice, no acceptance card.
+  assert.equal(board.tasks["SP-2_SL-1"], undefined);
+  assert.equal(board.tasks["SP-2_accept"], undefined);
+});
+
+test("a Spec with no SpecMeta (no archived flag) is unaffected (back-compat)", () => {
+  const board = buildSliceBoard(
+    [{ specNumber: "1", sliceNumber: 1, title: "x", status: "ready" }],
+    "demo",
+  );
+  assert.ok(board.tasks["SP-1_SL-1"]);
+  assert.ok(board.tasks["SP-1_accept"]);
 });

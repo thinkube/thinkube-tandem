@@ -112,6 +112,8 @@ export interface SpecMeta {
   allAcsChecked: boolean;
   /** The Spec's `## Acceptance Criteria` as a checklist — shown on the card. */
   criteria: AcceptanceItem[];
+  /** Spec frontmatter `archived: true` — its cards drop off the board (TEP-tg86v7). */
+  archived: boolean;
 }
 
 /**
@@ -124,7 +126,7 @@ export interface SpecMeta {
  * place.
  */
 export function deriveSpecMeta(
-  frontmatter: { accepted?: unknown } | undefined,
+  frontmatter: { accepted?: unknown; archived?: unknown } | undefined,
   body: string | undefined,
 ): SpecMeta {
   const accepted = frontmatter?.accepted != null && frontmatter.accepted !== "";
@@ -133,6 +135,7 @@ export function deriveSpecMeta(
     accepted,
     allAcsChecked: criteria.length > 0 && criteria.every((i) => i.checked),
     criteria,
+    archived: frontmatter?.archived === true,
   };
 }
 
@@ -154,6 +157,9 @@ export function buildSliceBoard(
 
   for (const s of ordered) {
     if ((s.status ?? "").toLowerCase() === "archived") continue;
+    // An archived parent Spec drops off the board entirely (TEP-tg86v7): skip its
+    // slices, which (via the tally below) also suppresses its acceptance card.
+    if (specMeta?.get(s.specNumber)?.archived) continue;
     const id = sliceHandle(s.specNumber, s.sliceNumber);
     const columnId = statusToColumnId(s.status);
     const specChange: SpecChangeKind = classifySpecChange({
