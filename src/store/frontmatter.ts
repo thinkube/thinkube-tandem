@@ -57,6 +57,10 @@ export interface Frontmatter {
   created?: string;
   /** Spec-level: ISO timestamp the human accepted the Spec (set by `accept_spec`, TEP-0010). */
   accepted?: string;
+  /** Spec-level: the TEP this Spec implements, e.g. `TEP-0009` (TEP-0009 link). */
+  implements?: string;
+  /** TEP-level: the Specs that deliver this TEP, e.g. `["SP-tg7y99"]` (TEP-0009 link). */
+  implemented_by?: string[];
   /** `owner/name`; the repo this board belongs to. */
   repo?: string;
   // ── legacy GitHub-backed model (removed once consumers go, phases 5–7) ──

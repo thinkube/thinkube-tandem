@@ -39,6 +39,13 @@ export interface DeliveredSlice {
   file: string;
 }
 
+/** The TEP a Spec implements, rolled up under it (TEP-0009). */
+export interface ImplementsLink {
+  tepId: string;
+  /** TEP file path — the click target (opens the proposal). */
+  file: string;
+}
+
 export type SpecNode =
   | {
       kind: "spec";
@@ -46,12 +53,15 @@ export type SpecNode =
       title: string;
       file: string;
       delivered: DeliveredSlice[];
+      /** The TEP this Spec implements (`implements:` frontmatter), if any. */
+      implementsTep?: ImplementsLink;
       /** The Thinking Space's code repo path — worktrees are cut from here (SP-9). */
       repoPath: string;
       /** Any ready/doing slice — gates the Start-in-Worktree action (SP-9). */
       hasOpenWork: boolean;
     }
   | { kind: "delivered"; slice: DeliveredSlice }
+  | { kind: "implements"; link: ImplementsLink }
   | { kind: "placeholder"; text: string };
 
 export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
@@ -76,9 +86,15 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
 
   async getChildren(element?: SpecNode): Promise<SpecNode[]> {
     if (element) {
-      // Expand a Spec into its "delivered by" roll-up of done slices.
+      // Expand a Spec into: the TEP it implements (the *why*, TEP-0009), then
+      // its "delivered by" roll-up of done slices.
       if (element.kind === "spec") {
-        return element.delivered.map((slice) => ({ kind: "delivered", slice }));
+        const rows: SpecNode[] = [];
+        if (element.implementsTep)
+          rows.push({ kind: "implements", link: element.implementsTep });
+        for (const slice of element.delivered)
+          rows.push({ kind: "delivered", slice });
+        return rows;
       }
       return [];
     }
@@ -117,12 +133,27 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         n,
         coords,
       );
+      // `implements: TEP-<id>` → a click-through to the proposal (TEP-0009).
+      const impl =
+        typeof doc?.frontmatter?.implements === "string"
+          ? doc.frontmatter.implements.trim()
+          : "";
+      const implementsTep: ImplementsLink | undefined = impl
+        ? {
+            tepId: impl.replace(/^TEP-/i, ""),
+            file: path.join(
+              store.thinkubeDir,
+              store.pathForTep(impl.replace(/^TEP-/i, "")),
+            ),
+          }
+        : undefined;
       nodes.push({
         kind: "spec",
         specNumber: n,
         title: firstHeading(doc?.body) ?? "(untitled)",
         file: path.join(store.thinkubeDir, rel),
         delivered,
+        implementsTep,
         repoPath: this.repo.path,
         hasOpenWork,
       });
@@ -176,10 +207,12 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
 
     if (node.kind === "delivered") return deliveredItem(node.slice);
 
-    // A Spec with done slices expands into the delivery roll-up.
+    if (node.kind === "implements") return implementsItem(node.link);
+
+    // A Spec with done slices or a TEP link expands into the roll-up.
     const item = new vscode.TreeItem(
       `SP-${node.specNumber}`,
-      node.delivered.length
+      node.delivered.length || node.implementsTep
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
@@ -194,6 +227,23 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     };
     return item;
   }
+}
+
+/** An "implements TEP-{id}" row under a Spec; clicking opens the proposal. */
+function implementsItem(link: ImplementsLink): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    `implements TEP-${link.tepId}`,
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.iconPath = new vscode.ThemeIcon("lightbulb");
+  item.contextValue = "specImplements";
+  item.tooltip = `Open TEP-${link.tepId}`;
+  item.command = {
+    command: "vscode.open",
+    title: "Open TEP",
+    arguments: [vscode.Uri.file(link.file)],
+  };
+  return item;
 }
 
 /** A "delivered by" row: SL-{m} with its commit/PR, clicking opens the link. */
