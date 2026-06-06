@@ -610,6 +610,29 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "write_spec",
+    description:
+      "Write a Spec's document at `specs/SP-{id}/spec.md` in the board (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `implements:`, `accepted:`) is preserved. This is the board-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the board.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: {
+          type: "string",
+          description:
+            "Spec id (the SP-{id}) — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).",
+        },
+        body: {
+          type: "string",
+          description:
+            "The full Spec markdown body (the `# title` heading + the four canonical sections). Frontmatter is managed separately and preserved.",
+        },
+        ...BOARD_PARAM,
+      },
+      required: ["spec", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "update_slice",
     description:
       "Replace a slice's markdown body (frontmatter is preserved). The body's first line must be the `# title` heading; if the new body lacks one, the existing title is re-attached and the input is treated as detail — a card can never become heading-less through this tool.",
@@ -703,6 +726,15 @@ async function dispatchTool(
         satisfies: optNumberArray(args, "satisfies"),
         priority: optString(args, "priority"),
       });
+    case "write_spec":
+      writeGate(name);
+      return writeSpec(
+        store,
+        typeof args.spec === "number"
+          ? String(args.spec)
+          : asString(args, "spec"),
+        asString(args, "body"),
+      );
     case "update_slice":
       writeGate(name);
       return updateSlice(
@@ -1088,6 +1120,32 @@ async function uniqueSlug(
   let i = 2;
   while (taken.has(slug)) slug = `${base}-${i++}`;
   return slug;
+}
+
+/**
+ * Write a Spec's `specs/SP-{id}/spec.md` into the board (the sidecar namespace),
+ * creating it if absent. The board-aware write path for `/spec-prepare` (SP-tg7jnf
+ * SL-4): a raw file write resolves against the session cwd (the code repo), not
+ * the board, so spec authoring must go through the store like slice creation does.
+ * Existing frontmatter is preserved — only the markdown body is replaced.
+ */
+async function writeSpec(
+  store: ThinkubeStore,
+  spec: string,
+  body: string,
+): Promise<unknown> {
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error("Spec body must not be empty.");
+  const rel = store.pathForSpecDoc(spec);
+  const existing = await store.getFile(rel);
+  const fm: Frontmatter = existing?.frontmatter ?? {};
+  await store.writeFile(rel, fm, `${trimmed}\n`);
+  return {
+    ok: true,
+    spec,
+    relativePath: rel,
+    created: existing === undefined,
+  };
 }
 
 async function updateSlice(
