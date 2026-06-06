@@ -10,6 +10,7 @@ satisfies:
 verified_req_hash: 0b18cda074e4a46ac40149fadff76728b7dd641e
 commit: 15e1369f9a4dab0234d0e987452ade3237bd4f04
 ---
+
 # Wire the extension to the sidecar (workspace root + setting)
 
 Add a 4th { "name": "Tandem", "path": "{{board_repo_path}}" } folder to thinkube.code-workspace.j2, and "thinkube.boards.root": "{{board_repo_path}}" to vscode-settings.json.j2 (merged into User/settings.json via combine(recursive), preserving the user's keys).
