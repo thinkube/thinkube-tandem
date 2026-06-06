@@ -42,6 +42,7 @@ import {
   scanForSecrets,
   serializeFrontmatter,
 } from "./frontmatter";
+import { mintEpochId } from "./ids";
 
 export type ListableKind =
   | "epic"
@@ -335,10 +336,21 @@ export class ThinkubeStore implements vscode.Disposable {
    *  independent writers never collide; the in-process monotonic guard keeps a
    *  single writer from reusing its own last second. */
   async nextSpecNumber(): Promise<string> {
-    let epoch = Math.floor(Date.now() / 1000);
-    if (epoch <= lastMintedEpoch) epoch = lastMintedEpoch + 1;
+    const { id, epoch } = mintEpochId(Date.now(), lastMintedEpoch);
     lastMintedEpoch = epoch;
-    return epoch.toString(36).padStart(6, "0");
+    return id;
+  }
+
+  /** Next TEP id: a zero-padded base36 epoch (TEP-0009), minted exactly like a
+   *  Spec id and sharing the same process-wide monotonic guard — so a shared
+   *  sidecar never collides across collaborators, and a single writer never
+   *  reuses a second across spec/TEP mints. The id parser (`listTeps`, and the
+   *  `TEP-<id>` regex) already accepts both this epoch form and the legacy
+   *  sequential `TEP-0009` form, as it does for specs. */
+  async nextTepId(): Promise<string> {
+    const { id, epoch } = mintEpochId(Date.now(), lastMintedEpoch);
+    lastMintedEpoch = epoch;
+    return id;
   }
 
   /** Next per-Spec Slice number = highest existing `SL-{m}` under that Spec + 1. */
