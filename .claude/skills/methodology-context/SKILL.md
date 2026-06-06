@@ -14,16 +14,16 @@ A reference document loaded by other bundle skills (`/spec-prepare`, `/slice`, `
 1. The team is **one human (navigator) + one AI (driver)** — not a group of humans.
 2. The **committed git repo is the single source of truth _and_ the board**.
 
-Consequences: the entire artifact set — specs, slices, decisions, retros — lives as committed `.thinkube/` markdown files, host-agnostic (Gitea, GitHub, or offline; reinstall recovery is `git clone`). There is **no external issue tracker in the core loop**, and "done" is defined by an **automated verifier**, not human sign-off.
+Consequences: the entire artifact set — specs, slices, **teps** (Tandem Enhancement Proposals), retros — lives as committed markdown in the **central Tandem sidecar board repo** (`thinkube-tandem`, TEP-0008), namespaced per Thinking Space — host-agnostic (the board repo can live on Gitea, GitHub, or offline; reinstall recovery is `git clone`). There is **no external issue tracker in the core loop**, and "done" is defined by an **automated verifier**, not human sign-off.
 
 ## Hierarchy: Spec → Slice
 
-Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an optional one-paragraph `.thinkube/roadmap.md`) — not a tier.
+Two concrete tiers. Grouping above a Spec is a `theme:` frontmatter tag (plus an optional one-paragraph `roadmap.md`) — not a tier.
 
 | Tier  | Lives at                           | Card?                 | Purpose                                                                              |
 | ----- | ---------------------------------- | --------------------- | ------------------------------------------------------------------------------------ |
-| Spec  | `.thinkube/specs/SP-{n}/spec.md`   | No — the document     | The documented unit of work: acceptance criteria, constraints, design, file plan.    |
-| Slice | `.thinkube/specs/SP-{n}/SL-{m}.md` | Yes — flows the board | One coherent end-to-end change you verify-and-commit as a single "done" (one green). |
+| Spec  | `specs/SP-{n}/spec.md`   | No — the document     | The documented unit of work: acceptance criteria, constraints, design, file plan.    |
+| Slice | `specs/SP-{n}/SL-{m}.md` | Yes — flows the board | One coherent end-to-end change you verify-and-commit as a single "done" (one green). |
 
 - A **Slice** is **vertical** — a coherent end-to-end behaviour that, once green, is demonstrable on its own — **not a layer or file** ("add the Redis store" is a fragment of a slice, not a slice). A slice is **not** a renamed atomic task; slicing by layer/file recreates the tiny-task soup the unit exists to prevent.
 - A **Slice** is sized by **coherence, not the clock**. Bounds: if you can't state a single "done" for it → it's more than one slice, split it; if it has its own distinct acceptance criteria / design → it's not a slice, it's a **Spec**.
@@ -119,7 +119,7 @@ Staleness is a normalized hash of the Spec's requirement sections with checkbox 
 
 ## Per-project board
 
-Each repository owns its own committed `.thinkube/` board — the **repo _is_ the project** (in our lexicon). A repo is methodology-enabled **iff it has a committed `.thinkube/` directory**: there is no settings registry, and the extension never auto-enables. The **workspace navigator** discovers the repos across the open workspace folders and lets you move between the enabled boards.
+Each **Thinking Space**'s board lives in the **central Tandem sidecar repo** (`thinkube-tandem`, TEP-0008), under its namespace `<container>/<rel>/` derived from the workspace-folder layout (host-agnostic — never from a git remote). A Space is methodology-enabled **iff its namespace dir exists in the board repo** (located via `thinkube.boards.root`); there is no settings registry, and the extension never auto-enables. The **workspace navigator** discovers the Spaces across the open workspace folders and lets you move between the enabled boards. _(The co-located `.thinkube/` dir is deprecated — TEP-0008.)_
 
 ## Pair modes
 
@@ -133,7 +133,7 @@ Inside an invoked skill, board bookkeeping — moving cards, checking the AC a s
 
 ## Slice creation (`/slice`)
 
-`/slice` decomposes a Spec into coherent slices, writing individual `.thinkube/specs/SP-{n}/SL-{m}.md` files **directly** — no issue minting, no checkbox-list intermediate, no GitHub API. It allocates the next per-Spec `SL-{m}` and refuses rows that have no single verifiable "done" (those go in the Spec, not on the board).
+`/slice` decomposes a Spec into coherent slices, writing individual `specs/SP-{n}/SL-{m}.md` files **directly** — no issue minting, no checkbox-list intermediate, no GitHub API. It allocates the next per-Spec `SL-{m}` and refuses rows that have no single verifiable "done" (those go in the Spec, not on the board).
 
 ## Subagents
 
