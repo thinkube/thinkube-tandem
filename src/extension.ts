@@ -217,6 +217,17 @@ export function activate(context: vscode.ExtensionContext) {
         tepsView.description = repo.name;
       }
     }),
+    // Auto-refresh the navigator when its discovery inputs change. Discovery
+    // (discoverRepos) depends on `thinkube.boards.root` and the workspace-folder
+    // layout (each folder name is a namespace's container segment). Without
+    // these listeners the view only re-discovered on a full window reload —
+    // setting boards.root or adding a folder mid-session left it stale (SP-8).
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("thinkube.boards.root")) {
+        boardNavigator.refresh();
+      }
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => boardNavigator.refresh()),
     vscode.commands.registerCommand("thinkube.specs.refresh", () =>
       specsProvider.refresh(),
     ),
