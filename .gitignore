@@ -9,6 +9,3 @@ media/kanban/
 out-test/
 # Subagent git worktrees
 .claude/worktrees/
-# Bundle install stamp (install-machine metadata: version + per-file hashes)
-.claude/.bundle-version.json
-.claude/.bundle-version.txt

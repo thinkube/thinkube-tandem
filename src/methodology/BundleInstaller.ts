@@ -20,13 +20,18 @@
  *
  * Status model (`getStatus`):
  *
- *   not-installed     no stamp file present
- *   up-to-date        every installed file's hash matches the stamp AND
- *                     every source-file hash matches the stamp
- *   update-available  source hashes differ from stamp (bundle in repo
- *                     advanced beyond what's installed)
- *   locally-modified  installed-file hashes differ from stamp (user
- *                     hand-edited bundle files after install)
+ *   not-installed     none of the bundle's files are present in the repo
+ *   up-to-date        every bundle file is present and matches the source
+ *   update-available  every file present but some differ from the source
+ *                     (bundle source advanced beyond what's committed)
+ *   locally-modified  a partial install (some files present, some missing)
+ *                     or, when a stamp exists, files hand-edited after install
+ *
+ * The committed `.claude/` bundle files are the source of truth: a repo that
+ * ships the bundle reads as installed even with no stamp. The stamp
+ * (`.claude/.bundle-version.json`), when present, refines this — it can tell a
+ * user's local edit (`modified-locally`) apart from an upstream source change
+ * (`source-changed`); without it the two collapse to `update-available`.
  *
  * `diff()` returns the per-file breakdown so the UI can show which file is
  * in which state.
@@ -43,8 +48,10 @@ const BUNDLE_SUBDIR = "templates/methodology-bundle";
 // The install stamp lives with the bundle's other code-repo files under
 // `.claude/`, NOT in `.thinkube/` — the board moved to the sidecar (TEP-0008)
 // and nothing should re-create a co-located `.thinkube/`. It tracks this repo's
-// bundle install (version + per-file hashes for drift), so it belongs next to
-// what it stamps. Gitignored (install-machine metadata, not source).
+// bundle install (version + per-file hashes), refining drift detection. It is
+// committed with the repo (not gitignored) so it travels; status no longer
+// depends on it (content-based detection), but when present it sharpens the
+// local-edit vs. source-change distinction.
 const STAMP_RELATIVE = ".claude/.bundle-version.json";
 
 export type FileKind =
@@ -166,16 +173,23 @@ export class BundleInstaller {
       const stampSource = stamp?.sourceHashes[f.source];
 
       let state: FileDiff["state"];
-      if (!stamp) {
+      if (installedHash === undefined) {
         state = "missing";
-      } else if (installedHash === undefined) {
-        state = "missing";
-      } else if (stampInstalled && installedHash !== stampInstalled) {
-        state = "modified-locally";
-      } else if (stampSource && sourceHash !== stampSource) {
-        state = "source-changed";
+      } else if (stamp) {
+        // Stamp present: provenance-aware — separate a local edit from an
+        // upstream source change.
+        if (stampInstalled && installedHash !== stampInstalled) {
+          state = "modified-locally";
+        } else if (stampSource && sourceHash !== stampSource) {
+          state = "source-changed";
+        } else {
+          state = "matches-stamp";
+        }
       } else {
-        state = "matches-stamp";
+        // No stamp: classify by content against the current bundle source.
+        // The file is present, so it counts as installed; whether it matches
+        // the source decides up-to-date vs. update-available.
+        state = installedHash === sourceHash ? "matches-stamp" : "source-changed";
       }
       files.push({
         source: f.source,
@@ -188,12 +202,19 @@ export class BundleInstaller {
       });
     }
 
+    const anyMissing = files.some((f) => f.state === "missing");
+    const allMissing = files.every((f) => f.state === "missing");
+
     let status: BundleStatus;
-    if (!stamp) {
+    if (allMissing) {
+      // Nothing from the bundle is present — truly not installed.
       status = "not-installed";
     } else if (
-      files.some((f) => f.state === "modified-locally" || f.state === "missing")
+      anyMissing ||
+      files.some((f) => f.state === "modified-locally")
     ) {
+      // A partial install (some files present, some not) or, with a stamp,
+      // hand-edited files.
       status = "locally-modified";
     } else if (files.some((f) => f.state === "source-changed")) {
       status = "update-available";
@@ -512,7 +533,9 @@ export function summarizeStatus(report: StatusReport): string {
     case "up-to-date":
       return `Bundle v${report.manifestVersion} installed and up-to-date.`;
     case "update-available":
-      return `Bundle update available: installed v${report.stampVersion ?? "?"} → source v${report.manifestVersion}.`;
+      return report.stampVersion
+        ? `Bundle update available: installed v${report.stampVersion} → source v${report.manifestVersion}.`
+        : `Bundle installed; update available → source v${report.manifestVersion}.`;
     case "locally-modified": {
       const modified = report.files.filter(
         (f) => f.state === "modified-locally",
