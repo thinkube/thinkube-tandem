@@ -1,5 +1,6 @@
 /**
- * ThinkubeStore — the file layer for `.thinkube/*.md`.
+ * ThinkubeStore — the file layer for the board's markdown files
+ * (the sidecar board namespace; co-located `.thinkube/` is deprecated, TEP-0008).
  *
  * Owns reading, writing, listing, and change notifications for the
  * methodology files described in §Appendix B:
@@ -109,21 +110,29 @@ export class ThinkubeStore implements vscode.Disposable {
   /**
    * @param workspaceRoot the Thinking Space's git repo root — still used for
    *   provenance / git-coords, which resolve against the code repo.
-   * @param boardDir the board directory (the `.thinkube`-equivalent that holds
-   *   specs/decisions/retros). Defaults to the co-located
-   *   `<workspaceRoot>/.thinkube`; pass a central `<board-root>/<namespace>` to
-   *   read/write the board from the sidecar. Decoupling board-location from
-   *   repo-location is the spine of SP-8 — the board may live outside the repo.
+   * @param boardDir the board directory: the sidecar namespace
+   *   (`<board-root>/<namespace>`) that holds specs/teps/decisions/retros.
+   *   **Required** — there is no co-located default. Decoupling board-location
+   *   from repo-location is the spine of SP-8 / TEP-0008, and a missing
+   *   `boardDir` must fail loudly rather than silently re-create the deprecated
+   *   co-located `<workspaceRoot>/.thinkube` form.
    */
   constructor(
     public readonly workspaceRoot: string,
     boardDir?: string,
   ) {
-    this.boardDir = boardDir ?? path.join(workspaceRoot, ".thinkube");
+    if (!boardDir) {
+      throw new Error(
+        "ThinkubeStore requires an explicit boardDir (the sidecar board " +
+          "namespace). Refusing to fall back to a co-located " +
+          "<workspaceRoot>/.thinkube — that form is deprecated (TEP-0008).",
+      );
+    }
+    this.boardDir = boardDir;
   }
 
-  /** Absolute path to the board dir (the `.thinkube`-equivalent holding
-   * specs/decisions/retros) — co-located by default, central under SP-8. */
+  /** Absolute path to the board dir (the sidecar board namespace holding
+   * specs/teps/decisions/retros). */
   get thinkubeDir(): string {
     return this.boardDir;
   }
@@ -131,7 +140,7 @@ export class ThinkubeStore implements vscode.Disposable {
   /** Start watching `.thinkube/**`. Idempotent. */
   activate(): void {
     if (this.watcher) return;
-    // Watch the board dir directly (it IS the `.thinkube`-equivalent). Using
+    // Watch the board dir directly (it IS the board namespace). Using
     // the board dir as the RelativePattern base lets the watcher fire even when
     // the board lives at a central root outside the code repo (SP-8).
     const pattern = new vscode.RelativePattern(this.boardDir, "**/*.md");

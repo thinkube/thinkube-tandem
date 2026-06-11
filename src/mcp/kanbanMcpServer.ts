@@ -511,7 +511,7 @@ const TOOL_DEFS = [
   {
     name: "get_thinkube_file",
     description:
-      "Read a specific `.thinkube/*.md` file (frontmatter + body). Path is relative to `.thinkube/`.",
+      "Read a specific markdown file from the board (frontmatter + body). Path is relative to the board directory (the sidecar namespace).",
     inputSchema: {
       type: "object",
       properties: {
@@ -681,7 +681,7 @@ const TOOL_DEFS = [
   {
     name: "write_retro_note",
     description:
-      "Append a retro note to today's `.thinkube/retros/{YYYY-MM-DD}.md`.",
+      "Append a retro note to today's `retros/{YYYY-MM-DD}.md` in the board.",
     inputSchema: {
       type: "object",
       properties: { body: { type: "string" }, ...BOARD_PARAM },
@@ -904,7 +904,7 @@ async function getSlice(
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
-  if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
+  if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
   return {
     handle: store.sliceHandle(specNumber, sliceNumber),
     relativePath: rel,
@@ -918,7 +918,9 @@ async function getThinkubeFile(
   relativePath: string,
 ): Promise<unknown> {
   const parsed = await store.getFile(relativePath);
-  if (!parsed) throw new Error(`No file at .thinkube/${relativePath}`);
+  if (!parsed) {
+    throw new Error(`No board file at ${store.thinkubeDir}/${relativePath}`);
+  }
   return { relativePath, frontmatter: parsed.frontmatter, body: parsed.body };
 }
 
@@ -936,7 +938,7 @@ async function moveSlice(
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
-  if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
+  if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
 
   const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
 
@@ -1084,7 +1086,7 @@ async function createSlice(
   const specDoc = await store.getFile(store.pathForSpecDoc(args.spec));
   if (!specDoc) {
     throw new Error(
-      `No spec at .thinkube/specs/SP-${args.spec}/spec.md — run /spec-prepare ${args.spec} first.`,
+      `No spec at ${store.thinkubeDir}/specs/SP-${args.spec}/spec.md — run /spec-prepare ${args.spec} first.`,
     );
   }
   if (!hasNonEmptyAcceptanceCriteria(specDoc.body)) {
@@ -1181,7 +1183,7 @@ async function updateSlice(
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
-  if (!parsed) throw new Error(`No slice file at .thinkube/${rel}`);
+  if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
 
   // Heading guard (SP-4): a body whose first non-empty line isn't a `#`
   // heading would regress the card to the merged-line shape — re-attach the
@@ -1291,7 +1293,7 @@ const RESOURCE_DEFS = [
     uri: "thinkube://thinkube_file/{path}",
     name: "A .thinkube file",
     description:
-      "Read a specific `.thinkube/*.md` file from this session's own repo. Substitute `{path}` with the relative path.",
+      "Read a specific board markdown file from this session's own repo. Substitute `{path}` with the path relative to the board directory.",
     mimeType: "application/json",
   },
 ];
