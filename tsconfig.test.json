@@ -18,7 +18,9 @@
     "src/services/WorktreeService.ts",
     "src/services/WorktreeService.test.ts",
     "src/github/specMerge.ts",
-    "src/github/specMerge.test.ts"
+    "src/github/specMerge.test.ts",
+    "src/mcp/boardDetection.ts",
+    "src/mcp/boardDetection.test.ts"
   ],
   "exclude": ["node_modules"]
 }

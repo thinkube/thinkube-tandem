@@ -60,6 +60,7 @@ import {
   type DocsGateMode,
 } from "../methodology/qualityGates";
 import { ThinkubeStore } from "../store/ThinkubeStore";
+import { isBoardDir } from "./boardDetection";
 import type { Frontmatter } from "../store/frontmatter";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
@@ -237,7 +238,8 @@ export class BoardRegistry {
     if (boardArg === undefined || boardArg.trim() === "") {
       if (!this.defaultBoardPath) {
         throw new Error(
-          "No default board: this session's cwd is not inside a repo with a committed .thinkube/. Pass `board` explicitly — call list_boards for the available ids.",
+          "No default board: this session's cwd is not inside a repo with a board-shaped board dir (a `specs/` directory). Pass `board` explicitly — call list_boards for the available ids." +
+            this.missingBoardRootHint(),
         );
       }
       return this.storeFor(
@@ -249,9 +251,10 @@ export class BoardRegistry {
     const arg = boardArg.trim();
     if (path.isAbsolute(arg)) {
       const boardDir = boardDirOf(arg, this.env);
-      if (!fsSync.existsSync(boardDir)) {
+      if (!isBoardDir(boardDir)) {
         throw new Error(
-          `"${arg}" is not a board — no board directory at ${boardDir}.`,
+          `"${arg}" is not a board — no board-shaped board directory at ${boardDir}.` +
+            this.missingBoardRootHint(),
         );
       }
       return this.storeFor(arg, boardDir);
@@ -283,6 +286,18 @@ export class BoardRegistry {
     return this.defaultBoardPath ? boardId(this.defaultBoardPath) : undefined;
   }
 
+  /**
+   * Hint appended to "not a board" errors when no board root is configured —
+   * the common cause is a missing `thinkube.boards.root` / `THINKUBE_BOARD_ROOT`
+   * for a board that lives in a central sidecar. Without it we'd resolve to a
+   * fabricated co-located `.thinkube/` (TEP-tghb9t). Empty when one IS set.
+   */
+  private missingBoardRootHint(): string {
+    return this.env.boardRoot
+      ? ""
+      : " (No thinkube.boards.root / THINKUBE_BOARD_ROOT is configured — if this repo's board lives in a central sidecar, that setting is required.)";
+  }
+
   private storeFor(repoPath: string, boardDir: string): ThinkubeStore {
     let store = this.stores.get(repoPath);
     if (!store) {
@@ -294,11 +309,10 @@ export class BoardRegistry {
 }
 
 function isBoard(dir: string): boolean {
-  try {
-    return fsSync.statSync(path.join(dir, ".thinkube")).isDirectory();
-  } catch {
-    return false;
-  }
+  // Legacy co-located board: a `<dir>/.thinkube/` that is board-shaped (has
+  // `specs/`). A bare `.thinkube/` holding something else (e.g. an api-token
+  // store) is NOT a board — see boardDetection.ts (TEP-tghb9t).
+  return isBoardDir(path.join(dir, ".thinkube"));
 }
 
 /**
@@ -328,7 +342,7 @@ function findEnclosingBoard(start: string, env: ServerEnv): string | undefined {
   let dir = path.resolve(start);
   for (;;) {
     const isRepo = fsSync.existsSync(path.join(dir, ".git"));
-    if ((isRepo && fsSync.existsSync(boardDirOf(dir, env))) || isBoard(dir)) {
+    if ((isRepo && isBoardDir(boardDirOf(dir, env))) || isBoard(dir)) {
       return dir;
     }
     const parent = path.dirname(dir);
@@ -369,7 +383,7 @@ function walkForBoards(
     const abs = path.resolve(dir);
     const wt = gitEntry.isFile() ? linkedWorktreeInfo(abs) : undefined;
     const boardDir = boardDirOf(abs, env); // boardDirOf maps a worktree → canonical
-    if (fsSync.existsSync(boardDir)) {
+    if (isBoardDir(boardDir)) {
       const name = wt
         ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
         : path.basename(abs);
@@ -736,10 +750,15 @@ async function dispatchTool(
       return getThinkubeFile(store, asString(args, "relative_path"));
     case "move_slice":
       writeGate(name);
-      return moveSlice(store, asString(args, "slice"), asString(args, "status"), {
-        docsGateMode: ctx.env.docsGateMode,
-        docsDone: optBoolean(args, "docs_done"),
-      });
+      return moveSlice(
+        store,
+        asString(args, "slice"),
+        asString(args, "status"),
+        {
+          docsGateMode: ctx.env.docsGateMode,
+          docsDone: optBoolean(args, "docs_done"),
+        },
+      );
     case "accept_spec":
       writeGate(name);
       return acceptSpec(
