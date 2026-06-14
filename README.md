@@ -43,6 +43,19 @@ Per-item right-click actions archive a single spec/TEP (a reversible `archived: 
 
 **Archive All Completed** (title-bar `$(archive)`) archives every completed item in the selected space in one shot — _accepted_ specs, or _accepted/superseded_ TEPs — after a confirmation that names the count. It reports how many were archived, or notes when nothing qualifies. Each is reversible via **Unarchive** under **Show Archived**.
 
+Each row carries a **colored status icon** so completion state is visible at a glance:
+
+| Icon               | Spec                                     | TEP                    |
+| ------------------ | ---------------------------------------- | ---------------------- |
+| 🟢 green check     | accepted (completed)                     | `accepted`             |
+| 🔵 blue dot        | has open (ready/doing) slices            | `proposed` / in-flight |
+| ⚪ neutral outline | not started (no open work, not accepted) | —                      |
+| ⚫ muted slash     | —                                        | `superseded`           |
+
+Archived items keep the archive icon regardless of status.
+
+For specs, two per-item right-click actions manage a git **worktree** (parallel work, one tree per spec): **Start Spec in Worktree** creates an isolated worktree + branch and opens a Claude session there; **Retire Spec Worktree** removes that worktree after delivery (refusing if it's dirty/unmerged) — it does _not_ delete the spec. Hover either action for the full description.
+
 ## Two MCPs — disambiguation
 
 The Claude Code ecosystem talks about MCP in two distinct senses; this extension touches both:

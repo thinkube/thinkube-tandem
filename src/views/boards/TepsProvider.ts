@@ -187,9 +187,7 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
     const base = node.status ? `${node.status} · ${node.title}` : node.title;
     item.description = node.archived ? `archived · ${base}` : base;
     item.tooltip = node.archived ? `(archived)\n${node.file}` : node.file;
-    item.iconPath = new vscode.ThemeIcon(
-      node.archived ? "archive" : "lightbulb",
-    );
+    item.iconPath = tepStatusIcon(node);
     // Archived TEPs get a distinct contextValue so Unarchive (not Archive) shows.
     item.contextValue = node.archived ? "tep-archived" : "tep";
     item.command = {
@@ -199,6 +197,31 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
     };
     return item;
   }
+}
+
+/** Status-at-a-glance icon for a TEP (SP-tgn2pd): archived keeps the archive
+ *  affordance; otherwise accepted = green check, superseded = muted, and
+ *  proposed (or any other in-flight status) = blue. */
+function tepStatusIcon(node: {
+  archived: boolean;
+  status: string;
+}): vscode.ThemeIcon {
+  if (node.archived) return new vscode.ThemeIcon("archive");
+  const status = node.status.toLowerCase();
+  if (status === "accepted")
+    return new vscode.ThemeIcon(
+      "pass-filled",
+      new vscode.ThemeColor("charts.green"),
+    );
+  if (status === "superseded")
+    return new vscode.ThemeIcon(
+      "circle-slash",
+      new vscode.ThemeColor("disabledForeground"),
+    );
+  return new vscode.ThemeIcon(
+    "circle-filled",
+    new vscode.ThemeColor("charts.blue"),
+  );
 }
 
 /** First markdown heading / non-empty line of the body, marker stripped. */

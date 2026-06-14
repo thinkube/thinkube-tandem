@@ -59,6 +59,9 @@ export type SpecNode =
       repoPath: string;
       /** Any ready/doing slice — gates the Start-in-Worktree action (SP-9). */
       hasOpenWork: boolean;
+      /** The Spec carries the `accepted:` stamp (completed; TEP-0010) — drives
+       *  the green status icon (SP-tgn2pd). */
+      accepted: boolean;
       /** Hidden from the default nav; revealed (marked) under "Show archived" (TEP-tg86v7). */
       archived: boolean;
     }
@@ -179,6 +182,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         implementsTep,
         repoPath: this.repo.path,
         hasOpenWork,
+        accepted: doc?.frontmatter?.accepted != null,
         archived,
       });
     }
@@ -242,7 +246,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     );
     item.description = node.archived ? `archived · ${node.title}` : node.title;
     item.tooltip = node.archived ? `(archived)\n${node.file}` : node.file;
-    item.iconPath = new vscode.ThemeIcon(node.archived ? "archive" : "book");
+    item.iconPath = specStatusIcon(node);
     // Archived specs get a distinct contextValue so Unarchive (not Archive, nor
     // the worktree actions) shows on them (TEP-tg86v7).
     item.contextValue = node.archived
@@ -257,6 +261,28 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     };
     return item;
   }
+}
+
+/** Status-at-a-glance icon for a Spec (SP-tgn2pd): archived keeps the archive
+ *  affordance; otherwise accepted = green check, open work = blue, and a Spec
+ *  with neither (not started / no open work) = a neutral outline. */
+function specStatusIcon(node: {
+  archived: boolean;
+  accepted: boolean;
+  hasOpenWork: boolean;
+}): vscode.ThemeIcon {
+  if (node.archived) return new vscode.ThemeIcon("archive");
+  if (node.accepted)
+    return new vscode.ThemeIcon(
+      "pass-filled",
+      new vscode.ThemeColor("charts.green"),
+    );
+  if (node.hasOpenWork)
+    return new vscode.ThemeIcon(
+      "circle-filled",
+      new vscode.ThemeColor("charts.blue"),
+    );
+  return new vscode.ThemeIcon("circle-outline");
 }
 
 /** An "implements TEP-{id}" row under a Spec; clicking opens the proposal. */
