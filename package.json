@@ -279,13 +279,15 @@
       },
       {
         "command": "thinkube.specs.startWorktree",
-        "title": "Start Spec in Worktree",
+        "title": "Start Spec in Worktree — create an isolated git worktree + branch and open a Claude session there",
+        "shortTitle": "Start Spec in Worktree",
         "category": "Thinkube Specs",
         "icon": "$(repo-clone)"
       },
       {
         "command": "thinkube.specs.retireWorktree",
-        "title": "Retire Spec Worktree",
+        "title": "Retire Spec Worktree — remove the spec's worktree after delivery (refuses if dirty/unmerged); does NOT delete the spec",
+        "shortTitle": "Retire Spec Worktree",
         "category": "Thinkube Specs",
         "icon": "$(trash)"
       },
