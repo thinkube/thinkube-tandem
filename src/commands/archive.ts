@@ -81,6 +81,62 @@ async function setArchived(
   await store.writeFile(rel, fm, doc.body);
 }
 
+/** Board-relative paths of completed-but-unarchived specs (SP-tgn2pd). A spec
+ *  is "completed" when it carries the `accepted:` stamp (the human acceptance
+ *  gate, TEP-0010) — not merely "all slices done". */
+async function completedSpecPaths(store: ThinkubeStore): Promise<string[]> {
+  const out: string[] = [];
+  for (const n of await store.listSpecDirs()) {
+    const rel = store.pathForSpecDoc(n);
+    const fm = (await store.getFile(rel))?.frontmatter;
+    if (!fm || fm.archived === true) continue;
+    if (fm.accepted) out.push(rel); // any truthy `accepted` stamp = completed
+  }
+  return out;
+}
+
+/** Completed-but-unarchived TEPs (SP-tgn2pd): `status:` of `accepted` or
+ *  `superseded` (proposed → accepted → superseded). */
+async function completedTepPaths(store: ThinkubeStore): Promise<string[]> {
+  const out: string[] = [];
+  for (const { relativePath: rel } of await store.listTeps()) {
+    const fm = (await store.getFile(rel))?.frontmatter;
+    if (!fm || fm.archived === true) continue;
+    const status = typeof fm.status === "string" ? fm.status.toLowerCase() : "";
+    if (status === "accepted" || status === "superseded") out.push(rel);
+  }
+  return out;
+}
+
+/** Confirm-then-archive a whole set of completed board items at once
+ *  (SP-tgn2pd). Reuses the per-item reversible `archived: true` flag; reports a
+ *  count, or a no-op note when nothing qualifies. */
+async function bulkArchive(
+  store: ThinkubeStore,
+  paths: string[],
+  noun: string,
+  refresh: () => void,
+): Promise<void> {
+  const plural = (n: number) => (n === 1 ? noun : `${noun}s`);
+  if (paths.length === 0) {
+    vscode.window.showInformationMessage(
+      `Nothing to archive — no completed ${noun}s are unarchived.`,
+    );
+    return;
+  }
+  const confirm = await vscode.window.showWarningMessage(
+    `Archive ${paths.length} completed ${plural(paths.length)}?`,
+    { modal: true },
+    "Archive",
+  );
+  if (confirm !== "Archive") return;
+  for (const rel of paths) await setArchived(store, rel, true);
+  refresh();
+  vscode.window.showInformationMessage(
+    `Archived ${paths.length} completed ${plural(paths.length)}.`,
+  );
+}
+
 export function registerArchiveCommands(
   context: vscode.ExtensionContext,
   deps: ArchiveDeps,
@@ -166,6 +222,45 @@ export function registerArchiveCommands(
         (v) => deps.tepsProvider.setShowArchived(v),
         false,
       ),
+    ),
+    // Bulk archive (SP-tgn2pd): archive every completed-but-unarchived item in
+    // one confirmed action, from the view title bar.
+    vscode.commands.registerCommand(
+      "thinkube.specs.archiveAllCompleted",
+      async () => {
+        const repo = deps.specsProvider.repoEntry;
+        if (!repo) return;
+        try {
+          const store = new ThinkubeStore(repo.path, repo.boardDir);
+          await bulkArchive(
+            store,
+            await completedSpecPaths(store),
+            "spec",
+            () => deps.specsProvider.refresh(),
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Couldn't archive completed specs: ${(err as Error).message}`,
+          );
+        }
+      },
+    ),
+    vscode.commands.registerCommand(
+      "thinkube.teps.archiveAllCompleted",
+      async () => {
+        const repo = deps.tepsProvider.repoEntry;
+        if (!repo) return;
+        try {
+          const store = new ThinkubeStore(repo.path, repo.boardDir);
+          await bulkArchive(store, await completedTepPaths(store), "TEP", () =>
+            deps.tepsProvider.refresh(),
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Couldn't archive completed TEPs: ${(err as Error).message}`,
+          );
+        }
+      },
     ),
   );
 }

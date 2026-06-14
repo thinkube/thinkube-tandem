@@ -336,6 +336,18 @@
         "title": "Hide Archived TEPs",
         "category": "Thinkube TEPs",
         "icon": "$(eye)"
+      },
+      {
+        "command": "thinkube.specs.archiveAllCompleted",
+        "title": "Archive All Completed Specs",
+        "category": "Thinkube Specs",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "thinkube.teps.archiveAllCompleted",
+        "title": "Archive All Completed TEPs",
+        "category": "Thinkube TEPs",
+        "icon": "$(archive)"
       }
     ],
     "menus": {
@@ -386,6 +398,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "thinkube.specs.archiveAllCompleted",
+          "when": "view == thinkubeSpecs",
+          "group": "navigation@3"
+        },
+        {
           "command": "thinkube.teps.new",
           "when": "view == thinkubeTeps",
           "group": "navigation@0"
@@ -404,6 +421,11 @@
           "command": "thinkube.teps.hideArchived",
           "when": "view == thinkubeTeps && thinkube.teps.showArchived",
           "group": "navigation@2"
+        },
+        {
+          "command": "thinkube.teps.archiveAllCompleted",
+          "when": "view == thinkubeTeps",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
