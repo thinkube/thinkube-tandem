@@ -23,6 +23,8 @@
     "src/services/agentTeams/tmuxShimInstall.test.ts",
     "src/services/agentTeams/ipcServer.ts",
     "src/services/agentTeams/ipcRoundtrip.test.ts",
+    "src/services/agentTeams/tmuxSurface.ts",
+    "src/services/agentTeams/conformance.test.ts",
     "src/github/specMerge.ts",
     "src/github/specMerge.test.ts",
     "src/mcp/boardDetection.ts",
