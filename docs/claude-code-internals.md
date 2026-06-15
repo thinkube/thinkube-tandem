@@ -257,3 +257,68 @@ decision are recorded.
 The encoding parity assertion also lives in the node smoke test used during
 development — if `encodeProjectDir()` ever diverges from the directory names
 claude-code actually creates, that's the first thing to check.
+
+For the **agent-teams `tmux` surface** (§8), the re-verify recipe is a live
+capture (the surface is not greppable from `extension.js` — it's emitted by the
+CLI at runtime). Put a **logging** `tmux` ahead of PATH, run a team, diff what
+Claude actually invoked against the surface our shim claims to support:
+
+```bash
+# A logging tmux that records argv then succeeds, so the team still forms
+# (point at a real tmux for $REAL if you want true pass-through).
+mkdir -p /tmp/tmux-capture && cat > /tmp/tmux-capture/tmux <<'EOF'
+#!/usr/bin/env bash
+printf '%q ' "$@" >> /tmp/tmux-capture/invocations.log; echo >> /tmp/tmux-capture/invocations.log
+exec /usr/bin/tmux "$@"   # or: exit 0  (no-op) if no real tmux
+EOF
+chmod +x /tmp/tmux-capture/tmux
+PATH=/tmp/tmux-capture:$PATH CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude   # form a 2-teammate team
+cut -d' ' -f1 /tmp/tmux-capture/invocations.log | sort -u   # the subcommands Claude used
+```
+
+Compare the captured subcommands/flags against `AGENT_TEAMS_TMUX_FIXTURE` in
+`src/services/agentTeams/tmuxSurface.ts`; any new subcommand is currently
+`log-and-no-op`'d by the dispatcher — add it to the registry and the fixture,
+and the conformance test (`conformance.test.ts`) will keep it honest.
+
+## 8. Agent-teams `tmux` display backend (SP-tgnb5o)
+
+Claude Code's experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`,
+≥ 2.1.32; verified against 2.1.177) render teammates as `tmux`/iTerm2 split
+panes. In plain VS Code neither exists, so we put a **fake `tmux`** on PATH that
+forwards each invocation to an IPC server in the Extension Host, which owns the
+PTYs (node-pty) and renders each teammate in a VS Code terminal pane.
+
+**Architecture.** `wrapper/tmux` (+ `tmux.cmd`) → `wrapper/tmux-shim.js` (a
+dependency-free Node client) connects to the unix socket / named pipe in
+`THINKUBE_TMUX_SHIM_SOCK`, sends `{argv}` as one JSON line, and prints back the
+server's `{stdout, exitCode}`. The server (`AgentTeamsShimServer`) routes argv
+through the pure `TmuxRegistry` (`tmuxDispatcher.ts`) and a `PaneFactory` that
+spawns a node-pty teammate into a `vscode.Pseudoterminal`. PATH takeover mirrors
+the cwd-wrapper (`LauncherService`): install when the slot is free/ours, one-time
+confirmation before displacing a third-party `tmux`.
+
+**The command surface we emulate** (the only `tmux` Claude's agent teams use):
+
+| Subcommand                                    | Our behaviour                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `new-session -d -s <name> -P -F '#{pane_id}'` | Spawn teammate after `--`; mint a pane id (`%0`, `%1`, …); print it via the `-F` format    |
+| `split-window -t <name> -P -F '#{pane_id}'`   | Same, adding a pane to the session                                                         |
+| `send-keys -t <pane> -l -- <text>`            | Write literal bytes to that pane's PTY                                                     |
+| `send-keys -t <pane> Enter`                   | Write a carriage return (`\r`); `Enter`/`C-m` is the only key-name translation needed      |
+| `has-session -t <name>`                       | Exit 0 if the session is live, 1 otherwise                                                 |
+| `list-panes -t <name> [-F …]`                 | Print the session's pane ids                                                               |
+| `display-message -p '#{client_control_mode}'` | **Returns empty** — keeps Claude off the iTerm2 `-CC` control-mode path (load-bearing)     |
+| `kill-session -t <name>`                      | Dispose every pane in the session                                                          |
+| `select-pane` / `set-option` / `resize-pane`  | Accepted as no-ops (cosmetic/layout)                                                       |
+| _anything else_                               | **Logged and no-op'd** (exit 0) — never crash Claude's display; surfaces as a drift signal |
+
+The canonical invocation fixture lives in `tmuxSurface.ts` and is replayed by
+`conformance.test.ts` (asserts zero unrecognised invocations). It is the
+**documented** surface, not a live capture — confirm it with the §7 recipe
+above after Claude Code updates.
+
+**Constraints honoured.** Display + stdin only — the file-based mailbox/task
+coordination (`~/.claude/teams/…`, `~/.claude/tasks/…`) is Claude Code's and is
+never touched; `capture-pane` is never issued against teammate panes, so PTY
+bytes pipe through unparsed (no scrollback/vt buffer).
