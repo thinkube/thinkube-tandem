@@ -78,6 +78,12 @@ export class AgentTeamsShimServer implements vscode.Disposable {
 
   /** Start the IPC server and publish its socket path to child processes. */
   async activate(): Promise<void> {
+    // environmentVariableCollection is PERSISTED by VS Code across reloads, so
+    // always clear stale entries (PATH prepend, $TMUX, flag) from a prior run
+    // first — otherwise disabling the feature would leave the shim shadowing
+    // real tmux on terminal PATH.
+    this.context.environmentVariableCollection.clear();
+
     // Opt-out switch: when disabled, do nothing — no flag, no shim, no server.
     const enabled = vscode.workspace
       .getConfiguration("thinkube")
