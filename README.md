@@ -56,6 +56,16 @@ Archived items keep the archive icon regardless of status.
 
 For specs, two per-item right-click actions manage a git **worktree** (parallel work, one tree per spec): **Start Spec in Worktree** creates an isolated worktree + branch and opens a Claude session there; **Retire Spec Worktree** removes that worktree after delivery (refusing if it's dirty/unmerged) — it does _not_ delete the spec. Hover either action for the full description.
 
+## Split-pane agent teams in VS Code (experimental)
+
+Claude Code's experimental **agent teams** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) render teammates as `tmux`/iTerm2 split panes. Where neither is available — plain VS Code — this extension ships a fake-`tmux` shim so a team still gets one pane per teammate, as VS Code terminals.
+
+How it works: the extension runs a small IPC server in the host and puts a `tmux` shim on `PATH` ahead of any system tmux (it won't displace a non-Thinkube `tmux` without a one-time confirmation). Claude Code's `tmux` calls are forwarded to the host, which spawns each teammate as a PTY and pipes its output into a dedicated terminal pane; your keystrokes route back to the selected teammate.
+
+When `thinkube.agentTeams.enableExperimental` is on (default), the extension sets `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` for Claude sessions it launches and for integrated terminals, and installs the shim on PATH — so you can just ask Claude to form a team. Set it to `false` to opt out entirely (no flag, no shim, no server). Changes take effect for sessions/terminals started after a window reload.
+
+> **Experimental / requirements.** Needs Claude Code ≥ 2.1.32, and the native `node-pty` module (declared dependency; node-pty 1.x ships ABI-independent N-API prebuilds, so it loads across VS Code / code-server Node runtimes). The reverse-engineered `tmux` surface is re-verified per `docs/claude-code-internals.md` (§7) after Claude Code updates; unrecognised `tmux` calls are logged and no-op'd rather than crashing.
+
 ## Two MCPs — disambiguation
 
 The Claude Code ecosystem talks about MCP in two distinct senses; this extension touches both:

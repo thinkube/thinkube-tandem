@@ -2,7 +2,7 @@
   "name": "thinkube-ai-integration",
   "displayName": "Thinkube AI Integration",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.9",
+  "version": "0.1.17",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -615,6 +615,11 @@
           "type": "string",
           "default": "",
           "description": "Central board root (ADR-0008 / SP-8): the directory holding every Thinking Space's board, namespaced by `<container>/<rel>` (e.g. `Platform/extensions/thinkube-ai-integration`). Empty = legacy co-located `.thinkube/` in each repo. In thinkube this is the cloned sidecar board repo at `/home/thinkube/<board-repo>`."
+        },
+        "thinkube.agentTeams.enableExperimental": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Claude Code's experimental agent teams in VS Code (SP-tgnb5o). When on, the extension exports `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + a synthetic `$TMUX` to Claude sessions/terminals and installs a fake-`tmux` shim on PATH so teammates render as native VS Code terminal panes. Off by default: it shadows `tmux` on the terminal PATH and sets `$TMUX`, so opt in deliberately. Takes effect for sessions/terminals started after a window reload."
         }
       }
     }
@@ -641,6 +646,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^19.0.13",
+    "node-pty": "^1.1.0",
     "yaml": "^2.9.0"
   }
 }

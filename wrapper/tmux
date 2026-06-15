@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake `tmux` launcher for Claude Code agent teams (SP-tgnb5o).
+# Forwards argv to the Node shim client, which talks to the Extension Host.
+# Installed on PATH ahead of any system tmux by LauncherService (SL-2).
+exec node "$(dirname "$0")/tmux-shim.js" "$@"

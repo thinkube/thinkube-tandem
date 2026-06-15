@@ -19,9 +19,12 @@ for (const name of entries) {
   const from = path.join(wrapperSrc, name);
   const to = path.join(wrapperDest, name);
   await fs.copyFile(from, to);
+  // Mark POSIX launchers executable: shell wrappers (*.sh, *.cmd) and the
+  // extensionless `tmux` shim launcher (SP-tgnb5o).
+  const isExtensionless = !name.includes(".");
   if (
     process.platform !== "win32" &&
-    (name.endsWith(".sh") || name.endsWith(".cmd"))
+    (name.endsWith(".sh") || name.endsWith(".cmd") || isExtensionless)
   ) {
     await fs.chmod(to, 0o755);
   }

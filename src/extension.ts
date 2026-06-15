@@ -18,6 +18,7 @@ import {
   stableServerScriptPath,
 } from "./mcp/stableServerPath";
 import { BundleInstaller } from "./methodology/BundleInstaller";
+import { AgentTeamsShimServer } from "./services/agentTeams/AgentTeamsShimServer";
 import { ClaudeConfigService } from "./services/ClaudeConfigService";
 import { LauncherService } from "./services/LauncherService";
 import { SessionLinkService } from "./services/SessionLinkService";
@@ -107,6 +108,20 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(launcher);
   launcher.activate().catch((err) => {
     console.error("LauncherService activation failed:", err);
+  });
+
+  // Agent-teams fake-tmux display backend (SP-tgnb5o): run the IPC server the
+  // on-PATH `tmux` shim forwards to, so Claude Code agent teams render as VS
+  // Code terminal panes where tmux/iTerm2 are unavailable. Activates async;
+  // it only spawns panes on demand when a team forms.
+  const agentTeamsOutput = vscode.window.createOutputChannel(
+    "Thinkube Agent Teams",
+  );
+  context.subscriptions.push(agentTeamsOutput);
+  const agentTeams = new AgentTeamsShimServer(context, agentTeamsOutput);
+  context.subscriptions.push(agentTeams);
+  agentTeams.activate().catch((err) => {
+    console.error("AgentTeamsShimServer activation failed:", err);
   });
 
   // GitHub stack (lazy auth — token only resolved on first kanban command).
@@ -227,7 +242,9 @@ export function activate(context: vscode.ExtensionContext) {
         boardNavigator.refresh();
       }
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => boardNavigator.refresh()),
+    vscode.workspace.onDidChangeWorkspaceFolders(() =>
+      boardNavigator.refresh(),
+    ),
     vscode.commands.registerCommand("thinkube.specs.refresh", () =>
       specsProvider.refresh(),
     ),

@@ -257,3 +257,78 @@ decision are recorded.
 The encoding parity assertion also lives in the node smoke test used during
 development — if `encodeProjectDir()` ever diverges from the directory names
 claude-code actually creates, that's the first thing to check.
+
+For the **agent-teams `tmux` surface** (§8), the re-verify recipe is a live
+capture (the surface is not greppable from `extension.js` — it's emitted by the
+CLI at runtime). Put a **logging** `tmux` ahead of PATH, run a team, diff what
+Claude actually invoked against the surface our shim claims to support:
+
+```bash
+# A logging tmux that records argv then succeeds, so the team still forms
+# (point at a real tmux for $REAL if you want true pass-through).
+mkdir -p /tmp/tmux-capture && cat > /tmp/tmux-capture/tmux <<'EOF'
+#!/usr/bin/env bash
+printf '%q ' "$@" >> /tmp/tmux-capture/invocations.log; echo >> /tmp/tmux-capture/invocations.log
+exec /usr/bin/tmux "$@"   # or: exit 0  (no-op) if no real tmux
+EOF
+chmod +x /tmp/tmux-capture/tmux
+PATH=/tmp/tmux-capture:$PATH CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude   # form a 2-teammate team
+cut -d' ' -f1 /tmp/tmux-capture/invocations.log | sort -u   # the subcommands Claude used
+```
+
+Compare the captured subcommands/flags against `AGENT_TEAMS_TMUX_FIXTURE` in
+`src/services/agentTeams/tmuxSurface.ts`; any new subcommand is currently
+`log-and-no-op`'d by the dispatcher — add it to the registry and the fixture,
+and the conformance test (`conformance.test.ts`) will keep it honest.
+
+## 8. Agent-teams `tmux` display backend (SP-tgnb5o)
+
+Claude Code's experimental agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`,
+≥ 2.1.32; verified against 2.1.177) render teammates as `tmux`/iTerm2 split
+panes. In plain VS Code neither exists, so we put a **fake `tmux`** on PATH that
+forwards each invocation to an IPC server in the Extension Host, which owns the
+PTYs (node-pty) and renders each teammate as a **native VS Code terminal**.
+
+**Backend selection (the load-bearing bit).** Claude picks the teammate backend
+by `teammateMode` (`tmux` | `in-process` | `auto`); `auto` resolves to **tmux
+only when `process.env.TMUX` is set**, else **in-process** (no panes). Putting a
+fake `tmux` on PATH is _not enough_ — `AgentTeamsShimServer` also exports a
+synthetic `$TMUX` (`<socket>,0,0`) + `$TMUX_PANE=%0` (and the experimental flag)
+so `auto` chooses tmux and routes to us. All of this is gated by
+`thinkube.agentTeams.enableExperimental` and cleared from
+`environmentVariableCollection` when disabled.
+
+**Architecture.** `wrapper/tmux` (+ `tmux.cmd`) → `wrapper/tmux-shim.js` (a
+dependency-free Node client) connects to the unix socket in
+`THINKUBE_TMUX_SHIM_SOCK`, sends `{argv}` as one JSON line, prints back
+`{stdout, exitCode}`. The server routes argv through the pure `TmuxRegistry`
+(`tmuxDispatcher.ts`) and a `PaneFactory` that spawns a node-pty process into a
+`vscode.Pseudoterminal` (buffering output until `open()`). PATH takeover mirrors
+the cwd-wrapper.
+
+**The surface — CAPTURED live** (logging-wrapper around real tmux, 2.1.177; the
+fixture in `tmuxSurface.ts`, replayed by `conformance.test.ts`). Every call is
+prefixed with the global **`-S <socket>`** before the subcommand. The leader (the
+Claude process itself) is pane **`%0`** in window **`@0`** — a phantom we report
+but never spawn; teammate panes mint `%1`, `%2`, …
+
+| Subcommand                                                      | Our behaviour                                                                                                                                                           |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-V`                                                            | `tmux 3.4` — the availability gate (exit 0 = tmux present)                                                                                                              |
+| `display-message -p '#{client_termtype}'` / current pane/window | Render the requested `#{…}` against a fabricated current context (`#{pane_id}=%0`, `#{window_id}=@0`, …); **`#{client_control_mode}` → empty** (stays off iTerm2 `-CC`) |
+| `show -gv focus-events` / `show -Av mouse`                      | `off` (no conflict)                                                                                                                                                     |
+| `show-options -g prefix`                                        | `prefix C-b`                                                                                                                                                            |
+| `list-panes -t @0 -F '#{pane_id}'`                              | Pane ids in that window — **incl. the leader `%0`** so counts/splits resolve                                                                                            |
+| `split-window -t %0 …-P -F '#{pane_id}'`                        | Open an **empty pane running the user's shell** in the target's window; mint + print the new id                                                                         |
+| `send-keys -t %1 -l -- '<cmd>'` then `… Enter`                  | Type the teammate launch command (`cd … && env … claude --agent-id …`) into the pane's shell, then a CR — **this is how the teammate is launched**                      |
+| `select-pane` / `set-option` / `select-layout` / `resize-pane`  | No-ops (VS Code owns layout)                                                                                                                                            |
+| `switch-client` / `attach-session` / `load-buffer`              | No-ops                                                                                                                                                                  |
+| `kill-pane -t %N` / `kill-window`                               | Dispose that pane's PTY + VS Code terminal (how a single agent is ended)                                                                                                |
+| `kill-session -t <name>`                                        | Dispose the session's panes (never the phantom leader)                                                                                                                  |
+| `has-session -t <name>`                                         | Exit 0 if live, 1 otherwise                                                                                                                                             |
+| _anything else_                                                 | **Logged + no-op'd** (exit 0) — never crash Claude; surfaces as a drift signal in `conformance.test.ts`                                                                 |
+
+**Constraints honoured.** Display + stdin only — the file-based mailbox/task
+coordination (`~/.claude/teams/…`, `~/.claude/tasks/…`) is Claude Code's and is
+never touched; `capture-pane` is never issued against teammate panes, so PTY
+bytes pipe through unparsed (no scrollback/vt buffer).
