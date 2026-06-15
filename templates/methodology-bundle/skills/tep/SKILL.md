@@ -1,5 +1,5 @@
 ---
-description: Author a Tandem Enhancement Proposal (TEP) conversationally — the why behind the work. Scaffolds from TEP-TEMPLATE and fills it section by section into teps/TEP-{id}.md.
+description: Author a Tandem Enhancement Proposal (the why behind the work) into teps/TEP-{id}.md. MUST BE USED when the user says "create a TEP", "write a TEP", "new enhancement proposal", or asks to capture the rationale/motivation for a piece of work. Do not hand-author TEP files yourself.
 allowed-tools:
   [
     "Read",

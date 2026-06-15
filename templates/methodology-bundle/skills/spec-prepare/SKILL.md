@@ -1,5 +1,5 @@
 ---
-description: Walk the user through filling a Spec's body. Writes specs/SP-{n}/spec.md with the standard Tandem spec sections (acceptance criteria, constraints, design, file plan).
+description: Prepare/fill a Spec body to the Tandem shape (acceptance criteria, constraints, design, file plan) at specs/SP-{n}/spec.md. MUST BE USED when the user says "create a spec", "write a spec", "prepare a spec", "spec for TEP-X", or asks to turn a TEP into a spec. Do not hand-author spec files yourself.
 allowed-tools:
   [
     "Read",

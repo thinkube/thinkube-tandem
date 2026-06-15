@@ -1,4 +1,4 @@
-<!-- thinkube-methodology:start v0.0.1 -->
+<!-- thinkube-methodology:start v0.0.2 -->
 
 ## Tandem methodology
 
@@ -11,6 +11,8 @@ Hierarchy: **spec → slice**. (Epic/Story are not tiers — grouping is a `them
 - A **Slice** is the card that flows the board (`specs/SP-{n}/SL-{m}.md`): one coherent end-to-end change verified-and-committed as a single "done." Sized by coherence, not the clock. Handle: `SP-{n}_SL-{m}` (e.g. `SP-3_SL-42`); slices are numbered per-Spec.
 - Per-Thinking-Space: each Space's board lives in the sidecar repo under its `<container>/<rel>/` namespace (via `thinkube.boards.root`); a Space is enabled **iff** its namespace dir exists there. The workspace navigator moves between the enabled boards. (Co-located `.thinkube/` is deprecated — TEP-0008.)
 - Phase model: a slice's `status:` frontmatter. Columns **Ready → Doing → Done**.
+
+**Spec & TEP workflow:** authoring or advancing spec/TEP/slice/pair work goes through the methodology skills — they are the board-aware path (`write_tep` / `write_spec` / `create_slice`) that keeps files in the sidecar and in canonical shape. So a conversational ask like "write a TEP", "create a spec for TEP-X", "break this into slices", or "start pairing" should invoke the matching skill below rather than hand-rolling the file with raw `Read`/`Write`. (Plain reading/explaining — "read this spec", "show me the board" — does not.)
 
 Skills (this bundle):
 

@@ -1,5 +1,5 @@
 {
-  "version": "0.0.19",
+  "version": "0.0.20",
   "_comment": "List of files the bundle owns. BundleInstaller reads this to know what to copy on install, hashes each file at install time, and records the hashes in .claude/.bundle-version.json for drift detection. Edit this file in lockstep with the bundle contents — files not listed here won't be installed.",
   "files": [
     {

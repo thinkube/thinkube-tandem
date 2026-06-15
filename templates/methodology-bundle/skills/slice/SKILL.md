@@ -1,5 +1,5 @@
 ---
-description: Decompose a Spec into coherent Slices, writing individual specs/SP-{n}/SL-{m}.md files directly. Each slice is one verifiable end-to-end change.
+description: Decompose a Spec into coherent end-to-end Slices at specs/SP-{n}/SL-{m}.md. MUST BE USED when the user says "slice", "decompose the spec", "break this into slices", or "create slices for SP-X". Do not hand-author slice files yourself.
 allowed-tools:
   [
     "Read",

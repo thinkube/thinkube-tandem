@@ -1,5 +1,5 @@
 ---
-description: Begin a pair-programming session on a Spec. Loads context (Spec body, Ready slices), surfaces the next slice to work, flags stale slices.
+description: Begin a pair-programming session on a Spec — loads the Spec body and Ready slices, checks out the spec branch, surfaces the next slice. MUST BE USED when the user says "start pairing", "pair-start", "begin the spec", or "let's work on SP-X". Do not hand-roll session setup yourself.
 allowed-tools:
   [
     "Read",
