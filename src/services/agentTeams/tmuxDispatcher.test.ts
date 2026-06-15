@@ -186,6 +186,24 @@ test("cosmetic subcommands are silent no-ops", () => {
   assert.equal(logs.length, 0);
 });
 
+// Claude resolves its own current pane/window via display-message; empty here
+// caused "Could not determine current tmux pane/window" live (spike).
+test("display-message resolves a current pane/window context", () => {
+  const { reg } = fixture();
+  assert.equal(
+    reg.dispatch(["display-message", "-p", "#{pane_id}"]).stdout,
+    "%0",
+  );
+  assert.equal(
+    reg.dispatch([
+      "display-message",
+      "-p",
+      "#{session_name}:#{window_index}.#{pane_index}",
+    ]).stdout,
+    "default:0.0",
+  );
+});
+
 // Init-probe surface the pane backend runs before committing to tmux (spike).
 test("tmux -V reports a version so the availability gate passes", () => {
   const { reg } = fixture();

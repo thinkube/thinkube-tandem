@@ -130,7 +130,9 @@ export class TmuxRegistry {
       case "list-panes":
         return this.listPanes(opts);
       case "display-message":
-        return this.displayMessage(opts);
+        return this.displayMessage(opts, rest);
+      case "new":
+        return this.openPane(opts, rest);
       // Init probes the pane backend runs before it commits to tmux — if these
       // don't answer plausibly, Claude Code silently falls back to the
       // in-process backend (SP-tgnb5o spike finding). `-V` is the availability
@@ -257,13 +259,28 @@ export class TmuxRegistry {
     return { stdout: lines.join("\n"), exitCode: 0 };
   }
 
-  private displayMessage(opts: Record<string, string>): DispatchResult {
-    // The load-bearing one: Claude probes `#{client_control_mode}` to decide
-    // whether to drive the iTerm2 `-CC` control-mode path. We are plain tmux,
-    // so it must come back EMPTY (AC#3). Any other format also resolves
-    // against an empty pane context — empty string is the safe answer.
-    const fmt = opts["-F"] ?? "";
-    const stdout = renderFormat(fmt, { client_control_mode: "" });
+  private displayMessage(
+    opts: Record<string, string>,
+    rest: string[],
+  ): DispatchResult {
+    // The requested format is the positional after `-p` (NOT `-F`):
+    // `display-message -p "#{pane_id}"`. Claude uses this both to stay off the
+    // iTerm2 `-CC` path (`#{client_control_mode}` must be EMPTY) and — crucially
+    // — to locate its OWN current pane/window ("Could not determine current
+    // tmux pane/window" if these are empty). We run "inside tmux" per the
+    // synthetic $TMUX, so answer a stable fabricated current context.
+    const fmt = opts["-F"] ?? rest[rest.length - 1] ?? "";
+    const stdout = renderFormat(fmt, {
+      client_control_mode: "", // keep empty: we are not an iTerm2 -CC client
+      client_termtype: "tmux-256color",
+      pane_id: "%0",
+      pane_index: "0",
+      window_id: "@0",
+      window_index: "0",
+      window_name: "claude",
+      session_name: "default",
+      session_id: "$0",
+    });
     return { stdout, exitCode: 0 };
   }
 
