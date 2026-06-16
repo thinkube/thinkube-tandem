@@ -62,6 +62,17 @@ export interface Frontmatter {
   pr?: string;
   /** Optional slice dependency handles, e.g. ["SP-3_SL-7"]. */
   depends_on?: string[];
+  /** Named concurrency group: sibling slices sharing this value may run in
+   *  parallel worktrees, so their `files` sets MUST be disjoint
+   *  (`validateParallelGroup`, SP-tgpwbm). Absent → the slice runs sequentially. */
+  parallel_group?: string;
+  /** The teammate / worktree currently owning this slice; empty until claimed
+   *  by the ownership arbiter (SP-tgpwbm). */
+  assignee?: string;
+  /** Machine-readable file set the slice declares it will edit — the unit of
+   *  disjointness for a `parallel_group` and the ownership arbiter's claim.
+   *  Repo-relative paths. */
+  files?: string[];
   /** 1-based AC ordinals this slice delivers; the → Done gate checks each is ticked on the parent Spec. */
   satisfies?: number[];
   /** Documentation obligation (TEP-tgh6iy). `required` (default for user-facing
