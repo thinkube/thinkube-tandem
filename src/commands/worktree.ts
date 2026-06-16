@@ -47,7 +47,19 @@ export function registerWorktreeCommands(
               .getConfiguration("thinkube")
               .get<string>("worktree.baseDir")
               ?.trim() || undefined;
-          const worktreePath = await worktrees.create(canonical, n, baseDir);
+          // Board-connect the new worktree (SP-tgpwbm): pass the configured board
+          // root so its .mcp.json kanban server points at the central sidecar.
+          const boardRoot =
+            vscode.workspace
+              .getConfiguration("thinkube.boards")
+              .get<string>("root")
+              ?.trim() || undefined;
+          const worktreePath = await worktrees.create(
+            canonical,
+            n,
+            baseDir,
+            boardRoot,
+          );
           // Context-aware (SP-9): only drop into /pair-start when there's open
           // work; a finished Spec opens a plain session.
           await deps.launcher.openHere(

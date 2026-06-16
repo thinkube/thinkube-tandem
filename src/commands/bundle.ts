@@ -26,6 +26,7 @@ import {
   summarizeStatus,
 } from "../methodology/BundleInstaller";
 import { discoverRepos } from "../views/boards/BoardNavigatorProvider";
+import { controlDir } from "../services/ControlRequestWatcher";
 
 export interface BundleCommandDeps {
   installer: BundleInstaller;
@@ -39,7 +40,7 @@ export function registerBundleCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "thinkube.kanban.installBundle",
-      (target?: unknown) => installBundle(deps, target),
+      (target?: unknown) => installBundle(deps, target, controlDir(context)),
     ),
     vscode.commands.registerCommand(
       "thinkube.kanban.statusBundle",
@@ -91,7 +92,7 @@ async function resolveTargetRepo(
  * the default board is NOT baked — the server derives it from the session's
  * cwd. Never put a token here — `.mcp.json` is committed.
  */
-function buildMcpEnv(): Record<string, string> {
+function buildMcpEnv(ctrlDir?: string): Record<string, string> {
   const kanbanCfg = vscode.workspace.getConfiguration("thinkube.kanban");
   const mode = kanbanCfg.get<string>("mode") ?? "both";
   const allowWrites =
@@ -114,12 +115,16 @@ function buildMcpEnv(): Record<string, string> {
   // Folder names carry the namespace container (Apps/Platform/…) for SP-8.
   if (folders.length) env.THINKUBE_FOLDERS = JSON.stringify(folders);
   if (boardRoot) env.THINKUBE_BOARD_ROOT = boardRoot;
+  // The control dir the MCP writes worktree hand-off requests into; the
+  // ControlRequestWatcher in the Extension Host watches the same path (SP-tgpwbm).
+  if (ctrlDir) env.THINKUBE_CONTROL_DIR = ctrlDir;
   return env;
 }
 
 async function installBundle(
   deps: BundleCommandDeps,
   target?: unknown,
+  ctrlDir?: string,
 ): Promise<void> {
   const workspace = await resolveTargetRepo(target);
   if (!workspace) return;
@@ -150,7 +155,7 @@ async function installBundle(
       try {
         const result = await deps.installer.install(workspace, {
           strategy,
-          mcpEnv: buildMcpEnv(),
+          mcpEnv: buildMcpEnv(ctrlDir),
         });
         deps.output.show(true);
         deps.output.appendLine(

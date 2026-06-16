@@ -98,6 +98,12 @@ export interface SliceInput {
   commitUrl?: string;
   /** Pull-request URL carrying the slice. */
   pr?: string;
+  /** Slice frontmatter `parallel_group` — the named concurrency group (SP-tgpwbm). */
+  parallelGroup?: string;
+  /** Slice frontmatter `assignee` — current owner; empty until the arbiter claims it. */
+  assignee?: string;
+  /** Slice frontmatter `files` — the declared machine-readable file set. */
+  files?: string[];
 }
 
 /**

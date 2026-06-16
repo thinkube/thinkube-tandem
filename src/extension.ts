@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as nodePath from "node:path";
+import * as nodeFs from "node:fs/promises";
 
 import { registerBundleCommands } from "./commands/bundle";
 import { registerConfigCommands } from "./commands/config";
@@ -19,6 +21,17 @@ import {
 } from "./mcp/stableServerPath";
 import { BundleInstaller } from "./methodology/BundleInstaller";
 import { AgentTeamsShimServer } from "./services/agentTeams/AgentTeamsShimServer";
+import {
+  OwnershipArbiter,
+  GitRefsClaimStore,
+  JournalClaimStore,
+  type ClaimStore,
+} from "./services/OwnershipArbiter";
+import { WorktreeService } from "./services/WorktreeService";
+import {
+  ControlRequestWatcher,
+  controlDir,
+} from "./services/ControlRequestWatcher";
 import { ClaudeConfigService } from "./services/ClaudeConfigService";
 import { LauncherService } from "./services/LauncherService";
 import { SessionLinkService } from "./services/SessionLinkService";
@@ -123,6 +136,24 @@ export function activate(context: vscode.ExtensionContext) {
   agentTeams.activate().catch((err) => {
     console.error("AgentTeamsShimServer activation failed:", err);
   });
+
+  // Ownership arbiter (SP-tgpwbm): the single Extension-Host authority over which
+  // slice owns which files while parallel Specs run in separate worktrees. Backed
+  // by git refs (refs/locks/*) in the code repo's shared .git when available, else
+  // a globalStorage JSON journal — and it RE-HYDRATES from that durable store on
+  // activate, so a window reload reconstructs ownership rather than starting
+  // blank. Consumed by the PreToolUse ownership hook (SL-4) and the
+  // worktree-recovery flow (SL-5); held here so its rehydrated cache lives for
+  // the session.
+  let ownershipArbiter: OwnershipArbiter | undefined;
+  activateOwnershipArbiter(context, initialPath)
+    .then((arbiter) => {
+      ownershipArbiter = arbiter;
+      void ownershipArbiter; // wired by SL-4 (IPC) / SL-5 (recovery)
+    })
+    .catch((err) => {
+      console.error("OwnershipArbiter activation failed:", err);
+    });
 
   // GitHub stack (lazy auth — token only resolved on first kanban command).
   const auth = new AuthService(context);
@@ -306,6 +337,44 @@ export function activate(context: vscode.ExtensionContext) {
   // "Start Spec in Worktree": create the Spec's git worktree and open a session
   // rooted there, so parallel Specs never share a working tree (SP-5).
   registerWorktreeCommands(context, { launcher });
+
+  // Control-request watcher (SP-tgpwbm): the standalone Kanban MCP server can't
+  // open a VS Code session itself, so its `start_spec_worktree` tool drops a
+  // one-shot request file into the shared control dir; this watcher runs the
+  // matching command (`thinkube.specs.startWorktree`) — the same filesystem
+  // MCP→host channel the board uses, decoupled from the agent-teams tmux bridge.
+  const controlWatcher = new ControlRequestWatcher(controlDir(context), (m) =>
+    kanbanOutput.appendLine(`[thinkube] control: ${m}`),
+  );
+  context.subscriptions.push(controlWatcher);
+  controlWatcher.activate().catch((err) => {
+    console.error("ControlRequestWatcher activation failed:", err);
+  });
+}
+
+/**
+ * Build the ownership arbiter and rehydrate it from its durable store. Prefers
+ * git refs in the seed path's canonical repo (shared across that repo's
+ * worktrees, durable in .git); falls back to a globalStorage JSON journal when
+ * the seed isn't a git repo. Rehydrating here is what makes ownership survive a
+ * window reload (SP-tgpwbm AC3).
+ */
+async function activateOwnershipArbiter(
+  context: vscode.ExtensionContext,
+  seedPath: string,
+): Promise<OwnershipArbiter> {
+  let store: ClaimStore;
+  const repo = await new WorktreeService().canonicalRepo(seedPath);
+  if (repo) {
+    store = new GitRefsClaimStore(repo);
+  } else {
+    const dir = context.globalStorageUri.fsPath;
+    await nodeFs.mkdir(dir, { recursive: true });
+    store = new JournalClaimStore(nodePath.join(dir, "ownership-claims.json"));
+  }
+  const arbiter = new OwnershipArbiter(store);
+  await arbiter.rehydrate();
+  return arbiter;
 }
 
 export function deactivate() {

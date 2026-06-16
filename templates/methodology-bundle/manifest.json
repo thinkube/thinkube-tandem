@@ -1,5 +1,5 @@
 {
-  "version": "0.0.21",
+  "version": "0.0.22",
   "_comment": "List of files the bundle owns. BundleInstaller reads this to know what to copy on install, hashes each file at install time, and records the hashes in .claude/.bundle-version.json for drift detection. Edit this file in lockstep with the bundle contents — files not listed here won't be installed.",
   "files": [
     {
@@ -11,6 +11,11 @@
       "source": "settings.json",
       "target": ".claude/settings.json",
       "kind": "settings-merge"
+    },
+    {
+      "source": "hooks/ownership-guard.mjs",
+      "target": ".claude/hooks/ownership-guard.mjs",
+      "kind": "copy"
     },
     {
       "source": "mcp.json",

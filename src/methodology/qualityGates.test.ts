@@ -171,7 +171,10 @@ test("docs obligation: explicit required ignores any stray reason", () => {
 });
 
 test("docs obligation: n/a with a reason is accepted and carries it", () => {
-  const r = resolveDocsObligation({ docs: "n/a", docs_reason: "test-only change" });
+  const r = resolveDocsObligation({
+    docs: "n/a",
+    docs_reason: "test-only change",
+  });
   assert.equal(r.ok, true);
   assert.deepEqual((r as { value: unknown }).value, {
     docs: "n/a",
@@ -193,7 +196,10 @@ test("docs obligation: n/a with a blank reason is refused", () => {
 test("docs obligation: an invalid value is refused", () => {
   const r = resolveDocsObligation({ docs: "maybe" });
   assert.equal(r.ok, false);
-  assert.match((r as { reason: string }).reason, /expected "required" or "n\/a"/);
+  assert.match(
+    (r as { reason: string }).reason,
+    /expected "required" or "n\/a"/,
+  );
 });
 
 // ── → Done docs gate (TEP-tgh6iy) ──────────────────────────────────────────
@@ -208,13 +214,21 @@ test("docs gate: a legacy slice (no docs field) is ungated", () => {
 });
 
 test("docs gate: required + docs_done passes in blocking mode", () => {
-  const r = gateSliceDocsToDone({ docs: "required", docsDone: true, mode: "blocking" });
+  const r = gateSliceDocsToDone({
+    docs: "required",
+    docsDone: true,
+    mode: "blocking",
+  });
   assert.equal(r.ok, true);
   assert.equal((r as { warning?: string }).warning, undefined);
 });
 
 test("docs gate: required + unsatisfied is REFUSED in blocking mode", () => {
-  const r = gateSliceDocsToDone({ docs: "required", docsDone: false, mode: "blocking" });
+  const r = gateSliceDocsToDone({
+    docs: "required",
+    docsDone: false,
+    mode: "blocking",
+  });
   assert.equal(r.ok, false);
   assert.match((r as { reason: string }).reason, /docs_done/);
 });
@@ -223,4 +237,28 @@ test("docs gate: required + unsatisfied PASSES with a warning in advisory mode",
   const r = gateSliceDocsToDone({ docs: "required", mode: "advisory" });
   assert.equal(r.ok, true);
   assert.match((r as { warning?: string }).warning ?? "", /advisory/);
+});
+
+// ── Done gate is UNCHANGED under worktree parallelism (SP-tgpwbm AC6) ───────
+// Parallel slices run in isolated worktrees and verify there, but the → Done
+// gate's contract must not change: it still refuses Done while a satisfied AC is
+// unchecked and allows it once checked. This pins that contract so a regression
+// is caught — SP-tgpwbm changes *where* the verifier runs, never the gate.
+
+test("AC6: the → Done gate still refuses while a satisfied AC is unchecked", () => {
+  // SPEC_PARTIAL: #1 unchecked, #2 checked.
+  const r = gateSliceSatisfiesToDone({
+    specBody: SPEC_PARTIAL,
+    satisfies: [1],
+  });
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /#1/);
+});
+
+test("AC6: the → Done gate still allows once every satisfied AC is checked", () => {
+  assert.equal(
+    gateSliceSatisfiesToDone({ specBody: SPEC_ALL_CHECKED, satisfies: [1, 2] })
+      .ok,
+    true,
+  );
 });

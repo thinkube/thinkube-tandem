@@ -53,6 +53,15 @@ import * as path from "node:path";
 
 import { requirementHash } from "../methodology/specChange";
 import {
+  validateParallelGroup,
+  type ParallelSliceInput,
+} from "../methodology/parallelSlices";
+import {
+  CONTROL_DIR_ENV,
+  serializeControlRequest,
+  startWorktreeRequestFile,
+} from "./controlRequests";
+import {
   gateSliceSatisfiesToDone,
   gateSpecAcceptance,
   gateSliceDocsToDone,
@@ -622,6 +631,17 @@ const TOOL_DEFS = [
           description:
             "Shares no files/state with sibling slices (parallel-eligible).",
         },
+        parallel_group: {
+          type: "string",
+          description:
+            "Named concurrency group (SP-tgpwbm). Slices sharing a parallel_group may run in parallel worktrees, so their `files` sets must be disjoint — the server refuses a group whose members overlap, naming the conflicting files.",
+        },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Repo-relative paths this slice will edit (its machine-readable file set), e.g. ["src/a.ts"]. The unit of disjointness for a parallel_group and, later, the ownership arbiter.',
+        },
         satisfies: {
           type: "array",
           items: { type: "integer", minimum: 1 },
@@ -729,6 +749,24 @@ const TOOL_DEFS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "start_spec_worktree",
+    description:
+      "Open the Spec's git worktree session (the 'Start Spec in Worktree' action) without a manual button — so a session that just sliced a Spec can hand off directly into a board-connected worktree pair session. Writes a one-shot control request the Extension Host picks up via a file watcher (the same MCP→host filesystem channel the board uses), which runs `thinkube.specs.startWorktree` (create-or-reuse + board-root inject + open session). Requires the host to be running.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: {
+          type: "string",
+          description:
+            "The Spec id (the SP-{id}) whose worktree session to open — an opaque string (base36-epoch or a legacy integer).",
+        },
+        ...BOARD_PARAM,
+      },
+      required: ["spec"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 async function dispatchTool(
@@ -780,6 +818,8 @@ async function dispatchTool(
         body: asString(args, "body"),
         depends_on: optStringArray(args, "depends_on"),
         parallel: optBoolean(args, "parallel"),
+        parallel_group: optString(args, "parallel_group"),
+        files: optStringArray(args, "files"),
         satisfies: optNumberArray(args, "satisfies"),
         docs: optString(args, "docs"),
         docs_reason: optString(args, "docs_reason"),
@@ -812,12 +852,45 @@ async function dispatchTool(
     case "write_retro_note":
       writeGate(name);
       return writeRetroNote(store, asString(args, "body"));
+    case "start_spec_worktree":
+      writeGate(name);
+      return startSpecWorktree(
+        typeof args.spec === "number"
+          ? String(args.spec)
+          : asString(args, "spec"),
+        store.workspaceRoot,
+      );
     default:
       throw new Error(`unknown tool: ${name}`);
   }
 }
 
 // ─── Tool implementations ───────────────────────────────────────────────────
+
+/**
+ * Hand off "open this Spec's worktree session" to the Extension Host (AC8). The
+ * MCP process can't open a VS Code session itself, so it writes a one-shot
+ * control request into the host-published `THINKUBE_CONTROL_DIR`; the host's
+ * file watcher consumes it and runs `thinkube.specs.startWorktree` (the same
+ * create-or-reuse + board-root inject + open-session machinery as the button,
+ * SL-7). Reuses the board's filesystem MCP→host channel — not the tmux bridge.
+ */
+async function startSpecWorktree(spec: string, repo: string): Promise<unknown> {
+  const dir = process.env[CONTROL_DIR_ENV];
+  if (!dir) {
+    throw new Error(
+      `${CONTROL_DIR_ENV} is not set, so the worktree hand-off can't reach the extension. Open the worktree from the Specs view button, or re-install the methodology bundle so the MCP env carries it.`,
+    );
+  }
+  await fsSync.promises.mkdir(dir, { recursive: true });
+  const file = path.join(dir, startWorktreeRequestFile(spec));
+  await fsSync.promises.writeFile(
+    file,
+    serializeControlRequest({ kind: "start-worktree", spec, repo }),
+    "utf8",
+  );
+  return { ok: true, spec, request: file };
+}
 
 const SLICE_PATH_RE = /specs\/SP-([A-Za-z0-9]+)\/SL-(\d+)\.md$/;
 const SLICE_HANDLE_RE = /^SP-([A-Za-z0-9]+)_SL-(\d+)$/;
@@ -1118,6 +1191,8 @@ async function createSlice(
     body: string;
     depends_on?: string[];
     parallel?: boolean;
+    parallel_group?: string;
+    files?: string[];
     satisfies?: number[];
     priority?: string;
     docs?: string;
@@ -1170,6 +1245,34 @@ async function createSlice(
     );
   }
 
+  // Parallel-group disjointness (SP-tgpwbm AC1): a slice joining a
+  // `parallel_group` must not claim a file already owned by a sibling in that
+  // group. Validate the would-be set against existing siblings before writing.
+  const group = args.parallel_group?.trim();
+  if (group && args.files?.length) {
+    const siblings: ParallelSliceInput[] = [];
+    for (const rel of await store.listSlices(args.spec)) {
+      const m = SLICE_PATH_RE.exec(rel);
+      if (!m) continue;
+      const parsed = await store.getFile(rel);
+      const sfm: Frontmatter = parsed?.frontmatter ?? {};
+      siblings.push({
+        handle: sliceHandle(m[1], Number(m[2])),
+        parallelGroup: sfm.parallel_group,
+        files: sfm.files,
+      });
+    }
+    const result = validateParallelGroup([
+      ...siblings,
+      {
+        handle: `SP-${args.spec}_SL-(new)`,
+        parallelGroup: group,
+        files: args.files,
+      },
+    ]);
+    if (!result.ok) throw new Error(result.reason);
+  }
+
   const sliceNumber = await store.nextSliceNumber(args.spec);
   const uid = await uniqueSlug(store, args.spec, title);
   const fm: Frontmatter = {
@@ -1179,6 +1282,10 @@ async function createSlice(
   };
   if (args.depends_on?.length) fm.depends_on = args.depends_on;
   if (args.parallel) fm.parallel = true;
+  if (group) fm.parallel_group = group;
+  if (args.files?.length) fm.files = args.files;
+  // Stamp an empty `assignee` slot the ownership arbiter later claims (SP-tgpwbm).
+  fm.assignee = "";
   if (args.satisfies?.length)
     fm.satisfies = [...new Set(args.satisfies)].sort((a, b) => a - b);
   fm.docs = docsResult.value.docs;

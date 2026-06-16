@@ -128,6 +128,65 @@ export function findSpecWorktree(
   return entries.find((e) => e.branch === `spec/SP-${specNumber}`);
 }
 
+/**
+ * Decide where a Spec's worktree lives, **reusing** an existing one rather than
+ * trying to re-add it (SP-tgpwbm AC7). If a worktree is already checked out on
+ * `spec/SP-{n}`, return its path with `reuse: true`; otherwise compute the path
+ * under `baseDir` (default: a sibling `<repo>-worktrees/`) with `reuse: false`.
+ * Pure — the I/O (`git worktree add`) is the caller's job, and only when not
+ * reusing. This is what lets `create` be idempotent instead of throwing on
+ * "already exists". */
+export function planWorktree(
+  existing: WorktreeEntry[],
+  canonicalRepo: string,
+  specNumber: string,
+  baseDir?: string,
+): { path: string; reuse: boolean } {
+  const found = findSpecWorktree(existing, specNumber);
+  if (found) return { path: found.path, reuse: true };
+  const root =
+    baseDir ??
+    path.join(
+      path.dirname(canonicalRepo),
+      `${path.basename(canonicalRepo)}-worktrees`,
+    );
+  return { path: path.join(root, `SP-${specNumber}`), reuse: false };
+}
+
+/** The MCP server key whose env carries the board location for Claude Code. */
+const KANBAN_SERVER = "thinkube-kanban";
+
+/**
+ * Inject `THINKUBE_BOARD_ROOT` into the kanban server's env in a parsed
+ * `.mcp.json` (SP-tgpwbm AC7), so a freshly-created worktree's Claude-Code-spawned
+ * kanban MCP finds the central sidecar board. Pure: takes the parsed config,
+ * returns a new config with the value set (other env preserved). A no-op when
+ * the kanban server isn't present. The value is machine-specific and stays an
+ * uncommitted local edit — never committed (like THINKUBE_FOLDERS). */
+export function mcpWithBoardRoot(
+  config: unknown,
+  boardRoot: string,
+): Record<string, unknown> {
+  const cfg =
+    config && typeof config === "object" ? { ...(config as object) } : {};
+  const servers = (cfg as { mcpServers?: unknown }).mcpServers;
+  if (!servers || typeof servers !== "object")
+    return cfg as Record<string, unknown>;
+  const nextServers: Record<string, unknown> = {
+    ...(servers as Record<string, unknown>),
+  };
+  const server = nextServers[KANBAN_SERVER];
+  if (server && typeof server === "object") {
+    const s = server as { env?: Record<string, unknown>; [k: string]: unknown };
+    nextServers[KANBAN_SERVER] = {
+      ...s,
+      env: { ...(s.env ?? {}), THINKUBE_BOARD_ROOT: boardRoot },
+    };
+  }
+  (cfg as { mcpServers?: unknown }).mcpServers = nextServers;
+  return cfg as Record<string, unknown>;
+}
+
 export class WorktreeService {
   /** All worktrees of the repo enclosing `cwd`; the first entry is canonical. */
   async list(cwd: string): Promise<WorktreeEntry[]> {
@@ -163,25 +222,67 @@ export class WorktreeService {
     canonicalRepo: string,
     specNumber: string,
     baseDir?: string,
+    boardRoot?: string,
   ): Promise<string> {
     const branch = `spec/SP-${specNumber}`;
-    const root =
-      baseDir ??
-      path.join(
-        path.dirname(canonicalRepo),
-        `${path.basename(canonicalRepo)}-worktrees`,
+    // Reuse an existing worktree for this Spec rather than failing on "already
+    // exists" — re-starting a Spec must be idempotent (SP-tgpwbm AC7).
+    const plan = planWorktree(
+      await this.list(canonicalRepo),
+      canonicalRepo,
+      specNumber,
+      baseDir,
+    );
+    let worktreePath = plan.path;
+    if (!plan.reuse) {
+      await fs.mkdir(path.dirname(worktreePath), { recursive: true });
+      // Reuse the Spec's branch if it already exists (re-starting a Spec); else
+      // cut a fresh one from the canonical repo's current HEAD.
+      const exists = await this.refExists(
+        canonicalRepo,
+        `refs/heads/${branch}`,
       );
-    const worktreePath = path.join(root, `SP-${specNumber}`);
-    await fs.mkdir(root, { recursive: true });
+      const addArgs = exists
+        ? ["-C", canonicalRepo, "worktree", "add", worktreePath, branch]
+        : ["-C", canonicalRepo, "worktree", "add", worktreePath, "-b", branch];
+      try {
+        await execFileAsync("git", addArgs, { timeout: 15000 });
+      } catch (err) {
+        // A worktree may have appeared (race / pre-existing dir now registered);
+        // reuse it instead of surfacing the add failure.
+        const now = findSpecWorktree(
+          await this.list(canonicalRepo),
+          specNumber,
+        );
+        if (now) worktreePath = now.path;
+        else throw err;
+      }
+    }
 
-    // Reuse the Spec's branch if it already exists (re-starting a Spec); else
-    // cut a fresh one from the canonical repo's current HEAD.
-    const exists = await this.refExists(canonicalRepo, `refs/heads/${branch}`);
-    const addArgs = exists
-      ? ["-C", canonicalRepo, "worktree", "add", worktreePath, branch]
-      : ["-C", canonicalRepo, "worktree", "add", worktreePath, "-b", branch];
-    await execFileAsync("git", addArgs, { timeout: 15000 });
+    // Board-connect the worktree: inject THINKUBE_BOARD_ROOT into its .mcp.json so
+    // the Claude-Code-spawned kanban MCP finds the central sidecar board (AC7).
+    if (boardRoot) await this.injectBoardRoot(worktreePath, boardRoot);
     return worktreePath;
+  }
+
+  /**
+   * Set `THINKUBE_BOARD_ROOT` in the worktree's `.mcp.json` kanban-server env.
+   * Best-effort and machine-local — the edit stays uncommitted (never committed,
+   * like THINKUBE_FOLDERS). A missing `.mcp.json` is left untouched.
+   */
+  private async injectBoardRoot(
+    worktreePath: string,
+    boardRoot: string,
+  ): Promise<void> {
+    const mcpPath = path.join(worktreePath, ".mcp.json");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await fs.readFile(mcpPath, "utf8"));
+    } catch {
+      return; // no .mcp.json to board-connect
+    }
+    const next = mcpWithBoardRoot(parsed, boardRoot);
+    await fs.writeFile(mcpPath, JSON.stringify(next, null, 2) + "\n", "utf8");
   }
 
   /**

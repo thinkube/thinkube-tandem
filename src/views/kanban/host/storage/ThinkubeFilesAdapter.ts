@@ -101,6 +101,9 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
         commitUrl:
           fm.commit && coords ? buildCommitUrl(coords, fm.commit) : undefined,
         pr: fm.pr,
+        parallelGroup: fm.parallel_group,
+        assignee: fm.assignee,
+        files: fm.files,
       });
     }
     return buildSliceBoard(inputs, this.scope, specMeta);

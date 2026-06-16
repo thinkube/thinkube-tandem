@@ -35,5 +35,19 @@
       "Bash(npm publish:*)",
       "Bash(ovsx publish:*)"
     ]
+  },
+  "_hooks_comment": "PreToolUse(Edit|Write) ownership guard (SP-tgpwbm / TEP-tgpupa): refuses an edit to a file the active slice does not own, per the ownership arbiter. Fail-open when the feature isn't engaged. Merged into the project's .claude/settings.json hooks by BundleInstaller (de-duplicating, never clobbering other hooks).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/ownership-guard.mjs\""
+          }
+        ]
+      }
+    ]
   }
 }

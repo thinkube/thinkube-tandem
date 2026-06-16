@@ -189,7 +189,8 @@ export class BundleInstaller {
         // No stamp: classify by content against the current bundle source.
         // The file is present, so it counts as installed; whether it matches
         // the source decides up-to-date vs. update-available.
-        state = installedHash === sourceHash ? "matches-stamp" : "source-changed";
+        state =
+          installedHash === sourceHash ? "matches-stamp" : "source-changed";
       }
       files.push({
         source: f.source,
@@ -352,7 +353,10 @@ export class BundleInstaller {
   ): Promise<void> {
     const src = JSON.parse(
       await fs.readFile(path.join(this.bundleRoot, f.source), "utf8"),
-    ) as { permissions?: { allow?: string[]; deny?: string[] } };
+    ) as {
+      permissions?: { allow?: string[]; deny?: string[] };
+      hooks?: Record<string, unknown[]>;
+    };
     const dst = path.join(workspacePath, f.target);
     const existing = await this.readJsonIfExists(dst);
     const merged = { ...existing };
@@ -362,6 +366,23 @@ export class BundleInstaller {
     };
     perms.allow = unionStrings(perms.allow ?? [], src.permissions?.allow ?? []);
     perms.deny = unionStrings(perms.deny ?? [], src.permissions?.deny ?? []);
+    // Merge hook fragments per event (PreToolUse, …) — append the bundle's
+    // matcher groups that aren't already present, never clobbering the user's
+    // own hooks. De-dupe on the serialized entry so a re-apply is idempotent.
+    if (src.hooks) {
+      const hooks = (merged.hooks ??= {}) as Record<string, unknown[]>;
+      for (const [event, groups] of Object.entries(src.hooks)) {
+        const have = (hooks[event] ??= []);
+        const seen = new Set(have.map((g) => JSON.stringify(g)));
+        for (const g of groups) {
+          const key = JSON.stringify(g);
+          if (!seen.has(key)) {
+            have.push(g);
+            seen.add(key);
+          }
+        }
+      }
+    }
     await fs.mkdir(path.dirname(dst), { recursive: true });
     await fs.writeFile(dst, JSON.stringify(merged, null, 2) + "\n", "utf8");
   }

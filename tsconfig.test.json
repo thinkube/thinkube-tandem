@@ -9,6 +9,9 @@
     "src/methodology/specChange.test.ts",
     "src/methodology/qualityGates.ts",
     "src/methodology/qualityGates.test.ts",
+    "src/methodology/parallelSlices.ts",
+    "src/methodology/parallelSlices.test.ts",
+    "src/methodology/ownershipGuard.test.ts",
     "src/views/kanban/host/storage/sliceBoard.ts",
     "src/views/kanban/host/storage/sliceBoard.test.ts",
     "src/store/frontmatter.ts",
@@ -28,7 +31,9 @@
     "src/github/specMerge.ts",
     "src/github/specMerge.test.ts",
     "src/mcp/boardDetection.ts",
-    "src/mcp/boardDetection.test.ts"
+    "src/mcp/boardDetection.test.ts",
+    "src/mcp/controlRequests.ts",
+    "src/mcp/controlRequests.test.ts"
   ],
   "exclude": ["node_modules"]
 }
