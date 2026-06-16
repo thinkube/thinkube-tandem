@@ -76,12 +76,22 @@ Two stores ship:
 A corrupt journal degrades to "no claims" rather than a dead arbiter that can't
 activate.
 
-### Reconciliation
+### Reconciliation and recovery
 
 After a reload the arbiter can `reconcile(liveSlices)` against the set of slices
 whose worktrees are still live, dropping (reclaiming) files held by abandoned
-slices and persisting the result. The live-worktree → live-slice signal and the
-orphaned-Spec recovery flow are wired by the worktree-recovery slice.
+slices and persisting the result — **board-wins** recovery.
+
+`detectRecoverable(slices, liveHolders)` (`parallelSlices.ts`) then spots an
+**orphaned worktree-shaped Spec**: one whose slices carry an `assignee:` stamp
+and are still open (`doing` / `ready`), yet have no live arbiter holder — the
+signature of a worktree session that died mid-Spec (a crash or window reload).
+On reactivation the ownership map (reconciled), the `assignee` stamps (persisted
+in slice frontmatter), and the worktree on disk all reconstruct, and
+`/pair-start` offers to **resume** that worktree rather than starting fresh. The
+live respawn-and-resume rides the existing `WorktreeService` + Claude session
+recovery; `detectRecoverable` is the pure signal that triggers it. Done and
+archived slices are finished, never orphaned.
 
 ## Enforcement: the PreToolUse hook
 

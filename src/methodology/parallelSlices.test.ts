@@ -14,8 +14,10 @@ import {
   reconcileOwnership,
   serializeOwnership,
   parseOwnership,
+  detectRecoverable,
   type ParallelSliceInput,
   type OwnershipState,
+  type SliceRecoveryInfo,
 } from "./parallelSlices";
 
 test("disjoint members of a parallel_group pass", () => {
@@ -218,4 +220,52 @@ test("reconcile with all owners live drops nothing", () => {
   const r = reconcileOwnership(state, ["SP-9_SL-1", "SP-9_SL-2"]);
   assert.deepEqual(r.state, state);
   assert.equal(r.dropped.length, 0);
+});
+
+// ── Worktree-Spec recovery (SP-tgpwbm AC5) ─────────────────────────────────
+
+test("detectRecoverable: assignee-stamped open slice with no live holder is recoverable", () => {
+  const slices: SliceRecoveryInfo[] = [
+    { handle: "SP-9_SL-1", assignee: "spec/SP-9", status: "doing" },
+  ];
+  const r = detectRecoverable(slices, []); // no live holders (post-reload)
+  assert.equal(r.recoverable, true);
+  assert.deepEqual(r.orphaned, ["SP-9_SL-1"]);
+});
+
+test("detectRecoverable: a slice still held live is NOT orphaned", () => {
+  const slices: SliceRecoveryInfo[] = [
+    { handle: "SP-9_SL-1", assignee: "spec/SP-9", status: "doing" },
+  ];
+  const r = detectRecoverable(slices, ["SP-9_SL-1"]);
+  assert.equal(r.recoverable, false);
+  assert.deepEqual(r.orphaned, []);
+});
+
+test("detectRecoverable: an unstamped slice (no assignee) is never orphaned", () => {
+  const slices: SliceRecoveryInfo[] = [
+    { handle: "SP-9_SL-1", status: "doing" },
+    { handle: "SP-9_SL-2", assignee: "  ", status: "ready" }, // blank stamp
+  ];
+  assert.equal(detectRecoverable(slices, []).recoverable, false);
+});
+
+test("detectRecoverable: done and archived slices are finished, not orphaned", () => {
+  const slices: SliceRecoveryInfo[] = [
+    { handle: "SP-9_SL-1", assignee: "spec/SP-9", status: "done" },
+    { handle: "SP-9_SL-2", assignee: "spec/SP-9", status: "archived" },
+  ];
+  assert.equal(detectRecoverable(slices, []).recoverable, false);
+});
+
+test("detectRecoverable: returns only the orphaned handles among a mix", () => {
+  const slices: SliceRecoveryInfo[] = [
+    { handle: "SP-9_SL-1", assignee: "spec/SP-9", status: "done" }, // finished
+    { handle: "SP-9_SL-2", assignee: "spec/SP-9", status: "doing" }, // orphaned
+    { handle: "SP-9_SL-3", assignee: "spec/SP-9", status: "ready" }, // held live
+    { handle: "SP-9_SL-4", status: "ready" }, // never claimed
+  ];
+  const r = detectRecoverable(slices, ["SP-9_SL-3"]);
+  assert.equal(r.recoverable, true);
+  assert.deepEqual(r.orphaned, ["SP-9_SL-2"]);
 });

@@ -216,3 +216,48 @@ export function parseOwnership(text: string): OwnershipState {
   }
   return {};
 }
+
+// ── Worktree-Spec recovery (SP-tgpwbm AC5) ─────────────────────────────────
+
+/** The recovery-relevant frontmatter of one slice. */
+export interface SliceRecoveryInfo {
+  handle: string;
+  /** Frontmatter `assignee:` — non-empty once a worktree/teammate claimed it. */
+  assignee?: string;
+  /** Frontmatter `status:` — ready | doing | done | archived. */
+  status?: string;
+}
+
+export interface RecoverableResult {
+  /** True when the Spec has orphaned, resumable work. */
+  recoverable: boolean;
+  /** Handles of the assignee-stamped, still-open slices with no live holder. */
+  orphaned: string[];
+}
+
+/**
+ * Detect an **orphaned worktree-shaped Spec** (AC5): one whose slices carry an
+ * `assignee:` stamp (a worktree/teammate claimed them) and are still open, yet
+ * have **no live arbiter holder** — the signature of a Spec whose worktree
+ * session died (a crash / window reload) before finishing. `/pair-start` uses
+ * this to offer to resume rather than starting fresh. Done and archived slices
+ * never count — their work is finished, not orphaned.
+ */
+export function detectRecoverable(
+  slices: SliceRecoveryInfo[],
+  liveHolders: Iterable<string>,
+): RecoverableResult {
+  const live = new Set(liveHolders);
+  const orphaned = slices
+    .filter((s) => {
+      const status = (s.status ?? "").toLowerCase();
+      return (
+        (s.assignee ?? "").trim() !== "" &&
+        status !== "done" &&
+        status !== "archived" &&
+        !live.has(s.handle)
+      );
+    })
+    .map((s) => s.handle);
+  return { recoverable: orphaned.length > 0, orphaned };
+}
