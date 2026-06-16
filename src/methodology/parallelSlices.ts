@@ -100,3 +100,119 @@ export function validateParallelGroup(
       .join("\n");
   return { ok: false, reason, conflicts };
 }
+
+// ── Ownership claims (SP-tgpwbm AC3 / AC5) ─────────────────────────────────
+//
+// The durable ownership map: each repo-relative file is owned by at most one
+// slice. The ownership arbiter (src/services/OwnershipArbiter.ts) wraps this
+// pure algebra with a durable store (git refs / a journal) and survives a
+// window reload by rehydrating the map from disk. These functions are the
+// testable core — no I/O, no clock.
+
+/** Normalized repo-relative file → the slice handle that owns it. */
+export type OwnershipState = Record<string, string>;
+
+export type AcquireOutcome =
+  | { ok: true; state: OwnershipState; acquired: string[] }
+  | { ok: false; conflicts: Array<{ file: string; heldBy: string }> };
+
+/**
+ * Atomically claim `files` for `slice`. **All-or-nothing**: if any file is
+ * already held by a *different* slice, the whole claim is denied and the input
+ * `state` is returned untouched (the caller never persists a partial claim).
+ * Re-claiming a file the same slice already owns is idempotent.
+ */
+export function acquireClaim(
+  state: OwnershipState,
+  slice: string,
+  files: string[],
+): AcquireOutcome {
+  const norm = [...new Set(files.map(normalizeFilePath).filter(Boolean))];
+  const conflicts: Array<{ file: string; heldBy: string }> = [];
+  for (const f of norm) {
+    const owner = state[f];
+    if (owner && owner !== slice) conflicts.push({ file: f, heldBy: owner });
+  }
+  if (conflicts.length) {
+    conflicts.sort((a, b) => a.file.localeCompare(b.file));
+    return { ok: false, conflicts };
+  }
+  const next: OwnershipState = { ...state };
+  for (const f of norm) next[f] = slice;
+  return { ok: true, state: next, acquired: norm };
+}
+
+/** Release every file owned by `slice`. Returns the new state (others kept). */
+export function releaseClaim(
+  state: OwnershipState,
+  slice: string,
+): OwnershipState {
+  const next: OwnershipState = {};
+  for (const [f, owner] of Object.entries(state)) {
+    if (owner !== slice) next[f] = owner;
+  }
+  return next;
+}
+
+export interface ReconcileResult {
+  state: OwnershipState;
+  dropped: Array<{ file: string; slice: string }>;
+}
+
+/**
+ * Reconcile the durable map against the set of slices whose worktrees are still
+ * live: any file owned by a slice **not** in `liveSlices` is reclaimed — its
+ * holder was abandoned (e.g. its worktree was removed without releasing). This
+ * is the board-wins recovery the arbiter runs after a reload (AC3, AC5).
+ */
+export function reconcileOwnership(
+  state: OwnershipState,
+  liveSlices: Iterable<string>,
+): ReconcileResult {
+  const live = new Set(liveSlices);
+  const next: OwnershipState = {};
+  const dropped: Array<{ file: string; slice: string }> = [];
+  for (const [f, owner] of Object.entries(state)) {
+    if (live.has(owner)) next[f] = owner;
+    else dropped.push({ file: f, slice: owner });
+  }
+  dropped.sort((a, b) => a.file.localeCompare(b.file));
+  return { state: next, dropped };
+}
+
+/** Serialize the ownership map to the durable journal format (stable key order). */
+export function serializeOwnership(state: OwnershipState): string {
+  const claims: OwnershipState = {};
+  for (const f of Object.keys(state).sort()) claims[f] = state[f];
+  return JSON.stringify({ version: 1, claims }, null, 2) + "\n";
+}
+
+/**
+ * Parse a durable journal back into an ownership map (rehydrate-from-disk).
+ * Tolerant: malformed JSON or an unexpected shape yields an **empty** map rather
+ * than throwing, so a corrupt journal degrades to "no claims" — never a dead
+ * arbiter that can't activate.
+ */
+export function parseOwnership(text: string): OwnershipState {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const claims = (parsed as { claims?: unknown }).claims;
+      if (claims && typeof claims === "object" && !Array.isArray(claims)) {
+        const out: OwnershipState = {};
+        for (const [f, slice] of Object.entries(
+          claims as Record<string, unknown>,
+        )) {
+          if (typeof slice === "string" && slice) {
+            const nf = normalizeFilePath(f);
+            if (nf) out[nf] = slice;
+          }
+        }
+        return out;
+      }
+    }
+  } catch {
+    // fall through to the empty map
+  }
+  return {};
+}
