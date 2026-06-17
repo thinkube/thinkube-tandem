@@ -46,6 +46,7 @@ import {
   seedArchivedFilters,
 } from "./commands/archive";
 import { registerWorktreeCommands } from "./commands/worktree";
+import { registerOrchestrateCommands } from "./commands/orchestrate";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Thinkube AI Integration is now active!");
@@ -337,6 +338,14 @@ export function activate(context: vscode.ExtensionContext) {
   // "Start Spec in Worktree": create the Spec's git worktree and open a session
   // rooted there, so parallel Specs never share a working tree (SP-5).
   registerWorktreeCommands(context, { launcher });
+
+  // Board orchestrator (SP-tgs8nz_SL-1): dispatch a Spec's next Ready slice to a
+  // `claude -p` worker in its worktree. Consumes the (async-built) ownership arbiter
+  // via a getter so it's read at invoke time.
+  registerOrchestrateCommands(context, {
+    specsProvider,
+    getArbiter: () => ownershipArbiter,
+  });
 
   // Control-request watcher (SP-tgpwbm): the standalone Kanban MCP server can't
   // open a VS Code session itself, so its `start_spec_worktree` tool drops a

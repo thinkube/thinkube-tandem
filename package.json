@@ -72,6 +72,11 @@
     ],
     "commands": [
       {
+        "command": "thinkube.orchestrate",
+        "title": "Orchestrate Next Slice",
+        "category": "Thinkube"
+      },
+      {
         "command": "thinkube.boards.refresh",
         "title": "Refresh Boards",
         "category": "Thinkube Boards",
