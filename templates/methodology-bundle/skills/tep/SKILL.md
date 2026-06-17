@@ -20,6 +20,8 @@ Author a **Tandem Enhancement Proposal** — the orthogonal _why_ axis (TEP-0009
 
 A TEP is **not** a board-flowing card (TEP-0003 keeps the hierarchy Spec→Slice). It is read from the board and linked to the specs that implement it (`implements:` ↔ `implemented_by:`).
 
+> **Decision-point protocol** (methodology `CLAUDE.md`): this is _human-paced_ authoring — converse → options → research → **read-back** → the human's explicit **"go."** Surface options as prose, never force convergence, and **approve ≠ execute**.
+
 ## Mission
 
 Produce a fully-shaped `teps/TEP-{id}.md` in the canonical format, with:

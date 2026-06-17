@@ -17,6 +17,8 @@ thinkube-bundle: 0.0.1
 
 Fill in a Spec's body to the standard Tandem shape. The Spec lives as a committed file at `specs/SP-{n}/spec.md` **in the board** (the central sidecar namespace, TEP-0008) — the single source of truth. Read it with `get_thinkube_file` and write it with `write_spec`; **both are board-aware**, so the file always lands in the sidecar regardless of where the session is rooted. Never write the Spec with a raw `Write`/`Edit` — a relative path resolves against the session's cwd (the code repo), not the board. After this skill runs, the → Ready gate passes (the Spec has a non-empty `## Acceptance Criteria`) and the Spec is ready for `/slice`.
 
+> **Decision-point protocol** (methodology `CLAUDE.md`): this is _human-paced_ authoring — converse → options → research → **read-back** → the human's explicit **"go."** Surface options as prose, never force convergence, and **approve ≠ execute**.
+
 ## Mission
 
 Produce a fully-shaped `specs/SP-{n}/spec.md` containing the four canonical sections, with:

@@ -20,6 +20,8 @@ thinkube-bundle: 0.0.1
 
 Read a fully-shaped Spec and cut it into **coherent slices** — each one an end-to-end change you can verify-and-commit as a single "done." Each slice is written **directly** as its own file at `specs/SP-{n}/SL-{m}.md` with `status: ready`. There is no checkbox-list intermediate, no materialiser, no issue minting — the files _are_ the board.
 
+> **Decision-point protocol** (methodology `CLAUDE.md`): this is _human-paced_ authoring — converse → options → research → **read-back** → the human's explicit **"go."** Surface options as prose, never force convergence, and **approve ≠ execute**.
+
 ## Mission
 
 Write one `specs/SP-{n}/SL-{m}.md` file per slice, where each slice:
