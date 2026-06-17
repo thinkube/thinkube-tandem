@@ -75,6 +75,18 @@ export interface Frontmatter {
   files?: string[];
   /** 1-based AC ordinals this slice delivers; the → Done gate checks each is ticked on the parent Spec. */
   satisfies?: number[];
+  /** Execution-aware work units under this slice (SP-tgs8gb): each an atom with a
+   *  file/object footprint + an execution shape. The slice stays the validation
+   *  envelope — work units are never independently gated. */
+  work_units?: {
+    /** Repo-relative files/objects this unit touches — the parallelism footprint. */
+    footprint: string[];
+    /** Work-unit/slice handles this unit depends on (ordering). */
+    depends_on?: string[];
+    /** serial (coupled) | mechanize (uniform data-parallel: one transform applied
+     *  N times) | fan-out (heterogeneous: AI per object). */
+    execution: "serial" | "mechanize" | "fan-out";
+  }[];
   /** Documentation obligation (TEP-tgh6iy). `required` (default for user-facing
    *  work) arms the → Done docs gate; `n/a` skips it but must carry `docs_reason`. */
   docs?: "required" | "n/a";

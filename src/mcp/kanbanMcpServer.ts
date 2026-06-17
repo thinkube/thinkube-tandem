@@ -648,6 +648,24 @@ const TOOL_DEFS = [
           description:
             "1-based AC ordinals this slice delivers (positions in the parent Spec's `## Acceptance Criteria`). Arms the → Done gate: the slice can't reach Done until each listed criterion is checked on the Spec.",
         },
+        work_units: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              footprint: { type: "array", items: { type: "string" } },
+              depends_on: { type: "array", items: { type: "string" } },
+              execution: {
+                type: "string",
+                enum: ["serial", "mechanize", "fan-out"],
+              },
+            },
+            required: ["footprint", "execution"],
+            additionalProperties: false,
+          },
+          description:
+            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), depends_on?, execution: serial|mechanize|fan-out }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out`; coupled → `serial`. The slice stays the validation envelope; work units are never independently gated.",
+        },
         docs: {
           type: "string",
           enum: ["required", "n/a"],
@@ -1194,6 +1212,11 @@ async function createSlice(
     parallel_group?: string;
     files?: string[];
     satisfies?: number[];
+    work_units?: {
+      footprint: string[];
+      depends_on?: string[];
+      execution: string;
+    }[];
     priority?: string;
     docs?: string;
     docs_reason?: string;
@@ -1220,6 +1243,18 @@ async function createSlice(
     if (!Number.isInteger(n) || n < 1) {
       throw new Error(
         `satisfies entry "${n}" is not a positive integer (a 1-based AC ordinal).`,
+      );
+    }
+  }
+  for (const wu of args.work_units ?? []) {
+    if (!Array.isArray(wu?.footprint) || wu.footprint.length === 0) {
+      throw new Error(
+        "each work_unit needs a non-empty `footprint` (the files/objects it touches).",
+      );
+    }
+    if (!["serial", "mechanize", "fan-out"].includes(wu.execution)) {
+      throw new Error(
+        `work_unit execution "${wu.execution}" must be serial | mechanize | fan-out.`,
       );
     }
   }
@@ -1288,6 +1323,8 @@ async function createSlice(
   fm.assignee = "";
   if (args.satisfies?.length)
     fm.satisfies = [...new Set(args.satisfies)].sort((a, b) => a - b);
+  if (args.work_units?.length)
+    fm.work_units = args.work_units as Frontmatter["work_units"];
   fm.docs = docsResult.value.docs;
   if (docsResult.value.docs_reason)
     fm.docs_reason = docsResult.value.docs_reason;
