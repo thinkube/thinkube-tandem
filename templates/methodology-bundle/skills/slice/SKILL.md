@@ -101,7 +101,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
    - `files` / `parallel_group`: the slice's **machine-readable file set** (repo-relative paths it will edit) and, when it runs concurrently with siblings, the **named group** they share. The server refuses a `parallel_group` whose members' `files` overlap — surface that refusal verbatim, then re-cut the slices file-disjoint (or sequence them with `depends_on`).
    - `docs`: the **documentation obligation** (TEP-tgh6iy). Default `required` — any **user-facing** slice (a feature, CLI, API, config surface, install/upgrade step, or template behavior a user can observe) must update its doc module to reach Done. Pass `docs: "n/a"` **with a one-line `docs_reason`** for work that changes nothing observable (internal refactor, test-only, infra) — the server rejects an `n/a` with no reason, so skipping docs is always a visible, deliberate choice. Default to `required` when unsure (fail closed).
 
-7. **Commit, then report.** Commit **and push** the new slice files to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the slice count and the next step: `/pair-start {n}` to begin working them.
+7. **Commit, then report.** Commit **and push** the new slice files to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the slice count and the next step: advance the Spec's slices from the board (the Orchestrate command).
 
 ## Constraints
 
@@ -120,7 +120,7 @@ The parent Spec is your scope — gather only what it doesn't already give you:
    wrote:   SP-{n}_SL-1 … SP-{n}_SL-{m}  (<count> slices, all status: ready)
    at:      specs/SP-{n}/SL-*.md
    ac-coverage: <covered>/<total> ✔
-   next:    /pair-start {n}
+   next:    advance from the board (Orchestrate)
 ```
 
 ## Safety / fallback

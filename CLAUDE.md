@@ -103,7 +103,7 @@ Skills (this bundle):
 
 - `/spec-prepare` — author a Spec's body (acceptance criteria come from you).
 - `/slice` — decompose a Spec into coherent slices (writes `SL-{n}.md` files directly; no issue minting).
-- `/pair-start`, `/pair-next`, `/board`, `/retro` — pair-programming orchestration over the workflow.
+- `/board`, `/retro` — board snapshot + retro journaling. Advancing a Spec's slices is **board-driven** (the Orchestrate command, SP-tgs8nz), not a chat skill; the legacy `/pair-start` + `/pair-next` are retired and their UI-driven replacement is under design.
 
 Subagents (this bundle):
 

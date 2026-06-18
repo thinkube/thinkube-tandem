@@ -60,12 +60,9 @@ export function registerWorktreeCommands(
             baseDir,
             boardRoot,
           );
-          // Context-aware (SP-9): only drop into /pair-start when there's open
-          // work; a finished Spec opens a plain session.
-          await deps.launcher.openHere(
-            vscode.Uri.file(worktreePath),
-            node.hasOpenWork ? `/pair-start ${n} ` : undefined,
-          );
+          // Open a plain session rooted in the worktree; advancing the Spec's
+          // slices is board-driven (the Orchestrate command), not a chat skill.
+          await deps.launcher.openHere(vscode.Uri.file(worktreePath));
         } catch (err) {
           vscode.window.showErrorMessage(
             `Start Spec SP-${n} failed: ${(err as Error).message}`,

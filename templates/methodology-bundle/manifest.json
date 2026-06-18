@@ -43,16 +43,6 @@
       "kind": "copy"
     },
     {
-      "source": "skills/pair-start/SKILL.md",
-      "target": ".claude/skills/pair-start/SKILL.md",
-      "kind": "copy"
-    },
-    {
-      "source": "skills/pair-next/SKILL.md",
-      "target": ".claude/skills/pair-next/SKILL.md",
-      "kind": "copy"
-    },
-    {
       "source": "skills/board/SKILL.md",
       "target": ".claude/skills/board/SKILL.md",
       "kind": "copy"
