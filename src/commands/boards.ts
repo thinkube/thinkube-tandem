@@ -82,6 +82,12 @@ export function registerBoardCommands(
     vscode.commands.registerCommand("thinkube.boards.open", (r: RepoEntry) =>
       openBoardFor(context, deps, r),
     ),
+    // Spec-scoped board: a single Spec's slices + DAG graph (SP-tgs8nz). Invoked
+    // by clicking a Spec in the Specs view.
+    vscode.commands.registerCommand(
+      "thinkube.specs.openKanban",
+      (r: RepoEntry, specId: string) => openBoardFor(context, deps, r, specId),
+    ),
     vscode.commands.registerCommand("thinkube.boards.enable", (r: RepoEntry) =>
       enableHere(deps, r),
     ),
@@ -160,11 +166,16 @@ async function openBoardFor(
   context: vscode.ExtensionContext,
   deps: BoardDeps,
   r: RepoEntry,
+  specFilter?: string,
 ): Promise<void> {
   const store = new ThinkubeStore(r.path, r.boardDir);
   store.activate();
   context.subscriptions.push(store);
-  const adapter = new ThinkubeFilesAdapter(store, r.name);
+  const adapter = new ThinkubeFilesAdapter(
+    store,
+    specFilter ? `SP-${specFilter}` : r.name,
+    specFilter,
+  );
   adapter.watchExternal();
   await KanbanPanel.open({
     extensionUri: deps.extensionUri,

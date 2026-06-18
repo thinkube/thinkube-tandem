@@ -265,6 +265,12 @@ export function activate(context: vscode.ExtensionContext) {
         tepsView.description = repo.name;
       }
     }),
+    // Drill-down (SP-tgs8nz): selecting a TEP filters the Specs view to that
+    // TEP's Specs, so the flow is space → TEP → its Specs → a Spec's kanban+graph.
+    tepsView.onDidChangeSelection((e) => {
+      const node = e.selection[0];
+      if (node?.kind === "tep") specsProvider.setTepFilter(node.tepId);
+    }),
     // Auto-refresh the navigator when its discovery inputs change. Discovery
     // (discoverRepos) depends on `thinkube.boards.root` and the workspace-folder
     // layout (each folder name is a namespace's container segment). Without

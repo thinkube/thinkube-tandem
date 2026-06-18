@@ -80,6 +80,9 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
   /** Whether archived specs are shown (TEP-tg86v7); default hides them. */
   private showArchived = false;
 
+  /** Drill-down: when set, list only Specs implementing this TEP id (SP-tgs8nz). */
+  private tepFilter: string | undefined;
+
   /** The currently-scoped thinking space — the "+ New Spec" command roots its
    *  session here and mints the id from its board. */
   get repoEntry(): RepoEntry | undefined {
@@ -91,6 +94,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     if (this.repo?.path === repo?.path && this.repo?.enabled === repo?.enabled)
       return;
     this.repo = repo;
+    this.tepFilter = undefined; // a new space → no TEP drill-down yet
     this.refresh();
   }
 
@@ -98,6 +102,14 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
   setShowArchived(value: boolean): void {
     if (this.showArchived === value) return;
     this.showArchived = value;
+    this.refresh();
+  }
+
+  /** Drill-down to a single TEP's Specs (undefined = all Specs of the space). */
+  setTepFilter(tepId: string | undefined): void {
+    const next = tepId || undefined;
+    if (this.tepFilter === next) return;
+    this.tepFilter = next;
     this.refresh();
   }
 
@@ -162,6 +174,9 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         typeof doc?.frontmatter?.implements === "string"
           ? doc.frontmatter.implements.trim()
           : "";
+      // Drill-down: when a TEP is selected, list only the Specs implementing it.
+      if (this.tepFilter && impl.replace(/^TEP-/i, "") !== this.tepFilter)
+        continue;
       let implementsTep: ImplementsLink | undefined;
       if (impl) {
         const tepId = impl.replace(/^TEP-/i, "");
@@ -254,10 +269,11 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       : node.hasOpenWork
         ? "spec-open"
         : "spec-done";
+    // Click a Spec → open its scoped kanban + DAG graph (SP-tgs8nz).
     item.command = {
-      command: "vscode.open",
-      title: "Open spec",
-      arguments: [vscode.Uri.file(node.file)],
+      command: "thinkube.specs.openKanban",
+      title: "Open Spec kanban",
+      arguments: [this.repo, node.specNumber],
     };
     return item;
   }

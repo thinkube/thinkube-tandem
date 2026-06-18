@@ -41,6 +41,8 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
   constructor(
     private readonly store: ThinkubeStore,
     readonly scope: string,
+    /** When set, the board is scoped to a single Spec (its slices + meta only). */
+    private readonly specFilter?: string,
   ) {}
 
   /** Begin reflecting external `.thinkube/` edits into the board. Idempotent. */
@@ -62,7 +64,10 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
     // Spec (specs are few).
     const reqHashBySpec = new Map<string, string>();
     const specMeta = new Map<string, SpecMeta>();
-    for (const specNumber of await this.store.listSpecDirs()) {
+    const specDirs = this.specFilter
+      ? [this.specFilter]
+      : await this.store.listSpecDirs();
+    for (const specNumber of specDirs) {
       const doc = await this.store.getFile(
         this.store.pathForSpecDoc(specNumber),
       );
@@ -76,7 +81,7 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
     const coords = await detectRepoCoords(this.store.workspaceRoot);
 
     const inputs: SliceInput[] = [];
-    for (const rel of await this.store.listSlices()) {
+    for (const rel of await this.store.listSlices(this.specFilter)) {
       const m = SLICE_PATH_RE.exec(rel);
       if (!m) continue;
       const specNumber = m[1];
