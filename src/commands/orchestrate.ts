@@ -87,22 +87,23 @@ export function registerOrchestrateCommands(
           baseDir,
         });
         output.show(true);
-        const r = await orchestrator.dispatchNext(spec);
-        if (!r.dispatched) {
+        const cap =
+          vscode.workspace
+            .getConfiguration("thinkube.orchestrator")
+            .get<number>("maxConcurrent") ?? 4;
+        const results = await orchestrator.dispatchFrontier(spec, cap);
+        if (results.length === 0) {
           vscode.window.showInformationMessage(
-            `SP-${spec}: nothing dispatched — ${r.reason ?? "no Ready slice"}.`,
-          );
-        } else if (r.advanced) {
-          vscode.window.showInformationMessage(
-            `${r.handle}: worker succeeded, verified green → advanced to Done.`,
-          );
-        } else if (r.success && r.verified === false) {
-          vscode.window.showWarningMessage(
-            `${r.handle}: worker succeeded but the verifier was red — left in Doing.`,
+            `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied slice.`,
           );
         } else {
-          vscode.window.showWarningMessage(
-            `${r.handle}: worker did not succeed — left in flight.`,
+          const advanced = results.filter((r) => r.advanced).length;
+          const stuck = results.filter(
+            (r) => r.success && r.verified === false,
+          ).length;
+          vscode.window.showInformationMessage(
+            `SP-${spec}: dispatched ${results.length}, advanced ${advanced}` +
+              (stuck ? `, ${stuck} verifier-red (left in Doing)` : ""),
           );
         }
       } catch (err) {

@@ -32,7 +32,12 @@ function fakeWorker(line: string): SpawnedWorker {
 }
 
 interface FakeFiles {
-  [rel: string]: { status?: string; depends_on?: string[]; files?: string[] };
+  [rel: string]: {
+    status?: string;
+    depends_on?: string[];
+    files?: string[];
+    work_units?: { footprint: string[]; execution: string }[];
+  };
 }
 
 function makeDeps(
@@ -45,6 +50,7 @@ function makeDeps(
     released: string[];
     advanced: string[];
     created: number;
+    log: string[];
   };
 } {
   const calls = {
@@ -52,6 +58,7 @@ function makeDeps(
     released: [] as string[],
     advanced: [] as string[],
     created: 0,
+    log: [] as string[],
   };
   const deps: OrchestratorDeps = {
     store: {
@@ -83,7 +90,9 @@ function makeDeps(
         return "/tmp/wt/SP-1";
       },
     } as unknown as OrchestratorDeps["worktrees"],
-    output: { appendLine: () => {} } as unknown as OrchestratorDeps["output"],
+    output: {
+      appendLine: (l: string) => calls.log.push(l),
+    } as unknown as OrchestratorDeps["output"],
     canonicalRepo: "/repo",
     spawnWorker: () =>
       fakeWorker(
@@ -164,4 +173,43 @@ test("dispatchNext: a worker with no success result → success:false (still rel
   assert.equal(r.dispatched, true);
   assert.equal(r.success, false);
   assert.deepEqual(calls.released, ["SP-1_SL-1"]);
+});
+
+test("dispatchFrontier: runs all footprint-disjoint ready slices and advances each", async () => {
+  const { deps, calls } = makeDeps({
+    "specs/SP-1/SL-1.md": { status: "ready", files: ["src/a.ts"] },
+    "specs/SP-1/SL-2.md": { status: "ready", files: ["src/b.ts"] },
+  });
+  const rs = await new OrchestratorService(deps).dispatchFrontier("1", 4);
+  assert.equal(rs.length, 2);
+  assert.ok(rs.every((r) => r.advanced));
+  assert.deepEqual(calls.advanced.sort(), ["SP-1_SL-1", "SP-1_SL-2"]);
+});
+
+test("dispatchFrontier: footprint-overlapping ready slices → only the first runs", async () => {
+  const { deps, calls } = makeDeps({
+    "specs/SP-1/SL-1.md": { status: "ready", files: ["src/shared.ts"] },
+    "specs/SP-1/SL-2.md": { status: "ready", files: ["src/shared.ts"] },
+  });
+  const rs = await new OrchestratorService(deps).dispatchFrontier("1", 4);
+  assert.equal(rs.length, 1); // SL-2 deferred for footprint overlap
+  assert.deepEqual(calls.advanced, ["SP-1_SL-1"]);
+});
+
+test("dispatchSlice: a slice's work units batch into execution units in one session (AC6)", async () => {
+  const { deps, calls } = makeDeps({
+    "specs/SP-1/SL-1.md": {
+      status: "ready",
+      files: ["src/a.ts"],
+      work_units: [
+        { footprint: ["src/a.ts"], execution: "serial" },
+        { footprint: ["src/b.ts"], execution: "serial" },
+        { footprint: ["src/c.ts"], execution: "fan-out" },
+      ],
+    },
+  });
+  await new OrchestratorService(deps).dispatchFrontier("1", 4);
+  const batchLine = calls.log.find((l) => l.includes("execution unit"));
+  assert.ok(batchLine, "should log the execution-unit batch plan");
+  assert.match(batchLine!, /3 work unit\(s\) → 2 execution unit\(s\)/);
 });

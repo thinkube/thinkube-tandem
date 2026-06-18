@@ -16,11 +16,25 @@ import type { OwnershipArbiter } from "./OwnershipArbiter";
 import type { ThinkubeStore } from "../store/ThinkubeStore";
 import {
   pickNextSlice,
+  pickFrontier,
+  selectDisjoint,
+  runWithConcurrency,
+  batchExecutionUnits,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
   type SliceRow,
+  type WorkUnit,
 } from "./orchestratorCore";
+
+/** Per-slice dispatch metadata derived from frontmatter. */
+interface SliceMeta {
+  num: number;
+  /** Disjointness footprint = declared files ∪ work-unit footprints. */
+  files: string[];
+  /** Raw work units (SP-tgs8gb) for economy batching (AC6). */
+  workUnits: WorkUnit[];
+}
 
 const SLICE_REL_RE = /specs\/SP-(.+?)\/SL-(\d+)\.md$/;
 
@@ -65,13 +79,14 @@ export interface DispatchResult {
 export class OrchestratorService {
   constructor(private readonly deps: OrchestratorDeps) {}
 
-  /** Dispatch the next Ready+deps-satisfied slice of `specNumber`, if any. */
-  async dispatchNext(specNumber: string): Promise<DispatchResult> {
-    const { store, arbiter, worktrees, output } = this.deps;
-
-    // 1. Read the Spec's slices → rows + a handle→frontmatter index.
+  /** Read the Spec's slices → rows + a handle→{num, footprint} index. */
+  private async buildRows(specNumber: string): Promise<{
+    rows: SliceRow[];
+    byHandle: Map<string, SliceMeta>;
+  }> {
+    const { store } = this.deps;
     const rows: SliceRow[] = [];
-    const byHandle = new Map<string, { num: number; files: string[] }>();
+    const byHandle = new Map<string, SliceMeta>();
     for (const rel of await store.listSlices(specNumber)) {
       const m = SLICE_REL_RE.exec(rel);
       if (!m) continue;
@@ -85,23 +100,67 @@ export class OrchestratorService {
           ? (fm!.depends_on as string[])
           : [],
       });
+      // Footprint for disjointness = declared files ∪ work-unit footprints (SP-tgs8gb).
+      const files = Array.isArray(fm?.files) ? (fm!.files as string[]) : [];
+      const workUnits = Array.isArray(fm?.work_units)
+        ? (fm!.work_units as WorkUnit[])
+        : [];
+      const wuFootprints = workUnits.flatMap((w) => w.footprint ?? []);
       byHandle.set(handle, {
         num,
-        files: Array.isArray(fm?.files) ? (fm!.files as string[]) : [],
+        files: [...files, ...wuFootprints],
+        workUnits,
       });
     }
+    return { rows, byHandle };
+  }
 
-    // 2. Pick (pure).
+  /** Dispatch the next Ready+deps-satisfied slice of `specNumber`, if any. */
+  async dispatchNext(specNumber: string): Promise<DispatchResult> {
+    const { rows, byHandle } = await this.buildRows(specNumber);
     const handle = pickNextSlice(rows);
     if (!handle) {
-      output.appendLine(
+      this.deps.output.appendLine(
         `▸ SP-${specNumber}: no Ready slice with satisfied deps.`,
       );
       return { dispatched: false, reason: "no dispatchable slice" };
     }
-    const picked = byHandle.get(handle)!;
+    return this.dispatchSlice(handle, byHandle.get(handle)!, specNumber);
+  }
 
-    // 3. Claim its declared files (atomic; skip on conflict).
+  /**
+   * Dispatch the **ready frontier** of `specNumber`: every Ready+deps-satisfied slice, narrowed
+   * to a footprint-disjoint subset, run with at most `cap` concurrent `claude -p` workers (AC3);
+   * a wider frontier queues and drains as slots free. Returns one result per dispatched slice.
+   */
+  async dispatchFrontier(
+    specNumber: string,
+    cap: number,
+  ): Promise<DispatchResult[]> {
+    const { rows, byHandle } = await this.buildRows(specNumber);
+    const frontier = pickFrontier(rows);
+    const disjoint = selectDisjoint(
+      frontier.map((h) => ({ handle: h, footprint: byHandle.get(h)!.files })),
+    );
+    const deferred = frontier.length - disjoint.length;
+    this.deps.output.appendLine(
+      `▸ SP-${specNumber}: frontier ${frontier.length}, running ${disjoint.length} disjoint (cap ${cap})` +
+        (deferred ? `, ${deferred} deferred for footprint overlap` : ""),
+    );
+    return runWithConcurrency(disjoint, cap, (handle) =>
+      this.dispatchSlice(handle, byHandle.get(handle)!, specNumber),
+    );
+  }
+
+  /** Claim → worktree → spawn → verify → advance → release, for one picked slice. */
+  private async dispatchSlice(
+    handle: string,
+    picked: SliceMeta,
+    specNumber: string,
+  ): Promise<DispatchResult> {
+    const { arbiter, worktrees, output } = this.deps;
+
+    // Claim its footprint (atomic; skip on conflict).
     const claim = await arbiter.acquire(handle, picked.files);
     if (!claim.ok) {
       const who = claim.conflicts
@@ -112,7 +171,7 @@ export class OrchestratorService {
     }
 
     try {
-      // 4. Ensure the Spec's worktree (board-injected).
+      // Ensure the Spec's worktree (board-injected).
       const worktreePath = await worktrees.create(
         this.deps.canonicalRepo,
         specNumber,
@@ -121,7 +180,18 @@ export class OrchestratorService {
       );
       output.appendLine(`▸ dispatching ${handle} in ${worktreePath}`);
 
-      // 5. Spawn the worker; stream its JSON-log events.
+      // Economy batching (AC6): the slice's work units share this one worker session —
+      // one cold-start amortized across its execution units, never spanning slices.
+      if (picked.workUnits.length) {
+        const eu = batchExecutionUnits(picked.workUnits);
+        output.appendLine(
+          `  ${picked.workUnits.length} work unit(s) → ${eu.length} execution unit(s) [${eu
+            .map((u) => u.shape)
+            .join(", ")}] in one session`,
+        );
+      }
+
+      // Spawn the worker; stream its JSON-log events.
       const success = await this.runWorker(
         handle,
         specNumber,
@@ -136,7 +206,7 @@ export class OrchestratorService {
       }
       output.appendLine(`✓ ${handle}: worker reported success — verifying…`);
 
-      // 6. Verify at slice grain in the worktree; advance only on green.
+      // Verify at slice grain in the worktree; advance only on green.
       const verify = this.deps.verify ?? ((cwd) => this.defaultVerify(cwd));
       const verified = await verify(worktreePath);
       if (!verified) {

@@ -8,10 +8,15 @@ import assert from "node:assert/strict";
 
 import {
   pickNextSlice,
+  pickFrontier,
+  selectDisjoint,
+  runWithConcurrency,
+  batchExecutionUnits,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
   type SliceRow,
+  type WorkUnit,
 } from "./orchestratorCore";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
@@ -94,4 +99,62 @@ test("isResultSuccess: success vs error", () => {
     false,
   );
   assert.equal(isResultSuccess({ type: "assistant" }), false);
+});
+
+test("pickFrontier: returns ALL dispatchable slices in order (not just the head)", () => {
+  const rows: SliceRow[] = [
+    { handle: "SP-1_SL-1", status: "done", dependsOn: [] },
+    { handle: "SP-1_SL-2", status: "ready", dependsOn: ["SP-1_SL-1"] },
+    { handle: "SP-1_SL-3", status: "ready", dependsOn: ["SP-1_SL-99"] }, // blocked
+    { handle: "SP-1_SL-4", status: "ready", dependsOn: [] },
+  ];
+  assert.deepEqual(pickFrontier(rows), ["SP-1_SL-2", "SP-1_SL-4"]);
+  assert.equal(pickNextSlice(rows), "SP-1_SL-2"); // still the head
+});
+
+test("selectDisjoint: skips a candidate whose footprint overlaps an earlier pick", () => {
+  const picked = selectDisjoint([
+    { handle: "A", footprint: ["src/a.ts"] },
+    { handle: "B", footprint: ["src/a.ts", "src/b.ts"] }, // overlaps A
+    { handle: "C", footprint: ["src/c.ts"] },
+  ]);
+  assert.deepEqual(picked, ["A", "C"]);
+});
+
+test("runWithConcurrency: never exceeds the cap, processes all, preserves order", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const worker = async (n: number) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((r) => setImmediate(r));
+    inFlight--;
+    return n * 2;
+  };
+  const out = await runWithConcurrency([0, 1, 2, 3, 4], 2, worker);
+  assert.deepEqual(out, [0, 2, 4, 6, 8]);
+  assert.ok(maxInFlight <= 2, `maxInFlight ${maxInFlight} should be ≤ 2`);
+});
+
+test("runWithConcurrency: cap floors to ≥1 and handles empty input", async () => {
+  assert.deepEqual(await runWithConcurrency([], 4, async (x) => x), []);
+  assert.deepEqual(
+    await runWithConcurrency([1, 2], 0, async (x) => x * 10),
+    [10, 20],
+  );
+});
+
+test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay separate", () => {
+  const units: WorkUnit[] = [
+    { footprint: ["a"], execution: "serial" },
+    { footprint: ["b"], execution: "serial" },
+    { footprint: ["c"], execution: "mechanize" },
+    { footprint: ["d"], execution: "fan-out" },
+    { footprint: ["e"], execution: "fan-out" },
+  ];
+  const eu = batchExecutionUnits(units);
+  assert.equal(eu.length, 4); // 1 serial batch + 1 mechanize + 2 fan-out
+  assert.equal(eu[0].shape, "serial");
+  assert.equal(eu[0].units.length, 2);
+  assert.deepEqual(eu.filter((u) => u.shape === "fan-out").length, 2);
 });

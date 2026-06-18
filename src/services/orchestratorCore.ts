@@ -22,15 +22,96 @@ export interface SliceRow {
  * concurrency cap is the shell's concern, not this picker's.
  */
 export function pickNextSlice(rows: SliceRow[]): string | null {
+  return pickFrontier(rows)[0] ?? null;
+}
+
+/**
+ * The **ready frontier**: every dispatchable slice (status **ready** with every `dependsOn`
+ * **done**), in input order. SL-2's bounded fan-out runs a footprint-disjoint subset of this
+ * up to the per-Spec concurrency cap; SL-1's `pickNextSlice` is just its width-1 head.
+ */
+export function pickFrontier(rows: SliceRow[]): string[] {
   const statusOf = new Map(
     rows.map((r) => [r.handle, (r.status ?? "").toLowerCase()]),
   );
-  for (const r of rows) {
-    if ((r.status ?? "").toLowerCase() !== "ready") continue;
-    const blocked = (r.dependsOn ?? []).some((d) => statusOf.get(d) !== "done");
-    if (!blocked) return r.handle;
+  return rows
+    .filter((r) => (r.status ?? "").toLowerCase() === "ready")
+    .filter((r) => !(r.dependsOn ?? []).some((d) => statusOf.get(d) !== "done"))
+    .map((r) => r.handle);
+}
+
+/**
+ * Greedy **footprint-disjoint** subset of frontier candidates (input order): take a candidate
+ * iff its footprint shares no path with any already-taken one. Two slices that would touch the
+ * same file are never dispatched concurrently — the ownership arbiter enforces this at runtime,
+ * this pre-selects so we don't even spawn a doomed worker.
+ */
+export function selectDisjoint(
+  items: { handle: string; footprint: string[] }[],
+): string[] {
+  const taken = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    const fp = it.footprint ?? [];
+    if (fp.some((f) => taken.has(f))) continue;
+    fp.forEach((f) => taken.add(f));
+    out.push(it.handle);
   }
-  return null;
+  return out;
+}
+
+/**
+ * Run `worker` over `items` with at most `cap` (≥1) in flight; a wider set **queues** and
+ * drains as slots free (AC3 — the per-Spec `claude -p` cap). Results are returned in input
+ * order; a worker that throws rejects the whole run (callers wrap per-item as needed).
+ */
+export async function runWithConcurrency<T, R>(
+  items: T[],
+  cap: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const limit = Math.max(1, Math.floor(cap));
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runner = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => runner()),
+  );
+  return results;
+}
+
+export interface WorkUnit {
+  footprint: string[];
+  depends_on?: string[];
+  execution: "serial" | "mechanize" | "fan-out";
+}
+
+export interface ExecutionUnit {
+  shape: "serial" | "mechanize" | "fan-out";
+  units: WorkUnit[];
+}
+
+/**
+ * Batch one slice's work units into **execution units** to amortize `claude -p` cold-start
+ * (AC6): all `serial` units collapse into ONE execution unit (a single warm session, run in
+ * order); each `mechanize` (codemod-once) and each `fan-out` (parallel-eligible) unit is its
+ * own execution unit. Never spans slices — the caller passes a single slice's units, so
+ * cross-slice economy can only come from warm-session reuse, never from merging slices.
+ */
+export function batchExecutionUnits(units: WorkUnit[]): ExecutionUnit[] {
+  const out: ExecutionUnit[] = [];
+  const serial = units.filter((u) => u.execution === "serial");
+  if (serial.length) out.push({ shape: "serial", units: serial });
+  for (const u of units.filter((u) => u.execution === "mechanize"))
+    out.push({ shape: "mechanize", units: [u] });
+  for (const u of units.filter((u) => u.execution === "fan-out"))
+    out.push({ shape: "fan-out", units: [u] });
+  return out;
 }
 
 /**
