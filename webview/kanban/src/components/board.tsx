@@ -3,30 +3,49 @@
  * list), minus the drawer / theme switcher / fork-me / toasts. Columns are the
  * fixed methodology workflow, so only tasks drag.
  */
+import { useState } from "react";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import styles from "./board.module.scss";
 import { ColumnList } from "./column-list";
+import { GraphView } from "./graph";
 import { useGlobalState } from "../utils/context";
 import { handleDragEnd } from "../utils/drag";
 import { ModeFlag } from "../types";
 
 export function Board({ mode }: { mode: ModeFlag }): JSX.Element {
   const { state, setState } = useGlobalState();
+  const [view, setView] = useState<"board" | "graph">("board");
   const onDragEnd = (result: DropResult) =>
     handleDragEnd(result, state, setState);
-  return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className={styles.board}>
-        <header className={styles.header}>
-          <h1>{state.scope || "Thinkube Kanban"}</h1>
-          <span className="grow" />
-          <ModeBadge mode={mode} />
-        </header>
-        <main className={styles.main}>
+  const inner = (
+    <div className={styles.board}>
+      <header className={styles.header}>
+        <h1>{state.scope || "Thinkube Kanban"}</h1>
+        <span className="grow" />
+        <button
+          type="button"
+          onClick={() => setView(view === "board" ? "graph" : "board")}
+          style={{ marginRight: 12, cursor: "pointer" }}
+          title="Toggle the board / control-center graph"
+        >
+          {view === "board" ? "Graph" : "Board"}
+        </button>
+        <ModeBadge mode={mode} />
+      </header>
+      <main className={styles.main}>
+        {view === "graph" ? (
+          <GraphView />
+        ) : (
           <ColumnList columns={state.columns} />
-        </main>
-      </div>
-    </DragDropContext>
+        )}
+      </main>
+    </div>
+  );
+  // The graph is static; only the board's columns need the drag context.
+  return view === "graph" ? (
+    inner
+  ) : (
+    <DragDropContext onDragEnd={onDragEnd}>{inner}</DragDropContext>
   );
 }
 

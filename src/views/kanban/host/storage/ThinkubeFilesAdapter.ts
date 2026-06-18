@@ -104,6 +104,7 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
         parallelGroup: fm.parallel_group,
         assignee: fm.assignee,
         files: fm.files,
+        dependsOn: Array.isArray(fm.depends_on) ? fm.depends_on : undefined,
       });
     }
     return buildSliceBoard(inputs, this.scope, specMeta);

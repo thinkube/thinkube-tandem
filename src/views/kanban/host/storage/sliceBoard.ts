@@ -164,6 +164,8 @@ export interface SliceInput {
   assignee?: string;
   /** Slice frontmatter `files` — the declared machine-readable file set. */
   files?: string[];
+  /** Slice frontmatter `depends_on` — dependency handles (slice-DAG edges). */
+  dependsOn?: string[];
 }
 
 /**
@@ -249,6 +251,7 @@ export function buildSliceBoard(
       commit: s.commit,
       commitUrl: s.commitUrl,
       pr: s.pr,
+      dependsOn: s.dependsOn,
     };
     tasks[id] = card;
     byColumn.get(columnId)?.push(id);

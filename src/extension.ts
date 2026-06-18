@@ -35,6 +35,7 @@ import {
 import { ClaudeConfigService } from "./services/ClaudeConfigService";
 import { LauncherService } from "./services/LauncherService";
 import { SessionLinkService } from "./services/SessionLinkService";
+import { initSessions } from "./services/orchestratorSessions";
 import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
 import { SpecsProvider } from "./views/boards/SpecsProvider";
@@ -342,6 +343,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Board orchestrator (SP-tgs8nz_SL-1): dispatch a Spec's next Ready slice to a
   // `claude -p` worker in its worktree. Consumes the (async-built) ownership arbiter
   // via a getter so it's read at invoke time.
+  // Persist orchestrator session logs (the .jsonl the control-center float-out renders).
+  initSessions(
+    nodePath.join(context.globalStorageUri.fsPath, "orchestrator-sessions"),
+  );
   registerOrchestrateCommands(context, {
     specsProvider,
     getArbiter: () => ownershipArbiter,

@@ -9,10 +9,14 @@ import * as vscode from "vscode";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { WorktreeService } from "../services/WorktreeService";
 import { OrchestratorService } from "../services/OrchestratorService";
+import * as fs from "node:fs";
 import {
   extractDiagnosis,
   buildAttendPrompt,
+  StreamJsonBuffer,
+  summarizeEvent,
 } from "../services/orchestratorCore";
+import { sessionLogPath } from "../services/orchestratorSessions";
 import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
 import type { SpecsProvider } from "../views/boards/SpecsProvider";
@@ -209,10 +213,10 @@ async function pickAttentionSlice(
 }
 
 /**
- * Float a running session into a separate webview panel beside the editor (SP-tgs8nz AC7) —
- * the user can then "Move into New Window" onto a second monitor. On code-server, where the
- * auxiliary-window route is unreliable, this beside-panel IS the dedicated-window fallback.
- * The live JSON-log stream renders here; wiring its content source is the visual-verdict part.
+ * Float a running (or finished) session into a webview panel beside the editor (SP-tgs8nz
+ * AC7) — the user can "Move into New Window" onto a second monitor; on code-server, where the
+ * aux-window route is unreliable, this beside-panel IS the dedicated-window fallback. It
+ * renders the session's persisted `.jsonl` and live-tails it while the worker streams.
  */
 function floatOutSession(
   context: vscode.ExtensionContext,
@@ -225,7 +229,48 @@ function floatOutSession(
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
     { retainContextWhenHidden: true },
   );
-  const safe = title.replace(/[&<>]/g, "");
-  panel.webview.html = `<!doctype html><html><head><meta charset="utf-8"><style>body{font:13px var(--vscode-editor-font-family,monospace);padding:8px;color:var(--vscode-foreground)}h1{font-size:13px;opacity:.7}#log{white-space:pre-wrap}</style></head><body><h1>${safe}</h1><div id="log">Live JSON-log renders here. Use the editor's “Move into New Window” to place it on a second monitor.</div></body></html>`;
+  const logPath = handle ? sessionLogPath(handle) : undefined;
+
+  const render = () => {
+    const lines: string[] = [];
+    if (logPath) {
+      try {
+        const buf = new StreamJsonBuffer();
+        for (const evt of buf.push(fs.readFileSync(logPath, "utf8"))) {
+          const s = summarizeEvent(evt);
+          if (s) lines.push(s);
+        }
+      } catch {
+        /* file not ready yet */
+      }
+    }
+    const body = lines.length
+      ? lines.map(esc).join("\n")
+      : logPath
+        ? "Waiting for session output…"
+        : "No session log for this slice yet — run it via “Orchestrate Next Slice”.";
+    panel.webview.html = sessionHtml(esc(title), body);
+  };
+
+  render();
+  let watcher: fs.FSWatcher | undefined;
+  if (logPath) {
+    try {
+      watcher = fs.watch(logPath, () => render());
+    } catch {
+      /* best-effort — the panel still shows what's there */
+    }
+  }
+  panel.onDidDispose(() => watcher?.close());
   context.subscriptions.push(panel);
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>]/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;",
+  );
+}
+
+function sessionHtml(title: string, body: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>body{font:13px var(--vscode-editor-font-family,monospace);padding:8px;color:var(--vscode-foreground)}h1{font-size:13px;opacity:.7}#log{white-space:pre-wrap}.hint{opacity:.5}</style></head><body><h1>${title}</h1><div id="log">${body}</div><p class="hint">Use the editor's “Move into New Window” to place this on a second monitor.</p></body></html>`;
 }

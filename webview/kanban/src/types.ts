@@ -57,6 +57,10 @@ export interface TaskCard {
   /** Close card only: slices Done / total, for the progress line. */
   slicesDone?: number;
   slicesTotal?: number;
+  /** Dependency handles (slice-DAG edges) for the control-center graph (SP-tgs8nz). */
+  dependsOn?: string[];
+  /** A live `claude -p` worker is running on this slice — graph running tag. */
+  running?: boolean;
 }
 
 export interface BoardColumn {
@@ -93,7 +97,9 @@ export type WebviewMessage =
   /** Open a commit/PR link in the user's browser (host guards to http(s)). */
   | { kind: "open-external"; url: string }
   /** Accept a Spec (TEP-0010): host runs the gate + accept_spec, then merges the PR. */
-  | { kind: "accept-spec"; spec: string };
+  | { kind: "accept-spec"; spec: string }
+  /** Float a running session out into a panel (clicked on the control-center graph). */
+  | { kind: "float-out"; handle: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 

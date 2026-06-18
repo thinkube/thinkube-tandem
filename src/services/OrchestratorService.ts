@@ -26,6 +26,11 @@ import {
   type SliceRow,
   type WorkUnit,
 } from "./orchestratorCore";
+import {
+  startSession,
+  appendSession,
+  endSession,
+} from "./orchestratorSessions";
 
 /** Per-slice dispatch metadata derived from frontmatter. */
 interface SliceMeta {
@@ -195,7 +200,9 @@ export class OrchestratorService {
         );
       }
 
-      // Spawn the worker; stream its JSON-log events.
+      // Spawn the worker; stream its JSON-log events. Mark the session live (and
+      // persist its `.jsonl`) so the control-center graph flags it + can float it out.
+      startSession(handle);
       const success = await this.runWorker(
         handle,
         specNumber,
@@ -250,6 +257,8 @@ export class OrchestratorService {
         advanced: true,
       };
     } finally {
+      // The worker is no longer live — clear its running flag (the .jsonl persists).
+      endSession(handle);
       // Release the claim regardless — the slice's lifecycle (→ Done) is gated
       // elsewhere (the verifier + AC gate / SL-3 on failure), not forced here.
       await arbiter.release(handle);
@@ -281,7 +290,9 @@ export class OrchestratorService {
     let success = false;
     return new Promise<boolean>((resolve) => {
       proc.stdout.on("data", (chunk) => {
-        for (const evt of buf.push(chunk.toString())) {
+        const text = chunk.toString();
+        appendSession(handle, text); // persist the raw stream to the session .jsonl
+        for (const evt of buf.push(text)) {
           const line = summarizeEvent(evt);
           if (line) this.deps.output.appendLine(`  ${line}`);
           if (isResultSuccess(evt)) success = true;

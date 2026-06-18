@@ -22,7 +22,17 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { StorageAdapter } from "./StorageAdapter";
-import { HostMessage, ModeFlag, WebviewMessage } from "./types";
+import {
+  Board,
+  HostMessage,
+  ModeFlag,
+  TaskCard,
+  WebviewMessage,
+} from "./types";
+import {
+  runningSessions,
+  onSessionsChange,
+} from "../../../services/orchestratorSessions";
 
 interface PanelDeps {
   extensionUri: vscode.Uri;
@@ -117,6 +127,8 @@ export class KanbanPanel implements vscode.Disposable {
     this.disposables.push(
       this.panel.onDidDispose(() => this.dispose()),
       this.panel.webview.onDidReceiveMessage((m) => this.handle(m)),
+      // Re-post when a worker starts/stops so the graph's running tags update live.
+      { dispose: onSessionsChange(() => void this.refreshRunning()) },
     );
     if (this.adapter.onExternalChange) {
       this.disposables.push(
@@ -240,6 +252,18 @@ export class KanbanPanel implements vscode.Disposable {
         }
         break;
       }
+      case "float-out":
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.floatOutSession",
+            message.handle,
+          );
+        } catch (err) {
+          this.log(
+            `float-out ${message.handle} failed: ${(err as Error).message}`,
+          );
+        }
+        break;
       case "notify":
         this.notify(message.level, message.text);
         break;
@@ -249,7 +273,33 @@ export class KanbanPanel implements vscode.Disposable {
   }
 
   private post(message: HostMessage): void {
-    this.panel.webview.postMessage(message);
+    // Overlay live-worker flags so the control-center graph can tag running slices.
+    const out =
+      "board" in message
+        ? { ...message, board: this.withRunning(message.board) }
+        : message;
+    this.panel.webview.postMessage(out);
+  }
+
+  /** Flag tasks whose slice has a live `claude -p` worker (SP-tgs8nz SL-4). */
+  private withRunning(board: Board): Board {
+    const live = new Set(runningSessions());
+    if (live.size === 0) return board;
+    const tasks: Record<string, TaskCard> = {};
+    for (const [id, t] of Object.entries(board.tasks)) {
+      tasks[id] = live.has(id) ? { ...t, running: true } : t;
+    }
+    return { ...board, tasks };
+  }
+
+  /** Re-post the board when the running set changes, so graph tags appear/clear live. */
+  private async refreshRunning(): Promise<void> {
+    try {
+      const board = await this.adapter.load();
+      this.post({ kind: "state", board, mode: readMode() });
+    } catch (err) {
+      this.log(`running refresh failed: ${(err as Error).message}`);
+    }
   }
 
   private notify(level: "info" | "warn" | "error", text: string): void {
