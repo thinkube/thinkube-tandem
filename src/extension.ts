@@ -280,13 +280,13 @@ export function activate(context: vscode.ExtensionContext) {
         treeProvider.setSelectedRepo({ path: repo.path, name: repo.name });
         treeView.description = repo.name;
       } else if (node?.kind === "project") {
-        // Selecting a Project lists its tag-resolved members (SP-tgvl81_SL-2).
+        // Selecting a Project lists its implements-resolved members (SP-tgvpbm_SL-4).
         projectMembersProvider.setProject({
           product: node.product,
+          id: node.id,
           name: node.name,
-          tag: node.tag,
         });
-        projectMembersView.description = `${node.name} · #${node.tag}`;
+        projectMembersView.description = node.name;
       }
     }),
     // Drill-down (SP-tgs8nz): selecting a TEP filters the Specs view to that

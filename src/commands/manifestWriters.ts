@@ -29,22 +29,22 @@ export async function writeProductManifest(
   return file;
 }
 
-/** Write `<boardRoot>/<product>/projects/<id>/project.yaml`; returns the file path. */
+/**
+ * Write `<boardRoot>/<product>/projects/<id>/project.yaml`; returns the file
+ * path. A Project is a code-less umbrella — its manifest is just `name`/`state`
+ * (membership is by `implements:`, not a tag — SP-tgvpbm).
+ */
 export async function writeProjectManifest(
   boardRoot: string,
   product: string,
-  project: { id: string; name: string; tag: string; state?: "open" | "done" },
+  project: { id: string; name: string; state?: "open" | "done" },
 ): Promise<string> {
   const dir = path.join(boardRoot, product, "projects", project.id);
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, "project.yaml");
   await fs.writeFile(
     file,
-    yamlStringify({
-      name: project.name,
-      state: project.state ?? "open",
-      tag: project.tag,
-    }),
+    yamlStringify({ name: project.name, state: project.state ?? "open" }),
     "utf8",
   );
   return file;

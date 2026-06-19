@@ -9,6 +9,7 @@
  */
 import type { Product } from "../../store/products";
 import type { Project } from "../../store/projects";
+import { parseImplements, resolvesTo } from "../../store/implementsRef";
 
 export interface RepoRef {
   /** Absolute repo path (the key the navigator maps back to a RepoEntry). */
@@ -60,6 +61,43 @@ export function projectMembers(tag: string, items: MemberItem[]): MemberDesc[] {
   return items
     .filter((i) => i.tags.includes(tag))
     .map(({ board, handle, kind }) => ({ board, handle, kind }));
+}
+
+export interface SpecImpl {
+  /** Board id (for display). */
+  board: string;
+  /** The spec's sidecar namespace (for resolving bare refs). */
+  namespace: string;
+  /** Spec handle, e.g. `SP-tgvc8v`. */
+  handle: string;
+  /** Raw `implements:` frontmatter value. */
+  implements?: string;
+}
+export interface TepGroup {
+  tepId: string;
+  specs: { board: string; handle: string }[];
+}
+
+/**
+ * Group the implementing specs under each umbrella TEP of a Project
+ * (SP-tgvpbm_SL-4): a spec is under TEP `t` iff its `implements:` resolves to
+ * `projectNamespace:t`. Pure — the navigator collects the specs host-side and
+ * filters them through here for the Project ▸ TEP ▸ specs drill-down.
+ */
+export function projectTepGroups(
+  projectNamespace: string,
+  tepIds: string[],
+  specs: SpecImpl[],
+): TepGroup[] {
+  return tepIds.map((tepId) => ({
+    tepId,
+    specs: specs
+      .filter((s) => {
+        const ref = parseImplements(s.implements);
+        return !!ref && resolvesTo(ref, s.namespace, projectNamespace, tepId);
+      })
+      .map((s) => ({ board: s.board, handle: s.handle })),
+  }));
 }
 
 export function buildProductTree(

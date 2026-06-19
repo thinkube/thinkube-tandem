@@ -45,11 +45,9 @@ test("writeProjectManifest creates a project.yaml discoverable by discoverProjec
   await writeProjectManifest(root, "thinkube", {
     id: "rebrand",
     name: "The Rebrand",
-    tag: "rebrand",
   });
   const pr = discoverProjects(root).find((p) => p.id === "rebrand");
   assert.equal(pr?.product, "thinkube");
   assert.equal(pr?.name, "The Rebrand");
-  assert.equal(pr?.tag, "rebrand");
-  assert.equal(pr?.state, "open"); // default
+  assert.equal(pr?.state, "open"); // default — a code-less umbrella (no tag)
 });

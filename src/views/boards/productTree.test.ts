@@ -5,7 +5,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildProductTree, projectMembers, RepoRef } from "./productTree";
+import {
+  buildProductTree,
+  projectMembers,
+  projectTepGroups,
+  RepoRef,
+} from "./productTree";
 import type { Product } from "../../store/products";
 import type { Project } from "../../store/projects";
 
@@ -59,6 +64,25 @@ test("no products → every repo is ungrouped", () => {
   const tree = buildProductTree([], [], repos);
   assert.equal(tree.products.length, 0);
   assert.equal(tree.ungroupedRepoPaths.length, repos.length);
+});
+
+test("projectTepGroups groups implementing specs under each umbrella TEP (SP-tgvpbm)", () => {
+  const PROJ = "Platform/projects/rebrand";
+  const specs = [
+    { board: "thinkube", namespace: "Platform/core/thinkube", handle: "SP-a", implements: `${PROJ}:TEP-reb` },
+    { board: "control", namespace: "Platform/core/control", handle: "SP-b", implements: `${PROJ}:TEP-reb` },
+    { board: "control", namespace: "Platform/core/control", handle: "SP-c", implements: "TEP-other" }, // non-member
+    { board: "thinkube", namespace: "Platform/core/thinkube", handle: "SP-d", implements: `${PROJ}:TEP-two` },
+  ];
+  const groups = projectTepGroups(PROJ, ["reb", "two"], specs);
+  assert.deepEqual(
+    groups.find((g) => g.tepId === "reb")?.specs.map((s) => s.handle),
+    ["SP-a", "SP-b"],
+  );
+  assert.deepEqual(
+    groups.find((g) => g.tepId === "two")?.specs.map((s) => s.handle),
+    ["SP-d"],
+  );
 });
 
 test("projectMembers keeps only items carrying the project tag (SL-2)", () => {

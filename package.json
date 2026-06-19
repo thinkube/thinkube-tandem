@@ -116,6 +116,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "thinkube.tep.promote",
+        "title": "Promote to Project…",
+        "category": "Thinkube Boards",
+        "icon": "$(arrow-up)"
+      },
+      {
         "command": "thinkube.boards.enable",
         "title": "Enable Methodology Here",
         "category": "Thinkube Boards",
@@ -465,6 +471,11 @@
         {
           "command": "thinkube.projects.new",
           "when": "view == thinkubeBoards && viewItem == thinkubeProduct",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.tep.promote",
+          "when": "view == thinkubeTeps && viewItem == tep",
           "group": "inline"
         },
         {
