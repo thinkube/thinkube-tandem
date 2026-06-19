@@ -25,6 +25,8 @@
     "src/store/ids.test.ts",
     "src/store/tags.ts",
     "src/store/tags.test.ts",
+    "src/store/products.ts",
+    "src/store/products.test.ts",
     "src/services/WorktreeService.ts",
     "src/services/WorktreeService.test.ts",
     "src/services/orchestratorCore.ts",
