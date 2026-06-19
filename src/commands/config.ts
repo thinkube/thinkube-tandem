@@ -25,6 +25,7 @@ import {
 import { Command } from "../models/Command";
 import { Skill } from "../models/Skill";
 import { Agent } from "../models/Agent";
+import { resolveConfigTarget } from "./configTarget";
 
 export interface ConfigCommandsDeps {
   configService: ClaudeConfigService;
@@ -45,6 +46,15 @@ export function registerConfigCommands(
     updateConfigContext,
   } = deps;
   const currentActiveContext = () => deps.getCurrentActiveContext();
+  // The Configuration view follows the navigator selection (SP-tgvhfk), so a
+  // config CRUD action with no explicit tree-item targets the selected Thinking
+  // Space first, then the chat-panel active context.
+  const scopeFor = (explicitPath?: string) =>
+    resolveConfigTarget(
+      explicitPath,
+      treeProvider.selectedRepoPath,
+      currentActiveContext(),
+    );
 
   // Refresh configuration
   context.subscriptions.push(
@@ -147,7 +157,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.initializeConfig",
       async (projectPath?: string) => {
-        const targetPath = projectPath || currentActiveContext();
+        const targetPath = scopeFor(projectPath);
         if (!targetPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -178,7 +188,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.addHook",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
         if (!projectPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -313,7 +323,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.addCommand",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
         if (!projectPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -398,7 +408,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.addSkill",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
         if (!projectPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -481,7 +491,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.addAgent",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
         if (!projectPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -564,7 +574,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.addMcpServer",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
         if (!projectPath) {
           vscode.window.showErrorMessage("No project selected");
           return;
@@ -669,7 +679,7 @@ export function registerConfigCommands(
     vscode.commands.registerCommand(
       "thinkube.editPermissions",
       async (item?: ConfigTreeItem) => {
-        const projectPath = item?.projectPath || currentActiveContext();
+        const projectPath = scopeFor(item?.projectPath);
 
         const permissions = await configService.getPermissions(projectPath);
         const action = await vscode.window.showQuickPick(
