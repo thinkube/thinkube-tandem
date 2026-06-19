@@ -771,7 +771,7 @@ const TOOL_DEFS = [
   {
     name: "write_spec",
     description:
-      "Write a Spec's document at `specs/SP-{id}/spec.md` in the board (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `implements:`, `accepted:`) is preserved. This is the board-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the board.",
+      "Write a Spec's document at `specs/SP-{id}/spec.md` in the board (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `accepted:`) is preserved, and `implements:` can be set via its parameter. This is the board-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the board.",
     inputSchema: {
       type: "object",
       properties: {
@@ -783,7 +783,12 @@ const TOOL_DEFS = [
         body: {
           type: "string",
           description:
-            "The full Spec markdown body (the `# title` heading + the four canonical sections). Frontmatter is managed separately and preserved.",
+            "The full Spec markdown body (the `# title` heading + the four canonical sections).",
+        },
+        implements: {
+          type: "string",
+          description:
+            "The TEP this Spec implements — a bare `TEP-<id>` (repo-local) or a qualified `<namespace>:TEP-<id>` (cross-board / umbrella project). Sets the `implements:` frontmatter (the TEP↔spec link + umbrella membership, which `promote_tep` rewrites). Omit to leave it unchanged; empty string clears it.",
         },
         ...BOARD_PARAM,
       },
@@ -959,6 +964,7 @@ async function dispatchTool(
           ? String(args.spec)
           : asString(args, "spec"),
         asString(args, "body"),
+        optString(args, "implements"),
       );
     case "update_slice":
       writeGate(name);
@@ -1751,18 +1757,27 @@ async function writeSpec(
   store: ThinkubeStore,
   spec: string,
   body: string,
+  implementsRef?: string,
 ): Promise<unknown> {
   const trimmed = body.trim();
   if (!trimmed) throw new Error("Spec body must not be empty.");
   const rel = store.pathForSpecDoc(spec);
   const existing = await store.getFile(rel);
-  const fm: Frontmatter = existing?.frontmatter ?? {};
+  const fm: Frontmatter = { ...(existing?.frontmatter ?? {}) };
+  // `implements:` is settable (TEP-tgvwct follow-up): a bare `TEP-<id>` or a
+  // qualified `<namespace>:TEP-<id>` (umbrella). Omitted → preserved; empty → cleared.
+  if (implementsRef !== undefined) {
+    const v = implementsRef.trim();
+    if (v) fm.implements = v;
+    else delete fm.implements;
+  }
   await store.writeFile(rel, fm, `${trimmed}\n`);
   return {
     ok: true,
     spec,
     relativePath: rel,
     created: existing === undefined,
+    implements: fm.implements,
   };
 }
 
