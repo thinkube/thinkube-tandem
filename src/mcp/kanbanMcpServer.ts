@@ -74,6 +74,7 @@ import type { Frontmatter } from "../store/frontmatter";
 import { effectiveTags } from "../store/frontmatter";
 import { groupByTag, type TaggedItem } from "../store/tags";
 import { discoverProducts } from "../store/products";
+import { discoverProjects } from "../store/projects";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
@@ -545,6 +546,36 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "list_projects",
+    description:
+      "List Projects across all Products (SP-tgvkmt / TEP-tgvh8p). A Project is a bounded multi-repo effort = a promoted tag with a version-controlled home (`<product>/projects/<name>/project.yaml`). Returns each Project `{ product, id, name, state (open|done), tag, tep? }`, sorted. Empty when no board root is configured. Use `get_project` to resolve a project's members (the items carrying its tag).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_project",
+    description:
+      "Get one Project's manifest + its members (SP-tgvkmt). A Project is a promoted tag: its members are the items (specs/TEPs/slices) across every board whose tags include the project's `tag`. Returns `{ project, members: [{ board, handle, kind }] }`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        product: {
+          type: "string",
+          description: "The Product (top sidecar dir) the project lives under, e.g. `Platform`.",
+        },
+        id: {
+          type: "string",
+          description: "The project id (its directory name under `<product>/projects/`).",
+        },
+      },
+      required: ["product", "id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "list_board",
     description:
       "Current Tandem board, projected from the committed `.thinkube/specs/SP-{n}/SL-{m}.md` slice files. Returns the Ready / Doing / Done columns; each card carries its slice handle (`id`, e.g. `SP-3_SL-42`), title (`description`), and `specStale` / `specChange` (whether the parent Spec's requirements changed since the slice was last verified).",
@@ -844,6 +875,9 @@ async function dispatchTool(
   if (name === "list_boards") return listBoards(ctx);
   if (name === "list_tags") return listTags(ctx);
   if (name === "list_products") return listProducts(ctx);
+  if (name === "list_projects") return listProjects(ctx);
+  if (name === "get_project")
+    return getProject(ctx, asString(args, "product"), asString(args, "id"));
 
   // Every other tool is board-scoped: resolve the store per call.
   const store = ctx.boards.resolve(optString(args, "board"));
@@ -1065,6 +1099,40 @@ export function listProducts(ctx: HandlerContext): unknown {
   return {
     products: ctx.env.boardRoot ? discoverProducts(ctx.env.boardRoot) : [],
   };
+}
+
+/** `list_projects` — every product's Projects (manifests) discovered from the
+ * sidecar board root. Empty when no board root is set. */
+export function listProjects(ctx: HandlerContext): unknown {
+  return {
+    projects: ctx.env.boardRoot ? discoverProjects(ctx.env.boardRoot) : [],
+  };
+}
+
+/**
+ * `get_project` — a Project's manifest + its members. A Project is a promoted
+ * tag: its members are the items across all boards whose effective tags include
+ * the project's `tag` (resolved through the same cross-board aggregation as
+ * `list_tags`). Throws if the project is unknown.
+ */
+export async function getProject(
+  ctx: HandlerContext,
+  product: string,
+  id: string,
+): Promise<unknown> {
+  const project = (
+    ctx.env.boardRoot ? discoverProjects(ctx.env.boardRoot) : []
+  ).find((p) => p.product === product && p.id === id);
+  if (!project) {
+    throw new Error(`No project "${product}/${id}" under the board root.`);
+  }
+  const boards = ctx.boards
+    .list(true)
+    .filter((b) => !b.worktree)
+    .map((b) => ({ boardId: b.id, store: ctx.boards.resolve(b.id) }));
+  const agg = await aggregateTagsAcrossBoards(boards);
+  const members = agg.find((t) => t.tag === project.tag)?.items ?? [];
+  return { project, members };
 }
 
 /** Parse a slice handle (`SP-3_SL-42`) → its (spec, slice) numbers. */
