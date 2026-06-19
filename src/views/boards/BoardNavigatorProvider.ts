@@ -28,9 +28,8 @@ import {
   namespaceForRepo,
 } from "../../store/boardNamespace";
 import { discoverProducts } from "../../store/products";
-import { discoverProjects, projectTeps } from "../../store/projects";
-import { buildProductTree, projectTepGroups, SpecImpl } from "./productTree";
-import { ThinkubeStore } from "../../store/ThinkubeStore";
+import { discoverProjects } from "../../store/projects";
+import { buildProductTree } from "./productTree";
 
 export interface RepoEntry {
   kind: "repo";
@@ -93,30 +92,12 @@ export interface ProjectNode {
   tag: string;
 }
 
-/** An umbrella TEP under a Project (SP-tgvpbm) — drills to its implementing specs. */
-export interface UmbrellaTepNode {
-  kind: "umbrella-tep";
-  product: string;
-  project: string;
-  projectNamespace: string;
-  tepId: string;
-}
-
-/** A member spec of an umbrella TEP (SP-tgvpbm) — a spec implementing it, in some repo. */
-export interface MemberSpecNode {
-  kind: "member-spec";
-  board: string;
-  handle: string;
-}
-
 export type BoardNode =
   | RepoEntry
   | BundleStatusNode
   | BoardMessageNode
   | ProductNode
-  | ProjectNode
-  | UmbrellaTepNode
-  | MemberSpecNode;
+  | ProjectNode;
 
 /**
  * Find git repos across the open workspace folders (depth-limited), marking
@@ -364,33 +345,9 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
     if (element.kind === "product") {
       return [...element.repos, ...element.projects];
     }
-    if (element.kind === "project") {
-      // Drill to the project's umbrella TEPs (SP-tgvpbm).
-      const boardRoot =
-        vscode.workspace
-          .getConfiguration("thinkube.boards")
-          .get<string>("root")
-          ?.trim() || undefined;
-      if (!boardRoot) return [];
-      return projectTeps(boardRoot, element.product, element.id).map(
-        (tepId): UmbrellaTepNode => ({
-          kind: "umbrella-tep",
-          product: element.product,
-          project: element.id,
-          projectNamespace: `${element.product}/projects/${element.id}`,
-          tepId,
-        }),
-      );
-    }
-    if (element.kind === "umbrella-tep") {
-      // Implementing specs (cross-repo) of this umbrella TEP.
-      const specs = await this.collectSpecImpls();
-      const group = projectTepGroups(element.projectNamespace, [element.tepId], specs)[0];
-      return (group?.specs ?? []).map(
-        (s): MemberSpecNode => ({ kind: "member-spec", board: s.board, handle: s.handle }),
-      );
-    }
-    if (element.kind === "member-spec") return [];
+    // A Project is a leaf in the navigator (SP-tgvud7): selecting it drives the
+    // TEPs → Specs side-views, exactly like a Thinking Space — no in-tree drill-down.
+    if (element.kind === "project") return [];
     if (element.kind !== "repo" || !element.enabled) return [];
     // Enabled repo → one bundle-status child (per-file detail stays behind
     // the Diff command, matching the old Project view's single-row design).
@@ -411,37 +368,6 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
     }
   }
 
-  /** Collect every enabled repo's specs as SpecImpl (board, namespace, handle,
-   *  implements) — the host-side input to `projectTepGroups` (SP-tgvpbm_SL-4). */
-  private async collectSpecImpls(): Promise<SpecImpl[]> {
-    const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
-      name: f.name,
-      path: f.uri.fsPath,
-    }));
-    const out: SpecImpl[] = [];
-    for (const repo of discoverRepos()) {
-      if (!repo.enabled || repo.worktreeOf) continue;
-      const ns = namespaceForRepo(repo.path, folders);
-      if (!ns) continue;
-      const store = new ThinkubeStore(repo.path, repo.boardDir);
-      try {
-        for (const spec of await store.listSpecDirs()) {
-          const fm = (await store.getFile(store.pathForSpecDoc(spec)))
-            ?.frontmatter;
-          out.push({
-            board: repo.name,
-            namespace: ns,
-            handle: `SP-${spec}`,
-            implements: typeof fm?.implements === "string" ? fm.implements : undefined,
-          });
-        }
-      } catch {
-        // skip an unreadable board
-      }
-    }
-    return out;
-  }
-
   getTreeItem(node: BoardNode): vscode.TreeItem {
     if (node.kind === "bundle-status") return bundleStatusItem(node);
     if (node.kind === "product") {
@@ -457,9 +383,11 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
       return item;
     }
     if (node.kind === "project") {
+      // A leaf that drives the TEPs → Specs side-views (SP-tgvud7); selecting it
+      // scopes the TEPs view to the project's umbrella TEPs.
       const item = new vscode.TreeItem(
         node.name,
-        vscode.TreeItemCollapsibleState.Collapsed,
+        vscode.TreeItemCollapsibleState.None,
       );
       item.description = node.state === "done" ? "✓ done" : "open";
       item.tooltip = `Project ${node.product}/${node.id} · ${node.state}`;
@@ -467,28 +395,6 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
       item.iconPath = new vscode.ThemeIcon(
         node.state === "done" ? "pass-filled" : "milestone",
       );
-      return item;
-    }
-    if (node.kind === "umbrella-tep") {
-      const item = new vscode.TreeItem(
-        `TEP-${node.tepId}`,
-        vscode.TreeItemCollapsibleState.Collapsed,
-      );
-      item.description = "umbrella TEP";
-      item.tooltip = `Umbrella TEP-${node.tepId} of ${node.projectNamespace}`;
-      item.contextValue = "thinkubeUmbrellaTep";
-      item.iconPath = new vscode.ThemeIcon("lightbulb");
-      return item;
-    }
-    if (node.kind === "member-spec") {
-      const item = new vscode.TreeItem(
-        node.handle,
-        vscode.TreeItemCollapsibleState.None,
-      );
-      item.description = node.board;
-      item.tooltip = `${node.handle} — implementing spec in ${node.board}`;
-      item.contextValue = "thinkubeMemberSpec";
-      item.iconPath = new vscode.ThemeIcon("list-tree");
       return item;
     }
     if (node.kind === "message") {

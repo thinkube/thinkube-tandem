@@ -40,7 +40,6 @@ import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
 import { BoardNavigatorProvider } from "./views/boards/BoardNavigatorProvider";
 import { SpecsProvider } from "./views/boards/SpecsProvider";
 import { TepsProvider } from "./views/boards/TepsProvider";
-import { ProjectMembersProvider } from "./views/boards/ProjectMembersProvider";
 import { ThinkubeStore } from "./store/ThinkubeStore";
 import { registerBoardCommands, seedBoardsFilter } from "./commands/boards";
 import { registerProductCommands } from "./commands/products";
@@ -250,18 +249,10 @@ export function activate(context: vscode.ExtensionContext) {
   const tepsView = vscode.window.createTreeView("thinkubeTeps", {
     treeDataProvider: tepsProvider,
   });
-  // Project members (SP-tgvl81_SL-2): selecting a Project in the navigator lists
-  // the items (across boards) carrying its tag.
-  const projectMembersProvider = new ProjectMembersProvider();
-  const projectMembersView = vscode.window.createTreeView(
-    "thinkubeProjectMembers",
-    { treeDataProvider: projectMembersProvider },
-  );
   context.subscriptions.push(
     boardsView,
     specsView,
     tepsView,
-    projectMembersView,
     boardsView.onDidChangeSelection((e) => {
       const node = e.selection[0];
       const repo =
@@ -280,20 +271,36 @@ export function activate(context: vscode.ExtensionContext) {
         treeProvider.setSelectedRepo({ path: repo.path, name: repo.name });
         treeView.description = repo.name;
       } else if (node?.kind === "project") {
-        // Selecting a Project lists its implements-resolved members (SP-tgvpbm_SL-4).
-        projectMembersProvider.setProject({
-          product: node.product,
-          id: node.id,
-          name: node.name,
-        });
-        projectMembersView.description = node.name;
+        // A Project navigates exactly like a Thinking Space (SP-tgvud7): scope
+        // the TEPs view to its umbrella TEPs; the Specs/Config views clear until
+        // a TEP is picked (a project has no specs of its own — they're cross-repo).
+        const boardRoot =
+          vscode.workspace
+            .getConfiguration("thinkube.boards")
+            .get<string>("root")
+            ?.trim() || undefined;
+        if (boardRoot) {
+          tepsProvider.setProject({
+            product: node.product,
+            id: node.id,
+            name: node.name,
+            boardRoot,
+          });
+          tepsView.description = node.name;
+        }
+        specsProvider.setRepo(undefined);
+        specsView.description = "";
+        treeProvider.setSelectedRepo(undefined);
+        treeView.description = "";
       }
     }),
-    // Drill-down (SP-tgs8nz): selecting a TEP filters the Specs view to that
-    // TEP's Specs, so the flow is space → TEP → its Specs → a Spec's kanban+graph.
+    // Drill-down: selecting a TEP fills the Specs view with its implementing
+    // specs — resolved CROSS-BOARD via the TEP's owner namespace (SP-tgvud7), so
+    // an umbrella TEP shows its specs across repos and a repo TEP shows its own.
     tepsView.onDidChangeSelection((e) => {
       const node = e.selection[0];
-      if (node?.kind === "tep") specsProvider.setTepFilter(node.tepId);
+      if (node?.kind === "tep")
+        specsProvider.setTepFilter(node.tepId, node.ownerNamespace);
     }),
     // Auto-refresh the navigator when its discovery inputs change. Discovery
     // (discoverRepos) depends on `thinkube.boards.root` and the workspace-folder

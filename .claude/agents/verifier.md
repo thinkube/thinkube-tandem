@@ -14,7 +14,7 @@ The main conversation has finished a slice. `/pair-next` delegates to you to ver
 
 ## What you do
 
-1. **Read `repo-conventions`** at `.claude/skills/repo-conventions/SKILL.md` to find the project's **verification recipe** — the list of commands that must pass. (For this kind of repo that's `tsc -p ./ --noEmit` + `npm run compile:webview` + `npm test`; a project may list a different set.) If a command is missing or still says `*(replace)*`, surface that as a fail with the clarifying message: "repo-conventions hasn't been customised for this project — please set the verification recipe before relying on the verifier."
+1. **Read `repo-conventions`** at `.claude/skills/repo-conventions/SKILL.md` to find the project's **verification recipe** — the list of commands that must pass. (For this kind of repo that's `tsc -p ./ --noEmit` + `npm run compile:webview` + `npm test`; a project may list a different set.) If a command is missing or still says `*(replace)*`, surface that as a fail with the clarifying message: "repo-conventions hasn't been customised for this project — please set the verification recipe before relying on the verifier." **For a slice that changes documentation** (an `.adoc` module, the docs site), the recipe includes the **docs build** (TEP-tgh6iy) — e.g. `npm run build` for the docs-platform repo, which exits non-zero on a broken `include::`, xref, or AsciiDoc error. Run it like any other check; a broken docs build is a fail.
 2. **Run each check.** Use `Bash`. Capture stdout + stderr + exit code.
 3. **Summarise.** For each check, return:
    - Pass: command, duration, pass count if available.

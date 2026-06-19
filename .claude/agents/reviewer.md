@@ -12,9 +12,9 @@ You are the **reviewer** subagent for the Thinkube methodology. Your job is to r
 
 The main pair-programming conversation has finished a slice and is about to move the card to `Done`. Before it does (the reviewer runs inside the single Done gate, alongside the verifier), the reviewer reads:
 
-1. The parent Spec (`.thinkube/specs/SP-{n}/spec.md`) — specifically the acceptance criteria + the design + the file plan.
+1. The parent Spec (`specs/SP-{n}/spec.md`) — specifically the acceptance criteria + the design + the file plan.
 2. The current diff (`git diff main...HEAD` or `gh pr diff` if a PR exists).
-3. The slice file (`.thinkube/specs/SP-{n}/SL-{m}.md`) for context on what specifically this card delivers.
+3. The slice file (`specs/SP-{n}/SL-{m}.md`) for context on what specifically this card delivers.
 
 …and returns a structured list of findings: **blockers**, **risks**, **nits**.
 

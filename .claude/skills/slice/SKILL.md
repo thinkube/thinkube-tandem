@@ -1,5 +1,5 @@
 ---
-description: Decompose a Spec into coherent Slices, writing individual specs/SP-{n}/SL-{m}.md files directly. Each slice is one verifiable end-to-end change.
+description: Decompose a Spec into coherent end-to-end Slices at specs/SP-{n}/SL-{m}.md. MUST BE USED when the user says "slice", "decompose the spec", "break this into slices", or "create slices for SP-X". Do not hand-author slice files yourself.
 allowed-tools:
   [
     "Read",
@@ -19,6 +19,8 @@ thinkube-bundle: 0.0.1
 # /slice
 
 Read a fully-shaped Spec and cut it into **coherent slices** — each one an end-to-end change you can verify-and-commit as a single "done." Each slice is written **directly** as its own file at `specs/SP-{n}/SL-{m}.md` with `status: ready`. There is no checkbox-list intermediate, no materialiser, no issue minting — the files _are_ the board.
+
+> **Decision-point protocol** (methodology `CLAUDE.md`): this is _human-paced_ authoring — converse → options → research → **read-back** → the human's explicit **"go."** Surface options as prose, never force convergence, and **approve ≠ execute**.
 
 ## Mission
 
@@ -81,12 +83,23 @@ The parent Spec is your scope — gather only what it doesn't already give you:
    - Does it have its own distinct AC / design? Then it's a **Spec**, not a slice — surface that to the user.
    - Is it a spike / investigation / "confirm X" with no verifiable output? Then it is **not a slice** — it belongs in the parent Spec's `## Design` / `## Constraints`. Don't write a file for it.
    - Does it depend on another slice? Note it for `depends_on`. Can it run independently of its siblings (no shared file/state edits, no required ordering)? If so, mark `parallel: true` — _parallel-eligible_, not must-run-in-parallel.
+     3a. **Classify each candidate's execution shape, and emit work units (SP-tgs8gb).** Coherence decides what the slice _is_; this decides how its work runs — an orthogonal axis. For each candidate (or group of look-alikes):
+   - **Same operation over disjoint objects?** Several candidates that are the _same change per object_ (e.g. rename per component) are ONE data-parallel operation — **collapse** them; don't mint a slice per object.
+   - **Mechanical or per-object judgment?** Mechanical (uniform, table-driven — search/replace, set-a-field, codemod) → one **`mechanize`** slice ("author a transform, apply across the set"); per-object judgment → **`fan-out`**; coupled (shared footprint) → **`serial`**.
+   - **Peel structural changes:** a non-table-driven change adjacent to a mechanize group is its **own** slice, never folded in.
+
+   Record each slice's work units via `create_slice`'s `work_units` — each `{ footprint, depends_on?, execution }`. The slice stays the validation envelope; work units are never independently verified.
+   - **Declare the slice's file set.** List the repo-relative files the slice will edit (`files:`), drawn from the Spec's File Structure Plan. When two or more slices are meant to run **concurrently**, give them the same `parallel_group:` name — their `files` sets **must be disjoint** (the server refuses an overlapping group, naming the conflicting files). Cut parallel siblings file-disjoint up front so the merge is trivial; if two candidates must touch the same file, either sequence them (`depends_on`) or leave them ungrouped.
+
 4. **Map back to acceptance criteria — and keep the ordinals.** For each AC line, identify which slice(s) satisfy it, recording its **1-based ordinal** (its position in the Spec's `## Acceptance Criteria`). If an AC is unmatched, add a slice. If a slice isn't traceable to any AC, drop it (or surface the gap — the AC may be missing). Each slice's ordinal list is passed to `create_slice` as `satisfies` (step 6) so the mapping lives in frontmatter, not prose — that's what arms the → Done gate.
+   - **Flag any AC that isn't AI-verifiable at the gate it arms.** While mapping, an AC that can only be checked _after_ the gate it arms — a **human-executed** step ("the human verifies in a fresh session") or a **deploy/merge-circular** outcome (needs the merged/deployed result, but merge/deploy is gated on the AC) — is a **defect in the Spec, not a slice to mint**. Don't write a slice whose only "done" is such an AC; route it back to `/spec-prepare` to reframe (probabilistic → proxy + AI probe; deploy-circular → pre-merge/preview AC + a non-gating post-deploy smoke check). A genuine post-deploy confirmation is modeled as a **follow-up slice** that runs after the deploy, never as a Done condition of the deploying slice.
 5. **Propose in chat.** Show the proposed slice list with rationale and the SL numbers you'll allocate. Wait for user feedback.
-6. **Create the files via `create_slice` — never freehand.** For each agreed slice, call `mcp__thinkube-kanban__create_slice` with `{ spec: {n}, title, body, satisfies?, depends_on?, parallel?, priority? }`. The **server** allocates the SL number (per-Spec, archive-aware), generates the uid, and serializes the canonical shape — you never pick numbers or format files. The tool refuses over-long titles (> 70 chars) and Specs with empty Acceptance Criteria; surface a refusal verbatim, fix the input, retry.
+6. **Create the files via `create_slice` — never freehand.** For each agreed slice, call `mcp__thinkube-kanban__create_slice` with `{ spec: {n}, title, body, satisfies?, depends_on?, parallel?, parallel_group?, files?, docs?, docs_reason?, priority? }`. The **server** allocates the SL number (per-Spec, archive-aware), generates the uid, and serializes the canonical shape — you never pick numbers or format files. The tool refuses over-long titles (> 70 chars) and Specs with empty Acceptance Criteria; surface a refusal verbatim, fix the input, retry.
    - `title`: the concrete capability, short — it becomes the card title.
    - `body`: 2–4 lines of detail — what the coherent end-to-end cut includes and what the observable "done" looks like. Title and body are **separate**; never collapse them into one merged line.
    - `satisfies`: the AC ordinals from step 4 (e.g. `[2, 3]`) — the 1-based positions of the criteria this slice delivers. Recording it arms the → Done gate (the slice can't reach Done until those boxes are checked on the Spec); omit it only when the slice genuinely maps to no single AC.
+   - `files` / `parallel_group`: the slice's **machine-readable file set** (repo-relative paths it will edit) and, when it runs concurrently with siblings, the **named group** they share. The server refuses a `parallel_group` whose members' `files` overlap — surface that refusal verbatim, then re-cut the slices file-disjoint (or sequence them with `depends_on`).
+   - `docs`: the **documentation obligation** (TEP-tgh6iy). Default `required` — any **user-facing** slice (a feature, CLI, API, config surface, install/upgrade step, or template behavior a user can observe) must update its doc module to reach Done. Pass `docs: "n/a"` **with a one-line `docs_reason`** for work that changes nothing observable (internal refactor, test-only, infra) — the server rejects an `n/a` with no reason, so skipping docs is always a visible, deliberate choice. Default to `required` when unsure (fail closed).
 
 7. **Commit, then report.** Commit **and push** the new slice files to the board and report the commit — don't ask first (board bookkeeping, per CLAUDE.md). Then print the slice count and the next step: advance the Spec's slices from the board (the Orchestrate command).
 
@@ -95,9 +108,10 @@ The parent Spec is your scope — gather only what it doesn't already give you:
 - Slices are **vertical, demonstrable changes** with one statable "done" — cut end-to-end, never by layer/file. A slice that isn't independently demonstrable is a fragment; merge it.
 - Title by the **concrete capability delivered**, not a vague whole-feature outcome and not a layer name.
 - **Allocate `SL-{m}` as `max+1`, counting archived files.** Numbers are never reused — collisions corrupt the board's links.
-- **`depends_on` uses full handles** (`SP-{n}_SL-7`), not bare numbers. **`parallel: true`** marks a slice sharing no files/state with its siblings (parallel-eligible, not must-run-in-parallel).
+- **`depends_on` uses full handles** (`SP-{n}_SL-7`), not bare numbers. **`parallel: true`** marks a slice sharing no files/state with its siblings (parallel-eligible, not must-run-in-parallel). **`parallel_group`** names a set of slices meant to run concurrently — their **`files` sets must be disjoint**, enforced server-side at `create_slice`.
 - **No checkbox list, no materialiser, no issue minting.** Write the slice files directly. The board reads `status:` from frontmatter.
 - A row with no single verifiable "done" is **rejected** — it goes in the Spec (`## Design` / `## Constraints`), not on the board.
+- A slice's "done" must be **AI-verifiable at the gate it arms** — never a human-executed check or a deploy/merge-circular outcome. Such an AC is routed back to `/spec-prepare`; a real post-deploy confirmation is a follow-up slice, not a Done condition.
 
 ## Output
 

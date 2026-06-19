@@ -85,7 +85,7 @@ This repo is a workspace sibling of `thinkube-control`, `thinkube-installer`, an
 
 The `tk-ai-extension/` sibling directory is a **different** project (a JupyterLab extension), not this one.
 
-<!-- thinkube-methodology:start v0.0.1 -->
+<!-- thinkube-methodology:start v0.0.3 -->
 
 ## Tandem methodology
 
@@ -98,6 +98,8 @@ Hierarchy: **spec → slice**. (Epic/Story are not tiers — grouping is a `them
 - A **Slice** is the card that flows the board (`specs/SP-{n}/SL-{m}.md`): one coherent end-to-end change verified-and-committed as a single "done." Sized by coherence, not the clock. Handle: `SP-{n}_SL-{m}` (e.g. `SP-3_SL-42`); slices are numbered per-Spec.
 - Per-Thinking-Space: each Space's board lives in the sidecar repo under its `<container>/<rel>/` namespace (via `thinkube.boards.root`); a Space is enabled **iff** its namespace dir exists there. The workspace navigator moves between the enabled boards. (Co-located `.thinkube/` is deprecated — TEP-0008.)
 - Phase model: a slice's `status:` frontmatter. Columns **Ready → Doing → Done**.
+
+**Spec & TEP workflow:** authoring or advancing spec/TEP/slice/pair work goes through the methodology skills — they are the board-aware path (`write_tep` / `write_spec` / `create_slice`) that keeps files in the sidecar and in canonical shape. So a conversational ask like "write a TEP", "create a spec for TEP-X", "break this into slices", or "start pairing" should invoke the matching skill below rather than hand-rolling the file with raw `Read`/`Write`. (Plain reading/explaining — "read this spec", "show me the board" — does not.)
 
 Skills (this bundle):
 
@@ -113,8 +115,10 @@ Subagents (this bundle):
 
 Quality gates (file checks, enforced by the kanban panel):
 
+- ACs are **AI-verified and verifiable before the gate they arm** — no human-executed ("the human checks in a fresh session") or deploy/merge-circular ACs; the human's only gate is acceptance. (TEP-tgnvkw)
 - → Ready: the slice's parent Spec has a non-empty `## Acceptance Criteria`.
 - → Done: verifier green for the slice, and the AC it satisfies is checked on the Spec. (Reviewer + verifier both run in this one gate — no Review/Verify handoff.)
+- → Done (docs, TEP-tgh6iy): a slice carries a `docs:` obligation — `required` (the default for **user-facing** work: a feature, CLI, API, config surface, install/upgrade step, or template behavior a reader can observe) or `n/a` + a one-line `docs_reason`. A `docs: required` slice must have its docs updated before Done; `/pair-next` attests this with `move_slice … docs_done: true`. `/slice` stamps `docs:` per slice and the server rejects an `n/a` with no reason, so skipping docs is always visible and deliberate. The gate rolls out via `thinkube.kanban.docsGateMode`: **`advisory`** (default) lets the move through with a warning; **`blocking`** refuses an unsatisfied obligation. Docs live **with the code** (docs-with-code): the `.adoc` module ships in the same repo and commit as the change, aggregated into the site by the docs playbook.
 
 Rules:
 
@@ -126,4 +130,12 @@ Rules:
 - **Write authority:** Inside an invoked skill, board bookkeeping — moving cards, checking the AC a slice satisfies, stamping provenance/verification — is the **AI's job**: it does it and **reports the result with evidence**. The human steers substance and **intervenes by exception**; the AI never asks the human to move a card or re-invoke a command merely to advance mechanics, and stops only at a marked **bless point**, a **gate refusal**, or a **failed precondition**. (In `navigator` mode this inverts per mode awareness — the AI proposes, the human writes.)
 - **Saving the board is part of authoring — not a separate ask.** After authoring or moving board state (a spec, slice, TEP, retro, or column move), commit **and push** the board WIP, then report the commit — the committed repo _is_ the board and its host is the only backup, so unsaved board state is data-loss risk, not "clean scoping." This is board bookkeeping under Write authority: in `driver` / `both` mode the AI just does it and reports; it never asks the human whether to commit or push the board. (In `navigator` mode it proposes, as with any write.) **Stage the whole board working tree** — `git add -A`, never cherry-pick paths: the human's other uncommitted board edits (e.g. archiving Specs/TEPs) are board state too, and selective staging silently drops them.
 
+## Decision-point protocol (human-paced authoring)
+
+At authoring decision points (`/tep`, `/spec-prepare`, `/slice`) the AI works **understand-before-create**: conversation → options → research → **read-back** → the human's explicit **"go."** Surface options as prose; **never** fire a decision-forcing prompt to force convergence. **Approve ≠ execute** — converging the content crystallizes the artifact (writes the TEP/Spec/slices); it never starts the build, which is a separate, later advance the human pulls. Before any advance the AI offers a **read-back** (reflects its understanding for correction) and advances only on the explicit go — and that go **carries continuation** (no redundant second command). This governs the _substance_ decisions only; mechanical bookkeeping (column moves, AC checks, stamps) stays AI-auto.
+
+**The lever — how much _ceremony_, never which _checks_.** At the start of a piece of work the AI **proposes a level** for **risk** (consequence × recovery-cost) and **nature** (`PoC | production-fix | professional`), surfacing the mechanism; the human **overrides** each and owns the call (the AI never blocks on its own assessment). **Ceremony** = the adjustable process _wrapping_: docs depth, slicing granularity, acceptance formality, how many / how formal the ACs, PR-vs-`main`, read-back depth. The levers scale **only that wrapping** — **risk floors the safety wrapping** (verify depth, PR-vs-`main`, reversibility); **nature ceilings the process wrapping** (docs, slicing, acceptance bless, AC formalism). **AI-testability is conditional** — it only matters when **risk is high _and_ the work is production / product (not a PoC)**; in a **low-risk PoC, ignore it — don't assess it, don't invent mitigations, just build.** **The levers never touch the _checks_:** that ACs are AI-verifiable, green-before-Done, and the TEP→spec→slice→implement→pass→Done process are invariants no level weakens (with worktrees and read-back). **`(low-risk × PoC)` is the express lane** — minimal _wrapping_ (write → verify → ship), **not** minimal verification. _(SP-tgsdvw / TEP-tgs1tf.)_
+
 <!-- thinkube-methodology:end -->
+
+

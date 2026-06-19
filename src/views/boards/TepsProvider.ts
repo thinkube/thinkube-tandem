@@ -16,6 +16,15 @@ import * as vscode from "vscode";
 
 import { ThinkubeStore } from "../../store/ThinkubeStore";
 import { RepoEntry } from "./BoardNavigatorProvider";
+import { namespaceForRepo } from "../../store/boardNamespace";
+
+/** A Project source the TEPs view can scope to (SP-tgvud7) — lists its umbrella TEPs. */
+export interface ProjectSource {
+  product: string;
+  id: string;
+  name: string;
+  boardRoot: string;
+}
 
 /** A Spec that delivers a TEP, rolled up under it (TEP-0009). */
 export interface ImplementingSpec {
@@ -31,6 +40,9 @@ export type TepNode =
       title: string;
       status: string;
       file: string;
+      /** The namespace owning this TEP — repo namespace or project namespace
+       *  (SP-tgvud7). Drives the cross-board Specs resolver on selection. */
+      ownerNamespace: string;
       /** Specs delivering this TEP (`implemented_by:` frontmatter). */
       implementedBy: ImplementingSpec[];
       /** Hidden from the default nav; revealed (marked) under "Show archived" (TEP-tg86v7). */
@@ -47,6 +59,10 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
 
   private repo: RepoEntry | undefined;
 
+  /** A Project source (SP-tgvud7) — when set, the view lists its umbrella TEPs
+   *  instead of a repo's. Mutually exclusive with `repo`. */
+  private project: ProjectSource | undefined;
+
   /** Whether archived TEPs are shown (TEP-tg86v7); default hides them. */
   private showArchived = false;
 
@@ -58,9 +74,21 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
 
   /** The thinking space whose TEPs we list (undefined = none selected). */
   setRepo(repo: RepoEntry | undefined): void {
-    if (this.repo?.path === repo?.path && this.repo?.enabled === repo?.enabled)
+    if (
+      !this.project &&
+      this.repo?.path === repo?.path &&
+      this.repo?.enabled === repo?.enabled
+    )
       return;
     this.repo = repo;
+    this.project = undefined;
+    this.refresh();
+  }
+
+  /** Scope the view to a Project — lists its umbrella TEPs (SP-tgvud7). */
+  setProject(project: ProjectSource | undefined): void {
+    this.project = project;
+    this.repo = undefined;
     this.refresh();
   }
 
@@ -85,18 +113,36 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
         }));
       return [];
     }
-    // No selection → empty, which surfaces the view's welcome text.
-    if (!this.repo) return [];
-    if (!this.repo.enabled) {
-      return [
-        {
-          kind: "placeholder",
-          text: "Methodology not enabled in this thinking space",
-        },
-      ];
+    // Resolve the source — a repo Thinking Space or a Project umbrella (SP-tgvud7).
+    let store: ThinkubeStore;
+    let ownerNamespace: string;
+    if (this.project) {
+      const dir = path.join(
+        this.project.boardRoot,
+        this.project.product,
+        "projects",
+        this.project.id,
+      );
+      store = new ThinkubeStore(dir, dir);
+      ownerNamespace = `${this.project.product}/projects/${this.project.id}`;
+    } else {
+      // No selection → empty, which surfaces the view's welcome text.
+      if (!this.repo) return [];
+      if (!this.repo.enabled) {
+        return [
+          {
+            kind: "placeholder",
+            text: "Methodology not enabled in this thinking space",
+          },
+        ];
+      }
+      store = new ThinkubeStore(this.repo.path, this.repo.boardDir);
+      const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+        name: f.name,
+        path: f.uri.fsPath,
+      }));
+      ownerNamespace = namespaceForRepo(this.repo.path, folders) ?? "";
     }
-
-    const store = new ThinkubeStore(this.repo.path, this.repo.boardDir);
     const teps = await store.listTeps();
     if (teps.length === 0) {
       return [
@@ -143,6 +189,7 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
         title,
         status: typeof fm?.status === "string" ? fm.status : "",
         file: path.join(store.thinkubeDir, rel),
+        ownerNamespace,
         implementedBy,
         archived,
       });

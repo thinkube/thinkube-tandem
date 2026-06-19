@@ -1,5 +1,5 @@
 ---
-description: Author a Tandem Enhancement Proposal (TEP) conversationally — the why behind the work. Scaffolds from TEP-TEMPLATE and fills it section by section into teps/TEP-{id}.md.
+description: Author a Tandem Enhancement Proposal (the why behind the work) into teps/TEP-{id}.md. MUST BE USED when the user says "create a TEP", "write a TEP", "new enhancement proposal", or asks to capture the rationale/motivation for a piece of work. Do not hand-author TEP files yourself.
 allowed-tools:
   [
     "Read",
@@ -19,6 +19,8 @@ thinkube-bundle: 0.0.1
 Author a **Tandem Enhancement Proposal** — the orthogonal _why_ axis (TEP-0009): the rationale above the work, recorded before specs and referenced by them. A TEP lives as a committed file at `teps/TEP-{id}.md` **in the board** (the sidecar namespace). Read it with `get_thinkube_file` and write it with `write_tep`; **both are board-aware**, so the file always lands in the sidecar — never write a TEP with a raw `Write`/`Edit`.
 
 A TEP is **not** a board-flowing card (TEP-0003 keeps the hierarchy Spec→Slice). It is read from the board and linked to the specs that implement it (`implements:` ↔ `implemented_by:`).
+
+> **Decision-point protocol** (methodology `CLAUDE.md`): this is _human-paced_ authoring — converse → options → research → **read-back** → the human's explicit **"go."** Surface options as prose, never force convergence, and **approve ≠ execute**.
 
 ## Mission
 

@@ -59,6 +59,8 @@ The `verifier` subagent runs the commands below to gate a slice's move to **Done
 
 All three must pass (exit 0) for a green. Replace these for a different project if its toolchain differs; where a project has no test suite, the typecheck + build pair stands in for "one green."
 
+**Documentation build (TEP-tgh6iy).** If this repo ships documentation — the Antora docs site, or a docs-with-code `.adoc` module that aggregates into it — the recipe **must include the docs build**, so a doc edit that breaks the site is a verification fail (no green = not Done). For the docs-platform repo that is `npm run build` (the Antora build; it exits non-zero on a broken `include::`, bad xref, or AsciiDoc error because the playbook sets `runtime.log.failure_level`). For a component repo whose docs aggregate elsewhere, build the docs site (or run an AsciiDoctor parse of the changed module) so breakage is caught in the same slice as the change.
+
 ## Things to never do
 
 - `git push --force` to `main`.

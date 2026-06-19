@@ -54,11 +54,6 @@
           "contextualTitle": "Thinkube Specs"
         },
         {
-          "id": "thinkubeProjectMembers",
-          "name": "Project Members",
-          "contextualTitle": "Thinkube Project Members"
-        },
-        {
           "id": "claudeConfigTree",
           "name": "Configuration",
           "contextualTitle": "Claude Code Configuration"

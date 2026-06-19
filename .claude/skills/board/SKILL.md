@@ -40,5 +40,5 @@ A compact chat-readable view of the project's current state, plus a pointer to t
 
 ## Safety / fallback
 
-- **No `.thinkube/` board in this repo.** A repo is methodology-enabled only if it has a committed `.thinkube/` directory. If `list_board` returns nothing, tell the user this repo isn't methodology-enabled yet (author a Spec via `/spec-prepare`, then `/slice`).
+- **No board for this Thinking Space.** A Space is methodology-enabled only if its namespace dir exists in the sidecar board repo (via `thinkube.boards.root`). If `list_board` returns nothing, tell the user this Space isn't methodology-enabled yet (author a Spec via `/spec-prepare`, then `/slice`).
 - **MCP error.** Surface the underlying error verbatim.
