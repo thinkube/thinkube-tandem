@@ -166,6 +166,8 @@ export interface SliceInput {
   files?: string[];
   /** Slice frontmatter `depends_on` — dependency handles (slice-DAG edges). */
   dependsOn?: string[];
+  /** Effective clustering tags (SP-tgvil2) — `tags` folded with legacy `theme`. */
+  tags?: string[];
 }
 
 /**
@@ -252,6 +254,7 @@ export function buildSliceBoard(
       commitUrl: s.commitUrl,
       pr: s.pr,
       dependsOn: s.dependsOn,
+      tags: s.tags,
     };
     tasks[id] = card;
     byColumn.get(columnId)?.push(id);

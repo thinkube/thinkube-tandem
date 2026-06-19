@@ -56,6 +56,10 @@ Archived items keep the archive icon regardless of status.
 
 For specs, two per-item right-click actions manage a git **worktree** (parallel work, one tree per spec): **Start Spec in Worktree** creates an isolated worktree + branch and opens a Claude session there; **Retire Spec Worktree** removes that worktree after delivery (refusing if it's dirty/unmerged) — it does _not_ delete the spec. Hover either action for the full description.
 
+## Tags
+
+Specs, TEPs, and slices carry a free-form **`tags: [...]`** frontmatter array — the cross-board clustering mesh. Tags span multiple axes at once: component (`keycloak`), concern (`security`, `inference`), or project (`rebrand`). They're set via the board tools (`create_slice` / `create_tep` accept a `tags` argument; `update_slice` replaces them — pass `[]` to clear), returned by `get_slice`, and shown on each `list_board` card. A legacy single `theme:` value is still honored (folded in as a tag, never dropped). Tags are the clustering layer that cross-board grouping builds on.
+
 ## Configuration view
 
 The **Configuration** view (Activity Bar → Thinkube AI → **Configuration**) **follows the navigator selection**: select a Thinking Space in **Boards** and the view scopes to _that_ repo's Claude config — its skills, agents, hooks, commands, MCP entries, permissions, and `CLAUDE.md`, read from the repo's `.claude/`. A **Global** node (`~/.claude`) is always shown above it. With no Thinking Space selected, the view shows the Global node plus a _"Select a Thinking Space"_ placeholder. (Selection drives the scope — there is no separate "Set Active Project" step for the config view, and no hardcoded Platform/Apps/Templates roots.)

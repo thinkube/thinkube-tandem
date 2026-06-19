@@ -46,6 +46,8 @@ export interface TaskCard {
   dependsOn?: string[];
   /** A live `claude -p` worker is running on this slice (control-center graph tag). */
   running?: boolean;
+  /** Clustering tags — the #hashtag mesh (SP-tgvil2). Effective set (folds legacy `theme`). */
+  tags?: string[];
 }
 
 export interface BoardColumn {

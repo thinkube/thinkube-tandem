@@ -42,7 +42,9 @@
     "src/mcp/boardDetection.ts",
     "src/mcp/boardDetection.test.ts",
     "src/mcp/controlRequests.ts",
-    "src/mcp/controlRequests.test.ts"
+    "src/mcp/controlRequests.test.ts",
+    "src/mcp/vscodeStub.ts",
+    "src/mcp/tagsTools.test.ts"
   ],
   "exclude": ["node_modules"]
 }

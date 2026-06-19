@@ -71,6 +71,7 @@ import {
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { isBoardDir } from "./boardDetection";
 import type { Frontmatter } from "../store/frontmatter";
+import { effectiveTags } from "../store/frontmatter";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
@@ -688,6 +689,12 @@ const TOOL_DEFS = [
           type: "string",
           enum: ["P0", "P1", "P2", "P3"],
         },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Free-form clustering tags — the #hashtag mesh (SP-tgvil2): component (`keycloak`), concern (`security`), project (`rebrand`). Many-to-many, cross-board (surfaced by `list_tags`).",
+        },
         ...BOARD_PARAM,
       },
       required: ["spec", "title", "body"],
@@ -729,6 +736,12 @@ const TOOL_DEFS = [
           description: "Slice handle, e.g. `SP-3_SL-42`.",
         },
         body: { type: "string" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Replace the slice's clustering tags (SP-tgvil2). Omit to leave tags unchanged; pass `[]` to clear.",
+        },
         ...BOARD_PARAM,
       },
       required: ["slice", "body"],
@@ -756,6 +769,12 @@ const TOOL_DEFS = [
           type: "string",
           description:
             "The TEP markdown body. Omit on create to scaffold from TEP-TEMPLATE.md.",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Clustering tags for the TEP — the #hashtag mesh (SP-tgvil2), surfaced cross-board by `list_tags`.",
         },
         ...BOARD_PARAM,
       },
@@ -849,6 +868,7 @@ async function dispatchTool(
         docs: optString(args, "docs"),
         docs_reason: optString(args, "docs_reason"),
         priority: optString(args, "priority"),
+        tags: optStringArray(args, "tags"),
       });
     case "write_spec":
       writeGate(name);
@@ -865,6 +885,7 @@ async function dispatchTool(
         store,
         asString(args, "slice"),
         asString(args, "body"),
+        optStringArray(args, "tags"),
       );
     case "write_tep":
       writeGate(name);
@@ -873,6 +894,7 @@ async function dispatchTool(
         title: optString(args, "title"),
         status: optString(args, "status"),
         body: optString(args, "body"),
+        tags: optStringArray(args, "tags"),
       });
     case "write_retro_note":
       writeGate(name);
@@ -981,7 +1003,7 @@ function sliceTitle(body: string | undefined, fallback: string): string {
  * `ThinkubeFilesAdapter.load()`'s read loop (we don't instantiate the adapter —
  * it builds a vscode EventEmitter, and this subprocess only has a vscode stub).
  */
-async function listBoard(store: ThinkubeStore): Promise<unknown> {
+export async function listBoard(store: ThinkubeStore): Promise<unknown> {
   // Per-Spec requirement-hash, computed once per Spec (specs are few).
   const reqHashBySpec = new Map<string, string>();
   const specMeta = new Map<string, SpecMeta>();
@@ -1009,6 +1031,7 @@ async function listBoard(store: ThinkubeStore): Promise<unknown> {
       priority: fm.priority,
       stampedReqHash: fm.verified_req_hash,
       currentReqHash: reqHashBySpec.get(specNumber),
+      tags: effectiveTags(fm),
     });
   }
 
@@ -1028,6 +1051,7 @@ async function listBoard(store: ThinkubeStore): Promise<unknown> {
         specChange: card.specChange,
         priority: card.priority,
         due: card.dueDate,
+        ...(card.tags?.length ? { tags: card.tags } : {}),
         // Close card (TEP-0010): present only on the auto-derived
         // `SP-{id}_accept` card, so a reader can tell it from a slice and know
         // the Spec's sign-off state — accepted/ready, slice progress, and how
@@ -1219,7 +1243,7 @@ const TITLE_MAX = 70;
  * The → Ready gate is enforced at creation time: the parent Spec must exist
  * with a non-empty `## Acceptance Criteria`.
  */
-async function createSlice(
+export async function createSlice(
   store: ThinkubeStore,
   args: {
     spec: string;
@@ -1238,6 +1262,7 @@ async function createSlice(
     priority?: string;
     docs?: string;
     docs_reason?: string;
+    tags?: string[];
   },
 ): Promise<unknown> {
   const title = args.title.trim();
@@ -1339,6 +1364,7 @@ async function createSlice(
   if (args.parallel) fm.parallel = true;
   if (group) fm.parallel_group = group;
   if (args.files?.length) fm.files = args.files;
+  if (args.tags?.length) fm.tags = args.tags;
   // Stamp an empty `assignee` slot the ownership arbiter later claims (SP-tgpwbm).
   fm.assignee = "";
   if (args.satisfies?.length)
@@ -1419,15 +1445,23 @@ async function writeSpec(
   };
 }
 
-async function updateSlice(
+export async function updateSlice(
   store: ThinkubeStore,
   handle: string,
   body: string,
+  tags?: string[],
 ): Promise<unknown> {
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
+
+  // Tags are settable/replaceable via update (SP-tgvil2): when provided, set the
+  // `tags` frontmatter (an empty array clears them); omitted → frontmatter as-is.
+  const nextFm: Frontmatter | undefined =
+    tags === undefined
+      ? parsed.frontmatter
+      : { ...(parsed.frontmatter ?? {}), tags };
 
   // Heading guard (SP-4): a body whose first non-empty line isn't a `#`
   // heading would regress the card to the merged-line shape — re-attach the
@@ -1444,7 +1478,7 @@ async function updateSlice(
     }
   }
 
-  await store.writeFile(rel, parsed.frontmatter, nextBody);
+  await store.writeFile(rel, nextFm, nextBody);
   return {
     ok: true,
     slice: store.sliceHandle(specNumber, sliceNumber),
@@ -1460,9 +1494,15 @@ async function updateSlice(
  * and canonical frontmatter is filled; on update existing frontmatter is
  * preserved (only `title`/`status` are overlaid).
  */
-async function writeTep(
+export async function writeTep(
   store: ThinkubeStore,
-  args: { tep?: string; title?: string; status?: string; body?: string },
+  args: {
+    tep?: string;
+    title?: string;
+    status?: string;
+    body?: string;
+    tags?: string[];
+  },
 ): Promise<unknown> {
   const provided = args.tep?.trim().replace(/^TEP-/i, "");
   const tepId =
@@ -1494,6 +1534,7 @@ async function writeTep(
   if (!fm.id) fm.id = `TEP-${tepId}`;
   if (args.title) fm.title = args.title;
   if (args.status) fm.status = args.status as Frontmatter["status"];
+  if (args.tags?.length) fm.tags = args.tags;
 
   await store.writeFile(rel, fm, body.endsWith("\n") ? body : `${body}\n`);
   return {
@@ -1622,9 +1663,14 @@ function optNumberArray(
 // Kick off LAST: `main()` references classes (BoardRegistry) that — unlike
 // function declarations — are not hoisted, so launching at the top of the
 // module dies in the temporal dead zone.
-main().catch((err) => {
-  process.stderr.write(
-    `[thinkube-mcp] startup failed: ${(err as Error).stack ?? err}\n`,
-  );
-  process.exit(1);
-});
+// Guard on `require.main === module` so importing this module (e.g. a unit test
+// exercising the exported handlers) does NOT boot the stdio server; only a
+// direct `node kanbanMcpServer.js` launch (the .mcp.json entry) starts it.
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(
+      `[thinkube-mcp] startup failed: ${(err as Error).stack ?? err}\n`,
+    );
+    process.exit(1);
+  });
+}
