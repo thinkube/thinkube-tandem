@@ -263,6 +263,10 @@ export function activate(context: vscode.ExtensionContext) {
         specsView.description = repo.name;
         tepsProvider.setRepo(repo);
         tepsView.description = repo.name;
+        // The Configuration view follows the same selection (SP-tgvhfk_SL-1):
+        // scope it to the selected Thinking Space's .claude/.
+        treeProvider.setSelectedRepo({ path: repo.path, name: repo.name });
+        treeView.description = repo.name;
       }
     }),
     // Drill-down (SP-tgs8nz): selecting a TEP filters the Specs view to that

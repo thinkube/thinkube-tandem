@@ -14,6 +14,8 @@
     "src/methodology/ownershipGuard.test.ts",
     "src/views/kanban/host/storage/sliceBoard.ts",
     "src/views/kanban/host/storage/sliceBoard.test.ts",
+    "src/views/sidebar/configScope.ts",
+    "src/views/sidebar/configScope.test.ts",
     "src/store/frontmatter.ts",
     "src/store/frontmatter.test.ts",
     "src/store/ids.ts",

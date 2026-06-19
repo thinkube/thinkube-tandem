@@ -56,6 +56,10 @@ Archived items keep the archive icon regardless of status.
 
 For specs, two per-item right-click actions manage a git **worktree** (parallel work, one tree per spec): **Start Spec in Worktree** creates an isolated worktree + branch and opens a Claude session there; **Retire Spec Worktree** removes that worktree after delivery (refusing if it's dirty/unmerged) — it does _not_ delete the spec. Hover either action for the full description.
 
+## Configuration view
+
+The **Configuration** view (Activity Bar → Thinkube AI → **Configuration**) **follows the navigator selection**: select a Thinking Space in **Boards** and the view scopes to _that_ repo's Claude config — its skills, agents, hooks, commands, MCP entries, permissions, and `CLAUDE.md`, read from the repo's `.claude/`. A **Global** node (`~/.claude`) is always shown above it. With no Thinking Space selected, the view shows the Global node plus a _"Select a Thinking Space"_ placeholder. (Selection drives the scope — there is no separate "Set Active Project" step for the config view, and no hardcoded Platform/Apps/Templates roots.)
+
 ## Split-pane agent teams in VS Code (experimental)
 
 Claude Code's experimental **agent teams** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) render teammates as `tmux`/iTerm2 split panes. Where neither is available — plain VS Code — this extension ships a fake-`tmux` shim so a team still gets one pane per teammate, as VS Code terminals.

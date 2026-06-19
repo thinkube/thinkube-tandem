@@ -32,9 +32,11 @@ import { Command } from "../../models/Command";
 import { Skill } from "../../models/Skill";
 import { Agent } from "../../models/Agent";
 import { McpServer, isHttpServer } from "../../models/McpServer";
+import { resolveSelectedScope, SelectedRepo } from "./configScope";
 
 export type ConfigItemType =
   | "scope-section"
+  | "no-selection"
   | "project-node"
   | "project-node-unconfigured"
   | "plugins-section"
@@ -62,26 +64,6 @@ export type ConfigItemType =
   | "permission-item"
   | "init-action";
 
-interface WorkspaceSection {
-  label: string;
-  rootPath: string;
-  icon: string;
-}
-
-const WORKSPACE_SECTIONS: WorkspaceSection[] = [
-  {
-    label: "Platform",
-    rootPath: "/home/thinkube/thinkube-platform",
-    icon: "server",
-  },
-  { label: "Apps", rootPath: "/home/thinkube/apps", icon: "code" },
-  {
-    label: "Templates",
-    rootPath: "/home/thinkube/user-templates",
-    icon: "file-symlink-directory",
-  },
-];
-
 const GLOBAL_HOME = process.env.HOME || "/home/thinkube";
 
 export class ConfigTreeItem extends vscode.TreeItem {
@@ -96,8 +78,7 @@ export class ConfigTreeItem extends vscode.TreeItem {
       | Agent
       | McpServer
       | InstalledPlugin
-      | string
-      | WorkspaceSection,
+      | string,
     public readonly parentType?: ConfigItemType,
     public readonly projectPath?: string,
   ) {
@@ -109,18 +90,14 @@ export class ConfigTreeItem extends vscode.TreeItem {
   private setIconAndTooltip(): void {
     switch (this.itemType) {
       case "scope-section":
-        if (
-          this.data &&
-          typeof this.data === "object" &&
-          "rootPath" in this.data
-        ) {
-          const section = this.data as WorkspaceSection;
-          this.iconPath = new vscode.ThemeIcon(section.icon);
-          this.tooltip = section.rootPath;
-        } else {
-          this.iconPath = new vscode.ThemeIcon("home");
-          this.tooltip = "Global Claude Code configuration";
-        }
+        this.iconPath = new vscode.ThemeIcon("home");
+        this.tooltip = "Global Claude Code configuration";
+        break;
+      case "no-selection":
+        this.iconPath = new vscode.ThemeIcon("list-selection");
+        this.description = "select a Thinking Space above";
+        this.tooltip =
+          "Select a Thinking Space in the navigator above to see and edit its Claude configuration.";
         break;
       case "project-node":
         this.iconPath = new vscode.ThemeIcon("folder-opened");
@@ -331,10 +308,8 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private pluginService: PluginService;
-  private projectCache: Map<
-    string,
-    { name: string; path: string; hasConfig: boolean }[]
-  > = new Map();
+  /** The navigator-selected Thinking Space the view is scoped to (SP-tgvhfk_SL-1). */
+  private selectedRepo: SelectedRepo | undefined;
 
   constructor(private configService: ClaudeConfigService) {
     this.pluginService = new PluginService(GLOBAL_HOME);
@@ -362,8 +337,22 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     return this.pluginService;
   }
 
+  /**
+   * Scope the view to the navigator-selected Thinking Space (SP-tgvhfk_SL-1).
+   * Pass `undefined` to clear the scope (renders the no-selection placeholder).
+   */
+  setSelectedRepo(repo: SelectedRepo | undefined): void {
+    if (this.selectedRepo?.path === repo?.path) return;
+    this.selectedRepo = repo;
+    this.refresh();
+  }
+
+  /** The repo path the view is scoped to — the default target for create/delete (SL-2). */
+  get selectedRepoPath(): string | undefined {
+    return this.selectedRepo?.path;
+  }
+
   refresh(): void {
-    this.projectCache.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -378,15 +367,6 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
 
     switch (element.itemType) {
       case "scope-section":
-        if (
-          element.data &&
-          typeof element.data === "object" &&
-          "rootPath" in element.data
-        ) {
-          return this.getWorkspaceSectionChildren(
-            element.data as WorkspaceSection,
-          );
-        }
         return this.getGlobalChildren();
 
       case "project-node":
@@ -432,7 +412,7 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
   private getRootChildren(): ConfigTreeItem[] {
     const items: ConfigTreeItem[] = [];
 
-    // Global scope
+    // Global scope is always shown.
     const globalItem = new ConfigTreeItem(
       "Global",
       "scope-section",
@@ -441,17 +421,29 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     globalItem.description = "~/.claude";
     items.push(globalItem);
 
-    // Workspace sections
-    for (const section of WORKSPACE_SECTIONS) {
-      if (fs.existsSync(section.rootPath)) {
-        const item = new ConfigTreeItem(
-          section.label,
-          "scope-section",
-          vscode.TreeItemCollapsibleState.Collapsed,
-          section,
-        );
-        items.push(item);
-      }
+    // The rest of the tree follows the navigator selection (SP-tgvhfk_SL-1):
+    // the selected Thinking Space's config, or a placeholder when none is
+    // selected. No hardcoded Platform/Apps/Templates roots.
+    const scope = resolveSelectedScope(this.selectedRepo);
+    if (scope.kind === "project") {
+      const item = new ConfigTreeItem(
+        scope.name,
+        scope.hasConfig ? "project-node" : "project-node-unconfigured",
+        vscode.TreeItemCollapsibleState.Expanded,
+        undefined,
+        undefined,
+        scope.path,
+      );
+      if (scope.hasConfig) item.description = "✓";
+      items.push(item);
+    } else {
+      items.push(
+        new ConfigTreeItem(
+          "Select a Thinking Space",
+          "no-selection",
+          vscode.TreeItemCollapsibleState.None,
+        ),
+      );
     }
 
     return items;
@@ -529,126 +521,6 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     );
 
     return items;
-  }
-
-  // ========== Workspace sections ==========
-
-  private getWorkspaceSectionChildren(
-    section: WorkspaceSection,
-  ): ConfigTreeItem[] {
-    const items: ConfigTreeItem[] = [];
-    const rootPath = section.rootPath;
-
-    // Workspace-level config (shared across all repos in this section)
-    const hasWorkspaceClaudeMd = fs.existsSync(
-      path.join(rootPath, "CLAUDE.md"),
-    );
-    const hasWorkspaceSettings = fs.existsSync(
-      path.join(rootPath, ".claude", "settings.json"),
-    );
-    if (hasWorkspaceClaudeMd || hasWorkspaceSettings) {
-      const wsConfig = new ConfigTreeItem(
-        "Workspace Config",
-        "project-config-section",
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        undefined,
-        rootPath,
-      );
-      wsConfig.description = "shared across repos";
-      wsConfig.tooltip = `Inherited by all projects under ${rootPath}`;
-      wsConfig.iconPath = new vscode.ThemeIcon("library");
-      items.push(wsConfig);
-    }
-
-    // Individual projects
-    const projects = this.scanProjects(section.rootPath);
-    for (const proj of projects) {
-      const itemType = proj.hasConfig
-        ? "project-node"
-        : "project-node-unconfigured";
-      const item = new ConfigTreeItem(
-        proj.name,
-        itemType,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        undefined,
-        proj.path,
-      );
-      if (proj.hasConfig) {
-        item.description = "✓";
-      }
-      items.push(item);
-    }
-
-    if (projects.length === 0) {
-      items.push(
-        new ConfigTreeItem(
-          "No projects found",
-          "init-action",
-          vscode.TreeItemCollapsibleState.None,
-        ),
-      );
-    }
-
-    return items;
-  }
-
-  private scanProjects(
-    rootPath: string,
-  ): { name: string; path: string; hasConfig: boolean }[] {
-    const cached = this.projectCache.get(rootPath);
-    if (cached) return cached;
-
-    const results: { name: string; path: string; hasConfig: boolean }[] = [];
-    try {
-      const entries = fs.readdirSync(rootPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith(".")) {
-          const fullPath = path.join(rootPath, entry.name);
-          if (fs.existsSync(path.join(fullPath, ".git"))) {
-            const hasConfig =
-              fs.existsSync(path.join(fullPath, ".claude")) ||
-              fs.existsSync(path.join(fullPath, "CLAUDE.md"));
-            results.push({ name: entry.name, path: fullPath, hasConfig });
-          } else {
-            // Scan one level deeper for categorized structures (e.g. core/, templates/)
-            try {
-              const subEntries = fs.readdirSync(fullPath, {
-                withFileTypes: true,
-              });
-              for (const subEntry of subEntries) {
-                if (subEntry.isDirectory() && !subEntry.name.startsWith(".")) {
-                  const subFullPath = path.join(fullPath, subEntry.name);
-                  if (fs.existsSync(path.join(subFullPath, ".git"))) {
-                    const hasConfig =
-                      fs.existsSync(path.join(subFullPath, ".claude")) ||
-                      fs.existsSync(path.join(subFullPath, "CLAUDE.md"));
-                    results.push({
-                      name: `${entry.name}/${subEntry.name}`,
-                      path: subFullPath,
-                      hasConfig,
-                    });
-                  }
-                }
-              }
-            } catch {
-              // ignore read errors on subdirectory
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore read errors
-    }
-
-    results.sort((a, b) => {
-      if (a.hasConfig !== b.hasConfig) return a.hasConfig ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    this.projectCache.set(rootPath, results);
-    return results;
   }
 
   // ========== Project node ==========
