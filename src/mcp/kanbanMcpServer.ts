@@ -75,7 +75,11 @@ import { effectiveTags } from "../store/frontmatter";
 import { groupByTag, type TaggedItem } from "../store/tags";
 import { discoverProducts } from "../store/products";
 import { discoverProjects, projectTeps } from "../store/projects";
-import { parseImplements, normalizeTepId } from "../store/implementsRef";
+import {
+  parseImplements,
+  normalizeTepId,
+  rewriteImplementsForPromote,
+} from "../store/implementsRef";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
@@ -559,7 +563,7 @@ const TOOL_DEFS = [
   {
     name: "get_project",
     description:
-      "Get one Project's manifest + its members (SP-tgvkmt). A Project is a promoted tag: its members are the items (specs/TEPs/slices) across every board whose tags include the project's `tag`. Returns `{ project, members: [{ board, handle, kind }] }`.",
+      "Get one Project's umbrella TEPs + its members (SP-tgvpbm). A Project is a code-less umbrella owning TEPs; its members are the specs (across boards) whose `implements:` resolves to one of those TEPs, plus their slices (inherited) — structural, not tags. Returns `{ project, teps: [TEP-id], members: [{ board, handle, kind }] }`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -573,6 +577,30 @@ const TOOL_DEFS = [
         },
       },
       required: ["product", "id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "promote_tep",
+    description:
+      "Promote a repo TEP into an existing Project's umbrella (SP-tgvpbm). Moves `TEP-<tep>` out of its repo's `teps/` into `<product>/projects/<id>/teps/`, then rewrites EVERY spec that implemented it (across boards) to the qualified umbrella ref — so all former implementers stay members and no dangling/bare ref remains. Returns `{ tep, movedTo, rewritten: [SP-handles] }`. The Project must already exist (create it with New Project first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tep: {
+          type: "string",
+          description: "The TEP id to promote (with or without the `TEP-` prefix).",
+        },
+        product: {
+          type: "string",
+          description: "The Product the target project lives under, e.g. `Platform`.",
+        },
+        id: {
+          type: "string",
+          description: "The target project's id (under `<product>/projects/`).",
+        },
+      },
+      required: ["tep", "product", "id"],
       additionalProperties: false,
     },
   },
@@ -879,6 +907,15 @@ async function dispatchTool(
   if (name === "list_projects") return listProjects(ctx);
   if (name === "get_project")
     return getProject(ctx, asString(args, "product"), asString(args, "id"));
+  if (name === "promote_tep") {
+    writeGate(name);
+    return promoteTep(
+      ctx,
+      asString(args, "tep"),
+      asString(args, "product"),
+      asString(args, "id"),
+    );
+  }
 
   // Every other tool is board-scoped: resolve the store per call.
   const store = ctx.boards.resolve(optString(args, "board"));
@@ -1166,6 +1203,101 @@ export async function getProject(
     project,
     teps: tepIds.map((t) => `TEP-${t}`),
     members,
+  };
+}
+
+/** A board's sidecar namespace = its board dir relative to the board root. */
+function namespaceOfBoardDir(boardRoot: string, boardDir: string): string {
+  return path.relative(boardRoot, boardDir).split(path.sep).join("/");
+}
+
+/**
+ * `promote_tep` (SP-tgvpbm) — move a repo TEP into an existing project's `teps/`
+ * (making it an umbrella TEP) and rewrite **every** dependent spec's
+ * `implements:` to the qualified umbrella ref, so all former implementers stay
+ * members and no bare/dangling ref to the moved TEP remains. Targets an existing
+ * project; refuses otherwise. Returns the moved path + the rewritten spec handles.
+ */
+export async function promoteTep(
+  ctx: HandlerContext,
+  tepArg: string,
+  product: string,
+  projectId: string,
+): Promise<unknown> {
+  const boardRoot = ctx.env.boardRoot;
+  if (!boardRoot) throw new Error("No board root configured.");
+  const tepId = normalizeTepId(tepArg);
+  const project = discoverProjects(boardRoot).find(
+    (p) => p.product === product && p.id === projectId,
+  );
+  if (!project) {
+    throw new Error(
+      `No project "${product}/${projectId}" — create it first (New Project).`,
+    );
+  }
+  const projectNamespace = `${product}/projects/${projectId}`;
+  const boards = ctx.boards.list(true).filter((b) => !b.worktree);
+
+  // Locate the TEP's origin board (the repo whose teps/ holds TEP-{id}).
+  let origin: { boardDir: string; namespace: string } | undefined;
+  for (const b of boards) {
+    const store = ctx.boards.resolve(b.id);
+    if ((await store.listTeps()).some((t) => normalizeTepId(t.id) === tepId)) {
+      origin = {
+        boardDir: store.thinkubeDir,
+        namespace: namespaceOfBoardDir(boardRoot, store.thinkubeDir),
+      };
+      break;
+    }
+  }
+  if (!origin) throw new Error(`TEP-${tepId} not found in any repo board.`);
+  if (origin.namespace === projectNamespace) {
+    throw new Error(`TEP-${tepId} is already under ${projectNamespace}.`);
+  }
+
+  // Move the TEP file: <origin>/teps/TEP-id.md → <project>/teps/TEP-id.md.
+  const fileName = `TEP-${tepId}.md`;
+  const projectTepsDir = path.join(
+    boardRoot,
+    product,
+    "projects",
+    projectId,
+    "teps",
+  );
+  fsSync.mkdirSync(projectTepsDir, { recursive: true });
+  fsSync.renameSync(
+    path.join(origin.boardDir, "teps", fileName),
+    path.join(projectTepsDir, fileName),
+  );
+
+  // Sweep every board's specs; rewrite each dependent's implements: completely.
+  const rewritten: string[] = [];
+  for (const b of boards) {
+    const store = ctx.boards.resolve(b.id);
+    const specNs = namespaceOfBoardDir(boardRoot, store.thinkubeDir);
+    for (const spec of await store.listSpecDirs()) {
+      const rel = store.pathForSpecDoc(spec);
+      const parsed = await store.getFile(rel);
+      const fm = parsed?.frontmatter;
+      const next = rewriteImplementsForPromote(
+        specNs,
+        typeof fm?.implements === "string" ? fm.implements : undefined,
+        origin.namespace,
+        tepId,
+        projectNamespace,
+      );
+      if (next && parsed) {
+        await store.writeFile(rel, { ...(fm ?? {}), implements: next }, parsed.body);
+        rewritten.push(`SP-${spec}`);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    tep: `TEP-${tepId}`,
+    movedTo: `${projectNamespace}/teps/${fileName}`,
+    rewritten,
   };
 }
 

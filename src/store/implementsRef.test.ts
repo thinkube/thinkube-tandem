@@ -10,6 +10,7 @@ import {
   formatImplements,
   resolvesTo,
   normalizeTepId,
+  rewriteImplementsForPromote,
 } from "./implementsRef";
 
 test("parseImplements: bare ref → id only (TEP- stripped)", () => {
@@ -61,4 +62,48 @@ test("resolvesTo: bare ref resolves to the spec's OWN board, never a project", (
   assert.equal(resolvesTo(ref, REPO, REPO, "tgkx1k"), true);
   // a bare ref can never make a spec a member of a project (owner ≠ project ns)
   assert.equal(resolvesTo(ref, REPO, PROJ, "tgkx1k"), false);
+});
+
+test("rewriteImplementsForPromote: bare ref in the origin repo → qualified umbrella ref", () => {
+  assert.equal(
+    rewriteImplementsForPromote(REPO, "TEP-tgkx1k", REPO, "tgkx1k", PROJ),
+    `${PROJ}:TEP-tgkx1k`,
+  );
+});
+
+test("rewriteImplementsForPromote: ref already qualified to the origin → rewritten", () => {
+  assert.equal(
+    rewriteImplementsForPromote(
+      "Platform/core/control",
+      `${REPO}:TEP-tgkx1k`,
+      REPO,
+      "tgkx1k",
+      PROJ,
+    ),
+    `${PROJ}:TEP-tgkx1k`,
+  );
+});
+
+test("rewriteImplementsForPromote: non-dependents return null", () => {
+  // different TEP id
+  assert.equal(
+    rewriteImplementsForPromote(REPO, "TEP-other", REPO, "tgkx1k", PROJ),
+    null,
+  );
+  // bare ref in a DIFFERENT repo (that's a different TEP, not the one moving)
+  assert.equal(
+    rewriteImplementsForPromote(
+      "Platform/core/control",
+      "TEP-tgkx1k",
+      REPO,
+      "tgkx1k",
+      PROJ,
+    ),
+    null,
+  );
+  // no implements at all
+  assert.equal(
+    rewriteImplementsForPromote(REPO, undefined, REPO, "tgkx1k", PROJ),
+    null,
+  );
 });

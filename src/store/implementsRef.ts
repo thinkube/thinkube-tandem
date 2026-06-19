@@ -67,3 +67,27 @@ export function resolvesTo(
   const owner = ref.namespace ?? specNamespace;
   return owner === targetNamespace;
 }
+
+/**
+ * The decision for `promote_tep` (SP-tgvpbm_SL-3): given a spec (in
+ * `specNamespace`) whose `implements:` is `implementsRaw`, and a TEP `tepId`
+ * being moved out of `originNamespace` into `projectNamespace`, return the
+ * spec's NEW `implements:` value if it depended on that TEP, else `null`.
+ * A dependent is any spec that resolved to the TEP at its origin (a bare ref in
+ * the origin repo, or a ref qualified to the origin namespace). The rewrite is
+ * always the qualified umbrella ref — so no bare/dangling ref to the moved TEP
+ * can remain.
+ */
+export function rewriteImplementsForPromote(
+  specNamespace: string,
+  implementsRaw: string | undefined,
+  originNamespace: string,
+  tepId: string,
+  projectNamespace: string,
+): string | null {
+  const ref = parseImplements(implementsRaw);
+  if (!ref || !resolvesTo(ref, specNamespace, originNamespace, tepId)) {
+    return null;
+  }
+  return formatImplements(projectNamespace, tepId);
+}
