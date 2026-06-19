@@ -176,16 +176,23 @@ export interface BoardInfo {
   path: string;
   /** The board dir (the `.thinkube`-equivalent) — central or co-located (SP-8). */
   boardDir: string;
+  /**
+   * True when this entry is a linked git worktree (SP-5/SP-9), not a standalone
+   * board: it shares its canonical repo's namespace. Listed separately so the
+   * board vocabulary stays a list of logical Thinking Spaces, not checkouts.
+   */
+  worktree?: boolean;
 }
 
 const DISCOVERY_TTL_MS = 10_000;
 const MAX_WALK_DEPTH = 3;
 
 /**
- * Discovers boards (repos with a committed `.thinkube/`) under the configured
- * roots and resolves `board` arguments to `ThinkubeStore`s. Discovery mirrors
- * the navigator's `discoverRepos`: a directory containing `.git` is a repo
- * and a leaf; it is a board iff it also contains `.thinkube/`.
+ * Discovers boards under the configured roots and resolves `board` arguments to
+ * `ThinkubeStore`s. Discovery mirrors the navigator's `discoverRepos`: a
+ * directory containing `.git` is a repo and a leaf; it is a board iff its board
+ * dir exists — the central sidecar namespace (ADR-0008) or a co-located
+ * `.thinkube/`. Linked worktrees map to their canonical repo's namespace.
  */
 export class BoardRegistry {
   /** The session's own board: the enabled repo containing process.cwd(). */
@@ -396,7 +403,7 @@ function walkForBoards(
       const name = wt
         ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
         : path.basename(abs);
-      out.set(abs, { id: boardId(abs), name, path: abs, boardDir });
+      out.set(abs, { id: boardId(abs), name, path: abs, boardDir, worktree: !!wt });
     }
     return; // a repo is a leaf — no nested boards
   }
@@ -507,7 +514,7 @@ const TOOL_DEFS = [
   {
     name: "list_boards",
     description:
-      "Discover every Tandem board: repos with a committed `.thinkube/` across the configured roots. Returns each board's canonical id (home-relative path — the value to pass as `board` to the other tools), name, and absolute path, plus which board is this session's default. The semantic location is part of the id (`apps/…` = deployed app, `user-templates/…` = template, `thinkube-platform/…` = platform code).",
+      "Discover every Tandem board across the configured roots: repos whose board dir exists — either the central sidecar namespace `<board-root>/<container>/<rel>` (ADR-0008) or a legacy co-located `.thinkube/`. Returns each board's canonical id (home-relative path — the value to pass as `board` to the other tools), name, and absolute path, plus which board is this session's default. Linked git worktrees are omitted (they share their canonical repo's board — address them by that repo's id). The semantic location is part of the id (`apps/…` = deployed app, `user-templates/…` = template, `thinkube-platform/…` = platform code).",
     inputSchema: {
       type: "object",
       properties: {},
@@ -920,13 +927,19 @@ const VALID_STATUSES = [
 ] as const;
 
 function listBoards(ctx: HandlerContext): unknown {
+  // A linked worktree shares its canonical repo's board (it is addressable via
+  // that repo's id), so it is not its own Thinking Space — omit worktree
+  // checkouts so the vocabulary lists logical boards, not checkouts.
   return {
     defaultBoard: ctx.boards.defaultBoardId() ?? null,
-    boards: ctx.boards.list(true).map((b) => ({
-      id: b.id,
-      name: b.name,
-      path: b.path,
-    })),
+    boards: ctx.boards
+      .list(true)
+      .filter((b) => !b.worktree)
+      .map((b) => ({
+        id: b.id,
+        name: b.name,
+        path: b.path,
+      })),
   };
 }
 

@@ -262,7 +262,14 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
           },
         ];
       }
-      const repos = discoverRepos();
+      const showWorktrees = vscode.workspace
+        .getConfiguration("thinkube.boards")
+        .get<boolean>("showWorktrees", false);
+      let repos = discoverRepos();
+      // A linked worktree shares its canonical repo's board (it is not a
+      // separate Thinking Space), so hide worktree entries unless opted in —
+      // they otherwise read as duplicate top-level boards.
+      if (!showWorktrees) repos = repos.filter((r) => !r.worktreeOf);
       return this._configuredOnly ? repos.filter((r) => r.enabled) : repos;
     }
     if (element.kind !== "repo" || !element.enabled) return [];
