@@ -43,6 +43,7 @@ import { TepsProvider } from "./views/boards/TepsProvider";
 import { ProjectMembersProvider } from "./views/boards/ProjectMembersProvider";
 import { ThinkubeStore } from "./store/ThinkubeStore";
 import { registerBoardCommands, seedBoardsFilter } from "./commands/boards";
+import { registerProductCommands } from "./commands/products";
 import {
   registerArchiveCommands,
   seedArchivedFilters,
@@ -232,6 +233,8 @@ export function activate(context: vscode.ExtensionContext) {
   });
   // Restore the configured-only filter (icon + list) from the last session.
   seedBoardsFilter(context, boardNavigator);
+  // New Product / New Project commands (SP-tgvl81_SL-3).
+  registerProductCommands(context, boardNavigator);
 
   // Specs section (master-detail): lists the selected thinking space's
   // .thinkube/specs/SP-{n}/spec.md files; clicking opens the document.

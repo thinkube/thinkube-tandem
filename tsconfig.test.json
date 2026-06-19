@@ -18,6 +18,8 @@
     "src/views/sidebar/configScope.test.ts",
     "src/views/boards/productTree.ts",
     "src/views/boards/productTree.test.ts",
+    "src/commands/manifestWriters.ts",
+    "src/commands/manifestWriters.test.ts",
     "src/models/ClaudeConfig.ts",
     "src/commands/configTarget.ts",
     "src/commands/configTarget.test.ts",

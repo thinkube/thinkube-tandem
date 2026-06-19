@@ -104,6 +104,18 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "thinkube.products.new",
+        "title": "New Product",
+        "category": "Thinkube Boards",
+        "icon": "$(package)"
+      },
+      {
+        "command": "thinkube.projects.new",
+        "title": "New Project",
+        "category": "Thinkube Boards",
+        "icon": "$(add)"
+      },
+      {
         "command": "thinkube.boards.enable",
         "title": "Enable Methodology Here",
         "category": "Thinkube Boards",
@@ -374,6 +386,11 @@
           "group": "navigation@0"
         },
         {
+          "command": "thinkube.products.new",
+          "when": "view == thinkubeBoards",
+          "group": "navigation@2"
+        },
+        {
           "command": "thinkube.boards.showConfiguredOnly",
           "when": "view == thinkubeBoards && !thinkube.boards.configuredOnly",
           "group": "navigation@1"
@@ -445,6 +462,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "thinkube.projects.new",
+          "when": "view == thinkubeBoards && viewItem == thinkubeProduct",
+          "group": "inline"
+        },
         {
           "command": "thinkube.specs.startWorktree",
           "when": "view == thinkubeSpecs && viewItem == spec-open",
