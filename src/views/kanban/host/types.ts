@@ -58,7 +58,12 @@ export interface BoardColumn {
 export interface Board {
   columns: BoardColumn[];
   tasks: Record<string, TaskCard>;
+  /** Panel key + fallback label. */
   scope: string;
+  /** Display title — the thinking space name (SP-tgs8nz). */
+  title?: string;
+  /** Display subtitle — the Spec's description (spec-scoped board). */
+  subtitle?: string;
 }
 
 export type WebviewMessage =

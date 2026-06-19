@@ -184,9 +184,10 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
-    const base = node.status ? `${node.status} · ${node.title}` : node.title;
-    item.description = node.archived ? `archived · ${base}` : base;
-    item.tooltip = node.archived ? `(archived)\n${node.file}` : node.file;
+    // Status lives in the icon colour, so keep it out of the row — that frees the
+    // width for the title. Hover surfaces the status + the full title.
+    item.description = node.archived ? `archived · ${node.title}` : node.title;
+    item.tooltip = node.status ? `${node.status} · ${node.title}` : node.title;
     item.iconPath = tepStatusIcon(node);
     // Archived TEPs get a distinct contextValue so Unarchive (not Archive) shows.
     item.contextValue = node.archived ? "tep-archived" : "tep";

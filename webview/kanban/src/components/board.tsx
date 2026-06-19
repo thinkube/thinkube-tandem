@@ -20,7 +20,23 @@ export function Board({ mode }: { mode: ModeFlag }): JSX.Element {
   const inner = (
     <div className={styles.board}>
       <header className={styles.header}>
-        <h1>{state.scope || "Thinkube Kanban"}</h1>
+        <div>
+          <h1 style={{ margin: 0 }}>
+            {state.title || state.scope || "Thinkube Kanban"}
+          </h1>
+          {state.subtitle && (
+            <div
+              style={{
+                fontSize: "0.7em",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                opacity: 0.65,
+              }}
+            >
+              {state.subtitle}
+            </div>
+          )}
+        </div>
         <span className="grow" />
         <button
           type="button"

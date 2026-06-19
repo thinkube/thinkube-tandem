@@ -63,7 +63,7 @@
     "viewsWelcome": [
       {
         "view": "thinkubeSpecs",
-        "contents": "Select a thinking space above to list its specs."
+        "contents": "Select a TEP above to list its specs."
       },
       {
         "view": "thinkubeTeps",

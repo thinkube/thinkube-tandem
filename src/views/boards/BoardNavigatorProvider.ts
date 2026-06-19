@@ -327,13 +327,9 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
           ? "project"
           : "circle-outline",
     );
-    if (node.enabled) {
-      item.command = {
-        command: "thinkube.boards.open",
-        title: "Open Tandem board",
-        arguments: [node],
-      };
-    }
+    // Clicking a Thinking Space only *selects* it (driving the TEPs → Specs
+    // drill-down); the kanban opens per-Spec, not for the whole space (SP-tgs8nz).
+    // The whole-space board stays available via the palette / context menu.
     return item;
   }
 }

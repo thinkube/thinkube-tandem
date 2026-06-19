@@ -175,6 +175,7 @@ async function openBoardFor(
     store,
     specFilter ? `SP-${specFilter}` : r.name,
     specFilter,
+    r.name,
   );
   adapter.watchExternal();
   await KanbanPanel.open({

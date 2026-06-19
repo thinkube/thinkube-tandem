@@ -89,6 +89,11 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     return this.repo;
   }
 
+  /** The TEP currently drilled into (drives auto-`implements` on New Spec). */
+  get selectedTep(): string | undefined {
+    return this.tepFilter;
+  }
+
   /** The thinking space whose specs we list (undefined = none selected). */
   setRepo(repo: RepoEntry | undefined): void {
     if (this.repo?.path === repo?.path && this.repo?.enabled === repo?.enabled)
@@ -141,6 +146,9 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         },
       ];
     }
+
+    // Specs are TEP-driven (SP-tgs8nz): nothing until a TEP is selected above.
+    if (!this.tepFilter) return [];
 
     const store = new ThinkubeStore(this.repo.path, this.repo.boardDir);
     const numbers = await store.listSpecDirs();
@@ -260,7 +268,8 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
         : vscode.TreeItemCollapsibleState.None,
     );
     item.description = node.archived ? `archived · ${node.title}` : node.title;
-    item.tooltip = node.archived ? `(archived)\n${node.file}` : node.file;
+    // Hover shows the full title (the spec's description), not the file path.
+    item.tooltip = node.archived ? `archived · ${node.title}` : node.title;
     item.iconPath = specStatusIcon(node);
     // Archived specs get a distinct contextValue so Unarchive (not Archive, nor
     // the worktree actions) shows on them (TEP-tg86v7).

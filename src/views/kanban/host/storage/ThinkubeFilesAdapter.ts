@@ -43,6 +43,8 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
     readonly scope: string,
     /** When set, the board is scoped to a single Spec (its slices + meta only). */
     private readonly specFilter?: string,
+    /** Display title — the thinking space name (falls back to scope). */
+    private readonly spaceName?: string,
   ) {}
 
   /** Begin reflecting external `.thinkube/` edits into the board. Idempotent. */
@@ -64,6 +66,7 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
     // Spec (specs are few).
     const reqHashBySpec = new Map<string, string>();
     const specMeta = new Map<string, SpecMeta>();
+    let subtitle: string | undefined;
     const specDirs = this.specFilter
       ? [this.specFilter]
       : await this.store.listSpecDirs();
@@ -73,6 +76,10 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
       );
       if (doc?.body) reqHashBySpec.set(specNumber, requirementHash(doc.body));
       specMeta.set(specNumber, deriveSpecMeta(doc?.frontmatter, doc?.body));
+      if (this.specFilter && specNumber === this.specFilter) {
+        const h = doc?.body ? /^#\s+(.+)$/m.exec(doc.body) : null;
+        subtitle = h?.[1]?.trim() || undefined;
+      }
     }
 
     // Resolve the repo coords once so a recorded commit SHA can be turned into
@@ -112,7 +119,10 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
         dependsOn: Array.isArray(fm.depends_on) ? fm.depends_on : undefined,
       });
     }
-    return buildSliceBoard(inputs, this.scope, specMeta);
+    const board = buildSliceBoard(inputs, this.scope, specMeta);
+    board.title = this.spaceName ?? this.scope;
+    board.subtitle = subtitle;
+    return board;
   }
 
   async save(board: Board): Promise<void> {

@@ -77,6 +77,10 @@ export interface Board {
   tasks: Record<string, TaskCard>;
   /** Human label shown in the panel title — usually a repo/project name. */
   scope: string;
+  /** Display title — the thinking space name (SP-tgs8nz). */
+  title?: string;
+  /** Display subtitle — the Spec's description (spec-scoped board). */
+  subtitle?: string;
 }
 
 /**

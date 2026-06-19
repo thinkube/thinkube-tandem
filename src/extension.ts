@@ -301,10 +301,12 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const store = new ThinkubeStore(repo.path, repo.boardDir);
         const n = await store.nextSpecNumber();
-        await launcher.openHere(
-          vscode.Uri.file(repo.path),
-          `/spec-prepare ${n} `,
-        );
+        // If a TEP is drilled into, pre-assign the new Spec to it (implements:).
+        const tep = specsProvider.selectedTep;
+        const prefill = tep
+          ? `/spec-prepare ${n} (implements TEP-${tep})`
+          : `/spec-prepare ${n} `;
+        await launcher.openHere(vscode.Uri.file(repo.path), prefill);
       } catch (err) {
         vscode.window.showErrorMessage(
           `Couldn't start a new spec: ${(err as Error).message}`,
