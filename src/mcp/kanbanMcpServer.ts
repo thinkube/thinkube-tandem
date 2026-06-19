@@ -74,7 +74,8 @@ import type { Frontmatter } from "../store/frontmatter";
 import { effectiveTags } from "../store/frontmatter";
 import { groupByTag, type TaggedItem } from "../store/tags";
 import { discoverProducts } from "../store/products";
-import { discoverProjects } from "../store/projects";
+import { discoverProjects, projectTeps } from "../store/projects";
+import { parseImplements, normalizeTepId } from "../store/implementsRef";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
@@ -1110,29 +1111,62 @@ export function listProjects(ctx: HandlerContext): unknown {
 }
 
 /**
- * `get_project` — a Project's manifest + its members. A Project is a promoted
- * tag: its members are the items across all boards whose effective tags include
- * the project's `tag` (resolved through the same cross-board aggregation as
- * `list_tags`). Throws if the project is unknown.
+ * `get_project` — a Project's manifest + its members (SP-tgvpbm). A Project is a
+ * code-less umbrella owning TEPs; its members are the specs (across boards) whose
+ * `implements:` resolves to one of the project's umbrella TEPs, PLUS each such
+ * spec's slices (inherited). Membership is structural (`implements:`), not tags.
+ * Throws if the project is unknown.
  */
 export async function getProject(
   ctx: HandlerContext,
   product: string,
   id: string,
 ): Promise<unknown> {
-  const project = (
-    ctx.env.boardRoot ? discoverProjects(ctx.env.boardRoot) : []
-  ).find((p) => p.product === product && p.id === id);
+  const boardRoot = ctx.env.boardRoot;
+  const project = (boardRoot ? discoverProjects(boardRoot) : []).find(
+    (p) => p.product === product && p.id === id,
+  );
   if (!project) {
     throw new Error(`No project "${product}/${id}" under the board root.`);
   }
-  const boards = ctx.boards
-    .list(true)
-    .filter((b) => !b.worktree)
-    .map((b) => ({ boardId: b.id, store: ctx.boards.resolve(b.id) }));
-  const agg = await aggregateTagsAcrossBoards(boards);
-  const members = agg.find((t) => t.tag === project.tag)?.items ?? [];
-  return { project, members };
+  const projectNamespace = `${product}/projects/${id}`;
+  const tepIds = projectTeps(boardRoot!, product, id).map(normalizeTepId);
+
+  const members: { board: string; handle: string; kind: string }[] = [];
+  for (const b of ctx.boards.list(true).filter((bb) => !bb.worktree)) {
+    const store = ctx.boards.resolve(b.id);
+    for (const spec of await store.listSpecDirs()) {
+      const fm = (await store.getFile(store.pathForSpecDoc(spec)))?.frontmatter;
+      const ref = parseImplements(
+        typeof fm?.implements === "string" ? fm.implements : undefined,
+      );
+      // A member's `implements:` is qualified to this project's namespace and an
+      // umbrella TEP it owns. (A bare ref is repo-local → never a project member.)
+      if (
+        !ref ||
+        ref.namespace !== projectNamespace ||
+        !tepIds.includes(ref.id)
+      ) {
+        continue;
+      }
+      members.push({ board: b.id, handle: `SP-${spec}`, kind: "spec" });
+      // Slices inherit membership from their spec.
+      for (const rel of await store.listSlices(spec)) {
+        const m = SLICE_PATH_RE.exec(rel);
+        if (m)
+          members.push({
+            board: b.id,
+            handle: sliceHandle(m[1], Number(m[2])),
+            kind: "slice",
+          });
+      }
+    }
+  }
+  return {
+    project,
+    teps: tepIds.map((t) => `TEP-${t}`),
+    members,
+  };
 }
 
 /** Parse a slice handle (`SP-3_SL-42`) → its (spec, slice) numbers. */

@@ -1,7 +1,10 @@
 /**
- * Handler tests for list_projects / get_project (SP-tgvkmt_SL-2). installVscodeStub
- * pattern (stub imported FIRST); main() is require.main-guarded so importing the
- * server module doesn't boot the stdio server.
+ * Handler tests for list_projects / get_project (SP-tgvkmt_SL-2, reworked for
+ * the structural-umbrella model in SP-tgvpbm_SL-2). installVscodeStub pattern
+ * (stub imported FIRST); main() is require.main-guarded.
+ *
+ * Membership is now structural: a project's members are the specs whose
+ * `implements:` resolves to one of the project's umbrella TEPs, plus their slices.
  */
 import "./installVscodeStub";
 
@@ -14,25 +17,33 @@ import * as path from "node:path";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { listProjects, getProject, createSlice } from "./kanbanMcpServer";
 
-/** A tmp board root carrying two products, each with a project.yaml. */
+/** A tmp board root with two products; the `rebrand` project owns an umbrella TEP. */
 function boardRootWithProjects(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-projbr-"));
   const proj = (rel: string, yaml: string) => {
     fs.mkdirSync(path.join(root, rel), { recursive: true });
     fs.writeFileSync(path.join(root, rel, "project.yaml"), yaml);
   };
-  proj("Platform/projects/rebrand", "name: The Rebrand\nstate: open\ntag: rebrand\n");
-  proj("Apps/projects/search", "tag: search\n");
+  proj("Platform/projects/rebrand", "name: The Rebrand\nstate: open\n");
+  // The umbrella TEP the project owns.
+  fs.mkdirSync(path.join(root, "Platform", "projects", "rebrand", "teps"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(root, "Platform", "projects", "rebrand", "teps", "TEP-reb.md"),
+    "---\nkind: tep\nid: TEP-reb\n---\n# Rebrand\n",
+  );
+  proj("Apps/projects/search", "name: Search\n");
   return root;
 }
 
-/** A tmp board store seeded with a Spec that has acceptance criteria. */
-async function seededStore(spec: string): Promise<ThinkubeStore> {
+/** A tmp board store with one Spec (given `implements`) that has acceptance criteria. */
+async function seededStore(spec: string, implementsRef: string): Promise<ThinkubeStore> {
   const board = fs.mkdtempSync(path.join(os.tmpdir(), "tk-projstore-"));
   const store = new ThinkubeStore(board, board);
   await store.writeFile(
     store.pathForSpecDoc(spec),
-    { implements: "TEP-x" },
+    { implements: implementsRef },
     "# Demo\n\n## Acceptance Criteria\n\n- [ ] x\n",
   );
   return store;
@@ -48,22 +59,17 @@ test("list_projects returns every product's projects, sorted", () => {
   );
 });
 
-test("get_project returns the manifest + tag-resolved members (non-matching excluded)", async () => {
+test("get_project members = specs implementing the umbrella TEP + their slices (not tags)", async () => {
   const root = boardRootWithProjects();
-  const a = await seededStore("aaa");
-  const b = await seededStore("bbb");
-  const member = (await createSlice(a, {
+  // member: implements the project's umbrella TEP via the qualified ref.
+  const a = await seededStore("aaa", "Platform/projects/rebrand:TEP-reb");
+  // non-member: implements something else.
+  const b = await seededStore("bbb", "Apps/projects/other:TEP-zzz");
+  const sl = (await createSlice(a, {
     spec: "aaa",
-    title: "a member",
+    title: "a member slice",
     body: "d",
-    tags: ["rebrand"],
   })) as { slice: string };
-  await createSlice(b, {
-    spec: "bbb",
-    title: "not a member",
-    body: "d",
-    tags: ["other"],
-  });
 
   const ctx = {
     env: { boardRoot: root },
@@ -76,15 +82,14 @@ test("get_project returns the manifest + tag-resolved members (non-matching excl
     },
   };
   const res = (await getProject(ctx as never, "Platform", "rebrand")) as {
-    project: { id: string; tag: string };
-    members: { handle: string }[];
+    teps: string[];
+    members: { handle: string; kind: string }[];
   };
-  assert.equal(res.project.id, "rebrand");
-  assert.equal(res.project.tag, "rebrand");
-  assert.deepEqual(
-    res.members.map((m) => m.handle),
-    [member.slice],
-  );
+  assert.deepEqual(res.teps, ["TEP-reb"]);
+  const handles = res.members.map((m) => m.handle).sort();
+  // the implementing spec + its (inherited) slice; the non-member excluded
+  assert.deepEqual(handles, ["SP-aaa", sl.slice].sort());
+  assert.ok(!handles.includes("SP-bbb"));
 });
 
 test("get_project throws for an unknown project", async () => {

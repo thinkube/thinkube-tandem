@@ -35,6 +35,30 @@ function str(v: unknown, fallback: string): string {
   return typeof v === "string" && v.trim() ? v.trim() : fallback;
 }
 
+/** The umbrella TEP ids under a project's `teps/` (SP-tgvpbm) — the TEPs a
+ *  project owns. A project is code-less, so this (plus `project.yaml`) is its
+ *  only content. Returns [] when the project / its `teps/` is absent. */
+export function projectTeps(
+  boardRoot: string,
+  product: string,
+  projectId: string,
+): string[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(
+      path.join(boardRoot, product, "projects", projectId, "teps"),
+    );
+  } catch {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const n of names) {
+    const mm = /^TEP-([A-Za-z0-9]+)\.md$/.exec(n);
+    if (mm) ids.push(mm[1]);
+  }
+  return ids.sort();
+}
+
 function readProject(boardRoot: string, product: string, id: string): Project {
   let m: Record<string, unknown> = {};
   try {
