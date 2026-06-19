@@ -20,6 +20,7 @@ import {
   stableServerScriptPath,
 } from "./mcp/stableServerPath";
 import { BundleInstaller } from "./methodology/BundleInstaller";
+import { writeMachineMcpConfig } from "./mcp/machineConfig";
 import { AgentTeamsShimServer } from "./services/agentTeams/AgentTeamsShimServer";
 import {
   OwnershipArbiter,
@@ -170,6 +171,15 @@ export function activate(context: vscode.ExtensionContext) {
   ensureStableServerLink(context).catch((err) => {
     kanbanOutput.appendLine(
       `[thinkube] stable server link failed: ${(err as Error).message}`,
+    );
+  });
+
+  // Machine-level MCP config (TEP-tgvwct, Phase 3): write board root / folders
+  // so the plugin-shipped kanban server self-configures without per-repo
+  // `.mcp.json` env injection. Best-effort; refreshed when the boards root changes.
+  writeMachineMcpConfig().catch((err) => {
+    kanbanOutput.appendLine(
+      `[thinkube] machine MCP config write failed: ${(err as Error).message}`,
     );
   });
 

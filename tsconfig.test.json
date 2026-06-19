@@ -55,6 +55,8 @@
     "src/github/specMerge.test.ts",
     "src/mcp/boardDetection.ts",
     "src/mcp/boardDetection.test.ts",
+    "src/mcp/serverConfig.ts",
+    "src/mcp/serverConfig.test.ts",
     "src/mcp/controlRequests.ts",
     "src/mcp/controlRequests.test.ts",
     "src/mcp/vscodeStub.ts",

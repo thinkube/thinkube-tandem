@@ -685,7 +685,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && node scripts/build-assets.mjs && npm run compile:webview",
+    "compile": "tsc -p ./ && node scripts/build-assets.mjs && npm run bundle:mcp && npm run compile:webview",
+    "bundle:mcp": "node esbuild.mcp.mjs",
     "compile:webview": "npm --prefix webview/kanban run build",
     "install:webview": "npm --prefix webview/kanban install",
     "watch": "tsc -watch -p ./",
@@ -699,6 +700,7 @@
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
     "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.28.1",
     "ovsx": "^0.8.3",
     "typescript": "^5.8.3"
   },

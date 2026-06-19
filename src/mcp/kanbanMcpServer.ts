@@ -70,6 +70,7 @@ import {
 } from "../methodology/qualityGates";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { isBoardDir } from "./boardDetection";
+import { resolveServerConfig, type ServerConfigFile } from "./serverConfig";
 import type { Frontmatter } from "../store/frontmatter";
 import { effectiveTags } from "../store/frontmatter";
 import { groupByTag, type TaggedItem } from "../store/tags";
@@ -107,40 +108,24 @@ interface ServerEnv {
   legacyWorkspace?: string;
 }
 
-function readEnv(): ServerEnv {
-  const roots = (process.env.THINKUBE_ROOTS ?? "")
-    .split(path.delimiter)
-    .map((r) => r.trim())
-    .filter(Boolean);
-  let folders: WorkspaceFolderRef[] = [];
+/** The machine-level config file the extension writes (TEP-tgvwct Phase 3) so
+ *  the plugin-shipped server self-configures without per-repo `.mcp.json` env
+ *  injection. Missing / unparseable → null (env + cwd discovery still apply). */
+function readConfigFile(): ServerConfigFile | null {
+  const dir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
   try {
-    const parsed = JSON.parse(process.env.THINKUBE_FOLDERS ?? "[]");
-    if (Array.isArray(parsed)) {
-      folders = parsed
-        .filter(
-          (f) => f && typeof f.name === "string" && typeof f.path === "string",
-        )
-        .map((f) => ({ name: f.name, path: f.path }));
-    }
+    return JSON.parse(
+      fsSync.readFileSync(path.join(dir, "thinkube-mcp.json"), "utf8"),
+    ) as ServerConfigFile;
   } catch {
-    folders = [];
+    return null;
   }
-  const boardRoot = (process.env.THINKUBE_BOARD_ROOT ?? "").trim() || undefined;
-  const legacyWorkspace = (process.env.THINKUBE_WORKSPACE ?? "").trim();
-  const allowAIWrites =
-    (process.env.THINKUBE_ALLOW_AI_WRITES ?? "true").toLowerCase() === "true";
-  const docsGateMode: DocsGateMode =
-    (process.env.THINKUBE_DOCS_GATE_MODE ?? "").toLowerCase() === "blocking"
-      ? "blocking"
-      : "advisory";
-  return {
-    roots,
-    folders,
-    boardRoot,
-    allowAIWrites,
-    docsGateMode,
-    legacyWorkspace: legacyWorkspace || undefined,
-  };
+}
+
+/** Effective config: `THINKUBE_*` env (back-compat) → machine-level file → cwd
+ *  discovery (in BoardRegistry). See `serverConfig.resolveServerConfig`. */
+function readEnv(): ServerEnv {
+  return resolveServerConfig(process.env, readConfigFile(), path.delimiter);
 }
 
 function log(msg: string): void {
