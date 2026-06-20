@@ -269,6 +269,33 @@ export function readyFrontier(
 }
 
 /**
+ * Build the **autonomy-first prompt** for a worker dispatched on one execution unit
+ * (SP-tgs8nz). Scoped to the unit's footprint + shape, it tells the worker to decide
+ * autonomously (never seek confirmation), never touch git or the board, and escalate
+ * with a question ONLY when genuinely blocked — the posture that keeps headless
+ * execution from stopping on routine approvals. Pure → unit-tested.
+ */
+export function buildWorkerPrompt(unit: SchedUnit, specNumber: string): string {
+  const m = /_SL-(\d+)$/.exec(unit.slice);
+  const sliceFile = m ? `specs/SP-${specNumber}/SL-${m[1]}.md` : unit.slice;
+  const fp = unit.footprint.join(", ") || "(no declared footprint)";
+  const task =
+    unit.shape === "mechanize"
+      ? `This is a MECHANIZE unit: author ONE transform and apply it across all of [${fp}] — do not hand-edit each object.`
+      : unit.shape === "fan-out"
+        ? `This is a FAN-OUT unit over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`
+        : `This is a SERIAL unit — do its steps in order over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`;
+  return (
+    `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
+    `Read ${sliceFile} and its parent spec for context, then implement THIS unit only — touch only its footprint: ${fp}.\n\n` +
+    `${task}\n\n` +
+    `Work autonomously to the slice's acceptance criteria. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
+    `Do NOT commit, run git, or move the board card — the orchestrator owns git and the gate. ` +
+    `Only if you hit a genuine decision you cannot make from the spec/slice/codebase, stop and state the question rather than guessing.`
+  );
+}
+
+/**
  * Extract a requires-attention slice's failure diagnosis from its body — the text the
  * orchestrator appended under the `## ⚑ Requires attention` heading (SP-tgs8nz AC4). Returns
  * undefined if absent. `/attend` uses it to prime the resolution session.

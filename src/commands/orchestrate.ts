@@ -102,19 +102,20 @@ export function registerOrchestrateCommands(
           vscode.workspace
             .getConfiguration("thinkube.orchestrator")
             .get<number>("maxConcurrent") ?? 4;
-        const results = await orchestrator.dispatchFrontier(spec, cap);
-        if (results.length === 0) {
+        const r = await orchestrator.dispatchSpec(spec, cap);
+        if (!r.ok) {
+          vscode.window.showErrorMessage(
+            `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,
+          );
+        } else if (r.dispatched === 0) {
           vscode.window.showInformationMessage(
-            `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied slice.`,
+            `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied unit.`,
           );
         } else {
-          const advanced = results.filter((r) => r.advanced).length;
-          const stuck = results.filter(
-            (r) => r.success && r.verified === false,
-          ).length;
           vscode.window.showInformationMessage(
-            `SP-${spec}: dispatched ${results.length}, advanced ${advanced}` +
-              (stuck ? `, ${stuck} verifier-red (left in Doing)` : ""),
+            `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
+              (r.attention.length ? `, ${r.attention.length} need attention` : "") +
+              (r.committed ? " — committed ✓" : ""),
           );
         }
       } catch (err) {
