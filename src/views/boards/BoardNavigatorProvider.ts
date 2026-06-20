@@ -9,19 +9,14 @@
  * is the single source of truth (ADR-0001).
  *
  * Per ADR-0007 Phase 6 the navigator also absorbed the old "Project" view:
- * each enabled repo expands to a methodology-bundle status node (computed
- * per-repo via `BundleInstaller`), with install/diff actions on the node.
+ * a Thinking Space is a leaf — selecting it scopes the TEPs → Specs side-views.
+ * The methodology ships as a versioned plugin, not a per-repo bundle.
  * There is no single configured methodology root anymore.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
-import {
-  BundleInstaller,
-  StatusReport,
-  summarizeStatus,
-} from "../../methodology/BundleInstaller";
 import { linkedWorktreeInfo } from "../../services/WorktreeService";
 import {
   boardDirForNamespace,
@@ -56,14 +51,6 @@ export interface RepoEntry {
   worktreeOf?: { repo: string; name: string };
 }
 
-/** Child node of an enabled repo: its methodology-bundle install state. */
-export interface BundleStatusNode {
-  kind: "bundle-status";
-  repo: RepoEntry;
-  report?: StatusReport;
-  error?: string;
-}
-
 /** A standalone message row — e.g. the board root is configured but missing. */
 export interface BoardMessageNode {
   kind: "message";
@@ -94,7 +81,6 @@ export interface ProjectNode {
 
 export type BoardNode =
   | RepoEntry
-  | BundleStatusNode
   | BoardMessageNode
   | ProductNode
   | ProjectNode;
@@ -245,9 +231,6 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
   >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  /** Per-repo bundle status, cached until the next refresh(). */
-  private readonly reportCache = new Map<string, StatusReport>();
-
   /**
    * When true, only methodology-enabled repos (those with a `.thinkube/` board)
    * are listed; unconfigured repos are hidden. Persisted across reloads by the
@@ -255,10 +238,7 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
    */
   private _configuredOnly = false;
 
-  constructor(
-    private readonly installer: BundleInstaller,
-    private readonly output: vscode.OutputChannel,
-  ) {}
+  constructor(private readonly output: vscode.OutputChannel) {}
 
   get configuredOnly(): boolean {
     return this._configuredOnly;
@@ -272,7 +252,6 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
   }
 
   refresh(): void {
-    this.reportCache.clear();
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -348,28 +327,13 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
     // A Project is a leaf in the navigator (SP-tgvud7): selecting it drives the
     // TEPs → Specs side-views, exactly like a Thinking Space — no in-tree drill-down.
     if (element.kind === "project") return [];
-    if (element.kind !== "repo" || !element.enabled) return [];
-    // Enabled repo → one bundle-status child (per-file detail stays behind
-    // the Diff command, matching the old Project view's single-row design).
-    try {
-      let report = this.reportCache.get(element.path);
-      if (!report) {
-        report = await this.installer.getStatus(element.path);
-        this.reportCache.set(element.path, report);
-      }
-      return [{ kind: "bundle-status", repo: element, report }];
-    } catch (err) {
-      this.output.appendLine(
-        `[boards] bundle status failed for ${element.rel}: ${(err as Error).message}`,
-      );
-      return [
-        { kind: "bundle-status", repo: element, error: (err as Error).message },
-      ];
-    }
+    // A Thinking Space is a leaf — the methodology is delivered as a versioned
+    // plugin (one marketplace install), not a per-repo bundle, so a repo has no
+    // bundle-status child to expand.
+    return [];
   }
 
   getTreeItem(node: BoardNode): vscode.TreeItem {
-    if (node.kind === "bundle-status") return bundleStatusItem(node);
     if (node.kind === "product") {
       const item = new vscode.TreeItem(
         node.name,
@@ -415,9 +379,7 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
       : node.name;
     const item = new vscode.TreeItem(
       label,
-      node.enabled
-        ? vscode.TreeItemCollapsibleState.Collapsed
-        : vscode.TreeItemCollapsibleState.None,
+      vscode.TreeItemCollapsibleState.None,
     );
     item.description = node.worktreeOf
       ? "worktree"
@@ -444,65 +406,3 @@ export class BoardNavigatorProvider implements vscode.TreeDataProvider<BoardNode
   }
 }
 
-function bundleStatusItem(node: BundleStatusNode): vscode.TreeItem {
-  if (!node.report) {
-    const item = new vscode.TreeItem(
-      "Methodology Bundle — status unavailable",
-      vscode.TreeItemCollapsibleState.None,
-    );
-    item.id = `bundle-status:${node.repo.path}`;
-    item.iconPath = new vscode.ThemeIcon("warning");
-    item.tooltip = node.error;
-    item.contextValue = "tandemBundle-error";
-    return item;
-  }
-  const status = node.report.status;
-  const item = new vscode.TreeItem(
-    `Methodology Bundle — ${labelForStatus(status)}`,
-    vscode.TreeItemCollapsibleState.None,
-  );
-  item.id = `bundle-status:${node.repo.path}`;
-  item.iconPath = iconForStatus(status);
-  item.contextValue = `tandemBundle-${status}`;
-  item.description =
-    node.report.stampVersion &&
-    node.report.stampVersion !== node.report.manifestVersion
-      ? `installed v${node.report.stampVersion} → bundle v${node.report.manifestVersion}`
-      : `v${node.report.manifestVersion}`;
-  item.tooltip = new vscode.MarkdownString(
-    [
-      `**${summarizeStatus(node.report)}**`,
-      "",
-      `repo: \`${node.repo.rel}\``,
-      "",
-      "Use the inline actions to install/update or diff the bundle.",
-    ].join("\n"),
-  );
-  return item;
-}
-
-function labelForStatus(status: StatusReport["status"]): string {
-  switch (status) {
-    case "not-installed":
-      return "not installed";
-    case "up-to-date":
-      return "up to date";
-    case "update-available":
-      return "update available";
-    case "locally-modified":
-      return "locally modified";
-  }
-}
-
-function iconForStatus(status: StatusReport["status"]): vscode.ThemeIcon {
-  switch (status) {
-    case "not-installed":
-      return new vscode.ThemeIcon("cloud-download");
-    case "up-to-date":
-      return new vscode.ThemeIcon("check");
-    case "update-available":
-      return new vscode.ThemeIcon("cloud-upload");
-    case "locally-modified":
-      return new vscode.ThemeIcon("edit");
-  }
-}

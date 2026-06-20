@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import * as nodePath from "node:path";
 import * as nodeFs from "node:fs/promises";
 
-import { registerBundleCommands } from "./commands/bundle";
 import { registerConfigCommands } from "./commands/config";
 import { registerKanbanCommands } from "./commands/kanban";
 import { registerLauncherCommands } from "./commands/launcher";
@@ -15,11 +14,7 @@ import {
 import { AuthService } from "./github/AuthService";
 import { GitHubService } from "./github/GitHubService";
 import { KanbanMcpProvider } from "./mcp/KanbanMcpProvider";
-import {
-  ensureStableServerLink,
-  stableServerScriptPath,
-} from "./mcp/stableServerPath";
-import { BundleInstaller } from "./methodology/BundleInstaller";
+import { ensureStableServerLink } from "./mcp/stableServerPath";
 import { writeMachineMcpConfig } from "./mcp/machineConfig";
 import { AgentTeamsShimServer } from "./services/agentTeams/AgentTeamsShimServer";
 import {
@@ -211,25 +206,11 @@ export function activate(context: vscode.ExtensionContext) {
     output: kanbanOutput,
   });
 
-  // Methodology bundle installer — per-repo (ADR-0006); bakes the
-  // version-stable server path into each .mcp.json it writes.
-  const bundleInstaller = new BundleInstaller(
-    context.extensionUri.fsPath,
-    stableServerScriptPath(context),
-  );
-  registerBundleCommands(context, {
-    installer: bundleInstaller,
-    output: kanbanOutput,
-  });
-
-  // Per-repo board navigator (ADR-0006): discover every repo's .thinkube/ board
-  // across the open workspace folders; open enabled ones, enable disabled ones.
-  // Each enabled repo expands to its methodology-bundle status (the old
-  // "Project" view, absorbed — ADR-0007 Phase 6).
-  const boardNavigator = new BoardNavigatorProvider(
-    bundleInstaller,
-    kanbanOutput,
-  );
+  // Per-repo board navigator (ADR-0006): discover every repo's board across the
+  // open workspace folders; open enabled ones, enable disabled ones. The
+  // methodology is delivered as a versioned plugin (not a per-repo bundle), so a
+  // Thinking Space is a leaf — selecting it scopes the TEPs → Specs side-views.
+  const boardNavigator = new BoardNavigatorProvider(kanbanOutput);
   const boardsView = vscode.window.createTreeView("thinkubeBoards", {
     treeDataProvider: boardNavigator,
   });
@@ -247,7 +228,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Specs section (master-detail): lists the selected thinking space's
   // .thinkube/specs/SP-{n}/spec.md files; clicking opens the document.
-  // Selecting either the repo row or its bundle-status child scopes it.
+  // Selecting a Thinking Space row scopes the Specs + TEPs side-views.
   const specsProvider = new SpecsProvider();
   const specsView = vscode.window.createTreeView("thinkubeSpecs", {
     treeDataProvider: specsProvider,
@@ -265,12 +246,7 @@ export function activate(context: vscode.ExtensionContext) {
     tepsView,
     boardsView.onDidChangeSelection((e) => {
       const node = e.selection[0];
-      const repo =
-        node?.kind === "repo"
-          ? node
-          : node?.kind === "bundle-status"
-            ? node.repo
-            : undefined;
+      const repo = node?.kind === "repo" ? node : undefined;
       if (repo) {
         specsProvider.setRepo(repo);
         specsView.description = repo.name;

@@ -297,17 +297,13 @@ async function enableHere(deps: BoardDeps, r: RepoEntry): Promise<void> {
     return;
   }
   // Scaffold the board at its resolved board dir — central
-  // `<board-root>/<namespace>` when configured, else co-located. The bundle
-  // (.claude/CLAUDE.md/.mcp.json) still installs into the repo below.
+  // `<board-root>/<namespace>` when configured, else co-located.
   const base = r.boardDir;
   for (const sub of ["specs", "decisions", "retros"]) {
     await fs.mkdir(path.join(base, sub), { recursive: true });
     // .gitkeep so the empty dir is committable — the board is the committed tree.
     await fs.writeFile(path.join(base, sub, ".gitkeep"), "");
   }
-  // ADR-0006: enable = the .thinkube/ skeleton + the per-repo methodology
-  // bundle (skills, agents, .mcp.json server entry), via BundleInstaller.
-  await vscode.commands.executeCommand("thinkube.kanban.installBundle", r.path);
 
   // Per-repo opt-in plugin delivery (TEP-tgvwct, Phase 2): make THIS repo's
   // methodology come from the tandem-methodology plugin. Register the
@@ -315,8 +311,7 @@ async function enableHere(deps: BoardDeps, r: RepoEntry): Promise<void> {
   // directory source — offline; the machine path stays in ~/.claude), then write
   // the portable `enabledPlugins` entry into this repo's committed
   // .claude/settings.json. On a trusted session here the plugin auto-installs;
-  // repos that weren't opted in get nothing. Best-effort — the copied bundle
-  // above still works if the plugin path is unavailable.
+  // repos that weren't opted in get nothing. Best-effort.
   // Register every locally-cloned `*-metadata` marketplace (TEP-tgvwct Phase 4):
   // the official `thinkube-metadata` AND any user `{org}-metadata`, so a user can
   // publish/enable their own plugins beside the official ones. Org-agnostic.
@@ -328,7 +323,7 @@ async function enableHere(deps: BoardDeps, r: RepoEntry): Promise<void> {
     for (const m of marketplaces) await registerMarketplace(m.path);
     await enableMethodologyPluginForRepo(r.path);
   } catch {
-    /* opt-in still succeeds via the copied bundle */
+    /* best-effort — marketplace registration / enablement can fail offline */
   }
   deps.provider.refresh();
   const action = await vscode.window.showInformationMessage(
