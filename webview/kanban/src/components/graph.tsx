@@ -198,6 +198,31 @@ export function GraphView(): JSX.Element {
                   ))}
                 </>
               )}
+              {/* A parked (needs-input) worker (SP-tgs8nz_SL-3): an amber dot; click it to
+                  answer the question and resume the resident session via /attend. */}
+              {(card.parkedWorkers ?? []).length > 0 && (
+                <>
+                  <text x={16} y={NODE_H - 6} fill="#d29922" fontSize={9}>
+                    {card.parkedWorkers!.length} awaiting answer
+                  </text>
+                  {card.parkedWorkers!.map((w, i) => (
+                    <circle
+                      key={w}
+                      cx={NODE_W - 14 - i * 14}
+                      cy={NODE_H - 14}
+                      r={5}
+                      fill="#d29922"
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        postToHost({ kind: "attend", handle: card.id });
+                      }}
+                    >
+                      <title>{`${w} asked a question — click to answer (/attend)`}</title>
+                    </circle>
+                  ))}
+                </>
+              )}
             </g>
           );
         })}

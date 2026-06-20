@@ -31,6 +31,7 @@ import {
 } from "./types";
 import {
   runningSessions,
+  parkedWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
 
@@ -264,6 +265,16 @@ export class KanbanPanel implements vscode.Disposable {
           );
         }
         break;
+      case "attend":
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.attend",
+            message.handle,
+          );
+        } catch (err) {
+          this.log(`attend ${message.handle} failed: ${(err as Error).message}`);
+        }
+        break;
       case "notify":
         this.notify(message.level, message.text);
         break;
@@ -284,22 +295,34 @@ export class KanbanPanel implements vscode.Disposable {
   /** Flag tasks whose slice has a live `claude -p` worker (SP-tgs8nz SL-4). */
   private withRunning(board: Board): Board {
     const live = runningSessions();
-    if (live.length === 0) return board;
+    const park = parkedWorkers();
+    if (live.length === 0 && park.length === 0) return board;
     // Sessions are keyed per WORKER (execution unit, e.g. `SP-3_SL-2#eu-0`); group them under
-    // their slice so the control-center graph shows a node per running worker (SP-tgs8nz_SL-4).
-    const bySlice = new Map<string, string[]>();
+    // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): a green
+    // dot per running worker, an amber dot per parked (needs-input) worker.
+    const runBySlice = new Map<string, string[]>();
     for (const id of live) {
       const slice = id.split("#")[0];
-      const arr = bySlice.get(slice) ?? [];
-      arr.push(id);
-      bySlice.set(slice, arr);
+      (runBySlice.get(slice) ?? runBySlice.set(slice, []).get(slice)!).push(id);
+    }
+    const parkBySlice = new Map<string, string[]>();
+    for (const p of park) {
+      (
+        parkBySlice.get(p.slice) ?? parkBySlice.set(p.slice, []).get(p.slice)!
+      ).push(p.id);
     }
     const tasks: Record<string, TaskCard> = {};
     for (const [id, t] of Object.entries(board.tasks)) {
-      const workers = bySlice.get(id);
-      tasks[id] = workers
-        ? { ...t, running: true, runningWorkers: workers }
-        : t;
+      const workers = runBySlice.get(id);
+      const parkedIds = parkBySlice.get(id);
+      tasks[id] =
+        workers || parkedIds
+          ? {
+              ...t,
+              ...(workers ? { running: true, runningWorkers: workers } : {}),
+              ...(parkedIds ? { parkedWorkers: parkedIds } : {}),
+            }
+          : t;
     }
     return { ...board, tasks };
   }

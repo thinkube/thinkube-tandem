@@ -63,6 +63,8 @@ export interface TaskCard {
   running?: boolean;
   /** The live worker (execution-unit) ids running on this slice — a node per worker (SL-4). */
   runningWorkers?: string[];
+  /** The parked worker (execution-unit) ids awaiting an answer on this slice — needs-input (SL-3). */
+  parkedWorkers?: string[];
 }
 
 export interface BoardColumn {
@@ -105,7 +107,8 @@ export type WebviewMessage =
   /** Accept a Spec (TEP-0010): host runs the gate + accept_spec, then merges the PR. */
   | { kind: "accept-spec"; spec: string }
   /** Float a running session out into a panel (clicked on the control-center graph). */
-  | { kind: "float-out"; handle: string };
+  | { kind: "float-out"; handle: string }
+  | { kind: "attend"; handle: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 
