@@ -85,6 +85,7 @@ function makeDeps(
     advanced: string[];
     attention: string[];
     needsInput: string[];
+    torndown: string[];
     created: number;
     committed: number;
     log: string[];
@@ -96,6 +97,7 @@ function makeDeps(
     advanced: [] as string[],
     attention: [] as string[],
     needsInput: [] as string[],
+    torndown: [] as string[],
     created: 0,
     committed: 0,
     log: [] as string[],
@@ -144,6 +146,9 @@ function makeDeps(
     },
     commit: async () => {
       calls.committed++;
+    },
+    teardown: async (n: string) => {
+      calls.torndown.push(n);
     },
   };
   return { deps, calls };

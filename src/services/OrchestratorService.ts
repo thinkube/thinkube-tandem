@@ -80,6 +80,8 @@ export interface OrchestratorDeps {
   ) => Promise<void>;
   /** Commit the worktree once the whole Spec is Done (tests): defaults to `git add -A && git commit`. */
   commit?: (specNumber: string, cwd: string) => Promise<void>;
+  /** Tear down a finished Spec — close its worktree (tests): defaults to `WorktreeService.remove`. */
+  teardown?: (specNumber: string) => Promise<void>;
   /** Run one execution unit (tests): overrides the SDK/spawn substrate; `onPark` parks it resident. */
   runUnit?: (
     unit: SchedUnit,
@@ -357,11 +359,24 @@ export class OrchestratorService {
       fill();
     }
 
-    // Commit ONCE when every slice is Done (workers never commit — the orchestrator owns git).
+    // Commit ONCE when every slice is Done (workers never commit — the orchestrator owns git),
+    // then TEAR DOWN: close the Spec's worktree (its branch persists for the accept step) and
+    // drop any leftover parked agents (SP-tgs8nz_SL-5).
     if (slices.every((s) => doneSlices.has(s.handle))) {
       await this.commit(specNumber, worktreePath);
       result.committed = true;
       output.appendLine(`✓ SP-${specNumber}: all slices Done — committed.`);
+      for (const u of dag) unparkWorker(u.id);
+      try {
+        await this.teardown(specNumber);
+        output.appendLine(
+          `▸ SP-${specNumber}: worktree closed (branch kept for accept).`,
+        );
+      } catch (err) {
+        output.appendLine(
+          `▸ SP-${specNumber}: worktree teardown skipped — ${(err as Error).message}`,
+        );
+      }
     } else if (remaining.size > 0) {
       output.appendLine(
         `▸ SP-${specNumber}: paused — ${remaining.size} slice(s) still have unreached units (blocked deps); nothing committed.`,
@@ -713,6 +728,15 @@ export class OrchestratorService {
       specNumber,
       cwd,
     );
+  }
+
+  /** Tear down a finished Spec: remove its worktree (the committed branch survives the removal). */
+  private teardown(specNumber: string): Promise<void> {
+    return (
+      this.deps.teardown ??
+      ((n: string) =>
+        this.deps.worktrees.remove(this.deps.canonicalRepo, n).then(() => {}))
+    )(specNumber);
   }
 
   /**
