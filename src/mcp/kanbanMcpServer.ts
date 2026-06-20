@@ -887,7 +887,7 @@ const TOOL_DEFS = [
   },
 ];
 
-async function dispatchTool(
+export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
   ctx: HandlerContext,
@@ -953,6 +953,18 @@ async function dispatchTool(
         parallel_group: optString(args, "parallel_group"),
         files: optStringArray(args, "files"),
         satisfies: optNumberArray(args, "satisfies"),
+        // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
+        // validates each unit's footprint and serializes the array to frontmatter. Without
+        // this line the schema accepts work_units but the handler silently drops it (the
+        // bug that left every created slice with no work_units).
+        work_units: Array.isArray(args.work_units)
+          ? (args.work_units as {
+              footprint: string[];
+              depends_on?: string[];
+              execution: string;
+              note?: string;
+            }[])
+          : undefined,
         docs: optString(args, "docs"),
         docs_reason: optString(args, "docs_reason"),
         priority: optString(args, "priority"),
