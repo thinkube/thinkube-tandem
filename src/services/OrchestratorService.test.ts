@@ -83,6 +83,7 @@ function makeDeps(
     released: string[];
     advanced: string[];
     attention: string[];
+    needsInput: string[];
     created: number;
     committed: number;
     log: string[];
@@ -93,6 +94,7 @@ function makeDeps(
     released: [] as string[],
     advanced: [] as string[],
     attention: [] as string[],
+    needsInput: [] as string[],
     created: 0,
     committed: 0,
     log: [] as string[],
@@ -135,6 +137,9 @@ function makeDeps(
     },
     flagAttention: async (h: string) => {
       calls.attention.push(h);
+    },
+    flagNeedsInput: async (h: string) => {
+      calls.needsInput.push(h);
     },
     commit: async () => {
       calls.committed++;
@@ -312,4 +317,51 @@ test("dispatchSpec: the worker pool never exceeds the cap", async () => {
   assert.equal(r.dispatched, 5, "all five units run");
   assert.deepEqual(r.advanced, ["SP-1_SL-1"]);
   assert.ok(track.max <= 2, `peak concurrency ${track.max} should be ≤ cap 2`);
+});
+
+test("dispatchSpec: a worker that asks a question parks the slice needs-input (not failed, not committed)", async () => {
+  const NEEDS =
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "⟦NEEDS-INPUT⟧ Which database — pg or sqlite?" }],
+      },
+    }) + "\n"; // no success result → classify finds the sentinel
+  const { deps, calls } = makeDeps(
+    { "specs/SP-1/SL-1.md": { status: "ready", files: ["src/a.ts"] } },
+    { spawn: () => fakeWorker(NEEDS) },
+  );
+  const r = await new OrchestratorService(deps).dispatchSpec("1", 4);
+  assert.deepEqual(
+    r.results.map((x) => x.outcome),
+    ["needs-input"],
+  );
+  assert.deepEqual(r.needsInput, ["SP-1_SL-1"]);
+  assert.equal(r.committed, false);
+  assert.deepEqual(calls.advanced, []);
+  assert.deepEqual(calls.attention, []); // needs-input is NOT a failure
+  assert.deepEqual(calls.needsInput, ["SP-1_SL-1"]);
+  // the question is carried on the result
+  assert.match(r.results[0].slice, /SP-1_SL-1/);
+});
+
+test("dispatchSpec: success wins over a stray sentinel mention", async () => {
+  const MIXED =
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "pondered ⟦NEEDS-INPUT⟧ but resolved it" }] },
+    }) +
+    "\n" +
+    SUCCESS;
+  const { deps, calls } = makeDeps(
+    { "specs/SP-1/SL-1.md": { status: "ready", files: ["src/a.ts"] } },
+    { spawn: () => fakeWorker(MIXED) },
+  );
+  const r = await new OrchestratorService(deps).dispatchSpec("1", 4);
+  assert.deepEqual(
+    r.results.map((x) => x.outcome),
+    ["success"],
+  );
+  assert.deepEqual(calls.needsInput, []);
+  assert.equal(r.committed, true);
 });

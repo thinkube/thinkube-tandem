@@ -19,10 +19,15 @@ import {
   isResultSuccess,
   buildUnitDag,
   readyFrontier,
+  buildWorkerPrompt,
+  extractNeedsInput,
+  sessionIdOf,
+  NEEDS_INPUT_SENTINEL,
   type SliceRow,
   type WorkUnit,
   type SliceForDag,
   type SchedulerState,
+  type SchedUnit,
 } from "./orchestratorCore";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
@@ -330,4 +335,40 @@ test("readyFrontier: blocked units (requires-attention slice) are not dispatched
   const dag = buildUnitDag([slice("SP-1_SL-1", { files: ["a.ts"] })]);
   const f = readyFrontier(dag, emptyState({ blocked: new Set(["SP-1_SL-1"]) }));
   assert.equal(f.length, 0);
+});
+
+// ── needs-input + worker prompt (SP-tgs8nz_SL-3) ───────────────────────────
+
+test("extractNeedsInput: pulls the question after the sentinel; null when absent", () => {
+  assert.equal(
+    extractNeedsInput(`some log\n${NEEDS_INPUT_SENTINEL} Which database — pg or sqlite?`),
+    "Which database — pg or sqlite?",
+  );
+  assert.equal(extractNeedsInput("worked fine, done"), null);
+  // sentinel with no text still parks (with a placeholder)
+  assert.equal(extractNeedsInput(NEEDS_INPUT_SENTINEL), "(no question text)");
+});
+
+test("sessionIdOf: reads a string session_id, undefined otherwise", () => {
+  assert.equal(sessionIdOf({ type: "system", session_id: "abc-123" }), "abc-123");
+  assert.equal(sessionIdOf({ type: "system" }), undefined);
+  assert.equal(sessionIdOf({ session_id: 42 }), undefined);
+});
+
+test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs the sentinel", () => {
+  const unit: SchedUnit = {
+    id: "SP-3_SL-2#eu-0",
+    slice: "SP-3_SL-2",
+    footprint: ["src/a.ts"],
+    dependsOn: [],
+    shape: "fan-out",
+    note: "add a test for module a",
+  };
+  const p = buildWorkerPrompt(unit, "3");
+  assert.match(p, /SP-3_SL-2#eu-0/);
+  assert.match(p, /src\/a\.ts/);
+  assert.match(p, /add a test for module a/);
+  assert.match(p, /specs\/SP-3\/SL-2\.md/);
+  assert.match(p, /Do NOT commit/);
+  assert.ok(p.includes(NEEDS_INPUT_SENTINEL), "instructs the escalation sentinel");
 });

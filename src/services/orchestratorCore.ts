@@ -291,8 +291,27 @@ export function buildWorkerPrompt(unit: SchedUnit, specNumber: string): string {
     `${task}\n\n` +
     `Work autonomously to the slice's acceptance criteria. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
     `Do NOT commit, run git, or move the board card — the orchestrator owns git and the gate. ` +
-    `Only if you hit a genuine decision you cannot make from the spec/slice/codebase, stop and state the question rather than guessing.`
+    `Only if you hit a genuine decision you cannot make from the spec/slice/codebase, output a single final message that begins with ${NEEDS_INPUT_SENTINEL} followed by your question, then stop — never guess.`
   );
+}
+
+/** The marker a blocked worker prepends to its question so the orchestrator can park it (SL-3). */
+export const NEEDS_INPUT_SENTINEL = "⟦NEEDS-INPUT⟧";
+
+/**
+ * Pull a worker's escalated question out of its output (SL-3): the text after the
+ * `⟦NEEDS-INPUT⟧` marker, or null if the worker never escalated. Pure.
+ */
+export function extractNeedsInput(text: string): string | null {
+  const i = text.indexOf(NEEDS_INPUT_SENTINEL);
+  if (i === -1) return null;
+  return text.slice(i + NEEDS_INPUT_SENTINEL.length).trim() || "(no question text)";
+}
+
+/** The session id carried on a stream-json / SDK event, for resume-on-answer (SL-3/SL-5). */
+export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
+  const s = evt.session_id;
+  return typeof s === "string" && s ? s : undefined;
 }
 
 /**

@@ -20,6 +20,8 @@ import {
   buildUnitDag,
   readyFrontier,
   buildWorkerPrompt,
+  extractNeedsInput,
+  sessionIdOf,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
@@ -56,8 +58,23 @@ export interface OrchestratorDeps {
   advance?: (handle: string) => Promise<void>;
   /** Flag a slice requires-attention with a diagnosis (tests): defaults to a frontmatter+body write. */
   flagAttention?: (handle: string, diagnosis: string) => Promise<void>;
+  /** Park a slice needs-input with its question + the worker's session id (tests): defaults to a frontmatter+body write. */
+  flagNeedsInput?: (
+    handle: string,
+    question: string,
+    sessionId?: string,
+  ) => Promise<void>;
   /** Commit the worktree once the whole Spec is Done (tests): defaults to `git add -A && git commit`. */
   commit?: (specNumber: string, cwd: string) => Promise<void>;
+}
+
+/** What a worker run resolved to — the third outcome carries the escalated question + session id. */
+export interface WorkerResult {
+  outcome: UnitOutcome;
+  /** The escalated question (needs-input only). */
+  question?: string;
+  /** The worker's session id, captured for resume-on-answer (SL-3 / SL-5). */
+  sessionId?: string;
 }
 
 /** Minimal shape of a spawned worker process the shell consumes. */
@@ -67,7 +84,7 @@ export interface SpawnedWorker {
   on(event: "error", cb: (err: Error) => void): void;
 }
 
-export type UnitOutcome = "success" | "failed";
+export type UnitOutcome = "success" | "needs-input" | "failed";
 
 export interface UnitResult {
   id: string;
@@ -87,8 +104,10 @@ export interface SpecRunResult {
   results: UnitResult[];
   /** Slices that completed + verified + advanced this run. */
   advanced: string[];
-  /** Slices flagged requires-attention this run. */
+  /** Slices flagged requires-attention (a worker failed or a verify was red) this run. */
   attention: string[];
+  /** Slices parked needs-input (a worker asked a question) this run. */
+  needsInput: string[];
   /** The whole Spec landed and was committed. */
   committed: boolean;
 }
@@ -135,6 +154,7 @@ export class OrchestratorService {
       results: [],
       advanced: [],
       attention: [],
+      needsInput: [],
       committed: false,
     };
 
@@ -232,7 +252,22 @@ export class OrchestratorService {
       (footprintsOf.get(d.id) ?? []).forEach((f) => state.running.delete(f));
       result.results.push({ id: d.id, slice: d.slice, outcome: d.outcome });
 
-      if (d.outcome === "failed") {
+      if (d.outcome === "needs-input") {
+        // The worker escalated a question rather than guessing — park the slice (slot already
+        // freed), capturing its session id for resume-on-answer (/attend, SL-5). Distinct from a
+        // failure: the work isn't wrong, it's waiting on a human decision.
+        await this.flagNeedsInput(
+          d.slice,
+          d.question ?? "(no question text)",
+          d.sessionId,
+        );
+        (unitsBySlice.get(d.slice) ?? []).forEach((u) => state.blocked.add(u.id));
+        remaining.delete(d.slice);
+        result.needsInput.push(d.slice);
+        output.appendLine(
+          `❓ ${d.slice}: ${d.id} asked a question → needs-input (slot freed).`,
+        );
+      } else if (d.outcome === "failed") {
         await blockSlice(
           d.slice,
           `Worker for ${d.id} exited without success — see the session JSON-log.`,
@@ -300,12 +335,34 @@ export class OrchestratorService {
     }
     startSession(unit.id);
     try {
-      const ok = await this.runWorker(unit, specNumber, worktreePath);
-      return { id: unit.id, slice: unit.slice, outcome: ok ? "success" : "failed" };
+      const wr = await this.runWorker(unit, specNumber, worktreePath);
+      return {
+        id: unit.id,
+        slice: unit.slice,
+        outcome: wr.outcome,
+        question: wr.question,
+        sessionId: wr.sessionId,
+      };
     } finally {
       endSession(unit.id);
       await this.deps.arbiter.release(unit.id);
     }
+  }
+
+  /**
+   * Classify a finished worker's accumulated output. Success wins (a worker that resolved its own
+   * doubt and reported success is done); otherwise a trailing `⟦NEEDS-INPUT⟧` question parks it
+   * needs-input; otherwise it failed.
+   */
+  private classify(
+    text: string,
+    success: boolean,
+    sessionId?: string,
+  ): WorkerResult {
+    if (success) return { outcome: "success", sessionId };
+    const question = extractNeedsInput(text);
+    if (question) return { outcome: "needs-input", question, sessionId };
+    return { outcome: "failed", sessionId };
   }
 
   /**
@@ -317,7 +374,7 @@ export class OrchestratorService {
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
-  ): Promise<boolean> {
+  ): Promise<WorkerResult> {
     return this.deps.spawnWorker
       ? this.runViaSpawn(unit, specNumber, cwd)
       : this.runViaSdk(unit, specNumber, cwd);
@@ -334,9 +391,11 @@ export class OrchestratorService {
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
-  ): Promise<boolean> {
+  ): Promise<WorkerResult> {
     const prompt = buildWorkerPrompt(unit, specNumber);
     let success = false;
+    let sessionId: string | undefined;
+    let textBuf = "";
     try {
       const { query } = await import("@anthropic-ai/claude-agent-sdk");
       for await (const msg of query({
@@ -382,17 +441,21 @@ export class OrchestratorService {
       })) {
         const rec = msg as unknown as Record<string, unknown>;
         appendSession(unit.id, JSON.stringify(rec) + "\n");
+        sessionId = sessionId ?? sessionIdOf(rec);
         const line = summarizeEvent(rec);
-        if (line) this.deps.output.appendLine(`  [${unit.id}] ${line}`);
+        if (line) {
+          this.deps.output.appendLine(`  [${unit.id}] ${line}`);
+          textBuf += line + "\n";
+        }
         if (isResultSuccess(rec)) success = true;
       }
     } catch (err) {
       this.deps.output.appendLine(
         `  ✗ ${unit.id} SDK worker error: ${(err as Error).message}`,
       );
-      return false;
+      return { outcome: "failed", sessionId };
     }
-    return success;
+    return this.classify(textBuf, success, sessionId);
   }
 
   /** The subprocess worker (injected `spawnWorker`): a headless `claude -p`, stream-json parsed. */
@@ -400,7 +463,7 @@ export class OrchestratorService {
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
-  ): Promise<boolean> {
+  ): Promise<WorkerResult> {
     const prompt = buildWorkerPrompt(unit, specNumber);
     const args = [
       "-p",
@@ -416,21 +479,27 @@ export class OrchestratorService {
     const proc = (this.deps.spawnWorker ?? defaultSpawn)(args, cwd);
     const buf = new StreamJsonBuffer();
     let success = false;
-    return new Promise<boolean>((resolve) => {
+    let sessionId: string | undefined;
+    let textBuf = "";
+    return new Promise<WorkerResult>((resolve) => {
       proc.stdout.on("data", (chunk) => {
         const text = chunk.toString();
         appendSession(unit.id, text);
         for (const evt of buf.push(text)) {
+          sessionId = sessionId ?? sessionIdOf(evt);
           const line = summarizeEvent(evt);
-          if (line) this.deps.output.appendLine(`  [${unit.id}] ${line}`);
+          if (line) {
+            this.deps.output.appendLine(`  [${unit.id}] ${line}`);
+            textBuf += line + "\n";
+          }
           if (isResultSuccess(evt)) success = true;
         }
       });
       proc.on("error", (err) => {
         this.deps.output.appendLine(`  ✗ ${unit.id} spawn error: ${err.message}`);
-        resolve(false);
+        resolve({ outcome: "failed", sessionId });
       });
-      proc.on("close", () => resolve(success));
+      proc.on("close", () => resolve(this.classify(textBuf, success, sessionId)));
     });
   }
 
@@ -494,6 +563,45 @@ export class OrchestratorService {
     );
   }
 
+  private flagNeedsInput(
+    handle: string,
+    question: string,
+    sessionId?: string,
+  ): Promise<void> {
+    return (
+      this.deps.flagNeedsInput ??
+      ((h, q, s) => this.defaultFlagNeedsInput(h, q, s))
+    )(handle, question, sessionId);
+  }
+
+  /**
+   * Default needs-input park (SL-3): mark the slice `requires-attention` (the human-needed column)
+   * but distinct from a failure — `needs_input: true` + the worker's `worker_session` (for
+   * resume-on-answer) + the question under a `## ❓ Needs input` heading. `/attend` (SL-5) answers it.
+   */
+  private async defaultFlagNeedsInput(
+    handle: string,
+    question: string,
+    sessionId?: string,
+  ): Promise<void> {
+    const m = /^SP-(.+)_SL-(\d+)$/.exec(handle);
+    if (!m) return;
+    const rel = this.deps.store.pathForSlice(m[1], Number(m[2]));
+    const parsed = await this.deps.store.getFile(rel);
+    if (!parsed?.frontmatter) return;
+    const note = `\n\n## ❓ Needs input\n\n${question}\n`;
+    await this.deps.store.writeFile(
+      rel,
+      {
+        ...parsed.frontmatter,
+        status: "requires-attention",
+        needs_input: true,
+        ...(sessionId ? { worker_session: sessionId } : {}),
+      },
+      (parsed.body ?? "") + note,
+    );
+  }
+
   private commit(specNumber: string, cwd: string): Promise<void> {
     return (this.deps.commit ?? ((n, c) => this.defaultCommit(n, c)))(
       specNumber,
@@ -527,6 +635,10 @@ interface UnitDone {
   id: string;
   slice: string;
   outcome: UnitOutcome;
+  /** The escalated question (needs-input only). */
+  question?: string;
+  /** The worker's session id (for resume-on-answer). */
+  sessionId?: string;
 }
 
 function defaultSpawn(args: string[], cwd: string): SpawnedWorker {

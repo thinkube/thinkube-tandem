@@ -114,6 +114,7 @@ export function registerOrchestrateCommands(
         } else {
           vscode.window.showInformationMessage(
             `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
+              (r.needsInput.length ? `, ${r.needsInput.length} need input` : "") +
               (r.attention.length ? `, ${r.attention.length} need attention` : "") +
               (r.committed ? " — committed ✓" : ""),
           );
