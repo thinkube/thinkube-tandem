@@ -308,8 +308,58 @@ export class OrchestratorService {
     }
   }
 
-  /** Spawn a headless worker for one execution unit, streaming its stream-json to the session log. */
+  /**
+   * Run one execution unit. The **default substrate is the Agent SDK** (`runViaSdk`); a test or a
+   * `claude -p` fallback injects `spawnWorker` to take the subprocess path. Returns true on a
+   * `result: success`.
+   */
   private runWorker(
+    unit: SchedUnit,
+    specNumber: string,
+    cwd: string,
+  ): Promise<boolean> {
+    return this.deps.spawnWorker
+      ? this.runViaSpawn(unit, specNumber, cwd)
+      : this.runViaSdk(unit, specNumber, cwd);
+  }
+
+  /**
+   * The Agent SDK worker (SP-tgs8nz_SL-2): `query()` runs a headless `claude` subprocess in the
+   * worktree under `bypassPermissions` (no prompts — the PreToolUse footprint hook from SL-6 is the
+   * guardrail). Typed messages are persisted to the unit's `.jsonl` (for the graph float-out) and
+   * summarized to the channel. The SDK is **lazy-imported** so it never loads at activation, and a
+   * load/run failure degrades to a non-success (→ requires-attention) rather than crashing the host.
+   */
+  private async runViaSdk(
+    unit: SchedUnit,
+    specNumber: string,
+    cwd: string,
+  ): Promise<boolean> {
+    const prompt = buildWorkerPrompt(unit, specNumber);
+    let success = false;
+    try {
+      const { query } = await import("@anthropic-ai/claude-agent-sdk");
+      for await (const msg of query({
+        prompt,
+        options: { cwd, permissionMode: "bypassPermissions" },
+      })) {
+        const rec = msg as unknown as Record<string, unknown>;
+        appendSession(unit.id, JSON.stringify(rec) + "\n");
+        const line = summarizeEvent(rec);
+        if (line) this.deps.output.appendLine(`  [${unit.id}] ${line}`);
+        if (isResultSuccess(rec)) success = true;
+      }
+    } catch (err) {
+      this.deps.output.appendLine(
+        `  ✗ ${unit.id} SDK worker error: ${(err as Error).message}`,
+      );
+      return false;
+    }
+    return success;
+  }
+
+  /** The subprocess worker (injected `spawnWorker`): a headless `claude -p`, stream-json parsed. */
+  private runViaSpawn(
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
