@@ -154,9 +154,19 @@ export function GraphView(): JSX.Element {
           to: pos.get(n.id) ?? { x: 0, y: 0 },
         })),
     );
-    const specs = [
+    const specIds = [
       ...new Set(cards.map((c) => c.parentId).filter((p): p is string => !!p)),
     ].sort();
+    // A Spec is orchestratable iff it has a dispatchable slice — ready (fresh) or
+    // requires-attention (re-runnable). All-Done (or only in-flight) → nothing to dispatch.
+    const specs = specIds.map((id) => ({
+      id,
+      canRun: cards.some(
+        (c) =>
+          c.parentId === id &&
+          (c.columnId === "column-ready" || c.columnId === "column-attention"),
+      ),
+    }));
     return {
       nodes: placed,
       edges: lines,
@@ -191,11 +201,21 @@ export function GraphView(): JSX.Element {
         </span>
         {specs.map((s) => (
           <button
-            key={s}
-            title={`Run the makespan scheduler on SP-${s} — dispatch its ready, footprint-disjoint units across N workers`}
-            onClick={() => postToHost({ kind: "orchestrate", spec: s })}
+            key={s.id}
+            disabled={!s.canRun}
+            title={
+              s.canRun
+                ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
+                : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
+            }
+            onClick={
+              s.canRun
+                ? () => postToHost({ kind: "orchestrate", spec: s.id })
+                : undefined
+            }
             style={{
-              cursor: "pointer",
+              cursor: s.canRun ? "pointer" : "default",
+              opacity: s.canRun ? 1 : 0.4,
               border: "1px solid var(--vscode-button-border, transparent)",
               background: "var(--vscode-button-background)",
               color: "var(--vscode-button-foreground)",
@@ -205,7 +225,7 @@ export function GraphView(): JSX.Element {
               fontWeight: 600,
             }}
           >
-            ▶ SP-{s}
+            ▶ SP-{s.id}
           </button>
         ))}
       </div>
