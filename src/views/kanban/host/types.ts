@@ -67,6 +67,8 @@ export interface TaskCard {
   runningWorkers?: string[];
   /** The parked worker (execution-unit) ids awaiting an answer on this slice — needs-input (SL-3). */
   parkedWorkers?: string[];
+  /** Execution-unit ids that completed successfully — the graph colours their node done (lime). */
+  doneWorkers?: string[];
   /** The slice's execution-unit nodes (SP-tgs8nz_SL-4) — a node per worker, shown idle before
    *  dispatch and coloured live via `runningWorkers`/`parkedWorkers` (ids align). */
   workUnits?: WorkUnitNode[];

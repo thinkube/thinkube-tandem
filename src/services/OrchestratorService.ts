@@ -36,6 +36,7 @@ import {
   startSession,
   appendSession,
   endSession,
+  markUnitDone,
   parkWorker,
   unparkWorker,
 } from "./orchestratorSessions";
@@ -329,6 +330,7 @@ export class OrchestratorService {
         output.appendLine(`⚑ ${d.slice}: ${d.id} failed → requires-attention.`);
       } else {
         state.done.add(d.id);
+        markUnitDone(d.id); // graph: show this worker's node done (lime) until re-dispatch
         const rem = (remaining.get(d.slice) ?? 1) - 1;
         remaining.set(d.slice, rem);
         if (rem <= 0) {

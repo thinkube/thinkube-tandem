@@ -10,6 +10,7 @@ import * as path from "path";
 
 const emitter = new EventEmitter();
 const running = new Set<string>(); // slice handles with a live worker right now
+const doneUnits = new Set<string>(); // unit ids that completed successfully in the current run
 const logs = new Map<string, string>(); // handle → persisted .jsonl path (kept after the worker ends)
 let baseDir: string | undefined;
 
@@ -37,6 +38,7 @@ export function startSession(handle: string): string | undefined {
     }
   }
   running.add(handle);
+  doneUnits.delete(handle); // a (re)starting unit is no longer "done"
   emitter.emit("change");
   return logPath;
 }
@@ -60,6 +62,22 @@ export function endSession(handle: string): void {
 /** Slice handles with a live worker right now. */
 export function runningSessions(): string[] {
   return [...running];
+}
+
+/** Mark a unit completed successfully — the graph shows its node done (lime) until the next
+ *  run re-dispatches it. A finished unit drops out of the running set, so without this it would
+ *  fall back to its slice's status (still "ready" mid-run) and revert to the idle/dashed style. */
+export function markUnitDone(id: string): void {
+  running.delete(id);
+  if (!doneUnits.has(id)) {
+    doneUnits.add(id);
+    emitter.emit("change");
+  }
+}
+
+/** Unit ids that completed successfully in the current run (for the graph's done nodes). */
+export function doneWorkers(): string[] {
+  return [...doneUnits];
 }
 
 /** The persisted `.jsonl` path for a slice (running or finished), if any. */

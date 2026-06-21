@@ -32,6 +32,7 @@ import {
 import {
   runningSessions,
   parkedWorkers,
+  doneWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
 
@@ -311,15 +312,21 @@ export class KanbanPanel implements vscode.Disposable {
   private withRunning(board: Board): Board {
     const live = runningSessions();
     const park = parkedWorkers();
-    if (live.length === 0 && park.length === 0) return board;
+    const done = doneWorkers();
+    if (live.length === 0 && park.length === 0 && done.length === 0) return board;
     // Sessions are keyed per WORKER (execution unit, e.g. `SP-3_SL-2#eu-0`); group them under
-    // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): a green
-    // dot per running worker, an amber dot per parked (needs-input) worker.
-    const runBySlice = new Map<string, string[]>();
-    for (const id of live) {
-      const slice = id.split("#")[0];
-      (runBySlice.get(slice) ?? runBySlice.set(slice, []).get(slice)!).push(id);
-    }
+    // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): green
+    // while running, amber while parked (needs-input), lime once it has completed.
+    const bySlice = (ids: string[]): Map<string, string[]> => {
+      const m = new Map<string, string[]>();
+      for (const id of ids) {
+        const slice = id.split("#")[0];
+        (m.get(slice) ?? m.set(slice, []).get(slice)!).push(id);
+      }
+      return m;
+    };
+    const runBySlice = bySlice(live);
+    const doneBySlice = bySlice(done);
     const parkBySlice = new Map<string, string[]>();
     for (const p of park) {
       (
@@ -330,12 +337,14 @@ export class KanbanPanel implements vscode.Disposable {
     for (const [id, t] of Object.entries(board.tasks)) {
       const workers = runBySlice.get(id);
       const parkedIds = parkBySlice.get(id);
+      const doneIds = doneBySlice.get(id);
       tasks[id] =
-        workers || parkedIds
+        workers || parkedIds || doneIds
           ? {
               ...t,
               ...(workers ? { running: true, runningWorkers: workers } : {}),
               ...(parkedIds ? { parkedWorkers: parkedIds } : {}),
+              ...(doneIds ? { doneWorkers: doneIds } : {}),
             }
           : t;
     }

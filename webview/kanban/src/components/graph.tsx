@@ -58,6 +58,9 @@ interface UnitNode {
 function unitStateOf(card: TaskCard, unitId: string): UnitState {
   if ((card.runningWorkers ?? []).includes(unitId)) return "running";
   if ((card.parkedWorkers ?? []).includes(unitId)) return "parked";
+  // A unit that completed stays done (lime) even if its slice later lands in requires-attention
+  // (a slice-level verify failure ≠ this unit failing) — the slice issue shows as a border below.
+  if ((card.doneWorkers ?? []).includes(unitId)) return "done";
   switch (card.columnId) {
     case "column-done":
       return "done";
@@ -235,6 +238,11 @@ export function GraphView(): JSX.Element {
         ))}
         {nodes.map(({ node, x, y }) => {
           const { card, unit, state: st, accent } = node;
+          // Slice-level requires-attention (e.g. a red verify) — shown as an amber border + ⚑
+          // on its nodes, so a unit that itself succeeded stays lime while the slice issue is visible.
+          const sliceAttention = card.columnId === "column-attention";
+          const borderColor =
+            sliceAttention && st !== "attention" ? PARKED_COLOR : accent;
           const clickable = st === "running" || st === "parked";
           const onClick =
             st === "running"
@@ -269,11 +277,16 @@ export function GraphView(): JSX.Element {
                 height={NODE_H}
                 rx={8}
                 fill="var(--vscode-editor-background)"
-                stroke={accent}
-                strokeWidth={2}
+                stroke={borderColor}
+                strokeWidth={sliceAttention ? 2.5 : 2}
                 strokeDasharray={st === "ready" ? "4 3" : undefined}
               />
               <rect width={6} height={NODE_H} rx={3} fill={accent} />
+              {sliceAttention && (
+                <text x={NODE_W - 16} y={23} fill={PARKED_COLOR} fontSize={13}>
+                  ⚑
+                </text>
+              )}
               <text
                 x={16}
                 y={22}
