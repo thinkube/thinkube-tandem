@@ -47,6 +47,16 @@ export class ThinkubeFilesAdapter implements StorageAdapter {
     private readonly spaceName?: string,
   ) {}
 
+  /** This board's identity, so a command triggered from the panel (the ▶ orchestrate button)
+   *  acts on THIS board rather than the ambient sidebar selection. */
+  boardContext(): { root: string; boardDir: string; name: string } {
+    return {
+      root: this.store.workspaceRoot,
+      boardDir: this.store.thinkubeDir,
+      name: this.spaceName ?? this.scope,
+    };
+  }
+
   /** Begin reflecting external `.thinkube/` edits into the board. Idempotent. */
   watchExternal(): void {
     if (this.storeSub) return;

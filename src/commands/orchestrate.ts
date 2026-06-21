@@ -45,13 +45,25 @@ export function registerOrchestrateCommands(
     deps.output ?? vscode.window.createOutputChannel("Thinkube Orchestrator");
   context.subscriptions.push(
     output,
-    vscode.commands.registerCommand("thinkube.orchestrate", async (specArg?: string) => {
-      const repo = deps.specsProvider.repoEntry;
-      if (!repo || !repo.enabled) {
-        vscode.window.showInformationMessage(
-          "Select an enabled thinking space to orchestrate.",
-        );
-        return;
+    vscode.commands.registerCommand("thinkube.orchestrate", async (specArg?: string, boardCtx?: { root: string; boardDir: string; name: string }) => {
+      // Prefer the panel's OWN board (passed by the ▶ button) over the ambient sidebar
+      // selection: the button must orchestrate the board it's shown on, not whatever space
+      // the sidebar happens to be scoped to (the "No Specs on this board" mismatch).
+      let repoPath: string;
+      let boardDir: string;
+      if (boardCtx) {
+        repoPath = boardCtx.root;
+        boardDir = boardCtx.boardDir;
+      } else {
+        const repo = deps.specsProvider.repoEntry;
+        if (!repo || !repo.enabled) {
+          vscode.window.showInformationMessage(
+            "Select an enabled thinking space to orchestrate.",
+          );
+          return;
+        }
+        repoPath = repo.path;
+        boardDir = repo.boardDir;
       }
       const arbiter = deps.getArbiter();
       if (!arbiter) {
@@ -61,7 +73,7 @@ export function registerOrchestrateCommands(
         return;
       }
       try {
-        const store = new ThinkubeStore(repo.path, repo.boardDir);
+        const store = new ThinkubeStore(repoPath, boardDir);
         const specs = (await store.listSpecDirs())
           .map((d) => /SP-([^/]+)/.exec(d)?.[1])
           .filter((id): id is string => !!id);
@@ -93,7 +105,7 @@ export function registerOrchestrateCommands(
         }
 
         const canonical =
-          (await worktrees.canonicalRepo(repo.path)) ?? repo.path;
+          (await worktrees.canonicalRepo(repoPath)) ?? repoPath;
         const baseDir =
           vscode.workspace
             .getConfiguration("thinkube")

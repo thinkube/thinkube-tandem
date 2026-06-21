@@ -277,9 +277,12 @@ export class KanbanPanel implements vscode.Disposable {
         break;
       case "orchestrate":
         try {
+          // Pass THIS panel's board so the command orchestrates the board the button is on,
+          // not whatever space the sidebar happens to be scoped to.
           await vscode.commands.executeCommand(
             "thinkube.orchestrate",
             message.spec,
+            this.adapter.boardContext?.(),
           );
         } catch (err) {
           this.log(
