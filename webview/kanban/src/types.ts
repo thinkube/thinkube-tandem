@@ -17,6 +17,23 @@
  * that slug gets derived deterministically from the task's parent epic so
  * tasks under the same epic share a color.
  */
+/**
+ * An execution-unit node (SP-tgs8nz_SL-4): a slice's work units expanded to the
+ * scheduler's execution units, so the control-center graph shows a node per worker
+ * even before dispatch. `id` matches the live `runningWorkers`/`parkedWorkers` keys
+ * (the Agent SDK worker/session key the scheduler dispatches and `float-out` opens).
+ */
+export interface WorkUnitNode {
+  /** `${sliceHandle}#eu-${i}`, or the slice handle for a unit-less (legacy) slice. */
+  id: string;
+  /** Execution shape of the batched unit. */
+  shape: "serial" | "mechanize" | "fan-out";
+  /** The unit's task text (the worker's prompt), for the node label. */
+  note?: string;
+  /** Unit/slice handles this unit waits on (work-unit DAG edges). */
+  dependsOn?: string[];
+}
+
 export interface TaskCard {
   id: string;
   /** The issue title — the card's heading. */
@@ -59,8 +76,17 @@ export interface TaskCard {
   slicesTotal?: number;
   /** Dependency handles (slice-DAG edges) for the control-center graph (SP-tgs8nz). */
   dependsOn?: string[];
-  /** A live `claude -p` worker is running on this slice — graph running tag. */
+  /** A live worker is running on this slice — graph running tag. */
   running?: boolean;
+  /** The live worker (execution-unit) ids running on this slice — a node per worker (SL-4). */
+  runningWorkers?: string[];
+  /** The parked worker (execution-unit) ids awaiting an answer on this slice — needs-input (SL-3). */
+  parkedWorkers?: string[];
+  /** Execution-unit ids that completed successfully — the graph colours their node done (lime). */
+  doneWorkers?: string[];
+  /** The slice's execution-unit nodes (SP-tgs8nz_SL-4) — a node per worker, shown idle before
+   *  dispatch and coloured live via `runningWorkers`/`parkedWorkers` (ids align). */
+  workUnits?: WorkUnitNode[];
 }
 
 export interface BoardColumn {
@@ -103,7 +129,10 @@ export type WebviewMessage =
   /** Accept a Spec (TEP-0010): host runs the gate + accept_spec, then merges the PR. */
   | { kind: "accept-spec"; spec: string }
   /** Float a running session out into a panel (clicked on the control-center graph). */
-  | { kind: "float-out"; handle: string };
+  | { kind: "float-out"; handle: string }
+  | { kind: "attend"; handle: string }
+  /** Start the makespan scheduler on a Spec (the ▶ button on the control-center graph). */
+  | { kind: "orchestrate"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 

@@ -9,6 +9,7 @@
  * numeric card encoding; colour and the parent chip group by the parent Spec id.
  */
 import { Board, BoardColumn, TaskCard } from "../types";
+import { buildUnitDag } from "../../../../services/orchestratorCore";
 import {
   classifySpecChange,
   SpecChangeKind,
@@ -166,6 +167,13 @@ export interface SliceInput {
   files?: string[];
   /** Slice frontmatter `depends_on` — dependency handles (slice-DAG edges). */
   dependsOn?: string[];
+  /** Slice frontmatter `work_units` — the execution-aware units (SP-tgs8gb). */
+  workUnits?: {
+    footprint: string[];
+    depends_on?: string[];
+    execution: "serial" | "mechanize" | "fan-out";
+    note?: string;
+  }[];
   /** Effective clustering tags (SP-tgvil2) — `tags` folded with legacy `theme`. */
   tags?: string[];
 }
@@ -255,6 +263,25 @@ export function buildSliceBoard(
       pr: s.pr,
       dependsOn: s.dependsOn,
       tags: s.tags,
+      // Expand the slice's work units into the scheduler's execution units (one per
+      // worker) so the control-center graph shows a node per worker even before
+      // dispatch. Ids (`${handle}#eu-${i}`) align with the live runningWorkers keys.
+      // A slice with no work_units yields one node (= the slice handle), preserving
+      // the legacy slice-grained graph.
+      workUnits: buildUnitDag([
+        {
+          handle: id,
+          status: s.status ?? "",
+          dependsOn: s.dependsOn ?? [],
+          files: s.files ?? [],
+          workUnits: s.workUnits ?? [],
+        },
+      ]).map((u) => ({
+        id: u.id,
+        shape: u.shape,
+        note: u.note,
+        dependsOn: u.dependsOn,
+      })),
     };
     tasks[id] = card;
     byColumn.get(columnId)?.push(id);

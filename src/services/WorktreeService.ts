@@ -262,7 +262,41 @@ export class WorktreeService {
     // Board-connect the worktree: inject THINKUBE_BOARD_ROOT into its .mcp.json so
     // the Claude-Code-spawned kanban MCP finds the central sidecar board (AC7).
     if (boardRoot) await this.injectBoardRoot(worktreePath, boardRoot);
+    // Share the canonical repo's node_modules so the orchestrator's slice-grain verify
+    // (`npm run compile`) and the worker's build work in the fresh worktree — node_modules is
+    // gitignored, so a fresh checkout has none (SP-tgs8nz).
+    await this.linkNodeModules(canonicalRepo, worktreePath);
     return worktreePath;
+  }
+
+  /**
+   * Symlink the canonical repo's `node_modules` into a fresh worktree so a Node project's
+   * build/verify works without a full install. Best-effort + idempotent: skipped if the
+   * canonical has no `node_modules` or the worktree already has one. Removing the worktree later
+   * deletes only the symlink (not the shared target).
+   */
+  private async linkNodeModules(
+    canonicalRepo: string,
+    worktreePath: string,
+  ): Promise<void> {
+    const src = path.join(canonicalRepo, "node_modules");
+    const dst = path.join(worktreePath, "node_modules");
+    try {
+      await fs.access(src); // nothing to share if the canonical has no deps
+    } catch {
+      return;
+    }
+    try {
+      await fs.access(dst); // already present (real dir or prior symlink) — leave it
+      return;
+    } catch {
+      /* dst missing → link it */
+    }
+    try {
+      await fs.symlink(src, dst, "dir");
+    } catch {
+      /* best-effort — verify will surface a missing-deps failure if this can't link */
+    }
   }
 
   /**

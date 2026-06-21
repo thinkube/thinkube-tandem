@@ -2,7 +2,7 @@
   "name": "thinkube-ai-integration",
   "displayName": "Thinkube AI Integration",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.39",
+  "version": "0.1.63",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -115,6 +115,18 @@
         "title": "Promote to Project…",
         "category": "Thinkube Boards",
         "icon": "$(arrow-up)"
+      },
+      {
+        "command": "thinkube.teps.openRendered",
+        "title": "Preview TEP (rendered)",
+        "category": "Thinkube Boards",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "thinkube.specs.openRendered",
+        "title": "Preview Spec (rendered)",
+        "category": "Thinkube Boards",
+        "icon": "$(open-preview)"
       },
       {
         "command": "thinkube.boards.enable",
@@ -267,24 +279,6 @@
         "title": "Refresh from GitHub",
         "category": "Thinkube Kanban",
         "icon": "$(sync)"
-      },
-      {
-        "command": "thinkube.kanban.installBundle",
-        "title": "Install Methodology Bundle",
-        "category": "Thinkube Kanban",
-        "icon": "$(package)"
-      },
-      {
-        "command": "thinkube.kanban.statusBundle",
-        "title": "Methodology Bundle Status",
-        "category": "Thinkube Kanban",
-        "icon": "$(info)"
-      },
-      {
-        "command": "thinkube.kanban.diffBundle",
-        "title": "Methodology Bundle Diff",
-        "category": "Thinkube Kanban",
-        "icon": "$(diff)"
       },
       {
         "command": "thinkube.specs.new",
@@ -480,19 +474,29 @@
           "group": "inline"
         },
         {
+          "command": "thinkube.teps.openRendered",
+          "when": "view == thinkubeTeps && (viewItem == tep || viewItem == tep-archived)",
+          "group": "inline@0"
+        },
+        {
           "command": "thinkube.tep.promote",
           "when": "view == thinkubeTeps && viewItem == tep",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.specs.openRendered",
+          "when": "view == thinkubeSpecs && (viewItem == spec-open || viewItem == spec-done || viewItem == spec-archived)",
+          "group": "inline@0"
         },
         {
           "command": "thinkube.specs.startWorktree",
           "when": "view == thinkubeSpecs && viewItem == spec-open",
-          "group": "inline@0"
+          "group": "inline@1"
         },
         {
           "command": "thinkube.specs.retireWorktree",
           "when": "view == thinkubeSpecs && (viewItem == spec-open || viewItem == spec-done)",
-          "group": "inline@1"
+          "group": "inline@2"
         },
         {
           "command": "thinkube.specs.archive",
@@ -533,16 +537,6 @@
           "command": "thinkube.boards.resumeClaudeSession",
           "when": "view == thinkubeBoards && viewItem =~ /tandemBoard/",
           "group": "inline@9"
-        },
-        {
-          "command": "thinkube.kanban.installBundle",
-          "when": "view == thinkubeBoards && viewItem =~ /tandemBundle/",
-          "group": "inline@1"
-        },
-        {
-          "command": "thinkube.kanban.diffBundle",
-          "when": "view == thinkubeBoards && viewItem =~ /tandemBundle/",
-          "group": "inline@2"
         },
         {
           "command": "thinkube.addHook",
@@ -684,7 +678,17 @@
           "type": "number",
           "default": 4,
           "minimum": 1,
-          "description": "Maximum concurrent `claude -p` workers per Spec when \"Orchestrate Next Slice\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
+          "description": "Maximum concurrent Agent SDK workers per Spec when \"Orchestrate Next Slice\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
+        },
+        "thinkube.orchestrator.verifyCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Shell command run in a slice's worktree to verify it before the orchestrator advances it to Done (green = exit 0), e.g. `ansible-lint` or `npm test`. When empty, the orchestrator runs `npm run compile` if the repo has a package.json, otherwise skips the verify (logged) so a non-JS repo isn't falsely failed by a JS-only gate."
+        },
+        "thinkube.orchestrator.floatLogsToNewWindow": {
+          "type": "boolean",
+          "default": true,
+          "description": "When you open a worker's log (the ≣ on a control-center graph node), pop it directly into its own editor window instead of a beside tab. Falls back to a beside tab where auxiliary windows aren't supported. Turn off to keep logs beside the editor."
         },
         "thinkube.agentTeams.enableExperimental": {
           "type": "boolean",
@@ -716,9 +720,11 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.183",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^19.0.13",
     "node-pty": "^1.1.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "markdown-it": "^12.3.2"
   }
 }

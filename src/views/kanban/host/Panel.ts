@@ -31,6 +31,8 @@ import {
 } from "./types";
 import {
   runningSessions,
+  parkedWorkers,
+  doneWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
 
@@ -264,6 +266,32 @@ export class KanbanPanel implements vscode.Disposable {
           );
         }
         break;
+      case "attend":
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.attend",
+            message.handle,
+            this.adapter.boardContext?.(),
+          );
+        } catch (err) {
+          this.log(`attend ${message.handle} failed: ${(err as Error).message}`);
+        }
+        break;
+      case "orchestrate":
+        try {
+          // Pass THIS panel's board so the command orchestrates the board the button is on,
+          // not whatever space the sidebar happens to be scoped to.
+          await vscode.commands.executeCommand(
+            "thinkube.orchestrate",
+            message.spec,
+            this.adapter.boardContext?.(),
+          );
+        } catch (err) {
+          this.log(
+            `orchestrate ${message.spec} failed: ${(err as Error).message}`,
+          );
+        }
+        break;
       case "notify":
         this.notify(message.level, message.text);
         break;
@@ -281,13 +309,45 @@ export class KanbanPanel implements vscode.Disposable {
     this.panel.webview.postMessage(out);
   }
 
-  /** Flag tasks whose slice has a live `claude -p` worker (SP-tgs8nz SL-4). */
+  /** Flag tasks whose slice has a live Agent SDK worker (SP-tgs8nz SL-4). */
   private withRunning(board: Board): Board {
-    const live = new Set(runningSessions());
-    if (live.size === 0) return board;
+    const live = runningSessions();
+    const park = parkedWorkers();
+    const done = doneWorkers();
+    if (live.length === 0 && park.length === 0 && done.length === 0) return board;
+    // Sessions are keyed per WORKER (execution unit, e.g. `SP-3_SL-2#eu-0`); group them under
+    // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): green
+    // while running, amber while parked (needs-input), lime once it has completed.
+    const bySlice = (ids: string[]): Map<string, string[]> => {
+      const m = new Map<string, string[]>();
+      for (const id of ids) {
+        const slice = id.split("#")[0];
+        (m.get(slice) ?? m.set(slice, []).get(slice)!).push(id);
+      }
+      return m;
+    };
+    const runBySlice = bySlice(live);
+    const doneBySlice = bySlice(done);
+    const parkBySlice = new Map<string, string[]>();
+    for (const p of park) {
+      (
+        parkBySlice.get(p.slice) ?? parkBySlice.set(p.slice, []).get(p.slice)!
+      ).push(p.id);
+    }
     const tasks: Record<string, TaskCard> = {};
     for (const [id, t] of Object.entries(board.tasks)) {
-      tasks[id] = live.has(id) ? { ...t, running: true } : t;
+      const workers = runBySlice.get(id);
+      const parkedIds = parkBySlice.get(id);
+      const doneIds = doneBySlice.get(id);
+      tasks[id] =
+        workers || parkedIds || doneIds
+          ? {
+              ...t,
+              ...(workers ? { running: true, runningWorkers: workers } : {}),
+              ...(parkedIds ? { parkedWorkers: parkedIds } : {}),
+              ...(doneIds ? { doneWorkers: doneIds } : {}),
+            }
+          : t;
     }
     return { ...board, tasks };
   }

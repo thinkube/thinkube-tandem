@@ -17,8 +17,17 @@ import {
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
+  buildUnitDag,
+  readyFrontier,
+  buildWorkerPrompt,
+  extractNeedsInput,
+  sessionIdOf,
+  NEEDS_INPUT_SENTINEL,
   type SliceRow,
   type WorkUnit,
+  type SliceForDag,
+  type SchedulerState,
+  type SchedUnit,
 } from "./orchestratorCore";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
@@ -72,13 +81,33 @@ test("StreamJsonBuffer: holds a trailing partial line until completed", () => {
   assert.equal(b.push('lt","subtype":"success"}\n').length, 1);
 });
 
-test("summarizeEvent: tool_use and text render; non-display events skip", () => {
+test("summarizeEvent: tool_use renders its input; results + snippets; non-display skip", () => {
+  // tool_use shows WHAT the tool did, not just its name
   assert.equal(
     summarizeEvent({
       type: "assistant",
-      message: { content: [{ type: "tool_use", name: "Bash" }] },
+      message: {
+        content: [{ type: "tool_use", name: "Bash", input: { command: "ls -la" } }],
+      },
     }),
-    "▸ Bash",
+    "▸ $ ls -la",
+  );
+  assert.equal(
+    summarizeEvent({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", name: "Read", input: { file_path: "a.yaml" } }],
+      },
+    }),
+    "▸ Read a.yaml",
+  );
+  // tool_result shows the first line of output, indented under its call
+  assert.equal(
+    summarizeEvent({
+      type: "user",
+      message: { content: [{ type: "tool_result", content: "first line\nsecond" }] },
+    }),
+    "   ⤷ first line",
   );
   assert.equal(
     summarizeEvent({ type: "user", message: { content: [] } }),
@@ -175,4 +204,199 @@ test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay 
   assert.equal(eu[0].shape, "serial");
   assert.equal(eu[0].units.length, 2);
   assert.deepEqual(eu.filter((u) => u.shape === "fan-out").length, 2);
+});
+
+// ── buildUnitDag + readyFrontier (SP-tgs8nz makespan scheduler) ────────────
+
+const slice = (
+  handle: string,
+  o: Partial<SliceForDag> = {},
+): SliceForDag => ({
+  handle,
+  status: o.status ?? "ready",
+  dependsOn: o.dependsOn ?? [],
+  files: o.files ?? [],
+  workUnits: o.workUnits ?? [],
+});
+
+test("buildUnitDag: a unit-less slice becomes ONE serial node (legacy)", () => {
+  const dag = buildUnitDag([slice("SP-1_SL-1", { files: ["a.ts", "b.ts"] })]);
+  assert.equal(dag.length, 1);
+  assert.equal(dag[0].id, "SP-1_SL-1");
+  assert.equal(dag[0].slice, "SP-1_SL-1");
+  assert.equal(dag[0].shape, "serial");
+  assert.deepEqual(dag[0].footprint, ["a.ts", "b.ts"]);
+});
+
+test("buildUnitDag: serial units of a slice collapse into one node; fan-out splits", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "serial" },
+        { footprint: ["b.ts"], execution: "serial" },
+        { footprint: ["c.ts"], execution: "fan-out", note: "do c" },
+        { footprint: ["d.ts"], execution: "fan-out", note: "do d" },
+      ],
+    }),
+  ]);
+  // 1 serial node (a+b) + 2 fan-out nodes = 3
+  assert.equal(dag.length, 3);
+  const serial = dag.find((u) => u.shape === "serial")!;
+  assert.deepEqual(serial.footprint.sort(), ["a.ts", "b.ts"]);
+  const fans = dag.filter((u) => u.shape === "fan-out");
+  assert.equal(fans.length, 2);
+  assert.equal(fans[0].note, "do c");
+});
+
+test("buildUnitDag: units inherit their slice's depends_on, pooled across slices", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", { files: ["a.ts"] }),
+    slice("SP-1_SL-2", {
+      dependsOn: ["SP-1_SL-1"],
+      workUnits: [
+        { footprint: ["b.ts"], execution: "fan-out" },
+        { footprint: ["c.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+  // one node for SL-1, two for SL-2 — pooled into one DAG across slices
+  assert.equal(dag.length, 3);
+  for (const u of dag.filter((u) => u.slice === "SP-1_SL-2"))
+    assert.deepEqual(u.dependsOn, ["SP-1_SL-1"]);
+});
+
+const emptyState = (over: Partial<SchedulerState> = {}): SchedulerState => ({
+  done: over.done ?? new Set(),
+  running: over.running ?? new Set(),
+  blocked: over.blocked ?? new Set(),
+});
+
+test("readyFrontier: independent disjoint units are all ready (max parallelism)", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+        { footprint: ["c.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+  const f = readyFrontier(dag, emptyState());
+  assert.equal(f.length, 3);
+});
+
+test("readyFrontier: a unit waits until its slice-dep is done", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", { files: ["a.ts"] }),
+    slice("SP-1_SL-2", { dependsOn: ["SP-1_SL-1"], files: ["b.ts"] }),
+  ]);
+  // SL-1 not done → only SL-1's unit is ready
+  let f = readyFrontier(dag, emptyState());
+  assert.deepEqual(
+    f.map((u) => u.id),
+    ["SP-1_SL-1"],
+  );
+  // mark SL-1 done → SL-2's unit becomes ready
+  f = readyFrontier(dag, emptyState({ done: new Set(["SP-1_SL-1"]) }));
+  assert.deepEqual(
+    f.map((u) => u.id),
+    ["SP-1_SL-2"],
+  );
+});
+
+test("readyFrontier: footprint conflicts serialize (running blocks an overlap)", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["shared.ts"], execution: "fan-out" },
+        { footprint: ["shared.ts", "x.ts"], execution: "fan-out" },
+        { footprint: ["y.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+  // nothing running: the two shared.ts units can't both go; y.ts is independent
+  const f = readyFrontier(dag, emptyState());
+  const fps = f.flatMap((u) => u.footprint);
+  // shared.ts appears at most once in the dispatched batch
+  assert.equal(fps.filter((x) => x === "shared.ts").length, 1);
+  assert.ok(fps.includes("y.ts"));
+});
+
+test("readyFrontier: a running footprint excludes an overlapping unit", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+  const f = readyFrontier(dag, emptyState({ running: new Set(["a.ts"]) }));
+  assert.deepEqual(
+    f.map((u) => u.footprint[0]),
+    ["b.ts"],
+  );
+});
+
+test("readyFrontier: critical-path first — the unit with the longest chain leads", () => {
+  // SL-1 (a) → SL-2 (b) → SL-3 (c) chain, plus an independent SL-4 (d).
+  // At the start only SL-1 and SL-4 are ready; SL-1 has the longer chain → first.
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", { files: ["a.ts"] }),
+    slice("SP-1_SL-2", { dependsOn: ["SP-1_SL-1"], files: ["b.ts"] }),
+    slice("SP-1_SL-3", { dependsOn: ["SP-1_SL-2"], files: ["c.ts"] }),
+    slice("SP-1_SL-4", { files: ["d.ts"] }),
+  ]);
+  const f = readyFrontier(dag, emptyState());
+  assert.equal(f[0].id, "SP-1_SL-1", "longest-chain unit dispatched first");
+});
+
+test("readyFrontier: blocked units (requires-attention slice) are not dispatched", () => {
+  const dag = buildUnitDag([slice("SP-1_SL-1", { files: ["a.ts"] })]);
+  const f = readyFrontier(dag, emptyState({ blocked: new Set(["SP-1_SL-1"]) }));
+  assert.equal(f.length, 0);
+});
+
+// ── needs-input + worker prompt (SP-tgs8nz_SL-3) ───────────────────────────
+
+test("extractNeedsInput: pulls the question after the sentinel; null when absent", () => {
+  assert.equal(
+    extractNeedsInput(`some log\n${NEEDS_INPUT_SENTINEL} Which database — pg or sqlite?`),
+    "Which database — pg or sqlite?",
+  );
+  assert.equal(extractNeedsInput("worked fine, done"), null);
+  // sentinel with no text still parks (with a placeholder)
+  assert.equal(extractNeedsInput(NEEDS_INPUT_SENTINEL), "(no question text)");
+});
+
+test("sessionIdOf: reads a string session_id, undefined otherwise", () => {
+  assert.equal(sessionIdOf({ type: "system", session_id: "abc-123" }), "abc-123");
+  assert.equal(sessionIdOf({ type: "system" }), undefined);
+  assert.equal(sessionIdOf({ session_id: 42 }), undefined);
+});
+
+test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs the sentinel", () => {
+  const unit: SchedUnit = {
+    id: "SP-3_SL-2#eu-0",
+    slice: "SP-3_SL-2",
+    footprint: ["src/a.ts"],
+    dependsOn: [],
+    shape: "fan-out",
+    note: "add a test for module a",
+  };
+  const p = buildWorkerPrompt(unit, "3");
+  assert.match(p, /SP-3_SL-2#eu-0/);
+  assert.match(p, /src\/a\.ts/);
+  assert.match(p, /add a test for module a/);
+  assert.match(p, /Do NOT commit/);
+  assert.ok(p.includes(NEEDS_INPUT_SENTINEL), "instructs the escalation sentinel");
+
+  // The worktree has no specs dir, so context is embedded in the prompt, not pointed to on disk.
+  const withCtx = buildWorkerPrompt(unit, "3", {
+    specBody: "## Acceptance Criteria\n- [ ] headlamp deploys",
+    sliceBody: "Pinned: namespace headlamp",
+  });
+  assert.match(withCtx, /Acceptance Criteria/);
+  assert.match(withCtx, /Pinned: namespace headlamp/);
+  assert.match(withCtx, /NOT in this worktree/);
 });

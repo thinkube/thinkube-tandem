@@ -35,4 +35,8 @@ export interface StorageAdapter {
   readonly onExternalChange?: vscode.Event<Board>;
   /** Adapter-supplied label used in the panel title. */
   readonly scope: string;
+  /** The backing board's identity (root repo, sidecar board dir, display name), so a command
+   *  triggered from THIS panel acts on its board rather than the ambient sidebar selection.
+   *  Optional — the in-memory demo adapter omits it. */
+  boardContext?(): { root: string; boardDir: string; name: string };
 }

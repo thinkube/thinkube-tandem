@@ -238,11 +238,9 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
     item.iconPath = tepStatusIcon(node);
     // Archived TEPs get a distinct contextValue so Unarchive (not Archive) shows.
     item.contextValue = node.archived ? "tep-archived" : "tep";
-    item.command = {
-      command: "vscode.open",
-      title: "Open TEP",
-      arguments: [vscode.Uri.file(node.file)],
-    };
+    // No `command` on click: selecting a TEP only scopes the Specs view (via
+    // onDidChangeSelection → setTepFilter). The inline eye icon opens it rendered — opening the
+    // raw markdown on every click was noise when you just wanted to list a TEP's specs.
     return item;
   }
 }

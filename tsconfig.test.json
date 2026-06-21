@@ -43,6 +43,8 @@
     "src/services/orchestratorCore.test.ts",
     "src/services/OrchestratorService.ts",
     "src/services/OrchestratorService.test.ts",
+    "src/services/OwnershipArbiter.ts",
+    "src/services/claimStoreConcurrency.test.ts",
     "src/services/agentTeams/tmuxDispatcher.ts",
     "src/services/agentTeams/tmuxDispatcher.test.ts",
     "src/services/agentTeams/tmuxShimInstall.ts",
@@ -61,6 +63,7 @@
     "src/mcp/controlRequests.test.ts",
     "src/mcp/vscodeStub.ts",
     "src/mcp/tagsTools.test.ts",
+    "src/mcp/workUnitsDispatch.test.ts",
     "src/mcp/productsTools.test.ts",
     "src/mcp/projectsTools.test.ts"
   ],

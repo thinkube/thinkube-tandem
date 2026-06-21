@@ -92,6 +92,9 @@ export interface Frontmatter {
     /** serial (coupled) | mechanize (uniform data-parallel: one transform applied
      *  N times) | fan-out (heterogeneous: AI per object). */
     execution: "serial" | "mechanize" | "fan-out";
+    /** The unit's task text — what this unit does. Self-describing so a worker can
+     *  act on it without re-reading siblings; required in practice for `fan-out`. */
+    note?: string;
   }[];
   /** Documentation obligation (TEP-tgh6iy). `required` (default for user-facing
    *  work) arms the → Done docs gate; `n/a` skips it but must carry `docs_reason`. */

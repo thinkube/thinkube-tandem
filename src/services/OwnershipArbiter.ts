@@ -53,6 +53,8 @@ export interface ClaimStore {
  */
 export class JournalClaimStore implements ClaimStore {
   constructor(private readonly file: string) {}
+  /** Serializes persist()s so concurrent callers can't race on the shared temp file. */
+  private writeChain: Promise<unknown> = Promise.resolve();
 
   async load(): Promise<OwnershipState> {
     try {
@@ -63,10 +65,19 @@ export class JournalClaimStore implements ClaimStore {
   }
 
   async persist(state: OwnershipState): Promise<void> {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    await fs.writeFile(tmp, serializeOwnership(state), "utf8");
-    await fs.rename(tmp, this.file);
+    // The makespan scheduler calls acquire()/release() concurrently (up to the per-Spec cap).
+    // With a single `${file}.tmp` path that raced: two writes landed on one temp file, then
+    // two renames — the second hit ENOENT because the first had already moved it away. Chain
+    // each write-then-rename so it finishes before the next starts. Each serializes the live
+    // state at run time, so coalescing is safe — the arbiter's in-memory map is the truth.
+    const run = this.writeChain.then(async () => {
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.tmp`;
+      await fs.writeFile(tmp, serializeOwnership(state), "utf8");
+      await fs.rename(tmp, this.file);
+    });
+    this.writeChain = run.catch(() => undefined);
+    return run;
   }
 }
 

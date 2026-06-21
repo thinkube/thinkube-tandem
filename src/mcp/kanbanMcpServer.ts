@@ -735,12 +735,13 @@ const TOOL_DEFS = [
                 type: "string",
                 enum: ["serial", "mechanize", "fan-out"],
               },
+              note: { type: "string" },
             },
             required: ["footprint", "execution"],
             additionalProperties: false,
           },
           description:
-            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), depends_on?, execution: serial|mechanize|fan-out }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out`; coupled → `serial`. The slice stays the validation envelope; work units are never independently gated.",
+            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), depends_on?, execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated.",
         },
         docs: {
           type: "string",
@@ -886,7 +887,7 @@ const TOOL_DEFS = [
   },
 ];
 
-async function dispatchTool(
+export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
   ctx: HandlerContext,
@@ -952,6 +953,18 @@ async function dispatchTool(
         parallel_group: optString(args, "parallel_group"),
         files: optStringArray(args, "files"),
         satisfies: optNumberArray(args, "satisfies"),
+        // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
+        // validates each unit's footprint and serializes the array to frontmatter. Without
+        // this line the schema accepts work_units but the handler silently drops it (the
+        // bug that left every created slice with no work_units).
+        work_units: Array.isArray(args.work_units)
+          ? (args.work_units as {
+              footprint: string[];
+              depends_on?: string[];
+              execution: string;
+              note?: string;
+            }[])
+          : undefined,
         docs: optString(args, "docs"),
         docs_reason: optString(args, "docs_reason"),
         priority: optString(args, "priority"),
@@ -1586,6 +1599,7 @@ export async function createSlice(
       footprint: string[];
       depends_on?: string[];
       execution: string;
+      note?: string;
     }[];
     priority?: string;
     docs?: string;

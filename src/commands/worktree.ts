@@ -81,6 +81,12 @@ export function registerWorktreeCommands(
           return;
         }
         const n = node.specNumber;
+        const ok = await vscode.window.showWarningMessage(
+          `Retire the SP-${n} worktree? This removes the worktree directory only — the branch and its commits are kept, and it refuses if there's uncommitted or unmerged work.`,
+          { modal: true },
+          "Retire",
+        );
+        if (ok !== "Retire") return;
         try {
           const canonical =
             (await worktrees.canonicalRepo(node.repoPath)) ?? node.repoPath;
