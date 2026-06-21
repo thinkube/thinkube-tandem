@@ -393,7 +393,7 @@ const clip = (x: string, n: number): string =>
 
 /** A readable one-liner for a tool_use — name PLUS the part that matters (the command, file,
  *  pattern, query), so the log is debuggable instead of a column of bare `▸ Bash`. */
-function toolUseSummary(name: string, input: unknown): string {
+export function toolUseSummary(name: string, input: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   switch (name) {
@@ -425,7 +425,7 @@ function toolUseSummary(name: string, input: unknown): string {
 }
 
 /** The first non-empty line of a tool_result, indented under its call (✗ when it errored). */
-function toolResultSummary(block: Record<string, unknown>): string | null {
+export function toolResultSummary(block: Record<string, unknown>): string | null {
   let text = "";
   if (typeof block.content === "string") text = block.content;
   else if (Array.isArray(block.content))

@@ -16,7 +16,18 @@ import {
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
+  toolUseSummary,
+  toolResultSummary,
 } from "../services/orchestratorCore";
+
+// markdown-it ships no bundled types; load it untyped (the extension is CommonJS).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const MarkdownIt = require("markdown-it") as new (o?: {
+  html?: boolean;
+  linkify?: boolean;
+  breaks?: boolean;
+}) => { render(s: string): string };
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 import {
   sessionLogPathFor,
   answerParkedWorker,
@@ -356,25 +367,25 @@ function floatOutSession(
   const logPath = handle ? sessionLogPathFor(handle) : undefined;
 
   const render = () => {
-    const lines: string[] = [];
+    const events: Record<string, unknown>[] = [];
     const exists = logPath ? fs.existsSync(logPath) : false;
     if (exists && logPath) {
       try {
         const buf = new StreamJsonBuffer();
-        for (const evt of buf.push(fs.readFileSync(logPath, "utf8"))) {
-          const s = summarizeEvent(evt);
-          if (s) lines.push(s);
-        }
+        for (const evt of buf.push(fs.readFileSync(logPath, "utf8")))
+          events.push(evt);
       } catch {
         /* file not ready yet */
       }
     }
-    const body = lines.length
-      ? lines.map(esc).join("\n")
-      : exists
-        ? "Waiting for session output…"
-        : "No log for this worker yet — it hasn't run (dispatch the Spec to start it).";
-    panel.webview.html = sessionHtml(esc(title), body);
+    const inner = events.length
+      ? renderEventsHtml(events)
+      : `<p class="hint">${
+          exists
+            ? "Waiting for session output…"
+            : "No log for this worker yet — it hasn't run (dispatch the Spec to start it)."
+        }</p>`;
+    panel.webview.html = sessionHtml(esc(title), inner);
   };
 
   render();
@@ -405,6 +416,72 @@ function esc(s: string): string {
   );
 }
 
-function sessionHtml(title: string, body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><style>body{font:13px var(--vscode-editor-font-family,monospace);padding:8px;color:var(--vscode-foreground)}h1{font-size:13px;opacity:.7}#log{white-space:pre-wrap}.hint{opacity:.5}</style></head><body><h1>${title}</h1><div id="log">${body}</div><p class="hint">Tip: drag this tab into its own editor group, or open a second code-server browser window, to place it on another monitor. (“Move into New Window” via right-clicking the tab is desktop-VS-Code only.)</p></body></html>`;
+/** Render a worker's session events as a legible transcript: assistant prose as formatted
+ *  markdown, each tool call as a styled command line, each tool result as a dimmed snippet. */
+function renderEventsHtml(events: Record<string, unknown>[]): string {
+  const out: string[] = [];
+  for (const evt of events) {
+    if (evt.type === "system" && evt.subtype === "init") {
+      out.push(`<div class="ev sys">▸ session started</div>`);
+      continue;
+    }
+    if (evt.type === "assistant") {
+      const msg = evt.message as { content?: unknown } | undefined;
+      const content = Array.isArray(msg?.content) ? msg!.content : [];
+      for (const b of content as Array<Record<string, unknown>>) {
+        if (b.type === "text" && typeof b.text === "string" && b.text.trim())
+          out.push(`<div class="ev say">${md.render(b.text)}</div>`);
+        if (b.type === "tool_use" && typeof b.name === "string")
+          out.push(
+            `<div class="ev tool">${esc(toolUseSummary(b.name, b.input))}</div>`,
+          );
+      }
+      continue;
+    }
+    if (evt.type === "user") {
+      const msg = evt.message as { content?: unknown } | undefined;
+      const content = Array.isArray(msg?.content) ? msg!.content : [];
+      for (const b of content as Array<Record<string, unknown>>) {
+        if (b.type === "tool_result") {
+          const s = toolResultSummary(b);
+          if (s)
+            out.push(
+              `<div class="ev res${b.is_error === true ? " err" : ""}">${esc(s.trim())}</div>`,
+            );
+        }
+      }
+      continue;
+    }
+    if (evt.type === "result") {
+      out.push(
+        `<div class="ev final">${
+          isResultSuccess(evt)
+            ? "✓ result: success"
+            : "✗ result: " + esc(String(evt.subtype ?? "error"))
+        }</div>`,
+      );
+    }
+  }
+  return out.join("\n");
+}
+
+function sessionHtml(title: string, inner: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    body{font:13px var(--vscode-font-family,sans-serif);line-height:1.5;padding:10px 16px;color:var(--vscode-foreground)}
+    h1{font-size:13px;font-weight:600;opacity:.7;margin:0 0 12px}
+    .ev{margin:0 0 9px}
+    .ev.say>:first-child{margin-top:0}.ev.say>:last-child{margin-bottom:0}
+    .ev.say :is(h1,h2,h3,h4){font-size:1.05em;font-weight:600;margin:.7em 0 .35em}
+    .ev.say ul,.ev.say ol{margin:.3em 0;padding-left:1.4em}
+    .ev.say pre{background:var(--vscode-textCodeBlock-background,rgba(127,127,127,.15));padding:8px 10px;border-radius:4px;overflow:auto}
+    .ev.say code{font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,rgba(127,127,127,.15));padding:1px 4px;border-radius:3px;font-size:.92em}
+    .ev.say pre code{background:none;padding:0}
+    .ev.tool{font-family:var(--vscode-editor-font-family,monospace);font-size:12px;white-space:pre-wrap;border-left:2px solid var(--vscode-terminal-ansiBlue,#4ea1f3);padding:1px 0 1px 8px;opacity:.85}
+    .ev.res{font-family:var(--vscode-editor-font-family,monospace);font-size:12px;white-space:pre-wrap;color:var(--vscode-descriptionForeground,#9aa);padding-left:14px}
+    .ev.res.err{color:var(--vscode-errorForeground,#f66)}
+    .ev.sys{opacity:.5}
+    .ev.final{font-weight:600;margin-top:12px}
+    .hint{opacity:.5;margin-top:16px;font-size:12px}
+    a{color:var(--vscode-textLink-foreground)}
+  </style></head><body><h1>${title}</h1>${inner}<p class="hint">Tip: drag this tab into its own editor group, or open a second code-server browser window, to place it on another monitor.</p></body></html>`;
 }
