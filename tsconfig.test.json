@@ -43,6 +43,8 @@
     "src/services/orchestratorCore.test.ts",
     "src/services/OrchestratorService.ts",
     "src/services/OrchestratorService.test.ts",
+    "src/services/OwnershipArbiter.ts",
+    "src/services/claimStoreConcurrency.test.ts",
     "src/services/agentTeams/tmuxDispatcher.ts",
     "src/services/agentTeams/tmuxDispatcher.test.ts",
     "src/services/agentTeams/tmuxShimInstall.ts",
