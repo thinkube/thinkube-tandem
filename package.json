@@ -2,7 +2,7 @@
   "name": "thinkube-ai-integration",
   "displayName": "Thinkube AI Integration",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.52",
+  "version": "0.1.53",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -656,7 +656,12 @@
           "type": "number",
           "default": 4,
           "minimum": 1,
-          "description": "Maximum concurrent `claude -p` workers per Spec when \"Orchestrate Next Slice\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
+          "description": "Maximum concurrent Agent SDK workers per Spec when \"Orchestrate Next Slice\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
+        },
+        "thinkube.orchestrator.verifyCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Shell command run in a slice's worktree to verify it before the orchestrator advances it to Done (green = exit 0), e.g. `ansible-lint` or `npm test`. When empty, the orchestrator runs `npm run compile` if the repo has a package.json, otherwise skips the verify (logged) so a non-JS repo isn't falsely failed by a JS-only gate."
         },
         "thinkube.agentTeams.enableExperimental": {
           "type": "boolean",

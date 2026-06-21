@@ -126,6 +126,10 @@ export function registerOrchestrateCommands(
           canonicalRepo: canonical,
           boardRoot,
           baseDir,
+          verifyCommand: vscode.workspace
+            .getConfiguration("thinkube.orchestrator")
+            .get<string>("verifyCommand")
+            ?.trim(),
         });
         output.show(true);
         const cap =

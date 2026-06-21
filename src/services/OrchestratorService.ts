@@ -14,6 +14,8 @@
  * commit): its end-to-end behaviour is a human verdict (SP-tgsdvw lever), exercised with fakes.
  */
 import { spawn } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 import type * as vscode from "vscode";
 import type { WorktreeService } from "./WorktreeService";
 import type { OwnershipArbiter } from "./OwnershipArbiter";
@@ -67,6 +69,9 @@ export interface OrchestratorDeps {
   baseDir?: string;
   /** Verify a slice at grain in its worktree (tests): defaults to `npm run compile`. */
   verify?: (cwd: string) => Promise<boolean>;
+  /** `thinkube.orchestrator.verifyCommand` — a shell verify recipe run in the worktree; when set
+   *  it overrides the `npm run compile` default (e.g. `ansible-lint` for an Ansible repo). */
+  verifyCommand?: string;
   /** Advance a slice to Done (tests): defaults to stamping `status: done`. */
   advance?: (handle: string) => Promise<void>;
   /** Flag a slice requires-attention with a diagnosis (tests): defaults to a frontmatter+body write. */
@@ -207,8 +212,10 @@ export class OrchestratorService {
         state.done.add(s.handle);
         doneSlices.add(s.handle);
         ids.forEach((id) => state.done.add(id));
-      } else if (st !== "ready") {
-        // doing / requires-attention — not dispatchable, and not done (deps wait).
+      } else if (st !== "ready" && st !== "requires-attention") {
+        // `doing` (in-flight elsewhere) — not dispatchable, not done (deps wait). A
+        // `requires-attention` slice IS re-dispatchable: clicking ▶ again retries it (the
+        // human's re-run after looking), so it falls through into the ready frontier.
         ids.forEach((id) => state.blocked.add(id));
       }
     }
@@ -556,13 +563,35 @@ export class OrchestratorService {
     return (this.deps.verify ?? ((c) => this.defaultVerify(c)))(cwd);
   }
 
-  /** Default slice-grain verify: `npm run compile` in the worktree; green = exit 0. */
+  /**
+   * Slice-grain verify in the worktree (green = exit 0). In order:
+   *  1. `thinkube.orchestrator.verifyCommand` if set (a shell recipe, e.g. `ansible-lint`);
+   *  2. else `npm run compile` if the repo has a `package.json` (the JS default);
+   *  3. else SKIP — a JS-only gate must not falsely fail a non-JS repo (the Ansible case). The
+   *     skip is logged, not silent; set the setting for a real gate.
+   */
   private defaultVerify(cwd: string): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      const proc = spawn("npm", ["run", "compile"], { cwd });
-      proc.on("error", () => resolve(false));
-      proc.on("close", (code) => resolve(code === 0));
-    });
+    const cmd = this.deps.verifyCommand?.trim();
+    if (cmd) {
+      this.deps.output.appendLine(`  ▸ verify: ${cmd}`);
+      return new Promise<boolean>((resolve) => {
+        const proc = spawn(cmd, { cwd, shell: true });
+        proc.on("error", () => resolve(false));
+        proc.on("close", (code) => resolve(code === 0));
+      });
+    }
+    if (fs.existsSync(path.join(cwd, "package.json"))) {
+      return new Promise<boolean>((resolve) => {
+        const proc = spawn("npm", ["run", "compile"], { cwd });
+        proc.on("error", () => resolve(false));
+        proc.on("close", (code) => resolve(code === 0));
+      });
+    }
+    this.deps.output.appendLine(
+      "  ▸ verify: no recipe (no package.json, and thinkube.orchestrator.verifyCommand unset) — " +
+        "treating as PASS. Set thinkube.orchestrator.verifyCommand for a real gate.",
+    );
+    return Promise.resolve(true);
   }
 
   private advance(handle: string): Promise<void> {

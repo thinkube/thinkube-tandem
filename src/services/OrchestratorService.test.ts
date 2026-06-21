@@ -267,6 +267,19 @@ test("dispatchSpec: nothing ready → no worktree, no commit", async () => {
   assert.equal(calls.created, 0);
 });
 
+test("dispatchSpec: a requires-attention slice is re-dispatchable (retry on a new run)", async () => {
+  // After a failed/verify-red run a slice sits in requires-attention; clicking ▶ again must
+  // retry it (the human's re-run), not leave it stranded as a dead end.
+  const { deps, calls } = makeDeps({
+    "specs/SP-1/SL-1.md": { status: "requires-attention", files: ["src/a.ts"] },
+  });
+  const r = await new OrchestratorService(deps).dispatchSpec("1", 4);
+  assert.equal(r.dispatched, 1, "the requires-attention slice re-dispatches");
+  assert.deepEqual(r.advanced, ["SP-1_SL-1"]);
+  assert.equal(r.committed, true);
+  assert.equal(calls.committed, 1);
+});
+
 test("dispatchSpec: the worker pool never exceeds the cap", async () => {
   const track = { inFlight: 0, max: 0 };
   const { deps } = makeDeps(
