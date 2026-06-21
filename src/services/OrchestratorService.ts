@@ -131,6 +131,8 @@ export interface SpecRunResult {
   needsInput: string[];
   /** The whole Spec landed and was committed. */
   committed: boolean;
+  /** Board-relative path of the written delivery summary (DELIVERY.md), set when committed. */
+  deliveryDoc?: string;
 }
 
 export class OrchestratorService {
@@ -142,6 +144,10 @@ export class OrchestratorService {
     specBody: "",
     sliceBodies: new Map(),
   };
+
+  /** How the slice-grain verify ran this Spec — surfaced in the delivery summary so acceptance
+   *  is eyes-open (e.g. "skipped" means the ACs were not actually verified). */
+  private verifyNote = "(not run)";
 
   /** Fetch the parent spec doc + each slice body from the board, to embed in worker prompts. */
   private async loadPromptContext(specNumber: string): Promise<void> {
@@ -398,6 +404,12 @@ export class OrchestratorService {
       await this.commit(specNumber, worktreePath);
       result.committed = true;
       output.appendLine(`✓ SP-${specNumber}: all slices Done — committed.`);
+      result.deliveryDoc = await this.writeDeliverySummary(
+        specNumber,
+        worktreePath,
+        result,
+        dag,
+      );
       for (const u of dag) unparkWorker(u.id);
       try {
         await this.teardown(specNumber);
@@ -605,6 +617,7 @@ export class OrchestratorService {
   private defaultVerify(cwd: string): Promise<boolean> {
     const cmd = this.deps.verifyCommand?.trim();
     if (cmd) {
+      this.verifyNote = `\`${cmd}\``;
       this.deps.output.appendLine(`  ▸ verify: ${cmd}`);
       return new Promise<boolean>((resolve) => {
         const proc = spawn(cmd, { cwd, shell: true });
@@ -613,17 +626,105 @@ export class OrchestratorService {
       });
     }
     if (fs.existsSync(path.join(cwd, "package.json"))) {
+      this.verifyNote = "`npm run compile`";
       return new Promise<boolean>((resolve) => {
         const proc = spawn("npm", ["run", "compile"], { cwd });
         proc.on("error", () => resolve(false));
         proc.on("close", (code) => resolve(code === 0));
       });
     }
+    this.verifyNote =
+      "**skipped** — no recipe (no `package.json`, `thinkube.orchestrator.verifyCommand` unset). " +
+      "The acceptance criteria were NOT verified by the orchestrator — verify them before accepting.";
     this.deps.output.appendLine(
       "  ▸ verify: no recipe (no package.json, and thinkube.orchestrator.verifyCommand unset) — " +
         "treating as PASS. Set thinkube.orchestrator.verifyCommand for a real gate.",
     );
     return Promise.resolve(true);
+  }
+
+  /** Short HEAD sha of the worktree (for the delivery summary); "" on any error. */
+  private gitShortSha(cwd: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+      const proc = spawn("git", ["rev-parse", "--short", "HEAD"], { cwd });
+      let out = "";
+      proc.stdout?.on("data", (d: Buffer) => (out += d.toString()));
+      proc.on("error", () => resolve(""));
+      proc.on("close", () => resolve(out.trim()));
+    });
+  }
+
+  /** The DELIVERY.md body: what the orchestrator built, the commit, per-unit outcomes, the verify
+   *  status, and the next step (review → verify → accept). */
+  private deliveryMarkdown(
+    specNumber: string,
+    sha: string,
+    files: string[],
+    result: SpecRunResult,
+  ): string {
+    const glyph = (o: UnitOutcome) =>
+      o === "success" ? "✓" : o === "needs-input" ? "❓" : "✗";
+    const units = result.results.length
+      ? result.results
+          .map((r) => `| \`${r.id}\` | ${glyph(r.outcome)} ${r.outcome} |`)
+          .join("\n")
+      : "| — | (none) |";
+    const fileList = files.length
+      ? files.map((f) => `- \`${f}\``).join("\n")
+      : "- (none)";
+    return [
+      `# Delivery — SP-${specNumber}`,
+      "",
+      `Orchestrated to branch \`spec/SP-${specNumber}\`${sha ? ` at \`${sha}\`` : ""}. ` +
+        `${result.advanced.length} slice(s) advanced to Done; ${result.dispatched} execution unit(s) ran.`,
+      "",
+      "## Execution units",
+      "",
+      "| Unit | Outcome |",
+      "| --- | --- |",
+      units,
+      "",
+      `## Files (${files.length})`,
+      "",
+      fileList,
+      "",
+      "## Verify",
+      "",
+      this.verifyNote,
+      "",
+      "## Next",
+      "",
+      `1. Review the \`spec/SP-${specNumber}\` branch (the committed change).`,
+      "2. Confirm the Spec's acceptance criteria — they are **not** auto-checked.",
+      "3. Accept the Spec to merge it to `main`.",
+      "",
+    ].join("\n");
+  }
+
+  /** Write the delivery summary to `specs/SP-{n}/DELIVERY.md` (a separate doc, so it doesn't touch
+   *  the spec body / trip the staleness hash). Returns the board-relative path, or undefined. */
+  private async writeDeliverySummary(
+    specNumber: string,
+    worktreePath: string,
+    result: SpecRunResult,
+    dag: SchedUnit[],
+  ): Promise<string | undefined> {
+    try {
+      const sha = await this.gitShortSha(worktreePath);
+      const files = [...new Set(dag.flatMap((u) => u.footprint))].sort();
+      const body = this.deliveryMarkdown(specNumber, sha, files, result);
+      const rel = this.deps.store
+        .pathForSpecDoc(specNumber)
+        .replace(/spec\.md$/, "DELIVERY.md");
+      fs.writeFileSync(path.join(this.deps.store.thinkubeDir, rel), body, "utf8");
+      this.deps.output.appendLine(`▸ SP-${specNumber}: delivery summary → ${rel}`);
+      return rel;
+    } catch (err) {
+      this.deps.output.appendLine(
+        `▸ SP-${specNumber}: delivery summary skipped — ${(err as Error).message}`,
+      );
+      return undefined;
+    }
   }
 
   private advance(handle: string): Promise<void> {

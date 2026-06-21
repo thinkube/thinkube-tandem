@@ -10,6 +10,7 @@ import { ThinkubeStore } from "../store/ThinkubeStore";
 import { WorktreeService } from "../services/WorktreeService";
 import { OrchestratorService } from "../services/OrchestratorService";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   extractDiagnosis,
   buildAttendPrompt,
@@ -162,6 +163,14 @@ export function registerOrchestrateCommands(
               (r.needsInput.length ? `, ${r.needsInput.length} need input` : "") +
               (r.attention.length ? `, ${r.attention.length} need attention` : "") +
               (r.committed ? " — committed ✓" : ""),
+          );
+        }
+        // On a completed Spec, auto-open the delivery summary in the Markdown PREVIEW (rendered)
+        // — the post-execution "here's what was accomplished + what to do next" record.
+        if (r.deliveryDoc) {
+          void vscode.commands.executeCommand(
+            "markdown.showPreview",
+            vscode.Uri.file(path.join(boardDir, r.deliveryDoc)),
           );
         }
       } catch (err) {
