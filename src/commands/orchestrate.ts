@@ -74,9 +74,10 @@ export function registerOrchestrateCommands(
       }
       try {
         const store = new ThinkubeStore(repoPath, boardDir);
-        const specs = (await store.listSpecDirs())
-          .map((d) => /SP-([^/]+)/.exec(d)?.[1])
-          .filter((id): id is string => !!id);
+        // listSpecDirs returns bare Spec ids (e.g. "tgxunl") — use them directly. The prior
+        // `/SP-.../.exec` ran an SP-prefixed regex over an already-unprefixed id → always
+        // undefined → empty, which is why orchestrate reported "No Specs" on every board.
+        const specs = await store.listSpecDirs();
         if (specs.length === 0) {
           vscode.window.showInformationMessage("No Specs on this board yet.");
           return;
@@ -292,9 +293,7 @@ async function pickAttentionSlice(
   store: ThinkubeStore,
 ): Promise<string | undefined> {
   const handles: string[] = [];
-  for (const dir of await store.listSpecDirs()) {
-    const specId = /SP-([^/]+)/.exec(dir)?.[1];
-    if (!specId) continue;
+  for (const specId of await store.listSpecDirs()) {
     for (const rel of await store.listSlices(specId)) {
       const fm = (await store.getFile(rel))?.frontmatter;
       if ((fm?.status ?? "") === "requires-attention") {
