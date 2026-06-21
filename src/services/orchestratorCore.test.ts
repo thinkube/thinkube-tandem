@@ -81,13 +81,33 @@ test("StreamJsonBuffer: holds a trailing partial line until completed", () => {
   assert.equal(b.push('lt","subtype":"success"}\n').length, 1);
 });
 
-test("summarizeEvent: tool_use and text render; non-display events skip", () => {
+test("summarizeEvent: tool_use renders its input; results + snippets; non-display skip", () => {
+  // tool_use shows WHAT the tool did, not just its name
   assert.equal(
     summarizeEvent({
       type: "assistant",
-      message: { content: [{ type: "tool_use", name: "Bash" }] },
+      message: {
+        content: [{ type: "tool_use", name: "Bash", input: { command: "ls -la" } }],
+      },
     }),
-    "▸ Bash",
+    "▸ $ ls -la",
+  );
+  assert.equal(
+    summarizeEvent({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", name: "Read", input: { file_path: "a.yaml" } }],
+      },
+    }),
+    "▸ Read a.yaml",
+  );
+  // tool_result shows the first line of output, indented under its call
+  assert.equal(
+    summarizeEvent({
+      type: "user",
+      message: { content: [{ type: "tool_result", content: "first line\nsecond" }] },
+    }),
+    "   ⤷ first line",
   );
   assert.equal(
     summarizeEvent({ type: "user", message: { content: [] } }),

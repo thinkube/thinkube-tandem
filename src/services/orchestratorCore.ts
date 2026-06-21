@@ -388,6 +388,63 @@ export class StreamJsonBuffer {
  * Event shapes verified against claude v2.1.178: system/init, assistant (text + tool_use),
  * result.
  */
+const clip = (x: string, n: number): string =>
+  x.length > n ? x.slice(0, n - 1) + "…" : x;
+
+/** A readable one-liner for a tool_use — name PLUS the part that matters (the command, file,
+ *  pattern, query), so the log is debuggable instead of a column of bare `▸ Bash`. */
+function toolUseSummary(name: string, input: unknown): string {
+  const inp = (input ?? {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  switch (name) {
+    case "Bash":
+      return `▸ $ ${clip(str(inp.command).replace(/\s+/g, " "), 160)}`;
+    case "Read":
+      return `▸ Read ${str(inp.file_path)}`;
+    case "Write":
+      return `▸ Write ${str(inp.file_path)}`;
+    case "Edit":
+    case "MultiEdit":
+      return `▸ Edit ${str(inp.file_path)}`;
+    case "Glob":
+      return `▸ Glob ${str(inp.pattern)}`;
+    case "Grep":
+      return `▸ Grep ${str(inp.pattern)}${inp.path ? ` in ${str(inp.path)}` : ""}`;
+    case "ToolSearch":
+      return `▸ ToolSearch ${clip(str(inp.query), 80)}`;
+    default: {
+      let j = "";
+      try {
+        j = JSON.stringify(inp);
+      } catch {
+        /* unserializable */
+      }
+      return `▸ ${name}${j && j !== "{}" ? ` ${clip(j, 120)}` : ""}`;
+    }
+  }
+}
+
+/** The first non-empty line of a tool_result, indented under its call (✗ when it errored). */
+function toolResultSummary(block: Record<string, unknown>): string | null {
+  let text = "";
+  if (typeof block.content === "string") text = block.content;
+  else if (Array.isArray(block.content))
+    text = (block.content as Array<Record<string, unknown>>)
+      .filter((x) => x.type === "text" && typeof x.text === "string")
+      .map((x) => x.text as string)
+      .join(" ");
+  const first = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find(Boolean);
+  if (!first) return null;
+  return `   ${block.is_error === true ? "✗" : "⤷"} ${clip(first, 160)}`;
+}
+
+/**
+ * Summarize a session-log event into one or more lines (newline-joined), or null to skip.
+ * Renders assistant text + tool_use (with its input), tool_result snippets, and the final result.
+ */
 export function summarizeEvent(evt: Record<string, unknown>): string | null {
   if (evt.type === "system" && evt.subtype === "init")
     return "▸ session started";
@@ -396,13 +453,24 @@ export function summarizeEvent(evt: Record<string, unknown>): string | null {
     const content = Array.isArray(msg?.content) ? msg!.content : [];
     const parts: string[] = [];
     for (const b of content as Array<Record<string, unknown>>) {
-      if (b.type === "text" && typeof b.text === "string")
+      if (b.type === "text" && typeof b.text === "string" && b.text.trim())
         parts.push(b.text.trim());
       if (b.type === "tool_use" && typeof b.name === "string")
-        parts.push(`▸ ${b.name}`);
+        parts.push(toolUseSummary(b.name, b.input));
     }
-    const s = parts.filter(Boolean).join(" ");
-    return s || null;
+    return parts.length ? parts.join("\n") : null;
+  }
+  if (evt.type === "user") {
+    const msg = evt.message as { content?: unknown } | undefined;
+    const content = Array.isArray(msg?.content) ? msg!.content : [];
+    const parts: string[] = [];
+    for (const b of content as Array<Record<string, unknown>>) {
+      if (b.type === "tool_result") {
+        const s = toolResultSummary(b);
+        if (s) parts.push(s);
+      }
+    }
+    return parts.length ? parts.join("\n") : null;
   }
   if (evt.type === "result") {
     return isResultSuccess(evt)
