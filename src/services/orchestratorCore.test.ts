@@ -368,7 +368,15 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
   assert.match(p, /SP-3_SL-2#eu-0/);
   assert.match(p, /src\/a\.ts/);
   assert.match(p, /add a test for module a/);
-  assert.match(p, /specs\/SP-3\/SL-2\.md/);
   assert.match(p, /Do NOT commit/);
   assert.ok(p.includes(NEEDS_INPUT_SENTINEL), "instructs the escalation sentinel");
+
+  // The worktree has no specs dir, so context is embedded in the prompt, not pointed to on disk.
+  const withCtx = buildWorkerPrompt(unit, "3", {
+    specBody: "## Acceptance Criteria\n- [ ] headlamp deploys",
+    sliceBody: "Pinned: namespace headlamp",
+  });
+  assert.match(withCtx, /Acceptance Criteria/);
+  assert.match(withCtx, /Pinned: namespace headlamp/);
+  assert.match(withCtx, /NOT in this worktree/);
 });

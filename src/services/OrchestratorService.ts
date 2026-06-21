@@ -136,6 +136,34 @@ export interface SpecRunResult {
 export class OrchestratorService {
   constructor(private readonly deps: OrchestratorDeps) {}
 
+  /** Spec + slice bodies to embed in each worker's prompt — the worktree has no specs dir, so the
+   *  worker can't read them from disk. Loaded once per dispatchSpec. */
+  private promptCtx: { specBody: string; sliceBodies: Map<string, string> } = {
+    specBody: "",
+    sliceBodies: new Map(),
+  };
+
+  /** Fetch the parent spec doc + each slice body from the board, to embed in worker prompts. */
+  private async loadPromptContext(specNumber: string): Promise<void> {
+    const { store } = this.deps;
+    const sliceBodies = new Map<string, string>();
+    let specBody = "";
+    try {
+      const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
+      specBody = specDoc?.body ?? "";
+      for (const rel of await store.listSlices(specNumber)) {
+        const m = SLICE_REL_RE.exec(rel);
+        if (!m) continue;
+        const parsed = await store.getFile(rel);
+        if (parsed?.body)
+          sliceBodies.set(store.sliceHandle(specNumber, Number(m[2])), parsed.body);
+      }
+    } catch {
+      /* best-effort — a worker just falls back to its unit note without the embedded context */
+    }
+    this.promptCtx = { specBody, sliceBodies };
+  }
+
   /** Read the Spec's slices into the DAG-builder input (frontmatter → SliceForDag). */
   private async buildSlices(specNumber: string): Promise<SliceForDag[]> {
     const { store } = this.deps;
@@ -180,6 +208,7 @@ export class OrchestratorService {
     };
 
     const slices = await this.buildSlices(specNumber);
+    await this.loadPromptContext(specNumber);
     const dag = buildUnitDag(slices);
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
@@ -454,7 +483,10 @@ export class OrchestratorService {
     cwd: string,
     onPark: OnPark,
   ): Promise<WorkerResult> {
-    const prompt = buildWorkerPrompt(unit, specNumber);
+    const prompt = buildWorkerPrompt(unit, specNumber, {
+      specBody: this.promptCtx.specBody,
+      sliceBody: this.promptCtx.sliceBodies.get(unit.slice),
+    });
     let success = false;
     let sessionId: string | undefined;
     let turnText = "";

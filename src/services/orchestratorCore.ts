@@ -275,9 +275,11 @@ export function readyFrontier(
  * with a question ONLY when genuinely blocked — the posture that keeps headless
  * execution from stopping on routine approvals. Pure → unit-tested.
  */
-export function buildWorkerPrompt(unit: SchedUnit, specNumber: string): string {
-  const m = /_SL-(\d+)$/.exec(unit.slice);
-  const sliceFile = m ? `specs/SP-${specNumber}/SL-${m[1]}.md` : unit.slice;
+export function buildWorkerPrompt(
+  unit: SchedUnit,
+  specNumber: string,
+  context?: { specBody?: string; sliceBody?: string },
+): string {
   const fp = unit.footprint.join(", ") || "(no declared footprint)";
   const task =
     unit.shape === "mechanize"
@@ -285,11 +287,26 @@ export function buildWorkerPrompt(unit: SchedUnit, specNumber: string): string {
       : unit.shape === "fan-out"
         ? `This is a FAN-OUT unit over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`
         : `This is a SERIAL unit — do its steps in order over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`;
+  // The worker runs in a worktree of the CODE repo — the board/specs dir is NOT there. Embed the
+  // spec + slice so it has full context inline rather than hunting the filesystem for a spec it
+  // cannot reach.
+  const specBlock = context?.specBody?.trim()
+    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${context.specBody.trim()}\n`
+    : "";
+  const sliceBlock = context?.sliceBody?.trim()
+    ? `\n──── YOUR SLICE (${unit.slice}) ────\n${context.sliceBody.trim()}\n`
+    : "";
+  const hasCtx = specBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
-    `Read ${sliceFile} and its parent spec for context, then implement THIS unit only — touch only its footprint: ${fp}.\n\n` +
-    `${task}\n\n` +
-    `Work autonomously to the slice's acceptance criteria. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
+    `Implement THIS unit only — touch only its footprint: ${fp}.\n` +
+    (hasCtx
+      ? `The board/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
+      : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+    `\n${task}\n` +
+    specBlock +
+    sliceBlock +
+    `\nWork autonomously to the slice's acceptance criteria above. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
     `Do NOT commit, run git, or move the board card — the orchestrator owns git and the gate. ` +
     `Only if you hit a genuine decision you cannot make from the spec/slice/codebase, output a single final message that begins with ${NEEDS_INPUT_SENTINEL} followed by your question, then stop — never guess.`
   );
