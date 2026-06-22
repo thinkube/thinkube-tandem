@@ -25,7 +25,7 @@ async function seededStore(spec = "demo"): Promise<ThinkubeStore> {
   const store = new ThinkubeStore(board, board);
   await store.writeFile(
     store.pathForSpecDoc(spec),
-    { implements: "TEP-x" },
+    { implements: "TEP-x", ac_verifications: { "1": { run: "npm test" } } },
     "# Demo Spec\n\n## Acceptance Criteria\n\n- [ ] something\n",
   );
   return store;
@@ -60,7 +60,11 @@ test("create_slice through the dispatcher persists work_units", async () => {
     | { footprint: string[]; execution: string; note?: string }[]
     | undefined;
 
-  assert.equal(wu?.length, 2, "both work units must persist through the dispatcher");
+  assert.equal(
+    wu?.length,
+    2,
+    "both work units must persist through the dispatcher",
+  );
   assert.deepEqual(wu![0].footprint, ["a.yaml"]);
   assert.equal(wu![0].execution, "fan-out");
   assert.equal(wu![0].note, "author a");
