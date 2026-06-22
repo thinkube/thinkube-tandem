@@ -153,7 +153,10 @@ async function openProjectSession(
   const dir = projectDirPath(boardRoot, node.product, node.id);
   try {
     await fs.mkdir(dir, { recursive: true });
-    for (const m of discoverMetadataMarketplaces(discoverRepos(), readMarketplaceName))
+    for (const m of discoverMetadataMarketplaces(
+      discoverRepos(),
+      readMarketplaceName,
+    ))
       await registerMarketplace(m.path);
     await enableMethodologyPluginForRepo(dir);
   } catch {
@@ -282,7 +285,7 @@ async function openBoardFor(
       );
       vscode.window.showInformationMessage(
         merge.merged
-          ? `Accepted SP-${spec} — merged ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+          ? `Accepted SP-${spec} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
           : `Accepted SP-${spec} — no PR to merge (shipped straight to main).`,
       );
     },

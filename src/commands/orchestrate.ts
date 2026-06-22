@@ -402,7 +402,7 @@ export function registerOrchestrateCommands(
           );
           vscode.window.showInformationMessage(
             merge.merged
-              ? `Accepted SP-${specId} — merged ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+              ? `Accepted SP-${specId} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
               : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
           );
         } catch (err) {
