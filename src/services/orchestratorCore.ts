@@ -168,8 +168,40 @@ export interface SchedUnit {
  * no `work_units` (legacy) becomes ONE serial node whose footprint is its declared
  * `files`. Each node inherits its slice's `depends_on` (the slice can't start until its
  * dep-slices are done) plus its work units' own `depends_on`.
+ *
+ * Slice-handle dependencies are **resolved here** (SP-th1lfn): a bare slice handle is never
+ * itself a DAG node — a work-unit'd upstream contributes only its `#eu-*` nodes — so a
+ * pre-pass maps each handle → the node ids it produces, and every slice-handle dep is
+ * expanded to that slice's full node-id set (the dependent waits for ALL upstream units).
+ * A handle matching no node (a slice not in the Spec) is left **intact** so `validateDag`
+ * still flags it unresolved (no false-accept, no prefix-glob); the legacy bare-handle node
+ * resolves by identity. `validateDag` is then fed a graph whose every dep is a real node id.
  */
 export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
+  // Pre-pass: handle → the node ids that slice contributes to the DAG.
+  const nodeIdsByHandle = new Map<string, string[]>();
+  for (const s of slices) {
+    const units = s.workUnits ?? [];
+    nodeIdsByHandle.set(
+      s.handle,
+      units.length === 0
+        ? [s.handle]
+        : batchExecutionUnits(units).map((_, i) => `${s.handle}#eu-${i}`),
+    );
+  }
+  // Replace each dep that names a known slice handle with that slice's node-id set
+  // (union → wait for all units); leave a dep that matches no handle as-is (an
+  // already-resolved node id, or an unknown handle validateDag must still reject).
+  const expandDeps = (deps: string[]): string[] => {
+    const out: string[] = [];
+    for (const d of deps) {
+      const ids = nodeIdsByHandle.get(d);
+      if (ids) out.push(...ids);
+      else out.push(d);
+    }
+    return [...new Set(out)];
+  };
+
   const out: SchedUnit[] = [];
   for (const s of slices) {
     const sliceDeps = s.dependsOn ?? [];
@@ -179,7 +211,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         id: s.handle,
         slice: s.handle,
         footprint: s.files ?? [],
-        dependsOn: [...sliceDeps],
+        dependsOn: expandDeps([...sliceDeps]),
         shape: "serial",
       });
       continue;
@@ -188,12 +220,10 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
       const footprint = [
         ...new Set(eu.units.flatMap((u) => u.footprint ?? [])),
       ];
-      const dependsOn = [
-        ...new Set([
-          ...sliceDeps,
-          ...eu.units.flatMap((u) => u.depends_on ?? []),
-        ]),
-      ];
+      const dependsOn = expandDeps([
+        ...sliceDeps,
+        ...eu.units.flatMap((u) => u.depends_on ?? []),
+      ]);
       const note =
         eu.units
           .map((u) => (u as WorkUnit & { note?: string }).note)

@@ -35,6 +35,7 @@ import {
   type AcExec,
   type AcResult,
 } from "./orchestratorCore";
+import { validateDag } from "../methodology/parallelSlices";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
   const rows: SliceRow[] = [
@@ -364,6 +365,115 @@ test("readyFrontier: blocked units (requires-attention slice) are not dispatched
   const dag = buildUnitDag([slice("SP-1_SL-1", { files: ["a.ts"] })]);
   const f = readyFrontier(dag, emptyState({ blocked: new Set(["SP-1_SL-1"]) }));
   assert.equal(f.length, 0);
+});
+
+// ── slice-handle dependency resolution in the DAG (SP-th1lfn / TEP-th1lbq) ──
+//
+// A slice-level `depends_on` on a slice that HAS work_units must resolve against
+// that slice's `#eu-*` execution-unit nodes — the bare handle is never a node, so
+// without expansion `validateDag` would reject a valid board. The contract: a dep
+// `SP_SL-k` expands to the union of `SP_SL-k#eu-*` (or the bare `SP_SL-k` node for
+// a no-work-units slice); a handle matching no node is NOT rewritten (AC3, elsewhere).
+
+test("AC1 — buildUnitDag→validateDag: a handle dep on a work-unit'd slice resolves (no unresolved dependency)", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+      ],
+    }),
+    // SL-2's bare-handle dep on the work-unit'd SL-1 used to dangle (no SP-1_SL-1 node).
+    slice("SP-1_SL-2", { dependsOn: ["SP-1_SL-1"], files: ["c.ts"] }),
+  ]);
+  const res = validateDag(dag);
+  assert.equal(res.ok, true, res.ok ? "" : res.reason);
+});
+
+test("AC2 — buildUnitDag: a handle dep expands to EVERY upstream #eu node; the bare handle is replaced", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+        { footprint: ["c.ts"], execution: "fan-out" },
+      ],
+    }),
+    slice("SP-1_SL-2", {
+      dependsOn: ["SP-1_SL-1"],
+      workUnits: [
+        { footprint: ["x.ts"], execution: "fan-out" },
+        { footprint: ["y.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+  const upstream = dag.filter((u) => u.slice === "SP-1_SL-1").map((u) => u.id);
+  assert.equal(upstream.length, 3, "SL-1 contributes its three #eu nodes");
+  const downstream = dag.filter((u) => u.slice === "SP-1_SL-2");
+  assert.equal(downstream.length, 2);
+  for (const u of downstream) {
+    // every dependent unit waits for EVERY upstream unit (union expansion)…
+    for (const up of upstream)
+      assert.ok(
+        u.dependsOn.includes(up),
+        `${u.id} should depend on upstream unit ${up}`,
+      );
+    // …and the now-danging bare handle is no longer a dep (it was replaced).
+    assert.ok(
+      !u.dependsOn.includes("SP-1_SL-1"),
+      `${u.id} should not still carry the bare handle SP-1_SL-1`,
+    );
+  }
+});
+
+test("AC2 — readyFrontier: the dependent is blocked until ALL upstream units are done, then released", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+      ],
+    }),
+    slice("SP-1_SL-2", { dependsOn: ["SP-1_SL-1"], files: ["c.ts"] }),
+  ]);
+  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!.id;
+  const ups = dag.filter((u) => u.slice === "SP-1_SL-1").map((u) => u.id);
+  assert.equal(ups.length, 2);
+
+  const ready = (state: SchedulerState) =>
+    readyFrontier(dag, state).some((u) => u.id === sl2);
+
+  // nothing done → SL-2 not in the frontier
+  assert.equal(ready(emptyState()), false, "blocked when no upstream done");
+  // only the FIRST upstream unit done → still blocked (must wait for ALL)
+  assert.equal(
+    ready(emptyState({ done: new Set([ups[0]]) })),
+    false,
+    "still blocked while any upstream unit is undone",
+  );
+  // ALL upstream units done → SL-2 released
+  assert.equal(
+    ready(emptyState({ done: new Set(ups) })),
+    true,
+    "released once every upstream unit is done",
+  );
+});
+
+test("AC5 — legacy no-work-units dep: a bare-handle node still resolves by identity (unchanged)", () => {
+  const dag = buildUnitDag([
+    // no work units → ONE bare-handle node whose id IS the slice handle
+    slice("SP-1_SL-1", { files: ["a.ts"] }),
+    slice("SP-1_SL-2", { dependsOn: ["SP-1_SL-1"], files: ["b.ts"] }),
+  ]);
+  // the upstream is itself a node named by the handle → the dep resolves unchanged
+  const res = validateDag(dag);
+  assert.equal(res.ok, true, res.ok ? "" : res.reason);
+  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
+  assert.deepEqual(
+    sl2.dependsOn,
+    ["SP-1_SL-1"],
+    "legacy bare handle is kept as-is (it is a real node id)",
+  );
 });
 
 // ── needs-input + worker prompt (SP-tgs8nz_SL-3) ───────────────────────────

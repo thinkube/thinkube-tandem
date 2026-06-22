@@ -369,6 +369,97 @@ test("validateDag: dangling deps are reported before cycles", () => {
   assert.ok(r.missing, "reports the missing dep first");
 });
 
+// ── validateDag over expanded slice-handle deps (SP-th1lfn AC3 / AC4) ───────
+//
+// `buildUnitDag` (orchestratorCore.ts) resolves a slice-handle `depends_on` to
+// the upstream slice's `#eu-*` node ids; `validateDag` is then fed that already
+// expanded graph and stays unchanged. These fixtures feed `validateDag` the
+// shapes the expansion produces, pinning that the two existing checks still
+// hold over the expanded edge set:
+//   • AC3 — an UNKNOWN handle is NOT rewritten (no matching upstream nodes), so
+//     it dangles and is still rejected + named (no blanket prefix false-accept).
+//   • AC4 — a cycle formed THROUGH expanded `#eu-*` deps is still caught and the
+//     loop named.
+
+test("validateDag: AC3 — an unknown slice handle is still rejected and named (no false-accept)", () => {
+  // Shape buildUnitDag emits when a dep names a slice absent from the Spec:
+  // SP-7_SL-2's units depend on SP-7_SL-9, which contributes no node, so the
+  // raw handle is left intact (never prefix-matched away) and dangles.
+  const r = validateDag([
+    { id: "SP-7_SL-1#eu-0", dependsOn: [] },
+    { id: "SP-7_SL-1#eu-1", dependsOn: [] },
+    { id: "SP-7_SL-2#eu-0", dependsOn: ["SP-7_SL-9"] }, // unknown handle, unrewritten
+  ]);
+  assert.equal(r.ok, false);
+  if (r.ok) return; // narrow for TS
+  assert.deepEqual(r.missing, [{ node: "SP-7_SL-2#eu-0", dep: "SP-7_SL-9" }]);
+  // The unresolved upstream handle is named verbatim — not silently swallowed.
+  assert.match(r.reason, /SP-7_SL-9/);
+  assert.match(r.reason, /SP-7_SL-2#eu-0/);
+});
+
+test("validateDag: AC3 — a real-prefix typo (#eu-2 that doesn't exist) is NOT accepted", () => {
+  // The upstream slice exists with eu-0/eu-1, but the dep points at a #eu-2 that
+  // was never emitted. Resolution targets real node ids, so this still dangles —
+  // a typo never resolves by prefix.
+  const r = validateDag([
+    { id: "SP-7_SL-1#eu-0", dependsOn: [] },
+    { id: "SP-7_SL-1#eu-1", dependsOn: [] },
+    { id: "SP-7_SL-2#eu-0", dependsOn: ["SP-7_SL-1#eu-2"] }, // typo'd unit id
+  ]);
+  assert.equal(r.ok, false);
+  if (r.ok) return;
+  assert.deepEqual(r.missing, [
+    { node: "SP-7_SL-2#eu-0", dep: "SP-7_SL-1#eu-2" },
+  ]);
+  assert.match(r.reason, /SP-7_SL-1#eu-2/);
+});
+
+test("validateDag: AC4 — a cycle formed THROUGH expanded slice-handle deps is caught and named", () => {
+  // After expansion, SP-7_SL-1's unit waits on SP-7_SL-2's unit and vice-versa
+  // (each slice's `depends_on` resolved to the other's #eu nodes) — a genuine
+  // loop. The existing DFS cycle check runs over the expanded edges.
+  const r = validateDag([
+    { id: "SP-7_SL-1#eu-0", dependsOn: ["SP-7_SL-2#eu-0"] },
+    { id: "SP-7_SL-2#eu-0", dependsOn: ["SP-7_SL-1#eu-0"] },
+  ]);
+  assert.equal(r.ok, false);
+  if (r.ok) return;
+  assert.ok(r.cycle && r.cycle.length >= 2, "names the cycle path");
+  // The loop names both expanded unit nodes involved.
+  assert.ok(r.cycle!.includes("SP-7_SL-1#eu-0"));
+  assert.ok(r.cycle!.includes("SP-7_SL-2#eu-0"));
+  assert.match(r.reason, /cycle/i);
+  assert.match(r.reason, /SP-7_SL-1#eu-0/);
+});
+
+test("validateDag: AC4 — a longer cycle across three expanded units is caught", () => {
+  // A 3-node loop through expanded deps (SL-1#eu → SL-2#eu → SL-3#eu → SL-1#eu).
+  const r = validateDag([
+    { id: "SP-7_SL-1#eu-0", dependsOn: ["SP-7_SL-3#eu-0"] },
+    { id: "SP-7_SL-2#eu-0", dependsOn: ["SP-7_SL-1#eu-0"] },
+    { id: "SP-7_SL-3#eu-0", dependsOn: ["SP-7_SL-2#eu-0"] },
+  ]);
+  assert.equal(r.ok, false);
+  if (r.ok) return;
+  assert.ok(r.cycle && r.cycle.length >= 3, "names the full loop");
+  assert.match(r.reason, /cycle/i);
+});
+
+test("validateDag: a fan-in over expanded units (no cycle) still passes", () => {
+  // Sanity counterpart to AC4: SP-7_SL-2's unit waiting on BOTH of SP-7_SL-1's
+  // units is the well-formed expansion shape and must validate (no false cycle).
+  const r = validateDag([
+    { id: "SP-7_SL-1#eu-0", dependsOn: [] },
+    { id: "SP-7_SL-1#eu-1", dependsOn: [] },
+    {
+      id: "SP-7_SL-2#eu-0",
+      dependsOn: ["SP-7_SL-1#eu-0", "SP-7_SL-1#eu-1"],
+    },
+  ]);
+  assert.equal(r.ok, true);
+});
+
 // ── footprintGuard (SP-tgs8nz_SL-6 PreToolUse fence) ───────────────────────
 
 test("footprintGuard: an in-footprint Write is allowed", () => {
@@ -382,7 +473,12 @@ test("footprintGuard: an in-footprint Write is allowed", () => {
 });
 
 test("footprintGuard: an out-of-footprint Edit is DENIED, naming the file", () => {
-  const d = footprintGuard("Edit", { file_path: "src/evil.ts" }, ["src/a.ts"], "/wt");
+  const d = footprintGuard(
+    "Edit",
+    { file_path: "src/evil.ts" },
+    ["src/a.ts"],
+    "/wt",
+  );
   assert.equal(d.allow, false);
   if (d.allow) return;
   assert.match(d.reason, /src\/evil\.ts/);
@@ -400,23 +496,38 @@ test("footprintGuard: an absolute path under the worktree is relativized before 
 });
 
 test("footprintGuard: non-write tools (Read, Bash) are not guarded", () => {
-  assert.equal(footprintGuard("Read", { file_path: "src/x.ts" }, [], "/wt").allow, true);
-  assert.equal(footprintGuard("Bash", { command: "ls" }, [], "/wt").allow, true);
+  assert.equal(
+    footprintGuard("Read", { file_path: "src/x.ts" }, [], "/wt").allow,
+    true,
+  );
+  assert.equal(
+    footprintGuard("Bash", { command: "ls" }, [], "/wt").allow,
+    true,
+  );
 });
 
 test("footprintGuard: a write with no file_path is allowed (nothing to fence)", () => {
   assert.equal(footprintGuard("Write", {}, ["src/a.ts"], "/wt").allow, true);
-  assert.equal(footprintGuard("Edit", undefined, ["src/a.ts"], "/wt").allow, true);
+  assert.equal(
+    footprintGuard("Edit", undefined, ["src/a.ts"], "/wt").allow,
+    true,
+  );
 });
 
 test("footprintGuard: ./-prefixed footprint matches the bare target", () => {
-  const d = footprintGuard("Edit", { file_path: "src/a.ts" }, ["./src/a.ts"], "/wt");
+  const d = footprintGuard(
+    "Edit",
+    { file_path: "src/a.ts" },
+    ["./src/a.ts"],
+    "/wt",
+  );
   assert.equal(d.allow, true);
 });
 
 test("footprintGuard: MultiEdit is guarded like Edit/Write", () => {
   assert.equal(
-    footprintGuard("MultiEdit", { file_path: "out.ts" }, ["in.ts"], "/wt").allow,
+    footprintGuard("MultiEdit", { file_path: "out.ts" }, ["in.ts"], "/wt")
+      .allow,
     false,
   );
 });
