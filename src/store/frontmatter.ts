@@ -81,6 +81,13 @@ export interface Frontmatter {
   files?: string[];
   /** 1-based AC ordinals this slice delivers; the → Done gate checks each is ticked on the parent Spec. */
   satisfies?: number[];
+  /** Spec-level (SP-tgzyfy / TEP-tgzx3p): the closing gate's per-AC verification declaration —
+   *  a map AC-ordinal → how that AC is verified. The orchestrator runs the union as a full plan
+   *  at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable →
+   *  requires-attention). `run` is a shell/playbook command (exit 0 = the AC's verification
+   *  passed); `env` is informational — `cluster` for an infra lifecycle, `local` otherwise.
+   *  Keys are the 1-based AC ordinals (as YAML map keys, parsed tolerantly). */
+  ac_verifications?: Record<string, { run: string; env?: "cluster" | "local" }>;
   /** Execution-aware work units under this slice (SP-tgs8gb): each an atom with a
    *  file/object footprint + an execution shape. The slice stays the validation
    *  envelope — work units are never independently gated. */

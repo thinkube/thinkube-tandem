@@ -132,7 +132,11 @@ export type WebviewMessage =
   | { kind: "float-out"; handle: string }
   | { kind: "attend"; handle: string }
   /** Start the makespan scheduler on a Spec (the ▶ button on the control-center graph). */
-  | { kind: "orchestrate"; spec: string };
+  | { kind: "orchestrate"; spec: string }
+  /** Accept the delivered Spec (SP-tgzyfy): host runs the gated merge spec/SP-{n} → main. */
+  | { kind: "accept"; spec: string }
+  /** Reject the delivered Spec: open a Claude session primed with the delivery report. */
+  | { kind: "reject"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 

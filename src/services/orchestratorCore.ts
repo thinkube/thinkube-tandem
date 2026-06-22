@@ -1,10 +1,15 @@
 /**
  * Pure, vscode-free core of the board orchestrator (SP-tgs8nz_SL-1): the work-unit DAG +
  * scheduler, plus session-log helpers that parse a worker's persisted `.jsonl` events.
- * No I/O — the `OrchestratorService` shell supplies board rows + the event stream and acts on
- * the results. Unit-tested directly (high AI-testability per the lever, SP-tgsdvw); the
- * live SDK worker / verify / advance is the shell's job — a human verdict (low AI-testability).
+ * Mostly I/O-free — the `OrchestratorService` shell supplies board rows + the event stream
+ * and acts on the results. Unit-tested directly (high AI-testability per the lever, SP-tgsdvw);
+ * the live SDK worker / advance is the shell's job — a human verdict (low AI-testability).
+ *
+ * The one I/O seam here is `runAcVerifications` (SP-tgzyfy / TEP-tgzx3p, the closing gate): it
+ * spawns the Spec's declared per-AC checks. The actual spawn is behind an injectable `AcExec`
+ * defaulting to `child_process` so the runner + the report builder stay unit-testable with fakes.
  */
+import { spawn } from "child_process";
 
 export interface SliceRow {
   /** Slice handle, e.g. "SP-3_SL-2". */
@@ -134,6 +139,9 @@ export interface SliceForDag {
   files: string[];
   /** `work_units` (may be empty → the whole slice is one serial unit). */
   workUnits: (WorkUnit & { note?: string })[];
+  /** 1-based AC ordinals the slice `satisfies` — the closing gate (SP-tgzyfy) advances the slice
+   *  to Done only when these ACs' verifications all ran green, then ticks exactly these on the Spec. */
+  satisfies?: number[];
 }
 
 /** A schedulable execution unit — one worker's assignment. */
@@ -181,7 +189,10 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         ...new Set(eu.units.flatMap((u) => u.footprint ?? [])),
       ];
       const dependsOn = [
-        ...new Set([...sliceDeps, ...eu.units.flatMap((u) => u.depends_on ?? [])]),
+        ...new Set([
+          ...sliceDeps,
+          ...eu.units.flatMap((u) => u.depends_on ?? []),
+        ]),
       ];
       const note =
         eu.units
@@ -322,7 +333,9 @@ export const NEEDS_INPUT_SENTINEL = "⟦NEEDS-INPUT⟧";
 export function extractNeedsInput(text: string): string | null {
   const i = text.indexOf(NEEDS_INPUT_SENTINEL);
   if (i === -1) return null;
-  return text.slice(i + NEEDS_INPUT_SENTINEL.length).trim() || "(no question text)";
+  return (
+    text.slice(i + NEEDS_INPUT_SENTINEL.length).trim() || "(no question text)"
+  );
 }
 
 /** The session id carried on a stream-json / SDK event, for resume-on-answer (SL-3/SL-5). */
@@ -425,7 +438,9 @@ export function toolUseSummary(name: string, input: unknown): string {
 }
 
 /** The first non-empty line of a tool_result, indented under its call (✗ when it errored). */
-export function toolResultSummary(block: Record<string, unknown>): string | null {
+export function toolResultSummary(
+  block: Record<string, unknown>,
+): string | null {
   let text = "";
   if (typeof block.content === "string") text = block.content;
   else if (Array.isArray(block.content))
@@ -485,4 +500,271 @@ export function isResultSuccess(evt: Record<string, unknown>): boolean {
   return (
     evt.type === "result" && evt.is_error !== true && evt.subtype === "success"
   );
+}
+
+// ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────────
+//
+// At Spec quiescence the orchestrator runs the Spec's DECLARED per-AC verifications as a
+// complete plan against the worktree (the live cluster for infra) and gates Done/commit on
+// all-green. No skip: a Spec whose declared checks can't all run is requires-attention, never
+// silently Done (this reverses today's `defaultVerify` skip-pass). The declaration lives in the
+// Spec frontmatter as `ac_verifications` (AC ordinal → { run, env }); the result maps each
+// pass/fail back to the AC(s) it proves and feeds the auditable per-AC report.
+
+/** One AC's declared verification — how AC #`ac` is proven (the closing gate's input). */
+export interface AcVerification {
+  /** 1-based AC ordinal this check proves. */
+  ac: number;
+  /** The shell/playbook command run in the worktree (exit 0 = the AC passed). */
+  run: string;
+  /** Where it runs — informational; the live cluster run is the shell's job (low AI-testability). */
+  env?: "cluster" | "local";
+}
+
+/** The outcome of running one AC's verification — pass/fail with its evidence (log excerpt). */
+export interface AcResult {
+  /** 1-based AC ordinal this result proves. */
+  ac: number;
+  pass: boolean;
+  /** The command + exit code + a tail of its output (or the un-runnable reason). Auditable. */
+  evidence: string;
+}
+
+/**
+ * Normalize the Spec frontmatter `ac_verifications` map (AC ordinal → { run, env }) into the
+ * ordered `AcVerification[]` the runner executes. Tolerant: keys parse from string or number,
+ * non-positive / non-integer ordinals and entries without a non-empty `run` are dropped; the
+ * result is sorted by ordinal so the plan runs in a stable, dependency-friendly order.
+ */
+export function parseAcVerifications(raw: unknown): AcVerification[] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const out: AcVerification[] = [];
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    const ac = Number(key);
+    if (!Number.isInteger(ac) || ac <= 0) continue;
+    if (!val || typeof val !== "object") continue;
+    const run = (val as Record<string, unknown>).run;
+    if (typeof run !== "string" || !run.trim()) continue;
+    const env = (val as Record<string, unknown>).env;
+    out.push({
+      ac,
+      run: run.trim(),
+      env: env === "cluster" || env === "local" ? env : undefined,
+    });
+  }
+  return out.sort((a, b) => a.ac - b.ac);
+}
+
+/** Run one declared command in `cwd`, resolving its exit code + combined output. Injectable so
+ *  the runner is unit-testable; the default spawns a shell (the real cluster/local run). */
+export type AcExec = (
+  run: string,
+  cwd: string,
+) => Promise<{ code: number | null; output: string }>;
+
+const defaultAcExec: AcExec = (run, cwd) =>
+  new Promise((resolve, reject) => {
+    const proc = spawn(run, { cwd, shell: true });
+    let output = "";
+    proc.stdout?.on("data", (d: Buffer) => (output += d.toString()));
+    proc.stderr?.on("data", (d: Buffer) => (output += d.toString()));
+    proc.on("error", reject);
+    proc.on("close", (code) => resolve({ code, output }));
+  });
+
+/** Format one verification's evidence: the command, its exit code, and a clipped output tail. */
+function acEvidence(run: string, code: number | null, output: string): string {
+  const tail = output
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .filter((l, i, a) => l.length > 0 || i < a.length - 1)
+    .slice(-8)
+    .join("\n")
+    .trim();
+  const head = `$ ${run} → exit ${code ?? "null"}`;
+  return tail ? `${head}\n${clip(tail, 600)}` : head;
+}
+
+/**
+ * Run the Spec's declared per-AC verifications as a complete plan (SP-tgzyfy): each check runs
+ * in `cwd` (the worktree / live cluster), in declared order, and its pass/fail is attributed
+ * back to the AC it proves. A command that exits 0 → pass; non-zero → fail; one that can't run
+ * at all (spawn error) → fail with an "could not run" evidence (the no-skip: un-runnable ⇒ red,
+ * never silently green). Returns one `AcResult` per declared verification.
+ */
+export async function runAcVerifications(
+  verifs: AcVerification[],
+  cwd: string,
+  exec: AcExec = defaultAcExec,
+): Promise<AcResult[]> {
+  const out: AcResult[] = [];
+  for (const v of verifs) {
+    try {
+      const { code, output } = await exec(v.run, cwd);
+      out.push({
+        ac: v.ac,
+        pass: code === 0,
+        evidence: acEvidence(v.run, code, output),
+      });
+    } catch (err) {
+      out.push({
+        ac: v.ac,
+        pass: false,
+        evidence: `$ ${v.run} → could not run: ${(err as Error).message}`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Tick the given 1-based AC ordinals (`- [ ]` → `- [x]`) under the Spec body's
+ * `## Acceptance Criteria` heading, leaving everything else byte-for-byte. Out-of-range or
+ * already-checked ordinals are no-ops. Pure — the shell writes the result back to the Spec doc
+ * so the accept gate (every AC checked) can pass. Mirrors `extractAcceptanceCriteria`'s parser.
+ */
+export function checkAcOrdinals(body: string, ordinals: number[]): string {
+  const want = new Set(ordinals.filter((n) => Number.isInteger(n) && n > 0));
+  if (!want.size) return body;
+  const lines = (body ?? "").split(/\r?\n/);
+  let inSection = false;
+  let ordinal = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const heading = /^(#{2,6})\s+(.+?)\s*$/.exec(lines[i]);
+    if (heading) {
+      const text = heading[2].trim().toLowerCase();
+      inSection =
+        text === "acceptance criteria" || text === "acceptance_criteria";
+      continue;
+    }
+    if (!inSection) continue;
+    const cb = /^(\s*[-*+]\s*)\[([ xX])\](\s+.+)$/.exec(lines[i]);
+    if (!cb) continue;
+    ordinal++;
+    if (want.has(ordinal) && cb[2] === " ") {
+      lines[i] = `${cb[1]}[x]${cb[3]}`;
+    }
+  }
+  return lines.join("\n");
+}
+
+/** One execution unit's outcome, for the delivery report's per-unit table. */
+export interface ReportUnit {
+  id: string;
+  outcome: "success" | "needs-input" | "failed";
+}
+
+/** Everything the auditable delivery report (DELIVERY.md) records (SP-tgzyfy). */
+export interface DeliveryReportInput {
+  specNumber: string;
+  /** Short HEAD sha the Spec was committed at (or "" when nothing committed). */
+  sha: string;
+  /** The union of the units' footprints. */
+  files: string[];
+  /** Per-execution-unit outcomes. */
+  units: ReportUnit[];
+  /** The declared per-AC verification plan (how each AC is verified). */
+  declared: AcVerification[];
+  /** The per-AC verification results (pass/fail + evidence). Empty when the gate couldn't run. */
+  acResults: AcResult[];
+  /** Worker-reported problems / requires-attention diagnoses caught this run. */
+  problems?: string[];
+  /** Slices advanced to Done this run. */
+  advanced: string[];
+  /** Slices left requires-attention this run. */
+  attention?: string[];
+  /** The whole Spec landed green and was committed. */
+  committed: boolean;
+}
+
+/**
+ * Build the auditable delivery report (DELIVERY.md) — the durable, non-ephemeral record the
+ * closing gate writes on EVERY completion (pass or fail): the commit, each execution unit's
+ * outcome, the caught problems, and — the SP-tgzyfy addition — a **per-AC pass/fail table with
+ * its verification evidence**, so a completed Spec carries proof of *how* each AC was verified
+ * (and a failed one carries proof of *why* it stalled). Pure → unit-tested.
+ */
+export function buildDeliveryReport(i: DeliveryReportInput): string {
+  const glyph = (o: ReportUnit["outcome"]) =>
+    o === "success" ? "✓" : o === "needs-input" ? "❓" : "✗";
+  const units = i.units.length
+    ? i.units
+        .map((u) => `| \`${u.id}\` | ${glyph(u.outcome)} ${u.outcome} |`)
+        .join("\n")
+    : "| — | (none) |";
+  const fileList = i.files.length
+    ? i.files.map((f) => `- \`${f}\``).join("\n")
+    : "- (none)";
+
+  const resultFor = new Map(i.acResults.map((r) => [r.ac, r]));
+  const acRows = i.declared.length
+    ? i.declared
+        .map((v) => {
+          const r = resultFor.get(v.ac);
+          const verdict = !r ? "· not run" : r.pass ? "✓ pass" : "✗ fail";
+          return `| #${v.ac} | \`${v.run.replace(/\|/g, "\\|")}\` | ${v.env ?? "—"} | ${verdict} |`;
+        })
+        .join("\n")
+    : null;
+  const acEvidenceBlocks = i.acResults.length
+    ? i.acResults
+        .map(
+          (r) =>
+            `**AC #${r.ac}** — ${r.pass ? "✓ pass" : "✗ fail"}\n\n\`\`\`\n${r.evidence}\n\`\`\``,
+        )
+        .join("\n\n")
+    : "";
+
+  const verifySection = acRows
+    ? [
+        "## Acceptance-criteria verification",
+        "",
+        "| AC | Verified by | Env | Result |",
+        "| --- | --- | --- | --- |",
+        acRows,
+        "",
+        acEvidenceBlocks,
+      ]
+    : [
+        "## Acceptance-criteria verification",
+        "",
+        "**No `ac_verifications` declared on the Spec — the closing gate could not run.** " +
+          "The acceptance criteria were NOT verified; the Spec is left `requires-attention` " +
+          "(no skip, TEP-tgzx3p). Declare a per-AC verification map on the Spec, then re-run.",
+      ];
+
+  const problems = (i.problems ?? []).filter(Boolean);
+  const problemSection = problems.length
+    ? ["## Caught problems", "", ...problems.map((p) => `- ${p}`), ""]
+    : [];
+
+  return [
+    `# Delivery — SP-${i.specNumber}`,
+    "",
+    `Orchestrated to branch \`spec/SP-${i.specNumber}\`${i.sha ? ` at \`${i.sha}\`` : ""}. ` +
+      `${i.advanced.length} slice(s) advanced to Done; ${i.units.length} execution unit(s) ran` +
+      `${i.committed ? " — committed ✓" : " — not committed"}.`,
+    "",
+    "## Execution units",
+    "",
+    "| Unit | Outcome |",
+    "| --- | --- |",
+    units,
+    "",
+    ...verifySection,
+    "",
+    ...problemSection,
+    `## Files (${i.files.length})`,
+    "",
+    fileList,
+    "",
+    "## Next",
+    "",
+    i.committed
+      ? `1. Review the \`spec/SP-${i.specNumber}\` branch (the committed change) — the per-AC table above is the evidence.\n` +
+        `2. **Accept** to merge the Spec to \`main\` (gated on every AC checked), or **Reject** to open a primed session.`
+      : `1. The closing gate did not pass — see the per-AC table / caught problems above.\n` +
+        `2. Resolve the requires-attention slice(s), then re-run the orchestrator.`,
+    "",
+  ].join("\n");
 }

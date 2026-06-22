@@ -113,7 +113,8 @@ interface ServerEnv {
  *  the plugin-shipped server self-configures without per-repo `.mcp.json` env
  *  injection. Missing / unparseable → null (env + cwd discovery still apply). */
 function readConfigFile(): ServerConfigFile | null {
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  const dir =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
   try {
     return JSON.parse(
       fsSync.readFileSync(path.join(dir, "thinkube-mcp.json"), "utf8"),
@@ -398,7 +399,13 @@ function walkForBoards(
       const name = wt
         ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
         : path.basename(abs);
-      out.set(abs, { id: boardId(abs), name, path: abs, boardDir, worktree: !!wt });
+      out.set(abs, {
+        id: boardId(abs),
+        name,
+        path: abs,
+        boardDir,
+        worktree: !!wt,
+      });
     }
     return; // a repo is a leaf — no nested boards
   }
@@ -555,11 +562,13 @@ const TOOL_DEFS = [
       properties: {
         product: {
           type: "string",
-          description: "The Product (top sidecar dir) the project lives under, e.g. `Platform`.",
+          description:
+            "The Product (top sidecar dir) the project lives under, e.g. `Platform`.",
         },
         id: {
           type: "string",
-          description: "The project id (its directory name under `<product>/projects/`).",
+          description:
+            "The project id (its directory name under `<product>/projects/`).",
         },
       },
       required: ["product", "id"],
@@ -575,11 +584,13 @@ const TOOL_DEFS = [
       properties: {
         tep: {
           type: "string",
-          description: "The TEP id to promote (with or without the `TEP-` prefix).",
+          description:
+            "The TEP id to promote (with or without the `TEP-` prefix).",
         },
         product: {
           type: "string",
-          description: "The Product the target project lives under, e.g. `Platform`.",
+          description:
+            "The Product the target project lives under, e.g. `Platform`.",
         },
         id: {
           type: "string",
@@ -792,6 +803,20 @@ const TOOL_DEFS = [
           description:
             "The TEP this Spec implements — a bare `TEP-<id>` (repo-local) or a qualified `<namespace>:TEP-<id>` (cross-board / umbrella project). Sets the `implements:` frontmatter (the TEP↔spec link + umbrella membership, which `promote_tep` rewrites). Omit to leave it unchanged; empty string clears it.",
         },
+        ac_verifications: {
+          type: "object",
+          description:
+            "The closing AI-verification gate's per-AC declaration (SP-tgzyfy / TEP-tgzx3p): a map keyed by 1-based AC ordinal → `{ run, env? }`, where `run` is the shell/playbook command that verifies that AC (exit 0 = pass) and `env` is `cluster` (an infra lifecycle) or `local`. The orchestrator runs the union as a full plan at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable → requires-attention). Sets the `ac_verifications:` frontmatter; omit to leave unchanged, pass `{}` to clear.",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              run: { type: "string" },
+              env: { type: "string", enum: ["cluster", "local"] },
+            },
+            required: ["run"],
+            additionalProperties: false,
+          },
+        },
         ...BOARD_PARAM,
       },
       required: ["spec", "body"],
@@ -979,6 +1004,14 @@ export async function dispatchTool(
           : asString(args, "spec"),
         asString(args, "body"),
         optString(args, "implements"),
+        // The closing gate's per-AC declaration (SP-tgzyfy). Forwarded verbatim — writeSpec
+        // normalizes + serializes it to the `ac_verifications:` frontmatter; undefined leaves
+        // any existing map intact, `{}` clears it.
+        args.ac_verifications !== undefined &&
+          typeof args.ac_verifications === "object" &&
+          !Array.isArray(args.ac_verifications)
+          ? (args.ac_verifications as Record<string, unknown>)
+          : undefined,
       );
     case "update_slice":
       writeGate(name);
@@ -1073,7 +1106,9 @@ async function collectTaggedItems(
   out: TaggedItem[],
 ): Promise<void> {
   for (const t of await store.listTeps()) {
-    const tags = effectiveTags((await store.getFile(t.relativePath))?.frontmatter);
+    const tags = effectiveTags(
+      (await store.getFile(t.relativePath))?.frontmatter,
+    );
     if (tags.length)
       out.push({ boardId, handle: `TEP-${t.id}`, kind: "tep", tags });
   }
@@ -1292,7 +1327,11 @@ export async function promoteTep(
         projectNamespace,
       );
       if (next && parsed) {
-        await store.writeFile(rel, { ...(fm ?? {}), implements: next }, parsed.body);
+        await store.writeFile(
+          rel,
+          { ...(fm ?? {}), implements: next },
+          parsed.body,
+        );
         rewritten.push(`SP-${spec}`);
       }
     }
@@ -1773,6 +1812,7 @@ async function writeSpec(
   spec: string,
   body: string,
   implementsRef?: string,
+  acVerifications?: Record<string, unknown>,
 ): Promise<unknown> {
   const trimmed = body.trim();
   if (!trimmed) throw new Error("Spec body must not be empty.");
@@ -1786,6 +1826,14 @@ async function writeSpec(
     if (v) fm.implements = v;
     else delete fm.implements;
   }
+  // `ac_verifications:` — the closing gate's per-AC declaration (SP-tgzyfy). Normalized to a map
+  // keyed by the AC ordinal → { run, env? }; omitted → preserved, `{}` → cleared. Invalid entries
+  // (no non-empty `run`, non-positive ordinal) are dropped so a malformed map can't poison the gate.
+  if (acVerifications !== undefined) {
+    const normalized = normalizeAcVerifications(acVerifications);
+    if (Object.keys(normalized).length) fm.ac_verifications = normalized;
+    else delete fm.ac_verifications;
+  }
   await store.writeFile(rel, fm, `${trimmed}\n`);
   return {
     ok: true,
@@ -1793,7 +1841,36 @@ async function writeSpec(
     relativePath: rel,
     created: existing === undefined,
     implements: fm.implements,
+    acVerifications: fm.ac_verifications,
   };
+}
+
+/** Normalize a raw `ac_verifications` map (AC ordinal → declaration) into the canonical
+ *  `{ run, env? }` frontmatter shape, dropping entries without a non-empty `run` or a positive
+ *  integer ordinal, and sorting the keys by ordinal for a stable, low-diff write. */
+function normalizeAcVerifications(
+  raw: Record<string, unknown>,
+): Record<string, { run: string; env?: "cluster" | "local" }> {
+  const entries: [number, { run: string; env?: "cluster" | "local" }][] = [];
+  for (const [key, val] of Object.entries(raw)) {
+    const ac = Number(key);
+    if (!Number.isInteger(ac) || ac <= 0) continue;
+    if (!val || typeof val !== "object") continue;
+    const run = (val as Record<string, unknown>).run;
+    if (typeof run !== "string" || !run.trim()) continue;
+    const env = (val as Record<string, unknown>).env;
+    entries.push([
+      ac,
+      {
+        run: run.trim(),
+        ...(env === "cluster" || env === "local" ? { env } : {}),
+      },
+    ]);
+  }
+  entries.sort((a, b) => a[0] - b[0]);
+  const out: Record<string, { run: string; env?: "cluster" | "local" }> = {};
+  for (const [ac, decl] of entries) out[String(ac)] = decl;
+  return out;
 }
 
 export async function updateSlice(

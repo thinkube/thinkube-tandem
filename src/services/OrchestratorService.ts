@@ -28,10 +28,16 @@ import {
   sessionIdOf,
   summarizeEvent,
   isResultSuccess,
+  parseAcVerifications,
+  runAcVerifications,
+  checkAcOrdinals,
+  buildDeliveryReport,
   type SliceForDag,
   type SchedUnit,
   type SchedulerState,
   type WorkUnit,
+  type AcVerification,
+  type AcResult,
 } from "./orchestratorCore";
 import { validateDag, footprintGuard } from "../methodology/parallelSlices";
 import {
@@ -67,10 +73,19 @@ export interface OrchestratorDeps {
   boardRoot?: string;
   /** `thinkube.worktree.baseDir` — where linked worktrees are created. */
   baseDir?: string;
-  /** Verify a slice at grain in its worktree (tests): defaults to `npm run compile`. */
-  verify?: (cwd: string) => Promise<boolean>;
-  /** `thinkube.orchestrator.verifyCommand` — a shell verify recipe run in the worktree; when set
-   *  it overrides the `npm run compile` default (e.g. `ansible-lint` for an Ansible repo). */
+  /** Run the Spec's declared per-AC verifications at quiescence (tests): defaults to the core
+   *  `runAcVerifications` runner (spawns each declared check in the worktree / live cluster).
+   *  This is the closing gate's injectable seam — tests feed per-AC outcomes without a cluster. */
+  runAcVerifications?: (
+    verifs: AcVerification[],
+    cwd: string,
+  ) => Promise<AcResult[]>;
+  /** Tick the satisfied AC ordinals on the Spec doc (tests): defaults to flipping the checkboxes
+   *  under the Spec body's `## Acceptance Criteria`, so the accept gate (every AC checked) passes. */
+  checkAcs?: (specNumber: string, ordinals: number[]) => Promise<void>;
+  /** @deprecated Legacy per-slice verify recipe (`thinkube.orchestrator.verifyCommand`); the
+   *  closing gate (SP-tgzyfy) is now per-AC, so this is no longer consulted. Kept so the command
+   *  layer that still passes it compiles. */
   verifyCommand?: string;
   /** Advance a slice to Done (tests): defaults to stamping `status: done`. */
   advance?: (handle: string) => Promise<void>;
@@ -131,8 +146,10 @@ export interface SpecRunResult {
   needsInput: string[];
   /** The whole Spec landed and was committed. */
   committed: boolean;
-  /** Board-relative path of the written delivery summary (DELIVERY.md), set when committed. */
+  /** Board-relative path of the written delivery summary (DELIVERY.md), set when the report is written. */
   deliveryDoc?: string;
+  /** The closing gate's per-AC verification results (pass/fail + evidence); empty when it couldn't run. */
+  acResults: AcResult[];
 }
 
 export class OrchestratorService {
@@ -144,10 +161,6 @@ export class OrchestratorService {
     specBody: "",
     sliceBodies: new Map(),
   };
-
-  /** How the slice-grain verify ran this Spec — surfaced in the delivery summary so acceptance
-   *  is eyes-open (e.g. "skipped" means the ACs were not actually verified). */
-  private verifyNote = "(not run)";
 
   /** Fetch the parent spec doc + each slice body from the board, to embed in worker prompts. */
   private async loadPromptContext(specNumber: string): Promise<void> {
@@ -162,7 +175,10 @@ export class OrchestratorService {
         if (!m) continue;
         const parsed = await store.getFile(rel);
         if (parsed?.body)
-          sliceBodies.set(store.sliceHandle(specNumber, Number(m[2])), parsed.body);
+          sliceBodies.set(
+            store.sliceHandle(specNumber, Number(m[2])),
+            parsed.body,
+          );
       }
     } catch {
       /* best-effort — a worker just falls back to its unit note without the embedded context */
@@ -188,6 +204,11 @@ export class OrchestratorService {
         workUnits: Array.isArray(fm?.work_units)
           ? (fm!.work_units as (WorkUnit & { note?: string })[])
           : [],
+        satisfies: Array.isArray(fm?.satisfies)
+          ? (fm!.satisfies as number[]).filter(
+              (n) => Number.isInteger(n) && n > 0,
+            )
+          : [],
       });
     }
     return slices;
@@ -196,9 +217,13 @@ export class OrchestratorService {
   /**
    * Run the makespan scheduler over `specNumber`'s work-unit DAG: validate the DAG, then keep up
    * to `cap` workers saturated dispatching the ready, footprint-disjoint, critical-path frontier
-   * (units pooled across slices). A slice verifies + advances when its last unit lands; a failed
-   * unit or red verify flags its slice `requires-attention` and blocks it. When every slice is
-   * Done the worktree is committed **once**.
+   * (units pooled across slices). A failed unit or a needs-input worker flags its slice
+   * `requires-attention`/`needs-input` during the run. When every slice's units have **landed**
+   * (Spec quiescence) the **closing AI-verification gate** runs (SP-tgzyfy): the Spec's declared
+   * per-AC verifications run as a full plan; a slice reaches Done only when the ACs it `satisfies`
+   * all ran green (then those AC ordinals are ticked on the Spec); any red / un-runnable check
+   * leaves its slice `requires-attention` (no skip). When the whole Spec is green it commits
+   * **once**; the auditable per-AC report is written on every completion (pass or fail).
    */
   async dispatchSpec(specNumber: string, cap: number): Promise<SpecRunResult> {
     const { output } = this.deps;
@@ -211,6 +236,7 @@ export class OrchestratorService {
       attention: [],
       needsInput: [],
       committed: false,
+      acResults: [],
     };
 
     const slices = await this.buildSlices(specNumber);
@@ -218,9 +244,13 @@ export class OrchestratorService {
     const dag = buildUnitDag(slices);
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
-    const v = validateDag(dag.map((u) => ({ id: u.id, dependsOn: u.dependsOn })));
+    const v = validateDag(
+      dag.map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+    );
     if (!v.ok) {
-      output.appendLine(`✗ SP-${specNumber}: malformed DAG — not dispatched.\n${v.reason}`);
+      output.appendLine(
+        `✗ SP-${specNumber}: malformed DAG — not dispatched.\n${v.reason}`,
+      );
       return { ...result, ok: false, reason: v.reason };
     }
 
@@ -236,10 +266,12 @@ export class OrchestratorService {
       running: new Set(),
       blocked: new Set(),
     };
-    // Slices that are verified+advanced (or already done on the board) — the **commit gate**.
-    // Tracked apart from `state.done` because a legacy slice's unit id equals its handle, so a
-    // unit completing must NOT mark its slice committable until the slice-grain verify passes.
+    // Slices already Done on the board (or advanced by this run's closing gate) — the **commit
+    // gate** is "every slice Done". `landed` (below) tracks slices whose units all landed THIS
+    // run; they only become Done once the closing AC-verification gate passes for their ACs.
     const doneSlices = new Set<string>();
+    // Slices whose every unit landed this run — the candidates the closing gate verifies.
+    const landed = new Set<string>();
     for (const s of slices) {
       const st = s.status.toLowerCase();
       const ids = (unitsBySlice.get(s.handle) ?? []).map((u) => u.id);
@@ -308,7 +340,10 @@ export class OrchestratorService {
         if (activeCount() >= limit) break;
         if (running.has(u.id)) continue;
         u.footprint.forEach((f) => state.running.add(f));
-        running.set(u.id, this.dispatchUnit(u, specNumber, worktreePath, onPark));
+        running.set(
+          u.id,
+          this.dispatchUnit(u, specNumber, worktreePath, onPark),
+        );
         result.dispatched++;
         output.appendLine(
           `▸ ${u.id} [${u.shape}] dispatched (${activeCount()}/${limit})`,
@@ -358,9 +393,12 @@ export class OrchestratorService {
           d.sessionId,
           d.id,
         );
-        (unitsBySlice.get(d.slice) ?? []).forEach((u) => state.blocked.add(u.id));
+        (unitsBySlice.get(d.slice) ?? []).forEach((u) =>
+          state.blocked.add(u.id),
+        );
         remaining.delete(d.slice);
-        if (!result.needsInput.includes(d.slice)) result.needsInput.push(d.slice);
+        if (!result.needsInput.includes(d.slice))
+          result.needsInput.push(d.slice);
         output.appendLine(
           `❓ ${d.slice}: ${d.id} asked a question → needs-input (slot freed).`,
         );
@@ -376,40 +414,72 @@ export class OrchestratorService {
         const rem = (remaining.get(d.slice) ?? 1) - 1;
         remaining.set(d.slice, rem);
         if (rem <= 0) {
-          // Slice complete → verify-join at slice grain.
-          const verified = await this.verify(worktreePath);
-          if (verified) {
-            state.done.add(d.slice);
-            doneSlices.add(d.slice);
-            remaining.delete(d.slice);
-            await this.advance(d.slice);
-            result.advanced.push(d.slice);
-            output.appendLine(`✓ ${d.slice}: all units landed + verified → Done.`);
-          } else {
-            await blockSlice(
-              d.slice,
-              "All units landed but the slice-grain verify was red in the worktree.",
-            );
-            output.appendLine(`⚑ ${d.slice}: verify red → requires-attention.`);
-          }
+          // Slice's units all LANDED. No per-slice verify any more — verification is the Spec's
+          // declared per-AC plan, run once at quiescence (the closing gate below). Mark the slice
+          // done for SCHEDULING (so dependents unblock) and record it as a gate candidate; it only
+          // becomes Done-on-the-board when the closing gate passes for the ACs it satisfies.
+          state.done.add(d.slice);
+          landed.add(d.slice);
+          remaining.delete(d.slice);
+          output.appendLine(
+            `✓ ${d.slice}: all units landed (verification deferred to the closing gate).`,
+          );
         }
       }
       fill();
     }
 
-    // Commit ONCE when every slice is Done (workers never commit — the orchestrator owns git),
-    // then TEAR DOWN: close the Spec's worktree (its branch persists for the accept step) and
-    // drop any leftover parked agents (SP-tgs8nz_SL-5).
-    if (slices.every((s) => doneSlices.has(s.handle))) {
+    // ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────
+    // At Spec quiescence — every slice's units landed (none failed / parked / blocked) — run the
+    // Spec's DECLARED per-AC verifications as one full plan and gate Done/commit on the result.
+    const everyLanded = slices.every(
+      (s) => doneSlices.has(s.handle) || landed.has(s.handle),
+    );
+    if (everyLanded && landed.size > 0) {
+      await this.runClosingGate(
+        specNumber,
+        worktreePath,
+        slices,
+        landed,
+        doneSlices,
+        unitsBySlice,
+        state,
+        blockSlice,
+        result,
+      );
+    } else if (landed.size > 0) {
+      output.appendLine(
+        `▸ SP-${specNumber}: paused — ${result.attention.length} need attention / ${result.needsInput.length} need input; closing gate not run, nothing committed.`,
+      );
+    }
+
+    // Commit ONCE when every slice is Done — the closing gate is the only path to Done now, so
+    // this holds iff the gate passed for every slice (workers never commit; the orchestrator owns
+    // git). The auditable report is written on EVERY completion (pass or fail) — its existence is
+    // not gated on the commit, so a failed gate is just as durable/auto-openable as a passing one.
+    const allDone = slices.every((s) => doneSlices.has(s.handle));
+    if (allDone && landed.size > 0) {
       await this.commit(specNumber, worktreePath);
       result.committed = true;
       output.appendLine(`✓ SP-${specNumber}: all slices Done — committed.`);
+    } else if (landed.size > 0) {
+      output.appendLine(
+        `⚑ SP-${specNumber}: closing gate did not pass for every slice — ${result.attention.length} requires-attention; nothing committed.`,
+      );
+    }
+
+    if (landed.size > 0) {
       result.deliveryDoc = await this.writeDeliverySummary(
         specNumber,
         worktreePath,
         result,
         dag,
       );
+    }
+
+    // Tear down only a fully-committed Spec (its branch persists for accept); a stalled Spec keeps
+    // its worktree for the human's re-run / `/attend`. Always drop leftover parked agents.
+    if (result.committed) {
       for (const u of dag) unparkWorker(u.id);
       try {
         await this.teardown(specNumber);
@@ -421,16 +491,103 @@ export class OrchestratorService {
           `▸ SP-${specNumber}: worktree teardown skipped — ${(err as Error).message}`,
         );
       }
-    } else if (remaining.size > 0) {
-      output.appendLine(
-        `▸ SP-${specNumber}: paused — ${remaining.size} slice(s) still have unreached units (blocked deps); nothing committed.`,
-      );
-    } else {
-      output.appendLine(
-        `▸ SP-${specNumber}: ${result.attention.length} slice(s) need attention; nothing committed.`,
-      );
     }
     return result;
+  }
+
+  /**
+   * The closing AI-verification gate (SP-tgzyfy): run the Spec's declared `ac_verifications` as a
+   * full plan against the worktree, then advance each landed slice to Done **iff** the ACs it
+   * `satisfies` all ran green — ticking exactly those AC ordinals on the Spec. No skip: a Spec
+   * with no declaration (or a red / un-runnable check) leaves the affected slices
+   * `requires-attention`, unchecked, uncommitted. The per-AC results land on `result.acResults`
+   * (and the auditable report). Mutates `doneSlices` / `state` / `result` in place.
+   */
+  private async runClosingGate(
+    specNumber: string,
+    worktreePath: string,
+    slices: SliceForDag[],
+    landed: Set<string>,
+    doneSlices: Set<string>,
+    unitsBySlice: Map<string, SchedUnit[]>,
+    state: SchedulerState,
+    blockSlice: (slice: string, diagnosis: string) => Promise<void>,
+    result: SpecRunResult,
+  ): Promise<void> {
+    const { output, store } = this.deps;
+    const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
+    const verifs = parseAcVerifications(specDoc?.frontmatter?.ac_verifications);
+
+    if (verifs.length === 0) {
+      // No declaration ⇒ the closing gate cannot run. NO SKIP: every landed slice →
+      // requires-attention; nothing advances, nothing commits (TEP-tgzx3p reverses the old pass).
+      const diagnosis =
+        "Closing AI-verification gate could not run: the Spec declares no `ac_verifications`. " +
+        "Declare a per-AC verification map on the Spec (AC ordinal → { run, env }), then re-run.";
+      for (const s of slices)
+        if (landed.has(s.handle)) await blockSlice(s.handle, diagnosis);
+      output.appendLine(
+        `⚑ SP-${specNumber}: no ac_verifications declared — closing gate un-runnable → requires-attention (no skip).`,
+      );
+      return;
+    }
+
+    output.appendLine(
+      `▸ SP-${specNumber}: closing gate — running ${verifs.length} declared AC verification(s).`,
+    );
+    const acResults = await (
+      this.deps.runAcVerifications ??
+      ((vs: AcVerification[], cwd: string) => runAcVerifications(vs, cwd))
+    )(verifs, worktreePath);
+    result.acResults = acResults;
+    const pass = new Map<number, boolean>(acResults.map((r) => [r.ac, r.pass]));
+    const allGreen = acResults.length > 0 && acResults.every((r) => r.pass);
+
+    // Per slice: advance iff every AC it satisfies ran green. A slice with no `satisfies` rides
+    // on the whole-plan verdict (all declared checks green) — a legacy slice can't be stranded by
+    // having no ordinals, but it still can't reach Done on a red plan.
+    const toCheck: number[] = [];
+    for (const s of slices) {
+      if (!landed.has(s.handle)) continue;
+      const sat = s.satisfies ?? [];
+      const missing = sat.filter((n) => !pass.has(n));
+      const red = sat.filter((n) => pass.get(n) === false);
+      const green =
+        sat.length > 0 ? missing.length === 0 && red.length === 0 : allGreen;
+      if (green) {
+        doneSlices.add(s.handle);
+        await this.advance(s.handle);
+        result.advanced.push(s.handle);
+        toCheck.push(...sat);
+        output.appendLine(
+          `✓ ${s.handle}: AC ${sat.length ? sat.map((n) => `#${n}`).join(", ") : "(plan)"} green → Done.`,
+        );
+      } else {
+        const why = sat.length
+          ? `AC ${[...missing.map((n) => `#${n} (no verification ran)`), ...red.map((n) => `#${n} (verification red)`)].join(", ")} did not pass`
+          : "the declared AC verification plan was not all-green";
+        await blockSlice(
+          s.handle,
+          `Closing gate: ${why}. The acceptance criteria were NOT verified green — see DELIVERY.md for per-AC evidence.`,
+        );
+        (unitsBySlice.get(s.handle) ?? []).forEach((u) =>
+          state.blocked.add(u.id),
+        );
+        output.appendLine(
+          `⚑ ${s.handle}: closing gate red → requires-attention.`,
+        );
+      }
+    }
+
+    // Tick exactly the satisfied AC ordinals of the advanced slices on the Spec (so the accept
+    // gate — every AC checked — can pass). One write with the union; out-of-range/checked are no-ops.
+    const ordinals = [...new Set(toCheck)].sort((a, b) => a - b);
+    if (ordinals.length) {
+      await this.checkAcs(specNumber, ordinals);
+      output.appendLine(
+        `▸ SP-${specNumber}: checked AC ${ordinals.map((n) => `#${n}`).join(", ")} on the Spec.`,
+      );
+    }
   }
 
   /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome. */
@@ -603,44 +760,26 @@ export class OrchestratorService {
       : { outcome: "failed", sessionId };
   }
 
-  private verify(cwd: string): Promise<boolean> {
-    return (this.deps.verify ?? ((c) => this.defaultVerify(c)))(cwd);
+  private checkAcs(specNumber: string, ordinals: number[]): Promise<void> {
+    return (this.deps.checkAcs ?? ((n, o) => this.defaultCheckAcs(n, o)))(
+      specNumber,
+      ordinals,
+    );
   }
 
-  /**
-   * Slice-grain verify in the worktree (green = exit 0). In order:
-   *  1. `thinkube.orchestrator.verifyCommand` if set (a shell recipe, e.g. `ansible-lint`);
-   *  2. else `npm run compile` if the repo has a `package.json` (the JS default);
-   *  3. else SKIP — a JS-only gate must not falsely fail a non-JS repo (the Ansible case). The
-   *     skip is logged, not silent; set the setting for a real gate.
-   */
-  private defaultVerify(cwd: string): Promise<boolean> {
-    const cmd = this.deps.verifyCommand?.trim();
-    if (cmd) {
-      this.verifyNote = `\`${cmd}\``;
-      this.deps.output.appendLine(`  ▸ verify: ${cmd}`);
-      return new Promise<boolean>((resolve) => {
-        const proc = spawn(cmd, { cwd, shell: true });
-        proc.on("error", () => resolve(false));
-        proc.on("close", (code) => resolve(code === 0));
-      });
-    }
-    if (fs.existsSync(path.join(cwd, "package.json"))) {
-      this.verifyNote = "`npm run compile`";
-      return new Promise<boolean>((resolve) => {
-        const proc = spawn("npm", ["run", "compile"], { cwd });
-        proc.on("error", () => resolve(false));
-        proc.on("close", (code) => resolve(code === 0));
-      });
-    }
-    this.verifyNote =
-      "**skipped** — no recipe (no `package.json`, `thinkube.orchestrator.verifyCommand` unset). " +
-      "The acceptance criteria were NOT verified by the orchestrator — verify them before accepting.";
-    this.deps.output.appendLine(
-      "  ▸ verify: no recipe (no package.json, and thinkube.orchestrator.verifyCommand unset) — " +
-        "treating as PASS. Set thinkube.orchestrator.verifyCommand for a real gate.",
-    );
-    return Promise.resolve(true);
+  /** Default AC-check: tick the given ordinals' boxes under the Spec body's `## Acceptance
+   *  Criteria` and write the Spec doc back (frontmatter preserved). A no-op for empty ordinals. */
+  private async defaultCheckAcs(
+    specNumber: string,
+    ordinals: number[],
+  ): Promise<void> {
+    if (!ordinals.length) return;
+    const rel = this.deps.store.pathForSpecDoc(specNumber);
+    const parsed = await this.deps.store.getFile(rel);
+    if (!parsed) return;
+    const body = checkAcOrdinals(parsed.body ?? "", ordinals);
+    if (body !== parsed.body)
+      await this.deps.store.writeFile(rel, parsed.frontmatter, body);
   }
 
   /** Short HEAD sha of the worktree (for the delivery summary); "" on any error. */
@@ -654,51 +793,34 @@ export class OrchestratorService {
     });
   }
 
-  /** The DELIVERY.md body: what the orchestrator built, the commit, per-unit outcomes, the verify
-   *  status, and the next step (review → verify → accept). */
+  /** Build the auditable delivery report (SP-tgzyfy): the per-AC pass/fail table + evidence, the
+   *  per-unit outcomes, caught problems, and the commit. Delegates to the pure `buildDeliveryReport`. */
   private deliveryMarkdown(
     specNumber: string,
     sha: string,
     files: string[],
     result: SpecRunResult,
+    verifs: AcVerification[],
   ): string {
-    const glyph = (o: UnitOutcome) =>
-      o === "success" ? "✓" : o === "needs-input" ? "❓" : "✗";
-    const units = result.results.length
-      ? result.results
-          .map((r) => `| \`${r.id}\` | ${glyph(r.outcome)} ${r.outcome} |`)
-          .join("\n")
-      : "| — | (none) |";
-    const fileList = files.length
-      ? files.map((f) => `- \`${f}\``).join("\n")
-      : "- (none)";
-    return [
-      `# Delivery — SP-${specNumber}`,
-      "",
-      `Orchestrated to branch \`spec/SP-${specNumber}\`${sha ? ` at \`${sha}\`` : ""}. ` +
-        `${result.advanced.length} slice(s) advanced to Done; ${result.dispatched} execution unit(s) ran.`,
-      "",
-      "## Execution units",
-      "",
-      "| Unit | Outcome |",
-      "| --- | --- |",
-      units,
-      "",
-      `## Files (${files.length})`,
-      "",
-      fileList,
-      "",
-      "## Verify",
-      "",
-      this.verifyNote,
-      "",
-      "## Next",
-      "",
-      `1. Review the \`spec/SP-${specNumber}\` branch (the committed change).`,
-      "2. Confirm the Spec's acceptance criteria — they are **not** auto-checked.",
-      "3. Accept the Spec to merge it to `main`.",
-      "",
-    ].join("\n");
+    // Caught problems for the audit trail: each failed / parked unit, surfaced from the run.
+    const problems = result.results
+      .filter((r) => r.outcome !== "success")
+      .map(
+        (r) =>
+          `\`${r.id}\` (${r.slice}) — ${r.outcome}${r.outcome === "needs-input" ? " (worker asked a question)" : ""}.`,
+      );
+    return buildDeliveryReport({
+      specNumber,
+      sha,
+      files,
+      units: result.results.map((r) => ({ id: r.id, outcome: r.outcome })),
+      declared: verifs,
+      acResults: result.acResults,
+      problems,
+      advanced: result.advanced,
+      attention: result.attention,
+      committed: result.committed,
+    });
   }
 
   /** Write the delivery summary to `specs/SP-{n}/DELIVERY.md` (a separate doc, so it doesn't touch
@@ -712,12 +834,30 @@ export class OrchestratorService {
     try {
       const sha = await this.gitShortSha(worktreePath);
       const files = [...new Set(dag.flatMap((u) => u.footprint))].sort();
-      const body = this.deliveryMarkdown(specNumber, sha, files, result);
+      const specDoc = await this.deps.store.getFile(
+        this.deps.store.pathForSpecDoc(specNumber),
+      );
+      const verifs = parseAcVerifications(
+        specDoc?.frontmatter?.ac_verifications,
+      );
+      const body = this.deliveryMarkdown(
+        specNumber,
+        sha,
+        files,
+        result,
+        verifs,
+      );
       const rel = this.deps.store
         .pathForSpecDoc(specNumber)
         .replace(/spec\.md$/, "DELIVERY.md");
-      fs.writeFileSync(path.join(this.deps.store.thinkubeDir, rel), body, "utf8");
-      this.deps.output.appendLine(`▸ SP-${specNumber}: delivery summary → ${rel}`);
+      fs.writeFileSync(
+        path.join(this.deps.store.thinkubeDir, rel),
+        body,
+        "utf8",
+      );
+      this.deps.output.appendLine(
+        `▸ SP-${specNumber}: delivery summary → ${rel}`,
+      );
       return rel;
     } catch (err) {
       this.deps.output.appendLine(
@@ -746,10 +886,9 @@ export class OrchestratorService {
   }
 
   private flagAttention(handle: string, diagnosis: string): Promise<void> {
-    return (this.deps.flagAttention ?? ((h, d) => this.defaultFlagAttention(h, d)))(
-      handle,
-      diagnosis,
-    );
+    return (
+      this.deps.flagAttention ?? ((h, d) => this.defaultFlagAttention(h, d))
+    )(handle, diagnosis);
   }
 
   /**
@@ -845,7 +984,11 @@ export class OrchestratorService {
       add.on("close", () => {
         const commit = spawn(
           "git",
-          ["commit", "-m", `feat(SP-${specNumber}): orchestrated Spec complete`],
+          [
+            "commit",
+            "-m",
+            `feat(SP-${specNumber}): orchestrated Spec complete`,
+          ],
           { cwd },
         );
         commit.on("error", () => resolve());

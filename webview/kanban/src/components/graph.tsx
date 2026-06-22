@@ -43,7 +43,13 @@ function shortId(id: string): string {
   return id.replace(/^SP-[^_]+_/, "");
 }
 
-type UnitState = "running" | "parked" | "done" | "attention" | "active" | "ready";
+type UnitState =
+  | "running"
+  | "parked"
+  | "done"
+  | "attention"
+  | "active"
+  | "ready";
 
 interface UnitNode {
   id: string;
@@ -91,7 +97,10 @@ export function GraphView(): JSX.Element {
     // deps, which name a slice handle, into edges between the actual unit nodes).
     const unitsBySlice = new Map<string, string[]>();
     for (const c of cards)
-      unitsBySlice.set(c.id, (c.workUnits ?? [{ id: c.id, shape: "serial" }]).map((u) => u.id));
+      unitsBySlice.set(
+        c.id,
+        (c.workUnits ?? [{ id: c.id, shape: "serial" }]).map((u) => u.id),
+      );
 
     const unitNodes: UnitNode[] = [];
     for (const c of cards) {
@@ -100,10 +109,17 @@ export function GraphView(): JSX.Element {
         const st = unitStateOf(c, u.id);
         // A dep may name a unit id (passes through) or a sibling slice handle (expand to its
         // units, so a cross-slice dependency draws edges between the real worker nodes).
-        const deps = (u.dependsOn ?? []).flatMap((d) =>
-          unitsBySlice.get(d) ?? [d],
+        const deps = (u.dependsOn ?? []).flatMap(
+          (d) => unitsBySlice.get(d) ?? [d],
         );
-        unitNodes.push({ id: u.id, card: c, unit: u, state: st, accent: accentFor(st, c), deps });
+        unitNodes.push({
+          id: u.id,
+          card: c,
+          unit: u,
+          state: st,
+          accent: accentFor(st, c),
+          deps,
+        });
       }
     }
     const byId = new Map(unitNodes.map((n) => [n.id, n]));
@@ -157,16 +173,31 @@ export function GraphView(): JSX.Element {
     const specIds = [
       ...new Set(cards.map((c) => c.parentId).filter((p): p is string => !!p)),
     ].sort();
+    // The auto-derived acceptance close-card carries the Spec's delivery state (TEP-0010):
+    // `acceptReady` (every slice Done + every AC checked) gates Accept; `accepted` rests it.
+    const acceptCards = new Map<string, TaskCard>();
+    for (const t of Object.values(state.tasks))
+      if (t.isAcceptance && t.parentId) acceptCards.set(t.parentId, t);
     // A Spec is orchestratable iff it has a dispatchable slice — ready (fresh) or
     // requires-attention (re-runnable). All-Done (or only in-flight) → nothing to dispatch.
-    const specs = specIds.map((id) => ({
-      id,
-      canRun: cards.some(
-        (c) =>
-          c.parentId === id &&
-          (c.columnId === "column-ready" || c.columnId === "column-attention"),
-      ),
-    }));
+    // Accept/Reject (SP-tgzyfy_SL-2) are the human exits on the delivery report: Accept the
+    // gated merge (enabled only when every AC is checked), Reject opens a primed rework session.
+    const specs = specIds.map((id) => {
+      const acc = acceptCards.get(id);
+      const accepted = !!acc?.accepted;
+      return {
+        id,
+        canRun: cards.some(
+          (c) =>
+            c.parentId === id &&
+            (c.columnId === "column-ready" ||
+              c.columnId === "column-attention"),
+        ),
+        accepted,
+        canAccept: !!acc?.acceptReady && !accepted,
+        canReject: !!acc && !accepted,
+      };
+    });
     return {
       nodes: placed,
       edges: lines,
@@ -199,190 +230,273 @@ export function GraphView(): JSX.Element {
         <span style={{ fontSize: 11, opacity: 0.7, marginRight: 4 }}>
           Orchestrate
         </span>
-        {specs.map((s) => (
-          <button
-            key={s.id}
-            disabled={!s.canRun}
-            title={
-              s.canRun
-                ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
-                : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
-            }
-            onClick={
-              s.canRun
-                ? () => postToHost({ kind: "orchestrate", spec: s.id })
-                : undefined
-            }
-            style={{
-              cursor: s.canRun ? "pointer" : "default",
-              opacity: s.canRun ? 1 : 0.4,
-              border: "1px solid var(--vscode-button-border, transparent)",
-              background: "var(--vscode-button-background)",
-              color: "var(--vscode-button-foreground)",
-              borderRadius: 6,
-              padding: "3px 10px",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            ▶ SP-{s.id}
-          </button>
-        ))}
-      </div>
-      <div style={{ overflow: "auto", padding: 16, flex: 1 }}>
-      <svg width={Math.max(width, 1)} height={Math.max(height, 1)}>
-        <defs>
-          <marker
-            id="tk-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M0,0 L10,5 L0,10 z" fill={edgeColor} />
-          </marker>
-        </defs>
-        {edges.map((e) => (
-          <line
-            key={e.key}
-            x1={e.from.x + NODE_W}
-            y1={e.from.y + NODE_H / 2}
-            x2={e.to.x}
-            y2={e.to.y + NODE_H / 2}
-            stroke={edgeColor}
-            strokeWidth={1.5}
-            markerEnd="url(#tk-arrow)"
-          />
-        ))}
-        {nodes.map(({ node, x, y }) => {
-          const { card, unit, state: st, accent } = node;
-          // Slice-level requires-attention (e.g. a red verify) — shown as an amber border + ⚑
-          // on its nodes, so a unit that itself succeeded stays lime while the slice issue is visible.
-          const sliceAttention = card.columnId === "column-attention";
-          const borderColor =
-            sliceAttention && st !== "attention" ? PARKED_COLOR : accent;
-          // Actionable when: running (open its live log), parked (answer it), or its slice needs
-          // attention (open the worktree to investigate + fix — attention is never just "retry").
-          const wantsAttend = st === "parked" || sliceAttention;
-          const clickable = st === "running" || wantsAttend;
-          const onClick =
-            st === "running"
-              ? () => postToHost({ kind: "float-out", handle: node.id })
-              : wantsAttend
-                ? () => postToHost({ kind: "attend", handle: card.id })
-                : undefined;
-          const subtitle = unit.note ?? card.description;
-          const title =
-            st === "running"
-              ? `${node.id} — click to open its live SDK-worker log`
-              : st === "parked"
-                ? `${node.id} asked a question — click to answer (/attend)`
-                : sliceAttention
-                  ? `${card.id} needs attention — click to open its worktree and investigate`
-                  : `${node.id}${unit.note ? ` — ${unit.note}` : ""}`;
+        {specs.map((s) => {
+          // A button's shared look; `enabled`/`secondary` vary cursor, opacity, and palette.
+          const btn = (enabled: boolean, secondary?: boolean) => ({
+            cursor: enabled ? "pointer" : "default",
+            opacity: enabled ? 1 : 0.4,
+            border: "1px solid var(--vscode-button-border, transparent)",
+            background: secondary
+              ? "var(--vscode-button-secondaryBackground, var(--vscode-button-background))"
+              : "var(--vscode-button-background)",
+            color: secondary
+              ? "var(--vscode-button-secondaryForeground, var(--vscode-button-foreground))"
+              : "var(--vscode-button-foreground)",
+            borderRadius: 6,
+            padding: "3px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+          });
+          // Show the Accept/Reject exits once the Spec has an acceptance card (a delivery to
+          // act on) — Accept gated on every AC checked, Reject opens a primed rework session.
+          const showExits = s.canAccept || s.canReject || s.accepted;
           return (
-            <g
-              key={node.id}
-              transform={`translate(${x},${y})`}
-              style={clickable ? { cursor: "pointer" } : undefined}
-              onClick={
-                onClick
-                  ? (e) => {
-                      e.stopPropagation();
-                      onClick();
-                    }
-                  : undefined
-              }
+            <span
+              key={s.id}
+              style={{ display: "inline-flex", gap: 4, alignItems: "center" }}
             >
-              <title>{title}</title>
-              <rect
-                width={NODE_W}
-                height={NODE_H}
-                rx={8}
-                fill="var(--vscode-editor-background)"
-                stroke={borderColor}
-                strokeWidth={sliceAttention ? 2.5 : 2}
-                strokeDasharray={st === "ready" ? "4 3" : undefined}
-              />
-              <rect width={6} height={NODE_H} rx={3} fill={accent} />
-              {sliceAttention && (
-                <text x={NODE_W - 16} y={23} fill={PARKED_COLOR} fontSize={13}>
-                  ⚑
-                </text>
-              )}
-              <text
-                x={16}
-                y={22}
-                fill="var(--vscode-foreground)"
-                fontSize={12}
-                fontWeight={600}
+              <button
+                disabled={!s.canRun}
+                title={
+                  s.canRun
+                    ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
+                    : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
+                }
+                onClick={
+                  s.canRun
+                    ? () => postToHost({ kind: "orchestrate", spec: s.id })
+                    : undefined
+                }
+                style={btn(s.canRun)}
               >
-                {truncate(shortId(node.id), 22)}
-              </text>
-              <text
-                x={16}
-                y={40}
-                fill="var(--vscode-descriptionForeground, #aaa)"
-                fontSize={10}
-              >
-                {truncate(subtitle, 30)}
-              </text>
-              {/* Shape tag bottom-left; status word bottom-right. */}
-              <text x={16} y={NODE_H - 6} fill={accent} fontSize={9} opacity={0.85}>
-                {unit.shape}
-              </text>
-              {/* A "view log" affordance on every worker that has run (done / failed / running /
-                  parked) — click to float out its JSON-log for debugging, even after a reload. */}
-              {st !== "ready" && (
-                <text
-                  x={NODE_W - 30}
-                  y={15}
-                  fill="var(--vscode-descriptionForeground, #aaa)"
-                  fontSize={12}
-                  style={{ cursor: "pointer" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    postToHost({ kind: "float-out", handle: node.id });
-                  }}
-                >
-                  <title>{`${node.id} — view this worker's log`}</title>
-                  ≣
-                </text>
-              )}
-              {st === "running" && (
+                ▶ SP-{s.id}
+              </button>
+              {showExits && (
                 <>
-                  <text x={NODE_W - 58} y={NODE_H - 6} fill={RUNNING_COLOR} fontSize={9}>
-                    running
-                  </text>
-                  <circle cx={NODE_W - 14} cy={16} r={5} fill={RUNNING_COLOR}>
-                    <animate
-                      attributeName="opacity"
-                      values="1;0.3;1"
-                      dur="1.2s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
+                  <button
+                    disabled={!s.canAccept}
+                    title={
+                      s.accepted
+                        ? `SP-${s.id} is already accepted`
+                        : s.canAccept
+                          ? `Accept SP-${s.id} — merge spec/SP-${s.id} → main (every AC checked)`
+                          : `SP-${s.id}: can't accept yet — every slice must be Done and every AC checked`
+                    }
+                    onClick={
+                      s.canAccept
+                        ? () => postToHost({ kind: "accept", spec: s.id })
+                        : undefined
+                    }
+                    style={btn(s.canAccept)}
+                  >
+                    {s.accepted ? "✓ Accepted" : "✓ Accept"}
+                  </button>
+                  <button
+                    disabled={!s.canReject}
+                    title={
+                      s.canReject
+                        ? `Reject SP-${s.id} — open a Claude session primed with the delivery report to rework it`
+                        : `SP-${s.id}: nothing to reject`
+                    }
+                    onClick={
+                      s.canReject
+                        ? () => postToHost({ kind: "reject", spec: s.id })
+                        : undefined
+                    }
+                    style={btn(s.canReject, true)}
+                  >
+                    ✗ Reject
+                  </button>
                 </>
               )}
-              {st === "parked" && (
-                <>
-                  <text x={NODE_W - 78} y={NODE_H - 6} fill={PARKED_COLOR} fontSize={9}>
-                    needs input
-                  </text>
-                  <circle cx={NODE_W - 14} cy={16} r={5} fill={PARKED_COLOR} />
-                </>
-              )}
-              {st === "done" && (
-                <text x={NODE_W - 36} y={NODE_H - 6} fill={accent} fontSize={9}>
-                  done
-                </text>
-              )}
-            </g>
+            </span>
           );
         })}
-      </svg>
+      </div>
+      <div style={{ overflow: "auto", padding: 16, flex: 1 }}>
+        <svg width={Math.max(width, 1)} height={Math.max(height, 1)}>
+          <defs>
+            <marker
+              id="tk-arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill={edgeColor} />
+            </marker>
+          </defs>
+          {edges.map((e) => (
+            <line
+              key={e.key}
+              x1={e.from.x + NODE_W}
+              y1={e.from.y + NODE_H / 2}
+              x2={e.to.x}
+              y2={e.to.y + NODE_H / 2}
+              stroke={edgeColor}
+              strokeWidth={1.5}
+              markerEnd="url(#tk-arrow)"
+            />
+          ))}
+          {nodes.map(({ node, x, y }) => {
+            const { card, unit, state: st, accent } = node;
+            // Slice-level requires-attention (e.g. a red verify) — shown as an amber border + ⚑
+            // on its nodes, so a unit that itself succeeded stays lime while the slice issue is visible.
+            const sliceAttention = card.columnId === "column-attention";
+            const borderColor =
+              sliceAttention && st !== "attention" ? PARKED_COLOR : accent;
+            // Actionable when: running (open its live log), parked (answer it), or its slice needs
+            // attention (open the worktree to investigate + fix — attention is never just "retry").
+            const wantsAttend = st === "parked" || sliceAttention;
+            const clickable = st === "running" || wantsAttend;
+            const onClick =
+              st === "running"
+                ? () => postToHost({ kind: "float-out", handle: node.id })
+                : wantsAttend
+                  ? () => postToHost({ kind: "attend", handle: card.id })
+                  : undefined;
+            const subtitle = unit.note ?? card.description;
+            const title =
+              st === "running"
+                ? `${node.id} — click to open its live SDK-worker log`
+                : st === "parked"
+                  ? `${node.id} asked a question — click to answer (/attend)`
+                  : sliceAttention
+                    ? `${card.id} needs attention — click to open its worktree and investigate`
+                    : `${node.id}${unit.note ? ` — ${unit.note}` : ""}`;
+            return (
+              <g
+                key={node.id}
+                transform={`translate(${x},${y})`}
+                style={clickable ? { cursor: "pointer" } : undefined}
+                onClick={
+                  onClick
+                    ? (e) => {
+                        e.stopPropagation();
+                        onClick();
+                      }
+                    : undefined
+                }
+              >
+                <title>{title}</title>
+                <rect
+                  width={NODE_W}
+                  height={NODE_H}
+                  rx={8}
+                  fill="var(--vscode-editor-background)"
+                  stroke={borderColor}
+                  strokeWidth={sliceAttention ? 2.5 : 2}
+                  strokeDasharray={st === "ready" ? "4 3" : undefined}
+                />
+                <rect width={6} height={NODE_H} rx={3} fill={accent} />
+                {sliceAttention && (
+                  <text
+                    x={NODE_W - 16}
+                    y={23}
+                    fill={PARKED_COLOR}
+                    fontSize={13}
+                  >
+                    ⚑
+                  </text>
+                )}
+                <text
+                  x={16}
+                  y={22}
+                  fill="var(--vscode-foreground)"
+                  fontSize={12}
+                  fontWeight={600}
+                >
+                  {truncate(shortId(node.id), 22)}
+                </text>
+                <text
+                  x={16}
+                  y={40}
+                  fill="var(--vscode-descriptionForeground, #aaa)"
+                  fontSize={10}
+                >
+                  {truncate(subtitle, 30)}
+                </text>
+                {/* Shape tag bottom-left; status word bottom-right. */}
+                <text
+                  x={16}
+                  y={NODE_H - 6}
+                  fill={accent}
+                  fontSize={9}
+                  opacity={0.85}
+                >
+                  {unit.shape}
+                </text>
+                {/* A "view log" affordance on every worker that has run (done / failed / running /
+                  parked) — click to float out its JSON-log for debugging, even after a reload. */}
+                {st !== "ready" && (
+                  <text
+                    x={NODE_W - 30}
+                    y={15}
+                    fill="var(--vscode-descriptionForeground, #aaa)"
+                    fontSize={12}
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      postToHost({ kind: "float-out", handle: node.id });
+                    }}
+                  >
+                    <title>{`${node.id} — view this worker's log`}</title>≣
+                  </text>
+                )}
+                {st === "running" && (
+                  <>
+                    <text
+                      x={NODE_W - 58}
+                      y={NODE_H - 6}
+                      fill={RUNNING_COLOR}
+                      fontSize={9}
+                    >
+                      running
+                    </text>
+                    <circle cx={NODE_W - 14} cy={16} r={5} fill={RUNNING_COLOR}>
+                      <animate
+                        attributeName="opacity"
+                        values="1;0.3;1"
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  </>
+                )}
+                {st === "parked" && (
+                  <>
+                    <text
+                      x={NODE_W - 78}
+                      y={NODE_H - 6}
+                      fill={PARKED_COLOR}
+                      fontSize={9}
+                    >
+                      needs input
+                    </text>
+                    <circle
+                      cx={NODE_W - 14}
+                      cy={16}
+                      r={5}
+                      fill={PARKED_COLOR}
+                    />
+                  </>
+                )}
+                {st === "done" && (
+                  <text
+                    x={NODE_W - 36}
+                    y={NODE_H - 6}
+                    fill={accent}
+                    fontSize={9}
+                  >
+                    done
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
       </div>
     </div>
   );

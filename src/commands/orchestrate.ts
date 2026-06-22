@@ -33,6 +33,8 @@ import {
   sessionLogPathFor,
   answerParkedWorker,
 } from "../services/orchestratorSessions";
+import { gateSpecAcceptance } from "../methodology/qualityGates";
+import { mergeSpecPr } from "../github/specMerge";
 import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
 import type { SpecsProvider } from "../views/boards/SpecsProvider";
@@ -57,128 +59,140 @@ export function registerOrchestrateCommands(
     deps.output ?? vscode.window.createOutputChannel("Thinkube Orchestrator");
   context.subscriptions.push(
     output,
-    vscode.commands.registerCommand("thinkube.orchestrate", async (specArg?: string, boardCtx?: { root: string; boardDir: string; name: string }) => {
-      // Prefer the panel's OWN board (passed by the ▶ button) over the ambient sidebar
-      // selection: the button must orchestrate the board it's shown on, not whatever space
-      // the sidebar happens to be scoped to (the "No Specs on this board" mismatch).
-      let repoPath: string;
-      let boardDir: string;
-      if (boardCtx) {
-        repoPath = boardCtx.root;
-        boardDir = boardCtx.boardDir;
-      } else {
-        const repo = deps.specsProvider.repoEntry;
-        if (!repo || !repo.enabled) {
-          vscode.window.showInformationMessage(
-            "Select an enabled thinking space to orchestrate.",
-          );
-          return;
-        }
-        repoPath = repo.path;
-        boardDir = repo.boardDir;
-      }
-      const arbiter = deps.getArbiter();
-      if (!arbiter) {
-        vscode.window.showWarningMessage(
-          "Orchestrator not ready — the ownership arbiter is still activating. Try again in a moment.",
-        );
-        return;
-      }
-      try {
-        const store = new ThinkubeStore(repoPath, boardDir);
-        // listSpecDirs returns bare Spec ids (e.g. "tgxunl") — use them directly. The prior
-        // `/SP-.../.exec` ran an SP-prefixed regex over an already-unprefixed id → always
-        // undefined → empty, which is why orchestrate reported "No Specs" on every board.
-        const specs = await store.listSpecDirs();
-        if (specs.length === 0) {
-          vscode.window.showInformationMessage("No Specs on this board yet.");
-          return;
-        }
-        // From the ▶ button (control-center graph): a spec id is passed directly — skip the
-        // quick-pick and orchestrate exactly the Spec the user clicked.
-        let spec: string;
-        if (typeof specArg === "string" && specArg.trim()) {
-          spec = specArg.replace(/^SP-/, "").trim();
-          if (!specs.includes(spec)) {
-            vscode.window.showWarningMessage(
-              `SP-${spec} is not a Spec on this board.`,
+    vscode.commands.registerCommand(
+      "thinkube.orchestrate",
+      async (
+        specArg?: string,
+        boardCtx?: { root: string; boardDir: string; name: string },
+      ) => {
+        // Prefer the panel's OWN board (passed by the ▶ button) over the ambient sidebar
+        // selection: the button must orchestrate the board it's shown on, not whatever space
+        // the sidebar happens to be scoped to (the "No Specs on this board" mismatch).
+        let repoPath: string;
+        let boardDir: string;
+        if (boardCtx) {
+          repoPath = boardCtx.root;
+          boardDir = boardCtx.boardDir;
+        } else {
+          const repo = deps.specsProvider.repoEntry;
+          if (!repo || !repo.enabled) {
+            vscode.window.showInformationMessage(
+              "Select an enabled thinking space to orchestrate.",
             );
             return;
           }
-        } else {
-          const specId =
-            specs.length === 1
-              ? specs[0]
-              : await vscode.window.showQuickPick(
-                  specs.map((id) => `SP-${id}`),
-                  { placeHolder: "Orchestrate which Spec's next Ready slice?" },
-                );
-          if (!specId) return;
-          spec = specId.replace(/^SP-/, "");
+          repoPath = repo.path;
+          boardDir = repo.boardDir;
         }
+        const arbiter = deps.getArbiter();
+        if (!arbiter) {
+          vscode.window.showWarningMessage(
+            "Orchestrator not ready — the ownership arbiter is still activating. Try again in a moment.",
+          );
+          return;
+        }
+        try {
+          const store = new ThinkubeStore(repoPath, boardDir);
+          // listSpecDirs returns bare Spec ids (e.g. "tgxunl") — use them directly. The prior
+          // `/SP-.../.exec` ran an SP-prefixed regex over an already-unprefixed id → always
+          // undefined → empty, which is why orchestrate reported "No Specs" on every board.
+          const specs = await store.listSpecDirs();
+          if (specs.length === 0) {
+            vscode.window.showInformationMessage("No Specs on this board yet.");
+            return;
+          }
+          // From the ▶ button (control-center graph): a spec id is passed directly — skip the
+          // quick-pick and orchestrate exactly the Spec the user clicked.
+          let spec: string;
+          if (typeof specArg === "string" && specArg.trim()) {
+            spec = specArg.replace(/^SP-/, "").trim();
+            if (!specs.includes(spec)) {
+              vscode.window.showWarningMessage(
+                `SP-${spec} is not a Spec on this board.`,
+              );
+              return;
+            }
+          } else {
+            const specId =
+              specs.length === 1
+                ? specs[0]
+                : await vscode.window.showQuickPick(
+                    specs.map((id) => `SP-${id}`),
+                    {
+                      placeHolder: "Orchestrate which Spec's next Ready slice?",
+                    },
+                  );
+            if (!specId) return;
+            spec = specId.replace(/^SP-/, "");
+          }
 
-        const canonical =
-          (await worktrees.canonicalRepo(repoPath)) ?? repoPath;
-        const baseDir =
-          vscode.workspace
-            .getConfiguration("thinkube")
-            .get<string>("worktree.baseDir")
-            ?.trim() || undefined;
-        const boardRoot =
-          vscode.workspace
-            .getConfiguration("thinkube.boards")
-            .get<string>("root")
-            ?.trim() || undefined;
+          const canonical =
+            (await worktrees.canonicalRepo(repoPath)) ?? repoPath;
+          const baseDir =
+            vscode.workspace
+              .getConfiguration("thinkube")
+              .get<string>("worktree.baseDir")
+              ?.trim() || undefined;
+          const boardRoot =
+            vscode.workspace
+              .getConfiguration("thinkube.boards")
+              .get<string>("root")
+              ?.trim() || undefined;
 
-        const orchestrator = new OrchestratorService({
-          worktrees,
-          arbiter,
-          store,
-          output,
-          canonicalRepo: canonical,
-          boardRoot,
-          baseDir,
-          verifyCommand: vscode.workspace
-            .getConfiguration("thinkube.orchestrator")
-            .get<string>("verifyCommand")
-            ?.trim(),
-        });
-        output.show(true);
-        const cap =
-          vscode.workspace
-            .getConfiguration("thinkube.orchestrator")
-            .get<number>("maxConcurrent") ?? 4;
-        const r = await orchestrator.dispatchSpec(spec, cap);
-        if (!r.ok) {
+          const orchestrator = new OrchestratorService({
+            worktrees,
+            arbiter,
+            store,
+            output,
+            canonicalRepo: canonical,
+            boardRoot,
+            baseDir,
+            verifyCommand: vscode.workspace
+              .getConfiguration("thinkube.orchestrator")
+              .get<string>("verifyCommand")
+              ?.trim(),
+          });
+          output.show(true);
+          const cap =
+            vscode.workspace
+              .getConfiguration("thinkube.orchestrator")
+              .get<number>("maxConcurrent") ?? 4;
+          const r = await orchestrator.dispatchSpec(spec, cap);
+          if (!r.ok) {
+            vscode.window.showErrorMessage(
+              `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,
+            );
+          } else if (r.dispatched === 0) {
+            vscode.window.showInformationMessage(
+              `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied unit.`,
+            );
+          } else {
+            vscode.window.showInformationMessage(
+              `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
+                (r.needsInput.length
+                  ? `, ${r.needsInput.length} need input`
+                  : "") +
+                (r.attention.length
+                  ? `, ${r.attention.length} need attention`
+                  : "") +
+                (r.committed ? " — committed ✓" : ""),
+            );
+          }
+          // On a completed Spec, auto-open the delivery summary in the Markdown PREVIEW (rendered)
+          // — the post-execution "here's what was accomplished + what to do next" record.
+          if (r.deliveryDoc) {
+            void vscode.commands.executeCommand(
+              "markdown.showPreview",
+              vscode.Uri.file(path.join(boardDir, r.deliveryDoc)),
+            );
+          }
+        } catch (err) {
           vscode.window.showErrorMessage(
-            `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,
-          );
-        } else if (r.dispatched === 0) {
-          vscode.window.showInformationMessage(
-            `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied unit.`,
-          );
-        } else {
-          vscode.window.showInformationMessage(
-            `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
-              (r.needsInput.length ? `, ${r.needsInput.length} need input` : "") +
-              (r.attention.length ? `, ${r.attention.length} need attention` : "") +
-              (r.committed ? " — committed ✓" : ""),
+            `Orchestrate failed: ${(err as Error).message}`,
           );
         }
-        // On a completed Spec, auto-open the delivery summary in the Markdown PREVIEW (rendered)
-        // — the post-execution "here's what was accomplished + what to do next" record.
-        if (r.deliveryDoc) {
-          void vscode.commands.executeCommand(
-            "markdown.showPreview",
-            vscode.Uri.file(path.join(boardDir, r.deliveryDoc)),
-          );
-        }
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Orchestrate failed: ${(err as Error).message}`,
-        );
-      }
-    }),
+      },
+    ),
     vscode.commands.registerCommand(
       "thinkube.floatOutSession",
       (handle?: string) => floatOutSession(context, handle),
@@ -321,6 +335,173 @@ export function registerOrchestrateCommands(
         }
       },
     ),
+    // Accept (SP-tgzyfy_SL-2): the human's "land it" on the closing delivery report. The
+    // gated merge — refuse unless every AC is checked + every slice Done (gateSpecAcceptance),
+    // then merge spec/SP-{n} → main and stamp `accepted:`. Mirrors boards.ts onAcceptSpec, but
+    // wired through a command so the report surface can post `accept` like orchestrate/attend.
+    vscode.commands.registerCommand(
+      "thinkube.accept",
+      async (
+        spec?: string,
+        boardCtx?: { root: string; boardDir: string; name: string },
+      ) => {
+        if (typeof spec !== "string" || !spec.trim()) {
+          vscode.window.showErrorMessage("Accept: no Spec id provided.");
+          return;
+        }
+        const specId = spec.replace(/^SP-/, "").trim();
+        let repoPath: string;
+        let boardDir: string;
+        if (boardCtx) {
+          repoPath = boardCtx.root;
+          boardDir = boardCtx.boardDir;
+        } else {
+          const repo = deps.specsProvider.repoEntry;
+          if (!repo || !repo.enabled) {
+            vscode.window.showInformationMessage(
+              "Select an enabled thinking space to accept a Spec.",
+            );
+            return;
+          }
+          repoPath = repo.path;
+          boardDir = repo.boardDir;
+        }
+        try {
+          const store = new ThinkubeStore(repoPath, boardDir);
+          const specRel = store.pathForSpecDoc(specId);
+          const specDoc = await store.getFile(specRel);
+          if (!specDoc) {
+            vscode.window.showErrorMessage(
+              `No spec at ${specRel} — nothing to accept.`,
+            );
+            return;
+          }
+          const sliceStatuses: string[] = [];
+          for (const rel of await store.listSlices(specId)) {
+            const parsed = await store.getFile(rel);
+            sliceStatuses.push(String(parsed?.frontmatter?.status ?? ""));
+          }
+          // Refuse unless every AC is checked (and every slice Done) — no accept of an
+          // unverified Spec.
+          const gate = gateSpecAcceptance({
+            specBody: specDoc.body,
+            sliceStatuses,
+          });
+          if (!gate.ok) {
+            vscode.window.showWarningMessage(`SP-${specId}: ${gate.reason}`);
+            return;
+          }
+          // Merge first, stamp second: a failed merge throws, and we must never leave a
+          // Spec stamped accepted while its branch is still open (mergeSpecPr returns
+          // without merging when there is simply no PR — shipped straight to main).
+          const merge = await mergeSpecPr(specId, store.workspaceRoot);
+          await store.writeFile(
+            specRel,
+            { ...specDoc.frontmatter, accepted: new Date().toISOString() },
+            specDoc.body,
+          );
+          vscode.window.showInformationMessage(
+            merge.merged
+              ? `Accepted SP-${specId} — merged ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+              : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Accept SP-${specId} failed: ${(err as Error).message}`,
+          );
+        }
+      },
+    ),
+    // Reject (SP-tgzyfy_SL-2): the spec-level analog of `/attend`. Open a Claude session in the
+    // Spec's worktree primed with the delivery report (DELIVERY.md) so the rework starts from the
+    // per-AC verdicts + caught problems the orchestrator recorded.
+    vscode.commands.registerCommand(
+      "thinkube.reject",
+      async (
+        spec?: string,
+        boardCtx?: { root: string; boardDir: string; name: string },
+      ) => {
+        if (typeof spec !== "string" || !spec.trim()) {
+          vscode.window.showErrorMessage("Reject: no Spec id provided.");
+          return;
+        }
+        const specId = spec.replace(/^SP-/, "").trim();
+        let repoPath: string;
+        let boardDir: string;
+        if (boardCtx) {
+          repoPath = boardCtx.root;
+          boardDir = boardCtx.boardDir;
+        } else {
+          const repo = deps.specsProvider.repoEntry;
+          if (!repo || !repo.enabled) {
+            vscode.window.showInformationMessage(
+              "Select an enabled thinking space to reject a Spec.",
+            );
+            return;
+          }
+          repoPath = repo.path;
+          boardDir = repo.boardDir;
+        }
+        try {
+          const store = new ThinkubeStore(repoPath, boardDir);
+          // The delivery report is the rejection's context. Best-effort: a Spec that hasn't
+          // been orchestrated yet has none — we still open a primed session (the prompt notes
+          // the absence) so Reject always launches.
+          const reportRel = store
+            .pathForSpecDoc(specId)
+            .replace(/spec\.md$/, "DELIVERY.md");
+          let report: string | undefined;
+          try {
+            report = fs.readFileSync(
+              path.join(store.thinkubeDir, reportRel),
+              "utf8",
+            );
+          } catch {
+            report = undefined;
+          }
+
+          const canonical =
+            (await worktrees.canonicalRepo(repoPath)) ?? repoPath;
+          const baseDir =
+            vscode.workspace
+              .getConfiguration("thinkube")
+              .get<string>("worktree.baseDir")
+              ?.trim() || undefined;
+          const boardRoot =
+            vscode.workspace
+              .getConfiguration("thinkube.boards")
+              .get<string>("root")
+              ?.trim() || undefined;
+          const worktreePath = await worktrees.create(
+            canonical,
+            specId,
+            baseDir,
+            boardRoot,
+          );
+
+          await deps.launcher.openHere(
+            vscode.Uri.file(worktreePath),
+            buildRejectPrompt(specId, report),
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Reject SP-${specId} failed: ${(err as Error).message}`,
+          );
+        }
+      },
+    ),
+  );
+}
+
+/** The chat prompt priming a Spec-level Reject session: the rejected Spec + its delivery report
+ *  (the spec-level analog of `buildAttendPrompt`'s slice diagnosis). */
+function buildRejectPrompt(specId: string, report?: string): string {
+  const ctx = report
+    ? `\n\nThe orchestrator's delivery report (DELIVERY.md):\n\n${report}`
+    : `\n\n(No delivery report was found — inspect the Spec and its slices to find what needs rework.)`;
+  return (
+    `Rework the rejected Spec SP-${specId} in this worktree.${ctx}` +
+    `\n\nAddress the failing acceptance criteria and any caught problems the report surfaces, re-verify at Spec grain, then re-orchestrate so SP-${specId} can reach Done.`
   );
 }
 
