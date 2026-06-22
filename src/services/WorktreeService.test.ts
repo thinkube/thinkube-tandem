@@ -11,7 +11,10 @@ import {
   parseGitdir,
   planWorktree,
   mcpWithBoardRoot,
+  worktreeRetirable,
+  retirePlan,
 } from "./WorktreeService";
+import * as path from "node:path";
 
 test("parses the canonical worktree first, then linked worktrees", () => {
   const porcelain = [
@@ -183,4 +186,51 @@ test("mcpWithBoardRoot is a no-op when the kanban server is absent", () => {
     mcpServers: Record<string, unknown>;
   };
   assert.deepEqual(out.mcpServers, { other: {} });
+});
+
+// ── worktreeRetirable (accept-land cleanup, TEP-tgqa78) ──────────────────────
+
+test("worktreeRetirable: a clean worktree is retirable", () => {
+  assert.equal(worktreeRetirable(""), true);
+  assert.equal(worktreeRetirable("\n  \n"), true);
+});
+
+test("worktreeRetirable: dirty with only .mcp.json is retirable (machine-local)", () => {
+  assert.equal(worktreeRetirable(" M .mcp.json"), true);
+  assert.equal(worktreeRetirable("?? .mcp.json"), true);
+});
+
+test("worktreeRetirable: any other uncommitted path is NOT retirable", () => {
+  assert.equal(worktreeRetirable(" M src/foo.ts"), false);
+  // .mcp.json plus a real edit still refuses — only .mcp.json alone is ignorable.
+  assert.equal(worktreeRetirable(" M .mcp.json\n M src/foo.ts"), false);
+  assert.equal(worktreeRetirable("?? newfile.txt"), false);
+});
+
+test("worktreeRetirable: a quoted .mcp.json path (git special-char quoting) still matches", () => {
+  assert.equal(worktreeRetirable('?? ".mcp.json"'), true);
+});
+
+// ── retirePlan (don't delete the session's own cwd) ──────────────────────────
+
+test("retirePlan: cwd outside the worktree → retire", () => {
+  assert.equal(retirePlan("/home/u/repo", "/home/u/wt/SP-1"), "retire");
+});
+
+test("retirePlan: cwd IS the worktree → defer", () => {
+  assert.equal(retirePlan("/home/u/wt/SP-1", "/home/u/wt/SP-1"), "defer");
+});
+
+test("retirePlan: cwd inside the worktree → defer", () => {
+  assert.equal(retirePlan("/home/u/wt/SP-1/src", "/home/u/wt/SP-1"), "defer");
+});
+
+test("retirePlan: a sibling whose path is a string-prefix is NOT inside → retire", () => {
+  // `/home/u/wt/SP-12` must not count as inside `/home/u/wt/SP-1`.
+  assert.equal(retirePlan("/home/u/wt/SP-12", "/home/u/wt/SP-1"), "retire");
+});
+
+test("retirePlan: trailing slashes don't change the verdict", () => {
+  assert.equal(retirePlan("/home/u/wt/SP-1/", "/home/u/wt/SP-1"), "defer");
+  assert.equal(path.sep, "/"); // sanity: POSIX separator in this env
 });

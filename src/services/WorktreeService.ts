@@ -187,6 +187,40 @@ export function mcpWithBoardRoot(
   return cfg as Record<string, unknown>;
 }
 
+/**
+ * Retire-safe iff the worktree is clean except for its machine-local `.mcp.json`
+ * (the per-worktree board-env injection, SP-tgpwbm SL-7) — never committed, so it
+ * must not block retirement. Any other porcelain entry → not retirable. Pure.
+ * Input is `git status --porcelain` text (`XY <path>` per line).
+ */
+export function worktreeRetirable(porcelain: string): boolean {
+  const entries = porcelain
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\r$/, ""))
+    .filter((l) => l.trim() !== "");
+  return entries.every((line) => {
+    // Porcelain is `XY <path>` (two status columns + space); strip to the path
+    // and unquote a path git quoted for special chars.
+    const p = line.slice(3).replace(/^"(.*)"$/, "$1");
+    return p === ".mcp.json";
+  });
+}
+
+/**
+ * `"defer"` when `cwd` is the worktree being retired or sits inside it — deleting
+ * it would pull the rug from the session running the accept; otherwise `"retire"`.
+ * Pure.
+ */
+export function retirePlan(
+  cwd: string,
+  worktreePath: string,
+): "retire" | "defer" {
+  const norm = (p: string) => path.resolve(p).replace(/[/\\]+$/, "");
+  const wt = norm(worktreePath);
+  const here = norm(cwd);
+  return here === wt || here.startsWith(wt + path.sep) ? "defer" : "retire";
+}
+
 export class WorktreeService {
   /** All worktrees of the repo enclosing `cwd`; the first entry is canonical. */
   async list(cwd: string): Promise<WorktreeEntry[]> {
@@ -320,46 +354,79 @@ export class WorktreeService {
   }
 
   /**
-   * Retire a Spec's worktree. Refuses (no silent data loss) when the worktree
-   * has uncommitted changes, or when its `spec/SP-{n}` branch still holds
-   * commits not in the base branch (retire only after the PR merges). Removing
-   * a worktree deletes only its working directory — the branch ref survives, so
-   * committed work is never lost. Returns the removed path.
+   * Retire a Spec's worktree after its work has landed. Refuses (no silent data
+   * loss) when the worktree has uncommitted changes beyond its machine-local
+   * `.mcp.json` (`worktreeRetirable`), or — unless `assumeMerged` — when its
+   * `spec/SP-{n}` branch still holds commits not in the base branch. `assumeMerged`
+   * is set by `retireAfterAccept`, where the merge was just confirmed by `gh` (the
+   * local base ref lags the remote merge, so the unmerged probe would false-refuse).
+   * With `assumeMerged` the now-merged local branch ref is deleted too. Returns the
+   * removed path.
    */
-  async remove(canonicalRepo: string, specNumber: string): Promise<string> {
+  async remove(
+    canonicalRepo: string,
+    specNumber: string,
+    opts: { assumeMerged?: boolean } = {},
+  ): Promise<string> {
     const wt = findSpecWorktree(await this.list(canonicalRepo), specNumber);
     if (!wt) {
       throw new Error(
         `No worktree for SP-${specNumber} (branch spec/SP-${specNumber}).`,
       );
     }
-    if (await this.isDirty(wt.path)) {
+    const { stdout: porcelain } = await execFileAsync(
+      "git",
+      ["-C", wt.path, "status", "--porcelain"],
+      { timeout: 5000 },
+    );
+    if (!worktreeRetirable(porcelain)) {
       throw new Error(
-        `Refusing to retire SP-${specNumber}: the worktree at ${wt.path} has uncommitted changes. Commit or discard them first.`,
+        `Refusing to retire SP-${specNumber}: the worktree at ${wt.path} has uncommitted changes (beyond .mcp.json). Commit or discard them first.`,
       );
     }
-    const unmerged = await this.unmergedCount(canonicalRepo, wt.path);
-    if (unmerged > 0) {
-      throw new Error(
-        `Refusing to retire SP-${specNumber}: branch spec/SP-${specNumber} has ${unmerged} commit(s) not in the base branch — merge its PR first.`,
-      );
+    if (!opts.assumeMerged) {
+      const unmerged = await this.unmergedCount(canonicalRepo, wt.path);
+      if (unmerged > 0) {
+        throw new Error(
+          `Refusing to retire SP-${specNumber}: branch spec/SP-${specNumber} has ${unmerged} commit(s) not in the base branch — merge its PR first.`,
+        );
+      }
     }
+    // `--force` ignores only the `.mcp.json` dirt we already vetted via
+    // `worktreeRetirable`; anything else would have thrown above.
     await execFileAsync(
       "git",
-      ["-C", canonicalRepo, "worktree", "remove", wt.path],
+      ["-C", canonicalRepo, "worktree", "remove", "--force", wt.path],
       { timeout: 10000 },
     );
+    if (opts.assumeMerged) {
+      // The branch is merged (work is on the remote base) — drop the local ref so
+      // the Space's branch list stays one-per-active-Spec. Best-effort.
+      await execFileAsync(
+        "git",
+        ["-C", canonicalRepo, "branch", "-D", `spec/SP-${specNumber}`],
+        { timeout: 5000 },
+      ).catch(() => undefined);
+    }
     return wt.path;
   }
 
-  /** True when the worktree has uncommitted changes (`git status --porcelain`). */
-  private async isDirty(worktreePath: string): Promise<boolean> {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", worktreePath, "status", "--porcelain"],
-      { timeout: 5000 },
-    );
-    return stdout.trim() !== "";
+  /**
+   * Retire the Spec's worktree as the cleanup half of accept-land (TEP-tgqa78),
+   * after a confirmed merge. Defers when the accept fires from inside the worktree
+   * being retired (`retirePlan`) so it never deletes the active session's own cwd.
+   * Returns what happened so the caller can message it.
+   */
+  async retireAfterAccept(
+    canonicalRepo: string,
+    specNumber: string,
+    cwd: string,
+  ): Promise<"retired" | "deferred" | "absent"> {
+    const wt = findSpecWorktree(await this.list(canonicalRepo), specNumber);
+    if (!wt) return "absent";
+    if (retirePlan(cwd, wt.path) === "defer") return "deferred";
+    await this.remove(canonicalRepo, specNumber, { assumeMerged: true });
+    return "retired";
   }
 
   /**

@@ -23,6 +23,8 @@ import { listSessionsForFolder, SessionInfo } from "../services/sessionLinks";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { gateSpecAcceptance } from "../methodology/qualityGates";
 import { mergeSpecPr } from "../github/specMerge";
+import { WorktreeService } from "../services/WorktreeService";
+import { retireWorktreeNote } from "./acceptLand";
 import { KanbanPanel } from "../views/kanban/host/Panel";
 import { ThinkubeFilesAdapter } from "../views/kanban/host/storage/ThinkubeFilesAdapter";
 import {
@@ -283,9 +285,16 @@ async function openBoardFor(
         { ...specDoc.frontmatter, accepted: new Date().toISOString() },
         specDoc.body,
       );
+      const retireNote = merge.merged
+        ? await retireWorktreeNote(
+            new WorktreeService(),
+            store.workspaceRoot,
+            spec,
+          )
+        : "";
       vscode.window.showInformationMessage(
         merge.merged
-          ? `Accepted SP-${spec} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+          ? `Accepted SP-${spec} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.${retireNote}`
           : `Accepted SP-${spec} — no PR to merge (shipped straight to main).`,
       );
     },

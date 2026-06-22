@@ -35,6 +35,7 @@ import {
 } from "../services/orchestratorSessions";
 import { gateSpecAcceptance } from "../methodology/qualityGates";
 import { mergeSpecPr } from "../github/specMerge";
+import { retireWorktreeNote } from "./acceptLand";
 import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
 import type { SpecsProvider } from "../views/boards/SpecsProvider";
@@ -400,9 +401,12 @@ export function registerOrchestrateCommands(
             { ...specDoc.frontmatter, accepted: new Date().toISOString() },
             specDoc.body,
           );
+          const retireNote = merge.merged
+            ? await retireWorktreeNote(worktrees, repoPath, specId)
+            : "";
           vscode.window.showInformationMessage(
             merge.merged
-              ? `Accepted SP-${specId} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.`
+              ? `Accepted SP-${specId} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.${retireNote}`
               : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
           );
         } catch (err) {
