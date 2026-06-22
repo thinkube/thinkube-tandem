@@ -31,7 +31,7 @@ async function seededStore(spec = "demo"): Promise<ThinkubeStore> {
   const store = new ThinkubeStore(board, board);
   await store.writeFile(
     store.pathForSpecDoc(spec),
-    { implements: "TEP-x" },
+    { implements: "TEP-x", ac_verifications: { "1": { run: "npm test" } } },
     "# Demo Spec\n\n## Acceptance Criteria\n\n- [ ] something\n",
   );
   return store;
@@ -45,9 +45,13 @@ async function sliceFm(store: ThinkubeStore, handle: string) {
 }
 
 /** Find a slice card in a list_board projection. */
-function cardFor(board: unknown, handle: string): { tags?: string[] } | undefined {
-  const cols = (board as { columns: { cards: { id: string; tags?: string[] }[] }[] })
-    .columns;
+function cardFor(
+  board: unknown,
+  handle: string,
+): { tags?: string[] } | undefined {
+  const cols = (
+    board as { columns: { cards: { id: string; tags?: string[] }[] }[] }
+  ).columns;
   for (const col of cols) {
     const hit = col.cards.find((c) => c.id === handle);
     if (hit) return hit;
@@ -107,7 +111,11 @@ test("list_board card folds a legacy `theme` into the card tags (back-compat)", 
   const m = /SP-([^_]+)_SL-(\d+)/.exec(res.slice)!;
   const rel = store.pathForSlice(m[1], Number(m[2]));
   const parsed = await store.getFile(rel);
-  await store.writeFile(rel, { ...parsed!.frontmatter, theme: "legacy" }, parsed!.body);
+  await store.writeFile(
+    rel,
+    { ...parsed!.frontmatter, theme: "legacy" },
+    parsed!.body,
+  );
 
   const card = cardFor(await listBoard(store), res.slice);
   assert.deepEqual(card?.tags, ["legacy"]);

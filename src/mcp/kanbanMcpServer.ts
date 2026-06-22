@@ -84,6 +84,7 @@ import {
 } from "../store/implementsRef";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
+import { readyGate } from "../services/openingGate";
 import {
   boardDirForNamespace,
   namespaceForRepo,
@@ -1691,16 +1692,37 @@ export async function createSlice(
   });
   if (!docsResult.ok) throw new Error(docsResult.reason);
 
-  // Creation-time → Ready gate: parent Spec present with non-empty AC.
+  // Creation-time → Ready gate (TEP-tgzx3p, opening half): the parent Spec must
+  // be present, carry acceptance criteria, and certify EVERY AC with a runnable
+  // `ac_verifications` entry. The structural check lives in the pure `readyGate`;
+  // the LLM auditor's verifiable | needs-reframe judgment runs in /spec-prepare,
+  // which only emits a declaration for an AC it certifies, so an un-certified AC
+  // arrives here with no entry and `readyGate` blocks it by ordinal.
   const specDoc = await store.getFile(store.pathForSpecDoc(args.spec));
   if (!specDoc) {
     throw new Error(
       `No spec at ${store.thinkubeDir}/specs/SP-${args.spec}/spec.md — run /spec-prepare ${args.spec} first.`,
     );
   }
-  if (!hasNonEmptyAcceptanceCriteria(specDoc.body)) {
+  const acs = acceptanceCriteriaOrdinals(specDoc.body);
+  if (acs.length === 0) {
     throw new Error(
       `SP-${args.spec} has no acceptance criteria (its slices would fail the → Ready gate) — run /spec-prepare ${args.spec} first.`,
+    );
+  }
+  // Reuse the closing gate's serialization (`normalizeAcVerifications`) so the
+  // map the gate reads is exactly the one the closing gate's `parseAcVerifications`
+  // consumes — one serialization, both ends (TEP-tgzx3p).
+  const rawVerifs = specDoc.frontmatter?.ac_verifications;
+  const verifications = normalizeAcVerifications(
+    rawVerifs && typeof rawVerifs === "object"
+      ? (rawVerifs as Record<string, unknown>)
+      : {},
+  );
+  const readyVerdict = readyGate(acs, verifications);
+  if (!readyVerdict.ok) {
+    throw new Error(
+      `SP-${args.spec} AC ${readyVerdict.ordinal} has no runnable ac_verifications entry — every AC must be certified with a verification before → Ready. Run /spec-prepare ${args.spec} to certify each AC.`,
     );
   }
 
@@ -1769,12 +1791,22 @@ export async function createSlice(
   };
 }
 
-/** Non-empty = the section exists and contains at least one checklist line. */
-function hasNonEmptyAcceptanceCriteria(body: string | undefined): boolean {
-  if (!body) return false;
+/**
+ * The Spec's acceptance criteria as 1-based ordinals — one entry per checklist
+ * line in the `## Acceptance Criteria` section, in document order. Empty when the
+ * section is absent or has no checklist lines. Feeds `readyGate`, which demands a
+ * runnable `ac_verifications` entry for every ordinal `1..N`.
+ */
+function acceptanceCriteriaOrdinals(
+  body: string | undefined,
+): { ordinal: number }[] {
+  if (!body) return [];
   const m = /##\s*Acceptance Criteria\s*\n([\s\S]*?)(?=\n##\s|$)/i.exec(body);
-  if (!m) return false;
-  return /[-*]\s*\[[ xX]\]/.test(m[1]);
+  if (!m) return [];
+  const count = m[1]
+    .split(/\r?\n/)
+    .filter((line) => /^\s*[-*]\s*\[[ xX]\]/.test(line)).length;
+  return Array.from({ length: count }, (_, i) => ({ ordinal: i + 1 }));
 }
 
 /** Slug uid from the title, unique among the Spec's existing slice uids. */

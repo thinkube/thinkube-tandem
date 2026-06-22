@@ -43,12 +43,18 @@ function boardRootWithProjects(): string {
 }
 
 /** A tmp board store with one Spec (given `implements`) that has acceptance criteria. */
-async function seededStore(spec: string, implementsRef: string): Promise<ThinkubeStore> {
+async function seededStore(
+  spec: string,
+  implementsRef: string,
+): Promise<ThinkubeStore> {
   const board = fs.mkdtempSync(path.join(os.tmpdir(), "tk-projstore-"));
   const store = new ThinkubeStore(board, board);
   await store.writeFile(
     store.pathForSpecDoc(spec),
-    { implements: implementsRef },
+    {
+      implements: implementsRef,
+      ac_verifications: { "1": { run: "npm test" } },
+    },
     "# Demo\n\n## Acceptance Criteria\n\n- [ ] x\n",
   );
   return store;
@@ -118,14 +124,26 @@ test("promote_tep moves the TEP and rewrites EVERY dependent (SP-tgvpbm_SL-3)", 
 
   // TEP lives in origin; SP-a implements it bare; SP-b (other repo) implements it
   // qualified to origin; SP-c implements something else (non-dependent).
-  await origin.writeFile(origin.pathForTep("reb"), { kind: "tep", id: "TEP-reb" }, "# Reb\n");
-  await origin.writeFile(origin.pathForSpecDoc("a"), { implements: "TEP-reb" }, `# A\n\n${ac}`);
+  await origin.writeFile(
+    origin.pathForTep("reb"),
+    { kind: "tep", id: "TEP-reb" },
+    "# Reb\n",
+  );
+  await origin.writeFile(
+    origin.pathForSpecDoc("a"),
+    { implements: "TEP-reb" },
+    `# A\n\n${ac}`,
+  );
   await control.writeFile(
     control.pathForSpecDoc("b"),
     { implements: "Platform/core/thinkube:TEP-reb" },
     `# B\n\n${ac}`,
   );
-  await control.writeFile(control.pathForSpecDoc("c"), { implements: "TEP-other" }, `# C\n\n${ac}`);
+  await control.writeFile(
+    control.pathForSpecDoc("c"),
+    { implements: "TEP-other" },
+    `# C\n\n${ac}`,
+  );
 
   const ctx = {
     env: { boardRoot: root },
@@ -137,25 +155,42 @@ test("promote_tep moves the TEP and rewrites EVERY dependent (SP-tgvpbm_SL-3)", 
       resolve: (id: string) => (id === "O" ? origin : control),
     },
   };
-  const res = (await promoteTep(ctx as never, "reb", "Platform", "rebrand")) as {
+  const res = (await promoteTep(
+    ctx as never,
+    "reb",
+    "Platform",
+    "rebrand",
+  )) as {
     rewritten: string[];
   };
 
   // moved under the project; gone from the origin repo
   assert.ok(
-    fs.existsSync(path.join(root, "Platform", "projects", "rebrand", "teps", "TEP-reb.md")),
+    fs.existsSync(
+      path.join(root, "Platform", "projects", "rebrand", "teps", "TEP-reb.md"),
+    ),
   );
   assert.ok(
-    !fs.existsSync(path.join(root, "Platform", "core", "thinkube", "teps", "TEP-reb.md")),
+    !fs.existsSync(
+      path.join(root, "Platform", "core", "thinkube", "teps", "TEP-reb.md"),
+    ),
   );
   // EVERY dependent rewritten to the qualified umbrella ref; none dangling
   assert.deepEqual(res.rewritten.sort(), ["SP-a", "SP-b"]);
   const want = "Platform/projects/rebrand:TEP-reb";
-  assert.equal((await origin.getFile(origin.pathForSpecDoc("a")))?.frontmatter?.implements, want);
-  assert.equal((await control.getFile(control.pathForSpecDoc("b")))?.frontmatter?.implements, want);
+  assert.equal(
+    (await origin.getFile(origin.pathForSpecDoc("a")))?.frontmatter?.implements,
+    want,
+  );
+  assert.equal(
+    (await control.getFile(control.pathForSpecDoc("b")))?.frontmatter
+      ?.implements,
+    want,
+  );
   // non-dependent untouched
   assert.equal(
-    (await control.getFile(control.pathForSpecDoc("c")))?.frontmatter?.implements,
+    (await control.getFile(control.pathForSpecDoc("c")))?.frontmatter
+      ?.implements,
     "TEP-other",
   );
 });
@@ -164,7 +199,10 @@ test("promote_tep refuses when the target project does not exist", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-promote-no-"));
   await assert.rejects(
     promoteTep(
-      { env: { boardRoot: root }, boards: { list: () => [], resolve: () => undefined } } as never,
+      {
+        env: { boardRoot: root },
+        boards: { list: () => [], resolve: () => undefined },
+      } as never,
       "reb",
       "Platform",
       "nope",
