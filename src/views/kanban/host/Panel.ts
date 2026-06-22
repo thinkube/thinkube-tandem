@@ -274,7 +274,9 @@ export class KanbanPanel implements vscode.Disposable {
             this.adapter.boardContext?.(),
           );
         } catch (err) {
-          this.log(`attend ${message.handle} failed: ${(err as Error).message}`);
+          this.log(
+            `attend ${message.handle} failed: ${(err as Error).message}`,
+          );
         }
         break;
       case "orchestrate":
@@ -290,6 +292,32 @@ export class KanbanPanel implements vscode.Disposable {
           this.log(
             `orchestrate ${message.spec} failed: ${(err as Error).message}`,
           );
+        }
+        break;
+      case "accept":
+        // The delivery report's Accept exit (SP-tgzyfy_SL-2): forward to the gated-merge
+        // command, carrying THIS panel's board (same shape as orchestrate/attend).
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.accept",
+            message.spec,
+            this.adapter.boardContext?.(),
+          );
+        } catch (err) {
+          this.log(`accept ${message.spec} failed: ${(err as Error).message}`);
+        }
+        break;
+      case "reject":
+        // The delivery report's Reject exit (SP-tgzyfy_SL-2): forward to the primed-session
+        // command (the spec-level analog of /attend).
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.reject",
+            message.spec,
+            this.adapter.boardContext?.(),
+          );
+        } catch (err) {
+          this.log(`reject ${message.spec} failed: ${(err as Error).message}`);
         }
         break;
       case "notify":
@@ -314,7 +342,8 @@ export class KanbanPanel implements vscode.Disposable {
     const live = runningSessions();
     const park = parkedWorkers();
     const done = doneWorkers();
-    if (live.length === 0 && park.length === 0 && done.length === 0) return board;
+    if (live.length === 0 && park.length === 0 && done.length === 0)
+      return board;
     // Sessions are keyed per WORKER (execution unit, e.g. `SP-3_SL-2#eu-0`); group them under
     // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): green
     // while running, amber while parked (needs-input), lime once it has completed.

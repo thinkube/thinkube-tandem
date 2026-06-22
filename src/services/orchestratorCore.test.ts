@@ -23,11 +23,17 @@ import {
   extractNeedsInput,
   sessionIdOf,
   NEEDS_INPUT_SENTINEL,
+  parseAcVerifications,
+  runAcVerifications,
+  checkAcOrdinals,
+  buildDeliveryReport,
   type SliceRow,
   type WorkUnit,
   type SliceForDag,
   type SchedulerState,
   type SchedUnit,
+  type AcExec,
+  type AcResult,
 } from "./orchestratorCore";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
@@ -87,7 +93,9 @@ test("summarizeEvent: tool_use renders its input; results + snippets; non-displa
     summarizeEvent({
       type: "assistant",
       message: {
-        content: [{ type: "tool_use", name: "Bash", input: { command: "ls -la" } }],
+        content: [
+          { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
+        ],
       },
     }),
     "▸ $ ls -la",
@@ -96,7 +104,9 @@ test("summarizeEvent: tool_use renders its input; results + snippets; non-displa
     summarizeEvent({
       type: "assistant",
       message: {
-        content: [{ type: "tool_use", name: "Read", input: { file_path: "a.yaml" } }],
+        content: [
+          { type: "tool_use", name: "Read", input: { file_path: "a.yaml" } },
+        ],
       },
     }),
     "▸ Read a.yaml",
@@ -105,7 +115,9 @@ test("summarizeEvent: tool_use renders its input; results + snippets; non-displa
   assert.equal(
     summarizeEvent({
       type: "user",
-      message: { content: [{ type: "tool_result", content: "first line\nsecond" }] },
+      message: {
+        content: [{ type: "tool_result", content: "first line\nsecond" }],
+      },
     }),
     "   ⤷ first line",
   );
@@ -208,10 +220,7 @@ test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay 
 
 // ── buildUnitDag + readyFrontier (SP-tgs8nz makespan scheduler) ────────────
 
-const slice = (
-  handle: string,
-  o: Partial<SliceForDag> = {},
-): SliceForDag => ({
+const slice = (handle: string, o: Partial<SliceForDag> = {}): SliceForDag => ({
   handle,
   status: o.status ?? "ready",
   dependsOn: o.dependsOn ?? [],
@@ -361,7 +370,9 @@ test("readyFrontier: blocked units (requires-attention slice) are not dispatched
 
 test("extractNeedsInput: pulls the question after the sentinel; null when absent", () => {
   assert.equal(
-    extractNeedsInput(`some log\n${NEEDS_INPUT_SENTINEL} Which database — pg or sqlite?`),
+    extractNeedsInput(
+      `some log\n${NEEDS_INPUT_SENTINEL} Which database — pg or sqlite?`,
+    ),
     "Which database — pg or sqlite?",
   );
   assert.equal(extractNeedsInput("worked fine, done"), null);
@@ -370,7 +381,10 @@ test("extractNeedsInput: pulls the question after the sentinel; null when absent
 });
 
 test("sessionIdOf: reads a string session_id, undefined otherwise", () => {
-  assert.equal(sessionIdOf({ type: "system", session_id: "abc-123" }), "abc-123");
+  assert.equal(
+    sessionIdOf({ type: "system", session_id: "abc-123" }),
+    "abc-123",
+  );
   assert.equal(sessionIdOf({ type: "system" }), undefined);
   assert.equal(sessionIdOf({ session_id: 42 }), undefined);
 });
@@ -389,7 +403,10 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
   assert.match(p, /src\/a\.ts/);
   assert.match(p, /add a test for module a/);
   assert.match(p, /Do NOT commit/);
-  assert.ok(p.includes(NEEDS_INPUT_SENTINEL), "instructs the escalation sentinel");
+  assert.ok(
+    p.includes(NEEDS_INPUT_SENTINEL),
+    "instructs the escalation sentinel",
+  );
 
   // The worktree has no specs dir, so context is embedded in the prompt, not pointed to on disk.
   const withCtx = buildWorkerPrompt(unit, "3", {
@@ -399,4 +416,147 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
   assert.match(withCtx, /Acceptance Criteria/);
   assert.match(withCtx, /Pinned: namespace headlamp/);
   assert.match(withCtx, /NOT in this worktree/);
+});
+
+// ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ───────────────────
+
+test("parseAcVerifications: normalizes the frontmatter map → ordered AcVerification[]", () => {
+  const v = parseAcVerifications({
+    "2": { run: "helm test", env: "cluster" },
+    "1": { run: " npm test ", env: "local" },
+  });
+  assert.deepEqual(v, [
+    { ac: 1, run: "npm test", env: "local" },
+    { ac: 2, run: "helm test", env: "cluster" },
+  ]);
+});
+
+test("parseAcVerifications: drops invalid entries (no run, bad ordinal, bad env), tolerates missing", () => {
+  assert.deepEqual(parseAcVerifications(undefined), []);
+  assert.deepEqual(parseAcVerifications({}), []);
+  const v = parseAcVerifications({
+    "0": { run: "x" }, // non-positive ordinal
+    foo: { run: "x" }, // non-numeric key
+    "1": { run: "" }, // empty run
+    "2": { run: "ok", env: "weird" }, // bad env → dropped to undefined
+    "3": { nope: true }, // no run field
+  });
+  assert.deepEqual(v, [{ ac: 2, run: "ok", env: undefined }]);
+});
+
+test("runAcVerifications: exit 0 = pass, non-zero = fail, attributed per-AC, in order", async () => {
+  const ran: string[] = [];
+  const exec: AcExec = async (run) => {
+    ran.push(run);
+    return { code: run.includes("FAIL") ? 1 : 0, output: `out:${run}` };
+  };
+  const results = await runAcVerifications(
+    [
+      { ac: 1, run: "step-install" },
+      { ac: 2, run: "step-FAIL" },
+      { ac: 3, run: "step-rollback" },
+    ],
+    "/wt",
+    exec,
+  );
+  assert.deepEqual(ran, ["step-install", "step-FAIL", "step-rollback"]);
+  assert.deepEqual(
+    results.map((r) => [r.ac, r.pass]),
+    [
+      [1, true],
+      [2, false],
+      [3, true],
+    ],
+  );
+  assert.match(results[0].evidence, /exit 0/);
+  assert.match(results[1].evidence, /exit 1/);
+});
+
+test("runAcVerifications: an un-runnable check is RED, never silently green (no skip)", async () => {
+  const exec: AcExec = async () => {
+    throw new Error("command not found");
+  };
+  const [r] = await runAcVerifications(
+    [{ ac: 1, run: "missing-cmd" }],
+    "/wt",
+    exec,
+  );
+  assert.equal(r.pass, false);
+  assert.match(r.evidence, /could not run: command not found/);
+});
+
+test("checkAcOrdinals: ticks only the named ordinals under Acceptance Criteria", () => {
+  const body = [
+    "# Spec",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- [ ] first AC",
+    "- [ ] second AC",
+    "- [ ] third AC",
+    "",
+    "## Design",
+    "",
+    "- [ ] not an AC (different section)",
+  ].join("\n");
+  const out = checkAcOrdinals(body, [1, 3]);
+  const lines = out.split("\n");
+  assert.equal(lines[4], "- [x] first AC");
+  assert.equal(lines[5], "- [ ] second AC");
+  assert.equal(lines[6], "- [x] third AC");
+  // a checkbox outside the AC section is never touched
+  assert.equal(lines[10], "- [ ] not an AC (different section)");
+});
+
+test("checkAcOrdinals: out-of-range / already-checked are no-ops; empty input unchanged", () => {
+  const body = "## Acceptance Criteria\n\n- [x] done\n- [ ] todo\n";
+  assert.equal(checkAcOrdinals(body, []), body);
+  // #1 already checked, #9 out of range → body unchanged
+  assert.equal(checkAcOrdinals(body, [1, 9]), body);
+  assert.match(checkAcOrdinals(body, [2]), /- \[x\] todo/);
+});
+
+test("buildDeliveryReport: carries the per-AC pass/fail table + evidence (auditable)", () => {
+  const acResults: AcResult[] = [
+    { ac: 1, pass: true, evidence: "$ install → exit 0" },
+    { ac: 2, pass: false, evidence: "$ test → exit 1\nassertion failed" },
+  ];
+  const md = buildDeliveryReport({
+    specNumber: "tgzyfy",
+    sha: "abc1234",
+    files: ["src/a.ts"],
+    units: [{ id: "SP-tgzyfy_SL-1#eu-0", outcome: "success" }],
+    declared: [
+      { ac: 1, run: "install", env: "cluster" },
+      { ac: 2, run: "test", env: "cluster" },
+    ],
+    acResults,
+    problems: ["worker X hit a wall"],
+    advanced: ["SP-tgzyfy_SL-1"],
+    attention: [],
+    committed: true,
+  });
+  assert.match(md, /Acceptance-criteria verification/);
+  assert.match(md, /#1 \|.*✓ pass/);
+  assert.match(md, /#2 \|.*✗ fail/);
+  assert.match(md, /assertion failed/); // evidence excerpt present
+  assert.match(md, /Caught problems/);
+  assert.match(md, /worker X hit a wall/);
+  assert.match(md, /abc1234/);
+});
+
+test("buildDeliveryReport: no declared verifications → the no-skip warning, not a silent pass", () => {
+  const md = buildDeliveryReport({
+    specNumber: "1",
+    sha: "",
+    files: [],
+    units: [],
+    declared: [],
+    acResults: [],
+    advanced: [],
+    committed: false,
+  });
+  assert.match(md, /No `ac_verifications` declared/);
+  assert.match(md, /requires-attention/);
+  assert.match(md, /not committed/);
 });
