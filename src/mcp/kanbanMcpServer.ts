@@ -53,6 +53,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { requirementHash } from "../methodology/specChange";
+import { sectionPatch } from "../methodology/sectionPatch";
+import { sliceFilesResolveInRepo } from "../methodology/sliceRepoGuard";
 import {
   validateParallelGroup,
   type ParallelSliceInput,
@@ -824,6 +826,34 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "patch_spec_section",
+    description:
+      "Replace exactly ONE named section of an existing Spec's body, leaving every other section byte-identical, and write the whole body back through the secret-scanning safe-write path. Use this for a single-section edit (e.g. updating `## Acceptance Criteria`) instead of the read-modify-write-whole-body dance — `write_spec` replaces the entire body, this surgically patches one section. The `section` is the heading text (without leading `#`s); the Spec must already exist. Frontmatter is preserved.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: {
+          type: "string",
+          description:
+            "Spec id (the SP-{id}) whose section to patch — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).",
+        },
+        section: {
+          type: "string",
+          description:
+            "The heading of the section to replace — the heading text without the leading `#`s (e.g. `Acceptance Criteria`).",
+        },
+        content: {
+          type: "string",
+          description:
+            "The replacement content for that named section. Every other section of the Spec is left byte-identical.",
+        },
+        ...BOARD_PARAM,
+      },
+      required: ["spec", "section", "content"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "update_slice",
     description:
       "Replace a slice's markdown body (frontmatter is preserved). The body's first line must be the `# title` heading; if the new body lacks one, the existing title is re-attached and the input is treated as detail — a card can never become heading-less through this tool.",
@@ -1012,6 +1042,16 @@ export async function dispatchTool(
           !Array.isArray(args.ac_verifications)
           ? (args.ac_verifications as Record<string, unknown>)
           : undefined,
+      );
+    case "patch_spec_section":
+      writeGate(name);
+      return patchSpecSection(
+        store,
+        typeof args.spec === "number"
+          ? String(args.spec)
+          : asString(args, "spec"),
+        asString(args, "section"),
+        asString(args, "content"),
       );
     case "update_slice":
       writeGate(name);
@@ -1683,6 +1723,25 @@ export async function createSlice(
     }
   }
 
+  // Preliminary-control gate (SP-th1ddy_SL-2): a slice's declared footprint must
+  // resolve **repo-relative inside the board's own repo**. An absolute path, a
+  // `..`-escaping path, or a different-repo path is structurally invalid — the
+  // orchestrated worker runs from the board repo's worktree root and could never
+  // legally write it, so the slice would fail orchestration *after* a run is
+  // burned. Refuse it at creation, naming the offending path. Both `files:` and
+  // every work_unit `footprint` are footprints, so both are checked.
+  const declaredFiles = [
+    ...(args.files ?? []),
+    ...(args.work_units ?? []).flatMap((wu) => wu.footprint ?? []),
+  ];
+  if (declaredFiles.length) {
+    const repoCheck = sliceFilesResolveInRepo(
+      store.workspaceRoot,
+      declaredFiles,
+    );
+    if (!repoCheck.ok) throw new Error(repoCheck.reason);
+  }
+
   // Documentation obligation (TEP-tgh6iy). Default `required` (fail closed);
   // `n/a` must justify. The rule lives in the methodology gates module.
   const docsResult = resolveDocsObligation({
@@ -1842,6 +1901,40 @@ async function writeSpec(
     created: existing === undefined,
     implements: fm.implements,
     acVerifications: fm.ac_verifications,
+  };
+}
+
+/**
+ * `patch_spec_section` (SP-th1ddy) — replace exactly one named section of an
+ * existing Spec's body via the pure `sectionPatch` helper, leaving every other
+ * section byte-identical, and write the whole body back through
+ * `ThinkubeStore.writeFile` so the secret scan applies (the only board-write
+ * boundary — no second write path). Frontmatter is preserved untouched. This is
+ * the surgical single-section edit that replaces the model's
+ * read-modify-write-whole-body dance; `write_spec` still replaces the full body.
+ */
+export async function patchSpecSection(
+  store: ThinkubeStore,
+  spec: string,
+  section: string,
+  content: string,
+): Promise<unknown> {
+  const rel = store.pathForSpecDoc(spec);
+  const existing = await store.getFile(rel);
+  if (!existing) {
+    throw new Error(
+      `No spec document at ${store.thinkubeDir}/${rel} — create it with write_spec first.`,
+    );
+  }
+  const nextBody = sectionPatch(existing.body, section, content);
+  // Route through the store's safe-write path so the secret scan refuses a
+  // planted secret — never a raw fs write (Constraint: one write boundary).
+  await store.writeFile(rel, existing.frontmatter, nextBody);
+  return {
+    ok: true,
+    spec,
+    section,
+    relativePath: rel,
   };
 }
 
