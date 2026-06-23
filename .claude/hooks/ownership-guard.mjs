@@ -155,6 +155,9 @@ function main() {
   if (!owns) allow(); // the active slice holds no claims — don't enforce
 
   const target = relFile(filePath);
+  // Out-of-repo scratch (/tmp, os.tmpdir, the scratchpad) is never owned and cannot collide with
+  // another slice footprint: allow it. Ownership is enforced only for files inside the repo.
+  if (target.startsWith("..")) allow();
   const owner = ownership[target];
   if (owner === activeSlice) allow();
 
