@@ -1,4 +1,7 @@
-node_modules/
+# Match a node_modules directory AND a symlink (no trailing slash): a worktree's
+# shared-deps symlink is a symlink, which `node_modules/` would NOT ignore — so it
+# leaked into `git add -A` and was committed as a self-referential loop (TEP-th3i18 #16).
+node_modules
 dist/
 *.vsix
 .vscode-test/
