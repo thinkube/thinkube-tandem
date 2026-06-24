@@ -2,7 +2,7 @@
   "name": "thinkube-ai-integration",
   "displayName": "Thinkube AI Integration",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -706,6 +706,8 @@
     "install:webview": "npm --prefix webview/kanban install",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
+    "deploy": "scripts/deploy.sh",
+    "deploy:release": "scripts/deploy.sh --bump",
     "test": "tsc -p tsconfig.test.json && node --test out-test/",
     "test:vscode": "node ./dist/test/runTest.js",
     "publish:ovsx": "ovsx publish",

@@ -35,6 +35,7 @@ import {
   type AcExec,
   type AcResult,
 } from "./orchestratorCore";
+import { validateDag } from "../methodology/parallelSlices";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
   const rows: SliceRow[] = [
@@ -272,6 +273,33 @@ test("buildUnitDag: units inherit their slice's depends_on, pooled across slices
   assert.equal(dag.length, 3);
   for (const u of dag.filter((u) => u.slice === "SP-1_SL-2"))
     assert.deepEqual(u.dependsOn, ["SP-1_SL-1"]);
+});
+
+test("buildUnitDag: a dep on a UNIT-BEARING slice expands to its unit ids — validateDag accepts it (TEP-th3i18 #18)", () => {
+  const dag = buildUnitDag([
+    slice("SP-1_SL-1", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+      ],
+    }),
+    slice("SP-1_SL-2", {
+      dependsOn: ["SP-1_SL-1"],
+      workUnits: [{ footprint: ["c.ts"], execution: "fan-out" }],
+    }),
+  ]);
+  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
+  // the bare handle expands to SL-1's two unit ids (a dep on a slice = ALL its units),
+  // NOT the unresolvable bare handle the static DAG used to carry
+  assert.deepEqual(sl2.dependsOn.slice().sort(), [
+    "SP-1_SL-1#eu-0",
+    "SP-1_SL-1#eu-1",
+  ]);
+  // and the static DAG now validates — the static/runtime asymmetry is gone
+  const verdict = validateDag(
+    dag.map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+  );
+  assert.equal(verdict.ok, true);
 });
 
 const emptyState = (over: Partial<SchedulerState> = {}): SchedulerState => ({

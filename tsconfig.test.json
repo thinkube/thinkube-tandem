@@ -71,6 +71,7 @@
     "src/mcp/vscodeStub.ts",
     "src/mcp/tagsTools.test.ts",
     "src/mcp/workUnitsDispatch.test.ts",
+    "src/mcp/createSliceDagGate.test.ts",
     "src/mcp/productsTools.test.ts",
     "src/mcp/projectsTools.test.ts"
   ],

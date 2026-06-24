@@ -57,8 +57,13 @@ import { sectionPatch } from "../methodology/sectionPatch";
 import { sliceFilesResolveInRepo } from "../methodology/sliceRepoGuard";
 import {
   validateParallelGroup,
+  validateDag,
   type ParallelSliceInput,
 } from "../methodology/parallelSlices";
+import {
+  buildUnitDag,
+  type SliceForDag,
+} from "../services/orchestratorCore";
 import {
   CONTROL_DIR_ENV,
   serializeControlRequest,
@@ -1116,6 +1121,9 @@ async function startSpecWorktree(spec: string, repo: string): Promise<unknown> {
 
 const SLICE_PATH_RE = /specs\/SP-([A-Za-z0-9]+)\/SL-(\d+)\.md$/;
 const SLICE_HANDLE_RE = /^SP-([A-Za-z0-9]+)_SL-(\d+)$/;
+// A work-unit DAG node-id: a slice handle, optionally an execution-unit suffix
+// (`#eu-{i}`). A `depends_on` must be one of these — never a footprint path.
+const NODE_ID_RE = /^SP-[A-Za-z0-9]+_SL-\d+(?:#eu-\d+)?$/;
 const VALID_STATUSES = [
   "ready",
   "doing",
@@ -1722,6 +1730,20 @@ export async function createSlice(
         `work_unit execution "${wu.execution}" must be serial | mechanize | fan-out.`,
       );
     }
+    // A work_unit `depends_on` is a DAG node-id (a slice handle `SP-{n}_SL-{m}`
+    // or a unit id `…#eu-{i}`) — never a footprint path. This is the most common
+    // authoring mistake: sequencing is by SHARED FOOTPRINT, not by listing a file
+    // as a dependency. Catch it at the door with a message that teaches the rule
+    // (TEP-th3i18 #17).
+    for (const dep of wu.depends_on ?? []) {
+      if (!NODE_ID_RE.test(String(dep).trim())) {
+        throw new Error(
+          `work_unit depends_on "${dep}" is not a node-id (a slice handle SP-{n}_SL-{m} or a unit id …#eu-{i}). ` +
+            `A work unit never depends on a file path: units serialize on a SHARED FOOTPRINT, not on logical/build order — ` +
+            `so a file another unit also touches belongs in that unit's \`footprint\`, not here. (See the methodology work-units model.)`,
+        );
+      }
+    }
   }
 
   // Preliminary-control gate (SP-th1ddy_SL-2): a slice's declared footprint must
@@ -1813,6 +1835,53 @@ export async function createSlice(
       },
     ]);
     if (!result.ok) throw new Error(result.reason);
+  }
+
+  // Authoring-time DAG gate (TEP-th3i18 #17): build the Spec's work-unit DAG —
+  // this new slice plus its siblings — and reject a malformed graph (a dangling
+  // dependency, a footprint-path dep that resolves to no node, or a cycle) **at
+  // creation**, not when a run is dispatched and burned. `buildUnitDag` resolves
+  // a slice-handle dep to that slice's unit ids (the #18 fix), so a valid
+  // inter-slice dependency on a unit-bearing slice passes. The new slice's handle
+  // is a placeholder (nothing depends on it yet — it can't be a dep target).
+  {
+    const dagSlices: SliceForDag[] = [];
+    for (const rel of await store.listSlices(args.spec)) {
+      const m = SLICE_PATH_RE.exec(rel);
+      if (!m) continue;
+      const sfm: Frontmatter = (await store.getFile(rel))?.frontmatter ?? {};
+      dagSlices.push({
+        handle: sliceHandle(m[1], Number(m[2])),
+        status: String(sfm.status ?? "ready"),
+        dependsOn: Array.isArray(sfm.depends_on)
+          ? (sfm.depends_on as string[])
+          : [],
+        files: Array.isArray(sfm.files) ? (sfm.files as string[]) : [],
+        workUnits: Array.isArray(sfm.work_units)
+          ? (sfm.work_units as SliceForDag["workUnits"])
+          : [],
+        satisfies: Array.isArray(sfm.satisfies)
+          ? (sfm.satisfies as number[])
+          : [],
+      });
+    }
+    dagSlices.push({
+      handle: `SP-${args.spec}_SL-new`,
+      status: "ready",
+      dependsOn: args.depends_on ?? [],
+      files: args.files ?? [],
+      workUnits: (args.work_units ?? []) as SliceForDag["workUnits"],
+      satisfies: args.satisfies ?? [],
+    });
+    const dagVerdict = validateDag(
+      buildUnitDag(dagSlices).map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+    );
+    if (!dagVerdict.ok) {
+      throw new Error(
+        `Work-unit DAG is malformed — refusing to create the slice:\n${dagVerdict.reason}\n` +
+          `(A depends_on names a node-id, not a file; units serialize on shared footprint, not logical order — see the methodology work-units model.)`,
+      );
+    }
   }
 
   const sliceNumber = await store.nextSliceNumber(args.spec);

@@ -170,6 +170,38 @@ export interface SchedUnit {
  * dep-slices are done) plus its work units' own `depends_on`.
  */
 export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
+  // Pre-pass: the node ids each slice emits. A unit-less slice's node IS its
+  // handle; a unit-bearing slice's nodes are `${handle}#eu-{i}`. This lets a
+  // slice-level `depends_on` (a bare handle) be **expanded** to the dep-slice's
+  // unit ids — a dependency on a slice means "wait for ALL its units." Without
+  // this, a handle dep on a unit-bearing slice is unresolvable in the static DAG
+  // (its nodes are `#eu-{i}`, never the bare handle) even though `readyFrontier`
+  // resolves it at runtime via the done-set — the static/runtime asymmetry that
+  // made `validateDag` false-reject a correctly-authored inter-slice dep
+  // (TEP-th3i18 #18). Expansion is a no-op for a unit-less dep-slice (its id ==
+  // its handle), so legacy slice graphs are unchanged.
+  const eusBySlice = new Map<string, ExecutionUnit[]>();
+  const nodeIdsBySlice = new Map<string, string[]>();
+  for (const s of slices) {
+    const units = s.workUnits ?? [];
+    if (units.length === 0) {
+      nodeIdsBySlice.set(s.handle, [s.handle]);
+    } else {
+      const eus = batchExecutionUnits(units);
+      eusBySlice.set(s.handle, eus);
+      nodeIdsBySlice.set(
+        s.handle,
+        eus.map((_, i) => `${s.handle}#eu-${i}`),
+      );
+    }
+  }
+  // A dep that names a slice handle becomes that slice's unit ids; a dep already
+  // a unit id (or an unresolvable one — a footprint path / dangling handle) is
+  // passed through so `validateDag` can flag it.
+  const expand = (deps: string[]): string[] => [
+    ...new Set(deps.flatMap((d) => nodeIdsBySlice.get(d) ?? [d])),
+  ];
+
   const out: SchedUnit[] = [];
   for (const s of slices) {
     const sliceDeps = s.dependsOn ?? [];
@@ -179,21 +211,19 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         id: s.handle,
         slice: s.handle,
         footprint: s.files ?? [],
-        dependsOn: [...sliceDeps],
+        dependsOn: expand(sliceDeps),
         shape: "serial",
       });
       continue;
     }
-    batchExecutionUnits(units).forEach((eu, i) => {
+    eusBySlice.get(s.handle)!.forEach((eu, i) => {
       const footprint = [
         ...new Set(eu.units.flatMap((u) => u.footprint ?? [])),
       ];
-      const dependsOn = [
-        ...new Set([
-          ...sliceDeps,
-          ...eu.units.flatMap((u) => u.depends_on ?? []),
-        ]),
-      ];
+      const dependsOn = expand([
+        ...sliceDeps,
+        ...eu.units.flatMap((u) => u.depends_on ?? []),
+      ]);
       const note =
         eu.units
           .map((u) => (u as WorkUnit & { note?: string }).note)
