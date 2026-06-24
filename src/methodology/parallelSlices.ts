@@ -192,11 +192,159 @@ export function validateDag(nodes: DagNode[]): ValidateDagResult {
   if (cycle) {
     return {
       ok: false,
-      reason: "Dependency cycle — the DAG must be acyclic:\n  • " + cycle.join(" → "),
+      reason:
+        "Dependency cycle — the DAG must be acyclic:\n  • " + cycle.join(" → "),
       cycle,
     };
   }
 
+  return { ok: true };
+}
+
+// ── Contract-first slicing (SP-th4wqi: the contract node) ──────────────────
+//
+// `buildUnitDag`/`readyFrontier` sequence only on shared *footprint*; work units
+// with **disjoint** footprints are treated as independent and fan out fully
+// parallel. But disjoint files can still share a **contract** — an interface,
+// name, schema, key, message or registration — and when a producer/consumer/test
+// cluster fans out with no coordination, each worker invents that contract and
+// they diverge (the SP-D / SP-th4wqe AC#3 double-red: the `ctx.promoteLocator`
+// seam and the `/promote_tep/` message at once).
+//
+// The remedy is **contract-first**: author the shared contract as one unit, and
+// have every implementer + the test declare `depends_on` that **contract node**
+// (never on each other — so they stay mutually parallel). At `create_slice` time
+// the work-unit files don't exist yet, so this gate can't parse imports; it acts
+// only on declared work_unit *structure*. Its enforceable trigger is the
+// high-confidence **unsequenced-integration** heuristic: a `*.test.*` /
+// declared-integration unit running `fan-out` with **no `depends_on`**, beside
+// ≥1 sibling implementation unit. A per-unit **opt-out flag** accepts a
+// genuinely-independent test (the escape hatch against false positives).
+//
+// This file is the **contract node** for the gate itself: `create_slice` (the
+// producer) and the AC test (the consumer) both import the shape, the check and
+// the teaching message from here — no consumer redefines them, so the rule and
+// its message can't drift (the `/promote_tep/` lesson: assert via the exported
+// constant, never a hardcoded copy).
+
+/**
+ * The per-unit opt-out field name on a work_unit. A unit carrying
+ * `contract_first_optout: true` is exempt from {@link contractFirstCheck} — the
+ * escape hatch for a genuinely-independent test that shares no contract with its
+ * siblings, so the unsequenced-integration heuristic's false positives stay
+ * unblockable by hand. Exported so the `create_slice` work_unit schema and the
+ * test name the field via this constant rather than a hardcoded string.
+ */
+export const CONTRACT_FIRST_OPTOUT_FIELD = "contract_first_optout" as const;
+
+/**
+ * The shape of a declared work_unit as the contract-first gate sees it — the
+ * single source `create_slice` (schema/handler) and the AC test both import.
+ * Mirrors the on-disk `work_units[]` frontmatter (`footprint`, `depends_on?`,
+ * `execution`, `note?`) plus the contract-first opt-out flag this spec adds.
+ */
+export interface ContractFirstWorkUnit {
+  /** Repo-relative files/objects this unit touches — the parallelism footprint. */
+  footprint: string[];
+  /** Work-unit / slice handles this unit waits on (ordering). */
+  depends_on?: string[];
+  /** serial (coupled) | mechanize (uniform data-parallel) | fan-out (heterogeneous). */
+  execution: "serial" | "mechanize" | "fan-out";
+  /** The unit's task text — what this unit does. */
+  note?: string;
+  /**
+   * Opt out of the contract-first check: assert this fan-out test/integration
+   * unit is genuinely independent (shares no contract with its siblings) so the
+   * missing `depends_on` is intentional, not an unsequenced-integration mistake.
+   */
+  contract_first_optout?: boolean;
+}
+
+/** Options for {@link contractFirstCheck}. */
+export interface ContractFirstOpts {
+  /**
+   * Override the predicate deciding whether a unit is a test/integration unit
+   * (the gate's trigger class). Defaults to {@link isIntegrationUnit} — any
+   * footprint path matching `*.test.*` / `*.spec.*` / an `integration` segment.
+   */
+  isIntegrationUnit?: (unit: ContractFirstWorkUnit) => boolean;
+}
+
+export type ContractFirstResult =
+  | { ok: true }
+  | { ok: false; message: string; offendingUnit: ContractFirstWorkUnit };
+
+/**
+ * The teaching message the contract-first refusal names. Exported so the
+ * refusal (in `create_slice`) and the test assert against **this constant**, not
+ * a duplicated literal — the `/promote_tep/` lesson: a shared message is itself a
+ * contract; if the test hardcodes its own copy, the two drift the moment one
+ * side is reworded.
+ */
+export const CONTRACT_FIRST_RULE_MSG =
+  "Contract-first slicing — define the shared contract before fanning out. " +
+  "This is a `*.test.*`/integration `fan-out` unit with no `depends_on`, placed " +
+  "beside sibling implementation units. Fanned out unsequenced, each worker will " +
+  "invent the shared contract (interface, name, schema, key, message, " +
+  "registration) on its own and they will diverge. Author the contract as one " +
+  "unit and route the test AND each implementer through it via `depends_on` that " +
+  "single contract-definition node — the implementers depend only on the contract " +
+  "node, never on each other, so the fan-out is preserved (no producer→consumer→" +
+  "test serialization). If this test is genuinely independent and shares no " +
+  `contract with its siblings, set \`${CONTRACT_FIRST_OPTOUT_FIELD}: true\` on the ` +
+  "unit to bypass this check.";
+
+/** Matches a footprint path that marks a unit as a test / integration unit. A
+ *  `.test.`/`.spec.`/`.integration.` marker only counts when it sits on a JS/TS
+ *  **source** file — so a config like `tsconfig.test.json` is NOT a test unit. */
+const TEST_OR_INTEGRATION_RE =
+  /(?:\.(?:test|spec|integration)\.[cm]?[jt]sx?$|(?:^|\/)integration(?:[./]|$))/i;
+
+/**
+ * Default {@link ContractFirstOpts.isIntegrationUnit}: a unit is a test /
+ * integration unit when any of its footprint paths looks like a test or
+ * integration file (`*.test.*`, `*.spec.*`, `*.integration.*`, or an
+ * `integration` path segment). Static-only — it reads declared structure, never
+ * file contents (the gate runs before the files exist).
+ */
+export function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
+  return (unit.footprint ?? []).some((f) =>
+    TEST_OR_INTEGRATION_RE.test(normalizeFilePath(f)),
+  );
+}
+
+/**
+ * The contract-first gate (SP-th4wqi, AC#1–3). Pure check over a slice's
+ * declared `work_units`: refuse the **unsequenced-integration** structure — a
+ * `*.test.*`/integration unit running `fan-out`, with **no `depends_on`**, beside
+ * **≥2** sibling implementation (producer) units — naming the rule ({@link CONTRACT_FIRST_RULE_MSG})
+ * and returning the offending unit, **unless** that unit carries the
+ * {@link CONTRACT_FIRST_OPTOUT_FIELD} opt-out flag. A unit that declares any
+ * `depends_on` (the contract-first remedy: a shared contract-definition node)
+ * passes — this gate refuses the *undeclared* case and lets `buildUnitDag`'s
+ * acyclicity/parallelism rules handle the rest. No I/O: fixtures in, a verdict out.
+ */
+export function contractFirstCheck(
+  units: ContractFirstWorkUnit[],
+  opts?: ContractFirstOpts,
+): ContractFirstResult {
+  const list = units ?? [];
+  const isIntegration = opts?.isIntegrationUnit ?? isIntegrationUnit;
+  // Sibling producer (non-test/integration) units. A contract-first divergence
+  // needs ≥2 producers that could each independently (re-)invent a shared seam:
+  // 0 producers → nothing to contract; 1 producer → a trivial self-contract (its
+  // own unit test), idiotic to gate. The gate engages only at ≥2 producers.
+  const producerCount = list.filter((u) => !isIntegration(u)).length;
+  if (producerCount < 2) return { ok: true };
+
+  for (const u of list) {
+    if (u.execution !== "fan-out") continue; // only fan-out integration triggers
+    if (!isIntegration(u)) continue; // only test/integration units
+    if (u[CONTRACT_FIRST_OPTOUT_FIELD] === true) continue; // explicit escape hatch
+    const sequenced = (u.depends_on ?? []).some((d) => d.trim() !== "");
+    if (sequenced) continue; // routed through a contract node (or any dep) → fine
+    return { ok: false, message: CONTRACT_FIRST_RULE_MSG, offendingUnit: u };
+  }
   return { ok: true };
 }
 
@@ -218,7 +366,9 @@ function relToRepo(p: string, repoRoot: string): string {
   return normalizeFilePath(t);
 }
 
-export type FootprintDecision = { allow: true } | { allow: false; reason: string };
+export type FootprintDecision =
+  | { allow: true }
+  | { allow: false; reason: string };
 
 /**
  * Decide whether a worker scoped to `footprint` may run `toolName` on `toolInput`

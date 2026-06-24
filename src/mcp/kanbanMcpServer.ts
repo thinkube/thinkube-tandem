@@ -58,12 +58,17 @@ import { sliceFilesResolveInRepo } from "../methodology/sliceRepoGuard";
 import {
   validateParallelGroup,
   validateDag,
+  // Contract-first gate (SP-th4wqi): consumed from parallelSlices.ts — the pure
+  // check, its teaching message, and the shared opt-out field name. NEVER
+  // redefined here; a second definition is exactly the contract divergence this
+  // gate exists to prevent (the SP-th4wqe AC#3 failure).
+  contractFirstCheck,
+  CONTRACT_FIRST_RULE_MSG,
+  CONTRACT_FIRST_OPTOUT_FIELD,
+  type ContractFirstWorkUnit,
   type ParallelSliceInput,
 } from "../methodology/parallelSlices";
-import {
-  buildUnitDag,
-  type SliceForDag,
-} from "../services/orchestratorCore";
+import { buildUnitDag, type SliceForDag } from "../services/orchestratorCore";
 import {
   CONTROL_DIR_ENV,
   serializeControlRequest,
@@ -813,12 +818,21 @@ const TOOL_DEFS = [
                 enum: ["serial", "mechanize", "fan-out"],
               },
               note: { type: "string" },
+              // Contract-first opt-out (SP-th4wqi). The property KEY is the shared
+              // CONTRACT_FIRST_OPTOUT_FIELD constant so the schema's field name
+              // can never drift from the name `contractFirstCheck` reads.
+              [CONTRACT_FIRST_OPTOUT_FIELD]: {
+                type: "boolean",
+                description:
+                  "Opt this unit out of the contract-first gate — accept a genuinely-independent `*.test.*`/integration `fan-out` unit that has no `depends_on` even though it sits beside sibling implementation units. Use ONLY when the test truly shares no contract with its siblings; the default refusal exists because " +
+                  CONTRACT_FIRST_RULE_MSG,
+              },
             },
             required: ["footprint", "execution"],
             additionalProperties: false,
           },
           description:
-            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), depends_on?, execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated.",
+            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), depends_on?, execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `depends_on` beside sibling implementers is refused by the contract-first gate (route it through a shared contract-definition node, or set the opt-out flag for a genuinely-independent test).",
         },
         docs: {
           type: "string",
@@ -1766,6 +1780,10 @@ export async function createSlice(
       depends_on?: string[];
       execution: string;
       note?: string;
+      // Contract-first opt-out (SP-th4wqi). The authoritative field name is the
+      // shared `CONTRACT_FIRST_OPTOUT_FIELD` constant (the schema key + what
+      // `contractFirstCheck` reads); this literal is the local TS view of it.
+      contract_first_optout?: boolean;
     }[];
     priority?: string;
     docs?: string;
@@ -1952,7 +1970,10 @@ export async function createSlice(
       satisfies: args.satisfies ?? [],
     });
     const dagVerdict = validateDag(
-      buildUnitDag(dagSlices).map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+      buildUnitDag(dagSlices).map((u) => ({
+        id: u.id,
+        dependsOn: u.dependsOn,
+      })),
     );
     if (!dagVerdict.ok) {
       throw new Error(
@@ -1960,6 +1981,29 @@ export async function createSlice(
           `(A depends_on names a node-id, not a file; units serialize on shared footprint, not logical order — see the methodology work-units model.)`,
       );
     }
+  }
+
+  // Contract-first gate (SP-th4wqi). The DAG check above proves the graph is
+  // well-formed; this one proves it isn't an **unsequenced-integration** fan-out:
+  // a `*.test.*`/declared-integration `fan-out` unit with no `depends_on` sitting
+  // beside ≥1 sibling implementation unit. With nothing sequencing it after a
+  // shared contract-definition node, the test and its implementers each invent the
+  // shared seam and diverge — the SP-D / SP-th4wqe AC#3 failure. The fix is a
+  // shared contract node every unit `depends_on` (parallelism preserved: no
+  // sibling↔sibling edges); a per-unit opt-out flag accepts a genuinely-independent
+  // test. The pure check + its teaching message are imported from parallelSlices.ts
+  // and never restated here — restating them is the very divergence this gates.
+  const contractVerdict = contractFirstCheck(
+    (args.work_units ?? []) as ContractFirstWorkUnit[],
+  );
+  if (!contractVerdict.ok) {
+    // The check returns the static rule message PLUS the structured offending
+    // unit, so the caller composes the refusal: the imported teaching message
+    // (never restated) and the offending unit named by its footprint, so the
+    // author sees exactly which unit to route through a contract node or opt out.
+    const fp =
+      contractVerdict.offendingUnit.footprint?.join(", ") || "(no footprint)";
+    throw new Error(`${contractVerdict.message}\n  • offending unit: ${fp}`);
   }
 
   const sliceNumber = await store.nextSliceNumber(args.spec);

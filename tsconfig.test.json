@@ -79,6 +79,7 @@
     "src/mcp/workUnitsDispatch.test.ts",
     "src/mcp/implementsPromoteDispatch.test.ts",
     "src/mcp/createSliceDagGate.test.ts",
+    "src/mcp/createSliceContractFirst.test.ts",
     "src/mcp/productsTools.test.ts",
     "src/mcp/projectsTools.test.ts"
   ],
