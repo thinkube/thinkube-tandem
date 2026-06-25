@@ -400,12 +400,28 @@ export class WorktreeService {
       { timeout: 10000 },
     );
     if (opts.assumeMerged) {
-      // The branch is merged (work is on the remote base) — drop the local ref so
-      // the Space's branch list stays one-per-active-Spec. Best-effort.
+      // The branch is merged (work is on the remote base) and the worktree is now gone,
+      // so drop BOTH the local ref and the remote branch — the cleanup the merge no
+      // longer does via `--delete-branch` (which raced this very worktree, #10). Order
+      // matters: worktree removed first (above), THEN the branch, so neither delete can
+      // fail on "branch used by worktree". Best-effort — a failed branch cleanup must
+      // never turn a landed, stamped accept into an error.
       await execFileAsync(
         "git",
         ["-C", canonicalRepo, "branch", "-D", `spec/SP-${specNumber}`],
         { timeout: 5000 },
+      ).catch(() => undefined);
+      await execFileAsync(
+        "git",
+        [
+          "-C",
+          canonicalRepo,
+          "push",
+          "origin",
+          "--delete",
+          `spec/SP-${specNumber}`,
+        ],
+        { timeout: 30000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
       ).catch(() => undefined);
     }
     return wt.path;

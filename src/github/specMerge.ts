@@ -146,9 +146,15 @@ const ghOps: PrOps = {
     }
   },
   async merge(branch, cwd) {
+    // Merge ONLY — never `--delete-branch`. That deletes the local branch as part of
+    // the merge, which FAILS when the Spec's worktree still holds it ("cannot delete
+    // branch … used by worktree") and aborts the whole accept even though the PR
+    // merged (TEP-th3i18 #10). Branch cleanup is the retire step's job, run AFTER the
+    // worktree is removed — see `WorktreeService.remove` (merge → retire worktree →
+    // delete branch, the transaction #10 always described).
     const { stdout } = await execFileAsync(
       "gh",
-      ["pr", "merge", branch, "--merge", "--delete-branch"],
+      ["pr", "merge", branch, "--merge"],
       { cwd, timeout: 60000 },
     );
     return stdout.trim();
