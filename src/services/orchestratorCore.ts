@@ -10,6 +10,8 @@
  * defaulting to `child_process` so the runner + the report builder stay unit-testable with fakes.
  */
 import { spawn } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 
 export interface SliceRow {
   /** Slice handle, e.g. "SP-3_SL-2". */
@@ -618,14 +620,165 @@ export type AcExec = (
   cwd: string,
 ) => Promise<{ code: number | null; output: string }>;
 
-const defaultAcExec: AcExec = (run, cwd) =>
-  new Promise((resolve, reject) => {
-    const proc = spawn(run, { cwd, shell: true });
+/** Knobs for {@link runBounded}: the time bound + a fixed base env (no ambient PATH leaks in). */
+export interface BoundedOptions {
+  /** Hard wall-clock bound (ms). On expiry the child's whole process group is killed. */
+  timeoutMs: number;
+  /**
+   * The FIXED base environment handed to the child — runBounded never folds in `process.env`
+   * wholesale. `env.PATH` is the scrubbed base PATH onto which `${cwd}/node_modules/.bin` is
+   * prepended; everything else (other than the always-injected `GIT_TERMINAL_PROMPT`) passes
+   * through verbatim. Pass `process.env` explicitly if you want the ambient env.
+   */
+  env: NodeJS.ProcessEnv;
+  /** Grace between SIGTERM and the SIGKILL backstop (ms). Default 250. */
+  killGraceMs?: number;
+}
+
+/** Exit code we resolve with when a bounded run is killed for exceeding its `timeoutMs`. */
+export const TIMED_OUT_CODE = 124;
+/** Marker appended to a timed-out run's output (and matched by the closing-gate report). */
+export const TIMED_OUT_MARKER = "[timed out]";
+/** Default bound for an unparameterized AC verification: generous (~10 minutes), per-AC overridable. */
+export const DEFAULT_AC_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Linux process-group membership via `/proc`: the pids whose process-group id (field 5 of
+ * `/proc/<pid>/stat`) equals `leaderPid`, EXCLUDING the leader itself. The shell spawned with
+ * `detached:true` is its own group leader (pgid == pid), so its whole descendant tree shares that
+ * pgid — these are the grandchildren we must reap. Returns `[]` where `/proc` is unavailable
+ * (non-Linux); callers then fall back to the group `kill(-pid, …)` path. Never throws.
+ */
+function groupDescendants(leaderPid: number): number[] {
+  const out: number[] = [];
+  let names: string[];
+  try {
+    names = fs.readdirSync("/proc");
+  } catch {
+    return out; // no /proc (non-Linux) — caller falls back to group kill.
+  }
+  for (const name of names) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    if (pid === leaderPid) continue;
+    let stat: string;
+    try {
+      stat = fs.readFileSync(`/proc/${name}/stat`, "utf8");
+    } catch {
+      continue; // process vanished mid-scan — fine.
+    }
+    // `pid (comm) state ppid pgrp …` — comm can contain spaces/parens, so split AFTER the last ')'.
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    if (Number(fields[2]) === leaderPid) out.push(pid); // fields[2] == pgrp
+  }
+  return out;
+}
+
+/**
+ * Run `run` in `cwd` as a bounded, non-interactive shell child (finding #12/#13/#7):
+ *
+ *  - **detached** → the child leads its own process group, so a timeout kill reaches the WHOLE tree:
+ *    a backgrounded grandchild (`sh -c 'sleep & wait'`) can't orphan.
+ *  - **stdin = /dev/null** (`stdio: ['ignore', …]`) → any read sees immediate EOF; nothing can wedge
+ *    waiting for interactive input.
+ *  - **env** = the fixed base `opts.env` + `GIT_TERMINAL_PROMPT=0` (git never prompts) + a PATH with
+ *    `${cwd}/node_modules/.bin` prepended onto `opts.env.PATH` (repo-local toolchain wins; no ambient
+ *    PATH is folded in — only what the caller put in the base env).
+ *  - **on timeout** → signal the grandchildren (`groupDescendants`) FIRST so the shell leader's
+ *    `wait` reaps them and then exits (node reaps the leader) — this frees their pids even on hosts
+ *    whose PID 1 doesn't reap orphans. A `kill(-pid, 'SIGKILL')` group backstop after `killGraceMs`
+ *    catches a leader/straggler that ignores SIGTERM. Resolves `{ code: 124, output: … + '[timed
+ *    out]' }`. No wall-clock is reported — only the verdict.
+ *
+ * Resolves with the child's exit `code` + combined stdout/stderr; rejects only if the shell itself
+ * can't be spawned (a not-found *command* surfaces as a non-zero shell exit, not a reject).
+ */
+export function runBounded(
+  run: string,
+  cwd: string,
+  opts: BoundedOptions,
+): Promise<{ code: number | null; output: string }> {
+  return new Promise((resolve, reject) => {
+    const base = opts.env ?? {};
+    const localBin = path.join(cwd, "node_modules", ".bin");
+    const childPath = base.PATH
+      ? `${localBin}${path.delimiter}${base.PATH}`
+      : localBin;
+    const env: NodeJS.ProcessEnv = {
+      ...base,
+      GIT_TERMINAL_PROMPT: "0",
+      PATH: childPath,
+    };
+
+    const proc = spawn(run, {
+      cwd,
+      shell: true,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env,
+    });
+
     let output = "";
+    let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const signal = (pid: number, sig: NodeJS.Signals): void => {
+      try {
+        process.kill(pid, sig);
+      } catch {
+        // already gone — nothing to do.
+      }
+    };
+
+    const settle = (result: { code: number | null; output: string }): void => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      resolve(result);
+    };
+
     proc.stdout?.on("data", (d: Buffer) => (output += d.toString()));
     proc.stderr?.on("data", (d: Buffer) => (output += d.toString()));
-    proc.on("error", reject);
-    proc.on("close", (code) => resolve({ code, output }));
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      reject(err);
+    });
+    proc.on("close", (code) => settle({ code, output }));
+
+    killTimer = setTimeout(() => {
+      const pid = proc.pid;
+      if (typeof pid === "number") {
+        // Reap grandchildren via the shell leader: SIGTERM the descendants so the leader's `wait`
+        // returns and reaps them, then the leader exits on its own and node reaps it. This frees
+        // the pids even where PID 1 doesn't reap orphans (so the group is *truly* gone, not zombied).
+        for (const child of groupDescendants(pid)) signal(child, "SIGTERM");
+        // Backstop: SIGKILL the whole group (covers a no-descendant leader and any SIGTERM-ignorer).
+        // unref'd so the timer can't keep the event loop alive after we've resolved.
+        setTimeout(() => {
+          for (const child of groupDescendants(pid)) signal(child, "SIGKILL");
+          signal(-pid, "SIGKILL"); // negative pid → the whole process group
+        }, opts.killGraceMs ?? 250).unref?.();
+      }
+      settle({
+        code: TIMED_OUT_CODE,
+        output: output + (output.endsWith("\n") ? "" : "\n") + TIMED_OUT_MARKER,
+      });
+    }, opts.timeoutMs);
+  });
+}
+
+/**
+ * Default `AcExec`: a {@link runBounded} call with the generous default bound and the ambient
+ * environment as its base (the real cluster/local run needs a working PATH). The bound, the
+ * non-interactive stdin, `GIT_TERMINAL_PROMPT=0`, and the repo-local `node_modules/.bin` prefix
+ * all come from `runBounded` — this wrapper just supplies the policy defaults.
+ */
+const defaultAcExec: AcExec = (run, cwd) =>
+  runBounded(run, cwd, {
+    timeoutMs: DEFAULT_AC_TIMEOUT_MS,
+    env: process.env,
   });
 
 /** Format one verification's evidence: the command, its exit code, and a clipped output tail. */
@@ -702,6 +855,159 @@ export function checkAcOrdinals(body: string, ordinals: number[]): string {
     }
   }
   return lines.join("\n");
+}
+
+// ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────────
+//
+// A run can land every execution unit and then silently wedge — the finalize tail
+// (commit the Spec, write DELIVERY.md, advance the slice off `ready`) never fires, so
+// the work sits done-but-uncommitted and the loop stalls without surfacing anything.
+// `finalizationVerdict` is the pure detector wired into `dispatchSpec`: consulted once
+// the run believes it's quiescent, it reports `{ wedged }` when the units are done but
+// the finalize markers are absent, so the shell can surface Requires-attention with a
+// diagnosis instead of looping forever. The diagnosis text is exported as a constant so
+// the test asserts against it (never a hand-copied string that can drift).
+
+/**
+ * The single, machine-checkable phrase a finalization wedge is diagnosed with. The watchdog
+ * surfaces it (verbatim, possibly with appended specifics) and the test asserts via THIS constant
+ * — never a hardcoded copy — so the message and its assertion can never silently diverge.
+ */
+export const FINALIZATION_WEDGED_DIAGNOSIS =
+  "units done but run never finalized";
+
+/**
+ * What `finalizationVerdict` inspects: whether the run reached quiescence (every dispatched
+ * execution unit landed) and whether each finalize marker is present. A finalized run has a
+ * commit SHA, a written DELIVERY.md, and no slice still sitting on `ready`.
+ */
+export interface FinalizationState {
+  /** Did every dispatched execution unit land (the run believes it's complete)? */
+  unitsAllDone: boolean;
+  /** The HEAD sha the Spec was committed at — falsy (empty/undefined) ⇒ nothing committed. */
+  committedSha?: string;
+  /** Was the auditable DELIVERY.md report written this run? */
+  deliveryWritten: boolean;
+  /** Slices still in `ready` after the run — non-empty ⇒ a slice was never advanced off `ready`. */
+  slicesStillReady?: string[];
+}
+
+/**
+ * Pure finalization watchdog (SP-th4wqc_SL-2): given the run's quiescence + finalize-marker
+ * state, return `'finalized'` when the run is healthy (or not yet at the finalize check), or
+ * `{ wedged }` when the units are **done** but one or more finalize markers — commit SHA,
+ * DELIVERY.md, slice moved off `ready` — are **absent**. The `wedged` string always contains
+ * `FINALIZATION_WEDGED_DIAGNOSIS` (assert with that constant, e.g. `.includes` / `toContain`),
+ * with the missing markers appended for the operator. When the units are not all done there is
+ * nothing to finalize yet, so the verdict is `'finalized'` (no wedge) — the caller is expected to
+ * consult this only at run quiescence.
+ */
+export function finalizationVerdict(
+  state: FinalizationState,
+): "finalized" | { wedged: string } {
+  if (!state.unitsAllDone) return "finalized";
+  const missing: string[] = [];
+  if (!state.committedSha) missing.push("commit SHA");
+  if (!state.deliveryWritten) missing.push("DELIVERY.md");
+  if ((state.slicesStillReady ?? []).length) missing.push("slice off `ready`");
+  if (!missing.length) return "finalized";
+  return {
+    wedged: `${FINALIZATION_WEDGED_DIAGNOSIS} (missing: ${missing.join(", ")})`,
+  };
+}
+
+// ── Atomic, resumable per-slice commit (SP-th4wqc_SL-3 / TEP-th3i18 #9) ────
+//
+// Today commit is all-or-nothing at run quiescence, so a partial gate or a git
+// failure can leave a slice on `Done` with uncommitted work — a sticky-Done lie. SL-3
+// reworks the finalize tail to **commit-before-Done, per slice**, and makes a re-run
+// **resume** rather than re-author. Two pure functions are the single contract the
+// `OrchestratorService` shell + the AC4 test read:
+//
+//   • `commitPlan(sliceOutcomes)` — the per-slice DECISION: which slices are eligible to
+//     commit-then-Done (units landed ∧ gate-green) and which must roll back to `ready`.
+//   • `resumeDecision(sliceState)` — what a (re-)run does with a slice it encounters:
+//     `'author'` (run the units), `'commit'` (work is already present uncommitted — commit
+//     it WITHOUT re-authoring), or `'skip'` (already committed/Done/archived — leave it).
+//
+// Both are I/O-free: the shell supplies the observed state, acts on the verdict (real git),
+// and — because commit itself is I/O that can fail — applies the **commit-failure protocol**
+// documented on `commitPlan`: attempt each `commit` handle's git commit; a handle whose commit
+// fails is treated as a rollback (→ `ready`, NOT Done), so only commit-succeeded slices end Done.
+
+/** One slice's outcome feeding the per-slice commit decision (SP-th4wqc_SL-3 / #9). */
+export interface SliceOutcome {
+  /** Slice handle, e.g. "SP-3_SL-2". */
+  handle: string;
+  /** Did every execution unit of this slice land (its worker(s) finished, no needs-input / failure)? */
+  unitsLanded: boolean;
+  /** Did this slice's closing-gate verifications all pass? A slice with no gate of its own inherits
+   *  the run-level verdict — the shell passes the effective (per-slice) result here. */
+  gatePassed: boolean;
+}
+
+/**
+ * The per-slice commit decision (SP-th4wqc_SL-3). `commit` lists the handles whose work is complete
+ * AND gate-green — the shell commits each (commit-before-Done) then marks it Done. `rollback` lists
+ * the handles that must NOT end Done — moved back to `ready` so a later run re-attempts them.
+ */
+export interface CommitPlan {
+  /** Handles eligible to commit-then-Done (units landed ∧ gate passed). */
+  commit: string[];
+  /** Handles rolled back to `ready` (units didn't all land, or the gate failed). */
+  rollback: string[];
+}
+
+/**
+ * Pure per-slice commit planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): partition the run's slice
+ * outcomes into the slices to **commit** (every unit landed ∧ the slice's gate passed) and the
+ * slices to **roll back** to `ready` (anything else — partial landing or a failed gate). This is
+ * the no-sticky-Done invariant: a slice is only ever committed-then-Done when its work is complete
+ * and green, so a partial-gate failure rolls the rest to `ready` rather than freezing them Done.
+ *
+ * Commit is I/O that can still fail at the git layer (e.g. AC4's fake git that fails one slice's
+ * commit). The shell honours this **commit-failure protocol**: attempt each `commit` handle's git
+ * commit in order; if a commit fails, treat that handle as a rollback (→ `ready`, NOT Done). Only
+ * handles whose commit actually succeeded end Done — so no slice is ever Done with uncommitted work.
+ */
+export function commitPlan(sliceOutcomes: SliceOutcome[]): CommitPlan {
+  const commit: string[] = [];
+  const rollback: string[] = [];
+  for (const o of sliceOutcomes ?? []) {
+    if (o && o.unitsLanded && o.gatePassed) commit.push(o.handle);
+    else if (o) rollback.push(o.handle);
+  }
+  return { commit, rollback };
+}
+
+/** What a slice looks like at the start of a (re-)run, for the resume decision (SP-th4wqc_SL-3 / #9). */
+export interface SliceState {
+  /** Frontmatter status: ready | doing | done | requires-attention | archived. */
+  status: string;
+  /** Did every execution unit of this slice already land — its work present in the worktree? */
+  unitsLanded: boolean;
+  /** Has this slice's work already been committed (a commit SHA recorded for it)? */
+  committed: boolean;
+}
+
+/**
+ * Pure resume planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): decide what a (re-)run does with a slice it
+ * encounters, so a resume **commits** rather than **re-authors** already-present work — the AC4
+ * invariant the spy `runUnit` asserts (not called for a complete-but-uncommitted slice on re-run).
+ *
+ *   • `'skip'`   — archived, or already committed (Done): nothing to do.
+ *   • `'commit'` — units already landed but NOT yet committed (complete-but-uncommitted): commit it
+ *                  WITHOUT re-authoring — the frontier never re-dispatches a worker for it.
+ *   • `'author'` — work not yet present: (re-)author the units as normal.
+ */
+export function resumeDecision(
+  sliceState: SliceState,
+): "author" | "commit" | "skip" {
+  const status = (sliceState?.status ?? "").toLowerCase();
+  if (status === "archived") return "skip";
+  if (sliceState?.committed) return "skip";
+  if (sliceState?.unitsLanded) return "commit";
+  return "author";
 }
 
 /** One execution unit's outcome, for the delivery report's per-unit table. */

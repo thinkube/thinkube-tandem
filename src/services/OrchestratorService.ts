@@ -32,12 +32,18 @@ import {
   runAcVerifications,
   checkAcOrdinals,
   buildDeliveryReport,
+  finalizationVerdict,
+  FINALIZATION_WEDGED_DIAGNOSIS,
+  commitPlan,
+  resumeDecision,
   type SliceForDag,
   type SchedUnit,
   type SchedulerState,
   type WorkUnit,
   type AcVerification,
   type AcResult,
+  type FinalizationState,
+  type SliceOutcome,
 } from "./orchestratorCore";
 import { validateDag, footprintGuard } from "../methodology/parallelSlices";
 import {
@@ -98,8 +104,14 @@ export interface OrchestratorDeps {
     sessionId?: string,
     unitId?: string,
   ) => Promise<void>;
-  /** Commit the worktree once the whole Spec is Done (tests): defaults to `git add -A && git commit`. */
-  commit?: (specNumber: string, cwd: string) => Promise<void>;
+  /** Commit ONE slice's work before it is marked Done (SP-th4wqc_SL-3 / #9): per-slice
+   *  commit-before-Done. Rejecting signals a git failure → the orchestrator rolls that slice back to
+   *  `ready` (NOT Done) per `commitPlan`'s commit-failure protocol. Defaults to `git add -A && git
+   *  commit` of the slice's footprint in the worktree (tests inject a fake git that fails one slice). */
+  commit?: (handle: string, specNumber: string, cwd: string) => Promise<void>;
+  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails — no slice ever ends
+   *  Done with uncommitted work, so a later run re-attempts it. Defaults to stamping `status: ready`. */
+  rollbackToReady?: (handle: string) => Promise<void>;
   /** Tear down a finished Spec — close its worktree (tests): defaults to `WorktreeService.remove`. */
   teardown?: (specNumber: string) => Promise<void>;
   /** Run one execution unit (tests): overrides the SDK substrate; `onPark` parks it resident. */
@@ -144,6 +156,9 @@ export interface SpecRunResult {
   attention: string[];
   /** Slices parked needs-input (a worker asked a question) this run. */
   needsInput: string[];
+  /** Slices rolled back to `ready` this run because their commit failed (SP-th4wqc_SL-3) — a slice
+   *  is never left Done with uncommitted work; a later run re-attempts (or resumes) it. */
+  rolledBack: string[];
   /** The whole Spec landed and was committed. */
   committed: boolean;
   /** Board-relative path of the written delivery summary (DELIVERY.md), set when the report is written. */
@@ -161,6 +176,15 @@ export class OrchestratorService {
     specBody: "",
     sliceBodies: new Map(),
   };
+
+  /** Per-slice resume state read from frontmatter (SP-th4wqc_SL-3): whether a slice's units already
+   *  landed (`units_landed`) and whether its work was already committed (`committed` / `commit_sha`).
+   *  `resumeDecision` consults this so a re-run COMMITS a complete-but-uncommitted slice rather than
+   *  re-authoring it (the frontier never re-dispatches a worker for it). Loaded once per dispatchSpec. */
+  private sliceResumeState: Map<
+    string,
+    { unitsLanded: boolean; committed: boolean }
+  > = new Map();
 
   /** Fetch the parent spec doc + each slice body from the board, to embed in worker prompts. */
   private async loadPromptContext(specNumber: string): Promise<void> {
@@ -190,12 +214,23 @@ export class OrchestratorService {
   private async buildSlices(specNumber: string): Promise<SliceForDag[]> {
     const { store } = this.deps;
     const slices: SliceForDag[] = [];
+    this.sliceResumeState = new Map();
     for (const rel of await store.listSlices(specNumber)) {
       const m = SLICE_REL_RE.exec(rel);
       if (!m) continue;
       const fm = (await store.getFile(rel))?.frontmatter;
+      const handle = store.sliceHandle(specNumber, Number(m[2]));
+      // Resume markers (SP-th4wqc_SL-3): a prior run that landed the units but couldn't commit
+      // stamps `units_landed: true` without a `commit_sha`; `resumeDecision` then COMMITS rather
+      // than re-authoring it on the next run. `committed`/`commit_sha` mark an already-landed slice.
+      this.sliceResumeState.set(handle, {
+        unitsLanded: fm?.units_landed === true,
+        committed:
+          fm?.committed === true ||
+          (typeof fm?.commit_sha === "string" && !!fm.commit_sha),
+      });
       slices.push({
-        handle: store.sliceHandle(specNumber, Number(m[2])),
+        handle,
         status: String(fm?.status ?? "ready"),
         dependsOn: Array.isArray(fm?.depends_on)
           ? (fm!.depends_on as string[])
@@ -235,6 +270,7 @@ export class OrchestratorService {
       advanced: [],
       attention: [],
       needsInput: [],
+      rolledBack: [],
       committed: false,
       acResults: [],
     };
@@ -272,13 +308,35 @@ export class OrchestratorService {
     const doneSlices = new Set<string>();
     // Slices whose every unit landed this run — the candidates the closing gate verifies.
     const landed = new Set<string>();
+    // Slices RESUMED this run (SP-th4wqc_SL-3): their units already landed in a prior run but were
+    // never committed, so `resumeDecision` says COMMIT (not author). Their units are seeded done so
+    // the frontier never re-dispatches a worker for them — the resume commits the present work.
+    const resumeCommit = new Set<string>();
     for (const s of slices) {
       const st = s.status.toLowerCase();
       const ids = (unitsBySlice.get(s.handle) ?? []).map((u) => u.id);
-      if (st === "done" || st === "archived") {
+      const rs = this.sliceResumeState.get(s.handle) ?? {
+        unitsLanded: false,
+        committed: false,
+      };
+      const decision = resumeDecision({
+        status: s.status,
+        unitsLanded: rs.unitsLanded,
+        committed: rs.committed,
+      });
+      if (decision === "skip" || st === "done" || st === "archived") {
+        // Already committed / Done / archived — nothing to do; mark done so dependents unblock.
         state.done.add(s.handle);
         doneSlices.add(s.handle);
         ids.forEach((id) => state.done.add(id));
+      } else if (decision === "commit") {
+        // Complete-but-uncommitted — RESUME: commit the already-present work WITHOUT re-authoring.
+        // Seed its units done (so the frontier never re-dispatches them) and record it as a landed
+        // candidate the closing gate verifies + the per-slice commit then lands.
+        state.done.add(s.handle);
+        ids.forEach((id) => state.done.add(id));
+        landed.add(s.handle);
+        resumeCommit.add(s.handle);
       } else if (st !== "ready" && st !== "requires-attention") {
         // `doing` (in-flight elsewhere) — not dispatchable, not done (deps wait). A
         // `requires-attention` slice IS re-dispatchable: clicking ▶ again retries it (the
@@ -294,7 +352,7 @@ export class OrchestratorService {
       ).length;
       if (rem > 0) remaining.set(slice, rem);
     }
-    if (readyFrontier(dag, state).length === 0) {
+    if (readyFrontier(dag, state).length === 0 && resumeCommit.size === 0) {
       output.appendLine(`▸ SP-${specNumber}: nothing ready to dispatch.`);
       return result;
     }
@@ -431,40 +489,84 @@ export class OrchestratorService {
 
     // ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────
     // At Spec quiescence — every slice's units landed (none failed / parked / blocked) — run the
-    // Spec's DECLARED per-AC verifications as one full plan and gate Done/commit on the result.
+    // Spec's DECLARED per-AC verifications as one full plan. The gate returns the landed slices that
+    // are AC-green (→ their satisfied ordinals); a red / un-runnable slice is flagged
+    // requires-attention in place. The green slices are the input to the per-slice commit below.
     const everyLanded = slices.every(
       (s) => doneSlices.has(s.handle) || landed.has(s.handle),
     );
+    const greenByGate = new Map<string, number[]>();
     if (everyLanded && landed.size > 0) {
-      await this.runClosingGate(
+      const green = await this.runClosingGate(
         specNumber,
         worktreePath,
         slices,
         landed,
-        doneSlices,
         unitsBySlice,
         state,
         blockSlice,
         result,
       );
+      for (const [h, ords] of green) greenByGate.set(h, ords);
     } else if (landed.size > 0) {
       output.appendLine(
         `▸ SP-${specNumber}: paused — ${result.attention.length} need attention / ${result.needsInput.length} need input; closing gate not run, nothing committed.`,
       );
     }
 
-    // Commit ONCE when every slice is Done — the closing gate is the only path to Done now, so
-    // this holds iff the gate passed for every slice (workers never commit; the orchestrator owns
-    // git). The auditable report is written on EVERY completion (pass or fail) — its existence is
-    // not gated on the commit, so a failed gate is just as durable/auto-openable as a passing one.
+    // ── Per-slice commit-before-Done (SP-th4wqc_SL-3 / TEP-th3i18 #9) ──────
+    // No more all-or-nothing commit. `commitPlan` is the per-slice decision: only landed ∧ gate-green
+    // slices are eligible to commit-then-Done. We commit each slice BEFORE marking it Done; a slice
+    // whose git commit FAILS rolls back to `ready` (the commit-failure protocol) and is NOT advanced —
+    // so no slice ever ends Done with uncommitted work. A partial-gate / partial-commit failure thus
+    // commits the slices that passed and rolls the rest back, rather than freezing them Done.
+    const outcomes: SliceOutcome[] = slices
+      .filter((s) => greenByGate.has(s.handle))
+      .map((s) => ({ handle: s.handle, unitsLanded: true, gatePassed: true }));
+    const plan = commitPlan(outcomes);
+    const checkedOrdinals: number[] = [];
+    for (const handle of plan.commit) {
+      try {
+        // commit-before-Done: the commit must succeed before the slice can be advanced.
+        await this.commit(handle, specNumber, worktreePath);
+      } catch (err) {
+        // Commit-failure protocol: roll this slice back to `ready` (NOT Done) so a later run
+        // re-attempts (or resumes) it; block its units this run so nothing else lands on it.
+        await this.rollbackToReady(handle);
+        result.rolledBack.push(handle);
+        (unitsBySlice.get(handle) ?? []).forEach((u) =>
+          state.blocked.add(u.id),
+        );
+        output.appendLine(
+          `⚑ ${handle}: commit failed → rolled back to ready (not Done) — ${(err as Error).message}`,
+        );
+        continue;
+      }
+      doneSlices.add(handle);
+      await this.advance(handle);
+      result.advanced.push(handle);
+      checkedOrdinals.push(...(greenByGate.get(handle) ?? []));
+      output.appendLine(`✓ ${handle}: committed → Done.`);
+    }
+
+    // Tick exactly the satisfied AC ordinals of the COMMITTED slices on the Spec (so the accept gate
+    // — every AC checked — can pass). One write with the union; out-of-range/checked are no-ops.
+    const ordinals = [...new Set(checkedOrdinals)].sort((a, b) => a - b);
+    if (ordinals.length) {
+      await this.checkAcs(specNumber, ordinals);
+      output.appendLine(
+        `▸ SP-${specNumber}: checked AC ${ordinals.map((n) => `#${n}`).join(", ")} on the Spec.`,
+      );
+    }
+
+    // The whole Spec is committed iff every slice ended Done (each via its own successful commit).
     const allDone = slices.every((s) => doneSlices.has(s.handle));
-    if (allDone && landed.size > 0) {
-      await this.commit(specNumber, worktreePath);
-      result.committed = true;
-      output.appendLine(`✓ SP-${specNumber}: all slices Done — committed.`);
+    result.committed = allDone && landed.size > 0;
+    if (result.committed) {
+      output.appendLine(`✓ SP-${specNumber}: every slice committed → Done.`);
     } else if (landed.size > 0) {
       output.appendLine(
-        `⚑ SP-${specNumber}: closing gate did not pass for every slice — ${result.attention.length} requires-attention; nothing committed.`,
+        `⚑ SP-${specNumber}: Spec not fully committed — ${result.attention.length} requires-attention, ${result.rolledBack.length} rolled back.`,
       );
     }
 
@@ -477,9 +579,55 @@ export class OrchestratorService {
       );
     }
 
-    // Tear down only a fully-committed Spec (its branch persists for accept); a stalled Spec keeps
-    // its worktree for the human's re-run / `/attend`. Always drop leftover parked agents.
-    if (result.committed) {
+    // ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────
+    // A run can land every unit and then silently wedge: the finalize tail above (commit, write
+    // DELIVERY.md, advance the slice off `ready`) believed it ran, but a marker is actually absent
+    // — no real commit SHA, no report on disk — so the work sits done-but-uncommitted and the loop
+    // would otherwise stall without surfacing anything. We consult the pure `finalizationVerdict`
+    // ONLY at a clean quiescence (no slice flagged attention / needs-input / rolled back this run):
+    // there the run BELIEVED it finalized, so any missing marker is a genuine wedge — not a normal
+    // pause at the closing gate, and not an EXPLICIT per-slice commit rollback (SP-th4wqc_SL-3),
+    // which is a handled outcome the slice already moved back to `ready` for, not a silent wedge.
+    // A `{ wedged }` verdict surfaces the affected slices Requires-attention with the exported
+    // diagnosis so a human (or a re-run) picks it up instead of a silent loop.
+    let wedged = false;
+    const cleanQuiescence =
+      result.dispatched > 0 &&
+      result.attention.length === 0 &&
+      result.needsInput.length === 0 &&
+      result.rolledBack.length === 0;
+    if (cleanQuiescence && everyLanded && landed.size > 0) {
+      const finalizeState: FinalizationState = {
+        unitsAllDone: true,
+        committedSha: result.committed
+          ? await this.gitShortSha(worktreePath)
+          : "",
+        deliveryWritten: !!result.deliveryDoc,
+        slicesStillReady: slices
+          .filter((s) => landed.has(s.handle) && !doneSlices.has(s.handle))
+          .map((s) => s.handle),
+      };
+      const verdict = finalizationVerdict(finalizeState);
+      if (typeof verdict !== "string") {
+        wedged = true;
+        // The run never truly finalized — don't let `committed` (set optimistically above) hide it.
+        result.committed = false;
+        output.appendLine(
+          `⚑ SP-${specNumber}: finalization watchdog — ${FINALIZATION_WEDGED_DIAGNOSIS}. ${verdict.wedged}`,
+        );
+        for (const s of slices) {
+          if (!landed.has(s.handle)) continue;
+          await blockSlice(s.handle, verdict.wedged);
+          output.appendLine(
+            `⚑ ${s.handle}: units landed but the run never finalized → requires-attention.`,
+          );
+        }
+      }
+    }
+
+    // Tear down only a fully-committed Spec (its branch persists for accept); a stalled or wedged
+    // Spec keeps its worktree for the human's re-run / `/attend`. Always drop leftover parked agents.
+    if (result.committed && !wedged) {
       for (const u of dag) unparkWorker(u.id);
       try {
         await this.teardown(specNumber);
@@ -497,24 +645,26 @@ export class OrchestratorService {
 
   /**
    * The closing AI-verification gate (SP-tgzyfy): run the Spec's declared `ac_verifications` as a
-   * full plan against the worktree, then advance each landed slice to Done **iff** the ACs it
-   * `satisfies` all ran green — ticking exactly those AC ordinals on the Spec. No skip: a Spec
-   * with no declaration (or a red / un-runnable check) leaves the affected slices
-   * `requires-attention`, unchecked, uncommitted. The per-AC results land on `result.acResults`
-   * (and the auditable report). Mutates `doneSlices` / `state` / `result` in place.
+   * full plan against the worktree, then classify each landed slice as **AC-green** iff the ACs it
+   * `satisfies` all ran green. Returns a map of the green slices → the AC ordinals they satisfy (the
+   * input to the per-slice commit-before-Done step, which commits then advances + ticks those
+   * ordinals — SP-th4wqc_SL-3). No skip: a Spec with no declaration (or a red / un-runnable check)
+   * leaves the affected slices `requires-attention` in place (not green, never returned). The per-AC
+   * results land on `result.acResults` (and the auditable report). Mutates `state` / `result`; does
+   * NOT advance / commit / check ordinals — that is the caller's per-slice commit responsibility.
    */
   private async runClosingGate(
     specNumber: string,
     worktreePath: string,
     slices: SliceForDag[],
     landed: Set<string>,
-    doneSlices: Set<string>,
     unitsBySlice: Map<string, SchedUnit[]>,
     state: SchedulerState,
     blockSlice: (slice: string, diagnosis: string) => Promise<void>,
     result: SpecRunResult,
-  ): Promise<void> {
+  ): Promise<Map<string, number[]>> {
     const { output, store } = this.deps;
+    const green = new Map<string, number[]>();
     const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
     const verifs = parseAcVerifications(specDoc?.frontmatter?.ac_verifications);
 
@@ -529,7 +679,7 @@ export class OrchestratorService {
       output.appendLine(
         `⚑ SP-${specNumber}: no ac_verifications declared — closing gate un-runnable → requires-attention (no skip).`,
       );
-      return;
+      return green;
     }
 
     output.appendLine(
@@ -543,24 +693,21 @@ export class OrchestratorService {
     const pass = new Map<number, boolean>(acResults.map((r) => [r.ac, r.pass]));
     const allGreen = acResults.length > 0 && acResults.every((r) => r.pass);
 
-    // Per slice: advance iff every AC it satisfies ran green. A slice with no `satisfies` rides
-    // on the whole-plan verdict (all declared checks green) — a legacy slice can't be stranded by
-    // having no ordinals, but it still can't reach Done on a red plan.
-    const toCheck: number[] = [];
+    // Per slice: green iff every AC it satisfies ran green. A slice with no `satisfies` rides on the
+    // whole-plan verdict (all declared checks green) — a legacy slice can't be stranded by having no
+    // ordinals, but it still can't reach Done on a red plan. Red/un-runnable → requires-attention here;
+    // green slices are returned for the caller to commit-before-Done (never advanced in this method).
     for (const s of slices) {
       if (!landed.has(s.handle)) continue;
       const sat = s.satisfies ?? [];
       const missing = sat.filter((n) => !pass.has(n));
       const red = sat.filter((n) => pass.get(n) === false);
-      const green =
+      const isGreen =
         sat.length > 0 ? missing.length === 0 && red.length === 0 : allGreen;
-      if (green) {
-        doneSlices.add(s.handle);
-        await this.advance(s.handle);
-        result.advanced.push(s.handle);
-        toCheck.push(...sat);
+      if (isGreen) {
+        green.set(s.handle, [...sat]);
         output.appendLine(
-          `✓ ${s.handle}: AC ${sat.length ? sat.map((n) => `#${n}`).join(", ") : "(plan)"} green → Done.`,
+          `✓ ${s.handle}: AC ${sat.length ? sat.map((n) => `#${n}`).join(", ") : "(plan)"} green → eligible to commit.`,
         );
       } else {
         const why = sat.length
@@ -579,15 +726,7 @@ export class OrchestratorService {
       }
     }
 
-    // Tick exactly the satisfied AC ordinals of the advanced slices on the Spec (so the accept
-    // gate — every AC checked — can pass). One write with the union; out-of-range/checked are no-ops.
-    const ordinals = [...new Set(toCheck)].sort((a, b) => a - b);
-    if (ordinals.length) {
-      await this.checkAcs(specNumber, ordinals);
-      output.appendLine(
-        `▸ SP-${specNumber}: checked AC ${ordinals.map((n) => `#${n}`).join(", ")} on the Spec.`,
-      );
-    }
+    return green;
   }
 
   /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome. */
@@ -956,10 +1095,39 @@ export class OrchestratorService {
     );
   }
 
-  private commit(specNumber: string, cwd: string): Promise<void> {
-    return (this.deps.commit ?? ((n, c) => this.defaultCommit(n, c)))(
+  private commit(
+    handle: string,
+    specNumber: string,
+    cwd: string,
+  ): Promise<void> {
+    return (this.deps.commit ?? ((h, n, c) => this.defaultCommit(h, n, c)))(
+      handle,
       specNumber,
       cwd,
+    );
+  }
+
+  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails so it is never left
+   *  Done with uncommitted work. Defaults to stamping `status: ready`. */
+  private rollbackToReady(handle: string): Promise<void> {
+    return (
+      this.deps.rollbackToReady ?? ((h) => this.defaultRollbackToReady(h))
+    )(handle);
+  }
+
+  /** Default rollback: stamp the slice `status: ready` (clearing any stale `units_landed`) so a
+   *  later run re-attempts it. The work itself stays in the worktree — a re-run RESUMES (commits)
+   *  rather than re-authors only when the run records `units_landed` without a commit. */
+  private async defaultRollbackToReady(handle: string): Promise<void> {
+    const m = /^SP-(.+)_SL-(\d+)$/.exec(handle);
+    if (!m) return;
+    const rel = this.deps.store.pathForSlice(m[1], Number(m[2]));
+    const parsed = await this.deps.store.getFile(rel);
+    if (!parsed?.frontmatter) return;
+    await this.deps.store.writeFile(
+      rel,
+      { ...parsed.frontmatter, status: "ready" },
+      parsed.body,
     );
   }
 
@@ -973,27 +1141,26 @@ export class OrchestratorService {
   }
 
   /**
-   * Default commit-once: stage everything, commit, then **publish the branch** in the Spec's
-   * worktree (workers never commit). Best-effort — a "nothing to commit" exit is not an error.
-   * The merge-back to the canonical branch is the human's accept step (SP-tgqf1v), not forced
-   * here — but the branch MUST be pushed so the commit isn't local-only: an unpushed branch is
-   * invisible to the remote, and the accept's "branch gone ⇒ already merged" probe would then
-   * misread it as already-landed and retire it, stranding the commit (TEP-th3i18 #29). Push is
-   * non-interactive (no auth hang) and best-effort: a push failure must not fail a landed Spec —
-   * the accept still lands it via its ahead-of-`main` count.
+   * Default per-slice commit (SP-th4wqc_SL-3): stage everything present and commit it as ONE slice's
+   * landing, then **publish the branch** (workers never commit). Commit-before-Done — the caller only
+   * marks the slice Done after this resolves; a rejection would roll it back to `ready`. Best-effort
+   * at the git layer — a "nothing to commit" exit (e.g. a sibling slice already swept the worktree in
+   * the same run) is NOT a failure, so we resolve rather than reject and the slice still advances. A
+   * genuine rollback is driven by an injected git that rejects (tests). The branch MUST be pushed so
+   * the commit isn't local-only (TEP-th3i18 #29); push is non-interactive and best-effort.
    */
-  private defaultCommit(specNumber: string, cwd: string): Promise<void> {
+  private defaultCommit(
+    handle: string,
+    specNumber: string,
+    cwd: string,
+  ): Promise<void> {
     return new Promise<void>((resolve) => {
       const add = spawn("git", ["add", "-A"], { cwd });
       add.on("error", () => resolve());
       add.on("close", () => {
         const commit = spawn(
           "git",
-          [
-            "commit",
-            "-m",
-            `feat(SP-${specNumber}): orchestrated Spec complete`,
-          ],
+          ["commit", "-m", `feat(${handle}): orchestrated slice complete`],
           { cwd },
         );
         commit.on("error", () => resolve());
