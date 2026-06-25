@@ -973,9 +973,14 @@ export class OrchestratorService {
   }
 
   /**
-   * Default commit-once: stage everything and commit in the Spec's worktree (workers never
-   * commit). Best-effort — a "nothing to commit" exit is not an error. The merge-back to the
-   * canonical branch is the human's accept step (SP-tgqf1v), not forced here.
+   * Default commit-once: stage everything, commit, then **publish the branch** in the Spec's
+   * worktree (workers never commit). Best-effort — a "nothing to commit" exit is not an error.
+   * The merge-back to the canonical branch is the human's accept step (SP-tgqf1v), not forced
+   * here — but the branch MUST be pushed so the commit isn't local-only: an unpushed branch is
+   * invisible to the remote, and the accept's "branch gone ⇒ already merged" probe would then
+   * misread it as already-landed and retire it, stranding the commit (TEP-th3i18 #29). Push is
+   * non-interactive (no auth hang) and best-effort: a push failure must not fail a landed Spec —
+   * the accept still lands it via its ahead-of-`main` count.
    */
   private defaultCommit(specNumber: string, cwd: string): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -992,7 +997,15 @@ export class OrchestratorService {
           { cwd },
         );
         commit.on("error", () => resolve());
-        commit.on("close", () => resolve());
+        commit.on("close", () => {
+          const push = spawn(
+            "git",
+            ["push", "-u", "origin", `spec/SP-${specNumber}`],
+            { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+          );
+          push.on("error", () => resolve());
+          push.on("close", () => resolve());
+        });
       });
     });
   }
