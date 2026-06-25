@@ -99,6 +99,72 @@ test("no PR but the branch is ahead of main → opens the PR, then merges (the S
   );
 });
 
+test("no PR, branch ahead, but remote branch ABSENT (never pushed) → lands it, not mis-read as already-merged (#29)", async () => {
+  // The strand bug: the orchestrator commits the Spec branch locally WITHOUT pushing,
+  // so on the first accept the remote branch doesn't exist yet. The old code read that
+  // absence as "already merged + deleted" and retired the branch, stranding the only
+  // copy of the commit. The ahead-count must win: there is unmerged work → push + open
+  // PR + merge — never alreadyMerged.
+  let opened: string | null = null;
+  let mergeCalled = false;
+  const res = await mergeSpecPr(
+    "tg8dsb",
+    "/repo",
+    ops({
+      openPrCount: async () => 0,
+      branchExists: async () => false, // never pushed — remote branch absent
+      unmergedCommits: async () => 1, // but there IS unmerged work
+      openPr: async (branch) => {
+        opened = branch;
+      },
+      merge: async () => {
+        mergeCalled = true;
+        return "Merged PR #9";
+      },
+    }),
+  );
+  assert.deepEqual(res, {
+    branch: "spec/SP-tg8dsb",
+    merged: true,
+    opened: true,
+    output: "Merged PR #9",
+  });
+  assert.equal(
+    opened,
+    "spec/SP-tg8dsb",
+    "an ahead branch must be pushed + opened, never retired as already-merged",
+  );
+  assert.equal(mergeCalled, true);
+});
+
+test("no PR, nothing ahead, remote branch GONE → already-merged idempotent re-accept (preserved)", async () => {
+  // The legitimate case the branchExists probe exists for: a prior accept already
+  // merged and deleted the branch, so nothing is ahead of main AND the remote branch is
+  // gone. That stays an already-merged success so the dispatch retires any zombie
+  // worktree — the #29 fix must not regress it.
+  let openCalled = false;
+  const res = await mergeSpecPr(
+    "tg8dsb",
+    "/repo",
+    ops({
+      openPrCount: async () => 0,
+      unmergedCommits: async () => 0, // provably already in main
+      branchExists: async () => false, // and the branch was deleted on merge
+      openPr: async () => {
+        openCalled = true;
+      },
+    }),
+  );
+  assert.deepEqual(res, {
+    branch: "spec/SP-tg8dsb",
+    merged: true,
+    opened: false,
+    output: "",
+    alreadyMerged: true,
+  });
+  assert.equal(openCalled, false, "an already-merged Spec must not re-open a PR");
+});
+
 test("ahead branch whose openPr fails (rejected push / gh) → throws, not silently dropped", async () => {
   let mergeCalled = false;
   await assert.rejects(

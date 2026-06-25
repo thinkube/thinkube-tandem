@@ -204,27 +204,14 @@ export async function mergeSpecPr(
 
   let opened = false;
   if (count === 0) {
-    // No open PR. Before treating this as a straight-to-main Spec, check whether the
-    // branch is simply *gone*: a prior accept may have already merged it and deleted
-    // the branch. That is an idempotent re-accept, not a no-op — report it as an
-    // already-merged success so the dispatch still retires the (possibly zombie)
-    // worktree rather than throwing on a missing branch (SP-th4wqe, #10-residual).
-    if (ops.branchExists) {
-      const exists = await ops.branchExists(branch, cwd);
-      if (!exists) {
-        return {
-          branch,
-          merged: true,
-          opened: false,
-          output: "",
-          alreadyMerged: true,
-        };
-      }
-    }
-    // The branch is present (or no detector is wired). Distinguish a genuine
-    // straight-to-main Spec (nothing ahead of `main`) from a branch-ahead Spec whose
-    // PR was never opened — the latter must still land, not be dropped as a no-op
-    // (the SP-th1jtj failure).
+    // No open PR. The ground truth for "already landed" is whether the branch still
+    // has commits NOT in `origin/main` — check THAT first, before any remote-branch
+    // probe. A branch ahead of main has unmerged work and MUST be landed (push + open
+    // PR + merge), even when the remote branch doesn't exist yet: the orchestrator
+    // commits the Spec branch **locally and does not push**, so on the first accept the
+    // remote branch is legitimately absent. Treating "no remote branch" as "already
+    // merged" here would retire + delete the branch, stranding the only copy of the
+    // commit (TEP-th3i18 #29). So the ahead-count gates everything.
     let ahead: number;
     try {
       ahead = await ops.unmergedCommits(branch, cwd);
@@ -233,11 +220,32 @@ export async function mergeSpecPr(
       const detail = (e.stderr || e.message || "unknown error").trim();
       throw new Error(`git rev-list ${branch} failed: ${detail}`);
     }
-    if (ahead === 0) {
+    if (ahead > 0) {
+      // Unmerged work: push + open the PR + merge it (the "push, open PR, merge" the
+      // accept land always promised). `openPr` pushes first, so this lands even a
+      // local-only branch — the #29 fix (and the SP-th1jtj "never opened" fix).
+      await ops.openPr(branch, cwd);
+      opened = true;
+    } else {
+      // Nothing ahead of `main` — the work is provably already in main. Now (and only
+      // now) the remote-branch probe is meaningful: a *gone* branch is a prior accept
+      // that already merged + deleted it (idempotent re-accept — report already-merged
+      // so the dispatch retires the possibly-zombie worktree, SP-th4wqe #10-residual);
+      // a *present* branch with nothing ahead is a genuine straight-to-main Spec (no-pr).
+      if (ops.branchExists) {
+        const exists = await ops.branchExists(branch, cwd);
+        if (!exists) {
+          return {
+            branch,
+            merged: true,
+            opened: false,
+            output: "",
+            alreadyMerged: true,
+          };
+        }
+      }
       return { branch, merged: false, reason: "no-pr" };
     }
-    await ops.openPr(branch, cwd);
-    opened = true;
   }
 
   try {
