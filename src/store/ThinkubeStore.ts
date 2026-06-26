@@ -44,6 +44,7 @@ import {
   serializeFrontmatter,
 } from "./frontmatter";
 import { mintEpochId } from "./ids";
+import { isRetiredStatus } from "../methodology/sliceLifecycle";
 
 export type ListableKind =
   | "epic"
@@ -351,6 +352,30 @@ export class ThinkubeStore implements vscode.Disposable {
     return out.sort();
   }
 
+  /**
+   * Active (frontier) slice file paths — the subset of {@link listSlices} that
+   * is **not** retired. A slice whose frontmatter `status:` is the terminal
+   * `retired` token (`sliceLifecycle.RETIRED_STATUS`, read via `isRetiredStatus`
+   * — never a re-spelled literal) is dropped here, because a retired slice
+   * leaves the active board/frontier (SP-th4wqd_SL-1; the → Done gate never runs
+   * for it).
+   *
+   * This is deliberately distinct from the numbering allocator: a retired slice
+   * is excluded from this active set but **still counted** by `listSlices` /
+   * {@link nextSliceNumber}, so its `SL-{m}` stays claimed and the next slice is
+   * still `max + 1` (number reserved — ADR-0007 "archive, don't delete").
+   */
+  async listActiveSlices(specNumber?: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const rel of await this.listSlices(specNumber)) {
+      const parsed = await this.getFile(rel);
+      const status = parsed?.frontmatter?.status;
+      if (typeof status === "string" && isRetiredStatus(status)) continue;
+      out.push(rel);
+    }
+    return out;
+  }
+
   // ── Monotonic number allocators ──
   // Archive-don't-delete keeps every number claimed by a file, so `max + 1`
   // can never reuse a freed number (ADR-0007).
@@ -377,7 +402,11 @@ export class ThinkubeStore implements vscode.Disposable {
     return id;
   }
 
-  /** Next per-Spec Slice number = highest existing `SL-{m}` under that Spec + 1. */
+  /** Next per-Spec Slice number = highest existing `SL-{m}` under that Spec + 1.
+   *  Deliberately reads the **full** {@link listSlices} set, not
+   *  {@link listActiveSlices}: a retired slice's file is kept (ADR-0007), so its
+   *  number stays claimed and the next slice is `max + 1` — a retired number is
+   *  never reused even though the slice has left the active frontier. */
   async nextSliceNumber(specNumber: string): Promise<number> {
     let max = 0;
     for (const rel of await this.listSlices(specNumber)) {

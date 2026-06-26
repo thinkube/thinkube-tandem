@@ -56,6 +56,19 @@ import { requirementHash } from "../methodology/specChange";
 import { sectionPatch } from "../methodology/sectionPatch";
 import { sliceFilesResolveInRepo } from "../methodology/sliceRepoGuard";
 import {
+  // Slice lifecycle contract (SP-th4wqd_SL-1): the single source the `move_slice`
+  // / `update_slice` handlers and their dispatch test agree on for retire + re-cut.
+  // The status literal, the "reason required" rule, and the re-cut footprint check
+  // are NEVER re-spelled here — they are consumed so the wiring and test can't drift.
+  RETIRED_STATUS,
+  isRetiredStatus,
+  validateRetireReason,
+  recutSliceFrontmatter,
+  hasRecutFields,
+  type SliceRecut,
+} from "../methodology/sliceLifecycle";
+import { resolveSpecId } from "../methodology/idMinting";
+import {
   validateParallelGroup,
   validateDag,
   // Contract-first gate (SP-th4wqi): consumed from parallelSlices.ts — the pure
@@ -84,8 +97,16 @@ import {
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { isBoardDir } from "./boardDetection";
 import { resolveServerConfig, type ServerConfigFile } from "./serverConfig";
-import type { Frontmatter } from "../store/frontmatter";
-import { effectiveTags } from "../store/frontmatter";
+import type { Frontmatter, ParsedFile } from "../store/frontmatter";
+import {
+  effectiveTags,
+  parseFrontmatter,
+  serializeFrontmatter,
+} from "../store/frontmatter";
+import {
+  resolveTepWritePath,
+  type PromotedProject,
+} from "../methodology/tepPromotion";
 import { groupByTag, type TaggedItem } from "../store/tags";
 import { discoverProducts } from "../store/products";
 import { discoverProjects, projectTeps } from "../store/projects";
@@ -716,7 +737,7 @@ const TOOL_DEFS = [
   {
     name: "move_slice",
     description:
-      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done, Requires-attention (a needs-human state the orchestrator sets when a worker can't resolve a problem — SP-tgs8nz; /attend returns it to the loop). Moving to Done is REFUSED unless every acceptance criterion the slice lists in `satisfies` is checked on the parent Spec (the error names the offending criterion); slices with no `satisfies` are not gated. The → Done **docs gate** (TEP-tgh6iy) also applies: a `docs: required` slice must have its documentation done — pass `docs_done: true` once you've updated the doc module. In blocking mode an unsatisfied obligation is refused; in advisory mode (default) the move returns a `docsWarning`. On a successful Done it stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
+      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done, Requires-attention (a needs-human state the orchestrator sets when a worker can't resolve a problem — SP-tgs8nz; /attend returns it to the loop), or Retired. **Retired** (SP-th4wqd) is a TERMINAL state DISTINCT from Done — it records a required `reason` (a retire with no `reason` is refused), drops the slice off the active board/frontier, and the → Done gate never runs for it; the slice file stays on disk so its `SL-{m}` stays reserved (the next slice is still `max+1`). Moving to Done is REFUSED unless every acceptance criterion the slice lists in `satisfies` is checked on the parent Spec (the error names the offending criterion); slices with no `satisfies` are not gated. The → Done **docs gate** (TEP-tgh6iy) also applies: a `docs: required` slice must have its documentation done — pass `docs_done: true` once you've updated the doc module. In blocking mode an unsatisfied obligation is refused; in advisory mode (default) the move returns a `docsWarning`. On a successful Done it stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
     inputSchema: {
       type: "object",
       properties: {
@@ -726,7 +747,12 @@ const TOOL_DEFS = [
         },
         status: {
           type: "string",
-          enum: ["Ready", "Doing", "Done", "Requires-attention"],
+          enum: ["Ready", "Doing", "Done", "Requires-attention", "Retired"],
+        },
+        reason: {
+          type: "string",
+          description:
+            "Why the slice is being retired — REQUIRED when `status: Retired` (a terminal state distinct from Done must record why); recorded as `reason` on the slice. Ignored for other statuses.",
         },
         docs_done: {
           type: "boolean",
@@ -870,14 +896,14 @@ const TOOL_DEFS = [
   {
     name: "write_spec",
     description:
-      "Write a Spec's document at `specs/SP-{id}/spec.md` in the board (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `accepted:`) is preserved, and `implements:` can be set via its parameter. This is the board-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the board.",
+      "Write a Spec's document at `specs/SP-{id}/spec.md` in the board (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `accepted:`) is preserved, and `implements:` can be set via its parameter. Omit `spec` to mint a conflict-free base36-epoch id (parity with `write_tep`); pass it to update an existing Spec. The minted/given id is returned as `spec`. This is the board-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the board.",
     inputSchema: {
       type: "object",
       properties: {
         spec: {
           type: "string",
           description:
-            "Spec id (the SP-{id}) — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).",
+            "Spec id (the SP-{id}) — an opaque string (base36-epoch for new Specs, a legacy integer for old ones). Omit to mint a new base36-epoch id.",
         },
         body: {
           type: "string",
@@ -905,7 +931,7 @@ const TOOL_DEFS = [
         },
         ...BOARD_PARAM,
       },
-      required: ["spec", "body"],
+      required: ["body"],
       additionalProperties: false,
     },
   },
@@ -940,7 +966,7 @@ const TOOL_DEFS = [
   {
     name: "update_slice",
     description:
-      "Replace a slice's markdown body (frontmatter is preserved). The body's first line must be the `# title` heading; if the new body lacks one, the existing title is re-attached and the input is treated as detail — a card can never become heading-less through this tool.",
+      "Update a slice in place, keeping its `SL-{m}` number. Pass `body` to replace the markdown body (frontmatter is preserved; the body's first line must be the `# title` heading — if the new body lacks one, the existing title is re-attached and the input is treated as detail, so a card can never become heading-less). **Re-cut (SP-th4wqd):** pass `files` / `satisfies` / `work_units` to REPLACE the slice's footprint fields without re-creating it — a re-scope. A provided field replaces wholesale (an empty array clears it); an omitted field is left untouched. A re-cut whose declared footprint (any `files` path or `work_units[].footprint` path) escapes the board repo is REFUSED with the same rejection `create_slice` gives — the check routes through the shared repo guard, not a copy. `body` is optional: omit it for a pure re-cut and the body is left unchanged.",
     inputSchema: {
       type: "object",
       properties: {
@@ -948,23 +974,58 @@ const TOOL_DEFS = [
           type: "string",
           description: "Slice handle, e.g. `SP-3_SL-42`.",
         },
-        body: { type: "string" },
+        body: {
+          type: "string",
+          description:
+            "Replacement markdown body (first line must be the `# title` heading). Omit to leave the body unchanged (e.g. for a pure re-cut).",
+        },
         tags: {
           type: "array",
           items: { type: "string" },
           description:
             "Replace the slice's clustering tags (SP-tgvil2). Omit to leave tags unchanged; pass `[]` to clear.",
         },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Re-cut (SP-th4wqd): REPLACE the slice's machine-readable file set (repo-relative paths). Omit to leave unchanged; pass `[]` to clear. Validated against the board repo with the same guard `create_slice` uses — a path that escapes the repo is refused.",
+        },
+        satisfies: {
+          type: "array",
+          items: { type: "integer", minimum: 1 },
+          description:
+            "Re-cut (SP-th4wqd): REPLACE the 1-based AC ordinals this slice delivers. Omit to leave unchanged; pass `[]` to clear.",
+        },
+        work_units: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              footprint: { type: "array", items: { type: "string" } },
+              depends_on: { type: "array", items: { type: "string" } },
+              execution: {
+                type: "string",
+                enum: ["serial", "mechanize", "fan-out"],
+              },
+              note: { type: "string" },
+            },
+            required: ["footprint", "execution"],
+            additionalProperties: false,
+          },
+          description:
+            "Re-cut (SP-th4wqd): REPLACE the slice's execution-aware work units. Omit to leave unchanged; pass `[]` to clear. Each unit's `footprint` is checked against the board repo with the same guard `create_slice` uses.",
+        },
         ...BOARD_PARAM,
       },
-      required: ["slice", "body"],
+      required: ["slice"],
       additionalProperties: false,
     },
   },
   {
     name: "write_tep",
     description:
-      "Write a Tandem Enhancement Proposal at `teps/TEP-<id>.md` in the board (the sidecar namespace), creating it if absent (TEP-0009). The board-aware write path for `/tep` — use it instead of a raw file write. Omit `tep` to mint a conflict-free base36-epoch id; pass it to update an existing TEP. On create, the body defaults to the `TEP-TEMPLATE.md` scaffold and canonical frontmatter (kind/id/status/created/implemented_by) is filled; on update, existing frontmatter is preserved. `title`/`status` set those fields.",
+      "Write a Tandem Enhancement Proposal at `teps/TEP-<id>.md` in the board (the sidecar namespace), creating it if absent (TEP-0009). The board-aware write path for `/tep` — use it instead of a raw file write. Omit `tep` to mint a conflict-free base36-epoch id; pass it to update an existing TEP. On create, the body defaults to the `TEP-TEMPLATE.md` scaffold and canonical frontmatter (kind/id/status/created/implemented_by) is filled; on update, existing frontmatter is preserved. `title`/`status` set those fields. Promotion-aware (TEP-th3i18 #14): if the TEP has been promoted into a Project (its canonical home moved to `<product>/projects/<id>/teps/`), the update lands on that **project copy** — no stale duplicate is left on the session board; if more than one project claims it the write is refused, pointing you at `promote_tep` to reconcile the single home.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1073,6 +1134,7 @@ export async function dispatchTool(
         moveSlice(store, asString(args, "slice"), asString(args, "status"), {
           docsGateMode: ctx.env.docsGateMode,
           docsDone: optBoolean(args, "docs_done"),
+          reason: optString(args, "reason"),
         }),
       );
     case "accept_spec":
@@ -1131,11 +1193,18 @@ export async function dispatchTool(
         ctx.promoteLocator ?? makeBoardPromoteLocator(ctx),
       );
       if (!promoteCheck.ok) throw new Error(promoteCheck.message);
-      return writeSpec(
-        store,
+      // #6 minting: `spec` is optional — when omitted, mint a fresh base36-epoch
+      // id via the store allocator (parity with `write_tep`). The pure
+      // `resolveSpecId` helper owns the decision; we inject the allocator.
+      const specId = await resolveSpecId(
         typeof args.spec === "number"
           ? String(args.spec)
-          : asString(args, "spec"),
+          : optString(args, "spec"),
+        () => store.nextSpecNumber(),
+      );
+      return writeSpec(
+        store,
+        specId,
         asString(args, "body"),
         implementsRaw,
         // The closing gate's per-AC declaration (SP-tgzyfy). Forwarded verbatim — writeSpec
@@ -1163,18 +1232,37 @@ export async function dispatchTool(
       return updateSlice(
         store,
         asString(args, "slice"),
-        asString(args, "body"),
+        // Body is optional (a pure re-cut needn't restate it).
+        optString(args, "body"),
         optStringArray(args, "tags"),
+        // Re-cut footprint fields (SP-th4wqd): a provided field replaces, omitted
+        // is left untouched. Forwarded verbatim; updateSlice routes them through
+        // the shared repo guard before writing.
+        {
+          files: optStringArray(args, "files"),
+          satisfies: optNumberArray(args, "satisfies"),
+          work_units: Array.isArray(args.work_units)
+            ? (args.work_units as Frontmatter["work_units"])
+            : undefined,
+        },
       );
     case "write_tep":
       writeGate(name);
-      return writeTep(store, {
-        tep: optString(args, "tep"),
-        title: optString(args, "title"),
-        status: optString(args, "status"),
-        body: optString(args, "body"),
-        tags: optStringArray(args, "tags"),
-      });
+      // #14 — pass the full handler context so `writeTep` can resolve a promoted
+      // TEP to its project copy (boardRoot + boards), not split-brain the session
+      // board. `ctx` is last + optional so the existing `writeTep(store, args)`
+      // call sites (tagsTools.test) keep compiling.
+      return writeTep(
+        store,
+        {
+          tep: optString(args, "tep"),
+          title: optString(args, "title"),
+          status: optString(args, "status"),
+          body: optString(args, "body"),
+          tags: optStringArray(args, "tags"),
+        },
+        ctx,
+      );
     case "write_retro_note":
       writeGate(name);
       return writeRetroNote(store, asString(args, "body"));
@@ -1228,6 +1316,10 @@ const VALID_STATUSES = [
   "doing",
   "done",
   "requires-attention",
+  // Terminal, distinct from `done` (SP-th4wqd_SL-1) — read from the shared
+  // contract so the wiring never re-spells the literal. A retired slice drops off
+  // the active frontier but its file (and so its SL-{m}) stays on disk.
+  RETIRED_STATUS,
 ] as const;
 
 function listBoards(ctx: HandlerContext): unknown {
@@ -1635,20 +1727,45 @@ async function moveSlice(
   store: ThinkubeStore,
   handle: string,
   status: string,
-  opts: { docsGateMode: DocsGateMode; docsDone?: boolean } = {
+  opts: { docsGateMode: DocsGateMode; docsDone?: boolean; reason?: string } = {
     docsGateMode: "advisory",
   },
 ): Promise<unknown> {
   const target = status.trim().toLowerCase() as (typeof VALID_STATUSES)[number];
   if (!VALID_STATUSES.includes(target)) {
     throw new Error(
-      `Invalid status "${status}" — expected one of Ready, Doing, Done, Requires-attention.`,
+      `Invalid status "${status}" — expected one of Ready, Doing, Done, Requires-attention, Retired.`,
     );
   }
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
+
+  // Retire (SP-th4wqd #5): `move_slice(…, "Retired", reason)` is a TERMINAL state
+  // distinct from Done — it records a REQUIRED reason and then short-circuits, so
+  // none of the → Done gates (satisfies / docs / baseline stamp) run for it. The
+  // "reason required" rule lives in the shared `validateRetireReason`; a missing
+  // reason throws before any write. The slice file is rewritten in place (its
+  // SL-{m} stays on disk → reserved for the next `max+1`) but its `retired` status
+  // drops it from the active frontier.
+  if (isRetiredStatus(target)) {
+    const validation = validateRetireReason(opts.reason);
+    if (!validation.ok) throw new Error(validation.error);
+    const retiredFm: Frontmatter = {
+      ...(parsed.frontmatter ?? {}),
+      status: RETIRED_STATUS as Frontmatter["status"],
+      reason: validation.reason,
+    };
+    await store.writeFile(rel, retiredFm, parsed.body);
+    return {
+      ok: true,
+      slice: store.sliceHandle(specNumber, sliceNumber),
+      status: RETIRED_STATUS,
+      reason: validation.reason,
+      retired: true,
+    };
+  }
 
   const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
   // Attest the documentation obligation (TEP-tgh6iy): a caller updating the doc
@@ -2202,8 +2319,9 @@ function normalizeAcVerifications(
 export async function updateSlice(
   store: ThinkubeStore,
   handle: string,
-  body: string,
+  body?: string,
   tags?: string[],
+  recut?: SliceRecut,
 ): Promise<unknown> {
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
@@ -2212,23 +2330,44 @@ export async function updateSlice(
 
   // Tags are settable/replaceable via update (SP-tgvil2): when provided, set the
   // `tags` frontmatter (an empty array clears them); omitted → frontmatter as-is.
-  const nextFm: Frontmatter | undefined =
+  let nextFm: Frontmatter | undefined =
     tags === undefined
       ? parsed.frontmatter
       : { ...(parsed.frontmatter ?? {}), tags };
 
-  // Heading guard (SP-4): a body whose first non-empty line isn't a `#`
-  // heading would regress the card to the merged-line shape — re-attach the
-  // existing title and treat the input as detail instead.
-  const firstLine = body.split(/\r?\n/).find((l) => l.trim());
-  let nextBody = body;
+  // Re-cut (SP-th4wqd #5): REPLACE the slice's footprint fields (files / satisfies
+  // / work_units) in place, keeping the same `SL-{m}` (its identity lives in the
+  // path, not these fields). The decision — including refusing a footprint that
+  // escapes the board repo with the SAME `sliceFilesResolveInRepo` rejection
+  // `create_slice` gives — is owned by the shared `recutSliceFrontmatter`, which is
+  // *driven* (not duplicated) here. A provided field replaces; omitted is left.
+  const reCut = hasRecutFields(recut);
+  if (reCut) {
+    const result = recutSliceFrontmatter(
+      store.workspaceRoot,
+      nextFm ?? parsed.frontmatter,
+      recut!,
+    );
+    if (!result.ok) throw new Error(result.error);
+    nextFm = result.frontmatter;
+  }
+
+  // Body: optional. When provided, the heading guard (SP-4) applies — a body whose
+  // first non-empty line isn't a `#` heading would regress the card to the
+  // merged-line shape, so re-attach the existing title and treat the input as
+  // detail. When omitted (e.g. a pure re-cut), the existing body is left unchanged.
+  let nextBody = parsed.body;
   let titleReattached = false;
-  if (!firstLine || !firstLine.trim().startsWith("#")) {
-    const oldFirst = parsed.body.split(/\r?\n/).find((l) => l.trim());
-    const oldTitle = (oldFirst ?? "").replace(/^#+\s*/, "").trim();
-    if (oldTitle) {
-      nextBody = `# ${oldTitle}\n\n${body.trim()}\n`;
-      titleReattached = true;
+  if (body !== undefined) {
+    const firstLine = body.split(/\r?\n/).find((l) => l.trim());
+    nextBody = body;
+    if (!firstLine || !firstLine.trim().startsWith("#")) {
+      const oldFirst = parsed.body.split(/\r?\n/).find((l) => l.trim());
+      const oldTitle = (oldFirst ?? "").replace(/^#+\s*/, "").trim();
+      if (oldTitle) {
+        nextBody = `# ${oldTitle}\n\n${body.trim()}\n`;
+        titleReattached = true;
+      }
     }
   }
 
@@ -2238,6 +2377,7 @@ export async function updateSlice(
     slice: store.sliceHandle(specNumber, sliceNumber),
     relativePath: rel,
     titleReattached,
+    reCut,
   };
 }
 
@@ -2257,12 +2397,49 @@ export async function writeTep(
     body?: string;
     tags?: string[];
   },
+  ctx?: HandlerContext,
 ): Promise<unknown> {
   const provided = args.tep?.trim().replace(/^TEP-/i, "");
   const tepId =
     provided && provided.length ? provided : await store.nextTepId();
-  const rel = store.pathForTep(tepId);
-  const existing = await store.getFile(rel);
+
+  // #14 — promotion-aware target (TEP-th3i18). Once a TEP is promoted into a
+  // Project, its canonical home moves out of the session board's `teps/` and
+  // into `<product>/projects/<id>/teps/TEP-<id>.md`. A naive write keeps
+  // clobbering the stale session-board copy while the promoted one drifts. So
+  // resolve where the bytes belong BEFORE writing, via the SAME ownership
+  // lookup `promote_tep`/`get_project` use (discoverProjects + projectTeps over
+  // the board root). The decision itself is the pure `resolveTepWritePath`
+  // (SL-3 sibling) — we never re-spell it here.
+  const boardRoot = ctx?.env.boardRoot;
+  const projects: PromotedProject[] = boardRoot
+    ? discoverProjects(boardRoot).map((p) => ({
+        product: p.product,
+        id: p.id,
+        teps: projectTeps(boardRoot, p.product, p.id),
+      }))
+    : [];
+  const dest = resolveTepWritePath(tepId, projects);
+  if (dest.kind === "refuse") {
+    // Ambiguous promotion home — refuse rather than minting a third copy. The
+    // message names `promote_tep`, the tool that owns the single-home invariant.
+    throw new Error(dest.message);
+  }
+
+  // The two homes differ only in *where* the bytes land:
+  //   - session  → the store, store-relative (`teps/TEP-{id}.md` on this board);
+  //   - project  → the promoted copy, board-root-relative fs (no session dup).
+  // Everything between (read existing → merge body/frontmatter → write) is shared.
+  const projectAbs =
+    dest.kind === "project" && boardRoot
+      ? path.join(boardRoot, dest.relativePath)
+      : undefined;
+  const sessionRel = store.pathForTep(tepId);
+  const relativePath = dest.kind === "project" ? dest.relativePath : sessionRel;
+
+  const existing: ParsedFile | undefined = projectAbs
+    ? await readMarkdownFile(projectAbs)
+    : await store.getFile(sessionRel);
 
   // Body: explicit > existing > template scaffold (create only).
   let body = args.body?.trim();
@@ -2290,13 +2467,43 @@ export async function writeTep(
   if (args.status) fm.status = args.status as Frontmatter["status"];
   if (args.tags?.length) fm.tags = args.tags;
 
-  await store.writeFile(rel, fm, body.endsWith("\n") ? body : `${body}\n`);
+  const finalBody = body.endsWith("\n") ? body : `${body}\n`;
+  if (projectAbs) {
+    // Promoted copy: write board-root-relative via fs (mirrors `promote_tep`'s
+    // direct moves). NO session-board copy is created — that's the whole point.
+    await fsSync.promises.mkdir(path.dirname(projectAbs), { recursive: true });
+    await fsSync.promises.writeFile(
+      projectAbs,
+      serializeFrontmatter({ frontmatter: fm, body: finalBody }),
+      "utf8",
+    );
+  } else {
+    await store.writeFile(sessionRel, fm, finalBody);
+  }
+
   return {
     ok: true,
     tep: `TEP-${tepId}`,
-    relativePath: rel,
+    relativePath,
     created: existing === undefined,
+    ...(dest.kind === "project"
+      ? { promoted: true, project: `${dest.product}/${dest.projectId}` }
+      : {}),
   };
+}
+
+/** Read a markdown file by absolute path, ENOENT → undefined (parity with
+ *  `ThinkubeStore.getFile`, used for the board-root-relative promoted TEP copy
+ *  which lives outside any single board's `thinkubeDir`). */
+async function readMarkdownFile(abs: string): Promise<ParsedFile | undefined> {
+  let text: string;
+  try {
+    text = await fsSync.promises.readFile(abs, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+  return parseFrontmatter(text);
 }
 
 async function writeRetroNote(
