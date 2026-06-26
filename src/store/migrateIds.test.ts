@@ -119,6 +119,16 @@ const E = {
   s4: 1_700_000_600, // cross-board member spec implementing the project TEP
 };
 
+/**
+ * The org-agnostic `TEP-TEMPLATE.md` scaffold (modeled on the live ai-integration
+ * board's). Its `TEP-NNNN` placeholder is NOT a number/epoch id and must survive
+ * the migration byte-for-byte — `write_tep` scaffolds new TEPs from it post-cutover.
+ */
+const TEMPLATE_CONTENT =
+  `---\nkind: tep\nid: TEP-NNNN\ntitle: <concise imperative title>\n` +
+  `status: proposed\nimplemented_by: []\n---\n\n` +
+  `# TEP-NNNN — <title>\n\n## Goal\n\n_Fill me in._\n`;
+
 /** Seed a full base36-epoch board fixture under a fresh tmp dir; return its paths. */
 function seedFixture(): { board: string; oldIds: string[] } {
   const board = fs.mkdtempSync(path.join(os.tmpdir(), "migrate-ids-"));
@@ -144,6 +154,10 @@ function seedFixture(): { board: string; oldIds: string[] } {
     path.join(repoNs, "teps", `TEP-${id.tepB}.md`),
     `---\nkind: tep\nstatus: accepted\n---\n\n# Second enhancement\n\nA later proposal.\n`,
   );
+  // The org-agnostic TEP template sits beside the numbered TEPs (as on the live
+  // ai-integration board) — the migration must relocate it to the fixed
+  // board-level path, never renumber it, and leave its TEP-NNNN placeholder.
+  write(path.join(repoNs, "teps", "TEP-TEMPLATE.md"), TEMPLATE_CONTENT);
 
   const specBody = (title: string) =>
     `# ${title}\n\n## Acceptance Criteria\n\n- [ ] something\n\n## Constraints\n\n- none\n\n## Design\n\n- n/a\n\n## File Structure Plan\n\n- n/a\n`;
@@ -271,6 +285,42 @@ test("migration assigns frozen sequential numbers in epoch order and is idempote
       "ADR preserved under <org>/decisions",
     );
 
+    // The org-agnostic template is relocated to the FIXED board-level path
+    // (`<ns>/teps/TEP-TEMPLATE.md`, NOT under <org>/), byte-for-byte unchanged —
+    // its TEP-NNNN placeholder intact and never parsed/renumbered.
+    const tmplPath = path.join(
+      board,
+      "Apps",
+      "widgets-app",
+      "teps",
+      "TEP-TEMPLATE.md",
+    );
+    assert.ok(fs.existsSync(tmplPath), "template not relocated to board level");
+    assert.equal(
+      fs.readFileSync(tmplPath, "utf8"),
+      TEMPLATE_CONTENT,
+      "template content changed",
+    );
+    assert.equal(fmValue(fs.readFileSync(tmplPath, "utf8"), "id"), "TEP-NNNN");
+    // The template never landed under <org>/ …
+    assert.ok(
+      !fs.existsSync(path.join(teps, "TEP-TEMPLATE", "tep.md")),
+      "template wrongly nested under <org>/teps",
+    );
+    assert.ok(
+      !fs.existsSync(path.join(teps, "TEP-TEMPLATE.md")),
+      "template wrongly placed under <org>/teps",
+    );
+    // … and no numbered TEP-n leaked into the board-level teps/ alongside it.
+    const boardTeps = fs.readdirSync(
+      path.join(board, "Apps", "widgets-app", "teps"),
+    );
+    assert.deepEqual(
+      boardTeps,
+      ["TEP-TEMPLATE.md"],
+      `board-level teps/ should hold only the template, got ${boardTeps.join(", ")}`,
+    );
+
     // Idempotent: a 2nd run is a no-op → byte-identical tree.
     const before = snapshot(board);
     const r2 = runMigrate(["--board", board, "--org", "Acme"]);
@@ -315,14 +365,16 @@ test("migration leaves no base36-epoch directory name or frontmatter id behind",
         );
       }
     }
-    // The old flat dirs are gone entirely.
+    // The old flat dirs are gone entirely. The board-level `teps/` survives,
+    // but ONLY to hold the org-agnostic template — no numbered/epoch TEP files.
     assert.ok(
       !fs.existsSync(path.join(board, "Apps", "widgets-app", "specs")),
       "old specs/ remains",
     );
-    assert.ok(
-      !fs.existsSync(path.join(board, "Apps", "widgets-app", "teps")),
-      "old teps/ remains",
+    assert.deepEqual(
+      fs.readdirSync(path.join(board, "Apps", "widgets-app", "teps")),
+      ["TEP-TEMPLATE.md"],
+      "old flat teps/ should be emptied of everything but the template",
     );
   } finally {
     fs.rmSync(board, { recursive: true, force: true });

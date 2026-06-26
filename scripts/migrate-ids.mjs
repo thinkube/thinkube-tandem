@@ -152,6 +152,7 @@ function decodeEpoch(id) {
 const TEP_FILE_RE = /^TEP-([A-Za-z0-9]+)(?:-.*)?\.md$/; // flat (old), optional slug
 const SPEC_DIR_RE = /^SP-([A-Za-z0-9]+)$/; // old spec folder
 const SLICE_FILE_RE = /^SL-(\d+)\.md$/;
+const TEMPLATE_FILE = "TEP-TEMPLATE.md"; // org-agnostic sentinel scaffold
 
 // ── fs helpers ───────────────────────────────────────────────────────────
 function readdirSafe(dir) {
@@ -177,6 +178,20 @@ function oldSpecDirs(nsDir) {
   return readdirSafe(path.join(nsDir, "specs"))
     .filter((e) => e.isDirectory() && SPEC_DIR_RE.test(e.name))
     .map((e) => e.name);
+}
+
+/**
+ * The org-agnostic `TEP-TEMPLATE.md` scaffold, if this namespace carries one.
+ * It is NOT a maintainer's TEP: it must never be parsed as a numbered/epoch id
+ * (the `oldTepFiles` scan already skips it) and must never be renumbered. The
+ * migration relocates it to the FIXED board-level path `<ns>/teps/TEP-TEMPLATE.md`
+ * (NOT under `<org>/`), content untouched — its `TEP-NNNN` placeholder stays
+ * intact so `write_tep` can keep scaffolding new TEPs after the cutover.
+ */
+function templateFile(nsDir) {
+  for (const e of readdirSafe(path.join(nsDir, "teps")))
+    if (e.isFile() && e.name === TEMPLATE_FILE) return e.name;
+  return undefined;
 }
 
 const SKIP_DIRS = new Set([".git", "node_modules"]);
@@ -454,6 +469,25 @@ export function migrate(opts) {
     }
   }
 
+  // The org-agnostic TEP template — relocated to the FIXED board-level path
+  // (`<ns>/teps/TEP-TEMPLATE.md`, NOT under `<org>/`), bytes untouched. Applied
+  // AFTER `removes` (which wipes the old `<ns>/teps`) so it survives the sweep,
+  // and read as raw bytes so the `TEP-NNNN` placeholder is never reserialized.
+  const templateWrites = [];
+  for (const ns of namespaces) {
+    const tf = templateFile(ns.dir);
+    if (!tf) continue;
+    templateWrites.push({
+      path: path.join(
+        boardRoot,
+        ...ns.rel.split("/").filter(Boolean),
+        "teps",
+        TEMPLATE_FILE,
+      ),
+      content: fs.readFileSync(path.join(ns.dir, "teps", tf)),
+    });
+  }
+
   // ── apply ──
   if (dryRun) {
     log(
@@ -462,6 +496,8 @@ export function migrate(opts) {
     );
     for (const w of writes) log(`  write  ${path.relative(boardRoot, w.path)}`);
     for (const r of removes) log(`  remove ${path.relative(boardRoot, r)}`);
+    for (const w of templateWrites)
+      log(`  keep   ${path.relative(boardRoot, w.path)} (template, unchanged)`);
     return {
       org,
       namespaces: namespaces.map((n) => n.rel),
@@ -477,6 +513,11 @@ export function migrate(opts) {
     fs.writeFileSync(w.path, w.content);
   }
   for (const r of removes) fs.rmSync(r, { recursive: true, force: true });
+  // Re-lay the template AFTER the sweep so the wiped `<ns>/teps` can't clobber it.
+  for (const w of templateWrites) {
+    fs.mkdirSync(path.dirname(w.path), { recursive: true });
+    fs.writeFileSync(w.path, w.content);
+  }
 
   // ── Pass 4: rename git branches + worktrees (best-effort, per --repo) ──
   let branchesRenamed = 0;
