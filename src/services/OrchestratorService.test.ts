@@ -9,6 +9,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import {
   OrchestratorService,
@@ -97,8 +100,17 @@ function makeDeps(
     defaultVerifs[String(n)] = { run: `verify-AC-${n}` };
   const specVerifs = opts.verifs === undefined ? defaultVerifs : opts.verifs;
 
+  // A real (throwaway) board dir so the closing run's `writeDeliverySummary` can land
+  // `specs/SP-1/DELIVERY.md` — the finalization watchdog (SP-th4wqc_SL-2) treats a missing
+  // report as a wedge, so the integration fake must let the report write.
+  const boardDir = fs.mkdtempSync(path.join(os.tmpdir(), "tk-orch-test-"));
+  fs.mkdirSync(path.join(boardDir, path.dirname(SPEC_DOC)), {
+    recursive: true,
+  });
+
   const deps: OrchestratorDeps = {
     store: {
+      thinkubeDir: boardDir,
       listSlices: async () =>
         Object.keys(files).filter((k) => /\/SL-\d+\.md$/.test(k)),
       getFile: async (rel: string) =>
@@ -167,6 +179,10 @@ function makeDeps(
     teardown: async (n: string) => {
       calls.torndown.push(n);
     },
+    // The worktree HEAD's short SHA — injected so the finalization watchdog sees a real commit
+    // marker without a live git repo (SP-th4wqc_SL-2). A non-empty SHA + the written DELIVERY.md
+    // make `finalizationVerdict` return "finalized", so a clean run isn't flagged a false wedge.
+    gitShortSha: async () => "deadbee",
   };
   return { deps, calls };
 }

@@ -121,6 +121,10 @@ export interface OrchestratorDeps {
     cwd: string,
     onPark: OnPark,
   ) => Promise<WorkerResult>;
+  /** Resolve the worktree HEAD's short SHA — the finalization watchdog's commit marker and the
+   *  delivery report's stamp (SP-th4wqc_SL-2). Defaults to `git rev-parse --short HEAD` in the
+   *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
+  gitShortSha?: (cwd: string) => Promise<string>;
 }
 
 /** What a worker run resolved to — the third outcome carries the escalated question + session id. */
@@ -923,6 +927,7 @@ export class OrchestratorService {
 
   /** Short HEAD sha of the worktree (for the delivery summary); "" on any error. */
   private gitShortSha(cwd: string): Promise<string> {
+    if (this.deps.gitShortSha) return this.deps.gitShortSha(cwd);
     return new Promise<string>((resolve) => {
       const proc = spawn("git", ["rev-parse", "--short", "HEAD"], { cwd });
       let out = "";

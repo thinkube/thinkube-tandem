@@ -95,7 +95,9 @@
     "src/methodology/specStructure.ts",
     "src/mcp/specGateDispatch.test.ts",
     "src/mcp/productsTools.test.ts",
-    "src/mcp/projectsTools.test.ts"
+    "src/mcp/projectsTools.test.ts",
+    "src/methodology/tepLifecycle.ts",
+    "src/mcp/tepLifecycleDispatch.test.ts"
   ],
   "exclude": ["node_modules"]
 }

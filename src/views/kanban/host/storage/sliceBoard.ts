@@ -18,6 +18,7 @@ import {
   extractAcceptanceCriteria,
   type AcceptanceItem,
 } from "../../../../methodology/qualityGates";
+import { isRetiredStatus } from "../../../../methodology/sliceLifecycle";
 
 export const TANDEM_COLUMNS: ReadonlyArray<{ id: string; title: string }> = [
   { id: "column-ready", title: "Ready" },
@@ -235,6 +236,11 @@ export function buildSliceBoard(
 
   for (const s of ordered) {
     if ((s.status ?? "").toLowerCase() === "archived") continue;
+    // A retired slice (SP-th4wqd) is terminal-and-DISTINCT-from-Done: it drops off the
+    // active board and (via the skipped tally below) out of its Spec's slice count, so a
+    // re-cut Spec can still close. Its SL-{m} stays reserved on disk (numbering reads files,
+    // not the board projection), so a retired number is never reused.
+    if (isRetiredStatus(s.status ?? "")) continue;
     // An archived parent Spec drops off the board entirely (TEP-tg86v7): skip its
     // slices, which (via the tally below) also suppresses its acceptance card.
     if (specMeta?.get(s.specNumber)?.archived) continue;

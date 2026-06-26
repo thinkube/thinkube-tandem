@@ -84,7 +84,11 @@ test("write_spec with spec omitted mints a base36-epoch id and writes specs/SP-{
 
   const res = await dispatchTool(
     "write_spec",
-    { body: "# Minted Spec\n\n## Acceptance Criteria\n\n- [ ] x\n" },
+    {
+      body:
+        "# Minted Spec\n\n## Acceptance Criteria\n\n- [ ] x\n\n" +
+        "## Constraints\n\n- c\n\n## Design\n\nd\n\n## File Structure Plan\n\n- f\n",
+    },
     ctxFor(store),
     ALLOW,
   );
@@ -114,7 +118,9 @@ test("write_spec with spec omitted mints a base36-epoch id and writes specs/SP-{
 test("write_spec mints are monotonic across two omitted-spec calls (catches a constant stub)", async () => {
   const store = freshStore();
   const ctx = ctxFor(store);
-  const body = "# A\n\n## Acceptance Criteria\n\n- [ ] x\n";
+  const body =
+    "# A\n\n## Acceptance Criteria\n\n- [ ] x\n\n" +
+    "## Constraints\n\n- c\n\n## Design\n\nd\n\n## File Structure Plan\n\n- f\n";
 
   const first = mintedId(
     await dispatchTool("write_spec", { body }, ctx, ALLOW),

@@ -44,7 +44,9 @@ export interface Frontmatter {
    *  Legacy single grouping tag (sat above the Spec; not a tier). */
   theme?: string;
   /** Board column / lifecycle status. Slices use ready|doing|done|archived;
-   *  TEPs use proposed|accepted|superseded (TEP-0009); draft|active are legacy. */
+   *  TEPs use proposed|accepted|superseded|implemented (TEP-0009; `implemented`
+   *  is the terminal "delivered" status per SP-th4wqg, distinct from `accepted`
+   *  = approved-to-build); draft|active are legacy. */
   status?:
     | "ready"
     | "doing"
@@ -55,7 +57,8 @@ export interface Frontmatter {
     | "active"
     | "proposed"
     | "accepted"
-    | "superseded";
+    | "superseded"
+    | "implemented";
   /** Optional slice due date (yyyy-mm-dd). */
   due?: string;
   /** Optional slice priority. */

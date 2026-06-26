@@ -117,8 +117,14 @@ import {
   normalizeTepId,
   formatImplements,
   rewriteImplementsForPromote,
+  resolvesTo,
   type ParsedImplements,
 } from "../store/implementsRef";
+import {
+  tepApprovalGate,
+  tepComplete,
+  type ImplementingSpec,
+} from "../methodology/tepLifecycle";
 import { stampOnEnteringDone } from "../github/sliceProvenance";
 import { linkedWorktreeInfo } from "../services/WorktreeService";
 import {
@@ -1048,7 +1054,8 @@ const TOOL_DEFS = [
         title: { type: "string", description: "TEP title (frontmatter)." },
         status: {
           type: "string",
-          description: "Lifecycle status: proposed | accepted | superseded.",
+          description:
+            "Lifecycle status: proposed | accepted (approved-to-build) | implemented (delivered — refused until every implementing Spec is accepted) | superseded.",
         },
         body: {
           type: "string",
@@ -1158,15 +1165,22 @@ export async function dispatchTool(
             : asString(args, "spec"),
         ),
       );
-    case "create_slice":
+    case "create_slice": {
       writeGate(name);
+      const createSpecId =
+        typeof args.spec === "number"
+          ? String(args.spec)
+          : asString(args, "spec");
+      // Approval gate (SP-th4wqg_SL-1, TEP-th3i18 #25): a slice may not reach
+      // Ready while the parent Spec's `implements:` TEP is not yet `accepted`
+      // (approved-to-build). Resolve the TEP's status via board context and run
+      // the pure `tepApprovalGate` before `createSlice` does any work, so the
+      // refusal (naming the TEP + its status) fires at the door.
+      await assertTepApproved(ctx, store, createSpecId);
       return createSlice(store, {
         // Spec id is a string (base36-epoch); tolerate a numeric integer id
         // from callers that still pass a number (legacy specs).
-        spec:
-          typeof args.spec === "number"
-            ? String(args.spec)
-            : asString(args, "spec"),
+        spec: createSpecId,
         title: asString(args, "title"),
         body: asString(args, "body"),
         depends_on: optStringArray(args, "depends_on"),
@@ -1192,6 +1206,7 @@ export async function dispatchTool(
         priority: optString(args, "priority"),
         tags: optStringArray(args, "tags"),
       });
+    }
     case "write_spec": {
       writeGate(name);
       // #3 cross-board learnability: refuse an `implements:` naming a TEP on
@@ -1257,8 +1272,17 @@ export async function dispatchTool(
             : undefined,
         },
       );
-    case "write_tep":
+    case "write_tep": {
       writeGate(name);
+      const tepStatus = optString(args, "status");
+      const tepArg = optString(args, "tep");
+      // Completeness gate (SP-th4wqg_SL-3, TEP-th3i18 #26): `implemented` is the
+      // terminal "delivered" status — refuse it while any implementing Spec is
+      // still unaccepted (the TEP hasn't actually been delivered). Resolve the
+      // TEP's implementing Specs via board context and run the pure `tepComplete`.
+      if (tepStatus === "implemented" && tepArg) {
+        await assertTepComplete(ctx, store, tepArg);
+      }
       // #14 — pass the full handler context so `writeTep` can resolve a promoted
       // TEP to its project copy (boardRoot + boards), not split-brain the session
       // board. `ctx` is last + optional so the existing `writeTep(store, args)`
@@ -1266,14 +1290,15 @@ export async function dispatchTool(
       return writeTep(
         store,
         {
-          tep: optString(args, "tep"),
+          tep: tepArg,
           title: optString(args, "title"),
-          status: optString(args, "status"),
+          status: tepStatus,
           body: optString(args, "body"),
           tags: optStringArray(args, "tags"),
         },
         ctx,
       );
+    }
     case "write_retro_note":
       writeGate(name);
       return writeRetroNote(store, asString(args, "body"));
@@ -1461,6 +1486,9 @@ export async function getProject(
   const tepIds = projectTeps(boardRoot!, product, id).map(normalizeTepId);
 
   const members: { board: string; handle: string; kind: string }[] = [];
+  // Per-umbrella-TEP implementing Specs (id + accepted stamp), for completeness.
+  const implByTep = new Map<string, ImplementingSpec[]>();
+  for (const t of tepIds) implByTep.set(t, []);
   for (const b of ctx.boards.list(true).filter((bb) => !bb.worktree)) {
     const store = ctx.boards.resolve(b.id);
     for (const spec of await store.listSpecDirs()) {
@@ -1478,6 +1506,10 @@ export async function getProject(
         continue;
       }
       members.push({ board: b.id, handle: `SP-${spec}`, kind: "spec" });
+      implByTep.get(ref.id)!.push({
+        id: `SP-${spec}`,
+        accepted: typeof fm?.accepted === "string" ? fm.accepted : undefined,
+      });
       // Slices inherit membership from their spec.
       for (const rel of await store.listSlices(spec)) {
         const m = SLICE_PATH_RE.exec(rel);
@@ -1490,16 +1522,155 @@ export async function getProject(
       }
     }
   }
+  // Completeness (SP-th4wqg_SL-2): a TEP is complete only when every implementing
+  // Spec is `accepted`; otherwise `openSpecs` names the unaccepted ones. Surfaced
+  // per-umbrella-TEP plus an aggregate (the project is complete iff all its TEPs
+  // are). The pure derivation is `tepComplete`.
+  const completeness = tepIds.map((t) => {
+    const r = tepComplete(t, implByTep.get(t) ?? []);
+    return { tep: `TEP-${t}`, complete: r.complete, openSpecs: r.openSpecs };
+  });
   return {
     project,
     teps: tepIds.map((t) => `TEP-${t}`),
     members,
+    completeness,
+    complete: completeness.length > 0 && completeness.every((c) => c.complete),
+    openSpecs: [...new Set(completeness.flatMap((c) => c.openSpecs))],
   };
 }
 
 /** A board's sidecar namespace = its board dir relative to the board root. */
 function namespaceOfBoardDir(boardRoot: string, boardDir: string): string {
   return path.relative(boardRoot, boardDir).split(path.sep).join("/");
+}
+
+// ─── TEP-lifecycle gate wiring (SP-th4wqg) ──────────────────────────────────
+// The pure decisions live in `methodology/tepLifecycle`; these functions only do
+// the board-backed RESOLUTION (a TEP's status, a TEP's implementing Specs) and
+// hand the result to the pure gate — the cross-board side `promoteTep` models.
+
+/** A board's namespace key for `resolvesTo`: its sidecar namespace when a board
+ *  root is configured, else its absolute board dir (so same-board bare refs still
+ *  match and different boards stay distinct). */
+function boardNamespace(
+  boardRoot: string | undefined,
+  store: ThinkubeStore,
+): string {
+  return boardRoot
+    ? namespaceOfBoardDir(boardRoot, store.thinkubeDir)
+    : store.thinkubeDir;
+}
+
+/**
+ * Resolve the lifecycle status of the TEP a Spec's `implements:` ref names —
+ * across boards. A **bare** ref resolves to a TEP in the Spec's OWN board
+ * (`store`); a **qualified** `<namespace>:TEP-id` ref to
+ * `<boardRoot>/<namespace>/teps/TEP-id.md` (the sidecar layout
+ * `namespaceOfBoardDir` inverts). Returns the resolved `status` string, or
+ * `undefined` when the ref names no resolvable TEP — `tepApprovalGate` treats
+ * that as not-accepted.
+ */
+async function resolveTepStatus(
+  ctx: HandlerContext,
+  store: ThinkubeStore,
+  ref: ParsedImplements,
+): Promise<string | undefined> {
+  const readStatus = async (s: ThinkubeStore): Promise<string | undefined> => {
+    const fm = (await s.getFile(s.pathForTep(ref.id)))?.frontmatter;
+    return typeof fm?.status === "string" ? fm.status : undefined;
+  };
+  // Bare ref → the Spec's own board owns the TEP.
+  if (!ref.namespace) return readStatus(store);
+  // Qualified ref → the board dir is <boardRoot>/<namespace>.
+  const boardRoot = ctx.env.boardRoot;
+  if (!boardRoot) return undefined;
+  const boardDir = path.join(boardRoot, ...ref.namespace.split("/"));
+  return readStatus(new ThinkubeStore(boardDir, boardDir));
+}
+
+/**
+ * Approval gate (AC#1): refuse a `create_slice` → Ready when the parent Spec's
+ * `implements:` TEP is not `accepted`. Resolves the TEP's status via board
+ * context and runs the pure `tepApprovalGate`; throws its refusal message
+ * (naming the TEP + status) on a block. A Spec with no `implements:` — or a
+ * missing Spec doc (left for `createSlice` to report) — passes.
+ */
+async function assertTepApproved(
+  ctx: HandlerContext,
+  store: ThinkubeStore,
+  specId: string,
+): Promise<void> {
+  const specDoc = await store.getFile(store.pathForSpecDoc(specId));
+  const implementsRaw =
+    typeof specDoc?.frontmatter?.implements === "string"
+      ? specDoc.frontmatter.implements
+      : undefined;
+  const ref = parseImplements(implementsRaw);
+  if (!ref) return; // no TEP linked → nothing to approve.
+  const status = await resolveTepStatus(ctx, store, ref);
+  const verdict = tepApprovalGate(implementsRaw, status);
+  if (!verdict.ok) throw new Error(verdict.message);
+}
+
+/**
+ * Resolve, across all (non-worktree) boards, the Specs whose `implements:`
+ * resolves to the TEP `tepId` owned by `targetNamespace`, projected to
+ * {@link ImplementingSpec} (id + `accepted:` stamp). A bare ref resolves to its
+ * own board; a qualified ref to its explicit namespace (`resolvesTo`). The pure
+ * `tepComplete` derives completeness from these.
+ */
+async function implementingSpecsOfTep(
+  ctx: HandlerContext,
+  targetNamespace: string,
+  tepId: string,
+): Promise<ImplementingSpec[]> {
+  const boardRoot = ctx.env.boardRoot;
+  const out: ImplementingSpec[] = [];
+  for (const b of ctx.boards.list(true).filter((bb) => !bb.worktree)) {
+    const s = ctx.boards.resolve(b.id);
+    const specNs = boardNamespace(boardRoot, s);
+    for (const spec of await s.listSpecDirs()) {
+      const fm = (await s.getFile(s.pathForSpecDoc(spec)))?.frontmatter;
+      const ref = parseImplements(
+        typeof fm?.implements === "string" ? fm.implements : undefined,
+      );
+      if (ref && resolvesTo(ref, specNs, targetNamespace, tepId)) {
+        out.push({
+          id: `SP-${spec}`,
+          accepted: typeof fm?.accepted === "string" ? fm.accepted : undefined,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Completeness gate (AC#3): refuse `write_tep status: implemented` while the TEP
+ * isn't complete (some implementing Spec unaccepted). The TEP being written
+ * lives in `store`, so its owning namespace is `store`'s; resolve its
+ * implementing Specs and run the pure `tepComplete`, naming the open Spec(s).
+ */
+async function assertTepComplete(
+  ctx: HandlerContext,
+  store: ThinkubeStore,
+  tepArg: string,
+): Promise<void> {
+  const tepId = normalizeTepId(tepArg);
+  const targetNs = boardNamespace(ctx.env.boardRoot, store);
+  const specs = await implementingSpecsOfTep(ctx, targetNs, tepId);
+  const result = tepComplete(tepId, specs);
+  if (!result.complete) {
+    const open = result.openSpecs.length
+      ? result.openSpecs.join(", ")
+      : "(no implementing Spec is accepted yet)";
+    throw new Error(
+      `Cannot set TEP-${tepId} to "implemented": it is not complete. ` +
+        `An "implemented" (delivered) TEP requires every implementing Spec to be ` +
+        `accepted; still open: ${open}. Accept the open Spec(s) first, then retry.`,
+    );
+  }
 }
 
 /**
