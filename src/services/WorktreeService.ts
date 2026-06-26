@@ -16,6 +16,7 @@ import { promisify } from "util";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
+import { provisionWorktree } from "./worktreeProvision";
 
 const execFileAsync = promisify(execFile);
 
@@ -221,6 +222,87 @@ export function retirePlan(
   return here === wt || here.startsWith(wt + path.sep) ? "defer" : "retire";
 }
 
+/**
+ * Decide whether symlinking `target` as `repoRoot`'s `node_modules` would be
+ * self-referential — i.e. the link would point the repo's deps dir at itself.
+ * Returns `true` when the link is **safe** (target resolves somewhere other than
+ * `repoRoot/node_modules`), `false` when it would point at itself.
+ *
+ * Comparison is on **realpath-resolved** paths, so it's robust to the ways two
+ * spellings can name the same location: `a/../node_modules`, a trailing slash,
+ * or a symlinked repo root. The would-be link (`repoRoot/node_modules`) usually
+ * doesn't exist yet — we can't `realpath` it directly — so we resolve its
+ * longest existing ancestor and re-append the remaining segments, which still
+ * follows a symlinked root correctly. Must be called before `fs.symlink` so a
+ * self-link is refused rather than created (it would break `node_modules`).
+ */
+export async function nodeModulesLinkSafe(
+  target: string,
+  repoRoot: string,
+): Promise<boolean> {
+  // realpath only resolves existing paths; for a not-yet-created path resolve
+  // its longest existing ancestor (following symlinks) and re-join the rest.
+  const resolveReal = async (p: string): Promise<string> => {
+    const abs = path.resolve(p);
+    try {
+      return await fs.realpath(abs);
+    } catch {
+      const parent = path.dirname(abs);
+      if (parent === abs) return abs; // reached the root; nothing left to resolve
+      return path.join(await resolveReal(parent), path.basename(abs));
+    }
+  };
+  const linkPath = path.join(repoRoot, "node_modules");
+  const [realTarget, realLink] = await Promise.all([
+    resolveReal(target),
+    resolveReal(linkPath),
+  ]);
+  return realTarget !== realLink;
+}
+
+/** Outcome of {@link linkNodeModules}. */
+export type LinkNodeModulesResult =
+  /** A fresh `node_modules` symlink was created. */
+  | "linked"
+  /** Refused — the link would be self-referential ({@link nodeModulesLinkSafe} said no). */
+  | "refused"
+  /** Skipped — the worktree already has a `node_modules` (real dir or prior link). */
+  | "skipped";
+
+/**
+ * The Node **recipe default**: symlink `src` (a canonical repo's `node_modules`)
+ * into `worktreePath` so a Node project's fresh worktree can build/verify without
+ * a full install. This is no longer wired into worktree creation — provisioning
+ * is now driven by the repo's *declared* recipe ({@link provisionWorktree}) and
+ * the runner is language-agnostic — but it is the safe primitive a symlink-style
+ * `repo-conventions` recipe (or a caller) uses, so the self-link guard lives at
+ * the one `fs.symlink` call site rather than scattered through recipe text.
+ *
+ * Idempotent: a pre-existing `node_modules` is left untouched (`"skipped"`).
+ * **Guarded:** {@link nodeModulesLinkSafe} is consulted *before* `fs.symlink`, so
+ * a link that would point the worktree's deps dir at itself is refused
+ * (`"refused"`) rather than created — the #16 self-link that breaks `node_modules`.
+ */
+export async function linkNodeModules(
+  src: string,
+  worktreePath: string,
+): Promise<LinkNodeModulesResult> {
+  const dst = path.join(worktreePath, "node_modules");
+  // Idempotent: never clobber an existing node_modules (real dir or prior link).
+  try {
+    await fs.lstat(dst);
+    return "skipped";
+  } catch {
+    /* dst missing → candidate for linking */
+  }
+  // Guard BEFORE fs.symlink — refuse a self-referential link (#16).
+  if (!(await nodeModulesLinkSafe(src, worktreePath))) {
+    return "refused";
+  }
+  await fs.symlink(src, dst, "dir");
+  return "linked";
+}
+
 export class WorktreeService {
   /** All worktrees of the repo enclosing `cwd`; the first entry is canonical. */
   async list(cwd: string): Promise<WorktreeEntry[]> {
@@ -296,41 +378,13 @@ export class WorktreeService {
     // Board-connect the worktree: inject THINKUBE_BOARD_ROOT into its .mcp.json so
     // the Claude-Code-spawned kanban MCP finds the central sidecar board (AC7).
     if (boardRoot) await this.injectBoardRoot(worktreePath, boardRoot);
-    // Share the canonical repo's node_modules so the orchestrator's slice-grain verify
-    // (`npm run compile`) and the worker's build work in the fresh worktree — node_modules is
-    // gitignored, so a fresh checkout has none (SP-tgs8nz).
-    await this.linkNodeModules(canonicalRepo, worktreePath);
+    // Provision the fresh worktree by running the repo's declared "Worktree setup"
+    // recipe (repo-conventions) via runBounded, so a fresh checkout — which has no
+    // gitignored deps — can run its tooling. Language-agnostic: this replaces the old
+    // hardcoded Node-only node_modules symlink, which didn't generalize and leaked
+    // into git (SP-th4wqh, #16/#24). No recipe declared → provisions nothing.
+    await provisionWorktree(canonicalRepo, worktreePath);
     return worktreePath;
-  }
-
-  /**
-   * Symlink the canonical repo's `node_modules` into a fresh worktree so a Node project's
-   * build/verify works without a full install. Best-effort + idempotent: skipped if the
-   * canonical has no `node_modules` or the worktree already has one. Removing the worktree later
-   * deletes only the symlink (not the shared target).
-   */
-  private async linkNodeModules(
-    canonicalRepo: string,
-    worktreePath: string,
-  ): Promise<void> {
-    const src = path.join(canonicalRepo, "node_modules");
-    const dst = path.join(worktreePath, "node_modules");
-    try {
-      await fs.access(src); // nothing to share if the canonical has no deps
-    } catch {
-      return;
-    }
-    try {
-      await fs.access(dst); // already present (real dir or prior symlink) — leave it
-      return;
-    } catch {
-      /* dst missing → link it */
-    }
-    try {
-      await fs.symlink(src, dst, "dir");
-    } catch {
-      /* best-effort — verify will surface a missing-deps failure if this can't link */
-    }
   }
 
   /**
