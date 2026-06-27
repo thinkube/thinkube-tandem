@@ -334,6 +334,17 @@ export class BoardRegistry {
     const exact = boards.find((b) => b.id === normalizeId(arg));
     if (exact) return this.storeFor(exact.path, exact.boardDir);
 
+    // A Project is a first-class but CODE-LESS board at `<product>/projects/<id>`
+    // in the sidecar root, addressable by that namespace. It has no code repo, so
+    // its store path IS its board dir; its member specs carry `repo:` naming the
+    // working repo the orchestrator branches a worktree in. This is what makes a
+    // project fully tool-managed (write_spec/create_slice/get_thinkube_file target
+    // it like any board) rather than a half-board special-cased around.
+    if (this.env.boardRoot && /(^|\/)projects\/[^/]+\/?$/.test(arg)) {
+      const projDir = path.join(this.env.boardRoot, ...arg.split("/"));
+      if (isBoardDir(projDir)) return this.storeFor(projDir, projDir);
+    }
+
     // Never resolve fuzzy/basename matches — suggest instead.
     const needle = arg.toLowerCase();
     const candidates = boards
