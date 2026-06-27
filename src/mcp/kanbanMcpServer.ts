@@ -932,6 +932,11 @@ const TOOL_DEFS = [
           description:
             "The TEP this Spec implements — a bare `TEP-<id>` (repo-local) or a qualified `<namespace>:TEP-<id>` (cross-board / umbrella project). Sets the `implements:` frontmatter (the TEP↔spec link + umbrella membership, which `promote_tep` rewrites). Omit to leave it unchanged; empty string clears it.",
         },
+        repo: {
+          type: "string",
+          description:
+            "The WORKING repository for a project-member spec — a board namespace (e.g. `thinkube-platform/core/thinkube-metadata`) the orchestrator branches a worktree in, independent of where the spec file lives under the project umbrella. Sets the `repo:` frontmatter. Omit to leave unchanged; empty clears it. A normal same-repo spec needs none (the orchestrator falls back to the board's repo).",
+        },
         ac_verifications: {
           type: "object",
           description:
@@ -1252,6 +1257,7 @@ export async function dispatchTool(
           !Array.isArray(args.ac_verifications)
           ? (args.ac_verifications as Record<string, unknown>)
           : undefined,
+        optString(args, "repo"),
       );
     }
     case "patch_spec_section":
@@ -2582,6 +2588,7 @@ async function writeSpec(
   body: string,
   implementsRef?: string,
   acVerifications?: Record<string, unknown>,
+  repoRef?: string,
 ): Promise<unknown> {
   const trimmed = body.trim();
   if (!trimmed) throw new Error("Spec body must not be empty.");
@@ -2609,6 +2616,15 @@ async function writeSpec(
     const v = implementsRef.trim();
     if (v) fm.implements = v;
     else delete fm.implements;
+  }
+  // `repo:` — the WORKING repository (a board namespace) for a project-member
+  // spec: the repo the orchestrator branches a worktree in, independent of where
+  // the spec file is located (TEP-5 / the project-layer cutover). Omitted →
+  // preserved; empty → cleared (a normal same-repo spec needs none).
+  if (repoRef !== undefined) {
+    const v = repoRef.trim();
+    if (v) fm.repo = v;
+    else delete fm.repo;
   }
   // `ac_verifications:` — the closing gate's per-AC declaration (SP-tgzyfy). Normalized to a map
   // keyed by the AC ordinal → { run, env? }; omitted → preserved, `{}` → cleared. Invalid entries
