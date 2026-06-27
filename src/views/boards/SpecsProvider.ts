@@ -232,15 +232,37 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       const ns = namespaceForRepo(r.path, folders);
       if (ns) repoByNs.set(ns, r);
     }
+    // The kanban/boardCtx target for every member is the PROJECT board itself —
+    // that's where the spec + its slices live, so the panel must load from here
+    // (loading the working repo is what made a member look "not sliced"). The
+    // WORKING repo (where the worktree is cut) rides in the spec's `repo:` and is
+    // resolved at orchestrate time, not here.
+    const projectRepo: RepoEntry = {
+      kind: "repo",
+      path: projDir,
+      name: ownerNamespace.split("/").pop() ?? ownerNamespace,
+      rel: ownerNamespace,
+      enabled: true,
+      boardDir: projDir,
+    };
     const nodes: SpecNode[] = [];
     for (const n of await store.listSpecDirs()) {
       if (n.split("/")[0] !== tepId) continue;
       const fm = (await store.getFile(store.pathForSpecDoc(n)))?.frontmatter;
       const homeNs = typeof fm?.repo === "string" ? fm.repo : undefined;
-      const repo = (homeNs && repoByNs.get(homeNs)) ?? repos[0];
-      if (!repo) continue;
-      const coords = await detectRepoCoords(repo.path);
-      const node = await this.buildSpecNode(repo, store, n, coords, boardRoot);
+      const workingRepo = (homeNs && repoByNs.get(homeNs)) ?? repos[0];
+      // Commit-URL coords come from the WORKING repo (where commits land), even
+      // though the node's board is the project.
+      const coords = workingRepo
+        ? await detectRepoCoords(workingRepo.path)
+        : undefined;
+      const node = await this.buildSpecNode(
+        projectRepo,
+        store,
+        n,
+        coords,
+        boardRoot,
+      );
       if (node) nodes.push(node);
     }
     return nodes;
