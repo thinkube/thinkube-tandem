@@ -346,9 +346,15 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
 
     if (node.kind === "implements") return implementsItem(node.link);
 
-    // A Spec with done slices or a TEP link expands into the roll-up.
+    // A Spec with done slices or a TEP link expands into the roll-up. The label
+    // shows ONLY the spec number (`SP-1`), not the composite `${tep}/${spec}` id
+    // (`SP-31/1`) — the view is already scoped to a drilled-into TEP, so the tep
+    // prefix is redundant. The composite stays in `specNumber` for the click logic.
+    const specLabel = node.specNumber.includes("/")
+      ? node.specNumber.split("/")[1]
+      : node.specNumber;
     const item = new vscode.TreeItem(
-      `SP-${node.specNumber}`,
+      `SP-${specLabel}`,
       node.delivered.length || node.implementsTep
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
