@@ -51,6 +51,16 @@ import { namespaceForRepo } from "../store/boardNamespace";
  * way `SpecsProvider.crossBoardSpecs` does. So the spec's *location* never
  * decides the worktree — its `repo:` does (TEP-5 / the project-layer cutover).
  */
+/** Normalize a spec arg from the ▶ button / a card — the tep-qualified handle
+ *  `TEP-n_SP-m` — (or a bare / `SP-`-prefixed id) into the composite spec id
+ *  `n/m` that `listSpecDirs` returns. The card carries the full handle, so the
+ *  old `replace(/^SP-/, "")` left `TEP-5_SP-1` intact → "not a Spec on this board". */
+function normalizeSpecArg(arg: string): string {
+  const raw = arg.trim();
+  const m = /^TEP-(\d+)_SP-(\d+)$/.exec(raw);
+  return m ? `${m[1]}/${m[2]}` : raw.replace(/^SP-/, "");
+}
+
 async function workingRepoPath(
   store: ThinkubeStore,
   spec: string,
@@ -134,7 +144,7 @@ export function registerOrchestrateCommands(
           // quick-pick and orchestrate exactly the Spec the user clicked.
           let spec: string;
           if (typeof specArg === "string" && specArg.trim()) {
-            spec = specArg.replace(/^SP-/, "").trim();
+            spec = normalizeSpecArg(specArg);
             if (!specs.includes(spec)) {
               vscode.window.showWarningMessage(
                 `SP-${spec} is not a Spec on this board.`,
@@ -378,7 +388,7 @@ export function registerOrchestrateCommands(
           vscode.window.showErrorMessage("Accept: no Spec id provided.");
           return;
         }
-        const specId = spec.replace(/^SP-/, "").trim();
+        const specId = normalizeSpecArg(spec);
         let repoPath: string;
         let boardDir: string;
         if (boardCtx) {
@@ -457,7 +467,7 @@ export function registerOrchestrateCommands(
           vscode.window.showErrorMessage("Reject: no Spec id provided.");
           return;
         }
-        const specId = spec.replace(/^SP-/, "").trim();
+        const specId = normalizeSpecArg(spec);
         let repoPath: string;
         let boardDir: string;
         if (boardCtx) {
