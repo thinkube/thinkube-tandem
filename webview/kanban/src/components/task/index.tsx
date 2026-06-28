@@ -33,6 +33,11 @@ export function Task({
   const [title, setTitle] = useState(task.description);
   const [body, setBody] = useState(task.body ?? "");
   const [due, setDue] = useState(task.dueDate ?? "");
+  // Optimistic accept: the accept action is a multi-second async (PR merge +
+  // worktree retire + fast-forward) before the host reloads and the card flips
+  // to "Approved & closed". Flip the button to a disabled "Approving…" the
+  // instant it's pressed so it can't be fired twice in that window.
+  const [accepting, setAccepting] = useState(false);
   const canEdit = task.id !== undefined;
   // The card id IS the handle SP-{n}_SL-{m}; surface the slice number as its own
   // chip (the spec is already shown by the SP- chip).
@@ -151,23 +156,26 @@ export function Task({
                 <button
                   type="button"
                   className={styles.acceptBtn}
-                  disabled={!task.acceptReady}
+                  disabled={!task.acceptReady || accepting}
                   title={
-                    task.acceptReady
-                      ? "Approve the finished implementation: merge the Spec's PR and close the Spec"
-                      : "Enabled once every slice is Done and every acceptance criterion is checked"
+                    accepting
+                      ? "Approving… (merging the PR and closing the Spec)"
+                      : task.acceptReady
+                        ? "Approve the finished implementation: merge the Spec's PR and close the Spec"
+                        : "Enabled once every slice is Done and every acceptance criterion is checked"
                   }
-                  onClick={() =>
-                    task.parentId !== undefined &&
+                  onClick={() => {
+                    if (task.parentId === undefined || accepting) return;
+                    setAccepting(true);
                     postToHost({
                       kind: "accept-spec",
                       spec: task.parentId,
-                    })
-                  }
+                    });
+                  }}
                 >
-                  Approve &amp; close
+                  {accepting ? "Approving…" : "Approve & close"}
                 </button>
-                {!task.acceptReady && (
+                {!task.acceptReady && !accepting && (
                   <span className={styles.acceptHint}>
                     all slices Done + all criteria checked
                   </span>
