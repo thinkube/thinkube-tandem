@@ -19,12 +19,12 @@ export interface SliceRow {
   /** Frontmatter status: ready | doing | done | archived. */
   status: string;
   /** `depends_on` handles. */
-  dependsOn: string[];
+  requires: string[];
 }
 
 /**
  * Pick the next dispatchable slice: the first **ready** slice (in input order) whose every
- * `dependsOn` handle is **done**. Returns its handle, or null if none is dispatchable. A
+ * `requires` handle is **done**. Returns its handle, or null if none is dispatchable. A
  * dep missing from `rows` counts as not-done (blocks) — fail safe. One-in-flight / the
  * concurrency cap is the shell's concern, not this picker's.
  */
@@ -33,7 +33,7 @@ export function pickNextSlice(rows: SliceRow[]): string | null {
 }
 
 /**
- * The **ready frontier**: every dispatchable slice (status **ready** with every `dependsOn`
+ * The **ready frontier**: every dispatchable slice (status **ready** with every `requires`
  * **done**), in input order. SL-2's bounded fan-out runs a footprint-disjoint subset of this
  * up to the per-Spec concurrency cap; SL-1's `pickNextSlice` is just its width-1 head.
  */
@@ -43,7 +43,7 @@ export function pickFrontier(rows: SliceRow[]): string[] {
   );
   return rows
     .filter((r) => (r.status ?? "").toLowerCase() === "ready")
-    .filter((r) => !(r.dependsOn ?? []).some((d) => statusOf.get(d) !== "done"))
+    .filter((r) => !(r.requires ?? []).some((d) => statusOf.get(d) !== "done"))
     .map((r) => r.handle);
 }
 
@@ -146,7 +146,7 @@ export interface SliceForDag {
    * ignored field only so the few remaining callers that still pass it keep compiling; do
    * not author new uses. The grounded replacement is a unit `consumes`.
    */
-  dependsOn?: string[];
+  requires?: string[];
   /** Declared `files:` (the footprint for a unit-less legacy slice). */
   files: string[];
   /** `work_units` (may be empty → the whole slice is one serial unit). */
@@ -165,7 +165,7 @@ export interface SchedUnit {
   /** Files this unit touches (∪ of its work units' footprints). */
   footprint: string[];
   /** Unit + slice ids this unit waits on. */
-  dependsOn: string[];
+  requires: string[];
   shape: "serial" | "mechanize" | "fan-out";
   /** The unit's task text(s), for the worker prompt. */
   note?: string;
@@ -234,7 +234,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         id: s.handle,
         slice: s.handle,
         footprint: s.files ?? [],
-        dependsOn: [],
+        requires: [],
         shape: "serial",
       });
       continue;
@@ -251,7 +251,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
           (c) => fileToNodes.get(normFile(c)) ?? [],
         ),
       );
-      const dependsOn = [
+      const requires = [
         ...new Set(consumesDeps.filter((id) => id !== thisId)),
       ];
       const note =
@@ -263,7 +263,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         id: thisId,
         slice: s.handle,
         footprint,
-        dependsOn,
+        requires,
         shape: eu.shape,
         note,
         units: eu.units,
@@ -300,13 +300,13 @@ export function readyFrontier(
       !done.has(u.id) &&
       !blocked.has(u.id) &&
       !u.footprint.some((f) => running.has(f)) &&
-      (u.dependsOn ?? []).every((d) => done.has(d)),
+      (u.requires ?? []).every((d) => done.has(d)),
   );
 
   // critical-path order: longest remaining chain of dependents first.
   const dependents = new Map<string, string[]>();
   for (const u of units)
-    for (const d of u.dependsOn ?? []) {
+    for (const d of u.requires ?? []) {
       const arr = dependents.get(d) ?? [];
       arr.push(u.id);
       dependents.set(d, arr);

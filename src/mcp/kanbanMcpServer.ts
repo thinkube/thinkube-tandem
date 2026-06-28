@@ -131,7 +131,25 @@ import {
   readyGate,
   acRequirementHash,
   AC_CERT_HASH_KEY,
+  emitAcVerifications,
 } from "../services/openingGate";
+// SP-6/1 (TEP-6): `write_spec` runs the verifiability audit itself and signs only what its own
+// audit produced — the agent-supplied `ac_verifications` map is no longer honored. The signing
+// secret lives only in the server's globalStorage (`loadOrCreateSecret`), the provenance signature
+// is HMAC'd over `(acRequirementHash, ac_verifications)` (`signAcVerifications`) and stamped under
+// `AC_SIGNATURE_KEY`, and the audit runner is the stub-injectable seam (`AuditRunner`) so the
+// handler's *honor the verdict, sign on pass, refuse otherwise* enforcement is unit-testable with a
+// fixed stub instead of a live model call.
+import {
+  AC_SIGNATURE_KEY,
+  loadOrCreateSecret,
+  signAcVerifications,
+} from "../services/acSignature";
+import {
+  createSdkAuditRunner,
+  type AuditAc,
+  type AuditRunner,
+} from "../services/auditorRunner";
 import {
   verificationRunnable,
   repoStateFromTsconfig,
@@ -211,10 +229,31 @@ async function main(): Promise<void> {
     { capabilities: { tools: {}, resources: {} } },
   );
 
+  // SP-6/1 (TEP-6): turn on the `ac_verifications` provenance path when the extension hands us a
+  // private globalStorage dir for the signing key. The secret never leaves this process; the audit
+  // runner is the real headless-Claude one (lazy SDK import, so no cost until a `write_spec` runs).
+  // Absent dir ⇒ signing stays off and `write_spec` keeps the legacy param path (forward-compatible).
+  let signingSecret: Buffer | undefined;
+  let auditRunner: AuditRunner | undefined;
+  const signingKeyDir = process.env.THINKUBE_SIGNING_KEY_DIR?.trim();
+  if (signingKeyDir) {
+    try {
+      signingSecret = loadOrCreateSecret(signingKeyDir);
+      auditRunner = createSdkAuditRunner({ log });
+      log("ac_verifications signing: on (secret loaded from globalStorage)");
+    } catch (err) {
+      signingSecret = undefined;
+      auditRunner = undefined;
+      log(`ac_verifications signing: off (${(err as Error).message})`);
+    }
+  }
+
   const ctx: HandlerContext = {
     env,
     thinkingSpaces,
     lock: new ConcurrencyLock(),
+    auditRunner,
+    signingSecret,
   };
   registerHandlers(server, sdkTypes, ctx);
 
@@ -496,6 +535,21 @@ interface HandlerContext {
    * there and this only resolves "is this qualified TEP promoted?".
    */
   promoteLocator?: PromoteLocator;
+  /**
+   * The server-side verifiability audit runner `write_spec` runs over a Spec's ACs (SP-6/1 / TEP-6).
+   * Injected so the handler's enforcement — *honor the verdict, sign on pass, refuse otherwise* — is
+   * unit-testable with a fixed stub (`fixedAuditRunner`) in `env: local`; production (`main`) wires
+   * the real headless-Claude runner (`createSdkAuditRunner`). Absent ⇒ signing is off and `write_spec`
+   * falls back to the legacy `ac_verifications` param path (no provenance signature).
+   */
+  auditRunner?: AuditRunner;
+  /**
+   * The server signing secret loaded from globalStorage (`loadOrCreateSecret`), held only by the
+   * server process and never seen by the agent. Its presence — together with {@link auditRunner} —
+   * turns on the SP-6/1 provenance path: `write_spec` HMAC-signs the audited `ac_verifications` under
+   * {@link AC_SIGNATURE_KEY} and stops honoring an agent-supplied map. Absent ⇒ legacy path.
+   */
+  signingSecret?: Buffer;
 }
 
 /**
@@ -843,7 +897,7 @@ const TOOL_DEFS = [
                 type: "array",
                 items: { type: "string" },
                 description:
-                  "Files a SIBLING unit produces that this unit reads — the contract-first reference and the ONLY authored dependency language (the ungrounded `depends_on` form was removed). Naming a sibling's footprint here satisfies the contract-first gate (the unit is coordinated through that contract, not fanned out blind) and is resolved into a real dependency edge on the producing unit(s). It is a file, not a node-id, so it is authorable at create time even though the slice has no number yet.",
+                  "Files a SIBLING unit produces that this unit reads — the contract-first reference and the authored dependency language. Naming a sibling's footprint here satisfies the contract-first gate (the unit is coordinated through that contract, not fanned out blind) and is resolved into a real dependency edge on the producing unit(s). It is a file, not a node-id, so it is authorable at create time even though the slice has no number yet.",
               },
               execution: {
                 type: "string",
@@ -856,7 +910,7 @@ const TOOL_DEFS = [
               [CONTRACT_FIRST_OPTOUT_FIELD]: {
                 type: "boolean",
                 description:
-                  "Opt this unit out of the contract-first gate — accept a genuinely-independent `*.test.*`/integration `fan-out` unit that has no `depends_on` even though it sits beside sibling implementation units. Use ONLY when the test truly shares no contract with its siblings; the default refusal exists because " +
+                  "Opt this unit out of the contract-first gate — accept a genuinely-independent `*.test.*`/integration `fan-out` unit that has no `consumes` even though it sits beside sibling implementation units. Use ONLY when the test truly shares no contract with its siblings; the default refusal exists because " +
                   CONTRACT_FIRST_RULE_MSG,
               },
             },
@@ -864,7 +918,7 @@ const TOOL_DEFS = [
             additionalProperties: false,
           },
           description:
-            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), consumes? (files a sibling unit produces that this unit reads — the only dependency language), execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers is refused by the contract-first gate (route it through a shared contract file via `consumes`, or set the opt-out flag for a genuinely-independent test). The ungrounded `depends_on` form is no longer accepted — express every dependency as `consumes`.",
+            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), consumes? (files a sibling unit produces that this unit reads — the only dependency language), execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers is refused by the contract-first gate (route it through a shared contract file via `consumes`, or set the opt-out flag for a genuinely-independent test). Express every dependency as `consumes`.",
         },
         docs: {
           type: "string",
@@ -1008,18 +1062,29 @@ const TOOL_DEFS = [
             type: "object",
             properties: {
               footprint: { type: "array", items: { type: "string" } },
-              depends_on: { type: "array", items: { type: "string" } },
+              consumes: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Files a SIBLING unit produces that this unit reads — the contract-first reference and the authored dependency language. Naming a sibling's footprint here satisfies the contract-first gate and is resolved into a real dependency edge on the producing unit(s). It is a file, not a node-id.",
+              },
               execution: {
                 type: "string",
                 enum: ["serial", "mechanize", "fan-out"],
               },
               note: { type: "string" },
+              [CONTRACT_FIRST_OPTOUT_FIELD]: {
+                type: "boolean",
+                description:
+                  "Opt this unit out of the contract-first gate — accept a genuinely-independent `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers. Use ONLY when the test truly shares no contract with its siblings; the default refusal exists because " +
+                  CONTRACT_FIRST_RULE_MSG,
+              },
             },
             required: ["footprint", "execution"],
             additionalProperties: false,
           },
           description:
-            "Re-cut (SP-th4wqd): REPLACE the slice's execution-aware work units. Omit to leave unchanged; pass `[]` to clear. Each unit's `footprint` is checked against the thinking space repo with the same guard `create_slice` uses.",
+            "Re-cut (SP-th4wqd): REPLACE the slice's execution-aware work units. Omit to leave unchanged; pass `[]` to clear. Each unit's `footprint` is checked against the thinking space repo with the same guard `create_slice` uses. Express dependencies as `consumes` (a sibling unit's produced file).",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -1165,35 +1230,43 @@ export async function dispatchTool(
       // the pure `tepApprovalGate` before `createSlice` does any work, so the
       // refusal (naming the TEP + its status) fires at the door.
       await assertTepApproved(ctx, store, createSpecId);
-      return createSlice(store, {
-        // Spec id is a string (base36-epoch); tolerate a numeric integer id
-        // from callers that still pass a number (legacy specs).
-        spec: createSpecId,
-        title: asString(args, "title"),
-        body: asString(args, "body"),
-        depends_on: optStringArray(args, "depends_on"),
-        parallel: optBoolean(args, "parallel"),
-        parallel_group: optString(args, "parallel_group"),
-        files: optStringArray(args, "files"),
-        satisfies: optNumberArray(args, "satisfies"),
-        // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
-        // validates each unit's footprint and serializes the array to frontmatter. Without
-        // this line the schema accepts work_units but the handler silently drops it (the
-        // bug that left every created slice with no work_units).
-        work_units: Array.isArray(args.work_units)
-          ? (args.work_units as {
-              footprint: string[];
-              depends_on?: string[];
-              consumes?: string[];
-              execution: string;
-              note?: string;
-            }[])
-          : undefined,
-        docs: optString(args, "docs"),
-        docs_reason: optString(args, "docs_reason"),
-        priority: optString(args, "priority"),
-        tags: optStringArray(args, "tags"),
-      });
+      return createSlice(
+        store,
+        {
+          // Spec id is a string (base36-epoch); tolerate a numeric integer id
+          // from callers that still pass a number (legacy specs).
+          spec: createSpecId,
+          title: asString(args, "title"),
+          body: asString(args, "body"),
+          depends_on: optStringArray(args, "depends_on"),
+          parallel: optBoolean(args, "parallel"),
+          parallel_group: optString(args, "parallel_group"),
+          files: optStringArray(args, "files"),
+          satisfies: optNumberArray(args, "satisfies"),
+          // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
+          // validates each unit's footprint and serializes the array to frontmatter. Without
+          // this line the schema accepts work_units but the handler silently drops it (the
+          // bug that left every created slice with no work_units).
+          work_units: Array.isArray(args.work_units)
+            ? (args.work_units as {
+                footprint: string[];
+                depends_on?: string[];
+                consumes?: string[];
+                execution: string;
+                note?: string;
+              }[])
+            : undefined,
+          docs: optString(args, "docs"),
+          docs_reason: optString(args, "docs_reason"),
+          priority: optString(args, "priority"),
+          tags: optStringArray(args, "tags"),
+        },
+        // SP-6/1 provenance: hand `createSlice` the server signing secret so its
+        // → Ready gate verifies the `ac_verifications` signature (not the
+        // reproducible hash) and refuses a Spec whose auditor was skipped. Absent
+        // ⇒ legacy hash-only gate.
+        ctx.signingSecret,
+      );
     }
     case "write_spec": {
       writeGate(name);
@@ -1234,13 +1307,25 @@ export async function dispatchTool(
         implementsRaw,
         // The closing gate's per-AC declaration (SP-tgzyfy). Forwarded verbatim — writeSpec
         // normalizes + serializes it to the `ac_verifications:` frontmatter; undefined leaves
-        // any existing map intact, `{}` clears it.
+        // any existing map intact, `{}` clears it. NOTE (SP-6/1): when signing is on (the audit
+        // context below is supplied), this agent-supplied map is *ignored* — `write_spec` runs the
+        // audit itself and signs only what its own audit produced.
         args.ac_verifications !== undefined &&
           typeof args.ac_verifications === "object" &&
           !Array.isArray(args.ac_verifications)
           ? (args.ac_verifications as Record<string, unknown>)
           : undefined,
         optString(args, "repo"),
+        // SP-6/1 provenance: when the server holds a signing secret AND an audit runner, hand them
+        // (plus the repo cwd the headless audit runs in) to `writeSpec` so it runs the audit, signs
+        // the result, and refuses an un-auditable Spec. Absent ⇒ legacy param path.
+        ctx.auditRunner !== undefined && ctx.signingSecret !== undefined
+          ? {
+              runner: ctx.auditRunner,
+              secret: ctx.signingSecret,
+              cwd: store.workspaceRoot,
+            }
+          : undefined,
       );
     }
     case "patch_spec_section":
@@ -1516,7 +1601,8 @@ export async function getProject(
     normalizeTepId,
   );
 
-  const members: { thinking_space: string; handle: string; kind: string }[] = [];
+  const members: { thinking_space: string; handle: string; kind: string }[] =
+    [];
   // Per-umbrella-TEP implementing Specs (id + accepted stamp), for completeness.
   const implByTep = new Map<string, ImplementingSpec[]>();
   for (const t of tepIds) implByTep.set(t, []);
@@ -2229,6 +2315,15 @@ export async function createSlice(
     docs_reason?: string;
     tags?: string[];
   },
+  /**
+   * SP-6/1 (TEP-6) provenance: the server signing secret (loaded from globalStorage by `main`,
+   * held only by the server process, never seen by the agent). When supplied, the → Ready gate
+   * enforces the `ac_verifications` provenance **signature** — `readyGate` trusts the server HMAC
+   * over `(acRequirementHash, ac_verifications)`, not the reproducible hash — so a Spec whose
+   * `write_spec` audit never ran (no signature) or whose ACs were edited after signing (invalid
+   * signature) is refused, naming the missing/invalid provenance. Absent ⇒ legacy hash-only path.
+   */
+  signingSecret?: Buffer,
 ): Promise<unknown> {
   const title = args.title.trim();
   if (!title) throw new Error("title must not be empty.");
@@ -2350,24 +2445,50 @@ export async function createSlice(
   // write_spec or a patch_spec_section of the AC section), the two diverge and the
   // structurally-complete map is still refused as `stale-certification` — re-cert
   // required. No stamp (a Spec certified before re-audit shipped) ⇒ never stale.
+  // Provenance signature (SP-6/1 / TEP-6): when the server holds a signing
+  // secret, signature enforcement is ON — `readyGate` verifies the server HMAC
+  // over `(acRequirementHash, ac_verifications)` (stamped by `write_spec`'s own
+  // audit under `AC_SIGNATURE_KEY`) instead of trusting the reproducible hash.
+  // The agent can recompute `acRequirementHash` but can never produce this
+  // signature (the secret never leaves the server), so a Spec whose auditor was
+  // skipped — its `ac_verifications` hand-supplied with no signature, or signed
+  // and then AC-edited — is refused below. No secret ⇒ the legacy hash-only
+  // stale check still applies (forward-compatible).
   const certification = {
     currentHash: acRequirementHash(specDoc.body),
     stampedHash: specDoc.frontmatter?.[AC_CERT_HASH_KEY],
+    ...(signingSecret !== undefined
+      ? {
+          secret: signingSecret,
+          signature: specDoc.frontmatter?.[AC_SIGNATURE_KEY],
+        }
+      : {}),
   };
   const readyVerdict = readyGate(acs, verifications, certification);
   if (!readyVerdict.ok) {
     // Structural block — an AC with no runnable declaration — names the ordinal.
-    // (The `stale-certification` variant of ReadyGateResult only arises when a
-    // certification baseline is supplied, which is the re-audit path's concern;
-    // narrow defensively so this handler stays correct as that union grows.)
     if ("ordinal" in readyVerdict) {
       throw new Error(
         `SP-${args.spec} AC ${readyVerdict.ordinal} has no runnable ac_verifications entry — every AC must be certified with a verification before → Ready. Run /spec-prepare ${args.spec} to certify each AC.`,
       );
     }
-    throw new Error(
-      `SP-${args.spec}'s acceptance-criteria certification is stale — the ACs changed since they were certified. Run /spec-prepare ${args.spec} to re-certify each AC before → Ready.`,
-    );
+    // Provenance / staleness blocks (discriminated by `reason`). Each names the
+    // missing or invalid provenance so skipping the auditor blocks slicing with a
+    // clear, actionable error (SP-6/1, AC3).
+    switch (readyVerdict.reason) {
+      case "missing-signature":
+        throw new Error(
+          `SP-${args.spec}'s ac_verifications carry no provenance signature (\`${AC_SIGNATURE_KEY}\`) — the verifiability auditor was skipped and the map hand-supplied, which the → Ready gate refuses. Run /spec-prepare ${args.spec} so write_spec runs the audit and signs the result before → Ready.`,
+        );
+      case "invalid-signature":
+        throw new Error(
+          `SP-${args.spec}'s ac_verifications provenance signature (\`${AC_SIGNATURE_KEY}\`) is invalid — it does not verify under the server secret (forged, tampered, signed elsewhere, or the acceptance criteria were edited after signing). Recomputing the ac_verifications_hash does not satisfy the gate. Run /spec-prepare ${args.spec} to re-audit and re-sign before → Ready.`,
+        );
+      case "stale-certification":
+        throw new Error(
+          `SP-${args.spec}'s acceptance-criteria certification is stale — the ACs changed since they were certified. Run /spec-prepare ${args.spec} to re-certify each AC before → Ready.`,
+        );
+    }
   }
 
   // Runnable-verification precheck (SP-th4wqf_SL-1 / TEP-th3i18 #8). A *declared*
@@ -2460,7 +2581,7 @@ export async function createSlice(
     const dagVerdict = validateDag(
       buildUnitDag(dagSlices).map((u) => ({
         id: u.id,
-        dependsOn: u.dependsOn,
+        requires: u.requires,
       })),
     );
     if (!dagVerdict.ok) {
@@ -2583,6 +2704,46 @@ function acceptanceCriteriaOrdinals(
   return Array.from({ length: count }, (_, i) => ({ ordinal: i + 1 }));
 }
 
+/**
+ * The Spec's acceptance criteria as {@link AuditAc}s — the same 1-based checklist lines
+ * {@link acceptanceCriteriaOrdinals} counts, but carrying each AC's prose so `write_spec`'s
+ * server-side verifiability audit (SP-6/1) can interrogate it. The text is the checklist line with
+ * its `- [ ] ` / `- [x] ` marker stripped; an empty section yields `[]` (nothing to audit → the
+ * caller does not run the audit). Mirrors `acceptanceCriteriaOrdinals`' regex so ordinals agree.
+ */
+function acceptanceCriteriaItems(body: string | undefined): AuditAc[] {
+  if (!body) return [];
+  const m = /##\s*Acceptance Criteria\s*\n([\s\S]*?)(?=\n##\s|$)/i.exec(body);
+  if (!m) return [];
+  const out: AuditAc[] = [];
+  for (const line of m[1].split(/\r?\n/)) {
+    const item = /^\s*[-*]\s*\[[ xX]\]\s?(.*)$/.exec(line);
+    if (!item) continue;
+    out.push({ ordinal: out.length + 1, text: item[1].trim() });
+  }
+  return out;
+}
+
+/**
+ * The 1-based ordinals the audit did NOT pass as `verifiable` — for a refusal message that names
+ * which ACs need reframing. An AC fails if it has no verdict, a non-`verifiable` verdict, or a
+ * `verifiable` verdict with no runnable `run` (mirrors {@link computePassed}'s structural rule).
+ */
+function unverifiableOrdinals(
+  acs: AuditAc[],
+  verdicts: { ordinal: number; verdict: string; run?: string }[],
+): number[] {
+  const byOrdinal = new Map(verdicts.map((v) => [v.ordinal, v]));
+  const flagged: number[] = [];
+  for (const ac of acs) {
+    const v = byOrdinal.get(ac.ordinal);
+    if (!v || v.verdict !== "verifiable" || !v.run?.trim()) {
+      flagged.push(ac.ordinal);
+    }
+  }
+  return flagged;
+}
+
 /** Slug uid from the title, unique among the Spec's existing slice uids. */
 async function uniqueSlug(
   store: ThinkubeStore,
@@ -2620,6 +2781,14 @@ async function writeSpec(
   implementsRef?: string,
   acVerifications?: Record<string, unknown>,
   repoRef?: string,
+  /**
+   * SP-6/1 (TEP-6) provenance context. When supplied, signing is **on**: `write_spec` runs the
+   * injected verifiability audit over the Spec's ACs itself, signs only what its own audit produced
+   * (HMAC over `(acRequirementHash, ac_verifications)` with the server-only `secret`), and refuses a
+   * Spec whose audit fails — the agent-supplied `acVerifications` map is ignored entirely. Absent ⇒
+   * legacy param path (no audit, no signature). `cwd` is the repo the headless audit runs in.
+   */
+  audit?: { runner: AuditRunner; secret: Buffer; cwd: string },
 ): Promise<unknown> {
   const trimmed = body.trim();
   if (!trimmed) throw new Error("Spec body must not be empty.");
@@ -2657,10 +2826,49 @@ async function writeSpec(
     if (v) fm.repo = v;
     else delete fm.repo;
   }
-  // `ac_verifications:` — the closing gate's per-AC declaration (SP-tgzyfy). Normalized to a map
-  // keyed by the AC ordinal → { run, env? }; omitted → preserved, `{}` → cleared. Invalid entries
-  // (no non-empty `run`, non-positive ordinal) are dropped so a malformed map can't poison the gate.
-  if (acVerifications !== undefined) {
+  // `ac_verifications:` — the closing gate's per-AC declaration (SP-tgzyfy).
+  if (audit !== undefined) {
+    // ── Signing on (SP-6/1 / TEP-6): run the audit ourselves, sign only what it produced ──────
+    // The agent's `acVerifications` param is *ignored* here — signing a map the agent handed in
+    // would only prove the tool wrote it, not that the auditor ran. So when this Spec sets ACs we
+    // spawn the (injected) verifiability audit, honor its verdict, and sign on pass; an empty AC
+    // set / a failing or errored audit refuses (nothing is persisted, since we throw before the
+    // write). Editing a Spec that carries no ACs leaves any existing `ac_verifications` untouched.
+    const acItems = acceptanceCriteriaItems(trimmed);
+    if (acItems.length > 0) {
+      const result = await audit.runner({
+        acs: acItems,
+        specBody: trimmed,
+        cwd: audit.cwd,
+      });
+      if (result.error) {
+        throw new Error(
+          `write_spec could not certify SP-${spec}'s acceptance criteria — the verifiability audit did not complete (${result.error}). The Spec was not written; re-run /spec-prepare ${spec}.`,
+        );
+      }
+      if (!result.passed) {
+        const flagged = unverifiableOrdinals(acItems, result.verdicts);
+        const which = flagged.length
+          ? `AC ${flagged.join(", ")} ${flagged.length === 1 ? "is" : "are"} not verifiable as written`
+          : "the acceptance criteria are not all verifiable as written";
+        throw new Error(
+          `write_spec refused SP-${spec}: the verifiability audit failed — ${which}. Reframe each so an AI agent can prove it with a concrete command before merge, then re-run /spec-prepare ${spec}. The Spec was not written.`,
+        );
+      }
+      // Passed: emit the canonical map from the audit's verdicts and bind a server signature over
+      // `(acRequirementHash, ac_verifications)` so `readyGate` can verify provenance — the agent
+      // can reproduce the hash but never this signature (the secret never leaves the server).
+      const map = emitAcVerifications(result.verdicts);
+      const acHash = acRequirementHash(trimmed);
+      fm.ac_verifications = map;
+      fm[AC_CERT_HASH_KEY] = acHash;
+      fm[AC_SIGNATURE_KEY] = signAcVerifications(acHash, map, audit.secret);
+    }
+  } else if (acVerifications !== undefined) {
+    // ── Signing off (legacy param path) ───────────────────────────────────────────────────────
+    // Normalized to a map keyed by the AC ordinal → { run, env? }; omitted → preserved, `{}` →
+    // cleared. Invalid entries (no non-empty `run`, non-positive ordinal) are dropped so a
+    // malformed map can't poison the gate. Used only when no server signing secret is configured.
     const normalized = normalizeAcVerifications(acVerifications);
     if (Object.keys(normalized).length) {
       fm.ac_verifications = normalized;
@@ -2688,6 +2896,11 @@ async function writeSpec(
     created: existing === undefined,
     implements: fm.implements,
     acVerifications: fm.ac_verifications,
+    // Surface the provenance signature on the signing-on path so callers/tests can assert it landed
+    // (the agent gains nothing from seeing it — it cannot reproduce it without the server secret).
+    ...(typeof fm[AC_SIGNATURE_KEY] === "string"
+      ? { acVerificationsSignature: fm[AC_SIGNATURE_KEY] }
+      : {}),
   };
 }
 

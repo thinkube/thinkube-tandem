@@ -323,7 +323,7 @@ export function buildSliceThinkingSpace(
         {
           handle: id,
           status: s.status ?? "",
-          dependsOn: s.dependsOn ?? [],
+          requires: s.dependsOn ?? [],
           files: s.files ?? [],
           workUnits: s.workUnits ?? [],
         },
@@ -331,7 +331,7 @@ export function buildSliceThinkingSpace(
         id: u.id,
         shape: u.shape,
         note: u.note,
-        dependsOn: u.dependsOn,
+        dependsOn: u.requires,
       })),
     };
     tasks[id] = card;

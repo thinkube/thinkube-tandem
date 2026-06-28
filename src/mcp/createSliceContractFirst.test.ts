@@ -188,7 +188,7 @@ test("buildUnitDag keeps contract-consuming implementers parallel — they share
     {
       handle: "TEP-1_SP-1_SL-1",
       status: "ready",
-      dependsOn: [],
+      requires: [],
       files: [],
       workUnits: [
         {
@@ -219,22 +219,22 @@ test("buildUnitDag keeps contract-consuming implementers parallel — they share
 
   // Both implementers depend on the shared contract producer...
   assert.ok(
-    implA.dependsOn.includes(contract.id),
+    implA.requires.includes(contract.id),
     "implA waits on the contract producer it consumes",
   );
   assert.ok(
-    implB.dependsOn.includes(contract.id),
+    implB.requires.includes(contract.id),
     "implB waits on the contract producer it consumes",
   );
 
   // ...but NOT on each other → mutually independent, parallel-eligible. This is
   // the proof contract-first is not a covert producer→consumer→test serialization.
   assert.ok(
-    !implA.dependsOn.includes(implB.id),
+    !implA.requires.includes(implB.id),
     "implA must not depend on its sibling implementer",
   );
   assert.ok(
-    !implB.dependsOn.includes(implA.id),
+    !implB.requires.includes(implA.id),
     "implB must not depend on its sibling implementer",
   );
 });
@@ -271,7 +271,7 @@ test("buildUnitDag resolves `consumes` to a real edge on the producing sibling",
     {
       handle: "TEP-1_SP-1_SL-1",
       status: "ready",
-      dependsOn: [],
+      requires: [],
       files: [],
       workUnits: [
         {
@@ -292,7 +292,7 @@ test("buildUnitDag resolves `consumes` to a real edge on the producing sibling",
   const test = dag.find((u) => u.footprint.includes("src/flow.test.ts"))!;
   assert.ok(contract && test, "both nodes present");
   assert.ok(
-    test.dependsOn.includes(contract.id),
+    test.requires.includes(contract.id),
     "`consumes` resolves to a dependency on the producing unit",
   );
 });
