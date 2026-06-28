@@ -174,7 +174,7 @@ test("buildWorkerPrompt surfaces the consumed file as a contract dependency to i
     {
       handle: "TEP-1_SP-1_SL-1",
       status: "ready",
-      dependsOn: [],
+      requires: [],
       files: [],
       workUnits: [
         {

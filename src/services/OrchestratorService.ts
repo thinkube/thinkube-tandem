@@ -236,7 +236,7 @@ export class OrchestratorService {
       slices.push({
         handle,
         status: String(fm?.status ?? "ready"),
-        dependsOn: Array.isArray(fm?.depends_on)
+        requires: Array.isArray(fm?.depends_on)
           ? (fm!.depends_on as string[])
           : [],
         files: Array.isArray(fm?.files) ? (fm!.files as string[]) : [],
@@ -285,7 +285,7 @@ export class OrchestratorService {
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
     const v = validateDag(
-      dag.map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+      dag.map((u) => ({ id: u.id, requires: u.requires })),
     );
     if (!v.ok) {
       output.appendLine(

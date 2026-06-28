@@ -41,6 +41,15 @@ import assert from "node:assert/strict";
 
 import { readyGate, emitAcVerifications, type AcVerdict } from "./openingGate";
 import { parseAcVerifications } from "./orchestratorCore";
+// Provenance (SP-6/1, AC3): build genuine server signatures with SL-1's sign helper so the gate's
+// verify path is exercised against real HMACs, not a re-implementation. `./acSignature` contract
+// (SL-1 owns the module):
+//   function signAcVerifications(
+//     acBlockHash: string,
+//     verifications: AcVerificationMap,
+//     secret: Buffer,
+//   ): string;  // the inverse of verifyAcSignature.
+import { signAcVerifications } from "./acSignature";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -255,4 +264,158 @@ test("round-trip: a blocked (needs-reframe) AC set leaves a hole the closing gat
     !parsedOrdinals.has(2),
     "AC #2 must have no parseable verification",
   );
+});
+
+// ── provenance signature (SP-6/1, AC3) ───────────────────────────────────────
+//
+// Once signing is on (a server `secret` is supplied), a structurally-complete + freshness-matching
+// map is refused unless it carries a valid server signature over (acRequirementHash, map). These
+// tests pin the gate's verify path: only what `write_spec` signed with the server secret passes;
+// an unsigned / forged / tampered / reproducible-hash-as-signature map is refused — even when the
+// freshness hash matches — naming the missing vs. invalid provenance.
+
+const SECRET = Buffer.from("server-secret-never-seen-by-agent-0123456789ab");
+const HASH = "ac-block-hash-1234"; // stands in for acRequirementHash(specBody)
+
+test("provenance: a server-signed map (freshness matches) is Ready-eligible", () => {
+  const map = fullMap(2);
+  const signature = signAcVerifications(HASH, map, SECRET);
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH,
+      stampedHash: HASH, // freshness hash matches too
+      signature,
+      secret: SECRET,
+    }),
+    { ok: true },
+  );
+});
+
+test("provenance: an UNSIGNED map is refused even when the freshness hash matches (AC3)", () => {
+  // The agent skipped the auditor and hand-supplied a complete map; no signature exists. The
+  // freshness hash matches (stampedHash === currentHash), yet the gate refuses for missing provenance.
+  const map = fullMap(2);
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      // signature absent
+      secret: SECRET,
+    }),
+    { ok: false, reason: "missing-signature" },
+  );
+});
+
+test("provenance: a FORGED signature (signed under a foreign secret) is refused (AC3)", () => {
+  // Whatever the agent could compute, it lacks the server secret — so its signature fails verify
+  // even with a matching freshness hash.
+  const map = fullMap(2);
+  const forged = signAcVerifications(
+    HASH,
+    map,
+    Buffer.from("attacker-guessed-secret"),
+  );
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      signature: forged,
+      secret: SECRET,
+    }),
+    { ok: false, reason: "invalid-signature" },
+  );
+});
+
+test("provenance: a signature valid for a DIFFERENT map does not transfer (tamper)", () => {
+  // Signed the originally-audited map, then swapped in a hand-edited map. The signature binds the
+  // map, so it no longer verifies — the substitution is caught.
+  const audited = fullMap(2);
+  const signature = signAcVerifications(HASH, audited, SECRET);
+  const tampered = { ...audited, "2": { run: "rm -rf / # injected" } };
+  assert.deepEqual(
+    readyGate(acs(2), tampered, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      signature,
+      secret: SECRET,
+    }),
+    { ok: false, reason: "invalid-signature" },
+  );
+});
+
+test("provenance: a signature valid under a STALE AC-block hash is refused", () => {
+  // Signed against an older AC block; the spec's AC block has since changed (currentHash differs),
+  // so the signature — bound to the old hash — no longer verifies. Editing the ACs voids provenance.
+  const map = fullMap(2);
+  const signature = signAcVerifications("old-ac-block-hash", map, SECRET);
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH, // AC block edited since signing
+      stampedHash: HASH,
+      signature,
+      secret: SECRET,
+    }),
+    { ok: false, reason: "invalid-signature" },
+  );
+});
+
+test("provenance: passing the reproducible AC-block hash as the signature does not satisfy the gate (AC2)", () => {
+  // The reproducible hash is distinct from the secret-bound signature; recomputing it is not enough.
+  const map = fullMap(2);
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      signature: HASH, // the reproducible hash, not a server signature
+      secret: SECRET,
+    }),
+    { ok: false, reason: "invalid-signature" },
+  );
+});
+
+test("provenance: an empty / whitespace signature is treated as missing", () => {
+  const map = fullMap(1);
+  assert.deepEqual(
+    readyGate(acs(1), map, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      signature: "   ",
+      secret: SECRET,
+    }),
+    { ok: false, reason: "missing-signature" },
+  );
+});
+
+test("provenance: the structural check runs BEFORE signature verification", () => {
+  // A hole in the map is named by ordinal even when signing is on — provenance is a second gate,
+  // not a replacement for structural completeness.
+  const map = { "1": { run: "a" } }; // AC #2 undeclared
+  const signature = signAcVerifications(HASH, map, SECRET);
+  assert.deepEqual(
+    readyGate(acs(2), map, {
+      currentHash: HASH,
+      stampedHash: HASH,
+      signature,
+      secret: SECRET,
+    }),
+    { ok: false, ordinal: 2 },
+  );
+});
+
+test("provenance: with NO secret supplied, the gate keeps the legacy hash-only fallback", () => {
+  // Backward compat for callers not yet passing the secret: a fresh stamp passes, a stale one is
+  // refused as before — the signature path is dormant until a secret arrives.
+  const map = fullMap(2);
+  assert.deepEqual(
+    readyGate(acs(2), map, { currentHash: HASH, stampedHash: HASH }),
+    { ok: true },
+  );
+  assert.deepEqual(
+    readyGate(acs(2), map, { currentHash: HASH, stampedHash: "older-hash" }),
+    { ok: false, reason: "stale-certification" },
+  );
+});
+
+test("provenance: omitting certification entirely is the pure structural gate (no signature needed)", () => {
+  assert.deepEqual(readyGate(acs(2), fullMap(2)), { ok: true });
 });

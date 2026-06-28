@@ -113,61 +113,6 @@ function acceptIdForKey(specKey: string, nested: boolean): string {
   return nested ? `${specKey}_accept` : `SP-${specKey}_accept`;
 }
 
-export type SliceGraphNode = {
-  id: string;
-  status: string;
-  color: string;
-  running: boolean;
-};
-export type SliceGraphEdge = { from: string; to: string };
-export interface SliceGraph {
-  nodes: SliceGraphNode[];
-  edges: SliceGraphEdge[];
-}
-
-/**
- * Distinct status colour for the control-center graph (SP-tgs8nz AC7): running (`doing`),
- * `done`, and `requires-attention` are each visually distinct. Slugs match the card palette.
- */
-export function statusColor(status: string | undefined): string {
-  switch ((status ?? "ready").toLowerCase()) {
-    case "doing":
-      return "azure";
-    case "requires-attention":
-      return "amber";
-    case "done":
-      return "lime";
-    case "archived":
-      return "slate";
-    default:
-      return "indigo"; // ready
-  }
-}
-
-/**
- * Derive the live control-center graph from a Spec's slices (AC7): one status-coloured node
- * per slice (flagged `running` when a worker is live on it) and one edge per `dependsOn`
- * link (dep → slice). Dangling deps (target not in the slice set) are dropped. Pure — the
- * webview renders it; the host supplies the `running` set from the dispatcher.
- */
-export function buildSliceGraph(
-  slices: { handle: string; status?: string; dependsOn?: string[] }[],
-  running: ReadonlySet<string> = new Set(),
-): SliceGraph {
-  const ids = new Set(slices.map((s) => s.handle));
-  const nodes: SliceGraphNode[] = slices.map((s) => ({
-    id: s.handle,
-    status: (s.status ?? "ready").toLowerCase(),
-    color: statusColor(s.status),
-    running: running.has(s.handle),
-  }));
-  const edges: SliceGraphEdge[] = [];
-  for (const s of slices)
-    for (const dep of s.dependsOn ?? [])
-      if (ids.has(dep)) edges.push({ from: dep, to: s.handle });
-  return { nodes, edges };
-}
-
 export interface SliceInput {
   /** Parent Spec id — an opaque string (base36-epoch, or a legacy integer). */
   specNumber: string;
@@ -278,6 +223,41 @@ export function buildSliceThinkingSpace(
       specKeyOf(a).localeCompare(specKeyOf(b)) || a.sliceNumber - b.sliceNumber,
   );
 
+  // ── One DAG — the one that executes ─────────────────────────────────────────
+  // Resolve work-unit dependencies the SAME way the orchestrator's scheduler does:
+  // `buildUnitDag` over a whole Spec's slices at once (NOT one slice at a time). The
+  // old per-slice call blinded the panel to cross-slice `consumes` edges — the scheduler
+  // resolved them, the rendered graph didn't. Grouped per Spec to match the scheduler's
+  // scope (it orchestrates one Spec at a time), over only the renderable slices so no edge
+  // points at an archived/retired card. `buildUnitDag` is the single edge-resolution entry
+  // point; this caller and the orchestrator now feed it the same shape — they cannot drift.
+  const unitNodesBySlice = new Map<string, ReturnType<typeof buildUnitDag>>();
+  const slicesBySpec = new Map<string, SliceInput[]>();
+  for (const s of ordered) {
+    const st = (s.status ?? "").toLowerCase();
+    if (st === "archived" || isRetiredStatus(s.status ?? "")) continue;
+    if (specMeta?.get(specKeyOf(s))?.archived) continue;
+    const k = specKeyOf(s);
+    const arr = slicesBySpec.get(k);
+    if (arr) arr.push(s);
+    else slicesBySpec.set(k, [s]);
+  }
+  for (const group of slicesBySpec.values()) {
+    for (const u of buildUnitDag(
+      group.map((s) => ({
+        handle: handleOf(s),
+        status: s.status ?? "",
+        requires: s.dependsOn ?? [],
+        files: s.files ?? [],
+        workUnits: s.workUnits ?? [],
+      })),
+    )) {
+      const arr = unitNodesBySlice.get(u.slice);
+      if (arr) arr.push(u);
+      else unitNodesBySlice.set(u.slice, [u]);
+    }
+  }
+
   for (const s of ordered) {
     if ((s.status ?? "").toLowerCase() === "archived") continue;
     // A retired slice (SP-th4wqd) is terminal-and-DISTINCT-from-Done: it drops off the
@@ -314,24 +294,15 @@ export function buildSliceThinkingSpace(
       pr: s.pr,
       dependsOn: s.dependsOn,
       tags: s.tags,
-      // Expand the slice's work units into the scheduler's execution units (one per
-      // worker) so the control-center graph shows a node per worker even before
-      // dispatch. Ids (`${handle}#eu-${i}`) align with the live runningWorkers keys.
-      // A slice with no work_units yields one node (= the slice handle), preserving
-      // the legacy slice-grained graph.
-      workUnits: buildUnitDag([
-        {
-          handle: id,
-          status: s.status ?? "",
-          dependsOn: s.dependsOn ?? [],
-          files: s.files ?? [],
-          workUnits: s.workUnits ?? [],
-        },
-      ]).map((u) => ({
+      // The slice's execution-unit nodes, projected from the canonical per-Spec DAG
+      // computed above (so cross-slice `consumes` edges show exactly as the scheduler
+      // resolves them). Ids (`${handle}#eu-${i}`) align with the live runningWorkers keys;
+      // a slice with no work_units contributes one node (= its handle).
+      workUnits: (unitNodesBySlice.get(id) ?? []).map((u) => ({
         id: u.id,
         shape: u.shape,
         note: u.note,
-        dependsOn: u.dependsOn,
+        dependsOn: u.requires,
       })),
     };
     tasks[id] = card;

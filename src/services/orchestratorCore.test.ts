@@ -39,18 +39,18 @@ import { validateDag } from "../methodology/parallelSlices";
 
 test("pickNextSlice: first ready slice with all deps done is picked", () => {
   const rows: SliceRow[] = [
-    { handle: "SP-1_SL-1", status: "done", dependsOn: [] },
-    { handle: "SP-1_SL-2", status: "ready", dependsOn: ["SP-1_SL-1"] },
-    { handle: "SP-1_SL-3", status: "ready", dependsOn: [] },
+    { handle: "SP-1_SL-1", status: "done", requires: [] },
+    { handle: "SP-1_SL-2", status: "ready", requires: ["SP-1_SL-1"] },
+    { handle: "SP-1_SL-3", status: "ready", requires: [] },
   ];
   assert.equal(pickNextSlice(rows), "SP-1_SL-2");
 });
 
 test("pickNextSlice: a ready slice with an unfinished dep is skipped", () => {
   const rows: SliceRow[] = [
-    { handle: "SP-1_SL-1", status: "doing", dependsOn: [] },
-    { handle: "SP-1_SL-2", status: "ready", dependsOn: ["SP-1_SL-1"] },
-    { handle: "SP-1_SL-3", status: "ready", dependsOn: [] },
+    { handle: "SP-1_SL-1", status: "doing", requires: [] },
+    { handle: "SP-1_SL-2", status: "ready", requires: ["SP-1_SL-1"] },
+    { handle: "SP-1_SL-3", status: "ready", requires: [] },
   ];
   // SL-2 blocked (dep doing); SL-3 free → SL-3.
   assert.equal(pickNextSlice(rows), "SP-1_SL-3");
@@ -58,15 +58,15 @@ test("pickNextSlice: a ready slice with an unfinished dep is skipped", () => {
 
 test("pickNextSlice: a missing dep counts as not-done (blocks)", () => {
   const rows: SliceRow[] = [
-    { handle: "SP-1_SL-2", status: "ready", dependsOn: ["SP-1_SL-99"] },
+    { handle: "SP-1_SL-2", status: "ready", requires: ["SP-1_SL-99"] },
   ];
   assert.equal(pickNextSlice(rows), null);
 });
 
 test("pickNextSlice: nothing ready → null", () => {
   const rows: SliceRow[] = [
-    { handle: "SP-1_SL-1", status: "done", dependsOn: [] },
-    { handle: "SP-1_SL-2", status: "doing", dependsOn: [] },
+    { handle: "SP-1_SL-1", status: "done", requires: [] },
+    { handle: "SP-1_SL-2", status: "doing", requires: [] },
   ];
   assert.equal(pickNextSlice(rows), null);
 });
@@ -147,10 +147,10 @@ test("isResultSuccess: success vs error", () => {
 
 test("pickFrontier: returns ALL dispatchable slices in order (not just the head)", () => {
   const rows: SliceRow[] = [
-    { handle: "SP-1_SL-1", status: "done", dependsOn: [] },
-    { handle: "SP-1_SL-2", status: "ready", dependsOn: ["SP-1_SL-1"] },
-    { handle: "SP-1_SL-3", status: "ready", dependsOn: ["SP-1_SL-99"] }, // blocked
-    { handle: "SP-1_SL-4", status: "ready", dependsOn: [] },
+    { handle: "SP-1_SL-1", status: "done", requires: [] },
+    { handle: "SP-1_SL-2", status: "ready", requires: ["SP-1_SL-1"] },
+    { handle: "SP-1_SL-3", status: "ready", requires: ["SP-1_SL-99"] }, // blocked
+    { handle: "SP-1_SL-4", status: "ready", requires: [] },
   ];
   assert.deepEqual(pickFrontier(rows), ["SP-1_SL-2", "SP-1_SL-4"]);
   assert.equal(pickNextSlice(rows), "SP-1_SL-2"); // still the head
@@ -221,7 +221,7 @@ test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay 
 
 // ── buildUnitDag + readyFrontier (SP-tgs8nz makespan scheduler) ────────────
 
-// `dependsOn` is intentionally omitted: SP-5/1 retired the authored slice-level
+// `requires` is intentionally omitted: SP-5/1 retired the authored slice-level
 // `depends_on` — `buildUnitDag` sources every edge from `consumes`+footprint, so a
 // slice's dependencies are now expressed by a unit's `consumes`, never a slice handle.
 const slice = (handle: string, o: Partial<SliceForDag> = {}): SliceForDag => ({
@@ -276,7 +276,7 @@ test("buildUnitDag: units from multiple slices pool into one DAG; a `consumes` e
   assert.equal(dag.length, 3);
   // both SL-2 units read a.ts → both depend on its (cross-slice) producer, by edge not by inheritance
   for (const u of dag.filter((u) => u.slice === "SP-1_SL-2"))
-    assert.deepEqual(u.dependsOn, ["SP-1_SL-1#eu-0"]);
+    assert.deepEqual(u.requires, ["SP-1_SL-1#eu-0"]);
 });
 
 test("buildUnitDag: a cross-slice `consumes` resolves to the EXACT producing #eu-k, not all-to-all (AC1)", () => {
@@ -295,10 +295,10 @@ test("buildUnitDag: a cross-slice `consumes` resolves to the EXACT producing #eu
   ]);
   const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
   // lands on the producer of a.ts ONLY (#eu-0) — NOT the sibling #eu-1, NOT a coarse slice-wide fan-in
-  assert.deepEqual(sl2.dependsOn, ["SP-1_SL-1#eu-0"]);
+  assert.deepEqual(sl2.requires, ["SP-1_SL-1#eu-0"]);
   // and the pooled DAG validates — the edge is a real, resolvable node id
   const verdict = validateDag(
-    dag.map((u) => ({ id: u.id, dependsOn: u.dependsOn })),
+    dag.map((u) => ({ id: u.id, requires: u.requires })),
   );
   assert.equal(verdict.ok, true);
 });
@@ -319,7 +319,7 @@ test("buildUnitDag: a file produced by TWO units makes a consumer depend on BOTH
   ]);
   const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
   // shared.ts has two writers → the consumer waits on EVERY writer (reads it fully written)
-  assert.deepEqual(sl2.dependsOn.slice().sort(), [
+  assert.deepEqual(sl2.requires.slice().sort(), [
     "SP-1_SL-1#eu-0",
     "SP-1_SL-1#eu-1",
   ]);
@@ -339,7 +339,7 @@ test("buildUnitDag: a cross-slice unit that consumes nothing upstream has NO edg
     }),
   ]);
   const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
-  assert.deepEqual(sl2.dependsOn, []);
+  assert.deepEqual(sl2.requires, []);
 });
 
 const emptyState = (over: Partial<SchedulerState> = {}): SchedulerState => ({
@@ -484,7 +484,7 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
     id: "SP-3_SL-2#eu-0",
     slice: "SP-3_SL-2",
     footprint: ["src/a.ts"],
-    dependsOn: [],
+    requires: [],
     shape: "fan-out",
     note: "add a test for module a",
   };

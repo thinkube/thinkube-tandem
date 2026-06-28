@@ -11,8 +11,6 @@ import {
   sliceHandle,
   columnIdToStatus,
   statusToColumnId,
-  statusColor,
-  buildSliceGraph,
   SliceInput,
 } from "./sliceThinkingSpace";
 
@@ -35,46 +33,6 @@ test("status ↔ column mapping is total and round-trips the four columns", () =
   assert.equal(statusToColumnId(undefined), "column-ready"); // default
   assert.equal(columnIdToStatus("column-doing"), "doing");
   assert.equal(columnIdToStatus("column-attention"), "requires-attention");
-});
-
-test("statusColor: running / done / requires-attention are distinct (AC7)", () => {
-  const colors = [
-    statusColor("doing"),
-    statusColor("done"),
-    statusColor("requires-attention"),
-    statusColor("ready"),
-  ];
-  assert.equal(
-    new Set(colors).size,
-    4,
-    "all four statuses map to distinct colours",
-  );
-});
-
-test("buildSliceGraph: status-coloured nodes + dep edges, dangling deps dropped", () => {
-  const graph = buildSliceGraph(
-    [
-      { handle: "SP-1_SL-1", status: "done" },
-      { handle: "SP-1_SL-2", status: "doing", dependsOn: ["SP-1_SL-1"] },
-      {
-        handle: "SP-1_SL-3",
-        status: "ready",
-        dependsOn: ["SP-1_SL-2", "SP-1_SL-99"],
-      },
-    ],
-    new Set(["SP-1_SL-2"]), // SL-2 has a live worker
-  );
-  assert.equal(graph.nodes.length, 3);
-  assert.equal(graph.nodes.find((n) => n.id === "SP-1_SL-2")!.running, true);
-  assert.equal(
-    graph.nodes.find((n) => n.id === "SP-1_SL-2")!.color,
-    statusColor("doing"),
-  );
-  // edges: SL-1→SL-2, SL-2→SL-3; the dangling SL-99→SL-3 is dropped.
-  assert.deepEqual(graph.edges, [
-    { from: "SP-1_SL-1", to: "SP-1_SL-2" },
-    { from: "SP-1_SL-2", to: "SP-1_SL-3" },
-  ]);
 });
 
 test("buildSliceThinkingSpace lays out three columns and places slices by status", () => {
@@ -171,7 +129,10 @@ test("buildSliceThinkingSpace projects the nested tree: tep-qualified handles gr
   assert.ok(thinkingSpace.tasks["TEP-2_SP-1_accept"]?.isAcceptance);
   assert.equal(thinkingSpace.tasks["TEP-1_SP-1_accept"].slicesTotal, 2);
   assert.equal(thinkingSpace.tasks["TEP-1_SP-2_accept"].slicesDone, 1);
-  assert.equal(thinkingSpace.tasks["TEP-1_SP-1_accept"].description, "TEP-1_SP-1");
+  assert.equal(
+    thinkingSpace.tasks["TEP-1_SP-1_accept"].description,
+    "TEP-1_SP-1",
+  );
 });
 
 test("nested specMeta is keyed by the tep-qualified spec key", () => {
@@ -199,7 +160,10 @@ test("nested specMeta is keyed by the tep-qualified spec key", () => {
     ]),
   );
   // Accepted → the close card rests in Done, keyed by the tep-qualified spec.
-  assert.equal(thinkingSpace.tasks["TEP-1_SP-1_accept"].columnId, "column-done");
+  assert.equal(
+    thinkingSpace.tasks["TEP-1_SP-1_accept"].columnId,
+    "column-done",
+  );
   assert.equal(thinkingSpace.tasks["TEP-1_SP-1_accept"].accepted, true);
 });
 

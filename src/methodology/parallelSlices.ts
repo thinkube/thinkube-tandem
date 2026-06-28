@@ -34,8 +34,7 @@ export interface FileConflict {
 }
 
 export type ValidateParallelGroupResult =
-  | { ok: true }
-  | { ok: false; reason: string; conflicts: FileConflict[] };
+  { ok: true } | { ok: false; reason: string; conflicts: FileConflict[] };
 
 /**
  * Normalize a declared path for comparison: trim surrounding whitespace and
@@ -119,7 +118,7 @@ export interface DagNode {
   /** Node id — a work-unit id (`SP-3_SL-2#wu-0`) or a slice handle (`SP-3_SL-2`). */
   id: string;
   /** Ids this node depends on (must all resolve to nodes in the same DAG). */
-  dependsOn: string[];
+  requires: string[];
 }
 
 export type ValidateDagResult =
@@ -133,7 +132,7 @@ export type ValidateDagResult =
 
 /**
  * Validate a work-unit / slice DAG is well-formed (SP-tgs8nz). Two checks, both
- * pure and deterministic: **dep-resolution** (every `dependsOn` id is a node in
+ * pure and deterministic: **dep-resolution** (every `requires` id is a node in
  * the DAG — no dangling reference) and **acyclicity** (no dependency cycle; the
  * returned `cycle` names the loop). Dangling deps are reported first (a cycle
  * check over a graph with missing nodes is meaningless). Fixtures in, a verdict
@@ -145,7 +144,7 @@ export function validateDag(nodes: DagNode[]): ValidateDagResult {
   // 1. Dep-resolution: every dependency must name a node in the DAG.
   const missing: Array<{ node: string; dep: string }> = [];
   for (const n of nodes)
-    for (const d of n.dependsOn ?? [])
+    for (const d of n.requires ?? [])
       if (!ids.has(d)) missing.push({ node: n.id, dep: d });
   if (missing.length) {
     missing.sort(
@@ -162,7 +161,7 @@ export function validateDag(nodes: DagNode[]): ValidateDagResult {
   // 2. Acyclicity: DFS with GRAY/BLACK colouring; a back-edge to a GRAY node is a cycle.
   // `findCycle` RETURNS the loop path (rather than mutating a closure var) so the
   // control-flow narrowing below sees `cycle` as `string[] | null`.
-  const adj = new Map(nodes.map((n) => [n.id, n.dependsOn ?? []]));
+  const adj = new Map(nodes.map((n) => [n.id, n.requires ?? []]));
   const WHITE = 0,
     GRAY = 1,
     BLACK = 2;
@@ -240,21 +239,19 @@ export const CONTRACT_FIRST_OPTOUT_FIELD = "contract_first_optout" as const;
 /**
  * The shape of a declared work_unit as the contract-first gate sees it — the
  * single source `create_slice` (schema/handler) and the AC test both import.
- * Mirrors the on-disk `work_units[]` frontmatter (`footprint`, `depends_on?`,
+ * Mirrors the on-disk `work_units[]` frontmatter (`footprint`, `consumes?`,
  * `execution`, `note?`) plus the contract-first opt-out flag this spec adds.
  */
 export interface ContractFirstWorkUnit {
   /** Repo-relative files/objects this unit touches — the parallelism footprint. */
   footprint: string[];
-  /** Work-unit / slice handles this unit waits on (ordering). */
-  depends_on?: string[];
   /**
    * Repo-relative files this unit **reads/depends on** that a SIBLING unit produces —
    * the contract-first reference. Naming a sibling's footprint here both satisfies the
    * contract-first gate (the unit is coordinated through that contract, not fanned out
    * blind) and is resolved by `buildUnitDag` into a real dependency edge on the producing
-   * unit. Unlike `depends_on`, it needs no node-id, so it is authorable at create time
-   * (the slice has no number yet) — the fix for the unsequenced-integration deadlock.
+   * unit. It is a file, not a node-id, so it is authorable at create time (the slice has
+   * no number yet) — the fix for the unsequenced-integration deadlock.
    */
   consumes?: string[];
   /** serial (coupled) | mechanize (uniform data-parallel) | fan-out (heterogeneous). */
@@ -264,7 +261,7 @@ export interface ContractFirstWorkUnit {
   /**
    * Opt out of the contract-first check: assert this fan-out test/integration
    * unit is genuinely independent (shares no contract with its siblings) so the
-   * missing `depends_on` is intentional, not an unsequenced-integration mistake.
+   * missing `consumes` is intentional, not an unsequenced-integration mistake.
    */
   contract_first_optout?: boolean;
 }
@@ -292,12 +289,12 @@ export type ContractFirstResult =
  */
 export const CONTRACT_FIRST_RULE_MSG =
   "Contract-first slicing — define the shared contract before fanning out. " +
-  "This is a `*.test.*`/integration `fan-out` unit with no `depends_on`, placed " +
+  "This is a `*.test.*`/integration `fan-out` unit with no `consumes`, placed " +
   "beside sibling implementation units. Fanned out unsequenced, each worker will " +
   "invent the shared contract (interface, name, schema, key, message, " +
   "registration) on its own and they will diverge. Author the contract as one " +
   "unit (a sibling whose footprint is the shared file) and route this test AND each " +
-  "implementer through it: add `consumes: [\"<that file>\"]` to each — the contract-" +
+  'implementer through it: add `consumes: ["<that file>"]` to each — the contract-' +
   "first reference. The implementers depend only on the contract, never on each other, " +
   "so the fan-out is preserved (no producer→consumer→test serialization). `consumes` " +
   "names a file (not a node-id), so it is authorable here even though the slice has no " +
@@ -326,11 +323,11 @@ export function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
 /**
  * The contract-first gate (SP-th4wqi, AC#1–3). Pure check over a slice's
  * declared `work_units`: refuse the **unsequenced-integration** structure — a
- * `*.test.*`/integration unit running `fan-out`, with **no `depends_on`**, beside
+ * `*.test.*`/integration unit running `fan-out`, with **no `consumes`**, beside
  * **≥2** sibling implementation (producer) units — naming the rule ({@link CONTRACT_FIRST_RULE_MSG})
  * and returning the offending unit, **unless** that unit carries the
  * {@link CONTRACT_FIRST_OPTOUT_FIELD} opt-out flag. A unit that declares any
- * `depends_on` (the contract-first remedy: a shared contract-definition node)
+ * `consumes` of a sibling's file (the contract-first remedy: a shared contract file)
  * passes — this gate refuses the *undeclared* case and lets `buildUnitDag`'s
  * acyclicity/parallelism rules handle the rest. No I/O: fixtures in, a verdict out.
  */
@@ -351,11 +348,9 @@ export function contractFirstCheck(
     if (u.execution !== "fan-out") continue; // only fan-out integration triggers
     if (!isIntegration(u)) continue; // only test/integration units
     if (u[CONTRACT_FIRST_OPTOUT_FIELD] === true) continue; // explicit escape hatch
-    const sequenced = (u.depends_on ?? []).some((d) => d.trim() !== "");
-    if (sequenced) continue; // routed through a contract node (or any dep) → fine
-    // …or it declares it `consumes` a file a SIBLING unit produces — the contract-first
-    // reference. That's a real contract edge (buildUnitDag resolves it), authorable
-    // without the unborn slice's node-id, so it coordinates the unit just like a dep.
+    // Passes iff it declares it `consumes` a file a SIBLING unit produces — the
+    // contract-first reference. That's a real contract edge (buildUnitDag resolves it),
+    // authorable without the unborn slice's node-id, so it coordinates the unit.
     const consumesSibling = (u.consumes ?? []).some((c) => {
       const cf = normalizeFilePath(c);
       return list.some(
@@ -389,8 +384,7 @@ function relToRepo(p: string, repoRoot: string): string {
 }
 
 export type FootprintDecision =
-  | { allow: true }
-  | { allow: false; reason: string };
+  { allow: true } | { allow: false; reason: string };
 
 /**
  * Decide whether a worker scoped to `footprint` may run `toolName` on `toolInput`

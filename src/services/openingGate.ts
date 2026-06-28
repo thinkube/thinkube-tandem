@@ -26,6 +26,25 @@ import type { AcVerification } from "./orchestratorCore";
 // Re-audit reuses the staleness hash (SP-th1ddy rule: reuse, don't fork). `requirementHash`
 // already normalizes checkbox state + whitespace; we feed it *only* the AC block to narrow it.
 import { requirementHash } from "../methodology/specChange";
+// Provenance verification (SP-6/1 / TEP-6). The certified `ac_verifications` map carries a
+// server-only HMAC signature over `(acRequirementHash, ac_verifications)`, produced by `write_spec`
+// after it runs the verifiability audit itself; the signing secret lives only in the server's
+// globalStorage and the agent never sees it. `readyGate` verifies that signature instead of trusting
+// the reproducible `acRequirementHash`: a map the agent hand-supplied — or one whose AC block was
+// edited after signing — yields no valid signature and is refused, closing the auditor-skip bypass.
+// `verifyAcSignature` lives in SL-1's pure/synchronous `./acSignature` helper, so this gate stays
+// model-free; the handler loads the secret (a Buffer from globalStorage) and passes it (and the
+// frontmatter signature) in.
+//
+// `./acSignature` contract (SL-1 owns the module):
+//   function verifyAcSignature(
+//     acBlockHash: string,
+//     verifications: AcVerificationMap,
+//     signature: unknown,
+//     secret: Buffer,
+//   ): boolean;  // true iff `signature` is a valid HMAC of `(acBlockHash, verifications)` under
+//                // `secret`; false for any tampered/absent/malformed/foreign-secret signature.
+import { verifyAcSignature } from "./acSignature";
 
 /** The auditor's per-AC certification (the model-side judgment from `/spec-prepare`). */
 export type AcVerdictKind = "verifiable" | "needs-reframe";
@@ -55,19 +74,30 @@ export type AcVerificationMap = Record<
 >;
 
 /**
- * `readyGate` result. Either Ready-eligible (`ok: true`) or blocked one of two ways:
+ * `readyGate` result. Either Ready-eligible (`ok: true`) or blocked one of four ways:
  *   - **structural** — `{ ok: false, ordinal }` names the *first* AC ordinal with no runnable
  *     `ac_verifications` entry (an un-certified / needs-reframe AC).
- *   - **stale certification** — `{ ok: false, reason: "stale-certification" }` means every AC is
- *     structurally certified but against an *older* AC block: the ACs were edited since the
- *     certification was stamped, so re-certification is required (re-audit, AC3).
+ *   - **missing provenance** — `{ ok: false, reason: "missing-signature" }`: signing is on
+ *     (a server secret was supplied) but the spec carries no `ac_verifications` signature at all —
+ *     the auditor was skipped and a map hand-supplied. (SP-6/1, AC3.)
+ *   - **invalid provenance** — `{ ok: false, reason: "invalid-signature" }`: a signature is present
+ *     but does not verify under the server secret — forged, tampered, signed with a foreign secret,
+ *     or stale (the AC block changed after signing, so it no longer matches `acRequirementHash`).
+ *     Recomputing the reproducible hash does *not* produce a passing signature. (SP-6/1, AC2/AC3.)
+ *   - **stale certification** — `{ ok: false, reason: "stale-certification" }`: legacy hash-only
+ *     path used only when no signing secret is supplied — every AC is structurally certified but
+ *     against an *older* AC block (the hashes diverge). Superseded by the signature check once
+ *     signing is on (the signature binds `acRequirementHash`, so a stale map fails verification).
  *
- * The two are discriminated by the presence of `ordinal` vs. `reason`. The shell turns a block
- * into the refused → Ready transition with the matching diagnosis.
+ * The structural block is discriminated by the presence of `ordinal`; the provenance/staleness
+ * blocks by `reason`. The shell turns a block into the refused → Ready transition with the matching
+ * diagnosis (naming the missing/invalid provenance for AC3).
  */
 export type ReadyGateResult =
   | { ok: true }
   | { ok: false; ordinal: number }
+  | { ok: false; reason: "missing-signature" }
+  | { ok: false; reason: "invalid-signature" }
   | { ok: false; reason: "stale-certification" };
 
 /** Frontmatter key under which the handler stamps {@link acRequirementHash} when the ACs are
@@ -135,18 +165,36 @@ function hasRunnableEntry(decl: unknown): decl is { run: string } {
  * Ordinals are taken from `acs` (1-based, in document order) rather than assumed contiguous, so a
  * malformed AC list is judged by what it actually declares.
  *
- * Re-audit (AC3): when `certification` is supplied — the Spec's `currentHash` (from
- * {@link acRequirementHash}) and the `stampedHash` recorded under {@link AC_CERT_HASH_KEY} at
- * certification — a structurally-complete map is still refused as `{ ok: false, reason:
- * "stale-certification" }` if the AC block was edited since (the hashes diverge). The structural
- * check runs first, so an un-certified ordinal is still named precisely; the staleness check is the
- * fallback that fires when the map *looks* complete but certifies an outdated AC block. Omit
- * `certification` for the pure structural gate (the existing two-arg contract is unchanged).
+ * Provenance (SP-6/1, AC3): when `certification` is supplied with a server `secret`, signing is on
+ * and a structurally-complete map is *still* refused unless its `signature` (the
+ * `ac_verifications` HMAC from frontmatter) verifies under that secret against the Spec's
+ * `currentHash` (from {@link acRequirementHash}) and the very map being gated — `verifyAcSignature`.
+ * A missing signature → `{ ok: false, reason: "missing-signature" }`; a present-but-failing one
+ * (forged, tampered, foreign-secret, or the reproducible hash passed off as a signature, or stale
+ * because the AC block changed after signing) → `{ ok: false, reason: "invalid-signature" }`. There
+ * is **no hash-only fallback once signing is on**: with a `secret` present the gate trusts the
+ * signature, not the reproducible hash or the `stampedHash`. The structural check runs first, so an
+ * un-certified ordinal is still named precisely.
+ *
+ * Legacy re-audit (no `secret`): when `certification` is supplied without a `secret`, a
+ * structurally-complete map is refused as `{ ok: false, reason: "stale-certification" }` if the AC
+ * block was edited since the `stampedHash` (under {@link AC_CERT_HASH_KEY}) was recorded (the hashes
+ * diverge). This is the pre-signing path, kept for callers not yet passing the secret; signing
+ * supersedes it. Omit `certification` for the pure structural gate (the two-arg contract unchanged).
  */
 export function readyGate(
   acs: { ordinal: number }[],
   verifications: Record<string, { run: string; env?: "cluster" | "local" }>,
-  certification?: { currentHash: string; stampedHash?: unknown },
+  certification?: {
+    currentHash: string;
+    stampedHash?: unknown;
+    /** The `ac_verifications` server signature read from the Spec frontmatter (SL-1's signature
+     * field). Verified — never trusted as-is — against {@link verifyAcSignature}. */
+    signature?: unknown;
+    /** The server signing secret (Buffer), loaded from globalStorage by the handler and never seen
+     * by the agent. Its presence turns on signature enforcement (no hash-only fallback). */
+    secret?: Buffer;
+  },
 ): ReadyGateResult {
   if (!acs.length) return { ok: false, ordinal: 1 };
   const ordered = [...acs].sort((a, b) => a.ordinal - b.ordinal);
@@ -155,11 +203,29 @@ export function readyGate(
       return { ok: false, ordinal: ac.ordinal };
     }
   }
-  if (
-    certification &&
-    isAcCertificationStale(certification.currentHash, certification.stampedHash)
-  ) {
-    return { ok: false, reason: "stale-certification" };
+  if (certification) {
+    if (certification.secret !== undefined) {
+      // Signing is on: the provenance signature is mandatory and authoritative — no hash fallback.
+      const sig = certification.signature;
+      if (typeof sig !== "string" || !sig.trim()) {
+        return { ok: false, reason: "missing-signature" };
+      }
+      const valid = verifyAcSignature(
+        certification.currentHash,
+        verifications,
+        sig,
+        certification.secret,
+      );
+      if (!valid) return { ok: false, reason: "invalid-signature" };
+    } else if (
+      isAcCertificationStale(
+        certification.currentHash,
+        certification.stampedHash,
+      )
+    ) {
+      // Pre-signing fallback: trust the reproducible hash only when no secret is supplied.
+      return { ok: false, reason: "stale-certification" };
+    }
   }
   return { ok: true };
 }

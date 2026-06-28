@@ -324,17 +324,17 @@ test("requiresWorktree: a linked worktree proceeds (no false sibling-prefix matc
 
 test("validateDag: a well-formed DAG passes", () => {
   const r = validateDag([
-    { id: "a", dependsOn: [] },
-    { id: "b", dependsOn: ["a"] },
-    { id: "c", dependsOn: ["a", "b"] },
+    { id: "a", requires: [] },
+    { id: "b", requires: ["a"] },
+    { id: "c", requires: ["a", "b"] },
   ]);
   assert.equal(r.ok, true);
 });
 
 test("validateDag: a dangling dependency is rejected, naming it", () => {
   const r = validateDag([
-    { id: "a", dependsOn: ["ghost"] },
-    { id: "b", dependsOn: ["a"] },
+    { id: "a", requires: ["ghost"] },
+    { id: "b", requires: ["a"] },
   ]);
   assert.equal(r.ok, false);
   if (r.ok) return;
@@ -344,9 +344,9 @@ test("validateDag: a dangling dependency is rejected, naming it", () => {
 
 test("validateDag: a cycle is rejected, naming the loop", () => {
   const r = validateDag([
-    { id: "a", dependsOn: ["c"] },
-    { id: "b", dependsOn: ["a"] },
-    { id: "c", dependsOn: ["b"] },
+    { id: "a", requires: ["c"] },
+    { id: "b", requires: ["a"] },
+    { id: "c", requires: ["b"] },
   ]);
   assert.equal(r.ok, false);
   if (r.ok) return;
@@ -355,14 +355,14 @@ test("validateDag: a cycle is rejected, naming the loop", () => {
 });
 
 test("validateDag: a self-loop is a cycle", () => {
-  const r = validateDag([{ id: "a", dependsOn: ["a"] }]);
+  const r = validateDag([{ id: "a", requires: ["a"] }]);
   assert.equal(r.ok, false);
 });
 
 test("validateDag: dangling deps are reported before cycles", () => {
   const r = validateDag([
-    { id: "a", dependsOn: ["b", "ghost"] },
-    { id: "b", dependsOn: ["a"] }, // also a cycle, but the dangling dep wins
+    { id: "a", requires: ["b", "ghost"] },
+    { id: "b", requires: ["a"] }, // also a cycle, but the dangling dep wins
   ]);
   assert.equal(r.ok, false);
   if (r.ok) return;
