@@ -9,7 +9,7 @@
         "THINKUBE_ALLOW_AI_WRITES": "true",
         "THINKUBE_ROOTS": "/home/thinkube/apps:/home/thinkube/user-templates:/home/thinkube/thinkube-platform:/home/thinkube/thinkube-tandem",
         "THINKUBE_FOLDERS": "[{\"name\":\"Apps\",\"path\":\"/home/thinkube/apps\"},{\"name\":\"User Templates\",\"path\":\"/home/thinkube/user-templates\"},{\"name\":\"Platform\",\"path\":\"/home/thinkube/thinkube-platform\"},{\"name\":\"Tandem Board\",\"path\":\"/home/thinkube/thinkube-tandem\"}]",
-        "THINKUBE_BOARD_ROOT": "/home/thinkube/thinkube-tandem",
+        "THINKUBE_THINKING_SPACE_ROOT": "/home/thinkube/thinkube-tandem",
         "THINKUBE_CONTROL_DIR": "/home/thinkube/.local/share/code-server/User/globalStorage/thinkube.thinkube-ai-integration/control"
       }
     }
