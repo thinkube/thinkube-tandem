@@ -13,7 +13,6 @@ import {
 } from "./context/active";
 import { AuthService } from "./github/AuthService";
 import { GitHubService } from "./github/GitHubService";
-import { KanbanMcpProvider } from "./mcp/KanbanMcpProvider";
 import { ensureStableServerLink } from "./mcp/stableServerPath";
 import { writeMachineMcpConfig } from "./mcp/machineConfig";
 import { AgentTeamsShimServer } from "./services/agentTeams/AgentTeamsShimServer";
@@ -199,14 +198,6 @@ export function activate(context: vscode.ExtensionContext) {
     github,
     output: kanbanOutput,
     extensionUri: context.extensionUri,
-  });
-
-  // MCP provider — exposes the thinking space-independent kanban server to VS Code-
-  // native LLM clients. (Claude Code sessions discover the same server via
-  // each repo's .mcp.json.) Returns no definitions until a thinking space exists.
-  KanbanMcpProvider.install(context, {
-    context,
-    output: kanbanOutput,
   });
 
   // Per-repo thinking space navigator (ADR-0006): discover every repo's thinking space across the

@@ -21,19 +21,6 @@ import * as vscode from "vscode";
 
 const LINK_NAME = "extension-current";
 
-/** The stable absolute path of the server script (through the symlink). */
-export function stableServerScriptPath(
-  context: vscode.ExtensionContext,
-): string {
-  return path.join(
-    context.globalStorageUri.fsPath,
-    LINK_NAME,
-    "dist",
-    "mcp",
-    "kanbanMcpServer.js",
-  );
-}
-
 /**
  * Create/refresh the `globalStorage/extension-current` symlink to the current
  * extension install dir. Idempotent; safe to call on every activation.
