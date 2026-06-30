@@ -28,6 +28,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { SessionLinkService } from "./SessionLinkService";
+import {
+  ensureStableServerLink,
+  stableExtensionSubpath,
+} from "../mcp/stableServerPath";
 
 const CFG_SECTION = "claudeCode";
 const CFG_KEY = "claudeProcessWrapper";
@@ -48,8 +52,16 @@ export class LauncherService implements vscode.Disposable {
       process.platform === "win32"
         ? "claude-cwd-wrapper.cmd"
         : "claude-cwd-wrapper.sh";
-    this.wrapperPath = this.context.asAbsolutePath(
-      path.join("dist", "wrapper", wrapperName),
+    // Resolve the wrapper through the version-stable `extension-current` symlink,
+    // NOT `context.asAbsolutePath` (which bakes the versioned install dir and gets
+    // orphaned on every update — the bug that left the setting pinned to an old
+    // version). Ensure the symlink exists first so the path resolves.
+    await ensureStableServerLink(this.context).catch(() => {});
+    this.wrapperPath = stableExtensionSubpath(
+      this.context,
+      "dist",
+      "wrapper",
+      wrapperName,
     );
 
     if (process.platform !== "win32") {
@@ -61,6 +73,14 @@ export class LauncherService implements vscode.Disposable {
 
     // The wrapper reads .target-cwd / .target-prefix from this directory.
     process.env.CLAUDE_CWD_PROXY_DIR = this.stateDir;
+
+    // Provenance signing (TEP-6 SP-1): publish the signing-secret dir on the host
+    // env so every launched session's kanban MCP server inherits it
+    // (host → claude → MCP, the same inheritance CLAUDE_CWD_PROXY_DIR rides). Its
+    // presence turns on write_spec's verifiability audit + signing and readyGate's
+    // signature check. One stable globalStorage dir means all servers share one key;
+    // `??=` lets an explicit override (e.g. tests) win.
+    process.env.THINKUBE_SIGNING_KEY_DIR ??= path.join(this.stateDir, "signing");
 
     await this.ensureWrapperRegistered();
   }

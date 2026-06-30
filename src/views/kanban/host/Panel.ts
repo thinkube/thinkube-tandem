@@ -288,6 +288,11 @@ export class KanbanPanel implements vscode.Disposable {
             message.spec,
             this.adapter.thinkingSpaceContext?.(),
           );
+          // The run advances slices to Done via a write path that bypasses this
+          // panel's in-process store (and the external FS watcher is unreliable for
+          // the out-of-workspace thinking space), so re-load + re-post once the
+          // command resolves — otherwise the final Done state needs a window reload.
+          await this.reloadAndPost();
         } catch (err) {
           this.log(
             `orchestrate ${message.spec} failed: ${(err as Error).message}`,
@@ -303,6 +308,11 @@ export class KanbanPanel implements vscode.Disposable {
             message.spec,
             this.adapter.thinkingSpaceContext?.(),
           );
+          // The merge + `accepted:` stamp land via a different write path than this
+          // panel's store, and the out-of-workspace FS watcher is unreliable — so the
+          // status never changes without a manual reload. Re-load + re-post here so the
+          // accepted Spec reflects immediately (mirrors the `accept-spec` handler).
+          await this.reloadAndPost();
         } catch (err) {
           this.log(`accept ${message.spec} failed: ${(err as Error).message}`);
         }
@@ -316,6 +326,7 @@ export class KanbanPanel implements vscode.Disposable {
             message.spec,
             this.adapter.thinkingSpaceContext?.(),
           );
+          await this.reloadAndPost();
         } catch (err) {
           this.log(`reject ${message.spec} failed: ${(err as Error).message}`);
         }
@@ -383,11 +394,22 @@ export class KanbanPanel implements vscode.Disposable {
 
   /** Re-post the thinking space when the running set changes, so graph tags appear/clear live. */
   private async refreshRunning(): Promise<void> {
+    await this.reloadAndPost();
+  }
+
+  /**
+   * Re-read the backing store and re-post the full state. Used after a host-driven
+   * command (orchestrate / accept / reject) whose writes land via a different path
+   * than this panel's in-process store — the external FS watcher is unreliable for an
+   * out-of-workspace thinking space, so we refresh explicitly instead of waiting for a
+   * window reload.
+   */
+  private async reloadAndPost(): Promise<void> {
     try {
       const thinkingSpace = await this.adapter.load();
       this.post({ kind: "state", thinkingSpace, mode: readMode() });
     } catch (err) {
-      this.log(`running refresh failed: ${(err as Error).message}`);
+      this.log(`reload-and-post failed: ${(err as Error).message}`);
     }
   }
 

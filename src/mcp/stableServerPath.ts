@@ -21,17 +21,19 @@ import * as vscode from "vscode";
 
 const LINK_NAME = "extension-current";
 
-/** The stable absolute path of the server script (through the symlink). */
-export function stableServerScriptPath(
+/**
+ * A version-stable path INTO the current extension install, resolved through the
+ * `extension-current` globalStorage symlink. Survives extension updates: the
+ * versioned install dir (`…-0.1.0/…`) changes on every update, but this path does
+ * not — so any setting/config that bakes it (the MCP server script, the
+ * cwd-patch wrapper) is never orphaned. This is the trap that a pinned,
+ * versioned `context.asAbsolutePath(...)` value falls into.
+ */
+export function stableExtensionSubpath(
   context: vscode.ExtensionContext,
+  ...parts: string[]
 ): string {
-  return path.join(
-    context.globalStorageUri.fsPath,
-    LINK_NAME,
-    "dist",
-    "mcp",
-    "kanbanMcpServer.js",
-  );
+  return path.join(context.globalStorageUri.fsPath, LINK_NAME, ...parts);
 }
 
 /**

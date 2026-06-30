@@ -19,6 +19,7 @@ import {
   isResultSuccess,
   buildUnitDag,
   readyFrontier,
+  requiresSatisfied,
   buildWorkerPrompt,
   extractNeedsInput,
   sessionIdOf,
@@ -384,6 +385,78 @@ test("readyFrontier: a unit waits until the unit it consumes from is done", () =
   assert.deepEqual(
     f.map((u) => u.id),
     ["SP-1_SL-2#eu-0"],
+  );
+});
+
+// ── SP-6/2 AC1: dependency ordering is enforced (load-bearing) ─────────────
+// Over a fixture DAG where execution unit B `consumes` a file unit A produces, the
+// scheduler never reports B dispatchable until A has landed: B is ABSENT from the ready
+// frontier while A is pending (un-dispatched OR in flight), and appears ONLY once A is
+// done. Pinned through the NAMED `requiresSatisfied` gate so a refactor can't silently
+// weaken the invariant to an inline filter clause.
+test("AC1: a consumer is absent from the frontier while its producer is pending, present once it is done", () => {
+  // Fixture DAG: B (consumer.ts) consumes producer.ts → a real edge B.requires = [A].
+  const dag = buildUnitDag([
+    slice("SP-6_SL-1", {
+      workUnits: [{ footprint: ["producer.ts"], execution: "fan-out" }],
+    }),
+    slice("SP-6_SL-2", {
+      workUnits: [
+        {
+          footprint: ["consumer.ts"],
+          execution: "fan-out",
+          consumes: ["producer.ts"],
+        },
+      ],
+    }),
+  ]);
+  const producer = "SP-6_SL-1#eu-0";
+  const consumer = "SP-6_SL-2#eu-0";
+  const b = dag.find((u) => u.id === consumer)!;
+  assert.deepEqual(
+    b.requires,
+    [producer],
+    "the `consumes` edge resolves to the producing unit",
+  );
+
+  const inFrontier = (state: SchedulerState) =>
+    readyFrontier(dag, state).some((u) => u.id === consumer);
+
+  // A PENDING (never dispatched) → B absent from the frontier.
+  assert.equal(
+    inFrontier(emptyState()),
+    false,
+    "consumer absent while its producer is pending (un-dispatched)",
+  );
+  // A still PENDING (in flight, not yet done) → B STILL absent.
+  assert.equal(
+    inFrontier(emptyState({ running: new Set(["producer.ts"]) })),
+    false,
+    "consumer absent while its producer is in flight (not yet landed)",
+  );
+  // A DONE → B finally appears.
+  assert.equal(
+    inFrontier(emptyState({ done: new Set([producer]) })),
+    true,
+    "consumer appears in the frontier only once its producer is done",
+  );
+
+  // The frontier routes B through the named, load-bearing gate: a pending or unresolved
+  // producer is treated as not-done (fail-safe blocks), a done one satisfies it.
+  assert.equal(
+    requiresSatisfied(b.requires, new Set()),
+    false,
+    "a pending producer leaves `requires` unsatisfied",
+  );
+  assert.equal(
+    requiresSatisfied(b.requires, new Set(["SP-6_SL-99#eu-0"])),
+    false,
+    "an unresolved producer (names no done unit) leaves `requires` unsatisfied",
+  );
+  assert.equal(
+    requiresSatisfied(b.requires, new Set([producer])),
+    true,
+    "the producer being done satisfies `requires`",
   );
 });
 

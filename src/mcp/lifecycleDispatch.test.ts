@@ -170,6 +170,68 @@ test("write_spec allocations are sequential + monotonic across two omitted-spec 
   );
 });
 
+test("write_spec with a PROVIDED bare spec id composes it with its implements: TEP → teps/TEP-{n}/SP-{m}/spec.md (no TEP-2/SP-undefined stray)", async () => {
+  const store = freshStore();
+  await seedTep(store, "1");
+
+  // The shape `/spec-prepare` passes: a bare SP number + `implements:`. Before the
+  // fix this fell through to `pathForSpecDoc("2")` → `TEP-2/SP-undefined/spec.md`,
+  // silently creating a stray doc instead of placing SP-2 under TEP-1.
+  const res = await dispatchTool(
+    "write_spec",
+    { body: SPEC_BODY, implements: "TEP-1", spec: 2 },
+    ctxFor(store),
+    ALLOW,
+  );
+
+  // The returned id is the composite `<tep>/<spec>`, and the doc lands under TEP-1.
+  assert.equal((res as { spec?: unknown }).spec, "1/2");
+  assert.equal(
+    (res as { relativePath?: unknown }).relativePath,
+    "teps/TEP-1/SP-2/spec.md",
+  );
+  assert.ok(
+    fs.existsSync(path.join(store.thinkubeDir, "teps/TEP-1/SP-2/spec.md")),
+    "the spec doc must land at its composed TEP-1/SP-2 path",
+  );
+  // The pre-fix stray must NOT exist.
+  assert.ok(
+    !fs.existsSync(
+      path.join(store.thinkubeDir, "teps/TEP-2/SP-undefined/spec.md"),
+    ),
+    "a bare provided id must never create a TEP-2/SP-undefined stray",
+  );
+});
+
+test("write_spec accepts an already-composite provided spec id verbatim (<tep>/<spec>)", async () => {
+  const store = freshStore();
+  await seedTep(store, "1");
+  const res = await dispatchTool(
+    "write_spec",
+    { body: SPEC_BODY, implements: "TEP-1", spec: "1/3" },
+    ctxFor(store),
+    ALLOW,
+  );
+  assert.equal((res as { spec?: unknown }).spec, "1/3");
+  assert.equal(
+    (res as { relativePath?: unknown }).relativePath,
+    "teps/TEP-1/SP-3/spec.md",
+  );
+});
+
+test("write_spec refuses a bare provided spec id with no implements: TEP (its TEP-<n>/SP-<m> location can't be resolved)", async () => {
+  const store = freshStore();
+  await assert.rejects(
+    dispatchTool(
+      "write_spec",
+      { body: SPEC_BODY, spec: 2 },
+      ctxFor(store),
+      ALLOW,
+    ),
+    /implements: TEP-<n>/,
+  );
+});
+
 // ─── retire + re-cut (SP-th4wqd_SL-1) ────────────────────────────────────────
 
 // The spec id is the composite `<tep>/<spec>` in the org-scoped tree layout.

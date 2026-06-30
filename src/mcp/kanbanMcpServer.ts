@@ -79,6 +79,11 @@ import {
   contractFirstCheck,
   CONTRACT_FIRST_RULE_MSG,
   CONTRACT_FIRST_OPTOUT_FIELD,
+  // Undeclared cross-unit read gate (SP-6/2 AC2): consumed from parallelSlices.ts —
+  // the pure check whose verdict the create_slice gate chain enforces. The rule
+  // message is carried in the verdict (never restated here), so a reworded rule
+  // can't drift between the check and the refusal it produces.
+  undeclaredReadsCheck,
   normalizeFilePath,
   type ContractFirstWorkUnit,
   type ParallelSliceInput,
@@ -163,6 +168,7 @@ import { ConcurrencyLock } from "../services/concurrencyLock";
 import {
   thinkingSpaceDirForNamespace,
   namespaceForRepo,
+  repoPathForNamespace,
   type WorkspaceFolderRef,
 } from "../store/thinkingSpaceNamespace";
 import {
@@ -899,6 +905,12 @@ const TOOL_DEFS = [
                 description:
                   "Files a SIBLING unit produces that this unit reads — the contract-first reference and the authored dependency language. Naming a sibling's footprint here satisfies the contract-first gate (the unit is coordinated through that contract, not fanned out blind) and is resolved into a real dependency edge on the producing unit(s). It is a file, not a node-id, so it is authorable at create time even though the slice has no number yet.",
               },
+              reads: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Files this unit READS but does not itself produce (SP-6/2). The declared read set the undeclared-cross-unit-read gate audits: any read that lands on a SIBLING unit's footprint with NO matching `consumes` is an undeclared cross-unit dependency and the slice is refused (naming the file and its producer) — add `consumes` for it so it is a real scheduling edge, or drop it. A read of a file no sibling produces is a pre-existing file and is fine. Declared (not inferred), so the gate runs at the door.",
+              },
               execution: {
                 type: "string",
                 enum: ["serial", "mechanize", "fan-out"],
@@ -1252,6 +1264,7 @@ export async function dispatchTool(
                 footprint: string[];
                 depends_on?: string[];
                 consumes?: string[];
+                reads?: string[];
                 execution: string;
                 note?: string;
               }[])
@@ -1300,9 +1313,49 @@ export async function dispatchTool(
           return `${parentTep}/${await store.nextSpecNumber(parentTep)}`;
         },
       );
+      // A Spec doc lives at the composite `<tep>/<spec>` location (pathForSpecDoc).
+      // The mint path already returns that composite; a caller-PROVIDED id may be the
+      // bare SP NUMBER (`2`) — the shape `/spec-prepare` passes (`spec: {n}`) — which
+      // must be composed with its parent TEP (from `implements:`) to resolve
+      // `teps/TEP-<tep>/SP-<m>/spec.md`. Without this a bare numeric fell through to
+      // `pathForSpecDoc("2")` → `TEP-2/SP-undefined`, silently creating a stray,
+      // wrong-placed doc instead of updating the intended spec. A bare numeric with no
+      // `implements:` can't be located, so refuse rather than write a stray. Opaque
+      // ids and already-composite (`<tep>/<spec>`) ids are used verbatim.
+      let composedSpecId = specId;
+      if (!specId.includes("/") && /^\d+$/.test(specId)) {
+        if (!parentTep)
+          throw new Error(
+            `write_spec needs \`implements: TEP-<n>\` to resolve the bare spec id \`${specId}\` to its \`TEP-<n>/SP-${specId}\` location.`,
+          );
+        composedSpecId = `${parentTep}/${specId}`;
+      }
+      // SP-6/1 provenance: when the server holds a signing secret AND an audit runner, the audit
+      // runs server-side. It must run where the CODE lives — the spec's WORKING repo (`repo:`),
+      // NOT store.workspaceRoot (the project-umbrella root has no package.json / repo-conventions,
+      // so the audit can neither read the code nor derive the real verification recipe — that's why
+      // it fabricated `npx vitest`). Resolve `repo:` (this call's arg, else the spec's existing
+      // frontmatter) to its path; fall back to the thinking space repo for a normal same-repo spec.
+      const auditOn =
+        ctx.auditRunner !== undefined && ctx.signingSecret !== undefined;
+      let auditCwd = store.workspaceRoot;
+      if (auditOn) {
+        const existingForRepo = await store.getFile(
+          store.pathForSpecDoc(composedSpecId),
+        );
+        const repoNs =
+          optString(args, "repo") ??
+          (typeof existingForRepo?.frontmatter?.repo === "string"
+            ? existingForRepo.frontmatter.repo.trim()
+            : undefined);
+        const resolved = repoNs
+          ? repoPathForNamespace(repoNs, ctx.env.folders)
+          : undefined;
+        if (resolved && fsSync.existsSync(resolved)) auditCwd = resolved;
+      }
       return writeSpec(
         store,
-        specId,
+        composedSpecId,
         asString(args, "body"),
         implementsRaw,
         // The closing gate's per-AC declaration (SP-tgzyfy). Forwarded verbatim — writeSpec
@@ -1316,14 +1369,11 @@ export async function dispatchTool(
           ? (args.ac_verifications as Record<string, unknown>)
           : undefined,
         optString(args, "repo"),
-        // SP-6/1 provenance: when the server holds a signing secret AND an audit runner, hand them
-        // (plus the repo cwd the headless audit runs in) to `writeSpec` so it runs the audit, signs
-        // the result, and refuses an un-auditable Spec. Absent ⇒ legacy param path.
-        ctx.auditRunner !== undefined && ctx.signingSecret !== undefined
+        auditOn
           ? {
-              runner: ctx.auditRunner,
-              secret: ctx.signingSecret,
-              cwd: store.workspaceRoot,
+              runner: ctx.auditRunner!,
+              secret: ctx.signingSecret!,
+              cwd: auditCwd,
             }
           : undefined,
       );
@@ -2303,6 +2353,9 @@ export async function createSlice(
       // Contract-first reference: files a sibling unit produces that this unit reads
       // (satisfies the gate + resolves to a dependency edge; authorable without a node-id).
       consumes?: string[];
+      // Declared read set (SP-6/2): files this unit reads but does not produce. The
+      // undeclared-cross-unit-read gate audits these against sibling productions.
+      reads?: string[];
       execution: string;
       note?: string;
       // Contract-first opt-out (SP-th4wqi). The authoritative field name is the
@@ -2649,6 +2702,25 @@ export async function createSlice(
           );
         }
       }
+    }
+  }
+
+  // Undeclared cross-unit read gate (SP-6/2 AC2). The consumes-resolvability gate
+  // above proves every declared `consumes` resolves to a real producer; this one
+  // proves the inverse for declared `reads`: a unit that `reads:` a file a SIBLING
+  // unit produces must also `consumes:` it, or the scheduler sees no edge and may
+  // dispatch the reader before its producer has landed (the prose-note dependency
+  // that caused the SL-1/SL-2 stub-and-`rm` deletion). The pure check + its teaching
+  // message live in parallelSlices.ts and are never restated here — the verdict
+  // carries the rule plus each offending file and its producing unit, so a reworded
+  // rule can't drift between check and refusal. A read of a file no sibling produces
+  // is a pre-existing file and passes — the gate fences only cross-unit reads.
+  {
+    const readsVerdict = undeclaredReadsCheck(
+      (args.work_units ?? []) as ContractFirstWorkUnit[],
+    );
+    if (!readsVerdict.ok) {
+      throw new Error(`Refusing to create the slice:\n${readsVerdict.message}`);
     }
   }
 

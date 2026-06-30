@@ -255,3 +255,70 @@ test("NO-HONOR: an agent map cannot rescue a failing audit (no write, no signatu
     "an agent-supplied map must not let a failing audit through",
   );
 });
+
+// ── Audit cwd: the audit runs in the spec's WORKING repo (repo:), not the thinking space root ──
+// A project-member spec's code lives in its `repo:` namespace, not under store.workspaceRoot (the
+// project umbrella). The audit (and its recipe resolution) must run there — else it can't read the
+// code or find package.json/repo-conventions, and fabricates a command (the `npx vitest` we hit).
+
+test("write_spec runs the audit in the working repo resolved from repo:, not the thinking space root", async () => {
+  const store = freshStore();
+  let seenCwd: string | undefined;
+  const recording: AuditRunner = async (req) => {
+    seenCwd = req.cwd;
+    return {
+      verdicts: [
+        { ordinal: 1, verdict: "verifiable", run: "npm test", env: "local" },
+        { ordinal: 2, verdict: "verifiable", run: "npm test", env: "local" },
+      ],
+      passed: true,
+    };
+  };
+
+  // A working repo on disk under a named workspace folder, addressed by its namespace.
+  const folderRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tk-folder-"));
+  const repoPath = path.join(folderRoot, "extensions", "demo-repo");
+  fs.mkdirSync(repoPath, { recursive: true });
+  fs.writeFileSync(path.join(repoPath, "package.json"), "{}\n");
+
+  const ctx = {
+    env: { folders: [{ name: "Plat", path: folderRoot }] } as never,
+    thinkingSpaces: { resolve: () => store } as never,
+    promoteLocator: (() => undefined) as never,
+    auditRunner: recording,
+    signingSecret: SECRET,
+  };
+
+  await dispatchTool(
+    "write_spec",
+    { spec: SPEC, body: BODY, implements: "TEP-1", repo: "Plat/extensions/demo-repo" },
+    ctx as never,
+    () => {},
+  );
+
+  assert.equal(
+    seenCwd,
+    repoPath,
+    "the audit cwd must be the repo: working repo, not store.workspaceRoot",
+  );
+
+  // And falling back: a spec with NO repo: audits in the thinking space repo (store.workspaceRoot).
+  let seenCwd2: string | undefined;
+  const recording2: AuditRunner = async (req) => {
+    seenCwd2 = req.cwd;
+    return { verdicts: PASS_VERDICTS, passed: true };
+  };
+  await dispatchTool(
+    "write_spec",
+    { spec: "1/2", body: BODY, implements: "TEP-1" },
+    {
+      env: { folders: [] } as never,
+      thinkingSpaces: { resolve: () => store } as never,
+      promoteLocator: (() => undefined) as never,
+      auditRunner: recording2,
+      signingSecret: SECRET,
+    } as never,
+    () => {},
+  );
+  assert.equal(seenCwd2, store.workspaceRoot, "no repo: → audit in the thinking space repo");
+});

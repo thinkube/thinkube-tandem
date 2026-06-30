@@ -9,6 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -16,11 +17,38 @@ import * as path from "node:path";
 import {
   OrchestratorService,
   type OrchestratorDeps,
+  type OnPark,
   type WorkerResult,
 } from "./OrchestratorService";
 import { answerParkedWorker } from "./orchestratorSessions";
+import type { SchedUnit } from "./orchestratorCore";
+import type { ContainmentResult } from "../methodology/parallelSlices";
 
 type RunUnit = NonNullable<OrchestratorDeps["runUnit"]>;
+
+/** Reach the orchestrator's private `runViaSdk` (the AC3 path under test) with the
+ *  real machinery intact — only the `sdkQuery` dep is faked. A focused cast, not a
+ *  reimplementation: the body (PostToolUse hook → containmentCheck → revertPaths →
+ *  abort → precedence) is the real production code. */
+function svcRunViaSdk(
+  deps: OrchestratorDeps,
+): (
+  unit: SchedUnit,
+  specNumber: string,
+  cwd: string,
+  onPark: OnPark,
+) => Promise<WorkerResult> {
+  const svc = new OrchestratorService(deps) as unknown as {
+    runViaSdk: (
+      unit: SchedUnit,
+      specNumber: string,
+      cwd: string,
+      onPark: OnPark,
+    ) => Promise<WorkerResult>;
+  };
+  return (unit, specNumber, cwd, onPark) =>
+    svc.runViaSdk(unit, specNumber, cwd, onPark);
+}
 
 /** A runUnit that resolves to a fixed outcome (the default seam: success). */
 const runOutcome =
@@ -77,6 +105,10 @@ function makeDeps(
     released: string[];
     advanced: string[];
     attention: string[];
+    /** The diagnosis string each requires-attention flag carried — so AC3 can assert the
+     *  containment hard-stop surfaces the offending out-of-footprint path verbatim (not the
+     *  generic "exited without success" message). Aligned 1:1 with `attention`. */
+    attentionReasons: string[];
     needsInput: string[];
     checked: number[];
     torndown: string[];
@@ -90,6 +122,7 @@ function makeDeps(
     released: [] as string[],
     advanced: [] as string[],
     attention: [] as string[],
+    attentionReasons: [] as string[],
     needsInput: [] as string[],
     checked: [] as number[],
     torndown: [] as string[],
@@ -110,7 +143,9 @@ function makeDeps(
   // A real (throwaway) thinking space dir so the closing run's `writeDeliverySummary` can land
   // `teps/TEP-1/SP-1/DELIVERY.md` — the finalization watchdog (SP-th4wqc_SL-2) treats a missing
   // report as a wedge, so the integration fake must let the report write.
-  const thinkingSpaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "tk-orch-test-"));
+  const thinkingSpaceDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-orch-test-"),
+  );
   fs.mkdirSync(path.join(thinkingSpaceDir, path.dirname(SPEC_DOC)), {
     recursive: true,
   });
@@ -177,8 +212,9 @@ function makeDeps(
     advance: async (h: string) => {
       calls.advanced.push(h);
     },
-    flagAttention: async (h: string) => {
+    flagAttention: async (h: string, diagnosis: string) => {
       calls.attention.push(h);
+      calls.attentionReasons.push(diagnosis);
     },
     flagNeedsInput: async (h: string) => {
       calls.needsInput.push(h);
@@ -539,4 +575,304 @@ test("dispatchSpec: a resident worker PARKS (frees its slot), then an external a
   );
   assert.equal(r.committed, true);
   assert.deepEqual(calls.needsInput, ["TEP-1_SP-1_SL-1"]); // flagged needs-input on park
+});
+
+// ── Post-tool footprint containment hard-stop (SP-6/2 AC3) ─────────────────
+//
+// AC3: "When an execution unit's run leaves any create/modify/delete in the
+// working tree outside its declared footprint — whether via Edit/Write or via
+// Bash — the orchestrator aborts the unit, restores the working tree, and marks
+// the unit requires-attention naming the offending path; it does not surface the
+// violation as a recoverable permission deny." These two tests cover the two
+// halves of that wiring deterministically (no live Agent SDK, no live cluster):
+//
+//   • the orchestrator-level handling of a containment hard-stop — `runViaSdk`
+//     aborts the `query()` and returns a TERMINAL `failed` carrying a diagnosis
+//     that names the offending out-of-footprint path, so the slice is flagged
+//     requires-attention naming it (never a recoverable deny), while a sibling
+//     unit's landed in-tree work is untouched (not failed, not flagged); and
+//   • the real-git post-tool containment itself (`containmentCheck` → porcelain
+//     diff → `footprintContainment` → path-scoped `git restore`/`clean`): an
+//     out-of-footprint Bash create (`cat >`) AND delete (`rm`) are detected and
+//     reverted, while a declared in-flight (sibling) change in the shared tree
+//     survives — the revert touches ONLY the offending paths, never the tree.
+
+/** A hermetic, offline git repo with one commit seeding the given tracked files.
+ *  Stands in for the shared spec worktree the post-tool diff runs against. */
+function initGitRepo(seed: Record<string, string>): string {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tk-orch-ac3-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false");
+  for (const [rel, body] of Object.entries(seed)) {
+    const abs = path.join(repo, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, body);
+  }
+  git("add", "-A");
+  git("commit", "-q", "-m", "seed");
+  return repo;
+}
+
+/**
+ * Drive the REAL {@link OrchestratorService.runViaSdk} with the Agent SDK boundary
+ * faked through the `sdkQuery` dep — NOT the `runUnit` seam (which would bypass the
+ * very machinery AC3 is about). The fake `query` performs the worker's tool calls as
+ * REAL Bash (`execFileSync('sh', ['-c', …])` so the change carries no `file_path` for
+ * the PreToolUse guard to pre-screen — the stub-and-`rm` hole), then fires the
+ * orchestrator's PostToolUse hook exactly as the live SDK would after each tool call,
+ * then (if the run was not aborted) emits a `result: success`. Everything inside
+ * `runViaSdk` is real: the PostToolUse hook, the real git `containmentCheck`
+ * (`git status --porcelain` → `footprintContainment`), the path-scoped `revertPaths`
+ * (`git restore`/`clean`), the `AbortController` hard-stop, and the
+ * success-precedence. `bash` runs the tool calls so Bash coverage is exercised end
+ * to end. Returns the messages the fake yields + whether the abort signal tripped.
+ */
+function fakeSdkQueryRunningBashThen(
+  repo: string,
+  bashScripts: string[],
+  observed: { aborted?: boolean },
+): NonNullable<OrchestratorDeps["sdkQuery"]> {
+  return ({ options }) => {
+    const opts = options as {
+      hooks: {
+        PostToolUse?: Array<{
+          hooks: Array<(i: unknown) => Promise<unknown>>;
+        }>;
+      };
+      abortController: AbortController;
+    };
+    async function* gen(): AsyncGenerator<unknown> {
+      // An assistant turn (a tool is about to run).
+      yield { type: "assistant", session_id: "ac3-sdk" };
+      // The worker's tool calls land as REAL Bash changes in the shared tree.
+      for (const script of bashScripts)
+        execFileSync("sh", ["-c", script], { cwd: repo, stdio: "pipe" });
+      // The SDK fires PostToolUse after the tool call — drive every registered hook.
+      for (const grp of opts.hooks.PostToolUse ?? [])
+        for (const h of grp.hooks)
+          await h({ tool_name: "Bash", tool_input: {} });
+      // A faithful SDK stops the stream once the orchestrator aborts the query.
+      observed.aborted = opts.abortController.signal.aborted;
+      if (opts.abortController.signal.aborted) return;
+      // If (wrongly) not aborted, a success races in — the breach must STILL win.
+      yield {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "ac3-sdk",
+      };
+    }
+    return gen();
+  };
+}
+
+/** The unit under test: fenced to its own footprint, the sibling's file declared
+ *  in-flight (so a sibling's shared-tree edit is in-bounds, not a violation). */
+function ac3Unit(footprint: string[]): SchedUnit {
+  return {
+    id: "TEP-1_SP-1_SL-1#eu-0",
+    slice: "TEP-1_SP-1_SL-1",
+    footprint,
+    requires: [],
+    shape: "fan-out",
+    note: "the breaching unit",
+  };
+}
+
+test("runViaSdk: an out-of-footprint Bash create+delete after a tool call → abort + PATH-SCOPED revert + TERMINAL requires-attention naming the path; a sibling's in-tree work survives", async () => {
+  // The shared worktree: this unit's owned file, a sibling's (declared in-flight),
+  // and a tracked file an out-of-footprint Bash `rm` will illegally delete.
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "src/sibling.ts": "// sibling original\n",
+    "src/gone.ts": "// only its owner may delete this\n",
+  });
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  // Drive the REAL runViaSdk: the fake query runs Bash (create out-of-footprint,
+  // delete out-of-footprint, edit sibling in-flight) then fires the PostToolUse hook.
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    [
+      "cat > src/evil.ts <<'E'\n// injected out-of-footprint\nE", // CREATE (untracked, ??)
+      "rm src/gone.ts", // DELETE (the stub-and-rm hole)
+      "printf '// sibling in-progress\\n' > src/sibling.ts", // a SIBLING's in-flight edit
+    ],
+    observed,
+  );
+
+  // Footprint fences this unit to owned + the sibling's declared in-flight file.
+  const unit = ac3Unit(["src/owned.ts", "src/sibling.ts"]);
+  const result = await (
+    svcRunViaSdk(deps)
+  )(unit, "1/1", repo, () => {});
+
+  // (a) The live query was aborted the instant containment fired.
+  assert.equal(
+    observed.aborted,
+    true,
+    "the SDK abortController.signal was aborted by the PostToolUse hard-stop",
+  );
+
+  // (c) TERMINAL requires-attention NAMING an offending out-of-footprint path —
+  //     never a recoverable deny the worker routes around.
+  assert.equal(result.outcome, "failed", "a containment breach is terminal");
+  assert.match(result.attention ?? "", /src\/evil\.ts/);
+  assert.match(result.attention ?? "", /src\/gone\.ts/);
+  assert.match(result.attention ?? "", /requires-attention/);
+  assert.match(result.attention ?? "", /not a recoverable deny/i);
+
+  // (b) The revert is PATH-SCOPED — only the two offenders, never a tree reset:
+  //   the out-of-footprint create is cleaned away…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/evil.ts")),
+    false,
+    "the out-of-footprint Bash create was reverted (git clean)",
+  );
+  //   …the out-of-footprint delete is restored to HEAD…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/gone.ts")),
+    true,
+    "the out-of-footprint Bash delete was restored (git restore)",
+  );
+  //   …and a SIBLING's in-progress edit in the shared tree is untouched.
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
+    "// sibling in-progress\n",
+    "a sibling's in-progress work in the shared tree is never touched",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("runViaSdk: a containment breach beats a raced `result: success` — the run is failed, NEVER reported success", async () => {
+  // Same machinery, narrowed to the precedence clause: even if the query is NOT
+  // aborted and a `result: success` is emitted, the breach must still win. We force
+  // that race by NOT short-circuiting on the abort signal in the fake query.
+  const repo = initGitRepo({ "src/owned.ts": "// owned\n" });
+
+  const deps = makeDeps({}).deps;
+  deps.sdkQuery = ({ options }) => {
+    const opts = options as {
+      hooks: {
+        PostToolUse?: Array<{ hooks: Array<(i: unknown) => Promise<unknown>> }>;
+      };
+    };
+    async function* gen(): AsyncGenerator<unknown> {
+      yield { type: "assistant", session_id: "ac3-race" };
+      // Out-of-footprint Bash create — a real working-tree change.
+      execFileSync("sh", ["-c", "echo '// injected' > src/evil.ts"], {
+        cwd: repo,
+        stdio: "pipe",
+      });
+      for (const grp of opts.hooks.PostToolUse ?? [])
+        for (const h of grp.hooks) await h({ tool_name: "Bash", tool_input: {} });
+      // Deliberately IGNORE the abort signal and race a success in behind the breach.
+      yield {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "ac3-race",
+      };
+    }
+    return gen();
+  };
+
+  const unit = ac3Unit(["src/owned.ts"]);
+  const result = await svcRunViaSdk(deps)(unit, "1/1", repo, () => {});
+
+  // The success message was emitted, yet the breach takes precedence: NOT success.
+  assert.equal(
+    result.outcome,
+    "failed",
+    "a raced result:success must not override a containment breach",
+  );
+  assert.match(result.attention ?? "", /src\/evil\.ts/);
+  // And the offending create was still reverted (path-scoped).
+  assert.equal(fs.existsSync(path.join(repo, "src/evil.ts")), false);
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("containmentCheck: an out-of-footprint Bash create + delete are detected and reverted PATH-SCOPED; a declared sibling change in the shared tree survives", async () => {
+  // The shared worktree: src/owned.ts (this unit's), src/sibling.ts (a sibling's,
+  // in-flight), and src/gone.ts (a tracked file a Bash `rm` will illegally delete).
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "src/sibling.ts": "// sibling original\n",
+    "src/gone.ts":
+      "// must survive — only the unit that owns it may delete it\n",
+  });
+
+  // Simulate a worker's Bash-driven tool calls in the shared tree:
+  //   `cat > src/evil.ts`  — an out-of-footprint CREATE (untracked, `??`)
+  //   `rm src/gone.ts`     — an out-of-footprint DELETE (the stub-and-rm hole)
+  //   edit src/owned.ts    — legitimate in-footprint work
+  //   edit src/sibling.ts  — a SIBLING's in-progress work, present in the tree
+  fs.writeFileSync(path.join(repo, "src/evil.ts"), "// injected\n");
+  fs.rmSync(path.join(repo, "src/gone.ts"));
+  fs.writeFileSync(path.join(repo, "src/owned.ts"), "// owned — edited\n");
+  fs.writeFileSync(
+    path.join(repo, "src/sibling.ts"),
+    "// sibling — in-progress edit\n",
+  );
+
+  // The post-tool diff is scoped to the in-flight declared footprints (this unit's
+  // owned file + the sibling's), so a sibling's declared work is in-bounds and only
+  // the truly out-of-footprint paths are violations.
+  const footprint = ["src/owned.ts", "src/sibling.ts"];
+
+  const svc = new OrchestratorService(makeDeps({}).deps);
+  // `containmentCheck` with no injected seam routes to the real git-based default:
+  // `git status --porcelain` → footprintContainment → revert ONLY the offenders.
+  const verdict = await (
+    svc as unknown as {
+      containmentCheck: (
+        cwd: string,
+        footprint: string[],
+      ) => Promise<ContainmentResult>;
+    }
+  ).containmentCheck(repo, footprint);
+
+  // Both out-of-footprint changes are surfaced (Bash-made, no `file_path` to pre-screen).
+  assert.equal(verdict.ok, false);
+  if (verdict.ok) throw new Error("expected a containment violation");
+  assert.deepEqual(verdict.violations.map((v) => v.file).sort(), [
+    "src/evil.ts",
+    "src/gone.ts",
+  ]);
+  assert.match(verdict.reason, /src\/evil\.ts/);
+
+  // The revert is PATH-SCOPED — it touched ONLY the two offending paths:
+  //   the out-of-footprint create is cleaned away…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/evil.ts")),
+    false,
+    "the out-of-footprint Bash create was reverted (git clean)",
+  );
+  //   …the out-of-footprint delete is restored to HEAD…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/gone.ts")),
+    true,
+    "the out-of-footprint Bash delete was restored (git restore)",
+  );
+  // …and NOTHING else was touched: the unit's own edit and the SIBLING's
+  // in-progress edit both survive (never a whole-tree reset).
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/owned.ts"), "utf8"),
+    "// owned — edited\n",
+    "the unit's own in-footprint edit survives",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
+    "// sibling — in-progress edit\n",
+    "a sibling's in-progress work in the shared tree is never touched",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
 });

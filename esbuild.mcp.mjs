@@ -24,7 +24,7 @@ await esbuild.build({
   target: "node20",
   outfile: path.join(root, "dist/mcp/kanban.js"),
   alias: { vscode: path.join(root, "src/mcp/vscodeStub.ts") },
-  external: ["node-pty", "@octokit/rest"],
+  external: ["node-pty", "@octokit/rest", "@anthropic-ai/claude-agent-sdk"],
   logLevel: "info",
 });
 

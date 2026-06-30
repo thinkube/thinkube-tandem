@@ -19,6 +19,9 @@
 // pass/fail (and signs on pass) from these verdicts, and the pure `readyGate` verifies the signature
 // downstream — this module stays model-side and authority-free.
 
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+
 import type { AcVerdict, AcVerdictKind } from "./openingGate";
 // Reuse, don't fork (SP-th1ddy): the same stream-json message-shape readers the orchestrator's
 // spawn path uses, so the audit session is summarized and its session id / success read identically.
@@ -206,13 +209,39 @@ type SdkQuery = (args: {
   options: { cwd: string; permissionMode: "bypassPermissions" };
 }) => AsyncIterable<unknown>;
 
-/** Deps for the real runner — both injectable so the spawn path is testable without a live model. */
+/** Deps for the real runner — all injectable so the spawn path is testable without a live model. */
 export interface SdkAuditDeps {
   /** Progress sink (mirrors the orchestrator's `output.appendLine`). Defaults to a no-op. */
   log?: (line: string) => void;
   /** Loads the SDK `query`. Defaults to a lazy `import("@anthropic-ai/claude-agent-sdk")` — the
    *  same lazy-import the orchestrator uses, so the SDK never loads at activation. */
   loadQuery?: () => Promise<SdkQuery>;
+  /** Resolve a repo's REAL local verification command from the audit cwd (see
+   *  {@link defaultLocalRunResolver}). Injected so the override is testable without a real
+   *  package.json on disk. */
+  resolveLocalRun?: (cwd: string) => Promise<string | undefined>;
+}
+
+/**
+ * Resolve a repo's REAL local verification command from the audit cwd — its own test entrypoint
+ * (`npm test`) when `package.json` declares a `test` script. The design-phase audit can't know the
+ * test FILE that will verify an AC: it doesn't exist yet (the slice that writes it hasn't run), so a
+ * model-fabricated per-file command (e.g. `npx vitest run src/x.test.ts` in a `node --test` repo) is
+ * a guess — and was observed wrong. The honest local command is the repo's actual test recipe.
+ * Returns `undefined` when there's no `test` script (the caller then leaves the model's command as a
+ * best-effort fallback rather than inventing one).
+ */
+export async function defaultLocalRunResolver(
+  cwd: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await fs.readFile(path.join(cwd, "package.json"), "utf8");
+    const pkg = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+    const test = pkg.scripts?.test;
+    return typeof test === "string" && test.trim() ? "npm test" : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -228,6 +257,7 @@ export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
     deps.loadQuery ??
     (async () =>
       (await import("@anthropic-ai/claude-agent-sdk")).query as SdkQuery);
+  const resolveLocalRun = deps.resolveLocalRun ?? defaultLocalRunResolver;
 
   return async (req: AuditRequest): Promise<AuditResult> => {
     if (!req.acs.length)
@@ -285,6 +315,21 @@ export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
         sessionId,
         error: "audit produced no parseable verdicts",
       };
+
+    // Replace each LOCAL `verifiable` AC's `run` with the repo's real test recipe: at design phase
+    // the verifying test file doesn't exist yet, so the model's per-file command is a fabrication
+    // (the `npx vitest` in a `node --test` repo we observed). Keep the model's verdict + env and
+    // swap only the command; `cluster` ACs (a deploy/lifecycle playbook the model is right to name)
+    // are left untouched. No repo recipe ⇒ leave the model's command as a best-effort fallback.
+    const localRun = await resolveLocalRun(req.cwd);
+    if (localRun) {
+      for (const v of verdicts) {
+        if (v.verdict === "verifiable" && v.env !== "cluster") {
+          v.run = localRun;
+          v.env = "local";
+        }
+      }
+    }
 
     return { verdicts, passed: computePassed(req.acs, verdicts), sessionId };
   };
