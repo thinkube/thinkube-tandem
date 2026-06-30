@@ -587,6 +587,120 @@ test("footprintContainment: the same out-of-footprint path on multiple lines is 
   assert.equal(r.violations.length, 1);
 });
 
+// ── footprintContainment cross-unit attribution (SP-2 / TEP-6 AC4) ──────────
+//
+// The porcelain the check is fed is a WHOLE-TREE diff of the shared worktree, so
+// it also shows every OTHER running unit's (and earlier units') legitimate,
+// in-their-own-footprint changes. Without context the check misattributes those to
+// THIS unit and reverts them (the mutual-destruction failure: two disjoint-footprint
+// units each flagged and reverted the other's file). The optional 3rd arg fences a
+// change to a violation ONLY when it is outside this unit's footprint AND outside
+// `running` (every running unit's footprint) AND not in `baseline` (paths already
+// dirty when this unit started). With the arg absent, behaviour is unchanged (AC3).
+
+test("footprintContainment: a change in a concurrent sibling's footprint (running) is NOT a violation", () => {
+  // The classic mutual-destruction case: this unit owns orchestratorCore.ts; a
+  // concurrent sibling owns (and is editing) parallelSlices.ts. The whole-tree diff
+  // shows both, but the sibling's in-footprint change must not be flagged here.
+  const porcelain = [
+    " M src/methodology/orchestratorCore.ts", // owned — fine
+    " M src/methodology/parallelSlices.ts", // a concurrent sibling's footprint
+  ].join("\n");
+  const r = footprintContainment(
+    porcelain,
+    ["src/methodology/orchestratorCore.ts"],
+    { running: ["src/methodology/parallelSlices.ts"] },
+  );
+  assert.equal(r.ok, true);
+});
+
+test("footprintContainment: a change already present at unit start (baseline) is NOT a violation", () => {
+  // An earlier unit left src/earlier.ts dirty before this unit ran; it predates this
+  // unit's run, so containment must not attribute (and revert) it here.
+  const r = footprintContainment(" M src/earlier.ts\n", ["src/a.ts"], {
+    baseline: ["src/earlier.ts"],
+  });
+  assert.equal(r.ok, true);
+});
+
+test("footprintContainment: a path outside footprint AND running AND baseline STILL violates (create)", () => {
+  // A genuine breach: src/evil.ts is in no unit's footprint and wasn't present at
+  // start — this unit truly left it out of bounds, so it must STILL be flagged.
+  const r = expectViolation(
+    footprintContainment("?? src/evil.ts\n", ["src/a.ts"], {
+      running: ["src/sibling.ts"],
+      baseline: ["src/preexisting.ts"],
+    }),
+  );
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].file, "src/evil.ts");
+  assert.equal(r.violations[0].change, "create");
+});
+
+test("footprintContainment: with running+baseline, sibling/baseline changes are exempt but a true breach (delete) still flags", () => {
+  // A whole-tree diff carrying: this unit's own work, a concurrent sibling's
+  // in-footprint edit, a baseline (pre-existing) change, and ONE genuine breach.
+  // Only the genuine breach survives the running/baseline exemptions.
+  const porcelain = [
+    " M src/a.ts", // owned — fine
+    " M src/sibling.ts", // concurrent sibling's footprint — exempt
+    " M src/earlier.ts", // already dirty at start (baseline) — exempt
+    " D src/gone.ts", // TRUE breach: out of footprint/running/baseline
+  ].join("\n");
+  const r = expectViolation(
+    footprintContainment(porcelain, ["src/a.ts"], {
+      running: ["src/sibling.ts"],
+      baseline: ["src/earlier.ts"],
+    }),
+  );
+  assert.deepEqual(
+    r.violations.map((v) => v.file),
+    ["src/gone.ts"],
+  );
+  assert.equal(r.violations[0].change, "delete");
+});
+
+test("footprintContainment: a rename whose destination is a sibling's footprint (running) is exempt; one to a true out-of-bounds path flags", () => {
+  // Rename endpoints obey the same exemptions. A move INTO a running sibling's
+  // footprint is that sibling's territory (exempt); a move to a path owned by no one
+  // and not in baseline is a genuine out-of-footprint destination (flagged).
+  const exempt = footprintContainment(
+    "R  src/a.ts -> src/sibling.ts\n",
+    ["src/a.ts"],
+    { running: ["src/sibling.ts"] },
+  );
+  assert.equal(exempt.ok, true, "rename dest inside a running footprint is exempt");
+
+  const r = expectViolation(
+    footprintContainment("R  src/a.ts -> src/moved.ts\n", ["src/a.ts"], {
+      running: ["src/sibling.ts"],
+      baseline: [],
+    }),
+  );
+  assert.ok(r.violations.some((v) => v.file === "src/moved.ts"));
+});
+
+test("footprintContainment: with the context absent, behaviour is exactly as before (AC3 unchanged)", () => {
+  // Backward-compat guard: no 3rd arg ⇒ any path outside the footprint is flagged,
+  // exactly as the AC3 tests above expect.
+  const r = expectViolation(
+    footprintContainment("?? src/evil.ts\n", ["src/a.ts"]),
+  );
+  assert.equal(r.violations[0].file, "src/evil.ts");
+  // Empty context objects are equivalent to absent (no exemptions).
+  assert.equal(
+    footprintContainment("?? src/evil.ts\n", ["src/a.ts"], {}).ok,
+    false,
+  );
+  assert.equal(
+    footprintContainment("?? src/evil.ts\n", ["src/a.ts"], {
+      running: [],
+      baseline: [],
+    }).ok,
+    false,
+  );
+});
+
 // ── undeclaredReadsCheck (SP-6/2 AC2: the declared cross-unit read gate) ──────
 //
 // `consumes` builds a real dependency edge the scheduler orders on; `reads`

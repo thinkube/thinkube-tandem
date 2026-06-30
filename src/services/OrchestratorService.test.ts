@@ -37,6 +37,8 @@ function svcRunViaSdk(
   specNumber: string,
   cwd: string,
   onPark: OnPark,
+  runningFootprints?: () => string[],
+  baseline?: string[],
 ) => Promise<WorkerResult> {
   const svc = new OrchestratorService(deps) as unknown as {
     runViaSdk: (
@@ -44,10 +46,12 @@ function svcRunViaSdk(
       specNumber: string,
       cwd: string,
       onPark: OnPark,
+      runningFootprints?: () => string[],
+      baseline?: string[],
     ) => Promise<WorkerResult>;
   };
-  return (unit, specNumber, cwd, onPark) =>
-    svc.runViaSdk(unit, specNumber, cwd, onPark);
+  return (unit, specNumber, cwd, onPark, runningFootprints, baseline) =>
+    svc.runViaSdk(unit, specNumber, cwd, onPark, runningFootprints, baseline);
 }
 
 /** A runUnit that resolves to a fixed outcome (the default seam: success). */
@@ -872,6 +876,182 @@ test("containmentCheck: an out-of-footprint Bash create + delete are detected an
     fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
     "// sibling — in-progress edit\n",
     "a sibling's in-progress work in the shared tree is never touched",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+// ── Cross-unit containment attribution (SP-2 / TEP-6 mechanism 4, AC4) ──────
+//
+// The AC3 post-tool fence ran `footprintContainment` over a WHOLE-TREE
+// `git status --porcelain`, so it also saw every OTHER running unit's (and earlier
+// units') legitimate, in-their-own-footprint changes — misattributed them as THIS
+// unit's violation, aborted the unit, and reverted them. The real failure: two
+// disjoint-footprint units (orchestratorCore.ts and parallelSlices.ts) ran
+// concurrently, each flagged + reverted the other's file (mutual destruction).
+//
+// AC4: a unit is hard-stopped only for a change it left during its own run that is
+// outside its footprint AND outside every running unit's footprint AND not already
+// present before it started. These end-to-end tests drive the REAL `runViaSdk`
+// (only the SDK boundary faked, a real on-disk git repo — the AC3 pattern):
+//   (a) a concurrent sibling's in-footprint change present in the tree → NO abort;
+//   (b) a change present BEFORE the unit started (baseline) → NO abort;
+//   (c) a write outside this unit's footprint AND all running footprints → STILL
+//       aborts + reverts only that path + terminal requires-attention.
+
+test("runViaSdk AC4: a concurrent sibling's in-footprint change in the shared tree does NOT abort this unit", async () => {
+  // The shared worktree holds this unit's file and a concurrent sibling's. The fake
+  // worker only edits its OWN footprint; the sibling's file is ALREADY changed in the
+  // tree (the sibling is running). `running` carries the sibling's footprint, so the
+  // whole-tree diff must NOT attribute the sibling's change to this unit.
+  const repo = initGitRepo({
+    "src/methodology/orchestratorCore.ts": "// core\n",
+    "src/methodology/parallelSlices.ts": "// slices\n",
+  });
+  // A concurrent sibling has already edited its in-footprint file in the shared tree.
+  fs.writeFileSync(
+    path.join(repo, "src/methodology/parallelSlices.ts"),
+    "// slices — sibling in-progress\n",
+  );
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  // This unit only touches its OWN footprint file (legitimate in-footprint work).
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    ["printf '// core — edited\\n' > src/methodology/orchestratorCore.ts"],
+    observed,
+  );
+
+  const unit = ac3Unit(["src/methodology/orchestratorCore.ts"]);
+  const result = await svcRunViaSdk(deps)(
+    unit,
+    "1/1",
+    repo,
+    () => {},
+    // The running-units footprint union includes the concurrent sibling's file.
+    () => [
+      "src/methodology/orchestratorCore.ts",
+      "src/methodology/parallelSlices.ts",
+    ],
+    [], // nothing dirty at this unit's start
+  );
+
+  // No breach: the query was never aborted and the run succeeded.
+  assert.equal(observed.aborted, false, "the query was not aborted (no breach)");
+  assert.equal(result.outcome, "success", "a sibling's in-footprint change is not this unit's violation");
+  // The sibling's in-progress work in the shared tree was NEVER reverted.
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/methodology/parallelSlices.ts"), "utf8"),
+    "// slices — sibling in-progress\n",
+    "a concurrent sibling's in-footprint change must never be reverted (no mutual destruction)",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("runViaSdk AC4: a change present BEFORE the unit started (baseline) does NOT abort it", async () => {
+  // An earlier unit left src/earlier.ts dirty before this unit ran. It is in no
+  // running footprint now, but it predates this unit's run (baseline), so this unit
+  // must not be aborted for it nor have it reverted.
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "src/earlier.ts": "// earlier original\n",
+  });
+  // An earlier unit's change, already present in the tree when this unit starts.
+  fs.writeFileSync(path.join(repo, "src/earlier.ts"), "// earlier — already changed\n");
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    ["printf '// owned — edited\\n' > src/owned.ts"],
+    observed,
+  );
+
+  const unit = ac3Unit(["src/owned.ts"]);
+  const result = await svcRunViaSdk(deps)(
+    unit,
+    "1/1",
+    repo,
+    () => {},
+    () => ["src/owned.ts"], // earlier.ts is in no running footprint
+    ["src/earlier.ts"], // …but it WAS dirty at this unit's start (baseline)
+  );
+
+  assert.equal(observed.aborted, false, "a baseline change does not abort the unit");
+  assert.equal(result.outcome, "success");
+  // The pre-existing change is left untouched (never reverted as this unit's work).
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/earlier.ts"), "utf8"),
+    "// earlier — already changed\n",
+    "a change present before the unit started must never be reverted",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("runViaSdk AC4: a write outside this unit's footprint AND all running footprints STILL aborts + reverts only that path + requires-attention", async () => {
+  // The genuine breach still hard-stops: src/evil.ts is in no unit's footprint, no
+  // running footprint, and was not present at start. A concurrent sibling's edit and
+  // a baseline change are both present too — neither may be reverted, only the breach.
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "src/sibling.ts": "// sibling original\n",
+    "src/earlier.ts": "// earlier original\n",
+  });
+  // A baseline change present before this unit starts.
+  fs.writeFileSync(path.join(repo, "src/earlier.ts"), "// earlier — pre-existing\n");
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    [
+      "printf '// owned — edited\\n' > src/owned.ts", // legit in-footprint
+      "printf '// sibling in-progress\\n' > src/sibling.ts", // a running sibling's in-footprint edit
+      "cat > src/evil.ts <<'E'\n// injected breach\nE", // the TRUE out-of-bounds breach
+    ],
+    observed,
+  );
+
+  const unit = ac3Unit(["src/owned.ts"]);
+  const result = await svcRunViaSdk(deps)(
+    unit,
+    "1/1",
+    repo,
+    () => {},
+    () => ["src/owned.ts", "src/sibling.ts"], // running union (sibling included)
+    ["src/earlier.ts"], // baseline
+  );
+
+  // The breach still hard-stops: aborted, terminal failure, naming ONLY the breach.
+  assert.equal(observed.aborted, true, "the genuine breach still aborts the query");
+  assert.equal(result.outcome, "failed", "a true out-of-bounds write is still terminal");
+  assert.match(result.attention ?? "", /src\/evil\.ts/);
+  assert.match(result.attention ?? "", /requires-attention/);
+  assert.match(result.attention ?? "", /not a recoverable deny/i);
+  // It must NOT name the sibling's or baseline files (they are exempt, not violations).
+  assert.doesNotMatch(result.attention ?? "", /src\/sibling\.ts/);
+  assert.doesNotMatch(result.attention ?? "", /src\/earlier\.ts/);
+
+  // The revert is PATH-SCOPED to the breach only:
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/evil.ts")),
+    false,
+    "the true out-of-footprint create was reverted (git clean)",
+  );
+  // …the sibling's in-footprint edit survives…
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
+    "// sibling in-progress\n",
+    "a concurrent sibling's in-footprint change survives the breach revert",
+  );
+  // …and the baseline change survives.
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/earlier.ts"), "utf8"),
+    "// earlier — pre-existing\n",
+    "a baseline change survives the breach revert",
   );
 
   fs.rmSync(repo, { recursive: true, force: true });
