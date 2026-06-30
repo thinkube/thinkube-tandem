@@ -18,9 +18,15 @@ import {
   parseOwnership,
   detectRecoverable,
   requiresWorktree,
+  footprintContainment,
+  undeclaredReadsCheck,
+  UNDECLARED_READ_RULE_MSG,
   type ParallelSliceInput,
   type OwnershipState,
   type SliceRecoveryInfo,
+  type ContainmentResult,
+  type ContractFirstWorkUnit,
+  type UndeclaredReadResult,
 } from "./parallelSlices";
 
 test("disjoint members of a parallel_group pass", () => {
@@ -382,7 +388,12 @@ test("footprintGuard: an in-footprint Write is allowed", () => {
 });
 
 test("footprintGuard: an out-of-footprint Edit is DENIED, naming the file", () => {
-  const d = footprintGuard("Edit", { file_path: "src/evil.ts" }, ["src/a.ts"], "/wt");
+  const d = footprintGuard(
+    "Edit",
+    { file_path: "src/evil.ts" },
+    ["src/a.ts"],
+    "/wt",
+  );
   assert.equal(d.allow, false);
   if (d.allow) return;
   assert.match(d.reason, /src\/evil\.ts/);
@@ -400,23 +411,302 @@ test("footprintGuard: an absolute path under the worktree is relativized before 
 });
 
 test("footprintGuard: non-write tools (Read, Bash) are not guarded", () => {
-  assert.equal(footprintGuard("Read", { file_path: "src/x.ts" }, [], "/wt").allow, true);
-  assert.equal(footprintGuard("Bash", { command: "ls" }, [], "/wt").allow, true);
+  assert.equal(
+    footprintGuard("Read", { file_path: "src/x.ts" }, [], "/wt").allow,
+    true,
+  );
+  assert.equal(
+    footprintGuard("Bash", { command: "ls" }, [], "/wt").allow,
+    true,
+  );
 });
 
 test("footprintGuard: a write with no file_path is allowed (nothing to fence)", () => {
   assert.equal(footprintGuard("Write", {}, ["src/a.ts"], "/wt").allow, true);
-  assert.equal(footprintGuard("Edit", undefined, ["src/a.ts"], "/wt").allow, true);
+  assert.equal(
+    footprintGuard("Edit", undefined, ["src/a.ts"], "/wt").allow,
+    true,
+  );
 });
 
 test("footprintGuard: ./-prefixed footprint matches the bare target", () => {
-  const d = footprintGuard("Edit", { file_path: "src/a.ts" }, ["./src/a.ts"], "/wt");
+  const d = footprintGuard(
+    "Edit",
+    { file_path: "src/a.ts" },
+    ["./src/a.ts"],
+    "/wt",
+  );
   assert.equal(d.allow, true);
 });
 
 test("footprintGuard: MultiEdit is guarded like Edit/Write", () => {
   assert.equal(
-    footprintGuard("MultiEdit", { file_path: "out.ts" }, ["in.ts"], "/wt").allow,
+    footprintGuard("MultiEdit", { file_path: "out.ts" }, ["in.ts"], "/wt")
+      .allow,
     false,
   );
+});
+
+// ── footprintContainment (SP-6/2 AC3: Bash-inclusive post-tool containment) ──
+//
+// The PreToolUse `footprintGuard` only fences tools that expose a `file_path`
+// (Edit/Write/MultiEdit). `footprintContainment` is the post-tool authority: it
+// reads the working-tree diff (`git status --porcelain` text) and flags any
+// create/modify/delete OUTSIDE the unit's declared footprint, no matter which
+// tool produced it — closing the hole a Bash `rm`/`cat >`/`mv`/`sed -i`/redirect
+// drives through the pre-tool guard (the stub-and-`rm` deletion). Pure: porcelain
+// + footprint in, the out-of-footprint changes out.
+
+/** Narrow a ContainmentResult to its failing branch for assertions. */
+function expectViolation(r: ContainmentResult) {
+  assert.equal(r.ok, false);
+  if (r.ok) throw new Error("expected a containment violation");
+  return r;
+}
+
+test("footprintContainment: an in-footprint modify passes", () => {
+  // The unit edited only its own footprint file — its own work, allowed.
+  const porcelain = " M src/methodology/parallelSlices.test.ts\n";
+  const r = footprintContainment(porcelain, [
+    "src/methodology/parallelSlices.test.ts",
+  ]);
+  assert.equal(r.ok, true);
+});
+
+test("footprintContainment: an empty (clean) working tree passes", () => {
+  assert.equal(footprintContainment("", ["src/a.ts"]).ok, true);
+  // Blank/whitespace-only lines are ignored, not treated as a change.
+  assert.equal(footprintContainment("\n   \n", ["src/a.ts"]).ok, true);
+});
+
+test("footprintContainment: an out-of-footprint Bash create (cat >/redirect) is detected", () => {
+  // A worker ran `cat > src/evil.ts` — an untracked file the pre-tool guard
+  // never saw (Bash carries no file_path). Porcelain marks it `??`.
+  const r = expectViolation(
+    footprintContainment("?? src/evil.ts\n", ["src/a.ts"]),
+  );
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].file, "src/evil.ts");
+  assert.equal(r.violations[0].change, "create");
+  // The reason names the offending path and says this is terminal, not a deny.
+  assert.match(r.reason, /src\/evil\.ts/);
+  assert.match(r.reason, /requires-attention/);
+  assert.match(r.reason, /terminal/i);
+});
+
+test("footprintContainment: an out-of-footprint Bash delete (rm) is detected — the stub-and-rm hole", () => {
+  // The exploit SP-6/2 closes: a worker `rm`s a SIBLING unit's produced file.
+  // Its footprint is only the test file, so deleting the source is out-of-bounds.
+  const r = expectViolation(
+    footprintContainment(" D src/methodology/parallelSlices.ts\n", [
+      "src/methodology/parallelSlices.test.ts",
+    ]),
+  );
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].file, "src/methodology/parallelSlices.ts");
+  assert.equal(r.violations[0].change, "delete");
+  assert.match(r.reason, /parallelSlices\.ts/);
+});
+
+test("footprintContainment: an out-of-footprint modify (sed -i) is detected", () => {
+  const r = expectViolation(
+    footprintContainment(" M src/other.ts\n", ["src/a.ts"]),
+  );
+  assert.equal(r.violations[0].file, "src/other.ts");
+  assert.equal(r.violations[0].change, "modify");
+});
+
+test("footprintContainment: deleting a file IN the footprint is allowed (fences only outside)", () => {
+  // Containment fences changes OUTSIDE the footprint, never within it — a unit
+  // may delete/replace files it owns.
+  const r = footprintContainment(" D src/a.ts\n", ["src/a.ts"]);
+  assert.equal(r.ok, true);
+});
+
+test("footprintContainment: a mix of in- and out-of-footprint changes reports only the out-of-footprint ones", () => {
+  const porcelain = [
+    " M src/a.ts", // owned — fine
+    "?? src/evil.ts", // out — violation
+    " D src/gone.ts", // out — violation
+    "M  src/b.ts", // owned (staged) — fine
+  ].join("\n");
+  const r = expectViolation(
+    footprintContainment(porcelain, ["src/a.ts", "src/b.ts"]),
+  );
+  // Sorted by path; only the two out-of-footprint paths surface.
+  assert.deepEqual(
+    r.violations.map((v) => v.file),
+    ["src/evil.ts", "src/gone.ts"],
+  );
+});
+
+test("footprintContainment: a rename OUT of the footprint surfaces the destination", () => {
+  // `git mv src/a.ts src/moved.ts` — the footprint file's new home is out of bounds.
+  const r = expectViolation(
+    footprintContainment("R  src/a.ts -> src/moved.ts\n", ["src/a.ts"]),
+  );
+  // The orig endpoint is owned; the destination is the out-of-footprint change.
+  assert.ok(
+    r.violations.some((v) => v.file === "src/moved.ts"),
+    "names the rename destination",
+  );
+  assert.ok(
+    !r.violations.some((v) => v.file === "src/a.ts"),
+    "the owned origin endpoint is not a violation",
+  );
+});
+
+test("footprintContainment: path normalization — a ./-prefixed footprint matches the bare porcelain path", () => {
+  // Footprint declared with ./, porcelain emits bare — they must compare equal.
+  assert.equal(footprintContainment(" M src/a.ts\n", ["./src/a.ts"]).ok, true);
+});
+
+test("footprintContainment: a quoted/escaped porcelain path is decoded before comparison", () => {
+  // git quotes paths with special chars; the owned file must still match.
+  assert.equal(
+    footprintContainment(' M "src/a\\tb.ts"\n', ["src/a\tb.ts"]).ok,
+    true,
+  );
+  // And an out-of-footprint quoted path is still caught, decoded.
+  const r = expectViolation(
+    footprintContainment('?? "src/e\\tvil.ts"\n', ["src/a.ts"]),
+  );
+  assert.equal(r.violations[0].file, "src/e\tvil.ts");
+});
+
+test("footprintContainment: an empty footprint flags every change", () => {
+  const r = expectViolation(footprintContainment("?? src/x.ts\n", []));
+  assert.equal(r.violations[0].file, "src/x.ts");
+  assert.match(r.reason, /\(none\)/);
+});
+
+test("footprintContainment: the same out-of-footprint path on multiple lines is reported once", () => {
+  const r = expectViolation(
+    footprintContainment("?? src/evil.ts\n?? src/evil.ts\n", ["src/a.ts"]),
+  );
+  assert.equal(r.violations.length, 1);
+});
+
+// ── undeclaredReadsCheck (SP-6/2 AC2: the declared cross-unit read gate) ──────
+//
+// `consumes` builds a real dependency edge the scheduler orders on; `reads`
+// merely declares a file a unit reads. The hole this closes: a unit `reads:` a
+// file ANOTHER unit in the same Spec produces but declares no `consumes` for it —
+// an undeclared cross-unit dependency. With no edge the scheduler may dispatch the
+// reader before the producer has landed (the prose-note dependency that caused the
+// SL-1/SL-2 deletion). The gate is pure and declared: a read that lands on a
+// SIBLING's footprint with no matching `consumes` is refused, naming the producer;
+// a declared+consumed read passes; a read of a file no sibling produces (a
+// pre-existing file) passes.
+
+/** Narrow an UndeclaredReadResult to its failing branch for assertions. */
+function expectUndeclaredRead(r: UndeclaredReadResult) {
+  assert.equal(r.ok, false);
+  if (r.ok) throw new Error("expected an undeclared-read violation");
+  return r;
+}
+
+test("undeclaredReadsCheck: an undeclared cross-unit read is refused, naming the producing unit", () => {
+  // The test unit reads a file a SIBLING produces but declares no `consumes` for
+  // it — an undeclared cross-unit dependency the scheduler can't order on.
+  const units: ContractFirstWorkUnit[] = [
+    {
+      footprint: ["src/methodology/parallelSlices.ts"],
+      execution: "serial",
+      note: "produce the parallelSlices helpers",
+    },
+    {
+      footprint: ["src/methodology/parallelSlices.test.ts"],
+      reads: ["src/methodology/parallelSlices.ts"], // read, but not consumed
+      execution: "fan-out",
+      note: "AC2 tests",
+    },
+  ];
+  const r = expectUndeclaredRead(undeclaredReadsCheck(units));
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].file, "src/methodology/parallelSlices.ts");
+  // The violation and message name the offending file AND the producing unit.
+  assert.match(r.violations[0].producer, /produce the parallelSlices helpers/);
+  assert.match(r.message, /src\/methodology\/parallelSlices\.ts/);
+  assert.match(r.message, /produce the parallelSlices helpers/);
+  // The teaching message is the shared, exported constant — not a hardcoded copy.
+  assert.ok(r.message.startsWith(UNDECLARED_READ_RULE_MSG));
+});
+
+test("undeclaredReadsCheck: a declared + consumed read passes", () => {
+  // Same read, but now the unit also `consumes:` it — a real edge the scheduler
+  // orders on, so the dependency is declared and the gate is satisfied.
+  const units: ContractFirstWorkUnit[] = [
+    {
+      footprint: ["src/methodology/parallelSlices.ts"],
+      execution: "serial",
+      note: "produce the parallelSlices helpers",
+    },
+    {
+      footprint: ["src/methodology/parallelSlices.test.ts"],
+      reads: ["src/methodology/parallelSlices.ts"],
+      consumes: ["src/methodology/parallelSlices.ts"], // declared dependency edge
+      execution: "fan-out",
+      note: "AC2 tests",
+    },
+  ];
+  assert.equal(undeclaredReadsCheck(units).ok, true);
+});
+
+test("undeclaredReadsCheck: a read of a non-sibling (pre-existing) file passes", () => {
+  // The unit reads a file NO sibling produces — a pre-existing file in the repo.
+  // The gate fences cross-unit reads, not reads of the world, so this is fine.
+  const units: ContractFirstWorkUnit[] = [
+    {
+      footprint: ["src/methodology/parallelSlices.ts"],
+      execution: "serial",
+      note: "produce the parallelSlices helpers",
+    },
+    {
+      footprint: ["src/methodology/parallelSlices.test.ts"],
+      reads: ["src/services/orchestratorCore.ts"], // produced by no unit here
+      execution: "fan-out",
+      note: "AC2 tests",
+    },
+  ];
+  assert.equal(undeclaredReadsCheck(units).ok, true);
+});
+
+test("undeclaredReadsCheck: reading a file the unit ITSELF produces is its own work, not a cross-unit read", () => {
+  // A read of a file in the unit's own footprint is its own production — never a
+  // cross-unit dependency, so no `consumes` is required.
+  const units: ContractFirstWorkUnit[] = [
+    {
+      footprint: ["src/methodology/parallelSlices.ts"],
+      reads: ["src/methodology/parallelSlices.ts"], // its own footprint
+      execution: "serial",
+    },
+  ];
+  assert.equal(undeclaredReadsCheck(units).ok, true);
+});
+
+test("undeclaredReadsCheck: no reads / empty input passes", () => {
+  assert.equal(undeclaredReadsCheck([]).ok, true);
+  assert.equal(
+    undeclaredReadsCheck([
+      { footprint: ["src/a.ts"], execution: "serial" },
+      { footprint: ["src/b.ts"], execution: "fan-out" },
+    ]).ok,
+    true,
+  );
+});
+
+test("undeclaredReadsCheck: path normalization — a ./-prefixed read matches a sibling's bare footprint", () => {
+  const units: ContractFirstWorkUnit[] = [
+    { footprint: ["src/shared.ts"], execution: "serial", note: "producer" },
+    {
+      footprint: ["src/reader.ts"],
+      reads: ["./src/shared.ts"], // ./-prefixed read of the bare-declared production
+      execution: "fan-out",
+      note: "reader",
+    },
+  ];
+  const r = expectUndeclaredRead(undeclaredReadsCheck(units));
+  assert.equal(r.violations[0].file, "src/shared.ts");
+  assert.match(r.violations[0].producer, /producer/);
 });

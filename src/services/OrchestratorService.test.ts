@@ -9,6 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,6 +20,7 @@ import {
   type WorkerResult,
 } from "./OrchestratorService";
 import { answerParkedWorker } from "./orchestratorSessions";
+import type { ContainmentResult } from "../methodology/parallelSlices";
 
 type RunUnit = NonNullable<OrchestratorDeps["runUnit"]>;
 
@@ -77,6 +79,10 @@ function makeDeps(
     released: string[];
     advanced: string[];
     attention: string[];
+    /** The diagnosis string each requires-attention flag carried — so AC3 can assert the
+     *  containment hard-stop surfaces the offending out-of-footprint path verbatim (not the
+     *  generic "exited without success" message). Aligned 1:1 with `attention`. */
+    attentionReasons: string[];
     needsInput: string[];
     checked: number[];
     torndown: string[];
@@ -90,6 +96,7 @@ function makeDeps(
     released: [] as string[],
     advanced: [] as string[],
     attention: [] as string[],
+    attentionReasons: [] as string[],
     needsInput: [] as string[],
     checked: [] as number[],
     torndown: [] as string[],
@@ -110,7 +117,9 @@ function makeDeps(
   // A real (throwaway) thinking space dir so the closing run's `writeDeliverySummary` can land
   // `teps/TEP-1/SP-1/DELIVERY.md` — the finalization watchdog (SP-th4wqc_SL-2) treats a missing
   // report as a wedge, so the integration fake must let the report write.
-  const thinkingSpaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "tk-orch-test-"));
+  const thinkingSpaceDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-orch-test-"),
+  );
   fs.mkdirSync(path.join(thinkingSpaceDir, path.dirname(SPEC_DOC)), {
     recursive: true,
   });
@@ -177,8 +186,9 @@ function makeDeps(
     advance: async (h: string) => {
       calls.advanced.push(h);
     },
-    flagAttention: async (h: string) => {
+    flagAttention: async (h: string, diagnosis: string) => {
       calls.attention.push(h);
+      calls.attentionReasons.push(diagnosis);
     },
     flagNeedsInput: async (h: string) => {
       calls.needsInput.push(h);
@@ -539,4 +549,194 @@ test("dispatchSpec: a resident worker PARKS (frees its slot), then an external a
   );
   assert.equal(r.committed, true);
   assert.deepEqual(calls.needsInput, ["TEP-1_SP-1_SL-1"]); // flagged needs-input on park
+});
+
+// ── Post-tool footprint containment hard-stop (SP-6/2 AC3) ─────────────────
+//
+// AC3: "When an execution unit's run leaves any create/modify/delete in the
+// working tree outside its declared footprint — whether via Edit/Write or via
+// Bash — the orchestrator aborts the unit, restores the working tree, and marks
+// the unit requires-attention naming the offending path; it does not surface the
+// violation as a recoverable permission deny." These two tests cover the two
+// halves of that wiring deterministically (no live Agent SDK, no live cluster):
+//
+//   • the orchestrator-level handling of a containment hard-stop — `runViaSdk`
+//     aborts the `query()` and returns a TERMINAL `failed` carrying a diagnosis
+//     that names the offending out-of-footprint path, so the slice is flagged
+//     requires-attention naming it (never a recoverable deny), while a sibling
+//     unit's landed in-tree work is untouched (not failed, not flagged); and
+//   • the real-git post-tool containment itself (`containmentCheck` → porcelain
+//     diff → `footprintContainment` → path-scoped `git restore`/`clean`): an
+//     out-of-footprint Bash create (`cat >`) AND delete (`rm`) are detected and
+//     reverted, while a declared in-flight (sibling) change in the shared tree
+//     survives — the revert touches ONLY the offending paths, never the tree.
+
+/** A hermetic, offline git repo with one commit seeding the given tracked files.
+ *  Stands in for the shared spec worktree the post-tool diff runs against. */
+function initGitRepo(seed: Record<string, string>): string {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tk-orch-ac3-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false");
+  for (const [rel, body] of Object.entries(seed)) {
+    const abs = path.join(repo, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, body);
+  }
+  git("add", "-A");
+  git("commit", "-q", "-m", "seed");
+  return repo;
+}
+
+test("dispatchSpec: a containment hard-stop fails its unit → slice requires-attention NAMING the out-of-footprint Bash path (not a recoverable deny); a sibling's landed work is untouched", async () => {
+  const { deps, calls } = makeDeps({
+    // SL-1's only unit is fenced to src/breach.ts but its worker drove an
+    // out-of-footprint Bash `rm` of src/victim.ts — the post-tool diff aborts it.
+    "teps/TEP-1/SP-1/SL-1.md": {
+      status: "ready",
+      satisfies: [3],
+      work_units: [
+        {
+          footprint: ["src/breach.ts"],
+          execution: "fan-out",
+          note: "breaches",
+        },
+      ],
+    },
+    // SL-2 is an honest sibling working its own footprint in the SAME shared tree.
+    "teps/TEP-1/SP-1/SL-2.md": {
+      status: "ready",
+      satisfies: [1],
+      files: ["src/sibling.ts"],
+    },
+  });
+
+  // The runUnit seam returns exactly what `runViaSdk` yields on a containment
+  // hard-stop: a TERMINAL `failed` whose `attention` names the offending path —
+  // NOT a `needs-input`/recoverable signal the worker could route around.
+  deps.runUnit = async (unit) => {
+    if (unit.footprint.includes("src/breach.ts")) {
+      return {
+        outcome: "failed",
+        attention:
+          "footprint breach: out-of-footprint delete src/victim.ts (Bash `rm`) " +
+          "reverted — terminal, requires-attention (not a recoverable deny).",
+      };
+    }
+    return { outcome: "success" };
+  };
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  // Only the breaching slice is flagged requires-attention…
+  assert.deepEqual(r.attention, ["TEP-1_SP-1_SL-1"]);
+  assert.deepEqual(calls.attention, ["TEP-1_SP-1_SL-1"]);
+  // …and the diagnosis it is flagged with NAMES the offending out-of-footprint
+  // path + is terminal (the worker's `attention` is surfaced verbatim, NOT the
+  // generic "exited without success" fallback).
+  assert.equal(calls.attentionReasons.length, 1);
+  const diagnosis = calls.attentionReasons[0];
+  assert.match(diagnosis, /src\/victim\.ts/);
+  assert.match(diagnosis, /requires-attention/);
+  assert.match(diagnosis, /not a recoverable deny/i);
+
+  // The breaching unit failed; the sibling unit succeeded (its work LANDED in the
+  // shared tree — never reverted, never flagged): the breach is terminal for ITS
+  // unit ALONE.
+  const breachRes = r.results.find((x) => /SL-1/.test(x.slice));
+  const siblingRes = r.results.find((x) => /SL-2/.test(x.slice));
+  assert.equal(breachRes?.outcome, "failed");
+  assert.equal(siblingRes?.outcome, "success");
+  assert.ok(
+    !r.attention.includes("TEP-1_SP-1_SL-2"),
+    "the sibling is never flagged on the breaching unit's behalf",
+  );
+
+  // A breach leaves the Spec un-quiescent → nothing commits this run.
+  assert.equal(r.committed, false);
+  assert.equal(calls.committed, 0);
+});
+
+test("containmentCheck: an out-of-footprint Bash create + delete are detected and reverted PATH-SCOPED; a declared sibling change in the shared tree survives", async () => {
+  // The shared worktree: src/owned.ts (this unit's), src/sibling.ts (a sibling's,
+  // in-flight), and src/gone.ts (a tracked file a Bash `rm` will illegally delete).
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "src/sibling.ts": "// sibling original\n",
+    "src/gone.ts":
+      "// must survive — only the unit that owns it may delete it\n",
+  });
+
+  // Simulate a worker's Bash-driven tool calls in the shared tree:
+  //   `cat > src/evil.ts`  — an out-of-footprint CREATE (untracked, `??`)
+  //   `rm src/gone.ts`     — an out-of-footprint DELETE (the stub-and-rm hole)
+  //   edit src/owned.ts    — legitimate in-footprint work
+  //   edit src/sibling.ts  — a SIBLING's in-progress work, present in the tree
+  fs.writeFileSync(path.join(repo, "src/evil.ts"), "// injected\n");
+  fs.rmSync(path.join(repo, "src/gone.ts"));
+  fs.writeFileSync(path.join(repo, "src/owned.ts"), "// owned — edited\n");
+  fs.writeFileSync(
+    path.join(repo, "src/sibling.ts"),
+    "// sibling — in-progress edit\n",
+  );
+
+  // The post-tool diff is scoped to the in-flight declared footprints (this unit's
+  // owned file + the sibling's), so a sibling's declared work is in-bounds and only
+  // the truly out-of-footprint paths are violations.
+  const footprint = ["src/owned.ts", "src/sibling.ts"];
+
+  const svc = new OrchestratorService(makeDeps({}).deps);
+  // `containmentCheck` with no injected seam routes to the real git-based default:
+  // `git status --porcelain` → footprintContainment → revert ONLY the offenders.
+  const verdict = await (
+    svc as unknown as {
+      containmentCheck: (
+        cwd: string,
+        footprint: string[],
+      ) => Promise<{
+        ok: boolean;
+        violations: { file: string; change: string }[];
+        reason: string;
+      }>;
+    }
+  ).containmentCheck(repo, footprint);
+
+  // Both out-of-footprint changes are surfaced (Bash-made, no `file_path` to pre-screen).
+  assert.equal(verdict.ok, false);
+  assert.deepEqual(verdict.violations.map((v) => v.file).sort(), [
+    "src/evil.ts",
+    "src/gone.ts",
+  ]);
+  assert.match(verdict.reason, /src\/evil\.ts/);
+
+  // The revert is PATH-SCOPED — it touched ONLY the two offending paths:
+  //   the out-of-footprint create is cleaned away…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/evil.ts")),
+    false,
+    "the out-of-footprint Bash create was reverted (git clean)",
+  );
+  //   …the out-of-footprint delete is restored to HEAD…
+  assert.equal(
+    fs.existsSync(path.join(repo, "src/gone.ts")),
+    true,
+    "the out-of-footprint Bash delete was restored (git restore)",
+  );
+  // …and NOTHING else was touched: the unit's own edit and the SIBLING's
+  // in-progress edit both survive (never a whole-tree reset).
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/owned.ts"), "utf8"),
+    "// owned — edited\n",
+    "the unit's own in-footprint edit survives",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
+    "// sibling — in-progress edit\n",
+    "a sibling's in-progress work in the shared tree is never touched",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
 });

@@ -104,6 +104,13 @@ export interface Frontmatter {
      *  dependency edge on the sibling whose footprint produces it — the typed,
      *  validated alternative to pinning the contract in `note`. */
     consumes?: string[];
+    /** Repo-relative files this unit reads but does **not** itself produce
+     *  (SP-6/2). Declared (not inferred), so the authoring-time `undeclaredReads`
+     *  gate can compare them against sibling productions: any `reads` entry that
+     *  lands on another unit's footprint with no matching `consumes` edge is an
+     *  undeclared cross-unit dependency and the slice is refused, naming the file
+     *  and its producer. Runs at the door, beside the consumes-resolvability gate. */
+    reads?: string[];
     /** serial (coupled) | mechanize (uniform data-parallel: one transform applied
      *  N times) | fan-out (heterogeneous: AI per object). */
     execution: "serial" | "mechanize" | "fan-out";

@@ -100,6 +100,14 @@ export interface WorkUnit {
    *  ONLY authored dependency language: the ungrounded `depends_on` form was removed
    *  (SP-5/1) — `consumes`+footprint is the single edge source. */
   consumes?: string[];
+  /** Files this unit READS but does NOT itself produce — the declared cross-unit read set
+   *  (SP-6/2 AC2). Unlike `consumes` (which builds a dependency edge), `reads` is the authoring-time
+   *  gate's input: at `create_slice` the pure undeclared-read check (in `parallelSlices.ts`) resolves
+   *  each entry over the global producer map and refuses any read that lands on a SIBLING unit's
+   *  footprint with no matching `consumes`. Declared (not inferred from a file that may not exist
+   *  yet), so the gate runs at the door — `buildUnitDag` carries the field but derives no edge from it
+   *  (edges remain `consumes`+footprint only). */
+  reads?: string[];
   execution: "serial" | "mechanize" | "fan-out";
 }
 
@@ -251,9 +259,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
           (c) => fileToNodes.get(normFile(c)) ?? [],
         ),
       );
-      const requires = [
-        ...new Set(consumesDeps.filter((id) => id !== thisId)),
-      ];
+      const requires = [...new Set(consumesDeps.filter((id) => id !== thisId))];
       const note =
         eu.units
           .map((u) => (u as WorkUnit & { note?: string }).note)
@@ -284,11 +290,33 @@ export interface SchedulerState {
 }
 
 /**
+ * The dependency-ordering invariant (SP-6/2 AC1), named and exported so it is **load-bearing**
+ * rather than an inline filter clause a refactor could silently weaken: an execution unit's
+ * `requires` are *satisfied* only when EVERY id in them is in `done`. A `requires` entry that is
+ * unresolved (names no unit that will ever be `done`) or merely pending is — by `done.has(d)` —
+ * treated as not-done, so the predicate is **fail-safe**: a missing or pending producer blocks the
+ * consumer, it never opens it. This is the single gate that guarantees no consumer is dispatched
+ * before its producer has landed; `readyFrontier` MUST route every candidate through it.
+ */
+export function requiresSatisfied(
+  requires: string[] | undefined,
+  done: ReadonlySet<string>,
+): boolean {
+  return (requires ?? []).every((d) => done.has(d));
+}
+
+/**
  * The scheduler's **ready frontier**: execution units that are not done, not blocked, whose
  * every dependency is satisfied (`done`), and whose footprint doesn't overlap a running unit
  * — ordered **critical-path first** (longest remaining chain of dependents) and narrowed to a
  * footprint-**disjoint** set so a batch dispatched together can't collide. A slice-handle dep
  * is satisfied once the shell marks that slice done (all its units landed).
+ *
+ * **Dependency-ordering invariant (SP-6/2 AC1, pinned):** the `requiresSatisfied` gate below is
+ * what makes "no consumer dispatched before its producer" load-bearing — a unit with any pending
+ * or unresolved `requires` is filtered out here and can NEVER reach the ordering / disjoint passes
+ * (those only ever see units already past the gate), so it is absent from the frontier until every
+ * producer it depends on is `done`.
  */
 export function readyFrontier(
   units: SchedUnit[],
@@ -300,7 +328,8 @@ export function readyFrontier(
       !done.has(u.id) &&
       !blocked.has(u.id) &&
       !u.footprint.some((f) => running.has(f)) &&
-      (u.requires ?? []).every((d) => done.has(d)),
+      // AC1: a consumer is dispatchable only once EVERY producer it `requires` has landed.
+      requiresSatisfied(u.requires, done),
   );
 
   // critical-path order: longest remaining chain of dependents first.

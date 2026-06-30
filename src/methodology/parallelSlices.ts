@@ -254,6 +254,16 @@ export interface ContractFirstWorkUnit {
    * no number yet) — the fix for the unsequenced-integration deadlock.
    */
   consumes?: string[];
+  /**
+   * Repo-relative files this unit **reads** but does not itself produce — the declared
+   * read set (SP-6/2 AC2). Unlike `consumes` (which builds a real dependency edge), `reads`
+   * is the authoring-time evidence the {@link undeclaredReadsCheck} gate audits: a read that
+   * lands on a SIBLING unit's footprint with no matching `consumes` is an undeclared
+   * cross-unit dependency and the slice is refused. A read of a file no sibling produces is a
+   * pre-existing file and passes. Declared (not inferred from a file that may not exist yet),
+   * so the gate runs at the door beside the consumes-resolvability gate.
+   */
+  reads?: string[];
   /** serial (coupled) | mechanize (uniform data-parallel) | fan-out (heterogeneous). */
   execution: "serial" | "mechanize" | "fan-out";
   /** The unit's task text — what this unit does. */
@@ -365,6 +375,143 @@ export function contractFirstCheck(
   return { ok: true };
 }
 
+// ── Undeclared cross-unit read (SP-6/2 AC2) ────────────────────────────────
+//
+// `consumes` declares a real dependency edge; `reads` declares a file a unit
+// merely *reads*. The hole this closes: a unit reads a file ANOTHER unit in the
+// same Spec produces but declares no `consumes` for it — an undeclared cross-unit
+// dependency. The scheduler then sees no edge and may dispatch the reader before
+// the producer has landed, so the reader reads a stale/absent file (the prose-note
+// dependency that slipped through and caused the SL-1/SL-2 stub-and-`rm` deletion).
+//
+// The gate is pure and **declared**: each unit lists the files it `reads:`; the
+// check compares those against sibling productions (the same global producer map
+// `buildUnitDag` builds) with **no source scan and no model call**. Any read that
+// lands on a sibling's footprint with no matching `consumes` is refused, naming the
+// file and its producing unit. A read of a file NO sibling produces is a pre-existing
+// file and passes — the gate fences only cross-unit reads, not reads of the world.
+// Because reads are *declared* (not inferred from a file that may not exist yet), it
+// runs at authoring time, at the door, beside the consumes-resolvability gate.
+
+/** One undeclared cross-unit read: `reader` reads `file`, which `producer` produces,
+ *  with no `consumes` edge declaring the dependency. */
+export interface UndeclaredRead {
+  /** The read file that a sibling unit produces. */
+  file: string;
+  /** A human label for the unit that declared the read. */
+  reader: string;
+  /** A human label for the sibling unit whose footprint produces `file`. */
+  producer: string;
+}
+
+export type UndeclaredReadResult =
+  { ok: true } | { ok: false; message: string; violations: UndeclaredRead[] };
+
+/**
+ * The teaching message the undeclared-read refusal names (SP-6/2 AC2). Exported so
+ * the refusal (in `create_slice`) and the test assert against **this constant**, not
+ * a duplicated literal — a shared message is itself a contract, and a hardcoded copy
+ * drifts the moment one side is reworded (the `/promote_tep/` lesson). The specific
+ * file + producing unit are appended per-violation by {@link undeclaredReadsCheck}.
+ */
+export const UNDECLARED_READ_RULE_MSG =
+  "Undeclared cross-unit read — a unit `reads:` a file another unit in this Spec " +
+  "produces, but declares no `consumes` for it. Without the `consumes` edge the " +
+  "scheduler sees no dependency and may dispatch this unit before its producer has " +
+  "landed, so it reads a stale or absent file (the prose-note dependency that caused " +
+  'the SL-1/SL-2 deletion). Either add `consumes: ["<that file>"]` so the dependency ' +
+  "is a real edge the scheduler orders on, or — if you do not actually depend on that " +
+  "unit's output — drop the file from `reads`. A read of a file no sibling unit " +
+  "produces is a pre-existing file and is fine.";
+
+/**
+ * Describe a work unit for a refusal message: prefer its `note` (the task text),
+ * fall back to its footprint, then to a positional `unit #<index>` handle. Pure and
+ * deterministic — never throws on a missing field.
+ */
+function describeUnit(unit: ContractFirstWorkUnit, index: number): string {
+  const note = (unit.note ?? "").trim();
+  if (note) {
+    // Keep the message readable — collapse whitespace and cap long notes.
+    const flat = note.replace(/\s+/g, " ");
+    return flat.length > 80 ? `${flat.slice(0, 77)}…` : flat;
+  }
+  const fp = (unit.footprint ?? []).map(normalizeFilePath).filter(Boolean);
+  if (fp.length) return `the unit producing [${fp.join(", ")}]`;
+  return `unit #${index}`;
+}
+
+/**
+ * The undeclared-cross-unit-read gate (SP-6/2 AC2). Pure check over a slice's
+ * declared `work_units`: for every file a unit `reads:` that a **sibling** unit's
+ * footprint **produces**, the unit must also `consumes:` it. A read of a sibling
+ * production with no matching `consumes` is refused, naming the {@link UNDECLARED_READ_RULE_MSG}
+ * rule plus the offending file and its producing unit. A read of a file **no** sibling
+ * produces (a pre-existing file), or a read of a file in the unit's **own** footprint
+ * (its own production), passes. No source scan, no model call, no I/O — fixtures in,
+ * a verdict out — the deterministic analog of the prose-note dependency that slipped
+ * the SL-1/SL-2 review.
+ */
+export function undeclaredReadsCheck(
+  units: ContractFirstWorkUnit[],
+): UndeclaredReadResult {
+  const list = units ?? [];
+
+  // Global producer map: normalized file → the indices of every unit producing it.
+  // Mirrors `buildUnitDag`'s producer resolution (footprint = production).
+  const producers = new Map<string, number[]>();
+  list.forEach((u, i) => {
+    for (const raw of u.footprint ?? []) {
+      const f = normalizeFilePath(raw);
+      if (!f) continue;
+      const arr = producers.get(f) ?? [];
+      arr.push(i);
+      producers.set(f, arr);
+    }
+  });
+
+  const violations: UndeclaredRead[] = [];
+  const seen = new Set<string>();
+  list.forEach((u, i) => {
+    const consumed = new Set(
+      (u.consumes ?? []).map(normalizeFilePath).filter(Boolean),
+    );
+    for (const raw of u.reads ?? []) {
+      const file = normalizeFilePath(raw);
+      if (!file) continue;
+      // A SIBLING producer (any producing unit other than this one). A read of a
+      // file this unit itself produces is its own work, not a cross-unit dependency.
+      const siblingProducer = (producers.get(file) ?? []).find((p) => p !== i);
+      if (siblingProducer === undefined) continue; // pre-existing file → fine
+      if (consumed.has(file)) continue; // declared the dependency → fine
+      const key = `${i} ${file}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      violations.push({
+        file,
+        reader: describeUnit(u, i),
+        producer: describeUnit(list[siblingProducer], siblingProducer),
+      });
+    }
+  });
+
+  if (violations.length === 0) return { ok: true };
+  violations.sort(
+    (a, b) => a.file.localeCompare(b.file) || a.reader.localeCompare(b.reader),
+  );
+  const message =
+    UNDECLARED_READ_RULE_MSG +
+    "\n" +
+    violations
+      .map(
+        (v) =>
+          `  • ${v.reader} reads ${v.file}, which ${v.producer} produces — add ` +
+          `\`consumes: ["${v.file}"]\` or drop it from \`reads\`.`,
+      )
+      .join("\n");
+  return { ok: false, message, violations };
+}
+
 // ── Footprint enforcement (SP-tgs8nz_SL-6: the PreToolUse guard) ────────────
 //
 // An orchestrated worker runs under `bypassPermissions` (no prompts), so a
@@ -412,6 +559,151 @@ export function footprintGuard(
       `[${owned.join(", ") || "(none)"}]. Edit only your footprint; if you genuinely ` +
       `need another file, stop and state the question rather than editing it.`,
   };
+}
+
+// ── Bash-inclusive post-tool footprint containment (SP-6/2 AC3) ─────────────
+//
+// The PreToolUse `footprintGuard` above fences only Edit/Write/MultiEdit — tools
+// that expose a `file_path` to pre-screen. A worker under `bypassPermissions` can
+// still route a corrupting change through **Bash** (`cat > f`, `rm`, `mv`,
+// `sed -i`, a `>`/`>>` redirect), which carries no `file_path`, so the pre-tool
+// guard can't see it (the stub-and-`rm` deletion that motivated SP-6/2). The
+// authority is therefore a **post-tool working-tree check**: after each tool call
+// (Bash included), diff the worktree with `git status --porcelain` and surface any
+// create/modify/delete that landed OUTSIDE the unit's declared footprint —
+// regardless of which tool produced it. Pure: porcelain text + footprint in, the
+// out-of-footprint changes out. The caller (`OrchestratorService.runViaSdk`) aborts
+// the `query()` and reverts only the offending path(s) on a non-empty result.
+
+/** What kind of change git observed for an out-of-footprint path. */
+export type ContainmentChange = "create" | "modify" | "delete" | "rename";
+
+export interface ContainmentViolation {
+  /** Normalized repo-relative path changed outside the unit's footprint. */
+  file: string;
+  /** The kind of change git reported for it (informational; any kind is a violation). */
+  change: ContainmentChange;
+}
+
+export type ContainmentResult =
+  | { ok: true }
+  | { ok: false; reason: string; violations: ContainmentViolation[] };
+
+/**
+ * Decode a path as `git status --porcelain` may emit it: when a path contains
+ * special characters (or `core.quotepath` is on) git wraps it in double quotes and
+ * C-style-escapes the contents. Best-effort: strip the surrounding quotes and undo
+ * the common `\\`, `\"`, `\n`, `\t`, … and octal `\NNN` escapes. An unquoted path
+ * is returned unchanged.
+ */
+function unquotePorcelainPath(p: string): string {
+  let t = p.trim();
+  if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+    t = t.slice(1, -1);
+    const SIMPLE: Record<string, string> = {
+      "\\": "\\",
+      '"': '"',
+      a: "\x07",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+      v: "\v",
+    };
+    t = t
+      .replace(/\\([0-7]{3})/g, (_m, o: string) =>
+        String.fromCharCode(parseInt(o, 8)),
+      )
+      .replace(/\\(.)/g, (_m, c: string) => SIMPLE[c] ?? c);
+  }
+  return t;
+}
+
+/**
+ * Classify a porcelain status pair (`XY`) into a coarse change kind. Untracked
+ * (`??`) is a create; otherwise the highest-signal code wins (rename → delete →
+ * add/copy create → modify). The exact label is informational — for containment,
+ * any kind outside the footprint is a violation.
+ */
+function classifyPorcelainChange(xy: string): ContainmentChange {
+  const codes = xy.replace(/\s/g, "");
+  if (codes.includes("?")) return "create";
+  if (codes.includes("R")) return "rename";
+  if (codes.includes("D")) return "delete";
+  if (codes.includes("A") || codes.includes("C")) return "create";
+  return "modify"; // M (modified), T (type change), U (unmerged), …
+}
+
+/**
+ * The Bash-inclusive post-tool containment check (SP-6/2 AC3). Given a unit's
+ * declared `footprint` and the working-tree diff as `git status --porcelain` text,
+ * return every create/modify/delete whose path falls **outside** the footprint —
+ * the changes a worker must not have made, no matter which tool made them (Edit,
+ * Write, or a Bash `rm`/`mv`/`sed -i`/redirect the pre-tool guard can't see).
+ *
+ * Paths are repo-relative on both sides (porcelain is repo-root-relative), compared
+ * after {@link normalizeFilePath}. A change whose path IS in the footprint is the
+ * unit's own work and is allowed — including a deletion of a footprint file, since
+ * containment fences changes *outside* the footprint, never within it. Rename/copy
+ * lines (`ORIG -> DEST`) are split into their endpoints so a footprint file moved
+ * *out* surfaces its new (out-of-footprint) destination. Pure — no I/O; the caller
+ * runs `git` and acts on the verdict (abort + revert only these paths).
+ */
+export function footprintContainment(
+  porcelain: string,
+  footprint: string[],
+): ContainmentResult {
+  const owned = new Set(footprint.map(normalizeFilePath).filter(Boolean));
+  const violations: ContainmentViolation[] = [];
+  const seen = new Set<string>();
+
+  for (const rawLine of (porcelain ?? "").split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    if (!line.trim()) continue;
+
+    // Well-formed porcelain v1: two status chars (`XY`), a space, then the path.
+    const xy = line.slice(0, 2);
+    const pathPart = line.slice(2).replace(/^\s+/, "");
+    if (!pathPart) continue;
+    const change = classifyPorcelainChange(xy);
+    const codes = xy.replace(/\s/g, "");
+
+    // Rename/copy carry `ORIG -> DEST`. A rename changes both endpoints (orig is
+    // deleted, dest created); a copy only creates dest (orig is untouched).
+    const arrow = pathPart.indexOf(" -> ");
+    const entries: Array<{ path: string; change: ContainmentChange }> = [];
+    if (arrow !== -1 && (codes.includes("R") || codes.includes("C"))) {
+      const orig = pathPart.slice(0, arrow);
+      const dest = pathPart.slice(arrow + 4);
+      if (codes.includes("R")) entries.push({ path: orig, change: "rename" });
+      entries.push({
+        path: dest,
+        change: codes.includes("R") ? "rename" : "create",
+      });
+    } else {
+      entries.push({ path: pathPart, change });
+    }
+
+    for (const e of entries) {
+      const file = normalizeFilePath(unquotePorcelainPath(e.path));
+      if (!file || owned.has(file) || seen.has(file)) continue;
+      seen.add(file);
+      violations.push({ file, change: e.change });
+    }
+  }
+
+  if (violations.length === 0) return { ok: true };
+  violations.sort((a, b) => a.file.localeCompare(b.file));
+  const reason =
+    "Out-of-footprint change after a tool call — this unit's run left changes in " +
+    "the working tree outside its declared footprint " +
+    `[${[...owned].sort().join(", ") || "(none)"}]:\n` +
+    violations.map((v) => `  • ${v.change} ${v.file}`).join("\n") +
+    "\nThe orchestrator aborts this unit, restores only these paths, and marks it " +
+    "requires-attention — this is terminal, not a recoverable deny. Edit only your " +
+    "footprint; do not route changes through Bash (rm/mv/sed/redirect) to evade the guard.";
+  return { ok: false, reason, violations };
 }
 
 // ── Ownership claims (SP-tgpwbm AC3 / AC5) ─────────────────────────────────

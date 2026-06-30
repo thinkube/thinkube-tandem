@@ -79,6 +79,11 @@ import {
   contractFirstCheck,
   CONTRACT_FIRST_RULE_MSG,
   CONTRACT_FIRST_OPTOUT_FIELD,
+  // Undeclared cross-unit read gate (SP-6/2 AC2): consumed from parallelSlices.ts —
+  // the pure check whose verdict the create_slice gate chain enforces. The rule
+  // message is carried in the verdict (never restated here), so a reworded rule
+  // can't drift between the check and the refusal it produces.
+  undeclaredReadsCheck,
   normalizeFilePath,
   type ContractFirstWorkUnit,
   type ParallelSliceInput,
@@ -900,6 +905,12 @@ const TOOL_DEFS = [
                 description:
                   "Files a SIBLING unit produces that this unit reads — the contract-first reference and the authored dependency language. Naming a sibling's footprint here satisfies the contract-first gate (the unit is coordinated through that contract, not fanned out blind) and is resolved into a real dependency edge on the producing unit(s). It is a file, not a node-id, so it is authorable at create time even though the slice has no number yet.",
               },
+              reads: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Files this unit READS but does not itself produce (SP-6/2). The declared read set the undeclared-cross-unit-read gate audits: any read that lands on a SIBLING unit's footprint with NO matching `consumes` is an undeclared cross-unit dependency and the slice is refused (naming the file and its producer) — add `consumes` for it so it is a real scheduling edge, or drop it. A read of a file no sibling produces is a pre-existing file and is fine. Declared (not inferred), so the gate runs at the door.",
+              },
               execution: {
                 type: "string",
                 enum: ["serial", "mechanize", "fan-out"],
@@ -1253,6 +1264,7 @@ export async function dispatchTool(
                 footprint: string[];
                 depends_on?: string[];
                 consumes?: string[];
+                reads?: string[];
                 execution: string;
                 note?: string;
               }[])
@@ -2341,6 +2353,9 @@ export async function createSlice(
       // Contract-first reference: files a sibling unit produces that this unit reads
       // (satisfies the gate + resolves to a dependency edge; authorable without a node-id).
       consumes?: string[];
+      // Declared read set (SP-6/2): files this unit reads but does not produce. The
+      // undeclared-cross-unit-read gate audits these against sibling productions.
+      reads?: string[];
       execution: string;
       note?: string;
       // Contract-first opt-out (SP-th4wqi). The authoritative field name is the
@@ -2687,6 +2702,25 @@ export async function createSlice(
           );
         }
       }
+    }
+  }
+
+  // Undeclared cross-unit read gate (SP-6/2 AC2). The consumes-resolvability gate
+  // above proves every declared `consumes` resolves to a real producer; this one
+  // proves the inverse for declared `reads`: a unit that `reads:` a file a SIBLING
+  // unit produces must also `consumes:` it, or the scheduler sees no edge and may
+  // dispatch the reader before its producer has landed (the prose-note dependency
+  // that caused the SL-1/SL-2 stub-and-`rm` deletion). The pure check + its teaching
+  // message live in parallelSlices.ts and are never restated here — the verdict
+  // carries the rule plus each offending file and its producing unit, so a reworded
+  // rule can't drift between check and refusal. A read of a file no sibling produces
+  // is a pre-existing file and passes — the gate fences only cross-unit reads.
+  {
+    const readsVerdict = undeclaredReadsCheck(
+      (args.work_units ?? []) as ContractFirstWorkUnit[],
+    );
+    if (!readsVerdict.ok) {
+      throw new Error(`Refusing to create the slice:\n${readsVerdict.message}`);
     }
   }
 

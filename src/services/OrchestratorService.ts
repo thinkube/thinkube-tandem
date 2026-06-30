@@ -45,7 +45,12 @@ import {
   type FinalizationState,
   type SliceOutcome,
 } from "./orchestratorCore";
-import { validateDag, footprintGuard } from "../methodology/parallelSlices";
+import {
+  validateDag,
+  footprintGuard,
+  footprintContainment,
+  type ContainmentResult,
+} from "../methodology/parallelSlices";
 import {
   startSession,
   appendSession,
@@ -125,6 +130,15 @@ export interface OrchestratorDeps {
    *  delivery report's stamp (SP-th4wqc_SL-2). Defaults to `git rev-parse --short HEAD` in the
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
+  /** Post-tool footprint containment (SP-6/2 AC3): diff the worktree against the unit's declared
+   *  `footprint` and REVERT only the out-of-footprint create/modify/delete (a sibling's in-progress
+   *  work in the shared tree is never touched), returning the containment verdict. Defaults to
+   *  `git status --porcelain` → `footprintContainment` → `git restore`/`clean` of only the offending
+   *  paths; tests inject it to drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
+  containmentCheck?: (
+    cwd: string,
+    footprint: string[],
+  ) => Promise<ContainmentResult>;
 }
 
 /** What a worker run resolved to — the third outcome carries the escalated question + session id. */
@@ -134,6 +148,10 @@ export interface WorkerResult {
   question?: string;
   /** The worker's session id, captured for resume-on-answer (SL-3 / SL-5). */
   sessionId?: string;
+  /** A requires-attention diagnosis to surface verbatim on the slice (failed only). Set by the
+   *  post-tool footprint-containment hard-stop (SP-6/2 AC3) so the flagged slice names the exact
+   *  out-of-footprint path, rather than the generic "exited without success" failure message. */
+  attention?: string;
 }
 
 export type UnitOutcome = "success" | "needs-input" | "failed";
@@ -284,9 +302,7 @@ export class OrchestratorService {
     const dag = buildUnitDag(slices);
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
-    const v = validateDag(
-      dag.map((u) => ({ id: u.id, requires: u.requires })),
-    );
+    const v = validateDag(dag.map((u) => ({ id: u.id, requires: u.requires })));
     if (!v.ok) {
       output.appendLine(
         `✗ SP-${specNumber}: malformed DAG — not dispatched.\n${v.reason}`,
@@ -465,9 +481,12 @@ export class OrchestratorService {
           `❓ ${d.slice}: ${d.id} asked a question → needs-input (slot freed).`,
         );
       } else if (d.outcome === "failed") {
+        // A footprint-containment hard-stop (SP-6/2 AC3) carries its own diagnosis naming the
+        // offending out-of-footprint path; otherwise fall back to the generic exit message.
         await blockSlice(
           d.slice,
-          `Worker for ${d.id} exited without success — see the session JSON-log.`,
+          d.attention ??
+            `Worker for ${d.id} exited without success — see the session JSON-log.`,
         );
         output.appendLine(`⚑ ${d.slice}: ${d.id} failed → requires-attention.`);
       } else {
@@ -760,6 +779,7 @@ export class OrchestratorService {
         outcome: wr.outcome,
         question: wr.question,
         sessionId: wr.sessionId,
+        attention: wr.attention,
       };
     } finally {
       endSession(unit.id);
@@ -785,9 +805,19 @@ export class OrchestratorService {
   /**
    * The Agent SDK worker (SP-tgs8nz_SL-2): `query()` runs a headless `claude` subprocess in the
    * worktree under `bypassPermissions` (no prompts — the PreToolUse footprint hook from SL-6 is the
-   * guardrail). Typed messages are persisted to the unit's `.jsonl` (for the graph float-out) and
-   * summarized to the channel. The SDK is **lazy-imported** so it never loads at activation, and a
-   * load/run failure degrades to a non-success (→ requires-attention) rather than crashing the host.
+   * cheap early guardrail). Typed messages are persisted to the unit's `.jsonl` (for the graph
+   * float-out) and summarized to the channel. The SDK is **lazy-imported** so it never loads at
+   * activation, and a load/run failure degrades to a non-success (→ requires-attention) rather than
+   * crashing the host.
+   *
+   * The **authority** over footprint is a post-tool working-tree check (SP-6/2 AC3): a `PostToolUse`
+   * hook runs after EVERY tool call (Bash included — `rm`/`mv`/`sed -i`/redirect carry no `file_path`
+   * the PreToolUse guard can pre-screen) and diffs the worktree against the unit's declared footprint.
+   * Any out-of-footprint create/modify/delete is **terminal**: we abort the `query()` (the SDK
+   * `AbortController`), revert ONLY the offending path(s) (`git restore`/`clean` — a sibling's
+   * in-progress work in the shared tree survives), and fail the unit with a diagnosis naming the path
+   * so its slice is flagged requires-attention. This is NOT a recoverable deny the worker can route
+   * around — it closes the stub-and-`rm` hole that the Edit/Write-only PreToolUse guard could not see.
    */
   private async runViaSdk(
     unit: SchedUnit,
@@ -803,6 +833,12 @@ export class OrchestratorService {
     let sessionId: string | undefined;
     let turnText = "";
     let parkedOnce = false;
+    // Set by the post-tool containment hard-stop (AC3) when a tool call left an out-of-footprint
+    // change: its diagnosis names the offending path and makes the unit fail → requires-attention.
+    // Once set, the run is terminal — it takes precedence over any later `success`.
+    let containmentReason: string | undefined;
+    // Aborts the live `query()` the instant containment fires (SDK `Options.abortController`).
+    const abort = new AbortController();
 
     // Streaming-input session (SL-3 resident standby): yield the task; when the agent ends a turn
     // with a `⟦NEEDS-INPUT⟧` question, the session stays alive (suspended at `await nextInput`) and
@@ -828,10 +864,12 @@ export class OrchestratorService {
         options: {
           cwd,
           permissionMode: "bypassPermissions",
-          // The guardrail (SL-6): a PreToolUse hook runs FIRST and denies any Edit/Write
-          // outside this unit's footprint — silently, no prompt. Must be a hook, not
-          // `canUseTool`, which bypassPermissions/acceptEdits skip for edits.
+          // Aborting this stops the query the moment the post-tool containment check fires (AC3).
+          abortController: abort,
           hooks: {
+            // The cheap early guardrail (SL-6): a PreToolUse hook runs FIRST and denies any Edit/Write
+            // outside this unit's footprint — silently, no prompt. Must be a hook, not
+            // `canUseTool`, which bypassPermissions/acceptEdits skip for edits.
             PreToolUse: [
               {
                 hooks: [
@@ -857,6 +895,36 @@ export class OrchestratorService {
                         permissionDecisionReason: d.reason,
                       },
                     };
+                  },
+                ],
+              },
+            ],
+            // The authority (AC3): after EVERY tool call — Bash included — diff the worktree vs the
+            // footprint and hard-stop on any out-of-footprint change. This is terminal (abort +
+            // revert-only-the-offending-path → requires-attention), NOT a recoverable deny: a Bash
+            // `rm`/`mv`/`sed -i`/redirect carries no `file_path` for the PreToolUse guard to screen,
+            // so the post-tool diff is what closes the stub-and-`rm` hole.
+            PostToolUse: [
+              {
+                hooks: [
+                  async () => {
+                    // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
+                    if (containmentReason) return {};
+                    const verdict = await this.containmentCheck(
+                      cwd,
+                      unit.footprint,
+                    );
+                    if (verdict.ok) return {};
+                    containmentReason = verdict.reason;
+                    this.deps.output.appendLine(
+                      `  ⛔ [${unit.id}] footprint breach — aborting + reverting ${verdict.violations
+                        .map((v) => `${v.change} ${v.file}`)
+                        .join(", ")}.`,
+                    );
+                    // Settle the streaming-input generator and tear down the live query.
+                    resolveNext(null);
+                    abort.abort();
+                    return {};
                   },
                 ],
               },
@@ -892,15 +960,94 @@ export class OrchestratorService {
         }
       }
     } catch (err) {
+      resolveNext(null);
+      // A containment hard-stop aborts the query, which surfaces here as an abort error — that is
+      // the EXPECTED terminal path, not an SDK failure: fail the unit with the offending-path
+      // diagnosis so its slice is flagged requires-attention naming the breach.
+      if (containmentReason)
+        return { outcome: "failed", sessionId, attention: containmentReason };
       this.deps.output.appendLine(
         `  ✗ ${unit.id} SDK worker error: ${(err as Error).message}`,
       );
-      resolveNext(null);
       return { outcome: "failed", sessionId };
     }
+    // A containment breach is terminal even if the abort raced a `result: success`.
+    if (containmentReason)
+      return { outcome: "failed", sessionId, attention: containmentReason };
     return success
       ? { outcome: "success", sessionId }
       : { outcome: "failed", sessionId };
+  }
+
+  /** Post-tool footprint containment (SP-6/2 AC3): diff the worktree against `footprint` and revert
+   *  only the out-of-footprint changes, returning the verdict. Routes through the injectable seam
+   *  (tests) or the real git-based default. */
+  private containmentCheck(
+    cwd: string,
+    footprint: string[],
+  ): Promise<ContainmentResult> {
+    return (
+      this.deps.containmentCheck ??
+      ((c, f) => this.defaultContainmentCheck(c, f))
+    )(cwd, footprint);
+  }
+
+  /**
+   * Default containment check (SP-6/2 AC3): `git status --porcelain` in the worktree → the pure
+   * {@link footprintContainment} (which surfaces every create/modify/delete outside the footprint,
+   * Bash-made ones included) → on a violation, `git restore`/`clean` of ONLY the offending paths,
+   * so a sibling unit's in-progress work in the shared tree is never reverted. Best-effort at the
+   * git layer; returns the verdict the caller acts on (abort the query + fail requires-attention).
+   */
+  private async defaultContainmentCheck(
+    cwd: string,
+    footprint: string[],
+  ): Promise<ContainmentResult> {
+    const porcelain = await this.gitPorcelain(cwd);
+    const verdict = footprintContainment(porcelain, footprint);
+    if (!verdict.ok)
+      await this.revertPaths(
+        cwd,
+        verdict.violations.map((v) => v.file),
+      );
+    return verdict;
+  }
+
+  /** The worktree diff as `git status --porcelain` text; "" on any git error (degrades to no diff). */
+  private gitPorcelain(cwd: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+      const proc = spawn("git", ["status", "--porcelain"], { cwd });
+      let out = "";
+      proc.stdout?.on("data", (d: Buffer) => (out += d.toString()));
+      proc.on("error", () => resolve(""));
+      proc.on("close", () => resolve(out));
+    });
+  }
+
+  /**
+   * Revert ONLY the given out-of-footprint paths (SP-6/2 AC3) — never the whole tree, so a sibling's
+   * concurrent work survives. Per path, two best-effort git calls cover every change kind: `git
+   * restore --source=HEAD --staged --worktree` undoes a tracked modify/delete back to HEAD (a no-op
+   * error for an untracked path), and `git clean -fdq` removes an untracked create. Errors are
+   * swallowed — the leftover (if any) re-surfaces on the next post-tool diff.
+   */
+  private async revertPaths(cwd: string, files: string[]): Promise<void> {
+    for (const f of files) {
+      await this.runGit(
+        ["restore", "--source=HEAD", "--staged", "--worktree", "--", f],
+        cwd,
+      );
+      await this.runGit(["clean", "-fdq", "--", f], cwd);
+    }
+  }
+
+  /** Run `git <args>` in `cwd`, resolving regardless of exit code (best-effort revert). */
+  private runGit(args: string[], cwd: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const proc = spawn("git", args, { cwd });
+      proc.on("error", () => resolve());
+      proc.on("close", () => resolve());
+    });
   }
 
   private checkAcs(specNumber: string, ordinals: number[]): Promise<void> {
@@ -1196,4 +1343,7 @@ interface UnitDone {
   question?: string;
   /** The worker's session id (for resume-on-answer). */
   sessionId?: string;
+  /** A requires-attention diagnosis to surface verbatim (failed only) — the footprint-containment
+   *  hard-stop's offending-path message (SP-6/2 AC3). */
+  attention?: string;
 }
