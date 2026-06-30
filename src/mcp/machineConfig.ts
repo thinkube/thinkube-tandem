@@ -21,10 +21,16 @@ export function machineConfigPath(): string {
   return path.join(dir, "thinkube-mcp.json");
 }
 
-/** `<CLAUDE_CONFIG_DIR or ~/.claude>/settings.json` — Claude Code's user-scope settings. */
-export function userSettingsPath(): string {
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
-  return path.join(dir, "settings.json");
+/**
+ * Claude Code's user-scope config file — `~/.claude.json` (or
+ * `$CLAUDE_CONFIG_DIR/.claude.json`). This is where user-scope `mcpServers` live —
+ * the store `claude mcp add -s user` writes and that `claude mcp list` reads.
+ * NOTE: `~/.claude/settings.json`'s `mcpServers` key is NOT consulted for MCP
+ * (verified via `claude mcp list`), so the registration MUST land here.
+ */
+export function userConfigPath(): string {
+  const base = process.env.CLAUDE_CONFIG_DIR ?? os.homedir();
+  return path.join(base, ".claude.json");
 }
 
 /** Write the machine-level config from the current workspace + settings.
@@ -118,22 +124,26 @@ export function kanbanServerEntry(
 }
 
 /**
- * Register the kanban server at user scope so Claude Code sees it in EVERY session
- * regardless of cwd. Best-effort and idempotent (only rewrites when the entry
- * changed). Refuses to overwrite an existing-but-unparseable settings file — a
- * malformed `JSON.parse` throws to the caller, which logs it, and the file is left
- * untouched rather than clobbering hand-written settings.
+ * Register the kanban server at user scope (in `~/.claude.json` `mcpServers`) so
+ * Claude Code sees it in EVERY session regardless of cwd. Best-effort and
+ * idempotent — it only writes when the entry actually changed, so after the first
+ * activation every later one reads, finds it current, and writes nothing (no churn,
+ * no race on a file Claude itself owns). When it does write, it goes through a
+ * temp-file + atomic rename so a concurrent reader never sees a half-written config,
+ * and EVERY existing key (projects, history, other servers) is preserved. Refuses to
+ * touch an existing-but-unparseable file — a malformed `JSON.parse` throws to the
+ * caller, which logs it, and the file is left exactly as found.
  */
 export async function ensureKanbanMcpRegistration(
   context: vscode.ExtensionContext,
 ): Promise<void> {
-  const file = userSettingsPath();
+  const file = userConfigPath();
   let raw: string | undefined;
   try {
     raw = await fs.readFile(file, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
-    raw = undefined; // missing → create a fresh settings file
+    raw = undefined; // missing → create a fresh config file
   }
   const parsed =
     raw === undefined ? null : (JSON.parse(raw) as Record<string, unknown>);
@@ -145,5 +155,7 @@ export async function ensureKanbanMcpRegistration(
   if (!changed) return;
 
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  const tmp = `${file}.thinkube-${process.pid}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  await fs.rename(tmp, file); // atomic swap — never leave a half-written ~/.claude.json
 }
