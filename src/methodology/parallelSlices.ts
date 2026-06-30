@@ -590,6 +590,30 @@ export type ContainmentResult =
   | { ok: false; reason: string; violations: ContainmentViolation[] };
 
 /**
+ * Cross-unit attribution context for {@link footprintContainment} (SP-2 / TEP-6 AC4).
+ * The post-tool diff git hands the check is a WHOLE-TREE diff of the shared worktree —
+ * so it also sees every *other* running unit's (and earlier units') legitimate, in-their-
+ * own-footprint changes. Without this context the check misattributes those to THIS unit
+ * and reverts a sibling's work (the mutual-destruction failure). These two sets fence the
+ * check to changes this unit actually left outside its own footprint AND outside every
+ * running unit's footprint AND not already present before it started.
+ */
+export interface ContainmentContext {
+  /**
+   * The UNION of every currently-running unit's footprint files (this unit's included is
+   * harmless — its own footprint is already owned). A changed path inside `running` is a
+   * concurrent sibling's in-footprint work in the shared tree, never this unit's violation.
+   */
+  running?: string[];
+  /**
+   * The set of paths already dirty when THIS unit started — earlier units' already-present
+   * changes the unit inherited. A changed path in `baseline` predates this unit's run, so
+   * it can't be a change this unit left and is never a violation.
+   */
+  baseline?: string[];
+}
+
+/**
  * Decode a path as `git status --porcelain` may emit it: when a path contains
  * special characters (or `core.quotepath` is on) git wraps it in double quotes and
  * C-style-escapes the contents. Best-effort: strip the surrounding quotes and undo
@@ -649,12 +673,27 @@ function classifyPorcelainChange(xy: string): ContainmentChange {
  * lines (`ORIG -> DEST`) are split into their endpoints so a footprint file moved
  * *out* surfaces its new (out-of-footprint) destination. Pure — no I/O; the caller
  * runs `git` and acts on the verdict (abort + revert only these paths).
+ *
+ * With the optional {@link ContainmentContext} (SP-2 / TEP-6 AC4), a changed path is a
+ * violation ONLY when it is outside this unit's `footprint` AND outside `ctx.running`
+ * (every currently-running unit's footprint — a concurrent sibling's in-footprint work)
+ * AND not in `ctx.baseline` (paths already dirty when this unit started). With the
+ * context absent, behaviour is exactly as before: any path outside `footprint` is flagged.
  */
 export function footprintContainment(
   porcelain: string,
   footprint: string[],
+  ctx?: ContainmentContext,
 ): ContainmentResult {
   const owned = new Set(footprint.map(normalizeFilePath).filter(Boolean));
+  // A concurrent sibling's footprint (the running-units union) and the paths already
+  // dirty before this unit started both EXEMPT a path from being this unit's violation.
+  const running = new Set(
+    (ctx?.running ?? []).map(normalizeFilePath).filter(Boolean),
+  );
+  const baseline = new Set(
+    (ctx?.baseline ?? []).map(normalizeFilePath).filter(Boolean),
+  );
   const violations: ContainmentViolation[] = [];
   const seen = new Set<string>();
 
@@ -687,7 +726,16 @@ export function footprintContainment(
 
     for (const e of entries) {
       const file = normalizeFilePath(unquotePorcelainPath(e.path));
-      if (!file || owned.has(file) || seen.has(file)) continue;
+      // Not a violation when: empty, already reported, this unit's own footprint, a
+      // concurrent sibling's footprint (running-union), or already dirty at unit start.
+      if (
+        !file ||
+        seen.has(file) ||
+        owned.has(file) ||
+        running.has(file) ||
+        baseline.has(file)
+      )
+        continue;
       seen.add(file);
       violations.push({ file, change: e.change });
     }

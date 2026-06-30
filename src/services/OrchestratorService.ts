@@ -130,14 +130,19 @@ export interface OrchestratorDeps {
    *  delivery report's stamp (SP-th4wqc_SL-2). Defaults to `git rev-parse --short HEAD` in the
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
-  /** Post-tool footprint containment (SP-6/2 AC3): diff the worktree against the unit's declared
-   *  `footprint` and REVERT only the out-of-footprint create/modify/delete (a sibling's in-progress
-   *  work in the shared tree is never touched), returning the containment verdict. Defaults to
-   *  `git status --porcelain` → `footprintContainment` → `git restore`/`clean` of only the offending
-   *  paths; tests inject it to drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
+  /** Post-tool footprint containment (SP-6/2 AC3 + SP-2/TEP-6 AC4): diff the worktree against the
+   *  unit's declared `footprint` and REVERT only the out-of-footprint create/modify/delete (a sibling's
+   *  in-progress work in the shared tree is never touched), returning the containment verdict. The
+   *  whole-tree porcelain also shows every OTHER running unit's (and earlier units') legitimate
+   *  in-their-own-footprint changes; `running` (the union of all currently-running units' footprints)
+   *  and `baseline` (paths already dirty when THIS unit started) fence those out so they are never
+   *  misattributed to this unit and reverted (AC4). Defaults to `git status --porcelain` →
+   *  `footprintContainment` → `git restore`/`clean` of only the offending paths; tests inject it to
+   *  drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
   containmentCheck?: (
     cwd: string,
     footprint: string[],
+    ctx?: { running?: string[]; baseline?: string[] },
   ) => Promise<ContainmentResult>;
   /** The Agent SDK `query()` entry (tests): defaults to the lazy `import("@anthropic-ai/claude-agent-sdk")`.
    *  Injected so a test can drive the REAL {@link OrchestratorService.runViaSdk} body — its PostToolUse
@@ -428,7 +433,17 @@ export class OrchestratorService {
         u.footprint.forEach((f) => state.running.add(f));
         running.set(
           u.id,
-          this.dispatchUnit(u, specNumber, worktreePath, onPark),
+          // `state.running` is the live UNION of every running unit's footprint files (a
+          // unit's footprint is added on dispatch above, removed on completion below). Pass
+          // it as the running-footprints source so this unit's post-tool containment check
+          // never misattributes a concurrent sibling's in-footprint change as its own (AC4).
+          this.dispatchUnit(
+            u,
+            specNumber,
+            worktreePath,
+            onPark,
+            () => [...state.running],
+          ),
         );
         result.dispatched++;
         output.appendLine(
@@ -760,12 +775,16 @@ export class OrchestratorService {
     return green;
   }
 
-  /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome. */
+  /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome.
+   *  `runningFootprints` reads the live UNION of every running unit's footprint (AC4) at check time; the
+   *  per-unit `baseline` (the paths already dirty when this unit started) is captured here, once, before
+   *  the worker runs — both fence the post-tool containment check from misattributing other units' work. */
   private async dispatchUnit(
     unit: SchedUnit,
     specNumber: string,
     worktreePath: string,
     onPark: OnPark,
+    runningFootprints?: () => string[],
   ): Promise<UnitDone> {
     const claim = await this.deps.arbiter.acquire(unit.id, unit.footprint);
     if (!claim.ok) {
@@ -779,8 +798,19 @@ export class OrchestratorService {
       return { id: unit.id, slice: unit.slice, outcome: "failed" };
     }
     startSession(unit.id);
+    // Per-unit baseline (AC4): the paths already dirty in the shared worktree at THIS unit's
+    // start — earlier units' already-present changes. A change present in the baseline predates
+    // this unit's run, so containment must never attribute it to this unit (and revert it).
+    const baseline = await this.gitDirtyPaths(worktreePath);
     try {
-      const wr = await this.runWorker(unit, specNumber, worktreePath, onPark);
+      const wr = await this.runWorker(
+        unit,
+        specNumber,
+        worktreePath,
+        onPark,
+        runningFootprints,
+        baseline,
+      );
       return {
         id: unit.id,
         slice: unit.slice,
@@ -804,10 +834,19 @@ export class OrchestratorService {
     specNumber: string,
     cwd: string,
     onPark: OnPark,
+    runningFootprints?: () => string[],
+    baseline?: string[],
   ): Promise<WorkerResult> {
     return this.deps.runUnit
       ? this.deps.runUnit(unit, specNumber, cwd, onPark)
-      : this.runViaSdk(unit, specNumber, cwd, onPark);
+      : this.runViaSdk(
+          unit,
+          specNumber,
+          cwd,
+          onPark,
+          runningFootprints,
+          baseline,
+        );
   }
 
   /**
@@ -832,6 +871,8 @@ export class OrchestratorService {
     specNumber: string,
     cwd: string,
     onPark: OnPark,
+    runningFootprints?: () => string[],
+    baseline?: string[],
   ): Promise<WorkerResult> {
     const prompt = buildWorkerPrompt(unit, specNumber, {
       specBody: this.promptCtx.specBody,
@@ -920,9 +961,16 @@ export class OrchestratorService {
                   async () => {
                     // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
                     if (containmentReason) return {};
+                    // AC4: pass the running-units footprint UNION (read live at check time) and this
+                    // unit's start baseline so a concurrent sibling's in-footprint change, or a change
+                    // already present before this unit started, is never misattributed here + reverted.
                     const verdict = await this.containmentCheck(
                       cwd,
                       unit.footprint,
+                      {
+                        running: runningFootprints?.() ?? [],
+                        baseline: baseline ?? [],
+                      },
                     );
                     if (verdict.ok) return {};
                     containmentReason = verdict.reason;
@@ -995,11 +1043,12 @@ export class OrchestratorService {
   private containmentCheck(
     cwd: string,
     footprint: string[],
+    ctx?: { running?: string[]; baseline?: string[] },
   ): Promise<ContainmentResult> {
     return (
       this.deps.containmentCheck ??
-      ((c, f) => this.defaultContainmentCheck(c, f))
-    )(cwd, footprint);
+      ((c, f, x) => this.defaultContainmentCheck(c, f, x))
+    )(cwd, footprint, ctx);
   }
 
   /**
@@ -1012,9 +1061,16 @@ export class OrchestratorService {
   private async defaultContainmentCheck(
     cwd: string,
     footprint: string[],
+    ctx?: { running?: string[]; baseline?: string[] },
   ): Promise<ContainmentResult> {
     const porcelain = await this.gitPorcelain(cwd);
-    const verdict = footprintContainment(porcelain, footprint);
+    // AC4: `running` (the running-units footprint union) and `baseline` (paths already dirty
+    // at this unit's start) exempt OTHER units' legitimate changes from this whole-tree diff,
+    // so the revert below only ever touches THIS unit's true out-of-footprint changes.
+    const verdict = footprintContainment(porcelain, footprint, {
+      running: ctx?.running,
+      baseline: ctx?.baseline,
+    });
     if (!verdict.ok)
       await this.revertPaths(
         cwd,
@@ -1032,6 +1088,20 @@ export class OrchestratorService {
       proc.on("error", () => resolve(""));
       proc.on("close", () => resolve(out));
     });
+  }
+
+  /**
+   * The set of repo-relative paths already dirty in the worktree (the per-unit containment
+   * baseline, AC4) — every endpoint `footprintContainment` would derive from the current
+   * `git status --porcelain`, captured at a unit's START. A change present here predates the
+   * unit's run, so its post-tool check must not attribute it to (and revert) this unit. Reuses
+   * `footprintContainment` with an empty footprint so the porcelain parsing/quoting/rename-split
+   * stays in one place; "" porcelain (clean tree or git error) yields an empty baseline.
+   */
+  private async gitDirtyPaths(cwd: string): Promise<string[]> {
+    const porcelain = await this.gitPorcelain(cwd);
+    const verdict = footprintContainment(porcelain, []);
+    return verdict.ok ? [] : verdict.violations.map((v) => v.file);
   }
 
   /**
