@@ -131,18 +131,19 @@ export interface OrchestratorDeps {
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
   /** Post-tool footprint containment (SP-6/2 AC3 + SP-2/TEP-6 AC4): diff the worktree against the
-   *  unit's declared `footprint` and REVERT only the out-of-footprint create/modify/delete (a sibling's
-   *  in-progress work in the shared tree is never touched), returning the containment verdict. The
-   *  whole-tree porcelain also shows every OTHER running unit's (and earlier units') legitimate
-   *  in-their-own-footprint changes; `running` (the union of all currently-running units' footprints)
-   *  and `baseline` (paths already dirty when THIS unit started) fence those out so they are never
-   *  misattributed to this unit and reverted (AC4). Defaults to `git status --porcelain` →
-   *  `footprintContainment` → `git restore`/`clean` of only the offending paths; tests inject it to
-   *  drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
+   *  run-level UNION of every dispatched unit's `footprint` and REVERT only the changes outside it,
+   *  returning the containment verdict. The whole-tree porcelain CANNOT attribute a change to a unit
+   *  (`git status --porcelain` shows every unit's edits with no author), so it must not try — a change
+   *  is a violation only when it lands outside ALL declared territory. A sibling's in-footprint change
+   *  is in the union whether that sibling is still running OR has already finished, so it is never
+   *  misattributed to this unit and reverted (the SP-6 mutual-destruction fix); `baseline` (paths
+   *  already dirty when THIS unit started) additionally exempts pre-existing dirt outside the union.
+   *  Defaults to `git status --porcelain` → `footprintContainment` → `git restore`/`clean` of only the
+   *  offending paths; tests inject it to drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
   containmentCheck?: (
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ) => Promise<ContainmentResult>;
   /** The Agent SDK `query()` entry (tests): defaults to the lazy `import("@anthropic-ai/claude-agent-sdk")`.
    *  Injected so a test can drive the REAL {@link OrchestratorService.runViaSdk} body — its PostToolUse
@@ -434,6 +435,13 @@ export class OrchestratorService {
     const footprintsOf = new Map<string, string[]>(
       dag.map((u) => [u.id, u.footprint]),
     );
+    // AC4 (SP-2/TEP-6): the run's containment territory is the UNION of every dispatched unit's
+    // declared footprint — computed once for the whole run (static, deterministic). The post-tool
+    // whole-tree backstop in `runViaSdk` cannot attribute a shared-tree change to a unit, so it
+    // refuses ONLY a change outside this union. A sibling's in-footprint change is in the union
+    // whether that sibling is still running OR has already finished — which fixes the SP-6 failure
+    // where a FINISHED sibling's legitimate change was misattributed to a running unit and reverted.
+    const unionFootprint = [...new Set(dag.flatMap((u) => u.footprint))];
     const running = new Map<string, Promise<UnitDone>>();
     const parked = new Set<string>(); // dispatched but suspended awaiting an answer (off the cap)
     let wake: () => void = () => {};
@@ -445,7 +453,9 @@ export class OrchestratorService {
     // pulling the ready frontier (no new dispatch) — the loop only drains the in-flight units.
     const threshold = Math.max(
       1,
-      Math.floor(failThreshold ?? this.deps.failThreshold ?? DEFAULT_FAIL_THRESHOLD),
+      Math.floor(
+        failThreshold ?? this.deps.failThreshold ?? DEFAULT_FAIL_THRESHOLD,
+      ),
     );
     let failCount = 0;
     let halt = false;
@@ -474,19 +484,22 @@ export class OrchestratorService {
       for (const u of readyFrontier(dag, state)) {
         if (activeCount() >= limit) break;
         if (running.has(u.id)) continue;
+        // `state.running` (the live footprints of running units) still drives the scheduler's
+        // footprint-disjoint frontier selection in `readyFrontier`; the post-tool containment
+        // backstop no longer reads it — it screens against the run-level `unionFootprint` instead.
         u.footprint.forEach((f) => state.running.add(f));
         running.set(
           u.id,
-          // `state.running` is the live UNION of every running unit's footprint files (a
-          // unit's footprint is added on dispatch above, removed on completion below). Pass
-          // it as the running-footprints source so this unit's post-tool containment check
-          // never misattributes a concurrent sibling's in-footprint change as its own (AC4).
+          // AC4: thread the run-level UNION of every dispatched unit's footprint (computed once
+          // above). The post-tool whole-tree backstop refuses only a change OUTSIDE this union —
+          // a sibling's in-footprint change (running OR finished) is always in the union, so it is
+          // never misattributed to this unit and reverted (the SP-6 mutual-destruction fix).
           this.dispatchUnit(
             u,
             specNumber,
             worktreePath,
             onPark,
-            () => [...state.running],
+            unionFootprint,
           ),
         );
         result.dispatched++;
@@ -841,15 +854,16 @@ export class OrchestratorService {
   }
 
   /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome.
-   *  `runningFootprints` reads the live UNION of every running unit's footprint (AC4) at check time; the
-   *  per-unit `baseline` (the paths already dirty when this unit started) is captured here, once, before
-   *  the worker runs — both fence the post-tool containment check from misattributing other units' work. */
+   *  `unionFootprint` is the run-level UNION of every dispatched unit's declared footprint (AC4) — the
+   *  post-tool whole-tree backstop refuses only a change outside it; the per-unit `baseline` (the paths
+   *  already dirty when this unit started) is captured here, once, before the worker runs, to exempt
+   *  pre-existing dirt outside the union from misattribution to this unit. */
   private async dispatchUnit(
     unit: SchedUnit,
     specNumber: string,
     worktreePath: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
   ): Promise<UnitDone> {
     const claim = await this.deps.arbiter.acquire(unit.id, unit.footprint);
     if (!claim.ok) {
@@ -873,7 +887,7 @@ export class OrchestratorService {
         specNumber,
         worktreePath,
         onPark,
-        runningFootprints,
+        unionFootprint,
         baseline,
       );
       return {
@@ -900,19 +914,12 @@ export class OrchestratorService {
     specNumber: string,
     cwd: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
     baseline?: string[],
   ): Promise<WorkerResult> {
     return this.deps.runUnit
       ? this.deps.runUnit(unit, specNumber, cwd, onPark)
-      : this.runViaSdk(
-          unit,
-          specNumber,
-          cwd,
-          onPark,
-          runningFootprints,
-          baseline,
-        );
+      : this.runViaSdk(unit, specNumber, cwd, onPark, unionFootprint, baseline);
   }
 
   /**
@@ -923,21 +930,24 @@ export class OrchestratorService {
    * activation, and a load/run failure degrades to a non-success (→ requires-attention) rather than
    * crashing the host.
    *
-   * The **authority** over footprint is a post-tool working-tree check (SP-6/2 AC3): a `PostToolUse`
-   * hook runs after EVERY tool call (Bash included — `rm`/`mv`/`sed -i`/redirect carry no `file_path`
-   * the PreToolUse guard can pre-screen) and diffs the worktree against the unit's declared footprint.
-   * Any out-of-footprint create/modify/delete is **terminal**: we abort the `query()` (the SDK
-   * `AbortController`), revert ONLY the offending path(s) (`git restore`/`clean` — a sibling's
-   * in-progress work in the shared tree survives), and fail the unit with a diagnosis naming the path
-   * so its slice is flagged requires-attention. This is NOT a recoverable deny the worker can route
-   * around — it closes the stub-and-`rm` hole that the Edit/Write-only PreToolUse guard could not see.
+   * The **authority** over footprint is a post-tool working-tree check (SP-6/2 AC3 + SP-2/TEP-6 AC4):
+   * a `PostToolUse` hook runs after EVERY tool call (Bash included — `rm`/`mv`/`sed -i`/redirect carry
+   * no `file_path` the PreToolUse guard can pre-screen) and diffs the worktree against the **run-level
+   * union of every dispatched unit's footprint** (NOT this unit's alone — the whole-tree diff cannot
+   * attribute a change to a unit, so it refuses only a change outside ALL declared territory). Any
+   * change outside that union is **terminal**: we abort the `query()` (the SDK `AbortController`),
+   * revert ONLY the offending path(s) (`git restore`/`clean` — a sibling's work in the shared tree,
+   * running or finished, is in the union and survives), and fail the unit with a diagnosis naming the
+   * path so its slice is flagged requires-attention. This is NOT a recoverable deny the worker can
+   * route around — it closes the stub-and-`rm` hole that the Edit/Write-only PreToolUse guard could
+   * not see. Tight per-unit containment is the PreToolUse hook's job (it has the `file_path`).
    */
   private async runViaSdk(
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
     baseline?: string[],
   ): Promise<WorkerResult> {
     const prompt = buildWorkerPrompt(unit, specNumber, {
@@ -1027,16 +1037,15 @@ export class OrchestratorService {
                   async () => {
                     // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
                     if (containmentReason) return {};
-                    // AC4: pass the running-units footprint UNION (read live at check time) and this
-                    // unit's start baseline so a concurrent sibling's in-footprint change, or a change
-                    // already present before this unit started, is never misattributed here + reverted.
+                    // AC4: diff the whole tree against the run-level UNION of every dispatched unit's
+                    // footprint (NOT this unit's alone). The backstop cannot attribute a shared-tree
+                    // change to a unit, so a change is a violation only when it falls outside ALL
+                    // declared territory. A sibling's in-footprint change — running OR finished — is in
+                    // the union and exempt; `baseline` additionally exempts pre-existing dirt.
                     const verdict = await this.containmentCheck(
                       cwd,
-                      unit.footprint,
-                      {
-                        running: runningFootprints?.() ?? [],
-                        baseline: baseline ?? [],
-                      },
+                      unionFootprint ?? unit.footprint,
+                      { baseline: baseline ?? [] },
                     );
                     if (verdict.ok) return {};
                     containmentReason = verdict.reason;
@@ -1119,7 +1128,7 @@ export class OrchestratorService {
   private containmentCheck(
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ): Promise<ContainmentResult> {
     return (
       this.deps.containmentCheck ??
@@ -1128,23 +1137,26 @@ export class OrchestratorService {
   }
 
   /**
-   * Default containment check (SP-6/2 AC3): `git status --porcelain` in the worktree → the pure
-   * {@link footprintContainment} (which surfaces every create/modify/delete outside the footprint,
-   * Bash-made ones included) → on a violation, `git restore`/`clean` of ONLY the offending paths,
-   * so a sibling unit's in-progress work in the shared tree is never reverted. Best-effort at the
-   * git layer; returns the verdict the caller acts on (abort the query + fail requires-attention).
+   * Default containment check (SP-6/2 AC3 + SP-2/TEP-6 AC4): `git status --porcelain` in the worktree
+   * → the pure {@link footprintContainment} (which surfaces every create/modify/delete outside the
+   * given footprint, Bash-made ones included) → on a violation, `git restore`/`clean` of ONLY the
+   * offending paths, so a sibling unit's work in the shared tree is never reverted. Here `footprint`
+   * is the run-level UNION of every dispatched unit's footprint, so a change is a violation only when
+   * it lands outside ALL declared territory; the running-footprints exclusion is no longer passed.
+   * Best-effort at the git layer; returns the verdict the caller acts on (abort the query + fail
+   * requires-attention).
    */
   private async defaultContainmentCheck(
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ): Promise<ContainmentResult> {
     const porcelain = await this.gitPorcelain(cwd);
-    // AC4: `running` (the running-units footprint union) and `baseline` (paths already dirty
-    // at this unit's start) exempt OTHER units' legitimate changes from this whole-tree diff,
-    // so the revert below only ever touches THIS unit's true out-of-footprint changes.
+    // AC4: `footprint` is the run-level UNION of declared footprints, so a sibling's in-footprint
+    // change (running OR finished) is in-bounds; `baseline` (paths already dirty at this unit's
+    // start) exempts pre-existing dirt outside the union. The revert below only ever touches a
+    // true out-of-union change.
     const verdict = footprintContainment(porcelain, footprint, {
-      running: ctx?.running,
       baseline: ctx?.baseline,
     });
     if (!verdict.ok)
