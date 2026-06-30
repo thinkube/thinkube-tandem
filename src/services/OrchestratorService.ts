@@ -1151,7 +1151,15 @@ export class OrchestratorService {
     footprint: string[],
     ctx?: { baseline?: string[] },
   ): Promise<ContainmentResult> {
-    const porcelain = await this.gitPorcelain(cwd);
+    const porcelainRaw = await this.gitPorcelain(cwd);
+    // Atomic-write scaffolding (`<file>.tmp.<pid>.<hash>`) is a transient artifact of editing an
+    // in-footprint file — a post-tool diff can race it in the instant between the temp's create
+    // and its rename onto the target. It is never a real out-of-territory change, so drop those
+    // lines before the union check (else a perfectly legal in-footprint edit aborts on a fluke).
+    const porcelain = porcelainRaw
+      .split("\n")
+      .filter((line) => !/\.tmp\.\d+\.[0-9a-f]+$/.test(line))
+      .join("\n");
     // AC4: `footprint` is the run-level UNION of declared footprints, so a sibling's in-footprint
     // change (running OR finished) is in-bounds; `baseline` (paths already dirty at this unit's
     // start) exempts pre-existing dirt outside the union. The revert below only ever touches a
