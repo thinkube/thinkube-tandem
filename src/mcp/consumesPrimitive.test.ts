@@ -165,6 +165,73 @@ test("create_slice refuses a dangling consumes and accepts a real-sibling consum
   );
 });
 
+// ── the DAG is Spec-global: a consumes may name ANOTHER slice's producer ──────
+test("create_slice accepts a CROSS-SLICE consumes — the work-unit DAG is Spec-global, not slice-local", async () => {
+  const store = await seededStore();
+
+  // SL-1 produces the contract.
+  await create(store, {
+    title: "producer slice",
+    body: "detail",
+    work_units: [
+      { footprint: ["src/contract.ts"], execution: "fan-out", note: "producer" },
+    ],
+  });
+
+  // SL-2's unit consumes that contract — produced by NO unit in SL-2, only by
+  // SL-1. Under the Spec-global DAG this is a normal cross-slice edge, accepted;
+  // the old slice-local gate wrongly refused it as "dangling".
+  const res = (await create(store, {
+    title: "consumer slice (cross-slice consumes)",
+    body: "detail",
+    work_units: [
+      {
+        footprint: ["src/flow.ts"],
+        execution: "fan-out",
+        consumes: ["src/contract.ts"], // produced by SL-1, another slice
+        note: "consumes SL-1's contract",
+      },
+    ],
+  })) as { slice: string };
+  assert.match(
+    res.slice,
+    /^TEP-1_SP-1_SL-\d+$/,
+    "a consumes produced by another slice's unit is accepted",
+  );
+});
+
+test("create_slice still refuses a consumes produced by NO unit in the whole Spec", async () => {
+  const store = await seededStore();
+  await create(store, {
+    title: "producer slice",
+    body: "detail",
+    work_units: [
+      { footprint: ["src/contract.ts"], execution: "fan-out", note: "producer" },
+    ],
+  });
+  // Consumes a path no unit in SL-1 or SL-2 produces → still dangling.
+  await assert.rejects(
+    create(store, {
+      title: "bad cross-spec consumes",
+      body: "detail",
+      work_units: [
+        {
+          footprint: ["src/flow.ts"],
+          execution: "fan-out",
+          consumes: ["src/ghost.ts"],
+          note: "no producer anywhere",
+        },
+      ],
+    }),
+    (err: unknown) => {
+      const msg = (err as Error).message;
+      assert.match(msg, /ghost\.ts/, "names the dangling file");
+      assert.match(msg, /anywhere in this Spec/i, "explains the global scope");
+      return true;
+    },
+  );
+});
+
 // ── AC#3: the worker prompt names the consumed file as a contract dependency ──
 test("buildWorkerPrompt surfaces the consumed file as a contract dependency to import, not re-invent", () => {
   // Build the execution-unit DAG via the REAL buildUnitDag, then prompt the

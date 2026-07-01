@@ -2203,13 +2203,16 @@ async function getThinkubeFile(
   store: ThinkubeStore,
   relativePath: string,
 ): Promise<unknown> {
-  const parsed = await store.getFile(relativePath);
+  // Org-aware: a caller may address the org tree by a bare `teps/…` path without
+  // knowing the maintainer's org segment — the store rewrites it to `<org>/teps/…`
+  // (a path already carrying the org, or a non-org dir, passes through). Keeps the
+  // org invisible plumbing, matching write_spec/get_slice.
+  const rel = store.resolveOrgRelativePath(relativePath);
+  const parsed = await store.getFile(rel);
   if (!parsed) {
-    throw new Error(
-      `No thinking space file at ${store.thinkubeDir}/${relativePath}`,
-    );
+    throw new Error(`No thinking space file at ${store.thinkubeDir}/${rel}`);
   }
-  return { relativePath, frontmatter: parsed.frontmatter, body: parsed.body };
+  return { relativePath: rel, frontmatter: parsed.frontmatter, body: parsed.body };
 }
 
 async function moveSlice(
@@ -2787,37 +2790,51 @@ export async function createSlice(
     throw new Error(`${contractVerdict.message}\n  • offending unit: ${fp}`);
   }
 
-  // Consumes-resolvability gate (SP-th4wqk AC#2). `buildUnitDag` resolves a unit's
-  // `consumes` to a dependency on the SIBLING unit whose footprint produces the
-  // named file; a `consumes` that matches no sibling footprint silently resolves
-  // to NO edge — a typo or stale path becomes a no-op, exactly the contract the
-  // gate is meant to make load-bearing. Refuse it at the door, naming the offending
-  // unit + the dangling file. File matching reuses `normalizeFilePath` — the same
-  // normalization `contractFirstCheck` and `buildUnitDag` use — so a `consumes`
-  // naming a real sibling footprint passes by the identical rule.
+  // Consumes-resolvability gate (SP-th4wqk AC#2), resolved GLOBALLY over the Spec's
+  // units — every slice's work_units, not just this slice's — exactly like the
+  // `buildUnitDag` gate above it (SP-5/1). The work-unit DAG is the Spec-wide
+  // scheduling graph and the slice is only a validation envelope, NEVER a
+  // scheduling boundary: a `consumes` naming a file produced by ANOTHER slice's
+  // unit is a normal cross-slice edge, not an error. Only a `consumes` that no
+  // unit ANYWHERE in the Spec produces (a typo/stale path) silently resolves to no
+  // edge — refuse THAT at the door. File matching reuses `normalizeFilePath`, the
+  // same normalization `buildUnitDag` uses, so a real producer passes by the
+  // identical rule.
   {
-    const wus = (args.work_units ?? []) as {
+    const newWus = (args.work_units ?? []) as {
       footprint?: string[];
       consumes?: string[];
     }[];
-    const siblingFiles = (selfIdx: number): Set<string> => {
-      const s = new Set<string>();
-      wus.forEach((w, i) => {
-        if (i === selfIdx) return;
-        for (const f of w.footprint ?? []) s.add(normalizeFilePath(f));
-      });
-      return s;
-    };
-    for (let i = 0; i < wus.length; i++) {
-      const produced = siblingFiles(i);
-      for (const c of wus[i].consumes ?? []) {
-        if (!produced.has(normalizeFilePath(c))) {
-          const fp = wus[i].footprint?.join(", ") || "(no footprint)";
+    // The Spec's full unit set: every already-created slice's units + this new
+    // slice's. `u !== w` (object identity) excludes only the consuming unit itself,
+    // so a unit never satisfies its own `consumes`.
+    const allUnits: { footprint?: string[]; consumes?: string[] }[] = [];
+    for (const rel of await store.listSlices(args.spec)) {
+      const sfm = (await store.getFile(rel))?.frontmatter ?? {};
+      if (Array.isArray(sfm.work_units)) {
+        allUnits.push(
+          ...(sfm.work_units as { footprint?: string[]; consumes?: string[] }[]),
+        );
+      }
+    }
+    allUnits.push(...newWus);
+    for (const w of newWus) {
+      for (const c of w.consumes ?? []) {
+        const cn = normalizeFilePath(c);
+        const producedByOther = allUnits.some(
+          (u) =>
+            u !== w &&
+            (u.footprint ?? []).some((f) => normalizeFilePath(f) === cn),
+        );
+        if (!producedByOther) {
+          const fp = w.footprint?.join(", ") || "(no footprint)";
           throw new Error(
             `Dangling \`consumes\` — refusing to create the slice: unit [${fp}] ` +
-              `consumes \`${c}\`, but no sibling work_unit's footprint produces that file. ` +
-              `A \`consumes\` must name a file another unit in this slice produces (so it ` +
-              `resolves to a real contract-first dependency edge), else it is a silent no-op.`,
+              `consumes \`${c}\`, but no work_unit anywhere in this Spec (any slice) ` +
+              `produces that file. \`consumes\` resolves GLOBALLY across the Spec's ` +
+              `units — a cross-slice consumes is fine (the slice is only a validation ` +
+              `envelope) — so check the path is exact; else drop it (it would be a ` +
+              `silent no-op edge).`,
           );
         }
       }

@@ -175,6 +175,26 @@ export class ThinkubeStore implements vscode.Disposable {
     return org ? `${org}/${KIND_TO_DIR.tep}` : KIND_TO_DIR.tep;
   }
 
+  /**
+   * Normalize a thinking-space-relative path so a caller may address the org tree
+   * WITHOUT knowing the maintainer's org segment. A leading `teps` / `teps/…` is
+   * rewritten to `<org>/teps/…` (the org discovered from the tree, same source
+   * `tepsRoot` uses). A path that already carries the org (`<org>/teps/…`), or
+   * targets a non-org dir (`specs/`, `decisions/`, `retros/`), is returned as-is,
+   * as is any path when the thinking space is org-less. This keeps the org
+   * invisible plumbing — the same reason `write_spec`/`get_slice` derive it
+   * internally — so a raw read like `get_thinkube_file "teps/TEP-6/SP-3/spec.md"`
+   * resolves instead of dropping the org and 404-ing.
+   */
+  resolveOrgRelativePath(relativePath: string): string {
+    const rel = relativePath.replace(/^\/+/, "");
+    const org = this.orgSeg();
+    const tep = KIND_TO_DIR.tep;
+    if (!org || org === "") return rel;
+    if (rel === tep || rel.startsWith(`${tep}/`)) return `${org}/${rel}`;
+    return rel;
+  }
+
   /** Start watching `.thinkube/**`. Idempotent. */
   activate(): void {
     if (this.watcher) return;
