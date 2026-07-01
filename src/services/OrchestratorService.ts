@@ -292,6 +292,31 @@ export function verificationIsWorkerAuthored(
   return false;
 }
 
+/**
+ * A "whole-suite" verification runs the ENTIRE test suite (`npm|pnpm|yarn test`, `vitest`,
+ * `jest`, `mocha`, or `node --test <dir>`) rather than a specific held-out acceptance probe.
+ * Its green necessarily includes the worker's own `*.test.*` files, so it is SELF-GRADED, not
+ * independent evidence — even though no single token resolves to a worker path (so
+ * `verificationIsWorkerAuthored` cannot catch it). The grade surfaces this so a self-graded
+ * green is never silently mistaken for an intent-check. It is NOT dropped from the grade: the
+ * bootstrapping convention (Specs verified by `npm test`) still counts until each AC is migrated
+ * to a held-out evidence path — the point where `verificationIsWorkerAuthored`'s independence
+ * guarantee actually bites. Pure.
+ */
+export function verificationIsWholeSuite(run: string): boolean {
+  const r = (run ?? "").trim();
+  if (!r) return false;
+  // A package `test` script runs the whole suite (the worker's tests included), whatever the args.
+  if (/\b(npm|pnpm|yarn)\s+(run\s+)?test\b/.test(r)) return true;
+  // A direct test-runner invocation is whole-suite ONLY when it names no specific file — a bare
+  // runner or a directory target. Naming a specific file (any JS/TS extension) is a targeted probe
+  // (a held-out `…/SP-6.acceptance.js` or `…/foo.test.js`), so it is NOT a blanket suite run.
+  if (/\S+\.[cm]?[jt]sx?\b/.test(r)) return false;
+  if (/\b(vitest|jest|mocha|ava)\b/.test(r)) return true;
+  if (/\bnode\b[^\n]*--test\b/.test(r)) return true;
+  return false;
+}
+
 export class OrchestratorService {
   constructor(private readonly deps: OrchestratorDeps) {}
 
@@ -1004,6 +1029,15 @@ export class OrchestratorService {
         output.appendLine(
           `⚑ SP-${specNumber}: AC #${r.ac} verification reaches worker-owned footprint — ` +
             `self-tick excluded from the grade (independent evidence only).`,
+        );
+      else if (v && verificationIsWholeSuite(v.run))
+        // Kept in the grade (bootstrapping: Specs verified by `npm test` until ACs migrate to
+        // held-out probes), but flagged so a self-graded green is never silently read as an
+        // independent intent-check.
+        output.appendLine(
+          `⚠ SP-${specNumber}: AC #${r.ac} is graded by a whole-suite command (\`${v.run}\`) — ` +
+            `SELF-GRADED, not independent evidence (its green includes the worker's own tests). ` +
+            `Point this AC at a held-out acceptance probe for a trustworthy intent-check.`,
         );
       return !selfTick;
     });
