@@ -1267,10 +1267,15 @@ export async function dispatchTool(
       );
     case "create_slice": {
       writeGate(name);
-      const createSpecId =
+      // Resolve a bare SP number to its composite `<tep>/<sp>` (SP numbers are
+      // per-TEP) up front, so the TEP-approval gate and createSlice below act on
+      // the same real spec — not an ambiguous bare id that mis-resolves.
+      const createSpecId = await resolveCompositeSpecId(
+        () => store.listSpecDirs(),
         typeof args.spec === "number"
           ? String(args.spec)
-          : asString(args, "spec");
+          : asString(args, "spec"),
+      );
       // Approval gate (SP-th4wqg_SL-1, TEP-th3i18 #25): a slice may not reach
       // Ready while the parent Spec's `implements:` TEP is not yet `accepted`
       // (approved-to-build). Resolve the TEP's status via thinking space context and run
@@ -2405,6 +2410,32 @@ const TITLE_MAX = 70;
  * The → Ready gate is enforced at creation time: the parent Spec must exist
  * with a non-empty `## Acceptance Criteria`.
  */
+/**
+ * Resolve a `spec` arg to the composite `<tep>/<sp>` id the org tree is keyed by.
+ * SP numbers are PER-TEP (SP-3 can exist under several TEPs), so a bare number is
+ * resolved against `listSpecDirs()`: a unique match is used; an ambiguous one is
+ * refused naming the candidate TEPs; an unknown bare id is returned verbatim so
+ * the caller reports the real not-found path. An id that already carries a `/`
+ * (composite or opaque) passes through untouched. This keeps `/slice`'s `spec: {n}`
+ * shape working without ever silently resolving to the wrong — or a phantom — spec.
+ */
+export async function resolveCompositeSpecId(
+  listSpecDirs: () => Promise<string[]>,
+  id: string,
+): Promise<string> {
+  if (id.includes("/")) return id;
+  const matches = (await listSpecDirs()).filter((s) => s.split("/")[1] === id);
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous spec id "${id}" — SP-${id} exists under ${matches
+        .map((m) => "TEP-" + m.split("/")[0])
+        .join(", ")}. Pass the composite \`<tep>/${id}\` (e.g. \`${matches[0]}\`).`,
+    );
+  }
+  return id;
+}
+
 export async function createSlice(
   store: ThinkubeStore,
   args: {
@@ -2540,10 +2571,18 @@ export async function createSlice(
   // the LLM auditor's verifiable | needs-reframe judgment runs in /spec-prepare,
   // which only emits a declaration for an AC it certifies, so an un-certified AC
   // arrives here with no entry and `readyGate` blocks it by ordinal.
+  // Resolve a bare SP number (`3`, the shape `/slice`'s `spec: {n}` carries) to the
+  // composite `<tep>/<sp>` id the org tree is keyed by. SP numbers are PER-TEP —
+  // SP-3 can exist under several TEPs — so a bare id is resolved against the tree:
+  // a unique match is used; an ambiguous one is refused naming the candidate TEPs.
+  // (Without this the bare id fell through `pathForSpecDoc("3")` → `TEP-3/SP-undefined`
+  // and then reported a MISLEADING legacy `specs/SP-3/spec.md` path for a spec that
+  // exists under its TEP — silent misdirection instead of an actionable id error.)
+  args.spec = await resolveCompositeSpecId(() => store.listSpecDirs(), args.spec);
   const specDoc = await store.getFile(store.pathForSpecDoc(args.spec));
   if (!specDoc) {
     throw new Error(
-      `No spec at ${store.thinkubeDir}/specs/SP-${args.spec}/spec.md — run /spec-prepare ${args.spec} first.`,
+      `No spec at ${store.thinkubeDir}/${store.pathForSpecDoc(args.spec)} — run /spec-prepare ${args.spec} first.`,
     );
   }
   const acs = acceptanceCriteriaOrdinals(specDoc.body);
