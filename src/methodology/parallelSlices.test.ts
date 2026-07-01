@@ -1004,17 +1004,17 @@ test("footprintContainment: the test-author's OWN probe (in its footprint) is NO
   assert.equal(r.ok, true);
 });
 
-test("footprintContainment: acceptance is exempt ONLY via owned — a sibling (running)/baseline can't excuse a code-author", () => {
-  // A code unit (owned = src/a.ts) whose run touched a sibling's acceptance probe is a violation even
-  // though the probe is in the running-union / baseline — this closes a code-author's shared-tree
-  // evasion of the held-out grader (only the role: test owner may author it).
-  const r = expectViolation(
-    footprintContainment(" M tests/acceptance/SP-6.test.ts\n", ["src/a.ts"], {
-      running: ["tests/acceptance/SP-6.test.ts"],
-      baseline: ["tests/acceptance/SP-6.test.ts"],
-    }),
+test("footprintContainment: a SIBLING test-author's acceptance probe (in the union) is exempt — concurrent held-out authors don't revert each other", () => {
+  // SP-6/7: the four held-out test-authors run concurrently in the shared worktree, each writing its
+  // OWN probe. So from unit X's post-tool diff, a SIBLING's probe (in the run-level `running` union)
+  // must be exempt — else every test-author reverts its siblings' probes (only one survives). An
+  // acceptance path is treated like any other: exempt via owned OR running OR baseline.
+  const r = footprintContainment(
+    " M tests/acceptance/SP-6_AC-3.test.ts\n" + " M tests/acceptance/SP-6_AC-4.test.ts\n",
+    ["tests/acceptance/SP-6_AC-2.test.ts"], // this unit owns AC-2
+    { running: ["tests/acceptance/SP-6_AC-3.test.ts", "tests/acceptance/SP-6_AC-4.test.ts"] },
   );
-  assert.equal(r.violations[0].file, "tests/acceptance/SP-6.test.ts");
+  assert.equal(r.ok, true, "siblings' probes (in the union) are not reverted");
 });
 
 test("footprintContainment: a non-evidence change beside an evidence change reports both correctly", () => {

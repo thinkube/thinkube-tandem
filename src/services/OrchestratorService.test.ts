@@ -1954,15 +1954,18 @@ test("runViaSdk AC2: even when a unit DECLARES the acceptance-evidence path in i
     observed,
   );
 
-  // The unit DECLARES both its real file AND the acceptance path — the resolver must strip the
-  // latter from every exemption set (owned + union) so the write is still a breach.
+  // The code unit DECLARES both its real file AND the acceptance path — but role-resolution strips
+  // the held-out path from BOTH its own footprint (owned) AND the run-level union (a `code` unit
+  // contributes no acceptance), so the write lands outside all exempt territory and is a breach.
   const unit = ac3Unit(["src/owned.ts", "tests/acceptance/sneak.test.ts"]);
   const result = await svcRunViaSdk(deps)(
     unit,
     "1/1",
     repo,
     () => {},
-    ["src/owned.ts", "tests/acceptance/sneak.test.ts"], // declared in the union too — still stripped
+    // The union the real dispatch passes is role-resolved: a code unit contributes NO acceptance
+    // path (resolveRoleFootprint strips it), so `tests/acceptance/…` is not in the union either.
+    ["src/owned.ts"],
     [],
   );
 

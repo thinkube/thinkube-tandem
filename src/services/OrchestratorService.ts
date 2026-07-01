@@ -950,7 +950,14 @@ export class OrchestratorService {
     // refuses ONLY a change outside this union. A sibling's in-footprint change is in the union
     // whether that sibling is still running OR has already finished — which fixes the SP-6 failure
     // where a FINISHED sibling's legitimate change was misattributed to a running unit and reverted.
-    const unionFootprint = [...new Set(dag.flatMap((u) => u.footprint))];
+    // SP-6/7: role-resolve each unit's footprint into the union — a `code` unit contributes NO
+    // acceptance path (resolveRoleFootprint strips it), a `test` unit contributes its held-out probe.
+    // So the union's acceptance paths come ONLY from their real role:test owners: sibling probes stay
+    // exempt (concurrent held-out authors don't revert each other) while a code-author's acceptance
+    // write — even one it brazenly declared in footprint — is NOT in the union and is caught.
+    const unionFootprint = [
+      ...new Set(dag.flatMap((u) => resolveRoleFootprint(u.role, u.footprint))),
+    ];
     const running = new Map<string, Promise<UnitDone>>();
     const parked = new Set<string>(); // dispatched but suspended awaiting an answer (off the cap)
     let wake: () => void = () => {};

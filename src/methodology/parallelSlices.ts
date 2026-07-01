@@ -889,15 +889,15 @@ export function footprintContainment(
     for (const e of entries) {
       const file = normalizeFilePath(unquotePorcelainPath(e.path));
       if (!file || seen.has(file)) continue;
-      // SP-6/7: a held-out acceptance probe is exempt ONLY for the `role: test` unit that OWNS it
-      // (in `owned`) — never via a sibling (`running`) or baseline, so the held-out grader can't be
-      // authored by a code-author through the shared tree. A non-acceptance path keeps the full
-      // owned / running / baseline exemption.
-      if (isAcceptanceEvidencePath(file, opts)) {
-        if (owned.has(file)) continue;
-      } else if (owned.has(file) || running.has(file) || baseline.has(file)) {
-        continue;
-      }
+      // A change is exempt when it lands in this unit's own footprint, a concurrent/finished
+      // sibling's (`running` = the run-level union), or was already dirty (`baseline`). SP-6/7: an
+      // `acceptance/` probe is treated like ANY path here — the held-out test-authors run
+      // concurrently in the shared worktree, each writing its OWN probe, so a sibling's probe is in
+      // the union and MUST be exempt (else every test-author reverts its siblings'). A code-author
+      // still cannot Write/Edit an `acceptance/` path — the per-unit PRE-tool footprint fence
+      // (`footprintGuard` over its role footprint, which strips acceptance) blocks that; only a
+      // deliberate Bash-write would slip the union, an accepted narrow residual.
+      if (owned.has(file) || running.has(file) || baseline.has(file)) continue;
       seen.add(file);
       violations.push({ file, change: e.change });
     }
