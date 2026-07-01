@@ -512,6 +512,71 @@ export function undeclaredReadsCheck(
   return { ok: false, message, violations };
 }
 
+// ── Acceptance-evidence path convention (SP-6/6 AC2) ───────────────────────
+//
+// Mechanism 5 holds the exam out of the implementer's reach: the acceptance
+// probes the closing gate runs are authored by the held-out verifier at
+// spec/slice time and committed to a reserved location — by convention, any path
+// with an `acceptance/` directory segment (e.g. `tests/acceptance/foo.test.ts`,
+// `.tandem/acceptance/SP-6.test.ts`). The footprint resolver below treats such a
+// path as **never-in-footprint**: no unit can own it, so SP-2's post-tool diff
+// ({@link footprintContainment}) flags any create/modify/delete that lands there
+// — regardless of what the unit *declared* — and the worker is aborted to
+// requires-attention rather than producing a green it authored. This is the
+// deterministic analog of "the student cannot write the answer key." Pure: a
+// path-shape convention, no I/O; both the pre-tool guard and the post-tool check
+// route through {@link isAcceptanceEvidencePath} so the rule can't drift.
+
+/**
+ * The default convention marking a path as held-out acceptance evidence: any
+ * `acceptance` directory segment (anchored to a path boundary, case-insensitive),
+ * so `acceptance/x`, `tests/acceptance/x`, and `.tandem/acceptance/x` all match
+ * while an `acceptanceFoo.ts` file does not. Exported so callers (`create_slice`,
+ * the footprint resolver, the tests) name the convention via this constant rather
+ * than re-deriving the regex.
+ */
+export const ACCEPTANCE_EVIDENCE_RE = /(?:^|\/)acceptance(?:\/|$)/i;
+
+/** Options for the acceptance-evidence convention (override the default shape). */
+export interface AcceptanceEvidenceOpts {
+  /**
+   * Override the predicate deciding whether a (normalized, repo-relative) path is
+   * held-out acceptance evidence. Defaults to {@link ACCEPTANCE_EVIDENCE_RE}.
+   */
+  isAcceptanceEvidence?: (file: string) => boolean;
+}
+
+/**
+ * Whether `p` is a held-out acceptance-evidence path (SP-6/6 AC2) — the evidence
+ * the independent grader runs, which **no unit may own or touch**. Normalizes the
+ * path first so `./acceptance/x` and `acceptance/x` agree. Static-only: a path-shape
+ * decision, never a filesystem query.
+ */
+export function isAcceptanceEvidencePath(
+  p: string,
+  opts?: AcceptanceEvidenceOpts,
+): boolean {
+  const file = normalizeFilePath(p);
+  if (!file) return false;
+  const predicate = opts?.isAcceptanceEvidence;
+  return predicate ? predicate(file) : ACCEPTANCE_EVIDENCE_RE.test(file);
+}
+
+/**
+ * The footprint resolver (SP-6/6 AC2): strip acceptance-evidence paths from a
+ * declared footprint so they are **never-in-footprint**. A unit cannot claim the
+ * held-out evidence by listing it in `files:`/`footprint:` — the resolver drops it,
+ * leaving the path unowned so {@link footprintGuard} denies a write to it and
+ * {@link footprintContainment} flags a change there. Returns the remaining paths
+ * unchanged (un-normalized); callers normalize as they already do.
+ */
+export function resolveFootprint(
+  footprint: string[],
+  opts?: AcceptanceEvidenceOpts,
+): string[] {
+  return (footprint ?? []).filter((f) => !isAcceptanceEvidencePath(f, opts));
+}
+
 // ── Footprint enforcement (SP-tgs8nz_SL-6: the PreToolUse guard) ────────────
 //
 // An orchestrated worker runs under `bypassPermissions` (no prompts), so a
@@ -545,12 +610,26 @@ export function footprintGuard(
   toolInput: unknown,
   footprint: string[],
   repoRoot: string,
+  opts?: AcceptanceEvidenceOpts,
 ): FootprintDecision {
   if (!GUARDED_TOOLS.has(toolName)) return { allow: true };
   const fp = (toolInput as { file_path?: unknown })?.file_path;
   if (typeof fp !== "string" || !fp.trim()) return { allow: true };
   const target = relToRepo(fp, repoRoot);
-  const owned = footprint.map(normalizeFilePath);
+  // Held-out acceptance evidence is never-in-footprint (SP-6/6 AC2): even if the
+  // worker declared it, a write to it is denied — the implementer cannot author
+  // or alter the grader. The resolver also strips it from `owned`, so the generic
+  // check below would refuse it too; this names the specific reason.
+  if (isAcceptanceEvidencePath(target, opts)) {
+    return {
+      allow: false,
+      reason:
+        `Acceptance-evidence write: ${target} is held-out grading evidence and is ` +
+        `never part of any unit's footprint. The implementer cannot author or alter ` +
+        `the evidence it is graded on — leave it to the independent verifier.`,
+    };
+  }
+  const owned = resolveFootprint(footprint, opts).map(normalizeFilePath);
   if (owned.includes(target)) return { allow: true };
   return {
     allow: false,
@@ -679,20 +758,36 @@ function classifyPorcelainChange(xy: string): ContainmentChange {
  * (every currently-running unit's footprint — a concurrent sibling's in-footprint work)
  * AND not in `ctx.baseline` (paths already dirty when this unit started). With the
  * context absent, behaviour is exactly as before: any path outside `footprint` is flagged.
+ *
+ * Held-out acceptance evidence ({@link isAcceptanceEvidencePath}, overridable via
+ * `opts`) is never-in-footprint (SP-6/6 AC2): it is stripped from every exemption set
+ * and a change touching it is ALWAYS a violation — so a worker that writes the grader
+ * it is judged on is aborted to requires-attention, never granted a green it authored.
  */
 export function footprintContainment(
   porcelain: string,
   footprint: string[],
   ctx?: ContainmentContext,
+  opts?: AcceptanceEvidenceOpts,
 ): ContainmentResult {
-  const owned = new Set(footprint.map(normalizeFilePath).filter(Boolean));
+  // Acceptance-evidence paths are never-in-footprint (SP-6/6 AC2): strip them from
+  // EVERY exemption set — owned, the running-union, and baseline — so a change a
+  // worker leaves there can never be excused as in-footprint, a sibling's work, or
+  // pre-existing. A write to the held-out grader always surfaces as a violation.
+  const owned = new Set(
+    resolveFootprint(footprint, opts).map(normalizeFilePath).filter(Boolean),
+  );
   // A concurrent sibling's footprint (the running-units union) and the paths already
   // dirty before this unit started both EXEMPT a path from being this unit's violation.
   const running = new Set(
-    (ctx?.running ?? []).map(normalizeFilePath).filter(Boolean),
+    resolveFootprint(ctx?.running ?? [], opts)
+      .map(normalizeFilePath)
+      .filter(Boolean),
   );
   const baseline = new Set(
-    (ctx?.baseline ?? []).map(normalizeFilePath).filter(Boolean),
+    resolveFootprint(ctx?.baseline ?? [], opts)
+      .map(normalizeFilePath)
+      .filter(Boolean),
   );
   const violations: ContainmentViolation[] = [];
   const seen = new Set<string>();
@@ -726,16 +821,15 @@ export function footprintContainment(
 
     for (const e of entries) {
       const file = normalizeFilePath(unquotePorcelainPath(e.path));
-      // Not a violation when: empty, already reported, this unit's own footprint, a
-      // concurrent sibling's footprint (running-union), or already dirty at unit start.
-      if (
-        !file ||
-        seen.has(file) ||
-        owned.has(file) ||
-        running.has(file) ||
-        baseline.has(file)
-      )
-        continue;
+      if (!file || seen.has(file)) continue;
+      // Held-out acceptance evidence is ALWAYS a violation when touched (SP-6/6 AC2)
+      // — no exemption (owned / running / baseline) can excuse a write to the grader.
+      // Otherwise: exempt this unit's own footprint, a concurrent sibling's footprint
+      // (running-union), or a path already dirty at unit start.
+      if (!isAcceptanceEvidencePath(file, opts)) {
+        if (owned.has(file) || running.has(file) || baseline.has(file))
+          continue;
+      }
       seen.add(file);
       violations.push({ file, change: e.change });
     }

@@ -24,6 +24,8 @@ import {
   buildUnitDag,
   readyFrontier,
   buildWorkerPrompt,
+  stripAcceptanceCriteria,
+  stripSatisfies,
   extractNeedsInput,
   sessionIdOf,
   summarizeEvent,
@@ -36,6 +38,10 @@ import {
   FINALIZATION_WEDGED_DIAGNOSIS,
   commitPlan,
   resumeDecision,
+  reDispatchDecision,
+  markEscalated,
+  hasEscalationMarker,
+  ESCALATION_MARKER,
   type SliceForDag,
   type SchedUnit,
   type SchedulerState,
@@ -49,6 +55,8 @@ import {
   validateDag,
   footprintGuard,
   footprintContainment,
+  resolveFootprint,
+  normalizeFilePath,
   type ContainmentResult,
 } from "../methodology/parallelSlices";
 import {
@@ -100,8 +108,17 @@ export interface OrchestratorDeps {
   verifyCommand?: string;
   /** Advance a slice to Done (tests): defaults to stamping `status: done`. */
   advance?: (handle: string) => Promise<void>;
-  /** Flag a slice requires-attention with a diagnosis (tests): defaults to a frontmatter+body write. */
-  flagAttention?: (handle: string, diagnosis: string) => Promise<void>;
+  /** Flag a slice requires-attention with a diagnosis (tests): defaults to a frontmatter+body write.
+   *  `escalation` (SP-6/6 AC5) carries the durable bounded-loop state to persist alongside the flag:
+   *  the threaded `attempts` counter (written as `rework_attempts`, read back by `buildSlices`) and,
+   *  when `escalated`, the `escalated: true` frontmatter flag + the {@link ESCALATION_MARKER} stamped on
+   *  the body — the reload-surviving signal that the loop gave up. Omitted ⇒ a plain requires-attention
+   *  flag with no counter change (the pre-SP-6 behaviour). */
+  flagAttention?: (
+    handle: string,
+    diagnosis: string,
+    escalation?: { attempts: number; escalated: boolean },
+  ) => Promise<void>;
   /** Park a slice needs-input with its question + the worker's session id + unit id (tests): defaults to a frontmatter+body write. */
   flagNeedsInput?: (
     handle: string,
@@ -131,18 +148,19 @@ export interface OrchestratorDeps {
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
   /** Post-tool footprint containment (SP-6/2 AC3 + SP-2/TEP-6 AC4): diff the worktree against the
-   *  unit's declared `footprint` and REVERT only the out-of-footprint create/modify/delete (a sibling's
-   *  in-progress work in the shared tree is never touched), returning the containment verdict. The
-   *  whole-tree porcelain also shows every OTHER running unit's (and earlier units') legitimate
-   *  in-their-own-footprint changes; `running` (the union of all currently-running units' footprints)
-   *  and `baseline` (paths already dirty when THIS unit started) fence those out so they are never
-   *  misattributed to this unit and reverted (AC4). Defaults to `git status --porcelain` →
-   *  `footprintContainment` → `git restore`/`clean` of only the offending paths; tests inject it to
-   *  drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
+   *  run-level UNION of every dispatched unit's `footprint` and REVERT only the changes outside it,
+   *  returning the containment verdict. The whole-tree porcelain CANNOT attribute a change to a unit
+   *  (`git status --porcelain` shows every unit's edits with no author), so it must not try — a change
+   *  is a violation only when it lands outside ALL declared territory. A sibling's in-footprint change
+   *  is in the union whether that sibling is still running OR has already finished, so it is never
+   *  misattributed to this unit and reverted (the SP-6 mutual-destruction fix); `baseline` (paths
+   *  already dirty when THIS unit started) additionally exempts pre-existing dirt outside the union.
+   *  Defaults to `git status --porcelain` → `footprintContainment` → `git restore`/`clean` of only the
+   *  offending paths; tests inject it to drive `runViaSdk`'s abort/rollback wiring without a live git repo. */
   containmentCheck?: (
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ) => Promise<ContainmentResult>;
   /** The Agent SDK `query()` entry (tests): defaults to the lazy `import("@anthropic-ai/claude-agent-sdk")`.
    *  Injected so a test can drive the REAL {@link OrchestratorService.runViaSdk} body — its PostToolUse
@@ -158,6 +176,12 @@ export interface OrchestratorDeps {
    *  (3). Overridable here (or via the `failThreshold` arg of `dispatchSpec`) so a test can set N=2.
    *  A footprint VIOLATION is NOT counted here — it halts on its FIRST occurrence regardless. */
   failThreshold?: number;
+  /** Per-SLICE rework bound before escalation (SP-6/6 AC5): once a slice has recorded this many
+   *  failed acceptance/rework attempts the bounded loop ESCALATES — it is left requires-attention
+   *  with the {@link ESCALATION_MARKER} and `readyFrontier` stops auto-re-dispatching it. Threaded
+   *  onto `SchedulerState.attemptBound`; defaults to the core's `MAX_REWORK_ATTEMPTS` when omitted.
+   *  Overridable so a test can set a smaller bound (e.g. 2). The bound is control-plane — no model. */
+  attemptBound?: number;
 }
 
 /** The default run-halt failure threshold (SP-2/TEP-6 AC5): a small N of ordinary unit failures across
@@ -205,6 +229,10 @@ export interface SpecRunResult {
   advanced: string[];
   /** Slices flagged requires-attention (a worker failed or a verify was red) this run. */
   attention: string[];
+  /** Slices the bounded rework loop ESCALATED this run (SP-6/6 AC5): their failed-attempt count
+   *  reached the bound, so they are left requires-attention with the {@link ESCALATION_MARKER} and
+   *  are no longer auto-re-dispatchable — a human must decide. A subset of `attention`. */
+  escalated: string[];
   /** Slices parked needs-input (a worker asked a question) this run. */
   needsInput: string[];
   /** Slices rolled back to `ready` this run because their commit failed (SP-th4wqc_SL-3) — a slice
@@ -218,11 +246,84 @@ export interface SpecRunResult {
   acResults: AcResult[];
 }
 
+// Leading/trailing shell punctuation to peel off a `run`-command token (quotes,
+// parens, separators, redirects) before it is matched against a footprint path.
+const RUN_TOKEN_TRIM_RE = /^['"`(]+|['"`);,&|<>]+$/g;
+
+/**
+ * Normalize a token from a verification `run` command to the repo-relative `src/`
+ * source path a footprint declares: peel shell punctuation, drop a leading `./`,
+ * rewrite the compiled `out-test/` tree back to `src/`, rewrite a compiled
+ * `.js`/`.mjs`/`.cjs`/`.jsx` extension back to its `.ts`/… source, and normalize
+ * separators. Mirrors `verificationRunnable`'s source mapping so a command like
+ * `node --test out-test/x.test.js` resolves to the `src/x.test.ts` a worker owns.
+ */
+function runTokenToSource(token: string): string {
+  let p = token
+    .replace(RUN_TOKEN_TRIM_RE, "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "");
+  if (p.startsWith("out-test/")) p = "src/" + p.slice("out-test/".length);
+  p = p.replace(/\.([cm]?)j(sx?)$/i, ".$1t$2");
+  return normalizeFilePath(p);
+}
+
+/**
+ * AC4 (SP-6/6 — the worker cannot grade itself). A declared AC verification is a
+ * worker-authored **self-tick** when its `run` command reaches a path inside some
+ * dispatched unit's footprint: the implementing (or test-authoring) worker could
+ * write the very file whose green it is graded on, so its result is NOT independent
+ * evidence and must never count as the grade. Held-out acceptance evidence is
+ * never-in-footprint — `parallelSlices.resolveFootprint` strips it from `workerOwned`
+ * — so a verification that runs only that evidence is independent and grades. Pure:
+ * tokenize the run command, normalize each (possibly compiled) target to its `src/`
+ * source, and test membership in the worker-owned set.
+ */
+export function verificationIsWorkerAuthored(
+  run: string,
+  workerOwned: ReadonlySet<string>,
+): boolean {
+  if (workerOwned.size === 0) return false;
+  for (const raw of (run ?? "").split(/\s+/)) {
+    if (!raw) continue;
+    const src = runTokenToSource(raw);
+    if (src && workerOwned.has(src)) return true;
+  }
+  return false;
+}
+
+/**
+ * A "whole-suite" verification runs the ENTIRE test suite (`npm|pnpm|yarn test`, `vitest`,
+ * `jest`, `mocha`, or `node --test <dir>`) rather than a specific held-out acceptance probe.
+ * Its green necessarily includes the worker's own `*.test.*` files, so it is SELF-GRADED, not
+ * independent evidence — even though no single token resolves to a worker path (so
+ * `verificationIsWorkerAuthored` cannot catch it). The grade surfaces this so a self-graded
+ * green is never silently mistaken for an intent-check. It is NOT dropped from the grade: the
+ * bootstrapping convention (Specs verified by `npm test`) still counts until each AC is migrated
+ * to a held-out evidence path — the point where `verificationIsWorkerAuthored`'s independence
+ * guarantee actually bites. Pure.
+ */
+export function verificationIsWholeSuite(run: string): boolean {
+  const r = (run ?? "").trim();
+  if (!r) return false;
+  // A package `test` script runs the whole suite (the worker's tests included), whatever the args.
+  if (/\b(npm|pnpm|yarn)\s+(run\s+)?test\b/.test(r)) return true;
+  // A direct test-runner invocation is whole-suite ONLY when it names no specific file — a bare
+  // runner or a directory target. Naming a specific file (any JS/TS extension) is a targeted probe
+  // (a held-out `…/SP-6.acceptance.js` or `…/foo.test.js`), so it is NOT a blanket suite run.
+  if (/\S+\.[cm]?[jt]sx?\b/.test(r)) return false;
+  if (/\b(vitest|jest|mocha|ava)\b/.test(r)) return true;
+  if (/\bnode\b[^\n]*--test\b/.test(r)) return true;
+  return false;
+}
+
 export class OrchestratorService {
   constructor(private readonly deps: OrchestratorDeps) {}
 
-  /** Spec + slice bodies to embed in each worker's prompt — the worktree has no specs dir, so the
-   *  worker can't read them from disk. Loaded once per dispatchSpec. */
+  /** Spec + slice **intent views** to embed in each worker's prompt — the worktree has no specs dir,
+   *  so the worker can't read them from disk. The `## Acceptance Criteria` block + `satisfies` ordinals
+   *  are stripped here in `loadPromptContext` (SP-6 AC1), so these strings are already exam-free. Loaded
+   *  once per dispatchSpec. */
   private promptCtx: { specBody: string; sliceBodies: Map<string, string> } = {
     specBody: "",
     sliceBodies: new Map(),
@@ -237,14 +338,40 @@ export class OrchestratorService {
     { unitsLanded: boolean; committed: boolean }
   > = new Map();
 
-  /** Fetch the parent spec doc + each slice body from the thinking space, to embed in worker prompts. */
+  /** Per-slice failed-rework-attempt counter, read from the slice frontmatter (`rework_attempts`)
+   *  in `buildSlices` and threaded onto `SchedulerState.attempts` so the bounded loop (SP-6/6 AC5)
+   *  survives a reload: a slice's count carries ACROSS runs, each requires-attention run adding one.
+   *  Loaded once per dispatchSpec. */
+  private reworkAttempts: Map<string, number> = new Map();
+
+  /** Slices the bounded loop already ESCALATED on a prior run (SP-6/6 AC5) — detected from the durable
+   *  `escalated` frontmatter flag or the {@link ESCALATION_MARKER} on the body. Their units are blocked
+   *  at seed time so `readyFrontier` never auto-re-dispatches them; only a human (clearing the marker)
+   *  re-opens the loop. Loaded once per dispatchSpec. */
+  private escalatedSlices: Set<string> = new Set();
+
+  /**
+   * Fetch the parent spec doc + each slice body from the thinking space, to embed in worker prompts.
+   *
+   * **Intent view, exam held out (SP-6 AC1).** What we store is the *intent* — the spec/slice with the
+   * `## Acceptance Criteria` block and any `satisfies` ordinals already **stripped** at the source via
+   * the core's pure {@link stripAcceptanceCriteria} / {@link stripSatisfies}. So `promptCtx.specBody`
+   * itself never carries the gradeable criteria: `buildWorkerPrompt` receives the intent view, not the
+   * raw whole-Spec body with the AC block. (The slice keeps `satisfies` orchestrator-internally — read
+   * from frontmatter in `buildSlices`, never from this prose embedding — so the grader still ticks the
+   * right ordinals while the implementer never reads the exam it is graded on.) Stripping here, not only
+   * in `buildWorkerPrompt`, is defense-in-depth using the same single-sourced helpers — no fork.
+   */
   private async loadPromptContext(specNumber: string): Promise<void> {
     const { store } = this.deps;
+    // Reduce a raw spec/slice body to its intent view: drop the gradeable criteria + ordinals.
+    const intentViewOf = (body: string): string =>
+      stripSatisfies(stripAcceptanceCriteria(body ?? ""));
     const sliceBodies = new Map<string, string>();
     let specBody = "";
     try {
       const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
-      specBody = specDoc?.body ?? "";
+      specBody = intentViewOf(specDoc?.body ?? "");
       for (const rel of await store.listSlices(specNumber)) {
         const m = SLICE_REL_RE.exec(rel);
         if (!m) continue;
@@ -252,7 +379,7 @@ export class OrchestratorService {
         if (parsed?.body)
           sliceBodies.set(
             store.sliceHandle(specNumber, Number(m[2])),
-            parsed.body,
+            intentViewOf(parsed.body),
           );
       }
     } catch {
@@ -266,11 +393,27 @@ export class OrchestratorService {
     const { store } = this.deps;
     const slices: SliceForDag[] = [];
     this.sliceResumeState = new Map();
+    this.reworkAttempts = new Map();
+    this.escalatedSlices = new Set();
     for (const rel of await store.listSlices(specNumber)) {
       const m = SLICE_REL_RE.exec(rel);
       if (!m) continue;
-      const fm = (await store.getFile(rel))?.frontmatter;
+      const parsed = await store.getFile(rel);
+      const fm = parsed?.frontmatter;
       const handle = store.sliceHandle(specNumber, Number(m[3]));
+      // Bounded rework loop (SP-6/6 AC5): re-seed the per-slice attempt counter + escalation state from
+      // the durable frontmatter/body so a re-run continues the SAME bounded loop rather than restarting
+      // it. `rework_attempts` carries the threaded count; `escalated` / the body marker mean the loop
+      // already gave up — those units stay blocked (never auto-re-dispatched) until a human clears it.
+      const priorAttempts = Number(fm?.rework_attempts);
+      this.reworkAttempts.set(
+        handle,
+        Number.isFinite(priorAttempts) && priorAttempts > 0
+          ? Math.floor(priorAttempts)
+          : 0,
+      );
+      if (fm?.escalated === true || hasEscalationMarker(parsed?.body ?? ""))
+        this.escalatedSlices.add(handle);
       // Resume markers (SP-th4wqc_SL-3): a prior run that landed the units but couldn't commit
       // stamps `units_landed: true` without a `commit_sha`; `resumeDecision` then COMMITS rather
       // than re-authoring it on the next run. `committed`/`commit_sha` mark an already-landed slice.
@@ -334,6 +477,7 @@ export class OrchestratorService {
       results: [],
       advanced: [],
       attention: [],
+      escalated: [],
       needsInput: [],
       rolledBack: [],
       committed: false,
@@ -360,10 +504,17 @@ export class OrchestratorService {
       arr.push(u);
       unitsBySlice.set(u.slice, arr);
     }
+    // AC5: the per-slice failed-attempt counter, threaded onto the scheduler so `readyFrontier` drops
+    // every unit of a slice that has reached the rework bound. Cloned to a MUTABLE map (the readonly
+    // `state.attempts` view is the same object) so `blockSlice` can bump a slice's count live and the
+    // frontier sees the escalation take effect within the run, not only on the next reload.
+    const attemptsMap = new Map<string, number>(this.reworkAttempts);
     const state: SchedulerState = {
       done: new Set(),
       running: new Set(),
       blocked: new Set(),
+      attempts: attemptsMap,
+      attemptBound: this.deps.attemptBound,
     };
     // Slices already Done on the thinking space (or advanced by this run's closing gate) — the **commit
     // gate** is "every slice Done". `landed` (below) tracks slices whose units all landed THIS
@@ -378,6 +529,15 @@ export class OrchestratorService {
     for (const s of slices) {
       const st = s.status.toLowerCase();
       const ids = (unitsBySlice.get(s.handle) ?? []).map((u) => u.id);
+      if (this.escalatedSlices.has(s.handle)) {
+        // AC5: a slice the bounded loop already ESCALATED on a prior run stays requires-attention —
+        // never auto-re-dispatched. Block its units so it's absent from the ready frontier (which also
+        // drops it via `state.attempts` ≥ bound), leaving the human-cleared marker the only way back in.
+        ids.forEach((id) => state.blocked.add(id));
+        if (!result.escalated.includes(s.handle))
+          result.escalated.push(s.handle);
+        continue;
+      }
       const rs = this.sliceResumeState.get(s.handle) ?? {
         unitsLanded: false,
         committed: false,
@@ -434,6 +594,13 @@ export class OrchestratorService {
     const footprintsOf = new Map<string, string[]>(
       dag.map((u) => [u.id, u.footprint]),
     );
+    // AC4 (SP-2/TEP-6): the run's containment territory is the UNION of every dispatched unit's
+    // declared footprint — computed once for the whole run (static, deterministic). The post-tool
+    // whole-tree backstop in `runViaSdk` cannot attribute a shared-tree change to a unit, so it
+    // refuses ONLY a change outside this union. A sibling's in-footprint change is in the union
+    // whether that sibling is still running OR has already finished — which fixes the SP-6 failure
+    // where a FINISHED sibling's legitimate change was misattributed to a running unit and reverted.
+    const unionFootprint = [...new Set(dag.flatMap((u) => u.footprint))];
     const running = new Map<string, Promise<UnitDone>>();
     const parked = new Set<string>(); // dispatched but suspended awaiting an answer (off the cap)
     let wake: () => void = () => {};
@@ -445,7 +612,9 @@ export class OrchestratorService {
     // pulling the ready frontier (no new dispatch) — the loop only drains the in-flight units.
     const threshold = Math.max(
       1,
-      Math.floor(failThreshold ?? this.deps.failThreshold ?? DEFAULT_FAIL_THRESHOLD),
+      Math.floor(
+        failThreshold ?? this.deps.failThreshold ?? DEFAULT_FAIL_THRESHOLD,
+      ),
     );
     let failCount = 0;
     let halt = false;
@@ -474,19 +643,22 @@ export class OrchestratorService {
       for (const u of readyFrontier(dag, state)) {
         if (activeCount() >= limit) break;
         if (running.has(u.id)) continue;
+        // `state.running` (the live footprints of running units) still drives the scheduler's
+        // footprint-disjoint frontier selection in `readyFrontier`; the post-tool containment
+        // backstop no longer reads it — it screens against the run-level `unionFootprint` instead.
         u.footprint.forEach((f) => state.running.add(f));
         running.set(
           u.id,
-          // `state.running` is the live UNION of every running unit's footprint files (a
-          // unit's footprint is added on dispatch above, removed on completion below). Pass
-          // it as the running-footprints source so this unit's post-tool containment check
-          // never misattributes a concurrent sibling's in-footprint change as its own (AC4).
+          // AC4: thread the run-level UNION of every dispatched unit's footprint (computed once
+          // above). The post-tool whole-tree backstop refuses only a change OUTSIDE this union —
+          // a sibling's in-footprint change (running OR finished) is always in the union, so it is
+          // never misattributed to this unit and reverted (the SP-6 mutual-destruction fix).
           this.dispatchUnit(
             u,
             specNumber,
             worktreePath,
             onPark,
-            () => [...state.running],
+            unionFootprint,
           ),
         );
         result.dispatched++;
@@ -496,11 +668,38 @@ export class OrchestratorService {
       }
     };
 
+    // AC5: a slice is counted at most ONCE per run — a run is one rework attempt — so a second
+    // requires-attention path on the same slice (e.g. closing gate then finalization wedge) never
+    // double-bumps the bounded counter.
+    const countedThisRun = new Set<string>();
     const blockSlice = async (slice: string, diagnosis: string) => {
-      await this.flagAttention(slice, diagnosis);
+      if (countedThisRun.has(slice)) return;
+      countedThisRun.add(slice);
+      // Bounded re-dispatch (SP-6/6 AC5): this requires-attention is one failed acceptance/rework
+      // attempt. The PURE, no-LLM decision increments the per-slice counter and decides re-dispatch vs
+      // escalate. On escalate the slice stays requires-attention with the durable ESCALATION_MARKER and
+      // `readyFrontier` (now reading the bumped `attemptsMap`) stops auto-re-dispatching it — a human
+      // must decide. The counter is persisted to frontmatter so the loop carries across runs.
+      const verdict = reDispatchDecision(
+        attemptsMap.get(slice) ?? 0,
+        state.attemptBound,
+      );
+      attemptsMap.set(slice, verdict.attempts);
+      const escalate = verdict.action === "escalate";
+      await this.flagAttention(slice, diagnosis, {
+        attempts: verdict.attempts,
+        escalated: escalate,
+      });
       (unitsBySlice.get(slice) ?? []).forEach((u) => state.blocked.add(u.id));
       remaining.delete(slice);
       result.attention.push(slice);
+      if (escalate) {
+        this.escalatedSlices.add(slice);
+        if (!result.escalated.includes(slice)) result.escalated.push(slice);
+        output.appendLine(
+          `⛔ ${slice}: bounded rework attempts exhausted (${verdict.attempts}) → escalated, awaiting a human decision.`,
+        );
+      }
     };
 
     fill();
@@ -800,9 +999,51 @@ export class OrchestratorService {
       this.deps.runAcVerifications ??
       ((vs: AcVerification[], cwd: string) => runAcVerifications(vs, cwd))
     )(verifs, worktreePath);
+    // The full per-AC run lands on the auditable report regardless of who could
+    // have authored it — but the GRADE is derived only from the independently-authored
+    // subset below (so a self-tick still leaves an audit trail of why it didn't count).
     result.acResults = acResults;
-    const pass = new Map<number, boolean>(acResults.map((r) => [r.ac, r.pass]));
-    const allGreen = acResults.length > 0 && acResults.every((r) => r.pass);
+
+    // AC4 (SP-6/6): the grade derives ONLY from independently-authored evidence.
+    // Build the run-level set of worker-owned paths — every dispatched unit's
+    // footprint, with any held-out acceptance evidence stripped by `resolveFootprint`
+    // (it is never-in-footprint) — and DROP from the grade any verification whose
+    // `run` reaches into it. A worker-authored test can never tick an AC green: the
+    // dropped AC is treated as un-graded, so the slice that satisfies it falls into
+    // the `missing` path below and goes requires-attention, exactly as if no
+    // verification had run. There is no worker-facing path to mark its own AC green.
+    const workerOwned = new Set(
+      resolveFootprint(
+        [...unitsBySlice.values()].flat().flatMap((u) => u.footprint ?? []),
+      ).map(normalizeFilePath),
+    );
+    const verifByAc = new Map<number, AcVerification>(
+      verifs.map((v) => [v.ac, v]),
+    );
+    const graded = acResults.filter((r) => {
+      const v = verifByAc.get(r.ac);
+      const selfTick = v
+        ? verificationIsWorkerAuthored(v.run, workerOwned)
+        : false;
+      if (selfTick)
+        output.appendLine(
+          `⚑ SP-${specNumber}: AC #${r.ac} verification reaches worker-owned footprint — ` +
+            `self-tick excluded from the grade (independent evidence only).`,
+        );
+      else if (v && verificationIsWholeSuite(v.run))
+        // Kept in the grade (bootstrapping: Specs verified by `npm test` until ACs migrate to
+        // held-out probes), but flagged so a self-graded green is never silently read as an
+        // independent intent-check.
+        output.appendLine(
+          `⚠ SP-${specNumber}: AC #${r.ac} is graded by a whole-suite command (\`${v.run}\`) — ` +
+            `SELF-GRADED, not independent evidence (its green includes the worker's own tests). ` +
+            `Point this AC at a held-out acceptance probe for a trustworthy intent-check.`,
+        );
+      return !selfTick;
+    });
+
+    const pass = new Map<number, boolean>(graded.map((r) => [r.ac, r.pass]));
+    const allGreen = graded.length > 0 && graded.every((r) => r.pass);
 
     // Per slice: green iff every AC it satisfies ran green. A slice with no `satisfies` rides on the
     // whole-plan verdict (all declared checks green) — a legacy slice can't be stranded by having no
@@ -841,15 +1082,16 @@ export class OrchestratorService {
   }
 
   /** Claim the unit's footprint → run the worker (may park resident) → release. Resolves with its outcome.
-   *  `runningFootprints` reads the live UNION of every running unit's footprint (AC4) at check time; the
-   *  per-unit `baseline` (the paths already dirty when this unit started) is captured here, once, before
-   *  the worker runs — both fence the post-tool containment check from misattributing other units' work. */
+   *  `unionFootprint` is the run-level UNION of every dispatched unit's declared footprint (AC4) — the
+   *  post-tool whole-tree backstop refuses only a change outside it; the per-unit `baseline` (the paths
+   *  already dirty when this unit started) is captured here, once, before the worker runs, to exempt
+   *  pre-existing dirt outside the union from misattribution to this unit. */
   private async dispatchUnit(
     unit: SchedUnit,
     specNumber: string,
     worktreePath: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
   ): Promise<UnitDone> {
     const claim = await this.deps.arbiter.acquire(unit.id, unit.footprint);
     if (!claim.ok) {
@@ -873,7 +1115,7 @@ export class OrchestratorService {
         specNumber,
         worktreePath,
         onPark,
-        runningFootprints,
+        unionFootprint,
         baseline,
       );
       return {
@@ -900,19 +1142,12 @@ export class OrchestratorService {
     specNumber: string,
     cwd: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
     baseline?: string[],
   ): Promise<WorkerResult> {
     return this.deps.runUnit
       ? this.deps.runUnit(unit, specNumber, cwd, onPark)
-      : this.runViaSdk(
-          unit,
-          specNumber,
-          cwd,
-          onPark,
-          runningFootprints,
-          baseline,
-        );
+      : this.runViaSdk(unit, specNumber, cwd, onPark, unionFootprint, baseline);
   }
 
   /**
@@ -923,21 +1158,24 @@ export class OrchestratorService {
    * activation, and a load/run failure degrades to a non-success (→ requires-attention) rather than
    * crashing the host.
    *
-   * The **authority** over footprint is a post-tool working-tree check (SP-6/2 AC3): a `PostToolUse`
-   * hook runs after EVERY tool call (Bash included — `rm`/`mv`/`sed -i`/redirect carry no `file_path`
-   * the PreToolUse guard can pre-screen) and diffs the worktree against the unit's declared footprint.
-   * Any out-of-footprint create/modify/delete is **terminal**: we abort the `query()` (the SDK
-   * `AbortController`), revert ONLY the offending path(s) (`git restore`/`clean` — a sibling's
-   * in-progress work in the shared tree survives), and fail the unit with a diagnosis naming the path
-   * so its slice is flagged requires-attention. This is NOT a recoverable deny the worker can route
-   * around — it closes the stub-and-`rm` hole that the Edit/Write-only PreToolUse guard could not see.
+   * The **authority** over footprint is a post-tool working-tree check (SP-6/2 AC3 + SP-2/TEP-6 AC4):
+   * a `PostToolUse` hook runs after EVERY tool call (Bash included — `rm`/`mv`/`sed -i`/redirect carry
+   * no `file_path` the PreToolUse guard can pre-screen) and diffs the worktree against the **run-level
+   * union of every dispatched unit's footprint** (NOT this unit's alone — the whole-tree diff cannot
+   * attribute a change to a unit, so it refuses only a change outside ALL declared territory). Any
+   * change outside that union is **terminal**: we abort the `query()` (the SDK `AbortController`),
+   * revert ONLY the offending path(s) (`git restore`/`clean` — a sibling's work in the shared tree,
+   * running or finished, is in the union and survives), and fail the unit with a diagnosis naming the
+   * path so its slice is flagged requires-attention. This is NOT a recoverable deny the worker can
+   * route around — it closes the stub-and-`rm` hole that the Edit/Write-only PreToolUse guard could
+   * not see. Tight per-unit containment is the PreToolUse hook's job (it has the `file_path`).
    */
   private async runViaSdk(
     unit: SchedUnit,
     specNumber: string,
     cwd: string,
     onPark: OnPark,
-    runningFootprints?: () => string[],
+    unionFootprint?: string[],
     baseline?: string[],
   ): Promise<WorkerResult> {
     const prompt = buildWorkerPrompt(unit, specNumber, {
@@ -1027,16 +1265,15 @@ export class OrchestratorService {
                   async () => {
                     // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
                     if (containmentReason) return {};
-                    // AC4: pass the running-units footprint UNION (read live at check time) and this
-                    // unit's start baseline so a concurrent sibling's in-footprint change, or a change
-                    // already present before this unit started, is never misattributed here + reverted.
+                    // AC4: diff the whole tree against the run-level UNION of every dispatched unit's
+                    // footprint (NOT this unit's alone). The backstop cannot attribute a shared-tree
+                    // change to a unit, so a change is a violation only when it falls outside ALL
+                    // declared territory. A sibling's in-footprint change — running OR finished — is in
+                    // the union and exempt; `baseline` additionally exempts pre-existing dirt.
                     const verdict = await this.containmentCheck(
                       cwd,
-                      unit.footprint,
-                      {
-                        running: runningFootprints?.() ?? [],
-                        baseline: baseline ?? [],
-                      },
+                      unionFootprint ?? unit.footprint,
+                      { baseline: baseline ?? [] },
                     );
                     if (verdict.ok) return {};
                     containmentReason = verdict.reason;
@@ -1119,7 +1356,7 @@ export class OrchestratorService {
   private containmentCheck(
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ): Promise<ContainmentResult> {
     return (
       this.deps.containmentCheck ??
@@ -1128,23 +1365,34 @@ export class OrchestratorService {
   }
 
   /**
-   * Default containment check (SP-6/2 AC3): `git status --porcelain` in the worktree → the pure
-   * {@link footprintContainment} (which surfaces every create/modify/delete outside the footprint,
-   * Bash-made ones included) → on a violation, `git restore`/`clean` of ONLY the offending paths,
-   * so a sibling unit's in-progress work in the shared tree is never reverted. Best-effort at the
-   * git layer; returns the verdict the caller acts on (abort the query + fail requires-attention).
+   * Default containment check (SP-6/2 AC3 + SP-2/TEP-6 AC4): `git status --porcelain` in the worktree
+   * → the pure {@link footprintContainment} (which surfaces every create/modify/delete outside the
+   * given footprint, Bash-made ones included) → on a violation, `git restore`/`clean` of ONLY the
+   * offending paths, so a sibling unit's work in the shared tree is never reverted. Here `footprint`
+   * is the run-level UNION of every dispatched unit's footprint, so a change is a violation only when
+   * it lands outside ALL declared territory; the running-footprints exclusion is no longer passed.
+   * Best-effort at the git layer; returns the verdict the caller acts on (abort the query + fail
+   * requires-attention).
    */
   private async defaultContainmentCheck(
     cwd: string,
     footprint: string[],
-    ctx?: { running?: string[]; baseline?: string[] },
+    ctx?: { baseline?: string[] },
   ): Promise<ContainmentResult> {
-    const porcelain = await this.gitPorcelain(cwd);
-    // AC4: `running` (the running-units footprint union) and `baseline` (paths already dirty
-    // at this unit's start) exempt OTHER units' legitimate changes from this whole-tree diff,
-    // so the revert below only ever touches THIS unit's true out-of-footprint changes.
+    const porcelainRaw = await this.gitPorcelain(cwd);
+    // Atomic-write scaffolding (`<file>.tmp.<pid>.<hash>`) is a transient artifact of editing an
+    // in-footprint file — a post-tool diff can race it in the instant between the temp's create
+    // and its rename onto the target. It is never a real out-of-territory change, so drop those
+    // lines before the union check (else a perfectly legal in-footprint edit aborts on a fluke).
+    const porcelain = porcelainRaw
+      .split("\n")
+      .filter((line) => !/\.tmp\.\d+\.[0-9a-f]+$/.test(line))
+      .join("\n");
+    // AC4: `footprint` is the run-level UNION of declared footprints, so a sibling's in-footprint
+    // change (running OR finished) is in-bounds; `baseline` (paths already dirty at this unit's
+    // start) exempts pre-existing dirt outside the union. The revert below only ever touches a
+    // true out-of-union change.
     const verdict = footprintContainment(porcelain, footprint, {
-      running: ctx?.running,
       baseline: ctx?.baseline,
     });
     if (!verdict.ok)
@@ -1332,20 +1580,32 @@ export class OrchestratorService {
     );
   }
 
-  private flagAttention(handle: string, diagnosis: string): Promise<void> {
+  private flagAttention(
+    handle: string,
+    diagnosis: string,
+    escalation?: { attempts: number; escalated: boolean },
+  ): Promise<void> {
     return (
-      this.deps.flagAttention ?? ((h, d) => this.defaultFlagAttention(h, d))
-    )(handle, diagnosis);
+      this.deps.flagAttention ??
+      ((h, d, e) => this.defaultFlagAttention(h, d, e))
+    )(handle, diagnosis, escalation);
   }
 
   /**
    * Default requires-attention flag: stamp the slice `status: requires-attention` and append
    * the worker's failure diagnosis to its body, so the stalled card carries the reason a human
    * needs (AC4). `/attend` (SL-5) returns it to the loop.
+   *
+   * Bounded rework loop (SP-6/6 AC5): when `escalation` is supplied this also persists the threaded
+   * `rework_attempts` counter to the frontmatter (read back by `buildSlices` so the loop carries across
+   * runs), and on ESCALATION sets a durable `escalated: true` flag + appends the {@link ESCALATION_MARKER}
+   * to the body (idempotently, via the core's pure `markEscalated`) — the reload-surviving signal that the
+   * bounded loop gave up and `readyFrontier` must no longer auto-re-dispatch this slice.
    */
   private async defaultFlagAttention(
     handle: string,
     diagnosis: string,
+    escalation?: { attempts: number; escalated: boolean },
   ): Promise<void> {
     const m = /^TEP-(\d+)_SP-(\d+)_SL-(\d+)$/.exec(handle);
     if (!m) return;
@@ -1353,10 +1613,16 @@ export class OrchestratorService {
     const parsed = await this.deps.store.getFile(rel);
     if (!parsed?.frontmatter) return;
     const note = `\n\n## ⚑ Requires attention\n\n${diagnosis}\n`;
+    const bodyWithNote = (parsed.body ?? "") + note;
     await this.deps.store.writeFile(
       rel,
-      { ...parsed.frontmatter, status: "requires-attention" },
-      (parsed.body ?? "") + note,
+      {
+        ...parsed.frontmatter,
+        status: "requires-attention",
+        ...(escalation ? { rework_attempts: escalation.attempts } : {}),
+        ...(escalation?.escalated ? { escalated: true } : {}),
+      },
+      escalation?.escalated ? markEscalated(bodyWithNote) : bodyWithNote,
     );
   }
 

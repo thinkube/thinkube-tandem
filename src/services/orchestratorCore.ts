@@ -287,6 +287,19 @@ export interface SchedulerState {
   running: Set<string>;
   /** Unit ids that must not be dispatched (slice doing-elsewhere / requires-attention / archived). */
   blocked: Set<string>;
+  /**
+   * SP-6 AC5 — the per-SLICE re-dispatch counter: slice handle → number of failed rework attempts
+   * recorded for it. A slice whose count has reached {@link SchedulerState.attemptBound} is
+   * **escalated** ({@link isEscalated}) and {@link readyFrontier} drops every unit it owns, so the
+   * loop stops auto-re-queuing it toward green and a human must intervene. Omitted/absent ⇒ zero
+   * attempts ⇒ never escalated (the pre-SP-6 behaviour is unchanged when callers don't track it).
+   */
+  attempts?: ReadonlyMap<string, number>;
+  /**
+   * SP-6 AC5 — the per-slice rework bound; defaults to {@link MAX_REWORK_ATTEMPTS} when omitted.
+   * Once a slice's recorded attempts reach this bound it is escalated rather than re-dispatched.
+   */
+  attemptBound?: number;
 }
 
 /**
@@ -317,19 +330,29 @@ export function requiresSatisfied(
  * or unresolved `requires` is filtered out here and can NEVER reach the ordering / disjoint passes
  * (those only ever see units already past the gate), so it is absent from the frontier until every
  * producer it depends on is `done`.
+ *
+ * **Bounded re-dispatch (SP-6/6 AC5):** a unit whose parent SLICE has reached the rework bound is
+ * **escalated** and dropped from the frontier here — {@link isEscalated} consults `state.attempts`
+ * against `state.attemptBound` (default {@link MAX_REWORK_ATTEMPTS}), so once a slice has failed its
+ * bounded number of rework attempts it is no longer auto-re-dispatchable and is left awaiting a human
+ * decision (the shell carries the durable {@link ESCALATION_MARKER} on the requires-attention slice).
  */
 export function readyFrontier(
   units: SchedUnit[],
   state: SchedulerState,
 ): SchedUnit[] {
   const { done, running, blocked } = state;
+  const attempts = state.attempts;
+  const bound = state.attemptBound;
   const candidates = units.filter(
     (u) =>
       !done.has(u.id) &&
       !blocked.has(u.id) &&
       !u.footprint.some((f) => running.has(f)) &&
       // AC1: a consumer is dispatchable only once EVERY producer it `requires` has landed.
-      requiresSatisfied(u.requires, done),
+      requiresSatisfied(u.requires, done) &&
+      // AC5: a slice past its rework bound is escalated — never re-dispatched, awaits a human.
+      !isEscalated(attempts?.get(u.slice) ?? 0, bound),
   );
 
   // critical-path order: longest remaining chain of dependents first.
@@ -368,12 +391,185 @@ export function readyFrontier(
   return out;
 }
 
+// ── Bounded re-dispatch + escalation (SP-6/6 AC5) ──────────────────────────
+//
+// The failure→fix loop must not re-queue a slice toward green forever. After a bounded
+// number of failed rework attempts on the SAME slice the orchestrator stops re-dispatching
+// and escalates: the slice is left `requires-attention` with a durable escalation marker and
+// is excluded from the ready frontier, so a human must decide. The decision is pure /
+// deterministic (no LLM) — the bound and the escalate-vs-re-dispatch verdict are control-plane,
+// per the Spec's constraint that the loop bound must not use a model.
+
+/**
+ * Default per-slice bound on failed rework attempts before escalation (SP-6/6 AC5). Counts the
+ * number of failed acceptance runs recorded for a slice; once a slice reaches this many, the loop
+ * escalates instead of re-dispatching. Overridable per run via {@link SchedulerState.attemptBound}.
+ */
+export const MAX_REWORK_ATTEMPTS = 3;
+
+/**
+ * The durable marker the orchestrator stamps onto an **escalated** slice's `## ⚑ Requires attention`
+ * block (SP-6/6 AC5). It is the human-facing, reload-surviving signal that the bounded loop gave up
+ * on auto-re-dispatch: a slice carrying it is awaiting a human decision, not a re-queue. Detected by
+ * {@link hasEscalationMarker} and stamped by {@link markEscalated}; the test asserts via THIS constant
+ * (never a hand-copied string) so the marker and its detector can never silently diverge.
+ */
+export const ESCALATION_MARKER =
+  "⛔ ESCALATED — bounded rework attempts exhausted";
+
+/**
+ * Has a slice **crossed its rework bound** (SP-6/6 AC5)? True once the recorded failed-attempt count
+ * reaches the bound (default {@link MAX_REWORK_ATTEMPTS}) — at which point {@link readyFrontier} drops
+ * every unit the slice owns, so it is no longer auto-re-dispatchable. Fail-safe on junk input: a
+ * negative / non-finite count is treated as zero, a non-positive bound falls back to the default.
+ * Pure.
+ */
+export function isEscalated(
+  attempts: number,
+  bound: number = MAX_REWORK_ATTEMPTS,
+): boolean {
+  const n = Number.isFinite(attempts) ? Math.max(0, Math.floor(attempts)) : 0;
+  const b =
+    Number.isFinite(bound) && bound >= 1
+      ? Math.floor(bound)
+      : MAX_REWORK_ATTEMPTS;
+  return n >= b;
+}
+
+/** One verdict from {@link reDispatchDecision}: whether to send a red slice back for rework or stop. */
+export interface ReDispatchVerdict {
+  /** `re-dispatch` → bump the counter and return the slice to the ready frontier; `escalate` → leave
+   *  it `requires-attention` with the {@link ESCALATION_MARKER}, excluded from the frontier (AC5). */
+  action: "re-dispatch" | "escalate";
+  /** The slice's new failed-attempt count (prior + 1), to persist on `state.attempts`. */
+  attempts: number;
+}
+
+/**
+ * The pure, deterministic re-dispatch decision for a slice that just failed its (independently-graded)
+ * acceptance run (SP-6/6 AC5). Given the slice's PRIOR recorded failed-attempt count and the bound
+ * (default {@link MAX_REWORK_ATTEMPTS}), it increments the counter and decides: while the new count is
+ * below the bound the slice is **re-dispatched** for another bounded rework attempt; once it reaches
+ * the bound the loop **escalates** — the slice stays `requires-attention` (marked with
+ * {@link ESCALATION_MARKER}) and {@link readyFrontier} stops dispatching it. No model is consulted —
+ * the bound and the verdict are control-plane, the deterministic analog of "stop retrying after N."
+ */
+export function reDispatchDecision(
+  priorAttempts: number,
+  bound: number = MAX_REWORK_ATTEMPTS,
+): ReDispatchVerdict {
+  const prior = Number.isFinite(priorAttempts)
+    ? Math.max(0, Math.floor(priorAttempts))
+    : 0;
+  const attempts = prior + 1;
+  return {
+    action: isEscalated(attempts, bound) ? "escalate" : "re-dispatch",
+    attempts,
+  };
+}
+
+/**
+ * Does a slice body / diagnosis already carry the {@link ESCALATION_MARKER} (SP-6/6 AC5)? The shell
+ * reads this on a reloaded slice to know the bounded loop already gave up, so it never re-seeds the
+ * slice into the ready frontier. Pure.
+ */
+export function hasEscalationMarker(body: string): boolean {
+  return (body ?? "").includes(ESCALATION_MARKER);
+}
+
+/**
+ * Stamp the {@link ESCALATION_MARKER} onto a requires-attention diagnosis/body (SP-6/6 AC5), idempotently
+ * — a body that already carries the marker is returned unchanged, so a re-run can't accumulate duplicate
+ * markers. The marker is appended on its own line (the durable, human-facing signal that the bounded
+ * rework loop has been exhausted and a human decision is required). Pure.
+ */
+export function markEscalated(body: string): string {
+  const text = body ?? "";
+  if (hasEscalationMarker(text)) return text;
+  return text.trim()
+    ? `${text.replace(/\s+$/, "")}\n\n${ESCALATION_MARKER}`
+    : ESCALATION_MARKER;
+}
+
+/**
+ * Strip the `## Acceptance Criteria` block — the heading PLUS its body, up to the next heading of
+ * the same or higher level — from a Spec/slice markdown body (SP-6 AC1, "hold out the exam"). The
+ * worker builds to **intent** (summary / Design / its task) and never receives the gradeable
+ * criteria it would otherwise be tempted to optimise to. Pure + idempotent: a body with no AC block
+ * passes through unchanged. Heading + AC-title matching mirrors `checkAcOrdinals` so the exact
+ * section the grader later ticks is the section withheld here.
+ */
+export function stripAcceptanceCriteria(body: string): string {
+  const lines = (body ?? "").split(/\r?\n/);
+  const out: string[] = [];
+  let skipLevel: number | null = null; // the AC heading's level while we're dropping its block
+  for (const line of lines) {
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      // Inside the AC block: a heading of the same/higher level ends it; a deeper sub-heading
+      // belongs to the block and is dropped too.
+      if (skipLevel !== null) {
+        if (level <= skipLevel) skipLevel = null;
+        else continue;
+      }
+      const text = heading[2].trim().toLowerCase();
+      if (
+        skipLevel === null &&
+        (text === "acceptance criteria" || text === "acceptance_criteria")
+      ) {
+        skipLevel = level;
+        continue;
+      }
+    } else if (skipLevel !== null) {
+      continue; // body line inside the AC block — drop it.
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+/**
+ * Strip a `satisfies:` frontmatter key — and any YAML block-list items nested under it — from a
+ * slice/spec body (SP-6 AC1). The slice keeps `satisfies` orchestrator-internally for the grader;
+ * what's removed here is only the embedding the worker would read, so the implementer can't learn
+ * which AC ordinals it is graded against. Targets the structured key (`^…satisfies:`) ONLY — a
+ * prose mention of the word "satisfies" is never touched. Pure + idempotent.
+ */
+export function stripSatisfies(body: string): string {
+  const lines = (body ?? "").split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)satisfies\s*:(.*)$/i.exec(lines[i]);
+    if (m) {
+      const indent = m[1].length;
+      // Block-list form (`satisfies:` with an empty value) → also drop the deeper `- …` items.
+      if (m[2].trim() === "") {
+        while (i + 1 < lines.length) {
+          const next = lines[i + 1];
+          const ni = (/^(\s*)/.exec(next)?.[1] ?? "").length;
+          if (ni > indent && /^\s*-\s/.test(next)) i++;
+          else break;
+        }
+      }
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  return out.join("\n");
+}
+
 /**
  * Build the **autonomy-first prompt** for a worker dispatched on one execution unit
  * (SP-tgs8nz). Scoped to the unit's footprint + shape, it tells the worker to decide
  * autonomously (never seek confirmation), never touch git or the thinking space, and escalate
  * with a question ONLY when genuinely blocked — the posture that keeps headless
- * execution from stopping on routine approvals. Pure → unit-tested.
+ * execution from stopping on routine approvals.
+ *
+ * **Intent view, exam held out (SP-6 AC1):** the embedded spec/slice is the *intent* (summary,
+ * Design, the unit's task + footprint) with the `## Acceptance Criteria` block and any `satisfies`
+ * ordinals **stripped** ({@link stripAcceptanceCriteria} / {@link stripSatisfies}) — the worker
+ * builds to what "correct" means, never to the rubric it is graded on. Pure → unit-tested.
  */
 export function buildWorkerPrompt(
   unit: SchedUnit,
@@ -403,12 +599,19 @@ export function buildWorkerPrompt(
         : `This is a SERIAL unit — do its steps in order over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`;
   // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
   // spec + slice so it has full context inline rather than hunting the filesystem for a spec it
-  // cannot reach.
-  const specBlock = context?.specBody?.trim()
-    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${context.specBody.trim()}\n`
+  // cannot reach. SP-6 AC1: embed the INTENT VIEW only — strip the `## Acceptance Criteria` block and
+  // any `satisfies` ordinals so the worker builds to intent, never to the rubric it is graded on.
+  const intentSpec = stripSatisfies(
+    stripAcceptanceCriteria(context?.specBody ?? ""),
+  ).trim();
+  const intentSlice = stripSatisfies(
+    stripAcceptanceCriteria(context?.sliceBody ?? ""),
+  ).trim();
+  const specBlock = intentSpec
+    ? `\n──── PARENT SPEC (SP-${specNumber}) — INTENT ────\n${intentSpec}\n`
     : "";
-  const sliceBlock = context?.sliceBody?.trim()
-    ? `\n──── YOUR SLICE (${unit.slice}) ────\n${context.sliceBody.trim()}\n`
+  const sliceBlock = intentSlice
+    ? `\n──── YOUR SLICE (${unit.slice}) — INTENT ────\n${intentSlice}\n`
     : "";
   const hasCtx = specBlock || sliceBlock;
   return (
@@ -421,7 +624,7 @@ export function buildWorkerPrompt(
     consumesBlock +
     specBlock +
     sliceBlock +
-    `\nWork autonomously to the slice's acceptance criteria above. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
+    `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
     `Do NOT commit, run git, or move the thinking space card — the orchestrator owns git and the gate. ` +
     `Only if you hit a genuine decision you cannot make from the spec/slice/codebase, output a single final message that begins with ${NEEDS_INPUT_SENTINEL} followed by your question, then stop — never guess.`
   );
@@ -460,14 +663,93 @@ export function extractDiagnosis(body: string): string | undefined {
   return m?.[1]?.trim() || undefined;
 }
 
-/** The chat prompt priming an `/attend` session: the slice, its diagnosis, and the exit. */
-export function buildAttendPrompt(handle: string, diagnosis?: string): string {
-  const diag = diagnosis
-    ? `\n\nThe orchestrator's diagnosis:\n\n${diagnosis}`
+/**
+ * Strip the **failing-check specifics** from a rework-feedback string (SP-6 AC3) so the fixer is
+ * steered by *what behaviour diverged from the intent*, never by "make assertion X pass." It
+ * defensively removes the three channels the closing gate's evidence leaks through:
+ *
+ *   • the failing **AC ordinal** — `AC #3`, `AC 3`, a bare `#4`;
+ *   • the failing **run command** — a `$ <cmd> → exit N` / `$ …` shell line (the `acEvidence` shape);
+ *   • **its output** — fenced ``` /``~~~`` evidence blocks and `| … |` per-AC table rows (the
+ *     `DELIVERY.md` per-AC table), plus leftover `→ exit N` / `→ could not run …` result fragments.
+ *
+ * A clean, prose intent-divergence description (no `$`/fence/table/ordinal tokens) passes through
+ * essentially unchanged. Pure + idempotent. The rework-prompt builders route their feedback through
+ * this as belt-and-braces — on top of only ever being *handed* a divergence description rather than
+ * the AC results or the delivery report — so the omission holds even if a caller passes raw evidence.
+ */
+export function stripFailingCheck(text: string): string {
+  const lines = (text ?? "").split(/\r?\n/);
+  const kept: string[] = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence; // drop the fence delimiters AND the command output they wrap
+      continue;
+    }
+    if (inFence) continue;
+    if (/^\s*\$\s/.test(line)) continue; // a `$ <cmd> → exit N` shell command line
+    if (/^\s*\|/.test(line)) continue; // a `| AC | Verified by | … |` per-AC evidence table row
+    kept.push(line);
+  }
+  return kept
+    .join("\n")
+    .replace(/\bAC[\s_]*#?\s*\d+/gi, "") // "AC #3" / "AC 3" → drop the ordinal
+    .replace(/#\d+\b/g, "") // a bare `#4` ordinal
+    .replace(/→\s*(?:exit\s+-?\d+|could not run[^\n]*)/gi, "") // leftover run-result fragments
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * The chat prompt priming an `/attend` session (SP-6 AC3): the slice, an **intent-divergence**
+ * description of how the behaviour diverged from what was intended, and the return-to-Ready exit.
+ * The feedback is framed as a divergence (never "the failing check") and routed through
+ * {@link stripFailingCheck}, so the fixer never sees the failing AC ordinal, the failing `run`
+ * command, or its output and so cannot optimise "make assertion X pass." A no-`divergence` call
+ * still names the slice + the exit, with no dangling label. Pure.
+ */
+export function buildAttendPrompt(handle: string, divergence?: string): string {
+  const clean = stripFailingCheck(divergence ?? "");
+  const body = clean
+    ? `\n\nHow the behaviour diverged from the intent:\n\n${clean}`
     : "";
   return (
-    `Attend the requires-attention slice ${handle} in this worktree.${diag}` +
-    `\n\nResolve the problem, verify at slice grain, then move ${handle} back to Ready so the loop can pick it up.`
+    `Attend the requires-attention slice ${handle} in this worktree.${body}` +
+    `\n\nRe-read the slice's intent (goal / design / behaviour), bring the behaviour back in line ` +
+    `with it, verify at slice grain, then move ${handle} back to Ready so the loop can pick it up.`
+  );
+}
+
+/**
+ * The chat prompt priming a Spec-level Reject session (SP-6 AC3) — the spec-level analog of
+ * {@link buildAttendPrompt}, hosted here so the rework/divergence builders live in one pure place
+ * (reuse, don't fork). It embeds an **intent-divergence** description of how the Spec's behaviour
+ * diverged from its intent — NOT the `DELIVERY.md` per-AC table, its `run` commands, or their output
+ * — routed through {@link stripFailingCheck}, so the reworking worker is steered by the intent and
+ * never by the failing AC ordinal, the failing command, or its output. When the Spec lives on a
+ * cross-repo project thinking space, `projectThinkingSpaceId` is surfaced so every kanban call
+ * addresses it explicitly. Pure.
+ */
+export function buildRejectPrompt(
+  specId: string,
+  divergence?: string,
+  projectThinkingSpaceId?: string,
+): string {
+  const clean = stripFailingCheck(divergence ?? "");
+  const ctx = clean
+    ? `\n\nHow the Spec's behaviour diverged from the intent:\n\n${clean}`
+    : `\n\n(No divergence summary was supplied — re-read the Spec's intent and its slices to find what behaviour is off.)`;
+  // For a cross-repo project member the Spec lives on the project thinking space, NOT on this
+  // worktree's repo thinking space — so every kanban call must address it explicitly.
+  const thinkingSpaceNote = projectThinkingSpaceId
+    ? `\n\nIMPORTANT — this Spec lives on the project thinking space \`${projectThinkingSpaceId}\`, not on this worktree's repo. Pass \`thinking_space=${projectThinkingSpaceId}\` to EVERY kanban tool (get_thinkube_file / get_slice / list_thinking_space / move_slice / patch_spec_section / write_spec / create_slice). Your cwd's thinking space is the working repo where the code lives, which is NOT this Spec's thinking space.`
+    : "";
+  return (
+    `Rework the rejected Spec SP-${specId} in this worktree.${thinkingSpaceNote}${ctx}` +
+    `\n\nBring the behaviour back in line with the Spec's intent, re-verify at Spec grain, then re-orchestrate so SP-${specId} can reach Done.`
   );
 }
 

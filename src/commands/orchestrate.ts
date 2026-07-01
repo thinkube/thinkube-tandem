@@ -14,6 +14,7 @@ import * as path from "node:path";
 import {
   extractDiagnosis,
   buildAttendPrompt,
+  stripFailingCheck,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
@@ -532,7 +533,7 @@ function buildRejectPrompt(
   projectThinkingSpaceId?: string,
 ): string {
   const ctx = report
-    ? `\n\nThe orchestrator's delivery report (DELIVERY.md):\n\n${report}`
+    ? `\n\nThe orchestrator's delivery report (DELIVERY.md — the failing commands, their output, and the AC ordinals are stripped so the rework targets the intent, not the red check):\n\n${stripFailingCheck(report)}`
     : `\n\n(No delivery report was found — inspect the Spec and its slices to find what needs rework.)`;
   // For a cross-repo project member the Spec lives on the project thinking space, NOT on
   // this worktree's repo thinking space — so every kanban call must address it explicitly.
@@ -541,7 +542,7 @@ function buildRejectPrompt(
     : "";
   return (
     `Rework the rejected Spec SP-${specId} in this worktree.${thinkingSpaceNote}${ctx}` +
-    `\n\nAddress the failing acceptance criteria and any caught problems the report surfaces, re-verify at Spec grain, then re-orchestrate so SP-${specId} can reach Done.`
+    `\n\nRework so the Spec's intent holds — address the behaviours the report flags as diverging — then re-verify at Spec grain and re-orchestrate so SP-${specId} can reach Done.`
   );
 }
 

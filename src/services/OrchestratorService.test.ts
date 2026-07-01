@@ -16,13 +16,17 @@ import * as path from "node:path";
 
 import {
   OrchestratorService,
+  verificationIsWorkerAuthored,
   type OrchestratorDeps,
   type OnPark,
   type WorkerResult,
 } from "./OrchestratorService";
 import { answerParkedWorker } from "./orchestratorSessions";
 import type { SchedUnit } from "./orchestratorCore";
-import type { ContainmentResult } from "../methodology/parallelSlices";
+import {
+  resolveFootprint,
+  type ContainmentResult,
+} from "../methodology/parallelSlices";
 
 type RunUnit = NonNullable<OrchestratorDeps["runUnit"]>;
 
@@ -37,7 +41,7 @@ function svcRunViaSdk(
   specNumber: string,
   cwd: string,
   onPark: OnPark,
-  runningFootprints?: () => string[],
+  unionFootprint?: string[],
   baseline?: string[],
 ) => Promise<WorkerResult> {
   const svc = new OrchestratorService(deps) as unknown as {
@@ -46,12 +50,56 @@ function svcRunViaSdk(
       specNumber: string,
       cwd: string,
       onPark: OnPark,
-      runningFootprints?: () => string[],
+      unionFootprint?: string[],
       baseline?: string[],
     ) => Promise<WorkerResult>;
   };
-  return (unit, specNumber, cwd, onPark, runningFootprints, baseline) =>
-    svc.runViaSdk(unit, specNumber, cwd, onPark, runningFootprints, baseline);
+  return (unit, specNumber, cwd, onPark, unionFootprint, baseline) =>
+    svc.runViaSdk(unit, specNumber, cwd, onPark, unionFootprint, baseline);
+}
+
+/** Reach the orchestrator's private `loadPromptContext` + the `promptCtx` it populates — the
+ *  AC1 path under test (SP-6/6 "hold out the exam"). A focused cast onto the real instance, not a
+ *  reimplementation: the body (fetch the spec doc + each slice, reduce each to its intent view via
+ *  the core's `stripAcceptanceCriteria` / `stripSatisfies`) is the real production code. */
+function svcLoadPromptContext(deps: OrchestratorDeps): {
+  load: (specNumber: string) => Promise<void>;
+  ctx: () => { specBody: string; sliceBodies: Map<string, string> };
+} {
+  const svc = new OrchestratorService(deps) as unknown as {
+    loadPromptContext: (specNumber: string) => Promise<void>;
+    promptCtx: { specBody: string; sliceBodies: Map<string, string> };
+  };
+  return {
+    load: (specNumber) => svc.loadPromptContext(specNumber),
+    ctx: () => svc.promptCtx,
+  };
+}
+
+/** A store fake whose spec doc + slices carry REAL markdown bodies, so `loadPromptContext` is
+ *  exercised against actual content (the makeDeps store always returns an empty body). The spec
+ *  doc resolves at `SPEC_DOC`; each `slices` entry maps a `teps/.../SL-<n>.md` rel path to a body.
+ *  Everything else routes to the makeDeps defaults. */
+function makeBodyDeps(
+  specBody: string,
+  slices: Array<{ n: number; body: string }>,
+): OrchestratorDeps {
+  const deps = makeDeps({}).deps;
+  const sliceRel = (n: number) => `teps/TEP-1/SP-1/SL-${n}.md`;
+  const byRel = new Map(slices.map((s) => [sliceRel(s.n), s.body]));
+  deps.store = {
+    listSlices: async () => slices.map((s) => sliceRel(s.n)),
+    getFile: async (rel: string) =>
+      rel === SPEC_DOC
+        ? { frontmatter: {}, body: specBody, raw: specBody }
+        : { frontmatter: {}, body: byRel.get(rel) ?? "", raw: "" },
+    sliceHandle: (spec: string, n: number) => {
+      const [t, s] = spec.split("/");
+      return `TEP-${t}_SP-${s}_SL-${n}`;
+    },
+    pathForSpecDoc: () => SPEC_DOC,
+  } as unknown as OrchestratorDeps["store"];
+  return deps;
 }
 
 /** A runUnit that resolves to a fixed outcome (the default seam: success). */
@@ -581,6 +629,114 @@ test("dispatchSpec: a resident worker PARKS (frees its slot), then an external a
   assert.deepEqual(calls.needsInput, ["TEP-1_SP-1_SL-1"]); // flagged needs-input on park
 });
 
+// ── loadPromptContext supplies the INTENT view, not the raw AC block (SP-6/6 AC1) ──
+//
+// AC1: "When the orchestrator builds a worker's prompt for a slice, the prompt contains the
+// intent (goal / design / behavioural spec of what correct does) but NOT the Spec's
+// `## Acceptance Criteria` block nor the slice's `satisfies` ordinals — the implementer cannot
+// read the exam it is graded on." `loadPromptContext` is the source that fills `promptCtx`
+// (the spec/slice prose later embedded by `buildWorkerPrompt`). These tests drive the REAL
+// `loadPromptContext` against a store whose spec doc + slices carry real markdown bodies, then
+// assert what it stored: the intent (Summary / Design) survives, while the gradeable criteria
+// (the `## Acceptance Criteria` block + every `satisfies` embedding) is held out — at the source,
+// so `promptCtx.specBody` itself is already exam-free (defence in depth alongside the strip in
+// `buildWorkerPrompt`). The slice still keeps `satisfies` orchestrator-internally (frontmatter,
+// read in `buildSlices`) — what's withheld is only the PROSE the worker reads.
+
+const AC1_SPEC_BODY = [
+  "## Summary",
+  "",
+  "Build the dedupe gateway that drops repeated events before the sink.",
+  "",
+  "## Design",
+  "",
+  "The gateway hashes each event and consults a bounded LRU before forwarding.",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "- [ ] **The gateway drops exact duplicates.** A repeated event id must emit EXACTLY ONCE.",
+  "- [ ] **The LRU evicts oldest-first.** After 1024 entries the coldest key is purged.",
+  "",
+  "satisfies: [1, 2]",
+  "",
+  "## Constraints",
+  "",
+  "Stay deterministic — no clock, no randomness.",
+].join("\n");
+
+test("loadPromptContext: the spec INTENT view keeps Summary/Design but strips the `## Acceptance Criteria` block + `satisfies` (the worker never reads the exam)", async () => {
+  const h = svcLoadPromptContext(makeBodyDeps(AC1_SPEC_BODY, []));
+  await h.load("1/1");
+  const { specBody } = h.ctx();
+
+  // Intent survives — the worker must build correctly from this alone.
+  assert.match(specBody, /## Summary/);
+  assert.match(specBody, /dedupe gateway/);
+  assert.match(specBody, /## Design/);
+  assert.match(specBody, /bounded LRU/);
+  // …and the section AFTER the AC block survives (the strip ends at the next same-level heading,
+  // it does not swallow the rest of the document).
+  assert.match(specBody, /## Constraints/);
+  assert.match(specBody, /no randomness/);
+
+  // The gradeable criteria are HELD OUT — heading, each criterion title, and the leaked
+  // gradeable detail the implementer would otherwise optimise toward.
+  assert.doesNotMatch(specBody, /## Acceptance Criteria/);
+  assert.doesNotMatch(specBody, /drops exact duplicates/i);
+  assert.doesNotMatch(specBody, /EXACTLY ONCE/);
+  assert.doesNotMatch(specBody, /evicts oldest-first/i);
+  // …and the `satisfies` embedding (which AC ordinals it is graded against) is stripped too.
+  assert.doesNotMatch(specBody, /^\s*satisfies\s*:/im);
+});
+
+test("loadPromptContext: each slice body is reduced to its intent view (AC block + `satisfies` stripped), keyed by slice handle", async () => {
+  const sliceBody = [
+    "satisfies: [3]",
+    "",
+    "## Task",
+    "",
+    "Wire the LRU into the gateway's forward path.",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- [ ] **Forwarding is single-pass.** Each event hits the LRU AT MOST ONCE.",
+  ].join("\n");
+  const h = svcLoadPromptContext(
+    makeBodyDeps(AC1_SPEC_BODY, [{ n: 1, body: sliceBody }]),
+  );
+  await h.load("1/1");
+  const { sliceBodies } = h.ctx();
+
+  const intent = sliceBodies.get("TEP-1_SP-1_SL-1");
+  assert.ok(
+    intent !== undefined,
+    "the slice's intent view is stored under its handle",
+  );
+  // Intent (the unit's task) survives…
+  assert.match(intent!, /## Task/);
+  assert.match(intent!, /forward path/);
+  // …while the slice's own AC block + `satisfies` embedding are held out.
+  assert.doesNotMatch(intent!, /## Acceptance Criteria/);
+  assert.doesNotMatch(intent!, /single-pass/i);
+  assert.doesNotMatch(intent!, /AT MOST ONCE/);
+  assert.doesNotMatch(intent!, /^\s*satisfies\s*:/im);
+});
+
+test("loadPromptContext: a store read error is best-effort — promptCtx falls back to empty, never leaks a raw body", async () => {
+  const deps = makeBodyDeps(AC1_SPEC_BODY, []);
+  (deps.store as unknown as { getFile: () => Promise<never> }).getFile =
+    async () => {
+      throw new Error("thinking space unreachable");
+    };
+  const h = svcLoadPromptContext(deps);
+  await h.load("1/1");
+  const { specBody, sliceBodies } = h.ctx();
+  // No partial/raw spec body is exposed when the read fails — the worker just falls back to its
+  // unit note, never to an un-stripped (exam-bearing) body.
+  assert.equal(specBody, "");
+  assert.equal(sliceBodies.size, 0);
+});
+
 // ── Post-tool footprint containment hard-stop (SP-6/2 AC3) ─────────────────
 //
 // AC3: "When an execution unit's run leaves any create/modify/delete in the
@@ -712,9 +868,7 @@ test("runViaSdk: an out-of-footprint Bash create+delete after a tool call → ab
 
   // Footprint fences this unit to owned + the sibling's declared in-flight file.
   const unit = ac3Unit(["src/owned.ts", "src/sibling.ts"]);
-  const result = await (
-    svcRunViaSdk(deps)
-  )(unit, "1/1", repo, () => {});
+  const result = await svcRunViaSdk(deps)(unit, "1/1", repo, () => {});
 
   // (a) The live query was aborted the instant containment fired.
   assert.equal(
@@ -775,7 +929,8 @@ test("runViaSdk: a containment breach beats a raced `result: success` — the ru
         stdio: "pipe",
       });
       for (const grp of opts.hooks.PostToolUse ?? [])
-        for (const h of grp.hooks) await h({ tool_name: "Bash", tool_input: {} });
+        for (const h of grp.hooks)
+          await h({ tool_name: "Bash", tool_input: {} });
       // Deliberately IGNORE the abort signal and race a success in behind the breach.
       yield {
         type: "result",
@@ -881,37 +1036,44 @@ test("containmentCheck: an out-of-footprint Bash create + delete are detected an
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-// ── Cross-unit containment attribution (SP-2 / TEP-6 mechanism 4, AC4) ──────
+// ── Union-scoped containment backstop (SP-2 / TEP-6 mechanism 4, AC4) ───────
 //
 // The AC3 post-tool fence ran `footprintContainment` over a WHOLE-TREE
-// `git status --porcelain`, so it also saw every OTHER running unit's (and earlier
-// units') legitimate, in-their-own-footprint changes — misattributed them as THIS
-// unit's violation, aborted the unit, and reverted them. The real failure: two
-// disjoint-footprint units (orchestratorCore.ts and parallelSlices.ts) ran
-// concurrently, each flagged + reverted the other's file (mutual destruction).
+// `git status --porcelain` against THIS unit's footprint, with a *running*-sibling
+// exclusion to spare concurrent siblings. That exclusion missed a FINISHED sibling:
+// once a sibling left the running set, its legitimate, landed in-footprint change was
+// misattributed as THIS unit's violation, aborted the unit, and reverted it. The real
+// failure: eu-1 aborted and reverted eu-2's COMPLETED change once eu-2 left the
+// running set (the SP-6 concurrent-run mutual destruction).
 //
-// AC4: a unit is hard-stopped only for a change it left during its own run that is
-// outside its footprint AND outside every running unit's footprint AND not already
-// present before it started. These end-to-end tests drive the REAL `runViaSdk`
-// (only the SDK boundary faked, a real on-disk git repo — the AC3 pattern):
-//   (a) a concurrent sibling's in-footprint change present in the tree → NO abort;
+// AC4 (this unit): the backstop screens against the run-level UNION of every dispatched
+// unit's footprint — it cannot attribute a shared-tree change to a unit, so a change is
+// a violation only when it lands OUTSIDE all declared territory. A sibling's in-footprint
+// change is in the union whether that sibling is still running OR has already finished.
+// These end-to-end tests drive the REAL `runViaSdk` (only the SDK boundary faked, a real
+// on-disk git repo — the AC3 pattern):
+//   (a) a FINISHED sibling's in-union change present in the tree → NO abort, NO revert
+//       (the exact case the running-exclusion missed);
 //   (b) a change present BEFORE the unit started (baseline) → NO abort;
-//   (c) a write outside this unit's footprint AND all running footprints → STILL
-//       aborts + reverts only that path + terminal requires-attention.
+//   (c) a write outside the UNION of all declared footprints → STILL aborts + reverts
+//       only that path + terminal requires-attention.
 
-test("runViaSdk AC4: a concurrent sibling's in-footprint change in the shared tree does NOT abort this unit", async () => {
-  // The shared worktree holds this unit's file and a concurrent sibling's. The fake
-  // worker only edits its OWN footprint; the sibling's file is ALREADY changed in the
-  // tree (the sibling is running). `running` carries the sibling's footprint, so the
-  // whole-tree diff must NOT attribute the sibling's change to this unit.
+test("runViaSdk AC4: a FINISHED sibling's in-union change in the shared tree does NOT abort this unit (nor is it reverted)", async () => {
+  // The shared worktree holds this unit's file and a sibling's. The sibling has ALREADY
+  // FINISHED and landed its in-footprint change — it is NOT in any running set. This is the
+  // exact case the earlier *running*-sibling exclusion missed: once the sibling left the
+  // running set, its legitimate landed change was misattributed to this unit and reverted
+  // (eu-1 reverting eu-2's completed work). The run-level UNION of declared footprints
+  // includes the sibling's file regardless of whether it still runs, so the whole-tree
+  // backstop must NOT attribute the finished sibling's change to this unit.
   const repo = initGitRepo({
     "src/methodology/orchestratorCore.ts": "// core\n",
     "src/methodology/parallelSlices.ts": "// slices\n",
   });
-  // A concurrent sibling has already edited its in-footprint file in the shared tree.
+  // A FINISHED sibling's landed in-footprint change, present in the shared tree.
   fs.writeFileSync(
     path.join(repo, "src/methodology/parallelSlices.ts"),
-    "// slices — sibling in-progress\n",
+    "// slices — finished sibling's landed work\n",
   );
 
   const observed: { aborted?: boolean } = {};
@@ -929,8 +1091,9 @@ test("runViaSdk AC4: a concurrent sibling's in-footprint change in the shared tr
     "1/1",
     repo,
     () => {},
-    // The running-units footprint union includes the concurrent sibling's file.
-    () => [
+    // The run-level UNION of every dispatched unit's footprint — the FINISHED sibling's
+    // file is in it (no running set is consulted any more).
+    [
       "src/methodology/orchestratorCore.ts",
       "src/methodology/parallelSlices.ts",
     ],
@@ -938,28 +1101,42 @@ test("runViaSdk AC4: a concurrent sibling's in-footprint change in the shared tr
   );
 
   // No breach: the query was never aborted and the run succeeded.
-  assert.equal(observed.aborted, false, "the query was not aborted (no breach)");
-  assert.equal(result.outcome, "success", "a sibling's in-footprint change is not this unit's violation");
-  // The sibling's in-progress work in the shared tree was NEVER reverted.
   assert.equal(
-    fs.readFileSync(path.join(repo, "src/methodology/parallelSlices.ts"), "utf8"),
-    "// slices — sibling in-progress\n",
-    "a concurrent sibling's in-footprint change must never be reverted (no mutual destruction)",
+    observed.aborted,
+    false,
+    "the query was not aborted (no breach)",
+  );
+  assert.equal(
+    result.outcome,
+    "success",
+    "a finished sibling's in-union change is not this unit's violation",
+  );
+  // The finished sibling's landed work in the shared tree was NEVER reverted.
+  assert.equal(
+    fs.readFileSync(
+      path.join(repo, "src/methodology/parallelSlices.ts"),
+      "utf8",
+    ),
+    "// slices — finished sibling's landed work\n",
+    "a finished sibling's in-union change must never be reverted (the running-exclusion miss)",
   );
 
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
 test("runViaSdk AC4: a change present BEFORE the unit started (baseline) does NOT abort it", async () => {
-  // An earlier unit left src/earlier.ts dirty before this unit ran. It is in no
-  // running footprint now, but it predates this unit's run (baseline), so this unit
-  // must not be aborted for it nor have it reverted.
+  // An earlier unit left src/earlier.ts dirty before this unit ran. It is outside the
+  // run-level union now, but it predates this unit's run (baseline), so this unit must
+  // not be aborted for it nor have it reverted.
   const repo = initGitRepo({
     "src/owned.ts": "// owned\n",
     "src/earlier.ts": "// earlier original\n",
   });
   // An earlier unit's change, already present in the tree when this unit starts.
-  fs.writeFileSync(path.join(repo, "src/earlier.ts"), "// earlier — already changed\n");
+  fs.writeFileSync(
+    path.join(repo, "src/earlier.ts"),
+    "// earlier — already changed\n",
+  );
 
   const observed: { aborted?: boolean } = {};
   const deps = makeDeps({}).deps;
@@ -975,11 +1152,15 @@ test("runViaSdk AC4: a change present BEFORE the unit started (baseline) does NO
     "1/1",
     repo,
     () => {},
-    () => ["src/owned.ts"], // earlier.ts is in no running footprint
+    ["src/owned.ts"], // the run-level union (earlier.ts is in no footprint)
     ["src/earlier.ts"], // …but it WAS dirty at this unit's start (baseline)
   );
 
-  assert.equal(observed.aborted, false, "a baseline change does not abort the unit");
+  assert.equal(
+    observed.aborted,
+    false,
+    "a baseline change does not abort the unit",
+  );
   assert.equal(result.outcome, "success");
   // The pre-existing change is left untouched (never reverted as this unit's work).
   assert.equal(
@@ -991,17 +1172,21 @@ test("runViaSdk AC4: a change present BEFORE the unit started (baseline) does NO
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-test("runViaSdk AC4: a write outside this unit's footprint AND all running footprints STILL aborts + reverts only that path + requires-attention", async () => {
-  // The genuine breach still hard-stops: src/evil.ts is in no unit's footprint, no
-  // running footprint, and was not present at start. A concurrent sibling's edit and
-  // a baseline change are both present too — neither may be reverted, only the breach.
+test("runViaSdk AC4: a write outside the UNION of all declared footprints STILL aborts + reverts only that path + requires-attention", async () => {
+  // The genuine breach still hard-stops: src/evil.ts is in NO unit's footprint (outside the
+  // union) and was not present at start. A sibling's in-union change (its owner already
+  // finished) and a baseline change are both present too — neither may be reverted, only the
+  // breach.
   const repo = initGitRepo({
     "src/owned.ts": "// owned\n",
     "src/sibling.ts": "// sibling original\n",
     "src/earlier.ts": "// earlier original\n",
   });
   // A baseline change present before this unit starts.
-  fs.writeFileSync(path.join(repo, "src/earlier.ts"), "// earlier — pre-existing\n");
+  fs.writeFileSync(
+    path.join(repo, "src/earlier.ts"),
+    "// earlier — pre-existing\n",
+  );
 
   const observed: { aborted?: boolean } = {};
   const deps = makeDeps({}).deps;
@@ -1009,8 +1194,8 @@ test("runViaSdk AC4: a write outside this unit's footprint AND all running footp
     repo,
     [
       "printf '// owned — edited\\n' > src/owned.ts", // legit in-footprint
-      "printf '// sibling in-progress\\n' > src/sibling.ts", // a running sibling's in-footprint edit
-      "cat > src/evil.ts <<'E'\n// injected breach\nE", // the TRUE out-of-bounds breach
+      "printf '// sibling in-progress\\n' > src/sibling.ts", // a (finished) sibling's in-union edit
+      "cat > src/evil.ts <<'E'\n// injected breach\nE", // the TRUE out-of-union breach
     ],
     observed,
   );
@@ -1021,18 +1206,29 @@ test("runViaSdk AC4: a write outside this unit's footprint AND all running footp
     "1/1",
     repo,
     () => {},
-    () => ["src/owned.ts", "src/sibling.ts"], // running union (sibling included)
+    ["src/owned.ts", "src/sibling.ts"], // the run-level union (sibling's footprint included)
     ["src/earlier.ts"], // baseline
   );
 
   // The breach still hard-stops: aborted, terminal failure, naming ONLY the breach.
-  assert.equal(observed.aborted, true, "the genuine breach still aborts the query");
-  assert.equal(result.outcome, "failed", "a true out-of-bounds write is still terminal");
+  assert.equal(
+    observed.aborted,
+    true,
+    "the genuine breach still aborts the query",
+  );
+  assert.equal(
+    result.outcome,
+    "failed",
+    "a true out-of-bounds write is still terminal",
+  );
   assert.match(result.attention ?? "", /src\/evil\.ts/);
   assert.match(result.attention ?? "", /requires-attention/);
   assert.match(result.attention ?? "", /not a recoverable deny/i);
-  // It must NOT name the sibling's or baseline files (they are exempt, not violations).
-  assert.doesNotMatch(result.attention ?? "", /src\/sibling\.ts/);
+  // evil.ts is the ONLY change listed as a reverted violation. The sibling's file may appear
+  // in the declared-territory header (it is part of the union), but NEVER as a reverted
+  // violation bullet; the baseline file appears nowhere at all (both are exempt, not violations).
+  assert.match(result.attention ?? "", /•[^\n]*src\/evil\.ts/);
+  assert.doesNotMatch(result.attention ?? "", /•[^\n]*src\/sibling\.ts/);
   assert.doesNotMatch(result.attention ?? "", /src\/earlier\.ts/);
 
   // The revert is PATH-SCOPED to the breach only:
@@ -1041,11 +1237,11 @@ test("runViaSdk AC4: a write outside this unit's footprint AND all running footp
     false,
     "the true out-of-footprint create was reverted (git clean)",
   );
-  // …the sibling's in-footprint edit survives…
+  // …the sibling's in-union edit survives…
   assert.equal(
     fs.readFileSync(path.join(repo, "src/sibling.ts"), "utf8"),
     "// sibling in-progress\n",
-    "a concurrent sibling's in-footprint change survives the breach revert",
+    "a sibling's in-union change survives the breach revert",
   );
   // …and the baseline change survives.
   assert.equal(
@@ -1057,17 +1253,17 @@ test("runViaSdk AC4: a write outside this unit's footprint AND all running footp
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-test("runViaSdk AC4 (mirror): a unit on B is NOT aborted by a concurrent sibling's in-footprint change to A (the other direction)", async () => {
+test("runViaSdk AC4 (mirror): a unit on B is NOT aborted by a finished sibling's in-union change to A (the other direction)", async () => {
   // The MIRROR of the test above (which ran the unit on orchestratorCore.ts with
-  // parallelSlices.ts as the sibling). Here the unit owns parallelSlices.ts and the
-  // CONCURRENT sibling has already changed orchestratorCore.ts in the shared tree.
-  // Both directions of the original SP-6 mutual-destruction pair must be exempt — a
-  // regression that broke only one direction would otherwise slip the suite.
+  // parallelSlices.ts as the sibling). Here the unit owns parallelSlices.ts and a sibling
+  // that already FINISHED has changed orchestratorCore.ts in the shared tree. Both
+  // directions of the original SP-6 mutual-destruction pair must be exempt — a regression
+  // that broke only one direction would otherwise slip the suite.
   const repo = initGitRepo({
     "src/methodology/orchestratorCore.ts": "// core\n",
     "src/methodology/parallelSlices.ts": "// slices\n",
   });
-  // The concurrent sibling has already edited ITS in-footprint file (orchestratorCore.ts).
+  // The finished sibling has already edited ITS in-footprint file (orchestratorCore.ts).
   fs.writeFileSync(
     path.join(repo, "src/methodology/orchestratorCore.ts"),
     "// core — sibling in-progress\n",
@@ -1088,19 +1284,23 @@ test("runViaSdk AC4 (mirror): a unit on B is NOT aborted by a concurrent sibling
     "1/1",
     repo,
     () => {},
-    // The running-units footprint union includes the concurrent sibling's file (A).
-    () => [
+    // The run-level union includes the finished sibling's file (A).
+    [
       "src/methodology/orchestratorCore.ts",
       "src/methodology/parallelSlices.ts",
     ],
     [], // nothing dirty at this unit's start
   );
 
-  assert.equal(observed.aborted, false, "the query was not aborted (no breach)");
+  assert.equal(
+    observed.aborted,
+    false,
+    "the query was not aborted (no breach)",
+  );
   assert.equal(
     result.outcome,
     "success",
-    "a sibling's in-footprint change to A is not this unit's violation",
+    "a finished sibling's in-union change to A is not this unit's violation",
   );
   // The sibling's in-progress work on A in the shared tree was NEVER reverted.
   assert.equal(
@@ -1109,27 +1309,26 @@ test("runViaSdk AC4 (mirror): a unit on B is NOT aborted by a concurrent sibling
       "utf8",
     ),
     "// core — sibling in-progress\n",
-    "a concurrent sibling's change to A must never be reverted (mirror direction)",
+    "a finished sibling's in-union change to A must never be reverted (mirror direction)",
   );
 
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-// ── End-to-end: the scheduler ITSELF builds the running-footprints union ──────
+// ── End-to-end: the scheduler ITSELF builds the run-level footprint union ─────
 //
-// The unit-level AC4 tests above hand `runViaSdk` a written `runningFootprints`
-// closure, so they prove the check HONOURS the union but never that the SCHEDULER
-// assembles it. This test drives the REAL `dispatchSpec` with two concurrently-
-// dispatched, disjoint-footprint units (cap 2) and the REAL `runViaSdk` (no `runUnit`
-// seam) against a REAL on-disk git worktree, so `state.running` is built BY THE
-// SCHEDULER's add-on-dispatch / remove-on-completion of each unit's footprint. A
-// barrier holds both units in-flight until BOTH have written their in-footprint file,
-// so each unit's PostToolUse containment check runs while the OTHER's change is already
-// in the shared tree AND the other unit is still in `state.running` — the exact SP-6
+// The unit-level AC4 tests above hand `runViaSdk` a written `unionFootprint`, so they
+// prove the check HONOURS the union but never that the SCHEDULER assembles it. This test
+// drives the REAL `dispatchSpec` with two concurrently-dispatched, disjoint-footprint
+// units (cap 2) and the REAL `runViaSdk` (no `runUnit` seam) against a REAL on-disk git
+// worktree, so the run-level UNION of every dispatched unit's footprint is built BY THE
+// SCHEDULER and threaded into each worker. A barrier holds both units in-flight until
+// BOTH have written their in-footprint file, so each unit's PostToolUse containment check
+// runs while the OTHER's change is already in the shared tree — the exact SP-6
 // mutual-destruction shape. Both must land success; neither may be aborted or have its
 // file reverted. This is the test that would have caught the original bug: break the
-// scheduler's `state.running` add/remove and it FAILS (the units revert each other).
-test("dispatchSpec AC4 (end-to-end): two concurrent disjoint units — the SCHEDULER builds state.running so NEITHER reverts the other (no mutual destruction)", async () => {
+// scheduler's union computation and it FAILS (the units revert each other).
+test("dispatchSpec AC4 (end-to-end): two concurrent disjoint units — the SCHEDULER builds the footprint union so NEITHER reverts the other (no mutual destruction)", async () => {
   const A = "src/methodology/orchestratorCore.ts";
   const B = "src/methodology/parallelSlices.ts";
   // The shared spec worktree, a real git repo seeding both units' files.
@@ -1186,9 +1385,8 @@ test("dispatchSpec AC4 (end-to-end): two concurrent disjoint units — the SCHED
       // Read the first user message to learn which unit this is (its id + footprint).
       let promptText = "";
       for await (const m of prompt as AsyncIterable<unknown>) {
-        const content = (
-          m as { message?: { content?: unknown } }
-        )?.message?.content;
+        const content = (m as { message?: { content?: unknown } })?.message
+          ?.content;
         if (typeof content === "string") promptText = content;
         break; // only the task message is needed to route
       }
@@ -1290,7 +1488,8 @@ test("dispatchSpec AC5: a footprint VIOLATION halts the run on the FIRST one —
         return unit.slice === "TEP-1_SP-1_SL-2"
           ? {
               outcome: "failed" as const,
-              attention: "out-of-footprint write to src/evil.ts — not a recoverable deny",
+              attention:
+                "out-of-footprint write to src/evil.ts — not a recoverable deny",
               containment: true,
             }
           : { outcome: "success" as const };
@@ -1302,23 +1501,41 @@ test("dispatchSpec AC5: a footprint VIOLATION halts the run on the FIRST one —
   const r = await new OrchestratorService(deps).dispatchSpec("1/1", 1);
 
   // Exactly one unit dispatched (the violating SL-2); SL-3 stayed ready (never run).
-  assert.equal(r.dispatched, 1, "only the violating unit dispatched — the run halted before SL-3");
-  assert.deepEqual(seen, ["TEP-1_SP-1_SL-2"], "no later unit ran after the violation");
+  assert.equal(
+    r.dispatched,
+    1,
+    "only the violating unit dispatched — the run halted before SL-3",
+  );
+  assert.deepEqual(
+    seen,
+    ["TEP-1_SP-1_SL-2"],
+    "no later unit ran after the violation",
+  );
   assert.deepEqual(
     r.results.map((x) => x.outcome),
     ["failed"],
     "the one dispatched unit failed (a footprint violation)",
   );
-  assert.deepEqual(r.attention, ["TEP-1_SP-1_SL-2"], "the breaching slice → requires-attention");
+  assert.deepEqual(
+    r.attention,
+    ["TEP-1_SP-1_SL-2"],
+    "the breaching slice → requires-attention",
+  );
   // SL-1 was already Done before the run — it is untouched (never re-dispatched, never advanced).
-  assert.ok(!seen.includes("TEP-1_SP-1_SL-1"), "the already-Done unit was not re-dispatched");
+  assert.ok(
+    !seen.includes("TEP-1_SP-1_SL-1"),
+    "the already-Done unit was not re-dispatched",
+  );
   assert.ok(
     !calls.advanced.includes("TEP-1_SP-1_SL-1"),
     "the already-Done slice is left untouched",
   );
   assert.equal(r.committed, false, "a halted run does not commit the Spec");
   // The report is STILL written (durable work / audit trail preserved on a halt).
-  assert.ok(r.deliveryDoc, "the delivery report is written even on a halted run");
+  assert.ok(
+    r.deliveryDoc,
+    "the delivery report is written even on a halted run",
+  );
 });
 
 test("dispatchSpec AC5: N ordinary failures halt the run (N=2 via override) — the (N+1)th ready unit never dispatches", async () => {
@@ -1342,14 +1559,22 @@ test("dispatchSpec AC5: N ordinary failures halt the run (N=2 via override) — 
   // Override N=2 via the dispatchSpec failThreshold arg.
   const r = await new OrchestratorService(deps).dispatchSpec("1/1", 1, 2);
 
-  assert.equal(r.dispatched, 2, "exactly N=2 units dispatched — the 3rd never ran");
+  assert.equal(
+    r.dispatched,
+    2,
+    "exactly N=2 units dispatched — the 3rd never ran",
+  );
   assert.equal(seen.length, 2, "the (N+1)th ready unit was never dispatched");
   assert.deepEqual(
     r.results.map((x) => x.outcome),
     ["failed", "failed"],
     "both dispatched units failed",
   );
-  assert.equal(r.attention.length, 2, "both failures flagged requires-attention");
+  assert.equal(
+    r.attention.length,
+    2,
+    "both failures flagged requires-attention",
+  );
   assert.equal(r.committed, false);
 });
 
@@ -1361,8 +1586,16 @@ test("dispatchSpec AC5: a SINGLE ordinary failure with N=3 does NOT halt — a h
   const seen: string[] = [];
   const { deps } = makeDeps(
     {
-      "teps/TEP-1/SP-1/SL-1.md": { status: "ready", files: ["src/a.ts"], satisfies: [1] },
-      "teps/TEP-1/SP-1/SL-2.md": { status: "ready", files: ["src/b.ts"], satisfies: [2] },
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        files: ["src/a.ts"],
+        satisfies: [1],
+      },
+      "teps/TEP-1/SP-1/SL-2.md": {
+        status: "ready",
+        files: ["src/b.ts"],
+        satisfies: [2],
+      },
     },
     {
       run: async (unit) => {
@@ -1377,15 +1610,30 @@ test("dispatchSpec AC5: a SINGLE ordinary failure with N=3 does NOT halt — a h
   // Threshold N=3 (one failure is below it) → no halt.
   const r = await new OrchestratorService(deps).dispatchSpec("1/1", 1, 3);
 
-  assert.equal(r.dispatched, 2, "both units dispatched — one failure below N=3 does not halt");
-  assert.equal(seen.length, 2, "the healthy sibling still ran despite the single failure");
-  assert.ok(seen.includes("TEP-1_SP-1_SL-2"), "the healthy sibling was dispatched (not halted)");
+  assert.equal(
+    r.dispatched,
+    2,
+    "both units dispatched — one failure below N=3 does not halt",
+  );
+  assert.equal(
+    seen.length,
+    2,
+    "the healthy sibling still ran despite the single failure",
+  );
+  assert.ok(
+    seen.includes("TEP-1_SP-1_SL-2"),
+    "the healthy sibling was dispatched (not halted)",
+  );
   assert.deepEqual(
     r.results.map((x) => x.outcome).sort(),
     ["failed", "success"],
     "the sibling landed success while the other failed — per-unit isolation preserved",
   );
-  assert.deepEqual(r.attention, ["TEP-1_SP-1_SL-1"], "only the failed slice → requires-attention");
+  assert.deepEqual(
+    r.attention,
+    ["TEP-1_SP-1_SL-1"],
+    "only the failed slice → requires-attention",
+  );
 });
 
 // ── AC5 durability: the REAL containment-threading drives the halt (not a hand-set flag) ──
@@ -1427,7 +1675,7 @@ test("dispatchSpec AC5 (end-to-end): a REAL runViaSdk footprint breach sets cont
       "1/1",
       repo,
       () => {},
-      () => [],
+      ["src/owned.ts"], // the run-level union (evil.ts / gone.ts are outside it → a breach)
       [],
     );
     assert.equal(probeResult.outcome, "failed", "a real breach fails the unit");
@@ -1452,14 +1700,22 @@ test("dispatchSpec AC5 (end-to-end): a REAL runViaSdk footprint breach sets cont
       status: "ready",
       satisfies: [1],
       work_units: [
-        { footprint: ["src/owned.ts"], execution: "fan-out", note: "the breacher" },
+        {
+          footprint: ["src/owned.ts"],
+          execution: "fan-out",
+          note: "the breacher",
+        },
       ],
     },
     "teps/TEP-1/SP-1/SL-2.md": {
       status: "ready",
       satisfies: [2],
       work_units: [
-        { footprint: ["src/healthy.ts"], execution: "fan-out", note: "healthy sibling" },
+        {
+          footprint: ["src/healthy.ts"],
+          execution: "fan-out",
+          note: "healthy sibling",
+        },
       ],
     },
   });
@@ -1481,13 +1737,17 @@ test("dispatchSpec AC5 (end-to-end): a REAL runViaSdk footprint breach sets cont
     async function* gen(): AsyncGenerator<unknown> {
       let promptText = "";
       for await (const m of prompt as AsyncIterable<unknown>) {
-        const content = (m as { message?: { content?: unknown } })?.message?.content;
+        const content = (m as { message?: { content?: unknown } })?.message
+          ?.content;
         if (typeof content === "string") promptText = content;
         break;
       }
       const isBreacher = promptText.includes("src/owned.ts");
       seen.push(isBreacher ? "SL-1" : "SL-2");
-      yield { type: "assistant", session_id: isBreacher ? "e2e-breach" : "e2e-ok" };
+      yield {
+        type: "assistant",
+        session_id: isBreacher ? "e2e-breach" : "e2e-ok",
+      };
       if (isBreacher) {
         // A genuine out-of-footprint create — real working-tree change the real check catches.
         execFileSync("sh", ["-c", "printf '// evil\\n' > src/evil.ts"], {
@@ -1501,7 +1761,8 @@ test("dispatchSpec AC5 (end-to-end): a REAL runViaSdk footprint breach sets cont
         });
       }
       for (const grp of opts.hooks.PostToolUse ?? [])
-        for (const h of grp.hooks) await h({ tool_name: "Bash", tool_input: {} });
+        for (const h of grp.hooks)
+          await h({ tool_name: "Bash", tool_input: {} });
       if (opts.abortController.signal.aborted) return; // the breach aborted us
       yield {
         type: "result",
@@ -1518,19 +1779,320 @@ test("dispatchSpec AC5 (end-to-end): a REAL runViaSdk footprint breach sets cont
 
   // The run halted on the FIRST (and only) violation: exactly one unit dispatched, SL-2 never ran.
   // This is ONLY reachable if containment:true threaded runViaSdk → dispatchUnit → the loop.
-  assert.equal(r.dispatched, 1, "only the breaching unit dispatched — the run halted before SL-2");
-  assert.deepEqual(seen, ["SL-1"], "no unit ran after the real footprint violation");
+  assert.equal(
+    r.dispatched,
+    1,
+    "only the breaching unit dispatched — the run halted before SL-2",
+  );
+  assert.deepEqual(
+    seen,
+    ["SL-1"],
+    "no unit ran after the real footprint violation",
+  );
   assert.deepEqual(
     r.results.map((x) => x.outcome),
     ["failed"],
     "the one dispatched unit failed (a footprint violation)",
   );
-  assert.deepEqual(r.attention, ["TEP-1_SP-1_SL-1"], "the breaching slice → requires-attention");
+  assert.deepEqual(
+    r.attention,
+    ["TEP-1_SP-1_SL-1"],
+    "the breaching slice → requires-attention",
+  );
   assert.equal(r.committed, false, "a halted run does not commit");
   // The report is STILL written on a halt (the audit trail the human re-orchestrating needs).
-  assert.ok(r.deliveryDoc, "the delivery report is written even on a halted run");
+  assert.ok(
+    r.deliveryDoc,
+    "the delivery report is written even on a halted run",
+  );
   // Only the breacher was ever claimed — SL-2's worker never started.
-  assert.deepEqual(calls.acquired, ["TEP-1_SP-1_SL-1#eu-0"], "SL-2's worker was never dispatched");
+  assert.deepEqual(
+    calls.acquired,
+    ["TEP-1_SP-1_SL-1#eu-0"],
+    "SL-2's worker was never dispatched",
+  );
 
   fs.rmSync(repo, { recursive: true, force: true });
+});
+
+// ── Held-out acceptance evidence: untouchable grader + independent grade (SP-6/6 AC2 + AC4) ──
+//
+// AC2: "The implementer cannot author or alter the grading evidence. The acceptance probes the
+// closing gate runs resolve to paths OUTSIDE every unit's declared footprint, and a worker
+// attempt to create/modify/delete an acceptance-evidence file is refused/hard-stopped (via SP-2's
+// fence) — the unit goes requires-attention rather than producing a green it authored."
+//
+// AC4: "The independent grader closes the loop; the worker cannot. The pass/fail that advances a
+// slice toward Done is produced by re-running the independently-authored acceptance evidence;
+// there is no path by which the implementing or fixing worker marks its own ACs green (no
+// self-tick, no worker-authored test counts as the grade)."
+//
+// The evidence convention (`acceptance/` path segment → never-in-footprint, via
+// `parallelSlices.resolveFootprint`) and the self-tick predicate
+// (`OrchestratorService.verificationIsWorkerAuthored`) are the seams this unit reuses — it does
+// NOT re-invent the rule, it drives the real wiring:
+//   • AC2 rides the SAME real `runViaSdk` → PostToolUse → `footprintContainment` → path-scoped
+//     revert → terminal requires-attention machinery the AC3/AC4 (SP-2) tests above exercise,
+//     but with the breach pointed at a held-out `acceptance/` path — which is a violation EVEN
+//     when the unit declared it (the resolver strips it from every exemption set);
+//   • AC4 drives the REAL closing gate in `dispatchSpec`: a verification whose `run` reaches a
+//     dispatched unit's own footprint is a self-tick that is DROPPED from the grade (the AC falls
+//     un-graded → the slice goes requires-attention, never advanced/committed/checked), while a
+//     verification that runs only the out-of-footprint acceptance evidence grades the slice green.
+
+test("runViaSdk AC2: a worker write to a held-out acceptance-evidence path hard-stops → abort + PATH-SCOPED revert + TERMINAL requires-attention naming it (the implementer cannot author the grader)", async () => {
+  // The shared worktree holds this unit's owned file plus the held-out acceptance evidence the
+  // independent grader runs. The worker tries to TAMPER with the grader (rewrite it so its own AC
+  // goes green) — the deterministic analog of "the student edits the answer key."
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "tests/acceptance/SP-6.test.ts":
+      "// the held-out grader — only the independent verifier may author this\n",
+  });
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  // A Bash MODIFY of the tracked acceptance file (no `file_path` for the PreToolUse guard to
+  // pre-screen — the stub-and-edit hole the post-tool containment closes).
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    ["printf '// tampered so my AC passes\\n' > tests/acceptance/SP-6.test.ts"],
+    observed,
+  );
+
+  // The unit is fenced to its own file; the acceptance path is in NO footprint.
+  const unit = ac3Unit(["src/owned.ts"]);
+  const result = await svcRunViaSdk(deps)(
+    unit,
+    "1/1",
+    repo,
+    () => {},
+    ["src/owned.ts"], // the run-level union — the acceptance evidence is outside it
+    [],
+  );
+
+  // The live query was aborted the instant containment fired (SP-2 fence).
+  assert.equal(
+    observed.aborted,
+    true,
+    "a write to the held-out acceptance evidence aborts the worker",
+  );
+  // TERMINAL requires-attention NAMING the acceptance path — never a recoverable deny.
+  assert.equal(
+    result.outcome,
+    "failed",
+    "tampering with the grader is a terminal containment breach",
+  );
+  assert.match(result.attention ?? "", /tests\/acceptance\/SP-6\.test\.ts/);
+  assert.match(result.attention ?? "", /requires-attention/);
+  assert.match(result.attention ?? "", /not a recoverable deny/i);
+  // The tamper was reverted (restored to HEAD): the independent grader is left intact, never
+  // a green the worker authored.
+  assert.equal(
+    fs.readFileSync(path.join(repo, "tests/acceptance/SP-6.test.ts"), "utf8"),
+    "// the held-out grader — only the independent verifier may author this\n",
+    "the held-out grader is restored — the worker's tamper never lands",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("runViaSdk AC2: even when a unit DECLARES the acceptance-evidence path in its footprint, a write there STILL hard-stops (the resolver makes it never-in-footprint — no claiming the grader)", async () => {
+  // The strongest form of AC2: a worker that brazenly LISTS the acceptance evidence in its own
+  // footprint still cannot author it. `resolveFootprint` strips the held-out path from owned, the
+  // running-union, AND baseline, so the create is a violation regardless of what the unit declared.
+  // `tests/acceptance/` is already tracked (a held-out grader lives there) so git reports the NEW
+  // file by its full path — otherwise git collapses a brand-new untracked dir to `tests/` and the
+  // breach would be caught generically rather than specifically via the resolver strip.
+  const repo = initGitRepo({
+    "src/owned.ts": "// owned\n",
+    "tests/acceptance/keep.test.ts": "// an existing held-out grader\n",
+  });
+
+  const observed: { aborted?: boolean } = {};
+  const deps = makeDeps({}).deps;
+  // A Bash CREATE of an acceptance-evidence file (untracked, `??`) the unit "owns" on paper.
+  deps.sdkQuery = fakeSdkQueryRunningBashThen(
+    repo,
+    [
+      "cat > tests/acceptance/sneak.test.ts <<'E'\n// a grader I wrote for myself\nE",
+    ],
+    observed,
+  );
+
+  // The unit DECLARES both its real file AND the acceptance path — the resolver must strip the
+  // latter from every exemption set (owned + union) so the write is still a breach.
+  const unit = ac3Unit(["src/owned.ts", "tests/acceptance/sneak.test.ts"]);
+  const result = await svcRunViaSdk(deps)(
+    unit,
+    "1/1",
+    repo,
+    () => {},
+    ["src/owned.ts", "tests/acceptance/sneak.test.ts"], // declared in the union too — still stripped
+    [],
+  );
+
+  assert.equal(
+    observed.aborted,
+    true,
+    "a declared acceptance-evidence write is still a breach (never-in-footprint)",
+  );
+  assert.equal(result.outcome, "failed");
+  assert.match(result.attention ?? "", /tests\/acceptance\/sneak\.test\.ts/);
+  assert.match(result.attention ?? "", /requires-attention/);
+  // The self-authored grader was cleaned away — it never lands as evidence.
+  assert.equal(
+    fs.existsSync(path.join(repo, "tests/acceptance/sneak.test.ts")),
+    false,
+    "a worker-authored grader is reverted — declaring it in footprint does not let it land",
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("dispatchSpec AC4: a worker-authored verification (its `run` reaches the unit's OWN footprint) is EXCLUDED from the grade — the AC is un-graded → requires-attention, never advanced/committed/checked (no self-tick)", async () => {
+  // SL-1's worker owns (and authored) `src/feature.test.ts`. The Spec declares AC#1's verification
+  // as running THAT test (the compiled `out-test/feature.test.js`). Even though the runner reports
+  // it green, it is the worker's OWN evidence — it must NOT count as the grade. With AC#1 dropped,
+  // the slice falls un-graded and goes requires-attention; nothing advances or commits.
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        files: ["src/feature.test.ts"], // the worker owns the test it would be graded on
+        satisfies: [1],
+      },
+    },
+    {
+      verifs: { "1": { run: "node --test out-test/feature.test.js" } },
+      acPass: { 1: true }, // the worker-authored test "passes" — it must STILL not count
+    },
+  );
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  // The unit landed (the worker succeeded) — the gate ran, so this is about the GRADE, not a crash.
+  assert.deepEqual(
+    r.results.map((x) => x.outcome),
+    ["success"],
+    "the unit landed — the gate ran",
+  );
+  // No self-tick path: the slice cannot advance off its own evidence.
+  assert.deepEqual(
+    r.advanced,
+    [],
+    "a self-ticked AC can never advance the slice",
+  );
+  assert.deepEqual(
+    r.attention,
+    ["TEP-1_SP-1_SL-1"],
+    "the AC is un-graded (self-tick dropped) → requires-attention",
+  );
+  assert.equal(r.committed, false, "no commit on a self-ticked grade");
+  assert.deepEqual(
+    calls.checked,
+    [],
+    "the AC ordinal is NEVER checked off the worker's own evidence",
+  );
+  // The full per-AC run still lands on the auditable result (the human sees WHY it didn't count)…
+  assert.deepEqual(
+    r.acResults.map((x) => [x.ac, x.pass] as [number, boolean]),
+    [[1, true]],
+    "the self-tick still appears in the audit trail (run, but not graded)",
+  );
+  // …but the grade excluded it, and that exclusion is logged.
+  assert.ok(
+    calls.log.some((l) => /self-tick/i.test(l)),
+    "the self-tick exclusion from the grade is logged",
+  );
+});
+
+test("dispatchSpec AC4: an INDEPENDENT verification (its `run` reaches only out-of-footprint acceptance evidence) grades — the slice advances, its ordinal is checked, the Spec commits", async () => {
+  // SL-1's worker owns the IMPLEMENTATION (`src/feature.ts`) only. AC#1 is proven by held-out
+  // acceptance evidence under `acceptance/` — never-in-footprint, so it is independent of the
+  // implementer. The independent green is the ONLY thing that ticks the ordinal and advances Done.
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        files: ["src/feature.ts"], // the worker owns only the implementation
+        satisfies: [1],
+      },
+    },
+    {
+      verifs: { "1": { run: "node --test out-test/acceptance/sp6.test.js" } },
+      acPass: { 1: true },
+    },
+  );
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  assert.deepEqual(
+    r.advanced,
+    ["TEP-1_SP-1_SL-1"],
+    "an independently-graded green advances the slice",
+  );
+  assert.deepEqual(
+    calls.checked,
+    [1],
+    "the ordinal is checked off the INDEPENDENT evidence (the grader closed the loop)",
+  );
+  assert.equal(
+    r.committed,
+    true,
+    "the Spec commits on an independently-graded green",
+  );
+  assert.deepEqual(
+    r.attention,
+    [],
+    "nothing requires-attention — the independent grade passed",
+  );
+});
+
+test("verificationIsWorkerAuthored: a run reaching worker-owned footprint is a self-tick; a run reaching only (stripped) acceptance evidence is independent — empty footprint never self-ticks", () => {
+  // Build `workerOwned` exactly as the closing gate does: the union of dispatched footprints with
+  // held-out acceptance evidence stripped (`resolveFootprint` → never-in-footprint). This locks the
+  // contract the gate consumes — the predicate that decides "the worker could have authored this."
+  const owned = new Set(
+    resolveFootprint([
+      "src/feature.ts",
+      "src/feature.test.ts",
+      "tests/acceptance/sp6.test.ts", // held-out — must be stripped out of owned
+    ]),
+  );
+  assert.ok(
+    !owned.has("tests/acceptance/sp6.test.ts"),
+    "the acceptance evidence is stripped from the worker-owned set (never-in-footprint)",
+  );
+
+  // A run that executes the worker's OWN (compiled) test resolves back to its `src/` source → self-tick.
+  assert.equal(
+    verificationIsWorkerAuthored("node --test out-test/feature.test.js", owned),
+    true,
+    "running the worker's own compiled test is a self-tick",
+  );
+  // A plain in-footprint source path → self-tick.
+  assert.equal(
+    verificationIsWorkerAuthored("npx tsx src/feature.ts", owned),
+    true,
+    "a run reaching an in-footprint source is a self-tick",
+  );
+  // A run that executes ONLY the held-out acceptance evidence → independent (it grades).
+  assert.equal(
+    verificationIsWorkerAuthored(
+      "node --test out-test/acceptance/sp6.test.js",
+      owned,
+    ),
+    false,
+    "a run over only the out-of-footprint acceptance evidence is independent",
+  );
+  // No dispatched footprint at all → nothing can be a self-tick (vacuously independent).
+  assert.equal(
+    verificationIsWorkerAuthored(
+      "node --test out-test/feature.test.js",
+      new Set<string>(),
+    ),
+    false,
+    "with no worker-owned footprint nothing is a self-tick",
+  );
 });

@@ -21,6 +21,9 @@ import {
   footprintContainment,
   undeclaredReadsCheck,
   UNDECLARED_READ_RULE_MSG,
+  isAcceptanceEvidencePath,
+  resolveFootprint,
+  ACCEPTANCE_EVIDENCE_RE,
   type ParallelSliceInput,
   type OwnershipState,
   type SliceRecoveryInfo,
@@ -669,7 +672,11 @@ test("footprintContainment: a rename whose destination is a sibling's footprint 
     ["src/a.ts"],
     { running: ["src/sibling.ts"] },
   );
-  assert.equal(exempt.ok, true, "rename dest inside a running footprint is exempt");
+  assert.equal(
+    exempt.ok,
+    true,
+    "rename dest inside a running footprint is exempt",
+  );
 
   const r = expectViolation(
     footprintContainment("R  src/a.ts -> src/moved.ts\n", ["src/a.ts"], {
@@ -823,4 +830,183 @@ test("undeclaredReadsCheck: path normalization — a ./-prefixed read matches a 
   const r = expectUndeclaredRead(undeclaredReadsCheck(units));
   assert.equal(r.violations[0].file, "src/shared.ts");
   assert.match(r.violations[0].producer, /producer/);
+});
+
+// ── Acceptance-evidence path convention (SP-6/6 AC2) ─────────────────────────
+//
+// Mechanism 5 holds the exam out of the implementer's reach: the acceptance probes
+// the closing gate runs are authored by the held-out verifier and committed to a
+// reserved location — by convention, any path with an `acceptance/` directory
+// segment. The footprint resolver treats such a path as NEVER-in-footprint: no unit
+// can own it (`resolveFootprint` strips it), the PreToolUse guard (`footprintGuard`)
+// denies a write to it even when the unit declared it, and the post-tool containment
+// check (`footprintContainment`) flags ANY change that lands there as a violation —
+// no owned/running/baseline exemption can excuse it. The deterministic analog of
+// "the student cannot write the answer key." Pure: a path-shape convention, no I/O.
+
+test("isAcceptanceEvidencePath: an `acceptance/` directory segment marks held-out evidence", () => {
+  // A leading, nested, or dot-prefixed `acceptance` segment all match.
+  assert.equal(isAcceptanceEvidencePath("acceptance/SP-6.test.ts"), true);
+  assert.equal(isAcceptanceEvidencePath("tests/acceptance/foo.test.ts"), true);
+  assert.equal(
+    isAcceptanceEvidencePath(".tandem/acceptance/SP-6.test.ts"),
+    true,
+  );
+  // Trailing-segment form (a bare `acceptance` dir) matches too.
+  assert.equal(isAcceptanceEvidencePath("tests/acceptance"), true);
+  // Normalization: a ./-prefixed evidence path still matches.
+  assert.equal(isAcceptanceEvidencePath("./acceptance/x.test.ts"), true);
+});
+
+test("isAcceptanceEvidencePath: a substring that is NOT a path segment does not match", () => {
+  // `acceptanceFoo.ts` / `acceptance.ts` are ordinary files — the marker is a
+  // directory segment, anchored to path boundaries, not any substring.
+  assert.equal(isAcceptanceEvidencePath("src/acceptanceFoo.ts"), false);
+  assert.equal(isAcceptanceEvidencePath("src/acceptance.ts"), false);
+  assert.equal(isAcceptanceEvidencePath("src/a.ts"), false);
+  // Empty / blank paths are not evidence.
+  assert.equal(isAcceptanceEvidencePath(""), false);
+  assert.equal(isAcceptanceEvidencePath("   "), false);
+});
+
+test("isAcceptanceEvidencePath: the exported regex is the shared convention (no drift)", () => {
+  // The convention is named via the exported constant so callers don't re-derive it.
+  assert.equal(ACCEPTANCE_EVIDENCE_RE.test("tests/acceptance/x.ts"), true);
+  assert.equal(ACCEPTANCE_EVIDENCE_RE.test("src/acceptanceFoo.ts"), false);
+});
+
+test("isAcceptanceEvidencePath: an override predicate replaces the default convention", () => {
+  // A caller can supply its own evidence-path shape (e.g. a `__grader__/` dir).
+  const opts = {
+    isAcceptanceEvidence: (f: string) => f.includes("__grader__/"),
+  };
+  assert.equal(isAcceptanceEvidencePath("x/__grader__/g.ts", opts), true);
+  // The default `acceptance/` no longer counts under the override.
+  assert.equal(isAcceptanceEvidencePath("tests/acceptance/x.ts", opts), false);
+});
+
+test("resolveFootprint: an acceptance-evidence path is stripped so it is never-in-footprint", () => {
+  // Even if a unit lists the held-out evidence in its footprint, the resolver drops
+  // it — the path is left unowned so the guard/containment checks fence it.
+  const resolved = resolveFootprint([
+    "src/a.ts",
+    "tests/acceptance/SP-6.test.ts",
+    "src/b.ts",
+  ]);
+  assert.deepEqual(resolved, ["src/a.ts", "src/b.ts"]);
+});
+
+test("resolveFootprint: a footprint with no evidence paths is returned unchanged", () => {
+  const fp = ["src/a.ts", "src/b.ts"];
+  assert.deepEqual(resolveFootprint(fp), fp);
+  // Empty / undefined footprints are handled.
+  assert.deepEqual(resolveFootprint([]), []);
+});
+
+test("footprintGuard: a write to an acceptance-evidence path is DENIED even when the unit declared it", () => {
+  // The implementer cannot author or alter the grader: a write to a held-out
+  // evidence path is refused even though the unit listed it in its footprint.
+  const d = footprintGuard(
+    "Write",
+    { file_path: "tests/acceptance/SP-6.test.ts" },
+    ["tests/acceptance/SP-6.test.ts", "src/a.ts"],
+    "/wt",
+  );
+  assert.equal(d.allow, false);
+  if (d.allow) return;
+  assert.match(d.reason, /tests\/acceptance\/SP-6\.test\.ts/);
+  // The reason names this as held-out grading evidence, not a generic out-of-footprint.
+  assert.match(d.reason, /evidence/i);
+});
+
+test("footprintGuard: an absolute path under the worktree to acceptance evidence is denied", () => {
+  const d = footprintGuard(
+    "Edit",
+    { file_path: "/wt/tests/acceptance/SP-6.test.ts" },
+    ["tests/acceptance/SP-6.test.ts"],
+    "/wt",
+  );
+  assert.equal(d.allow, false);
+});
+
+test("footprintContainment: a CREATE of an acceptance-evidence file is always a violation (the worker authored its grader)", () => {
+  // AC2 core: the worker wrote the held-out evidence it is judged on — a containment
+  // violation that aborts the unit to requires-attention, never a self-authored green.
+  const r = expectViolation(
+    footprintContainment("?? tests/acceptance/SP-6.test.ts\n", ["src/a.ts"]),
+  );
+  assert.equal(r.violations.length, 1);
+  assert.equal(r.violations[0].file, "tests/acceptance/SP-6.test.ts");
+  assert.equal(r.violations[0].change, "create");
+  assert.match(r.reason, /tests\/acceptance\/SP-6\.test\.ts/);
+});
+
+test("footprintContainment: a write to acceptance evidence violates even if the unit DECLARED it in footprint", () => {
+  // The path is never-in-footprint: `resolveFootprint` strips it, so listing it as
+  // owned can't excuse the change — the modify still surfaces as a violation.
+  const r = expectViolation(
+    footprintContainment(" M tests/acceptance/SP-6.test.ts\n", [
+      "tests/acceptance/SP-6.test.ts",
+    ]),
+  );
+  assert.equal(r.violations[0].file, "tests/acceptance/SP-6.test.ts");
+  assert.equal(r.violations[0].change, "modify");
+});
+
+test("footprintContainment: no exemption (running / baseline) can excuse an acceptance-evidence change", () => {
+  // Even if the held-out path were claimed as a concurrent sibling's footprint or
+  // a pre-existing baseline change, a write to it is ALWAYS a violation here.
+  const r = expectViolation(
+    footprintContainment(" M tests/acceptance/SP-6.test.ts\n", ["src/a.ts"], {
+      running: ["tests/acceptance/SP-6.test.ts"],
+      baseline: ["tests/acceptance/SP-6.test.ts"],
+    }),
+  );
+  assert.equal(r.violations[0].file, "tests/acceptance/SP-6.test.ts");
+});
+
+test("footprintContainment: a non-evidence change beside an evidence change reports both correctly", () => {
+  // An in-footprint edit (fine), a sibling's edit (exempt), and an evidence write
+  // (always a violation) — only the evidence write surfaces.
+  const porcelain = [
+    " M src/a.ts", // owned — fine
+    " M src/sibling.ts", // running sibling — exempt
+    "?? tests/acceptance/SP-6.test.ts", // evidence — violation
+  ].join("\n");
+  const r = expectViolation(
+    footprintContainment(porcelain, ["src/a.ts"], {
+      running: ["src/sibling.ts"],
+    }),
+  );
+  assert.deepEqual(
+    r.violations.map((v) => v.file),
+    ["tests/acceptance/SP-6.test.ts"],
+  );
+});
+
+test("footprintContainment: an override predicate marks a custom evidence path never-in-footprint", () => {
+  // The opts override flows through to containment: a `__grader__/` write violates
+  // even when declared owned, while a now-ordinary `acceptance/` edit is in-footprint.
+  const opts = {
+    isAcceptanceEvidence: (f: string) => f.includes("__grader__/"),
+  };
+  const r = expectViolation(
+    footprintContainment(
+      " M x/__grader__/g.ts\n",
+      ["x/__grader__/g.ts"],
+      undefined,
+      opts,
+    ),
+  );
+  assert.equal(r.violations[0].file, "x/__grader__/g.ts");
+  // Under the override, `acceptance/` is just a normal owned file → no violation.
+  assert.equal(
+    footprintContainment(
+      " M tests/acceptance/x.ts\n",
+      ["tests/acceptance/x.ts"],
+      undefined,
+      opts,
+    ).ok,
+    true,
+  );
 });

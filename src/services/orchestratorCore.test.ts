@@ -14,6 +14,8 @@ import {
   batchExecutionUnits,
   extractDiagnosis,
   buildAttendPrompt,
+  buildRejectPrompt,
+  stripFailingCheck,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
@@ -21,6 +23,8 @@ import {
   readyFrontier,
   requiresSatisfied,
   buildWorkerPrompt,
+  stripAcceptanceCriteria,
+  stripSatisfies,
   extractNeedsInput,
   sessionIdOf,
   NEEDS_INPUT_SENTINEL,
@@ -28,6 +32,13 @@ import {
   runAcVerifications,
   checkAcOrdinals,
   buildDeliveryReport,
+  reDispatchDecision,
+  isEscalated,
+  hasEscalationMarker,
+  markEscalated,
+  MAX_REWORK_ATTEMPTS,
+  ESCALATION_MARKER,
+  type ReDispatchVerdict,
   type SliceRow,
   type WorkUnit,
   type SliceForDag,
@@ -203,6 +214,143 @@ test("buildAttendPrompt: names the slice, includes the diagnosis + the return-to
   assert.match(p, /back to Ready/);
   // No diagnosis → still names the slice + the exit, no dangling "diagnosis:" label.
   assert.doesNotMatch(buildAttendPrompt("SP-1_SL-2"), /diagnosis/i);
+});
+
+// ── SP-6 AC3: fix-loop feedback is intent-divergence, not the failing check ──
+//
+// The rework prompt must STATE which behaviour diverged from the intent and EXCLUDE the
+// three channels the closing gate's evidence leaks through — the failing AC ordinal, the
+// failing `run` command, and its output — so the fixer cannot optimise "make assertion X
+// pass." `stripFailingCheck` is the pure belt-and-braces scrubber; the two rework-prompt
+// builders (`buildAttendPrompt` at slice grain, `buildRejectPrompt` at Spec grain) route
+// their feedback through it. These tests pin all three exclusions + the divergence framing.
+
+// A single raw blob carrying ALL THREE leak channels at once — the shape the closing gate
+// would produce if a caller wired raw `acEvidence` / `DELIVERY.md` into the rework prompt
+// instead of an intent-divergence summary. The scrubber must survive even that worst case.
+const RAW_EVIDENCE_WITH_INTENT =
+  "The exporter emits ISO-8601 timestamps, but the intent is Unix epoch seconds.\n" +
+  "\n" +
+  "AC #3 failed.\n" +
+  "$ npm test -- export.spec.ts → exit 1\n" +
+  "```\n" +
+  "AssertionError: expected '2026-06-30T00:00:00Z' to equal 1782777600\n" +
+  "  at Object.<anonymous> (export.spec.ts:42:18)\n" +
+  "```\n" +
+  "| AC | Verified by | Result |\n" +
+  "| #3 | npm test -- export.spec.ts | could not run |\n";
+
+// The intent prose that MUST survive scrubbing — the actionable "what diverged" signal.
+const SURVIVING_INTENT =
+  "The exporter emits ISO-8601 timestamps, but the intent is Unix epoch seconds.";
+
+// Helper: assert a rework prompt leaks NONE of the three forbidden channels.
+function assertNoLeak(prompt: string): void {
+  // (a) the failing AC ordinal — neither "AC #3"/"AC 3" nor a bare "#3".
+  assert.doesNotMatch(
+    prompt,
+    /AC[\s_]*#?\s*\d/i,
+    "leaked the failing AC ordinal",
+  );
+  assert.doesNotMatch(prompt, /#\d/, "leaked a bare ordinal token");
+  // (b) the failing `run` command.
+  assert.doesNotMatch(prompt, /npm test/, "leaked the failing run command");
+  assert.doesNotMatch(
+    prompt,
+    /export\.spec\.ts/,
+    "leaked the failing run command target",
+  );
+  // (c) its output — the exit code, the assertion text, the per-AC evidence table.
+  assert.doesNotMatch(prompt, /exit\s+1/i, "leaked the failing exit code");
+  assert.doesNotMatch(
+    prompt,
+    /AssertionError/,
+    "leaked the failing command output",
+  );
+  assert.doesNotMatch(prompt, /could not run/i, "leaked a run-result fragment");
+  assert.doesNotMatch(prompt, /\|/, "leaked a per-AC evidence table row");
+}
+
+test("AC3: stripFailingCheck drops the AC ordinal, the failing `$` command, fenced output, table rows + leftover run fragments", () => {
+  const out = stripFailingCheck(RAW_EVIDENCE_WITH_INTENT);
+  // The intent-divergence prose survives — the fixer is still told WHAT diverged.
+  assert.match(out, /Unix epoch seconds/);
+  assert.match(out, /ISO-8601 timestamps/);
+  assertNoLeak(out);
+});
+
+test("AC3: stripFailingCheck passes clean intent prose through unchanged and is idempotent", () => {
+  const clean =
+    "The retry path gives up after one attempt; the intent is to retry until the bound is reached.";
+  assert.equal(stripFailingCheck(clean), clean);
+  // Idempotent — scrubbing an already-scrubbed blob is a fixed point (AC3 belt-and-braces).
+  const once = stripFailingCheck(RAW_EVIDENCE_WITH_INTENT);
+  assert.equal(stripFailingCheck(once), once);
+});
+
+test("AC3: stripFailingCheck scrubs each leak channel in isolation", () => {
+  // Bare ordinal forms.
+  assert.doesNotMatch(stripFailingCheck("re-run AC 4 then AC_5 and #6"), /\d/);
+  // A `$ cmd → exit N` line is removed whole.
+  assert.equal(stripFailingCheck("$ pytest -k thing → exit 2"), "");
+  // A fenced output block is removed including its contents.
+  assert.equal(
+    stripFailingCheck("```\nTraceback (most recent call last)\n```"),
+    "",
+  );
+  // A leftover inline run-result fragment is removed but its lead-in prose stays.
+  assert.match(
+    stripFailingCheck("the gate stayed red → could not run the harness"),
+    /the gate stayed red/,
+  );
+  assert.doesNotMatch(
+    stripFailingCheck("the gate stayed red → could not run the harness"),
+    /could not run/,
+  );
+});
+
+test("AC3: buildAttendPrompt states the divergence and excludes the failing AC ordinal / command / output", () => {
+  const p = buildAttendPrompt("SP-6_SL-3", RAW_EVIDENCE_WITH_INTENT);
+  // States the divergence, intent-framed.
+  assert.match(p, /diverged from the intent/i);
+  assert.match(p, /Unix epoch seconds/);
+  assert.match(p, /SP-6_SL-3/);
+  // Excludes all three leak channels even when handed raw evidence.
+  assertNoLeak(p);
+});
+
+test("AC3: buildRejectPrompt states the Spec-grain divergence and excludes the failing AC ordinal / command / output", () => {
+  const p = buildRejectPrompt("6", RAW_EVIDENCE_WITH_INTENT);
+  assert.match(p, /SP-6/);
+  assert.match(p, /diverged from the intent/i);
+  assert.match(p, /Unix epoch seconds/);
+  assertNoLeak(p);
+});
+
+test("AC3: a no-divergence rework prompt steers back to the intent — never to a failing check", () => {
+  // Slice grain: still names the slice + the return-to-Ready exit, no leaked channel.
+  const attend = buildAttendPrompt("SP-6_SL-3");
+  assert.match(attend, /SP-6_SL-3/);
+  assert.match(attend, /intent/i);
+  assertNoLeak(attend);
+  // Spec grain: the fallback points the worker at the Spec's intent, not at a failing run.
+  const reject = buildRejectPrompt("6");
+  assert.match(reject, /intent/i);
+  assert.doesNotMatch(reject, /failing (?:check|run|command)/i);
+  assertNoLeak(reject);
+});
+
+test("AC3: the rework prompt never frames feedback as 'the failing check'", () => {
+  for (const p of [
+    buildAttendPrompt("SP-6_SL-3", RAW_EVIDENCE_WITH_INTENT),
+    buildRejectPrompt("6", RAW_EVIDENCE_WITH_INTENT),
+  ]) {
+    // The feedback is framed as a divergence, never as "make the failing assertion pass."
+    assert.doesNotMatch(p, /failing (?:check|assertion|test|command)/i);
+    assert.doesNotMatch(p, /make .* pass/i);
+    // The actionable intent signal is present in both.
+    assert.match(p, new RegExp(SURVIVING_INTENT.split(",")[0]));
+  }
 });
 
 test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay separate", () => {
@@ -572,13 +720,165 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
   );
 
   // The worktree has no specs dir, so context is embedded in the prompt, not pointed to on disk.
+  // SP-6 AC1: the embedded context is the INTENT view — the `## Acceptance Criteria` block is
+  // held out, so the worker reads the Design/intent but never the rubric it is graded on.
   const withCtx = buildWorkerPrompt(unit, "3", {
-    specBody: "## Acceptance Criteria\n- [ ] headlamp deploys",
+    specBody:
+      "## Design\n\nDeploy headlamp into its namespace.\n\n## Acceptance Criteria\n\n- [ ] headlamp deploys",
     sliceBody: "Pinned: namespace headlamp",
   });
-  assert.match(withCtx, /Acceptance Criteria/);
+  assert.doesNotMatch(withCtx, /Acceptance Criteria/);
+  assert.match(withCtx, /Deploy headlamp into its namespace/);
   assert.match(withCtx, /Pinned: namespace headlamp/);
   assert.match(withCtx, /NOT in this worktree/);
+});
+
+// ── SP-6 AC1: hold out the exam — intent in, gradeable criteria withheld ────
+// The worker prompt must carry the INTENT (summary / Design / the unit's task + footprint)
+// but NEVER the Spec's `## Acceptance Criteria` block nor the slice's `satisfies` ordinals —
+// the implementer cannot read the rubric it is graded on, so a green proves intent, not
+// "I optimised to the assertions I was shown."
+
+test("AC1: buildWorkerPrompt embeds the intent view but withholds the Acceptance Criteria block + satisfies", () => {
+  const unit: SchedUnit = {
+    id: "SP-6_SL-1#eu-0",
+    slice: "SP-6_SL-1",
+    footprint: ["src/foo.ts"],
+    requires: [],
+    shape: "fan-out",
+    note: "implement foo end to end",
+  };
+  const specBody = [
+    "# The Spec title",
+    "",
+    "A one-line summary of what correct behaviour looks like.",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- [ ] **a secret gradeable rubric** the worker must never read",
+    "- [ ] another hidden criterion the implementer is graded on",
+    "",
+    "## Design",
+    "",
+    "Build foo by wiring the bar seam onto the baz core.",
+    "",
+    "## Constraints",
+    "",
+    "Reuse, don't fork the existing seam.",
+  ].join("\n");
+  const sliceBody = [
+    "---",
+    "status: ready",
+    "satisfies: [2, 4]",
+    "---",
+    "",
+    "# Slice intent",
+    "",
+    "Wire foo end to end so the bar seam reaches the baz core.",
+  ].join("\n");
+
+  const p = buildWorkerPrompt(unit, "6", { specBody, sliceBody });
+
+  // The INTENT view is present — summary, Design, Constraints, and the slice's intent prose.
+  assert.match(p, /one-line summary of what correct behaviour looks like/);
+  assert.match(p, /Build foo by wiring the bar seam onto the baz core/);
+  assert.match(p, /Reuse, don't fork the existing seam/); // block boundary stopped at ## Constraints
+  assert.match(p, /Wire foo end to end so the bar seam reaches the baz core/);
+  // …and the unit's own task/footprint (the rest of the intent view).
+  assert.match(p, /SP-6_SL-1#eu-0/);
+  assert.match(p, /src\/foo\.ts/);
+  assert.match(p, /implement foo end to end/);
+
+  // The gradeable criteria are HELD OUT — neither the heading nor any of its body lines leak.
+  assert.doesNotMatch(p, /Acceptance Criteria/);
+  assert.doesNotMatch(p, /a secret gradeable rubric/);
+  assert.doesNotMatch(p, /another hidden criterion/);
+
+  // The `satisfies` ordinals are withheld — the worker can't learn which ACs it is graded against.
+  assert.doesNotMatch(p, /satisfies/i);
+  assert.doesNotMatch(p, /\[2, 4\]/);
+});
+
+test("AC1: buildWorkerPrompt withholds the AC block even when it is the LAST section (no trailing heading)", () => {
+  const unit: SchedUnit = {
+    id: "SP-6_SL-2#eu-0",
+    slice: "SP-6_SL-2",
+    footprint: ["src/bar.ts"],
+    requires: [],
+    shape: "fan-out",
+  };
+  const specBody = [
+    "## Design",
+    "",
+    "Intent: make bar idempotent.",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- [ ] bar is idempotent under retry",
+    "- [ ] bar never double-writes",
+  ].join("\n");
+
+  const p = buildWorkerPrompt(unit, "6", { specBody });
+  assert.match(p, /make bar idempotent/); // intent survives
+  assert.doesNotMatch(p, /Acceptance Criteria/); // trailing AC block fully removed
+  assert.doesNotMatch(p, /idempotent under retry/);
+  assert.doesNotMatch(p, /never double-writes/);
+});
+
+test("stripAcceptanceCriteria: removes the AC heading + its body up to the next same/higher heading; idempotent", () => {
+  const body = [
+    "# Title",
+    "",
+    "intent summary",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- [ ] hidden one",
+    "",
+    "### a sub-heading still inside the AC block",
+    "",
+    "- [ ] hidden two",
+    "",
+    "## Design",
+    "",
+    "kept design",
+  ].join("\n");
+  const stripped = stripAcceptanceCriteria(body);
+  assert.doesNotMatch(stripped, /Acceptance Criteria/);
+  assert.doesNotMatch(stripped, /hidden one/);
+  assert.doesNotMatch(stripped, /sub-heading still inside/);
+  assert.doesNotMatch(stripped, /hidden two/);
+  assert.match(stripped, /intent summary/);
+  assert.match(stripped, /## Design/);
+  assert.match(stripped, /kept design/);
+  // idempotent: a body with no AC block is unchanged.
+  assert.equal(stripAcceptanceCriteria(stripped), stripped);
+  assert.equal(stripAcceptanceCriteria("no headings here"), "no headings here");
+});
+
+test("stripSatisfies: drops the structured `satisfies:` key (inline + block-list), never prose", () => {
+  // inline list form
+  assert.doesNotMatch(
+    stripSatisfies("satisfies: [1, 3]\nstatus: ready"),
+    /satisfies/,
+  );
+  assert.match(
+    stripSatisfies("satisfies: [1, 3]\nstatus: ready"),
+    /status: ready/,
+  );
+  // block-list form — the deeper `- N` items go too
+  const block = ["satisfies:", "  - 1", "  - 2", "files:", "  - a.ts"].join(
+    "\n",
+  );
+  const out = stripSatisfies(block);
+  assert.doesNotMatch(out, /satisfies/);
+  assert.match(out, /files:/);
+  assert.match(out, /- a\.ts/);
+  // a prose mention of the word is never touched
+  assert.match(
+    stripSatisfies("This design satisfies the durability goal."),
+    /satisfies the durability goal/,
+  );
 });
 
 // ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ───────────────────
@@ -722,4 +1022,208 @@ test("buildDeliveryReport: no declared verifications → the no-skip warning, no
   assert.match(md, /No `ac_verifications` declared/);
   assert.match(md, /requires-attention/);
   assert.match(md, /not committed/);
+});
+
+// ── SP-6/6 AC5: bounded rework loop → escalation, NOT re-queue forever ──────
+// After a bounded number of failed rework attempts on the SAME slice the orchestrator must
+// STOP re-dispatching and escalate: the verdict flips to `escalate`, the slice carries the
+// durable ESCALATION_MARKER, and readyFrontier drops every unit it owns — so a human must
+// intervene rather than the loop re-queuing it toward green indefinitely. The bound + the
+// verdict are pure / deterministic (no LLM).
+
+test("AC5: reDispatchDecision re-dispatches below the bound and escalates AT the bound (default = MAX_REWORK_ATTEMPTS)", () => {
+  // Walk the loop from a fresh slice (0 prior attempts) at the default bound of 3. Each red
+  // acceptance run bumps the counter; the verdict stays `re-dispatch` until the count reaches
+  // the bound, then flips to `escalate` exactly once — never re-queued past that.
+  assert.equal(MAX_REWORK_ATTEMPTS, 3, "default bound is the documented value");
+  const seq: ReDispatchVerdict[] = [
+    reDispatchDecision(0), // 1st failure → attempts 1, below bound
+    reDispatchDecision(1), // 2nd failure → attempts 2, below bound
+    reDispatchDecision(2), // 3rd failure → attempts 3, AT the bound → escalate
+  ];
+  assert.deepEqual(
+    seq.map((v) => v.action),
+    ["re-dispatch", "re-dispatch", "escalate"],
+    "re-dispatch while below the bound, escalate once it is reached — not indefinitely",
+  );
+  assert.deepEqual(
+    seq.map((v) => v.attempts),
+    [1, 2, 3],
+    "each verdict carries the incremented (prior + 1) attempt count to persist",
+  );
+  // Past the bound it stays escalated (never silently re-opens).
+  assert.equal(reDispatchDecision(3).action, "escalate");
+  assert.equal(reDispatchDecision(99).action, "escalate");
+});
+
+test("AC5: reDispatchDecision honours a custom bound and is fail-safe on junk priors", () => {
+  // A tighter bound of 1: the very first failure escalates.
+  assert.equal(reDispatchDecision(0, 1).action, "escalate");
+  // A looser bound of 5: still re-dispatching at prior=3 (→4), escalates at prior=4 (→5).
+  assert.equal(reDispatchDecision(3, 5).action, "re-dispatch");
+  assert.equal(reDispatchDecision(4, 5).action, "escalate");
+  // Junk prior counts are clamped to 0 (one attempt recorded), never negative/NaN.
+  assert.deepEqual(reDispatchDecision(-7), {
+    action: "re-dispatch",
+    attempts: 1,
+  });
+  assert.deepEqual(reDispatchDecision(NaN), {
+    action: "re-dispatch",
+    attempts: 1,
+  });
+  // A non-positive bound falls back to the default (so a misconfig can't disable the loop bound).
+  assert.equal(reDispatchDecision(2, 0).action, "escalate");
+});
+
+test("AC5: isEscalated trips at/above the bound, false below, fail-safe on junk", () => {
+  assert.equal(isEscalated(0), false);
+  assert.equal(isEscalated(2), false, "below the default bound of 3");
+  assert.equal(isEscalated(3), true, "at the default bound");
+  assert.equal(isEscalated(10), true);
+  // custom bound
+  assert.equal(isEscalated(1, 2), false);
+  assert.equal(isEscalated(2, 2), true);
+  // fail-safe: junk counts → 0 (not escalated), junk bound → default.
+  assert.equal(isEscalated(-5), false);
+  assert.equal(isEscalated(NaN), false);
+  assert.equal(
+    isEscalated(3, 0),
+    true,
+    "non-positive bound falls back to default 3",
+  );
+});
+
+test("AC5: readyFrontier DROPS every unit of a slice that has reached its rework bound (escalated, not re-dispatched)", () => {
+  // A slice with two units, otherwise perfectly dispatchable (no deps, disjoint footprints).
+  const dag = buildUnitDag([
+    slice("SP-6_SL-9", {
+      workUnits: [
+        { footprint: ["a.ts"], execution: "fan-out" },
+        { footprint: ["b.ts"], execution: "fan-out" },
+      ],
+    }),
+  ]);
+
+  // Below the bound (2 of 3 attempts) → still on the frontier: the loop keeps re-dispatching.
+  const belowBound = readyFrontier(dag, {
+    ...emptyState(),
+    attempts: new Map([["SP-6_SL-9", 2]]),
+  });
+  assert.equal(
+    belowBound.length,
+    2,
+    "a slice below its rework bound is still re-dispatchable",
+  );
+
+  // At the bound (3 attempts, default) → the WHOLE slice is excluded from the frontier.
+  const atBound = readyFrontier(dag, {
+    ...emptyState(),
+    attempts: new Map([["SP-6_SL-9", 3]]),
+  });
+  assert.equal(
+    atBound.length,
+    0,
+    "an escalated slice is no longer auto-re-dispatchable — every unit it owns is dropped",
+  );
+
+  // Sanity: with no attempts recorded the pre-SP-6 behaviour is unchanged (fully dispatchable).
+  assert.equal(readyFrontier(dag, emptyState()).length, 2);
+});
+
+test("AC5: readyFrontier respects a custom attemptBound when deciding escalation", () => {
+  const dag = buildUnitDag([
+    slice("SP-6_SL-9", {
+      workUnits: [{ footprint: ["a.ts"], execution: "fan-out" }],
+    }),
+  ]);
+  // bound of 1 → a single recorded failure escalates the slice off the frontier.
+  const f = readyFrontier(dag, {
+    ...emptyState(),
+    attempts: new Map([["SP-6_SL-9", 1]]),
+    attemptBound: 1,
+  });
+  assert.equal(f.length, 0, "custom attemptBound escalates earlier");
+});
+
+test("AC5: markEscalated stamps the durable marker idempotently; hasEscalationMarker detects it", () => {
+  const diagnosis = "Behaviour diverged from intent: foo never reaches bar.";
+  assert.equal(hasEscalationMarker(diagnosis), false);
+
+  const marked = markEscalated(diagnosis);
+  assert.ok(
+    marked.includes(ESCALATION_MARKER),
+    "the durable, reload-surviving escalation marker is stamped (asserted via the exported constant)",
+  );
+  assert.ok(marked.includes(diagnosis), "the original diagnosis is preserved");
+  assert.equal(hasEscalationMarker(marked), true);
+
+  // Idempotent: a second stamp does not accumulate a duplicate marker.
+  const twice = markEscalated(marked);
+  assert.equal(twice, marked);
+  assert.equal(
+    twice.split(ESCALATION_MARKER).length - 1,
+    1,
+    "the marker appears exactly once after re-stamping",
+  );
+
+  // An empty body still yields a detectable marker (the bare signal).
+  assert.equal(hasEscalationMarker(markEscalated("")), true);
+});
+
+test("AC5: end-to-end — the loop re-dispatches up to the bound, then escalates and stops re-queuing", () => {
+  // Tie reDispatchDecision (the verdict) to readyFrontier (the dispatch gate) and to the
+  // durable marker: simulate red acceptance runs until the bound, asserting the slice is
+  // never re-queued past escalation.
+  const handle = "SP-6_SL-9";
+  const dag = buildUnitDag([
+    slice(handle, {
+      workUnits: [{ footprint: ["a.ts"], execution: "fan-out" }],
+    }),
+  ]);
+
+  let attempts = 0;
+  let diagnosis = "intent divergence: the bar seam never reaches the baz core.";
+  const dispatchable = () =>
+    readyFrontier(dag, {
+      ...emptyState(),
+      attempts: new Map([[handle, attempts]]),
+    }).length > 0;
+
+  // Loop: each iteration represents one red acceptance run + its re-dispatch decision.
+  let verdict: ReDispatchVerdict | undefined;
+  for (let guard = 0; guard < 10; guard++) {
+    // The slice must still be dispatchable while we are below the bound.
+    assert.equal(
+      dispatchable(),
+      true,
+      `still re-dispatchable before escalation (attempt ${attempts})`,
+    );
+    verdict = reDispatchDecision(attempts);
+    attempts = verdict.attempts;
+    if (verdict.action === "escalate") {
+      diagnosis = markEscalated(diagnosis);
+      break;
+    }
+  }
+
+  assert.equal(
+    verdict?.action,
+    "escalate",
+    "the bounded loop terminates in escalation",
+  );
+  assert.equal(
+    attempts,
+    MAX_REWORK_ATTEMPTS,
+    "it escalated exactly at the bound",
+  );
+  assert.equal(
+    hasEscalationMarker(diagnosis),
+    true,
+    "the requires-attention slice carries the durable escalation marker",
+  );
+  assert.equal(
+    dispatchable(),
+    false,
+    "after escalation the slice is NOT re-queued — readyFrontier drops it, a human must decide",
+  );
 });
