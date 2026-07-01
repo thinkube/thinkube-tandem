@@ -153,6 +153,7 @@ import {
 } from "../services/acSignature";
 import {
   createSdkAuditRunner,
+  deriveVerificationCommands,
   type AuditAc,
   type AuditRunner,
 } from "../services/auditorRunner";
@@ -3002,7 +3003,14 @@ async function writeSpec(
       // (SP-6/7) contributes an `env: "assessment"` entry with **no** `run` — it must survive into the
       // signed frontmatter so → Ready arms and the closing gate can dispatch its independent assessor
       // (dropping it here was the arming-side gap that left an all-assessment spec un-Ready-able).
-      const map = emitAcVerifications(result.verdicts);
+      // The auditor JUDGED (verdict + env only); now AUTHOR each local verifiable AC's `run` from the
+      // repo's convention — a held-out acceptance-probe recipe filled with (spec, ordinal), else the
+      // whole-suite fallback. Deterministic + model-free, so it belongs to the builder, not the judge.
+      const verdicts = await deriveVerificationCommands(result.verdicts, {
+        cwd: audit.cwd,
+        specId: spec,
+      });
+      const map = emitAcVerifications(verdicts);
       const acHash = acRequirementHash(trimmed);
       fm.ac_verifications = map;
       fm[AC_CERT_HASH_KEY] = acHash;

@@ -1,0 +1,7 @@
+{
+  "//": "Per-repo Tandem conventions (TEP-6). `acceptanceProbe` is this repo's held-out acceptance-probe recipe (mechanism 5, runnable half): how a *runnable* AC is graded by an INDEPENDENTLY-authored probe instead of the self-graded whole suite. `{spec}` = the sanitized Spec id, `{ac}` = the 1-based AC ordinal. The methodology fills these templates; the language lives HERE, so the same methodology works against a Python repo (pytest), a Rust crate (cargo test), Ansible (molecule), etc. — each declares its own recipe. `sourcePath` is where /slice's held-out test-author writes the probe; `run` is what the closing gate executes. For this TypeScript extension: sources under src/ compile to out-test/ (tsconfig.test.json include: src/**/*), run by node:test.",
+  "acceptanceProbe": {
+    "sourcePath": "src/acceptance/SP-{spec}_AC-{ac}.test.ts",
+    "run": "node --test out-test/acceptance/SP-{spec}_AC-{ac}.test.js"
+  }
+}

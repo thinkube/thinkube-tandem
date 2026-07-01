@@ -270,10 +270,6 @@ export interface SdkAuditDeps {
   /** Loads the SDK `query`. Defaults to a lazy `import("@anthropic-ai/claude-agent-sdk")` — the
    *  same lazy-import the orchestrator uses, so the SDK never loads at activation. */
   loadQuery?: () => Promise<SdkQuery>;
-  /** Resolve a repo's REAL local verification command from the audit cwd (see
-   *  {@link defaultLocalRunResolver}). Injected so the override is testable without a real
-   *  package.json on disk. */
-  resolveLocalRun?: (cwd: string) => Promise<string | undefined>;
 }
 
 /**
@@ -299,6 +295,106 @@ export async function defaultLocalRunResolver(
 }
 
 /**
+ * A repo's held-out **acceptance-probe recipe** (SP-6/7, the runnable half of mechanism 5) — how a
+ * *runnable* AC is graded by an **independently-authored** probe instead of the self-graded whole
+ * suite. Both templates carry `{spec}` (the sanitized Spec id) and `{ac}` (the 1-based AC ordinal)
+ * slots. Declared per-repo in `.tandem/conventions.json` so the convention is **tech-agnostic**: a TS
+ * repo fills it with `node --test …*.test.js`, a Python repo with `pytest …`, a Rust crate with
+ * `cargo test …`. The methodology never hardcodes a language — the repo supplies it.
+ */
+export interface AcceptanceRecipe {
+  /** Where the held-out test-author writes the probe (`/slice` fills this per AC). */
+  sourcePath: string;
+  /** How the closing gate runs it (the auditor fills this into `ac_verifications.run`). */
+  run: string;
+}
+
+/** Fill `{spec}`/`{ac}` in an acceptance-probe template. `spec` is sanitized to a path-safe token
+ *  (any non-`[A-Za-z0-9._-]` run → `_`) so a composite id like `6/3` yields `6_3`; both the auditor
+ *  (run) and `/slice` (sourcePath) fill the same way so the declared path and the written path match. */
+export function fillProbeTemplate(
+  template: string,
+  spec: string,
+  ac: number,
+): string {
+  const safeSpec = String(spec).replace(/[^A-Za-z0-9._-]+/g, "_");
+  return template.replace(/\{spec\}/g, safeSpec).replace(/\{ac\}/g, String(ac));
+}
+
+/**
+ * Load a repo's held-out {@link AcceptanceRecipe} from `.tandem/conventions.json` (its
+ * `acceptanceProbe` object). Returns `undefined` when the file/field is absent or malformed — the
+ * caller then falls back to the repo's whole-suite command (today's self-graded behavior), so a repo
+ * that has not opted in is unaffected. Tech-agnostic: the file's own templates supply the language.
+ */
+export async function defaultAcceptanceRecipeResolver(
+  cwd: string,
+): Promise<AcceptanceRecipe | undefined> {
+  try {
+    const raw = await fs.readFile(
+      path.join(cwd, ".tandem", "conventions.json"),
+      "utf8",
+    );
+    const cfg = JSON.parse(raw) as { acceptanceProbe?: unknown };
+    const p = cfg.acceptanceProbe as Record<string, unknown> | undefined;
+    if (
+      p &&
+      typeof p.sourcePath === "string" &&
+      p.sourcePath.trim() &&
+      typeof p.run === "string" &&
+      p.run.trim()
+    )
+      return { sourcePath: p.sourcePath.trim(), run: p.run.trim() };
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Author each LOCAL `verifiable` AC's `run` command over the auditor's verdicts (SP-6/7). The auditor
+ * only JUDGED verifiability; this deterministic, **model-free** step supplies the command from the
+ * repo's CONVENTION — never a per-AC decision:
+ *   - **held-out probe** — if the repo declares an {@link AcceptanceRecipe}, fill its `run` template
+ *     with `(specId, ordinal)` so the AC is graded by an INDEPENDENTLY-authored probe (mechanism 5),
+ *     not the self-graded whole suite;
+ *   - **fallback** — a repo with no recipe keeps its whole-suite command (today's behavior), so it is
+ *     unaffected until it opts in;
+ *   - a command the auditor already pointed at a held-out `acceptance/` path is kept as-is.
+ * `cluster` (an infra-lifecycle command the auditor is right to name) and `assessment` verdicts are
+ * left untouched. Mutates and returns `verdicts`. Injectable resolvers keep it unit-testable.
+ */
+export async function deriveVerificationCommands(
+  verdicts: AuditVerdict[],
+  opts: {
+    cwd: string;
+    specId?: string;
+    resolveLocalRun?: (cwd: string) => Promise<string | undefined>;
+    resolveAcceptanceRecipe?: (
+      cwd: string,
+    ) => Promise<AcceptanceRecipe | undefined>;
+  },
+): Promise<AuditVerdict[]> {
+  const resolveLocalRun = opts.resolveLocalRun ?? defaultLocalRunResolver;
+  const resolveAcceptanceRecipe =
+    opts.resolveAcceptanceRecipe ?? defaultAcceptanceRecipeResolver;
+  const localRun = await resolveLocalRun(opts.cwd);
+  const recipe = await resolveAcceptanceRecipe(opts.cwd);
+  for (const v of verdicts) {
+    if (v.verdict !== "verifiable" || v.env === "cluster") continue;
+    if (v.run && ACCEPTANCE_EVIDENCE_RE.test(v.run)) continue;
+    if (recipe && opts.specId) {
+      v.run = fillProbeTemplate(recipe.run, opts.specId, v.ordinal);
+      v.env = "local";
+    } else if (localRun) {
+      v.run = localRun;
+      v.env = "local";
+    }
+  }
+  return verdicts;
+}
+
+/**
  * The production {@link AuditRunner}: spawn a headless Claude verifiability audit reusing the
  * orchestrator's `query()` spawn path, and return the parsed per-AC verdicts. Read-only (the audit
  * only needs the ACs we put in the prompt), lazy-imported, and failure-tolerant — a load/run error,
@@ -311,7 +407,6 @@ export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
     deps.loadQuery ??
     (async () =>
       (await import("@anthropic-ai/claude-agent-sdk")).query as SdkQuery);
-  const resolveLocalRun = deps.resolveLocalRun ?? defaultLocalRunResolver;
 
   return async (req: AuditRequest): Promise<AuditResult> => {
     if (!req.acs.length)
@@ -370,26 +465,10 @@ export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
         error: "audit produced no parseable verdicts",
       };
 
-    // Replace each LOCAL `verifiable` AC's `run` with the repo's real test recipe: at design phase
-    // the verifying test file doesn't exist yet, so the model's per-file command is a fabrication
-    // (the `npx vitest` in a `node --test` repo we observed). Keep the model's verdict + env and
-    // swap only the command; `cluster` ACs (a deploy/lifecycle playbook the model is right to name)
-    // are left untouched. No repo recipe ⇒ leave the model's command as a best-effort fallback.
-    const localRun = await resolveLocalRun(req.cwd);
-    if (localRun) {
-      for (const v of verdicts) {
-        if (v.verdict !== "verifiable" || v.env === "cluster") continue;
-        // SP-6/7 AC6: a command pointing at a held-out `acceptance/` path is KEPT, not overridden to
-        // the repo's `npm test`. That probe is authored by the held-out test unit at slice time and
-        // is exactly the independent evidence the closing gate must grade — clobbering it with the
-        // whole-suite recipe is what kept mechanism 5 from ever firing. Everything else still resolves
-        // to the repo recipe (the model's per-file command is a design-phase fabrication).
-        if (v.run && ACCEPTANCE_EVIDENCE_RE.test(v.run)) continue;
-        v.run = localRun;
-        v.env = "local";
-      }
-    }
-
+    // The auditor JUDGES only — verdict + env per AC. Authoring a local verifiable AC's `run`
+    // command (from the repo's held-out acceptance-probe recipe, or a whole-suite fallback) is a
+    // deterministic, model-free convention-fill that belongs to the builder, not the judge: see
+    // `deriveVerificationCommands`, which `write_spec` runs over these verdicts before signing.
     return { verdicts, passed: computePassed(req.acs, verdicts), sessionId };
   };
 }
