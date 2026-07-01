@@ -45,6 +45,8 @@ test("create_slice through the dispatcher persists work_units", async () => {
       spec: "1/1",
       title: "A multi-file component",
       body: "detail",
+      // SP-6/3: a multi-unit slice requires a design-time contract.
+      contract: "interface Contract { /* shared seam */ }",
       work_units: [
         { footprint: ["a.yaml"], execution: "fan-out", note: "author a" },
         { footprint: ["b.yaml"], execution: "fan-out", note: "author b" },

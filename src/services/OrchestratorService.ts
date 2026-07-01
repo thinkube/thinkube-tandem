@@ -780,6 +780,9 @@ export class OrchestratorService {
               (n) => Number.isInteger(n) && n > 0,
             )
           : [],
+        // SP-6/3: carry the slice's design-time contract so buildUnitDag stamps it onto every
+        // SchedUnit and buildWorkerPrompt injects it into each worker (code + held-out test).
+        contract: typeof fm?.contract === "string" ? fm.contract : undefined,
       });
     }
     return slices;

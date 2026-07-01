@@ -42,7 +42,9 @@ const ctxFor = (store: ThinkubeStore) => ({
 const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
   dispatchTool(
     "create_slice",
-    { spec: "1/1", ...args },
+    // SP-6/3: a multi-unit slice requires a design-time contract — default one so these DAG-gate
+    // fixtures exercise the graph checks, not the contract-required refusal.
+    { spec: "1/1", contract: "interface Contract { /* shared seam */ }", ...args },
     ctxFor(store),
     () => {},
   );

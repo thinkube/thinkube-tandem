@@ -911,6 +911,11 @@ const TOOL_DEFS = [
           description:
             "1-based AC ordinals this slice delivers (positions in the parent Spec's `## Acceptance Criteria`). Arms the → Done gate: the slice can't reach Done until each listed criterion is checked on the Spec.",
         },
+        contract: {
+          type: "string",
+          description:
+            "The slice's design-time CONTRACT (SP-6/3): the shared interface — the exact exports, types, signatures and behaviour — every work unit builds against, written by the slicer WHEN THE SLICE IS CREATED (~10–20 lines, not prose). It is injected verbatim into every worker's prompt (code AND held-out test alike), so the units agree on the seam WITHOUT reading each other's code. Because the contract pins the interface up front, a contract-defined slice needs `consumes` ONLY for a genuine produced-artifact dependency (a unit that ingests another unit's OUTPUT) — never for interface agreement — and its units are exempt from the contract-first gate (the contract IS the shared seam). Write the contract for any multi-unit slice.",
+        },
         work_units: {
           type: "array",
           items: {
@@ -1295,6 +1300,7 @@ export async function dispatchTool(
           parallel_group: optString(args, "parallel_group"),
           files: optStringArray(args, "files"),
           satisfies: optNumberArray(args, "satisfies"),
+          contract: optString(args, "contract"),
           // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
           // validates each unit's footprint and serializes the array to frontmatter. Without
           // this line the schema accepts work_units but the handler silently drops it (the
@@ -2450,6 +2456,7 @@ export async function createSlice(
     parallel_group?: string;
     files?: string[];
     satisfies?: number[];
+    contract?: string;
     work_units?: {
       footprint: string[];
       depends_on?: string[];
@@ -2767,27 +2774,21 @@ export async function createSlice(
     }
   }
 
-  // Contract-first gate (SP-th4wqi). The DAG check above proves the graph is
-  // well-formed; this one proves it isn't an **unsequenced-integration** fan-out:
-  // a `*.test.*`/declared-integration `fan-out` unit with no `depends_on` sitting
-  // beside ≥1 sibling implementation unit. With nothing sequencing it after a
-  // shared contract-definition node, the test and its implementers each invent the
-  // shared seam and diverge — the SP-D / SP-th4wqe AC#3 failure. The fix is a
-  // shared contract node every unit `depends_on` (parallelism preserved: no
-  // sibling↔sibling edges); a per-unit opt-out flag accepts a genuinely-independent
-  // test. The pure check + its teaching message are imported from parallelSlices.ts
-  // and never restated here — restating them is the very divergence this gates.
-  const contractVerdict = contractFirstCheck(
-    (args.work_units ?? []) as ContractFirstWorkUnit[],
-  );
-  if (!contractVerdict.ok) {
-    // The check returns the static rule message PLUS the structured offending
-    // unit, so the caller composes the refusal: the imported teaching message
-    // (never restated) and the offending unit named by its footprint, so the
-    // author sees exactly which unit to route through a contract node or opt out.
-    const fp =
-      contractVerdict.offendingUnit.footprint?.join(", ") || "(no footprint)";
-    throw new Error(`${contractVerdict.message}\n  • offending unit: ${fp}`);
+  // Required design-time contract (SP-6/3). A multi-unit slice MUST declare a `contract` — the
+  // shared interface (exact exports, types, signatures, behaviour) every unit, code AND held-out
+  // test, builds against. It is injected into every worker prompt so parallel units agree on the
+  // seam up front; that SUPERSEDES the old contract-first coordination gate (units no longer point
+  // `consumes` at a sibling's seam — they build to the contract). There is deliberately NO
+  // no-contract fallback path: a legacy slice without one is re-sliced, not patched.
+  const unitCount = (args.work_units ?? []).length;
+  if (unitCount > 1 && (args.contract ?? "").trim().length === 0) {
+    throw new Error(
+      `A multi-unit slice must declare a \`contract\` — the shared interface (exact exports, ` +
+        `types, signatures, behaviour) every work unit builds against. Without it, the ${unitCount} ` +
+        `parallel units (and the held-out test) each invent the seam and diverge. Write the ` +
+        `interface in \`contract\` (~10–20 lines); with it, units need \`consumes\` only for a ` +
+        `genuine produced-artifact dependency, never for interface agreement.`,
+    );
   }
 
   // Consumes-resolvability gate (SP-th4wqk AC#2), resolved GLOBALLY over the Spec's
@@ -2875,6 +2876,7 @@ export async function createSlice(
   fm.assignee = "";
   if (args.satisfies?.length)
     fm.satisfies = [...new Set(args.satisfies)].sort((a, b) => a - b);
+  if (args.contract?.trim()) fm.contract = args.contract.trim();
   if (args.work_units?.length)
     fm.work_units = args.work_units as Frontmatter["work_units"];
   fm.docs = docsResult.value.docs;

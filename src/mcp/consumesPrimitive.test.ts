@@ -56,7 +56,10 @@ const ctxFor = (store: ThinkubeStore) => ({
 const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
   dispatchTool(
     "create_slice",
-    { spec: "1/1", ...args },
+    // SP-6/3: a multi-unit slice requires a design-time contract; supply a default so these
+    // fixtures exercise the consumes gates, not the contract-required refusal. (A caller may
+    // override.)
+    { spec: "1/1", contract: "interface Contract { /* shared seam */ }", ...args },
     ctxFor(store),
     () => {},
   );

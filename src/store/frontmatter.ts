@@ -84,6 +84,13 @@ export interface Frontmatter {
   files?: string[];
   /** 1-based AC ordinals this slice delivers; the → Done gate checks each is ticked on the parent Spec. */
   satisfies?: number[];
+  /** The slice's design-time CONTRACT (SP-6/3): the shared interface — exact exports, types,
+   *  signatures, behaviour — every unit (code AND held-out test) builds against. Authored by the
+   *  slicer when the slice is created and injected verbatim into every worker prompt, so units
+   *  agree on the seam without consuming each other. A slice that declares a contract is exempt
+   *  from the contract-first gate (the contract IS the shared seam), and needs `consumes` only for
+   *  a genuine produced-artifact dependency. */
+  contract?: string;
   /** Spec-level (SP-tgzyfy / TEP-tgzx3p): the closing gate's per-AC verification declaration —
    *  a map AC-ordinal → how that AC is verified. The orchestrator runs the union as a full plan
    *  at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable →

@@ -173,6 +173,13 @@ export interface SliceForDag {
   /** 1-based AC ordinals the slice `satisfies` — the closing gate (SP-tgzyfy) advances the slice
    *  to Done only when these ACs' verifications all ran green, then ticks exactly these on the Spec. */
   satisfies?: number[];
+  /** The slice's design-time CONTRACT (SP-6/3): the shared interface — the exact exports, types
+   *  and behaviour — every unit builds against. Established by the slicer WHEN THE SLICE IS
+   *  CREATED (not a work unit, not derived), and injected into every worker prompt so code and
+   *  held-out test alike agree on the seam WITHOUT consuming each other. Because the contract
+   *  pins the interface up front, contract-defined slices need `consumes` only for a genuine
+   *  produced-artifact dependency (a unit ingesting another unit's OUTPUT), not for interfaces. */
+  contract?: string;
 }
 
 /** A schedulable execution unit — one worker's assignment. */
@@ -192,6 +199,9 @@ export interface SchedUnit {
   role?: "code" | "test";
   /** The unit's task text(s), for the worker prompt. */
   note?: string;
+  /** The parent slice's design-time contract (SP-6/3), injected verbatim into this unit's worker
+   *  prompt so code and held-out test alike build to the same interface. Carried from the slice. */
+  contract?: string;
   /** The underlying work units (for the worker prompt + footprint). */
   units?: WorkUnit[];
 }
@@ -259,6 +269,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         footprint: s.files ?? [],
         requires: [],
         shape: "serial",
+        contract: s.contract,
       });
       continue;
     }
@@ -296,6 +307,7 @@ export function buildUnitDag(slices: SliceForDag[]): SchedUnit[] {
         shape: eu.shape,
         role,
         note,
+        contract: s.contract,
         units: eu.units,
       });
     });
@@ -678,7 +690,14 @@ export function buildWorkerPrompt(
   // acceptance probe under the reserved `acceptance/` path (its footprint), grading the ACs embedded
   // below, black-box (it must NOT read or couple to the implementation the code-author writes in parallel).
   const roleBlock = isTest
-    ? `\nYou are the HELD-OUT TEST-AUTHOR (the independent verifier) for this slice. Author the acceptance probe at your footprint (a reserved \`acceptance/\` path) that GRADES the slice's \`## Acceptance Criteria\` (embedded below). Target the INTENT — the criteria + design — BLACK-BOX: do NOT read or couple to the implementation code (a code-author writes that in parallel). Your probe is the independent evidence the closing gate grades on, so it must fail if the intent is not met.\n`
+    ? `\nYou are the HELD-OUT TEST-AUTHOR (the independent verifier) for this slice. Author the acceptance probe at your footprint (a reserved \`acceptance/\` path) that GRADES the slice's \`## Acceptance Criteria\` (embedded below). Target the INTENT — the criteria + design — BLACK-BOX: do NOT read or couple to the implementation code (a code-author writes that in parallel). Drive it through the SLICE CONTRACT below (its public exports/signatures); your probe is the independent evidence the closing gate grades on, so it must fail if the intent is not met.\n`
+    : "";
+  // SP-6/3: the slice's design-time CONTRACT — the shared interface every unit (code AND held-out
+  // test) builds against, established when the slice was created. Injected verbatim into EVERY
+  // unit's prompt so they agree on the exact seam (exports/types/signatures/behaviour) WITHOUT
+  // reading each other's code — the coordination `consumes` used to force, now pinned up front.
+  const contractBlock = unit.contract?.trim()
+    ? `\n──── SLICE CONTRACT (the shared interface — implement and verify EXACTLY against this; do not rename, widen, or invent) ────\n${unit.contract.trim()}\n`
     : "";
   // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
   // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
@@ -708,6 +727,7 @@ export function buildWorkerPrompt(
       : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
     `\n${task}\n` +
     roleBlock +
+    contractBlock +
     consumesBlock +
     specBlock +
     sliceBlock +
