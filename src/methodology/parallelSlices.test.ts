@@ -11,7 +11,7 @@ import {
   validateParallelGroup,
   validateDag,
   footprintGuard,
-  testReadFence,
+  codeReadFence,
   acquireClaim,
   releaseClaim,
   reconcileOwnership,
@@ -926,37 +926,41 @@ test("footprintGuard: a CODE-author cannot write the held-out probe (acceptance 
   assert.doesNotMatch(d.reason, /grading evidence|independent verifier|held-out/i);
 });
 
-test("testReadFence: a test worker reads the BASE directory but not the in-progress worktree", () => {
-  const base = "/home/u/repos/ext";
+test("codeReadFence (SP-6/7 reverse-leak): a code worker cannot Read an acceptance probe; everything else passes", () => {
   const wt = "/home/u/repos/ext-worktrees/SP-6_3"; // the cwd (repoRoot)
-  // A read under the base directory → allowed.
-  assert.equal(
-    testReadFence("Read", { file_path: `${base}/src/mcp/kanbanMcpServer.ts` }, base, wt).allow,
-    true,
-  );
-  // A relative read resolves against the worktree cwd → refused, pointing at the base.
-  const rel = testReadFence("Read", { file_path: "src/services/approvalToken.ts" }, base, wt);
+  // A Read of a held-out probe (relative or absolute under the worktree) → denied, tersely —
+  // the reason must not teach the grading mechanism.
+  const rel = codeReadFence("Read", { file_path: "src/acceptance/SP-6_3_AC-1.test.ts" }, wt);
   assert.equal(rel.allow, false);
   if (rel.allow) return;
-  assert.match(rel.reason, /base directory/i);
-  assert.match(rel.reason, new RegExp(base.replace(/\//g, "\\/")));
-  // An absolute read into the worktree (the in-progress impl) → refused.
+  assert.match(rel.reason, /out-of-scope read/i);
+  assert.doesNotMatch(rel.reason, /grading|held-out|independent|probe|evidence/i);
   assert.equal(
-    testReadFence("Read", { file_path: `${wt}/src/services/approvalToken.ts` }, base, wt).allow,
+    codeReadFence("Read", { file_path: `${wt}/src/acceptance/SP-6_3_AC-2.test.ts` }, wt).allow,
     false,
   );
-  // Its own acceptance/ probe is readable (it authors it).
+  // Ordinary source, tests, config → readable.
+  assert.equal(codeReadFence("Read", { file_path: "src/services/approvalToken.ts" }, wt).allow, true);
+  assert.equal(codeReadFence("Read", { file_path: `${wt}/tsconfig.test.json` }, wt).allow, true);
+  // Only Read is screened here — writes are the write-fence's job.
+  assert.equal(codeReadFence("Write", { file_path: "src/acceptance/x.test.ts" }, wt).allow, true);
+  assert.equal(codeReadFence("Glob", { pattern: "src/**/*" }, wt).allow, true);
+});
+
+test("footprintGuard: NotebookEdit is a guarded write tool (notebook_path screened like file_path)", () => {
+  // In-footprint notebook edit → allowed; out-of-footprint → denied.
   assert.equal(
-    testReadFence("Read", { file_path: `${wt}/src/acceptance/SP-6_3_AC-1.test.ts` }, base, wt).allow,
+    footprintGuard("NotebookEdit", { notebook_path: "nb/owned.ipynb" }, ["nb/owned.ipynb"], "/wt")
+      .allow,
     true,
   );
-  // Non-read tools are untouched by this fence (the write-fence handles Write/Edit).
-  assert.equal(testReadFence("Write", { file_path: `${wt}/x` }, base, wt).allow, true);
-  // The base dir is NOT a false prefix of the worktree ("…/ext" vs "…/ext-worktrees/…").
-  assert.equal(
-    testReadFence("Read", { file_path: `${wt}/README.md` }, base, wt).allow,
-    false,
+  const d = footprintGuard(
+    "NotebookEdit",
+    { notebook_path: "nb/other.ipynb" },
+    ["nb/owned.ipynb"],
+    "/wt",
   );
+  assert.equal(d.allow, false);
 });
 
 test("footprintGuard: the HELD-OUT test-author MAY write its own probe (its role footprint IS the probe)", () => {

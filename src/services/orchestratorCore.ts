@@ -673,18 +673,17 @@ export function stripSatisfies(body: string): string {
  * Pure → unit-tested.
  */
 /**
- * Tools DENIED to a worker by role (SP-6/7). A held-out `role: test` worker may still explore the
- * BASE code it's writing an integrated test against — it keeps Read + Glob (Read is content-fenced by
- * {@link testReadFence} to the base code only, never the spec's implementation nor outside the
- * worktree). It loses:
- *   • **Bash** — the evasion + roam vector (`cat impl`, `cat > probe`, `cd` into other repos/transcripts);
- *   • **Grep** — a pathless content-search would surface the implementation it is graded on;
+ * Tools DENIED to a worker by role (SP-6/7). Independence is STRUCTURAL — a `role: test` worker's
+ * cwd is the Spec's TESTER worktree, a base-commit snapshot where the code workers' in-progress
+ * modifications simply do not exist — so its Read/Glob are unrestricted (there is nothing to hide in
+ * its tree; it needs the base code to write a well-integrated test). The tool denial is the
+ * SECONDARY control (the maintainer's layering: inform → structure → fence):
+ *   • **Bash** — the roam vector (`cd` into the code worktree / other repos / session transcripts);
+ *   • **Grep** — pathless content-search outside its tree via an absolute path;
  *   • **WebFetch / WebSearch / Task** — no need, and Task could spawn an unfenced sub-agent.
- * So it authors its probe from the injected contract + criteria + test convention, reading only the
- * repo's harness/helpers/conventions — never the code-author's work. The restriction is STRUCTURAL
- * (the tool is simply absent) and never announced, so the worker stays unaware of — and can't game —
- * the independence boundary. A `code` worker keeps the full set (its footprint fence already stops it
- * authoring the `acceptance/` grader). Pure → the caller passes the result as `disallowedTools`.
+ * A `code` worker keeps the full set (its footprint fence stops it authoring the `acceptance/`
+ * grader, and `codeReadFence` stops it reading copied-in probes during rework). Pure → the caller
+ * passes the result as the SDK query's `disallowedTools`.
  */
 export function disallowedToolsForRole(role?: "code" | "test"): string[] {
   return role === "test"
@@ -699,7 +698,6 @@ export function buildWorkerPrompt(
     specBody?: string;
     sliceBody?: string;
     testConvention?: string;
-    baseDir?: string;
   },
 ): string {
   const fp = unit.footprint.join(", ") || "(no declared footprint)";
@@ -721,29 +719,29 @@ export function buildWorkerPrompt(
   // SP-6/7: a `test` unit's task is framed NEUTRALLY — "write tests asserting these behaviours
   // against this interface." It is deliberately NOT told it is a held-out verifier, that a code-author
   // exists, that ACs were stripped from anyone, or that a fence exists: an unaware worker can't reason
-  // about or game the independence boundary. Its independence is STRUCTURAL — it simply lacks the
-  // tools (Bash/Grep/Glob/Read) to see the implementation (see `disallowedToolsForRole`), so it writes
-  // its test from the injected contract + criteria + test convention alone.
+  // about or game the independence boundary. Its independence is STRUCTURAL — its cwd is a base-commit
+  // snapshot that simply does not contain the in-progress implementation — so it writes its test from
+  // the snapshot's base code + the injected contract + criteria + test convention.
   const task = isTest
-    ? `Write automated test(s) at [${fp}]${unit.note ? ` that assert: ${unit.note}` : " asserting the behaviours in the Acceptance criteria below"}. Exercise ONLY the public interface in the SPEC CONTRACT below (write to that interface — do not assume any particular internal implementation).`
+    ? `Write automated test(s) at [${fp}]${unit.note ? ` that assert: ${unit.note.replace(/\s*\.?\s*$/, "")}` : " asserting the behaviours in the Acceptance criteria below"}. Exercise ONLY the public interface in the SPEC CONTRACT below (write to that interface — do not assume any particular internal implementation).`
     : unit.shape === "mechanize"
       ? `This is a MECHANIZE unit: author ONE transform and apply it across all of [${fp}] — do not hand-edit each object.`
       : unit.shape === "fan-out"
         ? `This is a FAN-OUT unit over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`
         : `This is a SERIAL unit — do its steps in order over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`;
   // The test convention (framework + how the file is run), injected so a test unit — which has no
-  // Read/Bash to discover it — can author a runnable test purely from its prompt (SP-6/7).
+  // Bash to poke the toolchain — can author a runnable test straight from its prompt (SP-6/7).
   const conventionBlock =
     isTest && context?.testConvention?.trim()
       ? `\nTest convention: ${context.testConvention.trim()}\n`
       : "";
-  // SP-6/7 — the read-here / write-there workspace separation, stated PLAINLY (this is a legitimate
-  // constraint, not the grading mechanism, so informing the worker avoids the blocked-and-thrashing
-  // behaviour rather than inviting gaming): reference the stable BASE codebase; write only the probe.
-  const workspaceBlock =
-    isTest && context?.baseDir?.trim()
-      ? `\n──── WORKSPACE (WRITE in your worktree · READ from the base) ────\nWRITE: your current working directory IS this worktree — write your test file(s) here at your footprint using paths RELATIVE to the working directory (e.g. \`${fp}\`). Do NOT write under the base directory below; it is READ-ONLY reference. Your ONLY output is your own test file(s).\nREAD: for anything you need to reference — test harness, helpers, existing tests, type/import conventions — read the STABLE BASE codebase (absolute paths under it):\n  ${context.baseDir.trim()}\nAuthor the test from the intent + the SPEC CONTRACT, not from this worktree's in-progress code, so it stays independent of any one implementation. (Files a sibling is still building — the modules under test, your \`acceptance/\` dir — won't exist in the base yet; that's expected. Import them by the path/name the SPEC CONTRACT gives; they resolve when the whole slice is built.)\n`
-      : "";
+  // SP-6/7 — the tester's workspace, stated PLAINLY (inform first): ONE directory — its cwd is a
+  // snapshot of the codebase taken before this feature's changes (structural independence: the
+  // in-progress implementation is not in its tree, so there's no read-here/write-there split to
+  // confuse and nothing to fence). Modules named in the contract may not exist yet — expected.
+  const workspaceBlock = isTest
+    ? `\nYour working directory is a SNAPSHOT of the codebase taken before this feature's changes. Read anything here you need — the test harness, helpers, existing tests, import/type conventions — and write your test file(s) at your footprint (${fp}) using paths relative to the working directory. The modules named in the SPEC CONTRACT may not exist in this snapshot yet (the feature is being built); that's expected — import them by the exact path/name the contract gives and write your tests against the contract + the criteria below. They resolve when the feature is assembled.\n`
+    : "";
   // SP-6/3: the Spec-wide design-time CONTRACT — the shared interface (union of every slice's
   // declared contract) every unit (code AND held-out test, in ANY slice) builds against. Injected
   // verbatim into EVERY unit's prompt so they agree on the exact seam (exports/types/signatures/
@@ -774,7 +772,7 @@ export function buildWorkerPrompt(
   const hasCtx = specBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
-    `Implement THIS unit only — touch only its footprint: ${fp}.\n` +
+    `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
     (hasCtx
       ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
       : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
@@ -787,11 +785,11 @@ export function buildWorkerPrompt(
     sliceBlock +
     `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
     `Do NOT commit, run git, or move the thinking space card — the orchestrator owns git and the gate. ` +
-    // Terminate-on-denial (SP-6/7): a system denial is a HARD boundary, not an obstacle to route
-    // around. This removes the incentive — the drive to finish the task — that turns a blocked worker
-    // into one grinding through alternate tools / Bash / paths to break the constraint.
-    `\nIf the SYSTEM denies a tool call (a permission/footprint/scope denial), that is a hard boundary — do NOT retry it, reach for another tool, or find another way to accomplish it. STOP immediately and output a single final message beginning with ${NEEDS_INPUT_SENTINEL} that quotes the denial, then stop. ` +
-    `Likewise, if you hit a genuine decision you cannot make from the spec/slice/codebase, output a single final message that begins with ${NEEDS_INPUT_SENTINEL} followed by your question, then stop — never guess, never work around a denial.`
+    // Terminate-on-denial (SP-6/7), redirect-aware: never BRUTE-FORCE a boundary (the drive to finish
+    // is what turns a blocked worker into one grinding through Bash / alternate paths), but a denial
+    // that redirects to a better source is followed, and only a genuine dead-end stops the worker.
+    `\nIf the SYSTEM denies a tool call, do NOT brute-force around it — no retrying, no routing through another tool, no alternate path to defeat the constraint. If the denial's message points you to a better source or way of working, follow it and carry on. Only if you genuinely cannot proceed from the spec / slice / contract / codebase, output a single final message beginning with ${NEEDS_INPUT_SENTINEL} that quotes the blocker, then stop. ` +
+    `Likewise, if you hit a genuine decision you cannot make from that context, output a single final message that begins with ${NEEDS_INPUT_SENTINEL} followed by your question, then stop — never guess, never brute-force a boundary.`
   );
 }
 

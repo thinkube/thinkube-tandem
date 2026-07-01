@@ -307,6 +307,10 @@ export interface AcceptanceRecipe {
   sourcePath: string;
   /** How the closing gate runs it (the auditor fills this into `ac_verifications.run`). */
   run: string;
+  /** Optional BUILD step the closing gate runs ONCE (per slice completion) before the per-AC `run`
+   *  commands — e.g. `npx tsc -p tsconfig.test.json` for a compiled language whose `run` targets
+   *  compiled output. A repo whose probes run from source (pytest, cargo test) declares none. */
+  prepare?: string;
 }
 
 /** Fill `{spec}`/`{ac}` in an acceptance-probe template. `spec` is sanitized to a path-safe token
@@ -343,8 +347,13 @@ export async function defaultAcceptanceRecipeResolver(
       p.sourcePath.trim() &&
       typeof p.run === "string" &&
       p.run.trim()
-    )
-      return { sourcePath: p.sourcePath.trim(), run: p.run.trim() };
+    ) {
+      const prepare =
+        typeof p.prepare === "string" && p.prepare.trim()
+          ? p.prepare.trim()
+          : undefined;
+      return { sourcePath: p.sourcePath.trim(), run: p.run.trim(), prepare };
+    }
     return undefined;
   } catch {
     return undefined;

@@ -612,7 +612,7 @@ export function resolveRoleFootprint(
 // callback (in OrchestratorService) and the shell `ownership-guard.mjs` both
 // call this; fixtures in, allow/deny out.
 
-const GUARDED_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
+const GUARDED_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 /** Relativize an Edit/Write target to the repo root so it compares to the (repo-relative) footprint. */
 function relToRepo(p: string, repoRoot: string): string {
@@ -627,10 +627,11 @@ export type FootprintDecision =
 
 /**
  * Decide whether a worker scoped to `footprint` may run `toolName` on `toolInput`
- * (SP-tgs8nz_SL-6). Only `Edit`/`Write`/`MultiEdit` are guarded — anything else, and a
- * call with no `file_path`, is allowed (the hook fences *writes*, not reads/Bash). A
- * write to a file **outside** the declared footprint is **denied**, naming it — so a
- * stray write surfaces immediately instead of corrupting another unit's files.
+ * (SP-tgs8nz_SL-6). Only the write tools — `Edit`/`Write`/`MultiEdit`/`NotebookEdit` — are
+ * guarded; anything else, and a call with no target path, is allowed (the hook fences
+ * *writes*, not reads/Bash). A write to a file **outside** the declared footprint is
+ * **denied**, naming it — so a stray write surfaces immediately instead of corrupting
+ * another unit's files.
  */
 export function footprintGuard(
   toolName: string,
@@ -640,7 +641,9 @@ export function footprintGuard(
   opts?: AcceptanceEvidenceOpts,
 ): FootprintDecision {
   if (!GUARDED_TOOLS.has(toolName)) return { allow: true };
-  const fp = (toolInput as { file_path?: unknown })?.file_path;
+  // NotebookEdit carries its target as `notebook_path`; the rest use `file_path`.
+  const inp = toolInput as { file_path?: unknown; notebook_path?: unknown };
+  const fp = typeof inp?.file_path === "string" ? inp.file_path : inp?.notebook_path;
   if (typeof fp !== "string" || !fp.trim()) return { allow: true };
   const target = relToRepo(fp, repoRoot);
   // The caller passes the ROLE-EFFECTIVE footprint (`resolveRoleFootprint`, SP-6/7): a
@@ -665,52 +668,31 @@ export function footprintGuard(
   };
 }
 
-/** Read/search tools scoped by {@link testReadFence}. */
-const TEST_READ_TOOLS = new Set(["Read", "Glob"]);
-
 /**
- * Read scoping for a `role: test` worker (SP-6/7). Its **reference codebase is the base directory**
- * (`baseDir` — the original checkout, which does NOT carry this run's in-progress changes); its
- * **output** is its own probe in the worktree. So a Read/Glob is allowed when it targets `baseDir`
- * (or the worker's own `acceptance/` area), and refused otherwise — the in-progress worktree, or
- * paths outside both.
- *
- * Unlike the write-fence, this refusal is **explicit and reasoned** on purpose: it is a legitimate
- * *workspace separation* (read stable base ↔ write your test here), NOT the grading mechanism — so
- * telling the worker where to read doesn't leak the independence game, it just stops it flailing.
- * The worker is told, plainly, to reference `baseDir`.
+ * Read scoping for a `role: code` worker (SP-6/7 — the *reverse*-leak closure). Structural
+ * independence puts the TESTER in its own base-commit snapshot, so the tester can't read the
+ * implementation; this fence closes the other direction: once the finished probes are copied
+ * into the code worktree for the gate (and during rework rounds after that), a re-dispatched
+ * code worker must not read the grading assertions and code-to-the-test. Deny a `Read` whose
+ * target is a held-out acceptance-evidence path; everything else is untouched. Terse on
+ * purpose — like the write-fence, the deny must not teach the grading mechanism.
  */
-export function testReadFence(
+export function codeReadFence(
   toolName: string,
   toolInput: unknown,
-  baseDir: string,
   repoRoot: string,
+  opts?: AcceptanceEvidenceOpts,
 ): FootprintDecision {
-  if (!TEST_READ_TOOLS.has(toolName)) return { allow: true };
-  const inp = toolInput as { file_path?: unknown; path?: unknown };
-  const raw =
-    typeof inp?.file_path === "string"
-      ? inp.file_path
-      : typeof inp?.path === "string"
-        ? inp.path
-        : undefined;
-  const base = baseDir.replace(/\/+$/, "");
-  // A Read/Glob with no explicit path resolves against cwd (the worktree) — point it at the base.
-  if (!raw || !raw.trim()) {
-    return {
-      allow: false,
-      reason: `Read your references from the base directory: ${base} (pass an absolute path under it). This worktree holds in-progress changes; author your test against the stable base.`,
-    };
-  }
-  const t = raw.trim();
-  const abs = t.startsWith("/") ? t : `${repoRoot.replace(/\/+$/, "")}/${t}`;
-  const norm = abs.replace(/\/+$/, "");
-  const underBase = norm === base || norm.startsWith(base + "/");
-  const isOwnProbe = isAcceptanceEvidencePath(normalizeFilePath(t));
-  if (underBase || isOwnProbe) return { allow: true };
+  if (toolName !== "Read") return { allow: true };
+  const raw = (toolInput as { file_path?: unknown })?.file_path;
+  if (typeof raw !== "string" || !raw.trim()) return { allow: true };
+  const target = relToRepo(raw.trim(), repoRoot);
+  if (!isAcceptanceEvidencePath(target, opts)) return { allow: true };
   return {
     allow: false,
-    reason: `Read your references from the base directory: ${base} (this is where the stable codebase lives). \`${t}\` is outside it — the worktree holds in-progress changes; read the base instead and write only your own test file.`,
+    reason:
+      `Out-of-scope read: ${target} is not part of this unit's task. Work from your ` +
+      `footprint and the task context; if you genuinely need it, stop and state the question.`,
   };
 }
 
