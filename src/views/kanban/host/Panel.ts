@@ -16,6 +16,16 @@
  * Singleton-by-key: opening the kanban twice surfaces the existing panel
  * rather than spinning up a second webview. Keys are derived from the
  * adapter's `scope` so two different adapters can coexist.
+ *
+ * This file is also the host end of the `open_review` bridge (SP-6/3): the
+ * detached MCP server has no `vscode` API, so its `open_review({kind, id})`
+ * tool asks the host to mount the review webview. `openReviewFromHost` (below)
+ * is that seam — it resolves the reviewed document and mounts `ReviewPanel`,
+ * whose **Approve spec** button mints the content-bound approval token the
+ * `create_slice`/→Ready gate verifies. That pre-slicing approval is a
+ * DIFFERENT moment from the `accept-spec` message this panel also handles
+ * (the end-of-lifecycle Approve-&-close / merge-to-main gate) — the two are
+ * named distinctly throughout so they don't blur.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -35,6 +45,7 @@ import {
   doneWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
+import { ReviewPanel } from "../../review/ReviewPanel";
 
 interface PanelDeps {
   extensionUri: vscode.Uri;
@@ -48,6 +59,15 @@ interface PanelDeps {
    * a gate refusal or merge failure. Absent on adapters with no backing repo.
    */
   onAcceptSpec?: (spec: string) => void | Promise<void>;
+  /**
+   * Where the approval secret + side-channel token store live — the host's
+   * globalStorage path, the same directory the MCP server sees as
+   * `THINKUBE_APPROVAL_DIR` (SP-6/3). Enables the "Approve spec" review
+   * affordance (the PRE-slicing approval that arms `create_slice`/→Ready —
+   * distinct from `onAcceptSpec` above, the end-of-lifecycle merge gate).
+   * Absent → the affordance reports unavailable; the approval gate ships dark.
+   */
+  approvalStorageDir?: string;
 }
 
 const ACTIVE_PANELS = new Map<string, KanbanPanel>();
@@ -58,11 +78,10 @@ export class KanbanPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly output: vscode.OutputChannel | undefined;
   private readonly openDetail:
-    | ((id: string) => void | Promise<void>)
-    | undefined;
+    ((id: string) => void | Promise<void>) | undefined;
   private readonly onAcceptSpec:
-    | ((spec: string) => void | Promise<void>)
-    | undefined;
+    ((spec: string) => void | Promise<void>) | undefined;
+  private readonly approvalStorageDir: string | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly key: string;
 
@@ -77,6 +96,7 @@ export class KanbanPanel implements vscode.Disposable {
     this.output = deps.output;
     this.openDetail = deps.openDetail;
     this.onAcceptSpec = deps.onAcceptSpec;
+    this.approvalStorageDir = deps.approvalStorageDir;
     this.key = key;
   }
 
@@ -159,7 +179,9 @@ export class KanbanPanel implements vscode.Disposable {
     );
   }
 
-  private async handle(message: WebviewMessage): Promise<void> {
+  private async handle(
+    message: WebviewMessage | OpenReviewMessage,
+  ): Promise<void> {
     switch (message.kind) {
       case "load": {
         const thinkingSpace = await this.adapter.load();
@@ -250,6 +272,39 @@ export class KanbanPanel implements vscode.Disposable {
           this.notify(
             "error",
             `Couldn't accept SP-${message.spec}: ${(err as Error).message}`,
+          );
+        }
+        break;
+      }
+      case "open-review": {
+        // "Approve spec" (SP-6/3) — the PRE-slicing approval moment, deliberately
+        // named distinctly from "accept-spec" above (the end-of-lifecycle
+        // Approve-&-close / merge-to-main gate). This opens the review panel whose
+        // Approve button mints the content-bound token the `create_slice`/→Ready
+        // gate verifies; it merges nothing and closes nothing.
+        if (!this.approvalStorageDir) {
+          this.notify(
+            "info",
+            "Approve spec isn't available here — no approval storage is configured for this panel (the approval gate ships dark).",
+          );
+          break;
+        }
+        try {
+          await openReviewFromHost(
+            { kind: "spec", id: message.spec },
+            {
+              storageDir: this.approvalStorageDir,
+              thinkingSpaceDir:
+                this.adapter.thinkingSpaceContext?.()?.thinkingSpaceDir,
+            },
+          );
+        } catch (err) {
+          this.log(
+            `open-review ${message.spec} failed: ${(err as Error).message}`,
+          );
+          this.notify(
+            "error",
+            `Couldn't open the spec review: ${(err as Error).message}`,
           );
         }
         break;
@@ -495,6 +550,172 @@ export class KanbanPanel implements vscode.Disposable {
 </body></html>`;
     return html;
   }
+}
+
+/**
+ * "Approve spec" affordance message (SP-6/3): open the pre-slicing review panel
+ * for a Spec. `spec` tolerates the tep-qualified key (`TEP-6_SP-3`), the
+ * composite id (`6/3`), or the canonical subject id (`TEP-6/SP-3`).
+ *
+ * Kept as a LOCAL type rather than a `WebviewMessage` member: `types.ts`
+ * mirrors the webview app (which is authoritative for the union), so the
+ * shared type follows when the webview grows its button. Deliberately a
+ * different kind from `accept-spec` — approving a spec for slicing and
+ * accepting a delivered spec (merge-to-main) are different moments and must
+ * never share a message.
+ */
+type OpenReviewMessage = { kind: "open-review"; spec: string };
+
+// ─── open_review host bridge (SP-6/3) ──────────────────────────────────────
+//
+// The detached MCP server's `open_review({kind, id})` tool cannot touch the
+// `vscode` API, so it hands the request to the extension host (the same
+// filesystem control-request channel `start_spec_worktree` uses). These
+// exports are the host end of that bridge: resolve the reviewed document and
+// mount the kind-agnostic `ReviewPanel`, whose Approve button mints the
+// content-bound approval token that the `create_slice`/→Ready gate verifies.
+
+/** The review subject kinds `open_review({kind, id})` can name. */
+export type ReviewKind = "spec" | "tep";
+
+/** The `open_review` request as it reaches the host: `{kind, id}` per the MCP tool. */
+export interface OpenReviewRequest {
+  kind: ReviewKind;
+  /** `TEP-6/SP-3` for a spec, `TEP-6` for a tep (tolerant forms are canonicalized). */
+  id: string;
+}
+
+export interface OpenReviewHostDeps {
+  /**
+   * Where the approval secret + token store live — the host's globalStorage
+   * path, i.e. the directory the MCP server sees as `THINKUBE_APPROVAL_DIR`.
+   */
+  storageDir: string;
+  /**
+   * The thinking space dir to resolve `{kind, id}` into a document path.
+   * Ignored when `docPath` is given.
+   */
+  thinkingSpaceDir?: string;
+  /**
+   * Pre-resolved absolute path of the reviewed document (e.g. computed by the
+   * MCP server, which knows its thinking space root, and carried on the
+   * control request). Wins over `thinkingSpaceDir` resolution.
+   */
+  docPath?: string;
+}
+
+/**
+ * Host end of `open_review({kind, id})`: canonicalize the subject, resolve the
+ * reviewed document, and mount {@link ReviewPanel} for
+ * `subjectKey = \`${kind}:${id}\`` (e.g. `spec:TEP-6/SP-3`) — the EXACT key the
+ * gate checks, so the panel's Approve arms precisely this subject's gate.
+ * Throws (with a reason) when the request can't be honoured; callers (the
+ * control-request watcher, this panel's `open-review` handler) surface it.
+ */
+export async function openReviewFromHost(
+  req: OpenReviewRequest,
+  deps: OpenReviewHostDeps,
+): Promise<void> {
+  if (req.kind !== "spec" && req.kind !== "tep") {
+    throw new Error(
+      `open_review: unknown review kind "${String(req.kind)}" (expected "spec" | "tep").`,
+    );
+  }
+  const id = canonicalReviewId(req.kind, req.id);
+  if (!id) {
+    throw new Error(
+      `open_review: unrecognized ${req.kind} id "${req.id}" — expected ` +
+        (req.kind === "spec" ? `"TEP-<t>/SP-<n>"` : `"TEP-<t>"`) +
+        `.`,
+    );
+  }
+  // Kind-namespaced subject — matches the gate's key byte-for-byte, and keeps
+  // a `spec:` approval from ever satisfying a `tep:` gate (or vice versa).
+  const subjectKey = `${req.kind}:${id}`;
+  const docPath =
+    deps.docPath ??
+    (deps.thinkingSpaceDir
+      ? await resolveReviewDocPath(req.kind, id, deps.thinkingSpaceDir)
+      : undefined);
+  if (!docPath) {
+    throw new Error(
+      `open_review: cannot locate the ${req.kind} document for ${subjectKey} — ` +
+        `no docPath was supplied and there is no thinking space dir to resolve it under.`,
+    );
+  }
+  ReviewPanel.open(subjectKey, docPath, { storageDir: deps.storageDir });
+}
+
+/**
+ * Canonicalize a review subject id to the form the gate keys on:
+ * `TEP-6/SP-3` (spec) / `TEP-6` (tep). Tolerates the tep-qualified flattening
+ * (`TEP-6_SP-3`), the composite spec id (`6/3`), and a bare tep number.
+ * Returns `undefined` for anything else.
+ */
+function canonicalReviewId(kind: ReviewKind, id: string): string | undefined {
+  const raw = id.trim();
+  if (kind === "tep") {
+    const m = /^(?:TEP-)?(\d+)$/.exec(raw);
+    return m ? `TEP-${m[1]}` : undefined;
+  }
+  const m = /^(?:TEP-)?(\d+)[/_](?:SP-)?(\d+)$/.exec(raw);
+  return m ? `TEP-${m[1]}/SP-${m[2]}` : undefined;
+}
+
+/**
+ * Resolve a canonical review id to its document under a thinking space dir:
+ * `<space>/<org>/teps/TEP-6/SP-3/spec.md` (or `…/TEP-6/tep.md`), where `<org>`
+ * is the per-maintainer segment discovered exactly as `ThinkubeStore.orgSeg`
+ * does — the child dir holding a `teps/` — with a bare `teps/` fallback for an
+ * org-less space. Prefers a candidate whose document EXISTS (several orgs can
+ * share one space), but still returns the store-mirroring path when none does:
+ * `ReviewPanel` renders a "not yet written" state and live-updates when the
+ * document appears, which matters mid-`/spec-prepare`.
+ */
+export async function resolveReviewDocPath(
+  kind: ReviewKind,
+  canonicalId: string,
+  thinkingSpaceDir: string,
+): Promise<string> {
+  const relDoc =
+    kind === "spec"
+      ? [...canonicalId.split("/"), "spec.md"]
+      : [canonicalId, "tep.md"];
+  // Candidate `teps` roots: each org child dir that holds one, then the bare root.
+  const roots: string[] = [];
+  try {
+    for (const e of await fs.readdir(thinkingSpaceDir, {
+      withFileTypes: true,
+    })) {
+      if (
+        !e.isDirectory() ||
+        e.name.startsWith(".") ||
+        e.name === "node_modules"
+      )
+        continue;
+      const orgTeps = path.join(thinkingSpaceDir, e.name, "teps");
+      try {
+        await fs.access(orgTeps);
+        roots.push(orgTeps);
+      } catch {
+        /* not an org dir */
+      }
+    }
+  } catch {
+    /* space dir missing/unreadable → bare-root fallback below */
+  }
+  roots.push(path.join(thinkingSpaceDir, "teps"));
+  for (const root of roots) {
+    const candidate = path.join(root, ...relDoc);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      /* keep probing */
+    }
+  }
+  // Nothing on disk yet: mirror the store's own resolution (first org, else bare).
+  return path.join(roots[0], ...relDoc);
 }
 
 function readMode(): ModeFlag {
