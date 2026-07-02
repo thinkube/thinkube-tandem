@@ -94,6 +94,9 @@ export interface SliceRecut {
   satisfies?: number[];
   /** New execution-aware work units. Replaces `work_units`. */
   work_units?: Frontmatter["work_units"];
+  /** New design-time contract (SP-6/3 — the shared interface every worker builds against).
+   *  Replaces `contract`; a re-scope that changes the seam must be able to revise it. */
+  contract?: string;
 }
 
 /** True when a re-cut carries at least one footprint field to replace. */
@@ -102,7 +105,8 @@ export function hasRecutFields(recut: SliceRecut | undefined): boolean {
   return (
     recut.files !== undefined ||
     recut.satisfies !== undefined ||
-    recut.work_units !== undefined
+    recut.work_units !== undefined ||
+    recut.contract !== undefined
   );
 }
 
@@ -163,6 +167,7 @@ export function recutSliceFrontmatter(
   if (recut.files !== undefined) next.files = recut.files;
   if (recut.satisfies !== undefined) next.satisfies = recut.satisfies;
   if (recut.work_units !== undefined) next.work_units = recut.work_units;
+  if (recut.contract !== undefined) next.contract = recut.contract;
 
   return { ok: true, frontmatter: next };
 }

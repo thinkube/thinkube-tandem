@@ -1102,6 +1102,11 @@ const TOOL_DEFS = [
           description:
             "Re-cut (SP-th4wqd): REPLACE the 1-based AC ordinals this slice delivers. Omit to leave unchanged; pass `[]` to clear.",
         },
+        contract: {
+          type: "string",
+          description:
+            "Re-cut: REPLACE the slice's design-time contract (SP-6/3 — the shared interface, compilable signatures, injected into every worker's prompt). Omit to leave unchanged. A re-scope that changes the seam must revise the contract here, never by hand-editing frontmatter.",
+        },
         work_units: {
           type: "array",
           items: {
@@ -1452,6 +1457,7 @@ export async function dispatchTool(
           work_units: Array.isArray(args.work_units)
             ? (args.work_units as Frontmatter["work_units"])
             : undefined,
+          contract: optString(args, "contract"),
         },
       );
     case "write_tep": {

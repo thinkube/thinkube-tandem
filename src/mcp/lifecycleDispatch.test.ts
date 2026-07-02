@@ -424,6 +424,29 @@ test("update_slice re-cut replaces files/satisfies/work_units in place, preservi
   assert.deepEqual(wu[1].footprint, ["src/after-b.ts"]);
 });
 
+test("update_slice re-cut replaces the design-time `contract` in place (SP-6/3 seam revision)", async () => {
+  const store = await seededStore();
+  const handle = await createSliceVia(store, { files: ["src/a.ts"] });
+
+  const revised =
+    "export function gate(dir: string): boolean; // armed by THINKUBE_APPROVAL_DIR";
+  await dispatchTool(
+    "update_slice",
+    { slice: handle, contract: revised },
+    ctxFor(store),
+    ALLOW,
+  );
+
+  const { frontmatter } = await readSlice(store, handle);
+  assert.equal(
+    frontmatter.contract,
+    revised,
+    "a contract-only re-cut must replace the slice's contract",
+  );
+  // Untouched fields survive the contract re-cut.
+  assert.deepEqual(frontmatter.files, ["src/a.ts"]);
+});
+
 test("update_slice re-cut whose files escape the repo is refused with the SAME guard rejection create_slice gives", async () => {
   const store = await seededStore();
   const handle = await createSliceVia(store, { files: ["src/ok.ts"] });
