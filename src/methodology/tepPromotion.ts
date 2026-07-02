@@ -91,21 +91,47 @@ export function projectTepPath(
  * Decide where a `write_tep` for `tepId` must write, given the projects that may
  * own it (each carrying the TEP ids in its `teps/`).
  *
- * - Owned by exactly one project → `{ kind: "project", … }` (update the promoted
- *   copy; the handler must NOT also touch the session thinking space).
+ * **A TEP id is unique only within its (thinking space, org) scope — a Project keeps
+ * its OWN numbering sequence, exactly like a Spec id is scoped per-TEP** (the same
+ * invariant `promoteTep` enforces by RE-numbering into the target project's own
+ * `nextTepId()` rather than preserving the origin number). So two *different*
+ * projects legitimately minting their own "TEP-1" is the expected shape of scoped
+ * numbering, not a collision — there is nothing to reconcile between them.
+ *
+ * - `callerProject` set (the caller's OWN `thinking_space:` already resolved to a
+ *   specific project's store) → `{ kind: "session" }` **unconditionally**: that
+ *   project is authoritative for its own `teps/` regardless of what any unrelated
+ *   project's `teps/` independently contains under the same bare number. The
+ *   cross-project scan below exists only to redirect an UNSCOPED (session/repo-local)
+ *   caller to wherever a TEP was already promoted — it has no bearing once the
+ *   caller has already named the project directly.
+ * - Owned by exactly one project (unscoped caller) → `{ kind: "project", … }`
+ *   (update the promoted copy; the handler must NOT also touch the session copy).
  * - Owned by no project → `{ kind: "session" }` (write the session thinking space copy).
- * - Owned by more than one project → `{ kind: "refuse", … }`: the promotion is
- *   unresolvable, so the handler refuses with a message naming `promote_tep`
- *   rather than split-braining yet another copy.
+ * - Owned by more than one project (unscoped caller, genuine caller-side ambiguity —
+ *   "TEP-1" could mean either project's own TEP-1) → `{ kind: "refuse", … }`: the
+ *   handler refuses, naming both candidates and directing the caller to retry with
+ *   a project-scoped `thinking_space:` (or, if this really is one proposal
+ *   double-promoted by mistake, to reconcile via `promote_tep`).
  *
  * @param tepId    the TEP id being written (with or without the `TEP-` prefix).
  * @param projects the candidate project homes + the TEP ids each owns.
+ * @param callerProject the project the caller's own `thinking_space:` argument
+ *   already resolved to, when its store IS a project's own store — bypasses the
+ *   cross-project scan entirely (see above).
  */
 export function resolveTepWritePath(
   tepId: string,
   projects: PromotedProject[],
+  callerProject?: { product: string; id: string },
 ): TepWritePath {
   const want = normalizeTepId(tepId);
+
+  // The caller already told us which project's TEP-{id} is meant — a project-scoped
+  // call is authoritative for its own teps/ no matter what an unrelated project's
+  // teps/ independently contains under the same bare number.
+  if (callerProject) return { kind: "session" };
+
   const owners = projects.filter((p) =>
     p.teps.some((t) => normalizeTepId(t) === want),
   );
@@ -127,9 +153,11 @@ export function resolveTepWritePath(
     kind: "refuse",
     refuse: { tool: PROMOTE_TOOL, tepId: want, candidates },
     message:
-      `TEP-${want} is promoted into more than one project (${candidates.join(", ")}), ` +
-      `so write_tep cannot resolve a single canonical home. A promoted TEP must ` +
-      `live in exactly one project's teps/. Reconcile the duplicate with the ` +
-      `${PROMOTE_TOOL} tool (it owns the single-home invariant), then retry write_tep.`,
+      `TEP-${want} exists in more than one project (${candidates.join(", ")}) — ` +
+      `a bare "TEP-${want}" is ambiguous between them (TEP numbers are scoped per ` +
+      `project, so this is normal, not necessarily an error). Retry with ` +
+      `thinking_space=<one of the candidates above> to target that project's own ` +
+      `TEP-${want} directly. If instead this is genuinely ONE proposal that got ` +
+      `promoted into two projects by mistake, reconcile it with the ${PROMOTE_TOOL} tool.`,
   };
 }

@@ -3348,7 +3348,24 @@ export async function writeTep(
         teps: projectTeps(thinkingSpaceRoot, p.product, p.id),
       }))
     : [];
-  const dest = resolveTepWritePath(tepId, projects);
+  // If the CALLER's own `thinking_space:` argument already resolved `store` to a
+  // specific project's own store (its root IS `<product>/projects/<id>`), that
+  // project is authoritative for its own TEP ids — a bare "TEP-1" existing in some
+  // OTHER, unrelated project must never veto this write (TEP numbers are scoped
+  // per-project, exactly like Spec numbers are scoped per-TEP; see
+  // `resolveTepWritePath`'s doc for the full rationale).
+  const callerProject = thinkingSpaceRoot
+    ? projects.find(
+        (p) =>
+          path.resolve(store.workspaceRoot) ===
+          path.resolve(thinkingSpaceRoot, p.product, "projects", p.id),
+      )
+    : undefined;
+  const dest = resolveTepWritePath(
+    tepId,
+    projects,
+    callerProject && { product: callerProject.product, id: callerProject.id },
+  );
   if (dest.kind === "refuse") {
     // Ambiguous promotion home — refuse rather than minting a third copy. The
     // message names `promote_tep`, the tool that owns the single-home invariant.
