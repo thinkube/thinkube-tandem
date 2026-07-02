@@ -942,6 +942,44 @@ test("runAcVerifications: exit 0 = pass, non-zero = fail, attributed per-AC, in 
   assert.match(results[1].evidence, /exit 1/);
 });
 
+test("runAcVerifications: a FAILING check's evidence carries the failing assertion, not just the summary counts", async () => {
+  // The evidence feeds the rework round's worker prompt and the human's DELIVERY read —
+  // "# fail 1" alone forces log archaeology (the SP-6/3 round-2 diagnosis). The node:test
+  // TAP failure block (`not ok` + its YAML diagnostic) must survive into the evidence.
+  const tap = [
+    "TAP version 13",
+    "not ok 2 - a content-bound approval clears the gate after an edit",
+    "  ---",
+    "  failureType: 'testCodeFailure'",
+    "  error: 'SP-1/1 AC 2 has no runnable ac_verifications entry'",
+    "  ...",
+    "1..2",
+    "# tests 2",
+    "# pass 1",
+    "# fail 1",
+  ].join("\n");
+  const exec: AcExec = async () => ({ code: 1, output: tap });
+  const [r] = await runAcVerifications([{ ac: 4, run: "probe-4" }], "/wt", exec);
+  assert.equal(r.pass, false);
+  assert.match(r.evidence, /not ok 2 - a content-bound approval/);
+  assert.match(r.evidence, /no runnable ac_verifications entry/);
+  assert.match(r.evidence, /# fail 1/);
+  // A PASSING check keeps the lean tail-only shape (no failure-block extraction) — with a
+  // realistic long output, the head of the run never appears, only the trailing summary.
+  const longOk = [
+    "TAP version 13",
+    ...Array.from({ length: 30 }, (_, i) => `ok ${i + 1} - case ${i + 1}`),
+    "1..30",
+    "# tests 30",
+    "# pass 30",
+    "# fail 0",
+  ].join("\n");
+  const ok: AcExec = async () => ({ code: 0, output: longOk });
+  const [g] = await runAcVerifications([{ ac: 1, run: "probe-1" }], "/wt", ok);
+  assert.match(g.evidence, /# pass 30/);
+  assert.doesNotMatch(g.evidence, /ok 1 - case 1\b/);
+});
+
 test("runAcVerifications: an un-runnable check is RED, never silently green (no skip)", async () => {
   const exec: AcExec = async () => {
     throw new Error("command not found");

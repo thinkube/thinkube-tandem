@@ -1313,15 +1313,27 @@ const defaultAcExec: AcExec = (run, cwd) =>
 
 /** Format one verification's evidence: the command, its exit code, and a clipped output tail. */
 function acEvidence(run: string, code: number | null, output: string): string {
-  const tail = output
-    .split("\n")
-    .map((l) => l.replace(/\s+$/, ""))
+  const lines = output.split("\n").map((l) => l.replace(/\s+$/, ""));
+  const tail = lines
     .filter((l, i, a) => l.length > 0 || i < a.length - 1)
     .slice(-8)
     .join("\n")
     .trim();
   const head = `$ ${run} → exit ${code ?? "null"}`;
-  return tail ? `${head}\n${clip(tail, 600)}` : head;
+  // On a FAILURE, the summary counts alone are useless for the rework round (the
+  // "# fail 1" tail says nothing about WHAT failed) — so carry the first failing
+  // assertion block too: from the first `not ok` line through its YAML diagnostic
+  // (name, error, failureType), capped. This is what the re-authoring worker and
+  // the human read; without it every red is "see the logs" archaeology.
+  let failDetail = "";
+  if (code !== 0) {
+    const at = lines.findIndex((l) => /^\s*not ok /.test(l));
+    if (at !== -1) failDetail = lines.slice(at, at + 14).join("\n").trim();
+  }
+  const body = [failDetail ? clip(failDetail, 900) : "", tail ? clip(tail, 600) : ""]
+    .filter(Boolean)
+    .join("\n");
+  return body ? `${head}\n${body}` : head;
 }
 
 /**

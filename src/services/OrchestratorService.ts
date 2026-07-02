@@ -1610,6 +1610,7 @@ export class OrchestratorService {
           .map((r) => `AC #${r.ac}: ${r.evidence}`)
           .join("\n\n");
         let fault: Fault = "both";
+        let rationale = "";
         try {
           const judgment = await judge(
             {
@@ -1620,6 +1621,7 @@ export class OrchestratorService {
             `${why}\n\n${failEvidence}`,
           );
           fault = judgment.fault;
+          rationale = (judgment.rationale ?? "").trim();
           output.appendLine(
             `⚖ ${s.handle}: judged fault = ${judgment.fault} — ${judgment.rationale}`,
           );
@@ -1630,9 +1632,17 @@ export class OrchestratorService {
           );
         }
         for (const n of failedAcs) routes.set(n, fault);
+        // The diagnosis lands on the slice and is INJECTED INTO THE REWORK ROUND's worker prompt
+        // (the slice body travels there) — so it must carry what actually failed: the judge's
+        // rationale and the failing evidence. Without them the re-author starts from zero and the
+        // rework round is the same experiment re-rolled ("see DELIVERY.md" is a dead pointer for
+        // a worker — DELIVERY lives in the thinking space, outside its worktree).
         await blockSlice(
           s.handle,
-          `Closing gate: ${why}. Judged fault: ${fault}. The acceptance criteria were NOT verified green — see DELIVERY.md for per-AC evidence.`,
+          `Closing gate: ${why}. Judged fault: ${fault}${rationale ? ` — ${rationale}` : ""}.` +
+            (failEvidence
+              ? `\n\nFailing evidence:\n${failEvidence.slice(0, 2000)}`
+              : ""),
           fault,
         );
         output.appendLine(
