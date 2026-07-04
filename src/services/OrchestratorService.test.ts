@@ -167,6 +167,8 @@ function makeDeps(
     /** The judged code-vs-test fault a red closing gate attributes (SP-6/7 AC4). Injected so the
      *  default judge (a real SDK session) never fires in a test; defaults to `code` (re-dispatch). */
     fault?: "code" | "test" | "both" | "contract";
+    /** Stamp the Spec doc's `superseded:` frontmatter (SP-6/14) so the orchestrate guard is exercisable. */
+    superseded?: string;
   } = {},
 ): {
   deps: OrchestratorDeps;
@@ -235,8 +237,10 @@ function makeDeps(
       getFile: async (rel: string) =>
         rel === SPEC_DOC
           ? {
-              frontmatter:
-                specVerifs === null ? {} : { ac_verifications: specVerifs },
+              frontmatter: {
+                ...(specVerifs === null ? {} : { ac_verifications: specVerifs }),
+                ...(opts.superseded ? { superseded: opts.superseded } : {}),
+              },
               body: "",
               raw: "",
             }
@@ -337,6 +341,24 @@ test("dispatchSpec: a legacy (unit-less) ready slice runs, lands, the gate advan
   assert.deepEqual(calls.released, ["TEP-1_SP-1_SL-2"]);
   // the closing gate ran the declared plan
   assert.ok(r.acResults.length >= 1 && r.acResults.every((x) => x.pass));
+});
+
+test("SP-6/14: a superseded Spec is NOT orchestrated — dispatchSpec refuses before any worker runs", async () => {
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        work_units: [{ footprint: ["src/a.ts"], execution: "fan-out", note: "do a" }],
+      },
+    },
+    { superseded: "2026-07-04T00:00:00.000Z" },
+  );
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+  assert.equal(r.ok, false, "a superseded Spec cannot be orchestrated");
+  assert.match(r.reason ?? "", /superseded/i);
+  assert.equal(r.dispatched, 0, "no units dispatched");
+  assert.equal(calls.created, 0, "no worktree created");
+  assert.deepEqual(calls.acquired, [], "no unit acquired");
 });
 
 test("dispatchSpec: a slice's fan-out units dispatch as SEPARATE workers; gate advances after all land", async () => {

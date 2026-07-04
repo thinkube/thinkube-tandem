@@ -155,6 +155,7 @@ test("nested specMeta is keyed by the tep-qualified spec key", () => {
           allAcsChecked: true,
           criteria: [{ label: "a", checked: true }],
           archived: false,
+          superseded: false,
         },
       ],
     ]),
@@ -194,6 +195,7 @@ test("an archived nested Spec drops its slices AND acceptance card off the think
           allAcsChecked: true,
           criteria: [{ label: "a", checked: true }],
           archived: true,
+          superseded: false,
         },
       ],
     ]),
@@ -305,6 +307,7 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
           allAcsChecked: false,
           criteria: crit,
           archived: false,
+          superseded: false,
         },
       ],
     ]),
@@ -329,6 +332,7 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
           allAcsChecked: true,
           criteria: [{ label: "one", checked: true }],
           archived: false,
+          superseded: false,
         },
       ],
     ]),
@@ -348,6 +352,7 @@ test("close card: one per Spec with slices, carrying checklist + progress (TEP-0
           allAcsChecked: true,
           criteria: [{ label: "one", checked: true }],
           archived: false,
+          superseded: false,
         },
       ],
     ]),
@@ -369,6 +374,7 @@ test("deriveSpecMeta reads accepted, all-ACs-checked, and the criteria checklist
       { label: "two", checked: true },
     ],
     archived: false,
+    superseded: false,
   });
   // A non-empty `accepted:` stamp flips accepted; an empty string does not.
   assert.equal(
@@ -399,6 +405,7 @@ test("an archived Spec drops its slices AND acceptance card off the thinking spa
     allAcsChecked: true,
     criteria: [{ label: "a", checked: true }],
     archived,
+    superseded: false,
   });
   const thinkingSpace = buildSliceThinkingSpace(
     [

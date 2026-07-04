@@ -69,6 +69,8 @@ export interface TaskCard {
   accepted?: boolean;
   /** Close card only: every slice Done + every AC checked → "Approve & close" enabled. */
   acceptReady?: boolean;
+  /** Close card only: the Spec is superseded (SP-6/14) — Orchestrate is disabled. */
+  superseded?: boolean;
   /** Close card only: the Spec's `## Acceptance Criteria` as a checklist. */
   acceptanceCriteria?: { label: string; checked: boolean }[];
   /** Close card only: slices Done / total, for the progress line. */
