@@ -29,8 +29,29 @@ export interface StartWorktreeRequest {
   repo?: string;
 }
 
+/**
+ * Open the review panel for a spec/tep (the `open_review` MCP tool → host bridge,
+ * SP-6/3). The detached MCP server writes this request; the host resolves it to
+ * `openReviewFromHost({kind, id}, {storageDir, docPath, thinkingSpaceDir})` and
+ * mounts the `ReviewPanel` whose Approve button mints the gate's approval token.
+ * The MCP writer's shape (`kanbanMcpServer.openReview`) is the contract parsed here.
+ */
+export interface OpenReviewRequest {
+  kind: "open-review";
+  /** The reviewed subject kind — `spec` or `tep` (`openReviewFromHost`'s `kind`). */
+  subjectKind: "spec" | "tep";
+  /** The canonical subject id (`TEP-6/SP-9` for a spec, `TEP-6` for a tep). */
+  id: string;
+  /** The kind-namespaced subject key the gate keys on (`spec:TEP-6/SP-9`). */
+  subjectKey: string;
+  /** Pre-resolved absolute path of the reviewed document (the MCP knows its root). */
+  docPath: string;
+  /** The thinking space dir — a fallback resolver for `docPath` when absent. */
+  thinkingSpaceDir?: string;
+}
+
 /** The discriminated union of control requests. New kinds are peers here. */
-export type ControlRequest = StartWorktreeRequest;
+export type ControlRequest = StartWorktreeRequest | OpenReviewRequest;
 
 /** Serialize a control request to the on-disk JSON line. */
 export function serializeControlRequest(req: ControlRequest): string {
@@ -59,6 +80,30 @@ export function parseControlRequest(text: string): ControlRequest | undefined {
         spec: o.spec,
         ...(typeof o.repo === "string" && o.repo ? { repo: o.repo } : {}),
       };
+    case "open-review":
+      // `docPath` is the load-bearing field (the host mounts the panel on it);
+      // subjectKind/id/subjectKey identify the gate subject. All required but
+      // `thinkingSpaceDir` (a fallback resolver the MCP normally also supplies).
+      if (
+        (o.subjectKind !== "spec" && o.subjectKind !== "tep") ||
+        typeof o.id !== "string" ||
+        !o.id ||
+        typeof o.subjectKey !== "string" ||
+        !o.subjectKey ||
+        typeof o.docPath !== "string" ||
+        !o.docPath
+      )
+        return undefined;
+      return {
+        kind: "open-review",
+        subjectKind: o.subjectKind,
+        id: o.id,
+        subjectKey: o.subjectKey,
+        docPath: o.docPath,
+        ...(typeof o.thinkingSpaceDir === "string" && o.thinkingSpaceDir
+          ? { thinkingSpaceDir: o.thinkingSpaceDir }
+          : {}),
+      };
     default:
       return undefined; // unknown control kind
   }
@@ -67,6 +112,7 @@ export function parseControlRequest(text: string): ControlRequest | undefined {
 /** Handlers a control-request router dispatches to, one per request kind. */
 export interface ControlRequestHandlers<T> {
   startWorktree(spec: string): T;
+  openReview(req: OpenReviewRequest): T;
 }
 
 /**
@@ -81,6 +127,8 @@ export function routeControlRequest<T>(
   switch (req.kind) {
     case "start-worktree":
       return handlers.startWorktree(req.spec);
+    case "open-review":
+      return handlers.openReview(req);
   }
 }
 
