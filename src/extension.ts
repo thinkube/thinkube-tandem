@@ -463,8 +463,13 @@ export function activate(context: vscode.ExtensionContext) {
   // one-shot request file into the shared control dir; this watcher runs the
   // matching command (`thinkube.specs.startWorktree`) — the same filesystem
   // MCP→host channel the thinking space uses, decoupled from the agent-teams tmux bridge.
-  const controlWatcher = new ControlRequestWatcher(controlDir(context), (m) =>
-    kanbanOutput.appendLine(`[thinkube] control: ${m}`),
+  const controlWatcher = new ControlRequestWatcher(
+    controlDir(context),
+    (m) => kanbanOutput.appendLine(`[thinkube] control: ${m}`),
+    // SP-6/3 open_review bridge: the same globalStorage approval dir the panel
+    // call sites and the MCP env use, so the Approve button mints into the store
+    // the gate reads — one directory, whichever route opens the panel.
+    approvalDir,
   );
   context.subscriptions.push(controlWatcher);
   controlWatcher.activate().catch((err) => {

@@ -20,7 +20,9 @@ import * as path from "node:path";
 import {
   parseControlRequest,
   routeControlRequest,
+  type OpenReviewRequest,
 } from "../mcp/controlRequests";
+import { openReviewFromHost } from "../views/kanban/host/Panel";
 
 /** The shared control dir, derived from globalStorage so the MCP env and the
  *  watcher agree on one location (published to the MCP as THINKUBE_CONTROL_DIR). */
@@ -34,6 +36,10 @@ export class ControlRequestWatcher implements vscode.Disposable {
   constructor(
     private readonly dir: string,
     private readonly log: (msg: string) => void = () => {},
+    /** The approval-token store dir (globalStorage) the `open_review` panel mints
+     *  into — the same directory the MCP server sees as THINKUBE_APPROVAL_DIR.
+     *  Absent → the panel opens but its Approve affordance reports itself off. */
+    private readonly approvalDir?: string,
   ) {}
 
   /** Start watching the control dir for request files. Idempotent. */
@@ -67,6 +73,7 @@ export class ControlRequestWatcher implements vscode.Disposable {
       await routeControlRequest(req, {
         startWorktree: (spec) =>
           this.openWorktree(spec, "repo" in req ? req.repo : undefined),
+        openReview: (r) => this.openReview(r),
       });
     } catch (err) {
       this.log(`control request ${req.kind} failed: ${(err as Error).message}`);
@@ -90,6 +97,29 @@ export class ControlRequestWatcher implements vscode.Disposable {
       repoPath,
       hasOpenWork: true,
     });
+  }
+
+  /**
+   * Mount the review panel for an `open_review` request — the host end of the
+   * MCP `open_review({kind, id})` tool. The MCP already resolved the reviewed
+   * document (`docPath`) and the gate subject; we hand them to
+   * `openReviewFromHost`, injecting the approval store dir so the panel's
+   * Approve button mints into the store the `create_slice`/→Ready gate reads.
+   */
+  private async openReview(req: OpenReviewRequest): Promise<void> {
+    if (!this.approvalDir) {
+      this.log(
+        `open-review ${req.subjectKey}: no approval dir configured — opening read-only (Approve is off)`,
+      );
+    }
+    await openReviewFromHost(
+      { kind: req.subjectKind, id: req.id },
+      {
+        storageDir: this.approvalDir ?? "",
+        docPath: req.docPath,
+        thinkingSpaceDir: req.thinkingSpaceDir,
+      },
+    );
   }
 
   dispose(): void {
