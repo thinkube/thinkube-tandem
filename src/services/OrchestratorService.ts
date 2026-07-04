@@ -867,6 +867,26 @@ export class OrchestratorService {
       verificationTrace: [],
     };
 
+    // Superseded gate (SP-6/14, completing "a superseded Spec is not advanceable"):
+    // orchestration is an advance path just like `create_slice`, so a non-empty
+    // `superseded:` stamp refuses here — guarding the ACTION covers every entry point
+    // (dashboard button, tree nav, command palette) at once. Reversible via
+    // `unsupersede_spec`. Checked before any slice is built or worker dispatched.
+    const specDoc = await this.deps.store.getFile(
+      this.deps.store.pathForSpecDoc(specNumber),
+    );
+    const supersededStamp = specDoc?.frontmatter?.superseded;
+    if (
+      typeof supersededStamp === "string" &&
+      supersededStamp.trim().length > 0
+    ) {
+      const reason =
+        `SP-${specNumber} is superseded (${supersededStamp}) and cannot be orchestrated. ` +
+        `Run unsupersede_spec ${specNumber} first if you mean to build it.`;
+      output.appendLine(`✗ ${reason}`);
+      return { ...result, ok: false, reason };
+    }
+
     const slices = await this.buildSlices(specNumber);
     await this.loadPromptContext(specNumber);
     const dag = buildUnitDag(slices);

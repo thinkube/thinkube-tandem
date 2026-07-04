@@ -185,14 +185,20 @@ export function GraphView(): JSX.Element {
     const specs = specIds.map((id) => {
       const acc = acceptCards.get(id);
       const accepted = !!acc?.accepted;
+      // SP-6/14: a superseded Spec is not advanceable — its Orchestrate action is
+      // disabled (the host command also refuses, this just hides the dead button).
+      const superseded = !!acc?.superseded;
       return {
         id,
-        canRun: cards.some(
-          (c) =>
-            c.parentId === id &&
-            (c.columnId === "column-ready" ||
-              c.columnId === "column-attention"),
-        ),
+        superseded,
+        canRun:
+          !superseded &&
+          cards.some(
+            (c) =>
+              c.parentId === id &&
+              (c.columnId === "column-ready" ||
+                c.columnId === "column-attention"),
+          ),
         accepted,
         canAccept: !!acc?.acceptReady && !accepted,
         canReject: !!acc && !accepted,
@@ -260,7 +266,9 @@ export function GraphView(): JSX.Element {
                 title={
                   s.canRun
                     ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
-                    : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
+                    : s.superseded
+                      ? `SP-${s.id} is superseded — unsupersede it first if you mean to build it`
+                      : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
                 }
                 onClick={
                   s.canRun

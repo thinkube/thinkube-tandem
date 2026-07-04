@@ -177,6 +177,9 @@ export interface SpecMeta {
   criteria: AcceptanceItem[];
   /** Spec frontmatter `archived: true` — its cards drop off the thinking space (TEP-tg86v7). */
   archived: boolean;
+  /** Spec frontmatter `superseded:` present (SP-6/14) — deliberately not building it; the
+   *  acceptance card's Orchestrate action is disabled (a superseded Spec is not advanceable). */
+  superseded: boolean;
 }
 
 /**
@@ -189,7 +192,9 @@ export interface SpecMeta {
  * place.
  */
 export function deriveSpecMeta(
-  frontmatter: { accepted?: unknown; archived?: unknown } | undefined,
+  frontmatter:
+    | { accepted?: unknown; archived?: unknown; superseded?: unknown }
+    | undefined,
   body: string | undefined,
 ): SpecMeta {
   const accepted = frontmatter?.accepted != null && frontmatter.accepted !== "";
@@ -199,6 +204,9 @@ export function deriveSpecMeta(
     allAcsChecked: criteria.length > 0 && criteria.every((i) => i.checked),
     criteria,
     archived: frontmatter?.archived === true,
+    superseded:
+      typeof frontmatter?.superseded === "string" &&
+      frontmatter.superseded.trim().length > 0,
   };
 }
 
@@ -343,6 +351,7 @@ export function buildSliceThinkingSpace(
       isAcceptance: true,
       accepted,
       acceptReady,
+      superseded: meta?.superseded ?? false,
       acceptanceCriteria: meta?.criteria ?? [],
       slicesDone: agg.done,
       slicesTotal: agg.total,
