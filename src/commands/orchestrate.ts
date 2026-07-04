@@ -35,7 +35,7 @@ import {
   answerParkedWorker,
 } from "../services/orchestratorSessions";
 import { gateSpecAcceptance } from "../methodology/qualityGates";
-import { mergeSpecPr } from "../github/specMerge";
+import { mergeSpecPr, specBranch } from "../github/specMerge";
 import { retireWorktreeNote } from "./acceptLand";
 import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
@@ -410,7 +410,13 @@ export function registerOrchestrateCommands(
           // Git ops run in the spec's WORKING repo (`repo:`), not the thinking space dir — a
           // project member's branch/worktree live in a different repo than its thinking space.
           const wrp = await workingRepoPath(store, specId, repoPath);
+          output.appendLine(
+            `▸ accept SP-${specId}: gate ok — merging in working repo ${wrp} (branch ${specBranch(specId)})…`,
+          );
           const merge = await mergeSpecPr(specId, wrp);
+          output.appendLine(
+            `▸ accept SP-${specId}: merge result — ${JSON.stringify(merge)}`,
+          );
           await store.writeFile(
             specRel,
             { ...specDoc.frontmatter, accepted: new Date().toISOString() },
@@ -425,8 +431,15 @@ export function registerOrchestrateCommands(
               : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
           );
         } catch (err) {
+          // Durable diagnostics (the toast is transient): log the full error + stack to the
+          // output channel so an accept failure is inspectable after the fact.
+          const e = err as Error;
+          output.appendLine(
+            `✗ accept SP-${specId} FAILED: ${e.message}\n${e.stack ?? "(no stack)"}`,
+          );
+          output.show(true);
           vscode.window.showErrorMessage(
-            `Accept SP-${specId} failed: ${(err as Error).message}`,
+            `Accept SP-${specId} failed: ${e.message}`,
           );
         }
       },
