@@ -45,6 +45,7 @@ import {
   markEscalated,
   hasEscalationMarker,
   ESCALATION_MARKER,
+  CONTRACT_DEFECT_MARKER,
   type SliceForDag,
   type SchedUnit,
   type SchedulerState,
@@ -519,24 +520,50 @@ export function createSdkAssessor(deps: SdkAssessorDeps): AssessAc {
 // on `both`). Injectable end-to-end — tests wire `deps.judgeFailure` with a fake so no live model runs.
 
 /**
- * Build the code-vs-test judge prompt (SP-6/7 AC4): given the failing unit + the failure evidence, ask
- * a fresh INDEPENDENT session (it did NOT author the change) to attribute the fault to the code, the
- * test, or both, and answer in machine-readable JSON with a rationale. It runs in the worktree so it
- * may read BOTH the implementation and the held-out probe before deciding. Pure.
+ * Build the code-vs-test judge prompt (SP-6/7 AC4 + SP-6/9): given the failing unit + the failure
+ * evidence + the slice's CONTRACT, ask a fresh INDEPENDENT session (it did NOT author the change) to
+ * **TRIANGULATE** against the contract — the one artifact both hands built against, and therefore the
+ * neutral arbiter — and attribute the fault to the code, the test, both, or the CONTRACT itself, in
+ * machine-readable JSON with a rationale. It runs in the worktree so it may read BOTH the implementation
+ * and the held-out probe before deciding. Each hand's conformance is judged against the contract, NOT by
+ * comparing the two hands to each other. The contract is embedded VERBATIM; a blank/undefined contract
+ * ⇒ the prompt notes none was supplied (and omits the verbatim block — nothing to triangulate against).
+ * Pure.
  */
 export function buildJudgePrompt(
   unit: Pick<SchedUnit, "id" | "slice" | "role">,
   failure: string,
+  contract?: string,
 ): string {
+  const hasContract = !!(contract && contract.trim());
+  // The contract goes in VERBATIM (SP-6/9) — it is the arbiter, so the judge must see the exact seam,
+  // not a paraphrase. Absent ⇒ say so and omit the verbatim block (there is nothing to triangulate on).
+  const contractBlock = hasContract
+    ? [
+        "",
+        "──── SLICE CONTRACT (the shared interface BOTH hands built against — the ARBITER; verbatim) ────",
+        contract!.trim(),
+        "──── end contract ────",
+      ].join("\n")
+    : "\n(No contract was supplied for this slice — you cannot TRIANGULATE against a contract that is absent; judge from the intent and the working tree, and do NOT return `contract`.)";
   return [
     "You are an INDEPENDENT judge for a FAILED acceptance verification of a software Spec.",
     "You did NOT implement the change and you did NOT author the test. A held-out acceptance probe",
     "(the TEST, authored black-box by a test-author) graded the implementation (the CODE, authored by a",
-    "code-author) and it went RED. Decide WHERE the fault lies:",
-    "  - `code`  — the implementation diverged from the intent; the probe is correct. Re-author the CODE.",
-    "  - `test`  — the probe itself is wrong (over-strict / mis-reads the intent); the code is correct.",
-    "              Re-author the TEST.",
-    "  - `both`  — both are suspect, or you cannot single one out. (This escalates to a human.)",
+    "code-author) and it went RED.",
+    "",
+    "TRIANGULATE against the CONTRACT below — the one artifact BOTH hands built against, and therefore",
+    "the neutral arbiter. Judge EACH hand's conformance against the CONTRACT ITSELF; do NOT decide by",
+    "comparing the two hands to each other. Then attribute the fault:",
+    "  - `code`     — the implementation diverges from the contract; the probe is correct. Re-author the CODE.",
+    "  - `test`     — the probe asserts something the contract does NOT define, or contradicts it; the",
+    "                 code conforms to the contract. Re-author the TEST.",
+    "  - `contract` — BOTH hands conform to the contract, yet the red pivots on a seam the contract never",
+    "                 defined (an arming mechanism, a constant, a state location, an observable effect the",
+    "                 contract never named). The CONTRACT itself is incomplete — name the undefined seam",
+    "                 in the rationale. (This routes the slice to a contract re-cut, not another guess.)",
+    "  - `both`     — both are suspect, or you cannot single one out. (This escalates to a human.)",
+    contractBlock,
     "",
     `Failing unit: ${unit.id} (slice ${unit.slice}${unit.role ? `, role ${unit.role}` : ""}).`,
     "",
@@ -544,7 +571,8 @@ export function buildJudgePrompt(
     (failure ?? "").trim() ||
       "(no evidence supplied — inspect the working tree)",
     "",
-    "You may read the working tree (your cwd) to inspect BOTH the implementation and the probe.",
+    "You may read the working tree (your cwd) to inspect BOTH the implementation and the probe, then",
+    "TRIANGULATE each against the contract above.",
     "",
     "Respond with ONLY a JSON object (no prose, no markdown fence needed):",
     '  {"fault": "code", "rationale": "one or two sentences explaining the attribution"}',
@@ -552,10 +580,11 @@ export function buildJudgePrompt(
 }
 
 /**
- * Parse a judge session's reply into a {@link FailureJudgment} (SP-6/7 AC4). Tolerant of a fence /
- * surrounding prose: the last top-level JSON object with a `fault` of `code`/`test`/`both` and a
- * `rationale`/`why`. Fail-safe: an unrecognised fault or unparseable reply → `both` (which escalates
- * to a human — never a silent mis-route), carrying the raw reply as the rationale. Pure.
+ * Parse a judge session's reply into a {@link FailureJudgment} (SP-6/7 AC4 + SP-6/9). Tolerant of a
+ * fence / surrounding prose: the last top-level JSON object with a `fault` of
+ * `code`/`test`/`both`/`contract` and a `rationale`/`why`. Fail-safe: an unrecognised fault or
+ * unparseable reply → `both` (which escalates to a human — never a silent mis-route), carrying the raw
+ * reply as the rationale. Pure.
  */
 export function parseJudgment(text: string): FailureJudgment {
   const obj = extractJsonObject(text);
@@ -568,7 +597,9 @@ export function parseJudgment(text: string): FailureJudgment {
           ? rec.verdict.trim().toLowerCase()
           : "";
     const fault: Fault =
-      raw === "code" || raw === "test" || raw === "both" ? raw : "both";
+      raw === "code" || raw === "test" || raw === "both" || raw === "contract"
+        ? raw
+        : "both";
     const rationale =
       (typeof rec.rationale === "string" && rec.rationale.trim()) ||
       (typeof rec.why === "string" && rec.why.trim()) ||
@@ -594,6 +625,8 @@ export function parseJudgment(text: string): FailureJudgment {
  * + rationale. Built exactly like {@link createSdkAssessor} (the shared independent-judgment seam) and
  * equally failure-tolerant — a load/run error, a non-success result, or an unparseable reply all degrade
  * to a `both` (escalate) verdict with a rationale, never a thrown crash and never a silent mis-route.
+ * SP-6/9: the returned judge forwards its `contract` argument to {@link buildJudgePrompt}, so the live
+ * session triangulates the red against the slice's contract (and can return the `contract` fault).
  */
 export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
   const log = deps.log ?? (() => {});
@@ -602,8 +635,8 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
     (async () =>
       (await import("@anthropic-ai/claude-agent-sdk"))
         .query as unknown as AssessorSdkQuery);
-  return async (unit, failure): Promise<FailureJudgment> => {
-    const prompt = buildJudgePrompt(unit, failure);
+  return async (unit, failure, contract): Promise<FailureJudgment> => {
+    const prompt = buildJudgePrompt(unit, failure, contract);
     let resultText = "";
     let assistantText = "";
     let sawSuccess = false;
@@ -1129,8 +1162,13 @@ export class OrchestratorService {
       if (escalate) {
         this.escalatedSlices.add(slice);
         if (!result.escalated.includes(slice)) result.escalated.push(slice);
+        // SP-6/9: a `contract` escalation is a DESIGN defect (the contract is incomplete), not exhausted
+        // attempts — its own human-facing line so the operator routes it to a contract re-cut, not a
+        // re-run. No attempt was burned (verdict.attempts is unchanged), so it names the seam instead.
         output.appendLine(
-          `⛔ ${slice}: bounded rework attempts exhausted (${verdict.attempts})${fault === "both" ? " / fault ambiguous (both code and test)" : ""} → escalated, awaiting a human decision.`,
+          fault === "contract"
+            ? `⛔ ${slice}: contract defect — both hands conform yet disagree on an undefined seam → held for a contract re-cut (no rework attempt burned), awaiting the slicer.`
+            : `⛔ ${slice}: bounded rework attempts exhausted (${verdict.attempts})${fault === "both" ? " / fault ambiguous (both code and test)" : ""} → escalated, awaiting a human decision.`,
         );
       }
     };
@@ -1464,9 +1502,7 @@ export class OrchestratorService {
       (await defaultAcceptanceRecipeResolver(this.deps.canonicalRepo)) ??
       (await defaultAcceptanceRecipeResolver(worktreePath));
     if (recipe?.prepare) {
-      output.appendLine(
-        `▸ SP-${specNumber}: build gate — $ ${recipe.prepare}`,
-      );
+      output.appendLine(`▸ SP-${specNumber}: build gate — $ ${recipe.prepare}`);
       const prep = await this.runPrepare(recipe.prepare, worktreePath);
       if (!prep.ok) {
         const diagnosis =
@@ -1619,6 +1655,9 @@ export class OrchestratorService {
               role: units[0]?.role,
             },
             `${why}\n\n${failEvidence}`,
+            // SP-6/9: thread the slice's CONTRACT so the judge triangulates the red against it (the
+            // neutral arbiter) rather than comparing the two hands — the only way to reach `contract`.
+            s.contract,
           );
           fault = judgment.fault;
           rationale = (judgment.rationale ?? "").trim();
@@ -1637,14 +1676,25 @@ export class OrchestratorService {
         // rationale and the failing evidence. Without them the re-author starts from zero and the
         // rework round is the same experiment re-rolled ("see DELIVERY.md" is a dead pointer for
         // a worker — DELIVERY lives in the thinking space, outside its worktree).
-        await blockSlice(
-          s.handle,
+        const baseDiagnosis =
           `Closing gate: ${why}. Judged fault: ${fault}${rationale ? ` — ${rationale}` : ""}.` +
-            (failEvidence
-              ? `\n\nFailing evidence:\n${failEvidence.slice(0, 2000)}`
-              : ""),
-          fault,
-        );
+          (failEvidence
+            ? `\n\nFailing evidence:\n${failEvidence.slice(0, 2000)}`
+            : "");
+        // SP-6/9: a `contract` route is NOT a role-rework — the contract itself is the defect. Lead the
+        // diagnosis with CONTRACT_DEFECT_MARKER naming the undefined seam and directing to a contract
+        // re-cut via /slice (update_slice contract), then re-orchestrate. Do NOT auto-rewrite the
+        // contract (design work owned by the slicer/human) and — via `reDispatchDecision`'s contract
+        // arm inside `blockSlice` — no rework attempt is burned (the slice was never the problem).
+        const diagnosis =
+          fault === "contract"
+            ? `${CONTRACT_DEFECT_MARKER}\n` +
+              `The contract is incomplete: ${rationale || "an undefined seam each hand filled differently"}. ` +
+              `Re-cut the contract via /slice (update_slice contract) to define this seam, then re-orchestrate — ` +
+              `do NOT re-author the code or the test (both conform to the contract as written), do NOT auto-rewrite ` +
+              `the contract here, and no rework attempt was burned.\n\n${baseDiagnosis}`
+            : baseDiagnosis;
+        await blockSlice(s.handle, diagnosis, fault);
         output.appendLine(
           `⚑ ${s.handle}: closing gate red → requires-attention.`,
         );
@@ -2094,7 +2144,9 @@ export class OrchestratorService {
    * (`.tandem/conventions.json`, via {@link defaultAcceptanceRecipeResolver}). Lets the worker author
    * a runnable test purely from its prompt. Undefined when the repo declares no recipe (best-effort).
    */
-  private async resolveTestConvention(cwd: string): Promise<string | undefined> {
+  private async resolveTestConvention(
+    cwd: string,
+  ): Promise<string | undefined> {
     try {
       const recipe = await defaultAcceptanceRecipeResolver(cwd);
       if (!recipe) return undefined;

@@ -467,6 +467,20 @@ export const ESCALATION_MARKER =
   "⛔ ESCALATED — bounded rework attempts exhausted";
 
 /**
+ * The durable marker the orchestrator stamps onto a **contract-attributed** escalation (SP-6/9) — a
+ * peer to {@link ESCALATION_MARKER} that names the CONTRACT (not a role) as the defect. When the judge
+ * triangulates a red slice to `fault: contract` (both hands conform to the contract yet still disagree
+ * on a seam the contract never defined), the requires-attention diagnosis leads with THIS marker so the
+ * human-facing signal reads "the contract is incomplete" and routes to a contract re-cut — NOT another
+ * bounded role-rework guess. Non-empty and contains "CONTRACT" (assert a SUBSTRING, never equality, so
+ * the wording can evolve without breaking the detector). Distinct from the exhausted-attempts marker
+ * because its cause and its remedy differ: this is a design defect the slicer re-cuts, and no rework
+ * attempt is burned reaching it.
+ */
+export const CONTRACT_DEFECT_MARKER =
+  "⛔ CONTRACT-DEFECT — the contract is incomplete";
+
+/**
  * Has a slice **crossed its rework bound** (SP-6/6 AC5)? True once the recorded failed-attempt count
  * reaches the bound (default {@link MAX_REWORK_ATTEMPTS}) — at which point {@link readyFrontier} drops
  * every unit the slice owns, so it is no longer auto-re-dispatchable. Fail-safe on junk input: a
@@ -488,10 +502,12 @@ export function isEscalated(
 /**
  * The role a failed acceptance run is attributed to (SP-6/7 AC4): the **code**-author (the
  * implementation diverged from intent), the **test**-author (the held-out probe is itself wrong), or
- * `both` / ambiguous (neither can be singled out → escalate to a human). The verdict of
- * {@link JudgeFailure}; routes {@link reDispatchDecision}.
+ * `both` / ambiguous (neither can be singled out → escalate to a human), or — SP-6/9 — **`contract`**:
+ * both hands conform to the contract yet the red pivots on a seam the contract never defined, so the
+ * defect is the CONTRACT itself and the slice routes to a contract re-cut (not another role guess). The
+ * verdict of {@link JudgeFailure}; routes {@link reDispatchDecision}.
  */
-export type Fault = "code" | "test" | "both";
+export type Fault = "code" | "test" | "both" | "contract";
 
 /**
  * An independent judge's verdict on a red acceptance run (SP-6/7 AC4): which role is at fault plus the
@@ -510,10 +526,15 @@ export interface FailureJudgment {
  * TEST (or both), so {@link reDispatchDecision} can route the re-dispatch to the right role (or
  * escalate on `both`). Injectable so the gate is unit-testable with no live model; the real
  * SDK-session dispatch lives in `OrchestratorService`.
+ *
+ * SP-6/9: gains an optional 3rd arg — the slice's CONTRACT, the triangulation arbiter. The judge
+ * decides each hand's conformance against the contract itself (not by comparing the two hands), which
+ * is what lets it return the `contract` fault when both conform yet still disagree on an undefined seam.
  */
 export type JudgeFailure = (
   unit: Pick<SchedUnit, "id" | "slice" | "role">,
   failure: string,
+  contract?: string,
 ) => Promise<FailureJudgment>;
 
 /** One verdict from {@link reDispatchDecision}: whether to send a red slice back for rework or stop. */
@@ -524,8 +545,9 @@ export interface ReDispatchVerdict {
   /** The slice's new failed-attempt count (prior + 1), to persist on `state.attempts`. */
   attempts: number;
   /** SP-6/7 AC4: which role the re-dispatch targets — set ONLY when a judged `fault` was supplied.
-   *  `code`/`test` route the re-author to that role; `both` forces escalation (ambiguous). Absent when
-   *  no fault is given (the pure attempt-bound decision), so the AC5 behaviour is unchanged. */
+   *  `code`/`test` route the re-author to that role; `both` forces escalation (ambiguous); SP-6/9
+   *  `contract` forces escalation to a contract re-cut (attempts NOT burned). Absent when no fault is
+   *  given (the pure attempt-bound decision), so the AC5 behaviour is unchanged. */
   route?: Fault;
 }
 
@@ -540,7 +562,11 @@ export interface ReDispatchVerdict {
  *     the code-author for a `code` fault, the test-author for a `test` fault;
  *   • once the count reaches the bound, OR the fault is `both`/ambiguous, the loop **escalates** — the
  *     slice stays `requires-attention` (marked with {@link ESCALATION_MARKER}) and {@link readyFrontier}
- *     stops dispatching it, so a human decides.
+ *     stops dispatching it, so a human decides;
+ *   • SP-6/9 — a `contract` fault **escalates** too, but to a contract re-cut (marked with
+ *     {@link CONTRACT_DEFECT_MARKER}, `route: "contract"`) and WITHOUT burning an attempt: `attempts`
+ *     stays === `priorAttempts`, regardless of the prior count or bound, because the slice was never
+ *     the problem — the contract is.
  *
  * No model is consulted here — the bound and the route are control-plane, the deterministic analog of
  * "stop retrying after N"; the code-vs-test `fault` is the only model input and it is supplied by the
@@ -554,6 +580,13 @@ export function reDispatchDecision(
   const prior = Number.isFinite(priorAttempts)
     ? Math.max(0, Math.floor(priorAttempts))
     : 0;
+  // SP-6/9 contract arm: a contract-attributed fault escalates to a contract re-cut REGARDLESS of the
+  // prior count / bound, and — unlike every other path — does NOT burn a rework attempt: the slice was
+  // never the problem, so `attempts` stays === the prior count (not prior + 1). `readyFrontier` holds
+  // the slice until the contract changes; the shell stamps the CONTRACT_DEFECT_MARKER, not ESCALATION.
+  if (fault === "contract") {
+    return { action: "escalate", attempts: prior, route: "contract" };
+  }
   const attempts = prior + 1;
   // Escalate at the bound OR when the fault is ambiguous (both code and test suspect) — AC4.
   const escalate = isEscalated(attempts, bound) || fault === "both";
@@ -1328,9 +1361,16 @@ function acEvidence(run: string, code: number | null, output: string): string {
   let failDetail = "";
   if (code !== 0) {
     const at = lines.findIndex((l) => /^\s*not ok /.test(l));
-    if (at !== -1) failDetail = lines.slice(at, at + 14).join("\n").trim();
+    if (at !== -1)
+      failDetail = lines
+        .slice(at, at + 14)
+        .join("\n")
+        .trim();
   }
-  const body = [failDetail ? clip(failDetail, 900) : "", tail ? clip(tail, 600) : ""]
+  const body = [
+    failDetail ? clip(failDetail, 900) : "",
+    tail ? clip(tail, 600) : "",
+  ]
     .filter(Boolean)
     .join("\n");
   return body ? `${head}\n${body}` : head;

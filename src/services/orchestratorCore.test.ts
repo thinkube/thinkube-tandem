@@ -39,6 +39,7 @@ import {
   markEscalated,
   MAX_REWORK_ATTEMPTS,
   ESCALATION_MARKER,
+  CONTRACT_DEFECT_MARKER,
   buildVerificationTrace,
   mergeVerificationTrace,
   type ReDispatchVerdict,
@@ -959,7 +960,11 @@ test("runAcVerifications: a FAILING check's evidence carries the failing asserti
     "# fail 1",
   ].join("\n");
   const exec: AcExec = async () => ({ code: 1, output: tap });
-  const [r] = await runAcVerifications([{ ac: 4, run: "probe-4" }], "/wt", exec);
+  const [r] = await runAcVerifications(
+    [{ ac: 4, run: "probe-4" }],
+    "/wt",
+    exec,
+  );
   assert.equal(r.pass, false);
   assert.match(r.evidence, /not ok 2 - a content-bound approval/);
   assert.match(r.evidence, /no runnable ac_verifications entry/);
@@ -1360,11 +1365,9 @@ test("SP-6/7: a test worker's prompt states the snapshot workspace + redirect-aw
   assert.match(tp, /do NOT brute-force/i);
   assert.match(tp, /follow it and carry on/i);
   // A code worker gets no snapshot workspace block…
-  const cp = buildWorkerPrompt(
-    { ...unit, role: "code" },
-    "6/3",
-    { specBody: "## Acceptance Criteria\n\n- [ ] x" },
-  );
+  const cp = buildWorkerPrompt({ ...unit, role: "code" }, "6/3", {
+    specBody: "## Acceptance Criteria\n\n- [ ] x",
+  });
   assert.doesNotMatch(cp, /SNAPSHOT of the codebase/i);
   // …but the terminate-on-denial instruction applies to EVERY worker.
   assert.match(cp, /do NOT brute-force/i);
@@ -1379,7 +1382,8 @@ test("SP-6/7: the test convention is injected for a test worker (it has no Bash 
     shape: "fan-out",
     role: "test",
   };
-  const convention = "author your test to run via `node --test out-test/acceptance/…`";
+  const convention =
+    "author your test to run via `node --test out-test/acceptance/…`";
   const tp = buildWorkerPrompt(unit, "6/3", {
     specBody: "## Acceptance Criteria\n\n- [ ] x",
     testConvention: convention,
@@ -1387,11 +1391,10 @@ test("SP-6/7: the test convention is injected for a test worker (it has no Bash 
   assert.match(tp, /Test convention:/);
   assert.match(tp, /node --test/);
   // A code worker gets no convention block (it isn't withheld its tools).
-  const cp = buildWorkerPrompt(
-    { ...unit, role: "code" },
-    "6/3",
-    { specBody: "## Acceptance Criteria\n\n- [ ] x", testConvention: convention },
-  );
+  const cp = buildWorkerPrompt({ ...unit, role: "code" }, "6/3", {
+    specBody: "## Acceptance Criteria\n\n- [ ] x",
+    testConvention: convention,
+  });
   assert.doesNotMatch(cp, /Test convention:/);
 });
 
@@ -1558,6 +1561,74 @@ test("SP-6/7 AC4: reDispatchDecision with NO fault is the unchanged attempt-boun
   });
   assert.equal("route" in reDispatchDecision(0), false);
   assert.equal(reDispatchDecision(2, 3).action, "escalate");
+});
+
+// ── SP-6/9: a `contract` fault escalates to a contract re-cut WITHOUT burning an attempt ──
+// When both hands conform to the contract yet still disagree on an undefined seam, the defect is the
+// CONTRACT itself. reDispatchDecision's contract arm escalates (route: "contract") REGARDLESS of the
+// prior count or bound, and — unlike every other path — leaves `attempts` === priorAttempts (the slice
+// was never the problem, so no rework attempt is spent).
+
+test("SP-6/9: reDispatchDecision routes a `contract` fault to escalate WITHOUT burning an attempt", () => {
+  // First failure, well below the bound: still escalates (a contract defect is not re-rollable) and
+  // the attempt counter is UNCHANGED (0 in → 0 out), not prior + 1.
+  const first = reDispatchDecision(0, 3, "contract");
+  assert.equal(first.action, "escalate");
+  assert.equal(first.route, "contract");
+  assert.equal(
+    first.attempts,
+    0,
+    "the attempt is NOT burned (stays === priorAttempts)",
+  );
+
+  // Mid-bound: same verdict, attempts unchanged (2 in → 2 out).
+  const mid = reDispatchDecision(2, 5, "contract");
+  assert.deepEqual(mid, { action: "escalate", attempts: 2, route: "contract" });
+
+  // AT/ABOVE the bound: still escalate, still unchanged — the bound is irrelevant to a contract defect.
+  const atBound = reDispatchDecision(3, 3, "contract");
+  assert.deepEqual(atBound, {
+    action: "escalate",
+    attempts: 3,
+    route: "contract",
+  });
+  const aboveBound = reDispatchDecision(9, 3, "contract");
+  assert.equal(
+    aboveBound.attempts,
+    9,
+    "never bumped, whatever the prior count vs the bound",
+  );
+
+  // Contrast: a `code` fault at the same prior count DOES burn the attempt (prior + 1) — proving the
+  // contract arm is the exception, not a general no-op.
+  assert.equal(reDispatchDecision(2, 5, "code").attempts, 3);
+});
+
+test("SP-6/9: CONTRACT_DEFECT_MARKER is a non-empty peer of ESCALATION_MARKER naming the contract", () => {
+  assert.equal(typeof CONTRACT_DEFECT_MARKER, "string");
+  assert.ok(CONTRACT_DEFECT_MARKER.trim().length > 0, "non-empty");
+  // Assert a SUBSTRING (per the contract) so the exact wording can evolve without breaking detection.
+  assert.ok(
+    /CONTRACT/i.test(CONTRACT_DEFECT_MARKER),
+    "names the contract as the defect",
+  );
+  // A distinct marker from the exhausted-attempts one — different cause, different remedy.
+  assert.notEqual(CONTRACT_DEFECT_MARKER, ESCALATION_MARKER);
+});
+
+test("SP-6/9: a `contract` route flows through buildVerificationTrace unchanged (Fault widened)", () => {
+  const trace = buildVerificationTrace({
+    round: 1,
+    declared: [{ ac: 1, run: "acceptance/SP.probe.js" }],
+    acResults: [{ ac: 1, pass: false, evidence: "$ probe → exit 1" }],
+    routes: new Map<number, Fault>([[1, "contract"]]),
+  });
+  assert.equal(trace[0].verdict, "fail");
+  assert.equal(
+    trace[0].route,
+    "contract",
+    "the widened contract route is carried on the failed entry, unchanged",
+  );
 });
 
 // ── SP-6/7 AC7: identical AC commands run once (de-dup) ─────────────────────

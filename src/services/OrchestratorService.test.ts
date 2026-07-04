@@ -29,7 +29,11 @@ import {
   type WorkerResult,
 } from "./OrchestratorService";
 import { normalizeFilePath } from "../methodology/parallelSlices";
-import { buildWorkerPrompt, type AcVerification } from "./orchestratorCore";
+import {
+  buildWorkerPrompt,
+  CONTRACT_DEFECT_MARKER,
+  type AcVerification,
+} from "./orchestratorCore";
 import { answerParkedWorker } from "./orchestratorSessions";
 import type { SchedUnit } from "./orchestratorCore";
 import {
@@ -134,6 +138,8 @@ interface FakeFile {
   status?: string;
   files?: string[];
   satisfies?: number[];
+  /** The slice's design-time contract (SP-6/3) — threaded to the judge for triangulation (SP-6/9). */
+  contract?: string;
   work_units?: {
     footprint: string[];
     execution: string;
@@ -160,7 +166,7 @@ function makeDeps(
     acPass?: Record<number, boolean>;
     /** The judged code-vs-test fault a red closing gate attributes (SP-6/7 AC4). Injected so the
      *  default judge (a real SDK session) never fires in a test; defaults to `code` (re-dispatch). */
-    fault?: "code" | "test" | "both";
+    fault?: "code" | "test" | "both" | "contract";
   } = {},
 ): {
   deps: OrchestratorDeps;
@@ -2449,4 +2455,149 @@ test("SP-6/7 AC4: createSdkJudge fails safe to `both` when the session does not 
   );
   assert.equal(verdict.fault, "both");
   assert.match(verdict.rationale, /did not complete/);
+});
+
+// ── SP-6/9: contract-aware fault triangulation ─────────────────────────────
+// The judge triangulates a red against the slice's CONTRACT (the arbiter), can return a `contract`
+// verdict, and a `contract` route writes a CONTRACT_DEFECT_MARKER diagnosis + re-cut direction WITHOUT
+// burning a rework attempt (the slice was never the problem).
+
+test("SP-6/9: buildJudgePrompt embeds the contract VERBATIM and instructs TRIANGULATION", () => {
+  const contract =
+    "export function arm(token: ArmToken): void; // sets the ARMED flag in the store";
+  const p = buildJudgePrompt(
+    { id: "SP-1_SL-1#eu-0", slice: "SP-1_SL-1", role: "code" },
+    "AC #1: $ probe → exit 1",
+    contract,
+  );
+  // The contract text is present verbatim (it is the arbiter — a paraphrase would not do).
+  assert.ok(p.includes(contract), "the contract is embedded verbatim");
+  // The prompt instructs triangulation (case-insensitive substring).
+  assert.ok(/TRIANGULATE/i.test(p), "the prompt instructs triangulation");
+  // The `contract` verdict is offered as an option.
+  assert.match(p, /`contract`/);
+  // Judge each hand against the contract, NOT by comparing the two hands to each other.
+  assert.match(p, /comparing the two hands/i);
+});
+
+test("SP-6/9: buildJudgePrompt with a blank/undefined contract notes none was supplied and omits the verbatim block", () => {
+  const blank = buildJudgePrompt(
+    { id: "SP-1_SL-1#eu-0", slice: "SP-1_SL-1", role: "code" },
+    "probe red",
+    "   ",
+  );
+  const undef = buildJudgePrompt(
+    { id: "SP-1_SL-1#eu-0", slice: "SP-1_SL-1", role: "code" },
+    "probe red",
+  );
+  for (const p of [blank, undef]) {
+    assert.match(p, /No contract was supplied/i);
+    assert.ok(
+      !p.includes("SLICE CONTRACT"),
+      "the verbatim contract block is omitted when there is no contract",
+    );
+    // TRIANGULATE still appears in the static rubric.
+    assert.ok(/TRIANGULATE/i.test(p));
+  }
+});
+
+test("SP-6/9: parseJudgment recognizes a `contract` verdict, keeping the fail-safe default of `both`", () => {
+  assert.deepEqual(
+    parseJudgment('{"fault":"contract","rationale":"undefined arming seam"}'),
+    { fault: "contract", rationale: "undefined arming seam" },
+  );
+  // Verdict-key form is recognized too.
+  assert.equal(parseJudgment('{"verdict":"contract"}').fault, "contract");
+  // Still fail-safe: an unrecognised fault → `both` (escalate), never a silent mis-route.
+  assert.equal(parseJudgment('{"fault":"nonsense"}').fault, "both");
+  assert.equal(parseJudgment("garbage").fault, "both");
+});
+
+test("SP-6/9: createSdkJudge forwards its contract argument to buildJudgePrompt", async () => {
+  const contract = "MARKER_CONTRACT_TEXT: the shared seam every hand builds to";
+  let capturedPrompt = "";
+  const fakeQuery = (args: { prompt: string; options: { cwd: string } }) => {
+    capturedPrompt = args.prompt;
+    return (async function* () {
+      yield {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result:
+          '{"fault":"contract","rationale":"both conform; seam undefined"}',
+      };
+    })();
+  };
+  const judge = createSdkJudge({
+    cwd: "/worktree",
+    loadQuery: async () => fakeQuery as never,
+  });
+  const verdict = await judge(
+    { id: "SP-1_SL-1#eu-0", slice: "SP-1_SL-1", role: "code" },
+    "the probe went red",
+    contract,
+  );
+  assert.equal(verdict.fault, "contract");
+  assert.ok(
+    capturedPrompt.includes(contract),
+    "the live session's prompt carries the forwarded contract verbatim",
+  );
+});
+
+test("SP-6/9: a `contract`-routed red gate writes CONTRACT_DEFECT_MARKER, threads the contract to the judge, and burns NO attempt", async () => {
+  const CONTRACT_TEXT =
+    "export const ARMED_KEY: string; // where the armed state lives";
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        files: ["src/a.ts"],
+        satisfies: [1],
+        contract: CONTRACT_TEXT,
+      },
+    },
+    { acPass: { 1: false }, fault: "contract" },
+  );
+  // Capture the contract the judge is handed + the escalation attempts persisted to the slice.
+  let judgeContract: string | undefined = "SENTINEL";
+  deps.judgeFailure = async (unit, _failure, contract) => {
+    calls.judged.push(unit.id);
+    judgeContract = contract;
+    return {
+      fault: "contract",
+      rationale: "both hands conform; ARMED seam undefined",
+    };
+  };
+  let persistedAttempts: number | undefined;
+  deps.flagAttention = async (h, diagnosis, escalation) => {
+    calls.attention.push(h);
+    calls.attentionReasons.push(diagnosis);
+    persistedAttempts = escalation?.attempts;
+  };
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  // The slice's contract reached the judge (triangulation arbiter).
+  assert.equal(
+    judgeContract,
+    CONTRACT_TEXT,
+    "runClosingGate threads the red slice's contract into the judge call",
+  );
+  // The requires-attention diagnosis leads with the contract-defect marker + a re-cut direction.
+  const diag = calls.attentionReasons.find((d) =>
+    d.includes(CONTRACT_DEFECT_MARKER),
+  );
+  assert.ok(diag, "the diagnosis carries CONTRACT_DEFECT_MARKER");
+  assert.match(diag!, /re-cut the contract/i);
+  assert.match(diag!, /update_slice contract/i);
+  // No rework attempt was burned — the prior count (0) is persisted unchanged.
+  assert.equal(
+    persistedAttempts,
+    0,
+    "a contract defect does not burn a rework attempt",
+  );
+  // The route is recorded on the verification trace, and the slice is held (not committed).
+  assert.equal(r.verificationTrace[0]?.route, "contract");
+  assert.equal(r.committed, false);
+  assert.ok(r.attention.includes("TEP-1_SP-1_SL-1"));
 });
