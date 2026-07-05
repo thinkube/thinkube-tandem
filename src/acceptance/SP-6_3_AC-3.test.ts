@@ -7,7 +7,7 @@
  *
  * Exercised strictly through the contract's public interface:
  *   - `mintApproval` / `verifyApproval` / `loadOrCreateApprovalSecret` /
- *     `approvalContentHash` / `APPROVAL_TTL_MS` from src/services/approvalToken.ts
+ *     `approvalContentHash` from src/services/approvalToken.ts
  *   - `createApprovalStore` from src/services/approvalStore.ts (the side-channel
  *     the gate reads — an agent "writing its own token into the store" goes
  *     through exactly this `put`, so we prove that path is inert too).
@@ -33,10 +33,10 @@
  *      approval survives a reload); different storageDirs → tokens do not
  *      cross-verify.
  *
- * Timestamps are fixed and `now === issuedAt` (well within `APPROVAL_TTL_MS`),
- * and subjectKey/contentHash always match the verify args — so the ONLY thing
- * deciding each verdict here is the secret. Expiry / wrong-subject /
- * wrong-content rejection are sibling units (AC2, AC4).
+ * Time is no longer a rejection axis (the short TTL was retired), and
+ * subjectKey/contentHash always match the verify args — so the ONLY thing
+ * deciding each verdict here is the secret. Wrong-subject / wrong-content
+ * rejection are sibling units (AC2, AC4).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -45,7 +45,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
-  APPROVAL_TTL_MS,
   mintApproval,
   verifyApproval,
   loadOrCreateApprovalSecret,
@@ -75,16 +74,15 @@ const SPEC_BODY = [
 ].join("\n");
 const CONTENT_HASH = approvalContentHash(SPEC_BODY);
 
-/** Fixed clock: minted and verified at the same instant → always within TTL. */
+/** A fixed issuedAt for the mints — retained in the payload for audit, but no
+ *  longer a rejection axis, so it plays no part in these verdicts. */
 const NOW = 1_750_000_000_000; // epoch ms, arbitrary but deterministic
 
 /** Verify-args under a given secret, everything else matching the mint. */
 const argsWith = (secret: Buffer) => ({
   subjectKey: SUBJECT_KEY,
   contentHash: CONTENT_HASH,
-  now: NOW,
   secret,
-  ttlMs: APPROVAL_TTL_MS,
 });
 
 // ── 1. positive control: server secret round-trip ─────────────────────────────
@@ -99,7 +97,7 @@ test("verifies under the server secret (round-trip positive control)", () => {
     verifyApproval(token, argsWith(serverSecret)),
     true,
     "a token minted under the server secret must verify under that secret " +
-      "(same subject, same content, within TTL)",
+      "(same subject, same content)",
   );
 });
 

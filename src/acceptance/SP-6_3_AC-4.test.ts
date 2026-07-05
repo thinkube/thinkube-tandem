@@ -10,7 +10,7 @@
  *
  *   Token layer (pure, injectable seams — `verifyApproval`):
  *     a token minted over hash(content A) verifies against hash(A) and fails
- *     against hash(B), everything else (subject, secret, clock, TTL) held
+ *     against hash(B), everything else (subject, secret) held
  *     constant — so the ONLY moving variable is the content hash. A fresh
  *     token minted over hash(B) then verifies against hash(B).
  *
@@ -19,17 +19,17 @@
  *     1. SATISFIES — with the gate ARMED and an approval minted for the CURRENT
  *        spec content in the side-channel store, `create_slice` succeeds.
  *     2. RE-ARMS — the spec body is edited (content hash moves). An approval
- *        for the OLD content — re-delivered with a FRESH `issuedAt`, so neither
- *        TTL expiry nor any notion of token consumption can explain the result
- *        — no longer clears the gate: `create_slice` refuses, names the
- *        approval, and persists NO new slice file.
+ *        for the OLD content — re-delivered with a FRESH `issuedAt`, so no
+ *        notion of token consumption can explain the result — no longer clears
+ *        the gate: `create_slice` refuses, names the approval, and persists NO
+ *        new slice file.
  *     3. FRESH MINT — a new approval minted for the NEW content (same subject,
  *        same secret, same store) clears the very same call. This is the
  *        positive control that pins the step-2 refusal on the content hash
  *        alone.
  *
  * This test CONSUMES the approval-token contract (`mintApproval`,
- * `verifyApproval`, `approvalContentHash`, `APPROVAL_TTL_MS`,
+ * `verifyApproval`, `approvalContentHash`,
  * `loadOrCreateApprovalSecret` from approvalToken.ts and `createApprovalStore`
  * from approvalStore.ts) to seed the store exactly the way the host's Approve
  * button does — it never re-derives hashing or signing, so a contract drift
@@ -46,7 +46,6 @@ import * as path from "node:path";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "../mcp/kanbanMcpServer";
 import {
-  APPROVAL_TTL_MS,
   mintApproval,
   verifyApproval,
   approvalContentHash,
@@ -145,7 +144,7 @@ test("verifyApproval is content-bound: a token for hash(A) verifies against A, f
     path.join(os.tmpdir(), "tk-approval-secret-"),
   );
   const secret = loadOrCreateApprovalSecret(secretDir);
-  const now = 1_750_000_000_000; // fixed injectable clock — TTL is provably not a factor
+  const now = 1_750_000_000_000; // fixed issuedAt — retained for audit, not a rejection axis
 
   const hashA = approvalContentHash(BODY_V1);
   const hashB = approvalContentHash(BODY_V2);
@@ -159,7 +158,7 @@ test("verifyApproval is content-bound: a token for hash(A) verifies against A, f
   );
 
   const tokenForA = mintApproval(SUBJECT_KEY, hashA, now, secret);
-  const base = { subjectKey: SUBJECT_KEY, now, secret, ttlMs: APPROVAL_TTL_MS };
+  const base = { subjectKey: SUBJECT_KEY, secret };
 
   // Minted for content A → satisfies while the content IS A…
   assert.equal(
@@ -168,7 +167,7 @@ test("verifyApproval is content-bound: a token for hash(A) verifies against A, f
     "an approval minted for the current content must verify",
   );
   // …and stops verifying the instant the content hash moves — same subject,
-  // same secret, same clock, same TTL.
+  // same secret.
   assert.equal(
     verifyApproval(tokenForA, { ...base, contentHash: hashB }),
     false,
@@ -223,8 +222,8 @@ test("ARMED gate: an approval for the current content satisfies create_slice; ed
     );
 
     //    Re-deliver an approval for the OLD content with a FRESH issuedAt:
-    //    it cannot be stale (TTL) and cannot have been "used up" (fresh put),
-    //    so a refusal is attributable to the content hash ALONE.
+    //    it cannot have been "used up" (fresh put), so a refusal is
+    //    attributable to the content hash ALONE.
     approveContent(approvalDir, BODY_V1, Date.now());
 
     await assert.rejects(

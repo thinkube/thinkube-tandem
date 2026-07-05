@@ -14,11 +14,13 @@
 //   - **subjectKey** (kind-namespaced, e.g. `spec:TEP-6/SP-3` vs `tep:TEP-6`) — an approval for
 //     one subject can never satisfy another subject's gate.
 //   - **contentHash** — the token certifies *what the human saw*: editing the document changes
-//     the hash, so a prior approval stops verifying and the panel re-arms Approve.
-//   - **issuedAt + TTL** — the approval is a recent signal, not a standing capability.
+//     the hash, so a prior approval stops verifying and the panel re-arms Approve. This — not a
+//     wall clock — is the freshness guarantee: an unchanged spec stays approved however long the
+//     human took, while any edit re-arms the gate. `issuedAt` remains in the signed payload for
+//     audit/debug but is no longer a rejection criterion.
 //
-// Kind-agnostic and pure: no `vscode` API, secret/clock/content-hash all injectable via
-// parameters, `verifyApproval` synchronous and never-throwing — so signature-binding, expiry,
+// Kind-agnostic and pure: no `vscode` API, secret/content-hash all injectable via parameters,
+// `approvalStatus`/`verifyApproval` synchronous and never-throwing — so signature-binding,
 // subject-mismatch and content-mismatch are unit-testable with no UI or model in the loop.
 import {
   createHash,
@@ -37,16 +39,6 @@ import { join } from "node:path";
  * so the gate needs nothing but the token, the current subject/content, a clock and the secret.
  */
 export type ApprovalToken = string;
-
-/**
- * How long an approval stays valid, in milliseconds — the TTL the armed gate enforces.
- *
- * 15 minutes: long enough to click Approve and let the agent run `create_slice` over a Spec's
- * slices in one sitting, short enough that a stale approval from an earlier session cannot be
- * ridden later. (Content-binding, not the TTL, is what invalidates an approval when the document
- * changes.)
- */
-export const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
 /** File name of the approval HMAC secret inside the storage directory. */
 export const APPROVAL_SECRET_FILE = "approval-signing-key";
@@ -134,36 +126,51 @@ export function mintApproval(
 }
 
 /**
- * Verify an approval token against *this gate's* expectations. Pure, synchronous, never throws.
+ * Why an approval token was refused.
  *
- * Returns true **iff** every check holds:
- *   - a token is present and structurally well-formed;
- *   - its HMAC verifies under `a.secret` (constant-time compare — a token minted with any other
- *     secret, or with tampered payload bytes, fails here);
- *   - its `subjectKey` equals `a.subjectKey` (an approval for `tep:TEP-6` can never satisfy the
- *     `spec:TEP-6/SP-3` gate, and vice versa);
- *   - its `contentHash` equals `a.contentHash` (the hash of the *current* document — an approval
- *     of an earlier revision stops verifying the moment the document changes);
- *   - it is fresh: `a.now - issuedAt <= a.ttlMs`.
- *
- * Anything else — missing token, garbage encoding, wrong shape, forged or truncated MAC, subject
- * or content mismatch, expiry — returns false. Callers (the gate) turn that false into a refusal
- * that directs the maintainer to the Approve action.
+ * Time is **not** a rejection axis (content-binding is the freshness guarantee), so there is no
+ * `'expired'` member — a refusal can only be one of these three:
+ *   - `'bad-signature'` — missing/garbage/forged token, wrong shape, or HMAC fails under the secret;
+ *   - `'subject-mismatch'` — a valid token, but minted for a different subject;
+ *   - `'content-mismatch'` — a valid token for this subject, but the document changed since approval.
  */
-export function verifyApproval(
+export type ApprovalRefusalReason =
+  "bad-signature" | "subject-mismatch" | "content-mismatch";
+
+/** The outcome of {@link approvalStatus}: approved, or refused with a single reason. */
+export type ApprovalStatus =
+  { ok: true } | { ok: false; reason: ApprovalRefusalReason };
+
+/**
+ * Verify an approval token against *this gate's* expectations, reporting *why* it was refused.
+ * Pure, synchronous, never throws.
+ *
+ * Runs the three surviving checks IN ORDER — signature → subject → content — and returns the
+ * first that fails; `{ ok: true }` iff all pass:
+ *   - **signature** — a token is present, structurally well-formed, its payload is our
+ *     domain-tagged 4-tuple, and its HMAC verifies under `a.secret` (constant-time compare — a
+ *     token minted with any other secret, or with tampered payload bytes, fails here). Any of
+ *     missing token, garbage encoding, wrong shape, forged/truncated MAC → `'bad-signature'`.
+ *   - **subject** — its `subjectKey` equals `a.subjectKey` (an approval for `tep:TEP-6` can never
+ *     satisfy the `spec:TEP-6/SP-3` gate) → else `'subject-mismatch'`.
+ *   - **content** — its `contentHash` equals `a.contentHash` (the hash of the *current* document;
+ *     an approval of an earlier revision stops matching the moment the document changes) → else
+ *     `'content-mismatch'`.
+ *
+ * There is no `now`/`ttlMs` parameter and no time-based refusal: an approval of unchanged content
+ * is honored however long the human took, while any edit moves the content hash and re-arms the
+ * gate. `issuedAt` still rides in the signed payload for audit/debug — it is simply not checked.
+ */
+export function approvalStatus(
   token: ApprovalToken | undefined,
-  a: {
-    subjectKey: string;
-    contentHash: string;
-    now: number;
-    secret: Buffer;
-    ttlMs: number;
-  },
-): boolean {
+  a: { subjectKey: string; contentHash: string; secret: Buffer },
+): ApprovalStatus {
   try {
-    if (typeof token !== "string" || token.length === 0) return false;
+    if (typeof token !== "string" || token.length === 0)
+      return { ok: false, reason: "bad-signature" };
     const dot = token.lastIndexOf(".");
-    if (dot <= 0 || dot === token.length - 1) return false;
+    if (dot <= 0 || dot === token.length - 1)
+      return { ok: false, reason: "bad-signature" };
     const payloadB64 = token.slice(0, dot);
     const mac = token.slice(dot + 1);
 
@@ -172,31 +179,49 @@ export function verifyApproval(
     const expected = createHmac("sha256", a.secret)
       .update(payload)
       .digest("hex");
-    if (mac.length !== expected.length) return false;
+    if (mac.length !== expected.length)
+      return { ok: false, reason: "bad-signature" };
     const macBuf = Buffer.from(mac, "hex");
     const expectedBuf = Buffer.from(expected, "hex");
     if (macBuf.length !== expectedBuf.length || macBuf.length === 0)
-      return false;
-    if (!timingSafeEqual(macBuf, expectedBuf)) return false;
+      return { ok: false, reason: "bad-signature" };
+    if (!timingSafeEqual(macBuf, expectedBuf))
+      return { ok: false, reason: "bad-signature" };
 
-    // 2. Shape: the signed payload must be exactly our domain-tagged triple.
+    // Shape is part of "is this a valid signature over our payload?": a well-signed but wrongly
+    // shaped payload is still not a token we minted, so it fails as 'bad-signature'.
     const parsed: unknown = JSON.parse(payload);
-    if (!Array.isArray(parsed) || parsed.length !== 4) return false;
+    if (!Array.isArray(parsed) || parsed.length !== 4)
+      return { ok: false, reason: "bad-signature" };
     const [domain, subjectKey, contentHash, issuedAt] = parsed as unknown[];
-    if (domain !== TOKEN_DOMAIN) return false;
+    if (domain !== TOKEN_DOMAIN) return { ok: false, reason: "bad-signature" };
     if (typeof subjectKey !== "string" || typeof contentHash !== "string")
-      return false;
+      return { ok: false, reason: "bad-signature" };
     if (typeof issuedAt !== "number" || !Number.isFinite(issuedAt))
-      return false;
+      return { ok: false, reason: "bad-signature" };
 
-    // 3. Bindings: this subject, this content, still fresh.
-    if (subjectKey !== a.subjectKey) return false;
-    if (contentHash !== a.contentHash) return false;
-    if (a.now - issuedAt > a.ttlMs) return false;
+    // 2. Subject binding: this approval must be for this exact subject.
+    if (subjectKey !== a.subjectKey)
+      return { ok: false, reason: "subject-mismatch" };
 
-    return true;
+    // 3. Content binding: the document must be unchanged since approval.
+    if (contentHash !== a.contentHash)
+      return { ok: false, reason: "content-mismatch" };
+
+    return { ok: true };
   } catch {
     // Malformed base64 / JSON / anything unexpected — an invalid token, never an exception.
-    return false;
+    return { ok: false, reason: "bad-signature" };
   }
+}
+
+/**
+ * Back-compat boolean wrapper over {@link approvalStatus} — true iff the token passes all three
+ * checks. Pure, synchronous, never throws; existing callers that only need pass/fail are unchanged.
+ */
+export function verifyApproval(
+  token: ApprovalToken | undefined,
+  a: { subjectKey: string; contentHash: string; secret: Buffer },
+): boolean {
+  return approvalStatus(token, a).ok;
 }

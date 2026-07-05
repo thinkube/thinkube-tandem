@@ -164,10 +164,9 @@ import {
 // THINKUBE_APPROVAL_DIR; the gate reads and verifies it. The tool call carries NO token, so the
 // agent can neither present, forge, nor replay one — the approval is a signal it cannot synthesize.
 import {
-  APPROVAL_TTL_MS,
   approvalContentHash,
+  approvalStatus,
   loadOrCreateApprovalSecret,
-  verifyApproval,
 } from "../services/approvalToken";
 import { createApprovalStore } from "../services/approvalStore";
 import {
@@ -752,7 +751,7 @@ const TOOL_DEFS = [
   {
     name: "resolve_project_space",
     description:
-      "Derive the project-umbrella thinking space for a working directory (TEP-6). Given the session's absolute `cwd`, returns `{ namespace: \"<product>/projects/<id>\", project }` when cwd is at/under a project umbrella, else `{ namespace: null, reason }`. Lets /spec-prepare and /slice pick `thinking_space` AUTOMATICALLY — precedence: an explicit thinking_space arg OVERRIDES; otherwise derive via this; otherwise ask. The server matches the passed cwd against the thinking-space root and never reads its own process.cwd().",
+      'Derive the project-umbrella thinking space for a working directory (TEP-6). Given the session\'s absolute `cwd`, returns `{ namespace: "<product>/projects/<id>", project }` when cwd is at/under a project umbrella, else `{ namespace: null, reason }`. Lets /spec-prepare and /slice pick `thinking_space` AUTOMATICALLY — precedence: an explicit thinking_space arg OVERRIDES; otherwise derive via this; otherwise ask. The server matches the passed cwd against the thinking-space root and never reads its own process.cwd().',
     inputSchema: {
       type: "object",
       properties: {
@@ -1945,8 +1944,12 @@ export function resolveProjectSpace(ctx: HandlerContext, cwd: string): unknown {
   if (!cwd || !path.isAbsolute(cwd))
     return { namespace: null, reason: "cwd-not-absolute" };
   const abs = path.resolve(cwd);
-  let best: { namespace: string; product: string; id: string; len: number } | null =
-    null;
+  let best: {
+    namespace: string;
+    product: string;
+    id: string;
+    len: number;
+  } | null = null;
   for (const p of discoverProjects(root)) {
     const umbrella = path.join(root, p.product, "projects", p.id);
     if (abs === umbrella || abs.startsWith(umbrella + path.sep)) {
@@ -1960,7 +1963,8 @@ export function resolveProjectSpace(ctx: HandlerContext, cwd: string): unknown {
       }
     }
   }
-  if (!best) return { namespace: null, reason: "cwd-not-under-project-umbrella" };
+  if (!best)
+    return { namespace: null, reason: "cwd-not-under-project-umbrella" };
   return {
     namespace: best.namespace,
     project: { product: best.product, id: best.id },
@@ -2839,9 +2843,10 @@ export async function resolveCompositeSpecId(
  * - contentHash binds the approval to the spec body the maintainer actually reviewed, via the
  *   SAME `approvalContentHash` the Approve mint uses: editing the spec moves the hash, a prior
  *   approval stops verifying, and the review panel re-arms Approve.
- * - `verifyApproval` is pure and never throws; expiry (`APPROVAL_TTL_MS`), signature, subject and
- *   content binding all collapse to one boolean — the refusal distinguishes only *missing* vs
- *   *invalid* (the store's absence of a token is the one thing observable out here).
+ * - `approvalStatus` is pure and never throws; the three surviving checks — signature, subject and
+ *   content binding — run in order and yield the first failure's reason. Time is not a rejection
+ *   axis (SP-6/11), so there is no expiry: an approval for unchanged content is honored however long
+ *   the maintainer took, while a `content-mismatch` reason means the spec changed since approval.
  *
  * The env var is read PER CALL — no import-time caching — so arming/disarming takes effect on the
  * next call. Unset ⇒ gate OFF: return without touching the secret or the store (the legacy
@@ -2856,14 +2861,12 @@ function assertSpecApprovedForSlicing(specId: string, specBody: string): void {
   const secret = loadOrCreateApprovalSecret(approvalDir);
   const approvalStore = createApprovalStore(approvalDir);
   const token = approvalStore.get(subjectKey);
-  const approved = verifyApproval(token, {
+  const status = approvalStatus(token, {
     subjectKey,
     contentHash: approvalContentHash(specBody),
-    now: Date.now(),
     secret,
-    ttlMs: APPROVAL_TTL_MS,
   });
-  if (approved) return;
+  if (status.ok) return;
   const approveAction =
     `open the review panel (\`open_review({ kind: "spec", id: "TEP-${tep}/SP-${sp}" })\`) ` +
     `and have the maintainer click **Approve spec** — a UI action the agent cannot take — then retry.`;
@@ -2874,11 +2877,17 @@ function assertSpecApprovedForSlicing(specId: string, specBody: string): void {
         `refuses without a maintainer-minted approval token in the side-channel store. To proceed, ${approveAction}`,
     );
   }
+  if (status.reason === "content-mismatch") {
+    throw new Error(
+      `Human approval stale — the approval on file for \`${subjectKey}\` was minted for a different ` +
+        `spec body: the spec content changed since it was approved, so the approval no longer covers ` +
+        `the CURRENT content. Re-approve the current spec: ${approveAction}`,
+    );
+  }
   throw new Error(
-    `Human approval invalid — the approval on file for \`${subjectKey}\` does not verify: it has ` +
-      `expired (TTL ${APPROVAL_TTL_MS} ms), the spec content changed since it was approved, it was ` +
+    `Human approval invalid — the approval on file for \`${subjectKey}\` does not verify: it was ` +
       `minted for a different subject, or it is not signed by this server's approval secret. ` +
-      `A stale or foreign token never satisfies the gate; re-approve the CURRENT content: ${approveAction}`,
+      `A foreign token never satisfies the gate; re-approve the CURRENT content: ${approveAction}`,
   );
 }
 

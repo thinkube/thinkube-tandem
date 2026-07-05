@@ -1,5 +1,5 @@
 /**
- * SP-6/3 (TEP-6) AC2 — **a forged, expired, or wrong-subject approval is rejected**,
+ * SP-6/3 (TEP-6) AC2 — **a forged or wrong-subject approval is rejected**,
  * driven through the real `create_slice` TOOL CALL (`dispatchTool`, the layer the
  * live MCP server runs), with the approval gate ARMED via `THINKUBE_APPROVAL_DIR`
  * (read per call — no import-time caching — so setting it inside a test takes
@@ -11,22 +11,23 @@
  *   1. FORGED       — a token HMAC'd under a secret that is NOT the server's
  *                     approval secret (an agent emitting its own token) does not
  *                     satisfy the gate.
- *   2. EXPIRED      — a token minted with the real server secret but with
- *                     `issuedAt` past `APPROVAL_TTL_MS` does not satisfy the gate.
- *   3. WRONG SUBJECT (another spec) — a token minted for `spec:TEP-1/SP-2` never
+ *   2. WRONG SUBJECT (another spec) — a token minted for `spec:TEP-1/SP-2` never
  *                     satisfies `spec:TEP-1/SP-1`'s gate, even when smuggled into
  *                     the store under the gate's own subjectKey.
- *   4. WRONG SUBJECT (`tep:` namespace) — a token minted for `tep:TEP-1` never
+ *   3. WRONG SUBJECT (`tep:` namespace) — a token minted for `tep:TEP-1` never
  *                     satisfies a `spec:`-namespaced gate; the kind-namespaced
  *                     subjectKey keeps the two approval moments disjoint.
  *
+ * Time is NOT a rejection axis: a stale but content-matching token now verifies,
+ * so there is no expiry branch here — only signature and subject bindings refuse.
+ *
  * Every refusal is TOTAL (no slice file is created) and its error names the
  * missing/invalid approval, directing to the Approve action. Each test then
- * repairs ONLY the defect (right secret / fresh issuedAt / right subject) and
+ * repairs ONLY the defect (right secret / right subject) and
  * shows `create_slice` clears the gate — proving the tested defect, and nothing
  * in the scaffolding, caused the refusal.
  *
- * This CONSUMES the approval contract — `mintApproval` / `APPROVAL_TTL_MS` /
+ * This CONSUMES the approval contract — `mintApproval` /
  * `loadOrCreateApprovalSecret` / `approvalContentHash` (approvalToken.ts) and
  * `createApprovalStore` (approvalStore.ts) — rather than re-deriving token or
  * hash shapes, so a contract drift surfaces here instead of silently passing.
@@ -42,7 +43,6 @@ import * as path from "node:path";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "../mcp/kanbanMcpServer";
 import {
-  APPROVAL_TTL_MS,
   approvalContentHash,
   loadOrCreateApprovalSecret,
   mintApproval,
@@ -173,21 +173,13 @@ async function assertRepairUnblocks(f: Fixture, title: string): Promise<void> {
   );
 }
 
-// ── sanity: the TTL constant the expired fixture leans on is a real duration ──
-
-test("APPROVAL_TTL_MS is a positive finite duration (the expiry branch is meaningful)", () => {
-  assert.equal(typeof APPROVAL_TTL_MS, "number");
-  assert.ok(Number.isFinite(APPROVAL_TTL_MS), "APPROVAL_TTL_MS must be finite");
-  assert.ok(APPROVAL_TTL_MS > 0, "APPROVAL_TTL_MS must be > 0");
-});
-
 // ── 1. FORGED: a token signed under a non-server secret is rejected ──────────
 
 test("create_slice REFUSES a forged approval (HMAC under a secret that is not the server's)", async () => {
   const f = await fixture();
   await withArmedGate(f.approvalDir, async () => {
-    // The forger holds SOME key — just not the server's. Subject, content hash,
-    // and freshness are all correct: the signature is the only defect.
+    // The forger holds SOME key — just not the server's. Subject and content
+    // hash are both correct: the signature is the only defect.
     const forgerSecret = Buffer.alloc(32, 0x5a);
     assert.notDeepEqual(forgerSecret, f.secret);
     const forged = mintApproval(
@@ -209,34 +201,7 @@ test("create_slice REFUSES a forged approval (HMAC under a secret that is not th
   });
 });
 
-// ── 2. EXPIRED: a genuinely-signed token past its TTL is rejected ────────────
-
-test("create_slice REFUSES an expired approval (real secret, issuedAt past APPROVAL_TTL_MS)", async () => {
-  const f = await fixture();
-  await withArmedGate(f.approvalDir, async () => {
-    // Signed with the REAL server secret, correct subject and content hash —
-    // but issued a full hour beyond the TTL, so age is the only defect.
-    const staleIssuedAt = Date.now() - APPROVAL_TTL_MS - 60 * 60 * 1000;
-    const expired = mintApproval(
-      SUBJECT,
-      f.contentHash,
-      staleIssuedAt,
-      f.secret,
-    );
-    createApprovalStore(f.approvalDir).put(SUBJECT, expired);
-
-    await assertRefusedTotally(
-      f.store,
-      () => createSlice(f.store, "expired approval"),
-      "expired token",
-    );
-
-    // Repair ONLY the freshness (re-mint now) → clears.
-    await assertRepairUnblocks(f, "freshly approved");
-  });
-});
-
-// ── 3. WRONG SUBJECT (another spec): subjectKey binding is enforced ──────────
+// ── 2. WRONG SUBJECT (another spec): subjectKey binding is enforced ──────────
 
 test("create_slice REFUSES an approval minted for ANOTHER spec's subjectKey", async () => {
   const f = await fixture();
@@ -266,7 +231,7 @@ test("create_slice REFUSES an approval minted for ANOTHER spec's subjectKey", as
   });
 });
 
-// ── 4. WRONG SUBJECT (tep: namespace): kind-namespacing keeps gates disjoint ─
+// ── 3. WRONG SUBJECT (tep: namespace): kind-namespacing keeps gates disjoint ─
 
 test("create_slice REFUSES an approval minted for a tep:-namespaced subject", async () => {
   const f = await fixture();

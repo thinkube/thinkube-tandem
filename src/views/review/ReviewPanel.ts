@@ -17,8 +17,8 @@
 // Content-binding drives the panel's state machine: every render recomputes
 // `approvalContentHash` of the current body and re-verifies the stored token against it, so the
 // moment the document is edited a prior approval stops verifying and the panel re-arms Approve
-// ("changed since approval — re-approve"). Expiry re-arms it too (a periodic re-check while
-// approved).
+// ("changed since approval — re-approve"). Time is not a factor: a content-matching approval stays
+// "approved" however long the human took — only an edit (via the file watcher) re-arms Approve.
 //
 // Kind-agnostic: the panel knows only `subjectKey` (e.g. `spec:TEP-6/SP-3` or `tep:TEP-6`) and a
 // document path. The kind prefix is used solely to label the button ("Approve spec"), which the
@@ -28,7 +28,6 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  APPROVAL_TTL_MS,
   approvalContentHash,
   loadOrCreateApprovalSecret,
   mintApproval,
@@ -58,17 +57,13 @@ export interface ReviewPanelDeps {
 
 /** Where the panel stands relative to the store's token for the current document content. */
 type ApprovalState =
-  | "approved" // stored token verifies for the current content hash, within TTL
-  | "expired" // token binds this exact content but its TTL has lapsed — re-approve
+  | "approved" // stored token verifies for the current content hash
   | "changed" // a token exists but no longer verifies for the current body — re-approve
   | "unapproved" // no token in the store for this subject yet
   | "missing-doc"; // the document is not on disk (nothing to approve)
 
 /** How long after an fs event we wait before re-reading — coalesces write bursts. */
 const WATCH_DEBOUNCE_MS = 150;
-
-/** While approved, re-check this often so the button re-arms when the TTL lapses. */
-const EXPIRY_RECHECK_MS = 30_000;
 
 export class ReviewPanel {
   /** One live panel per subject — re-`open` reveals and refreshes instead of duplicating. */
@@ -101,7 +96,6 @@ export class ReviewPanel {
   private readonly panel: vscode.WebviewPanel;
   private watcher: fs.FSWatcher | undefined;
   private debounce: ReturnType<typeof setTimeout> | undefined;
-  private expiryTimer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
 
   private constructor(
@@ -186,21 +180,15 @@ export class ReviewPanel {
     const contentHash = approvalContentHash(body);
     const state = this.evaluate(contentHash);
     this.postUpdate(state, contentHash, md.render(body));
-
-    // While approved, keep a low-frequency re-check running so the button re-arms on its own
-    // when the TTL lapses (the token is opaque, so we can't schedule the exact expiry moment).
-    if (this.expiryTimer) clearTimeout(this.expiryTimer);
-    this.expiryTimer =
-      state === "approved"
-        ? setTimeout(() => this.refresh(), EXPIRY_RECHECK_MS)
-        : undefined;
   }
 
   /**
    * Classify the store's token against the current content — using only the public verify
-   * surface, exactly as the gate does. The token is opaque, so "expired" vs "changed" is told
-   * apart by re-verifying with an unbounded TTL: passes → only freshness failed; fails → the
-   * content (or subject/signature) no longer matches.
+   * surface, exactly as the gate does. Time is not a factor: the token either binds this exact
+   * body (→ "approved") or it does not (→ "changed since approval"). A missing token is
+   * "unapproved". `verifyApproval` folds signature/subject/content into a single boolean, so any
+   * non-matching token — edited content, wrong subject, forged MAC — surfaces as "changed",
+   * directing the maintainer back to Approve.
    */
   private evaluate(contentHash: string): ApprovalState {
     let token: string | undefined;
@@ -219,19 +207,13 @@ export class ReviewPanel {
       return "unapproved";
     }
 
-    const base = {
+    return verifyApproval(token, {
       subjectKey: this.subjectKey,
       contentHash,
-      now: Date.now(),
       secret,
-    };
-    if (verifyApproval(token, { ...base, ttlMs: APPROVAL_TTL_MS })) {
-      return "approved";
-    }
-    if (verifyApproval(token, { ...base, ttlMs: Number.MAX_SAFE_INTEGER })) {
-      return "expired";
-    }
-    return "changed";
+    })
+      ? "approved"
+      : "changed";
   }
 
   /** Push a state + rendered-content update into the webview (the skeleton stays put). */
@@ -243,8 +225,7 @@ export class ReviewPanel {
     const kind = this.kindLabel();
     const armed = state !== "approved" && state !== "missing-doc";
     const statusText: Record<ApprovalState, string> = {
-      approved: `Approved for the current content — the ${kind} gate will accept until the approval expires or the document changes.`,
-      expired: "Approval expired — re-approve to re-arm the gate.",
+      approved: `Approved — the ${kind} gate will accept this content until the document changes, however long that takes.`,
       changed: "Changed since approval — re-approve.",
       unapproved: `Not yet approved — the gate refuses until you approve this ${kind}.`,
       "missing-doc": "Nothing to approve — the document is not on disk.",
@@ -298,7 +279,6 @@ export class ReviewPanel {
     ReviewPanel.panels.delete(this.subjectKey);
     this.watcher?.close();
     if (this.debounce) clearTimeout(this.debounce);
-    if (this.expiryTimer) clearTimeout(this.expiryTimer);
   }
 
   // ── Webview HTML ───────────────────────────────────────────────────────────────────────────
@@ -354,7 +334,7 @@ export class ReviewPanel {
     button#approve:disabled { opacity: .5; cursor: default; }
     .status { font-size: .9em; }
     .status.approved { color: var(--vscode-testing-iconPassed, #3fb950); }
-    .status.changed, .status.expired { color: var(--vscode-editorWarning-foreground, #d29922); }
+    .status.changed { color: var(--vscode-editorWarning-foreground, #d29922); }
     .status.unapproved, .status.missing-doc { opacity: .8; }
     .caption { font-size: .8em; opacity: .6; margin-top: .35em; }
     #content { max-width: 55em; line-height: 1.55; }
@@ -396,7 +376,7 @@ export class ReviewPanel {
       const m = e.data;
       if (!m || m.type !== 'update') return;
       // Swap the body only when the content actually moved — preserves scroll while the
-      // status/button re-arm on every state change (approve, edit, expiry).
+      // status/button re-arm on every state change (approve, edit).
       if (m.contentHash !== lastHash) {
         content.innerHTML = m.html;
         lastHash = m.contentHash;
