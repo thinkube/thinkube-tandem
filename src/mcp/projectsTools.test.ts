@@ -19,6 +19,7 @@ import { projectTeps } from "../store/projects";
 import {
   listProjects,
   getProject,
+  resolveProjectSpace,
   createSlice,
   promoteTep,
 } from "./kanbanMcpServer";
@@ -120,7 +121,7 @@ test("get_project members = specs implementing the umbrella TEP + their slices (
   assert.ok(!handles.includes("TEP-2_SP-1"));
 });
 
-test("get_project surfaces a NESTED member spec with its repo: as the working repo", async () => {
+test("get_project surfaces a NESTED member spec: thinking_space = umbrella (file location), repo = working repo", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-proj-nested-"));
   const projDir = path.join(root, "Platform", "projects", "rebrand");
   fs.mkdirSync(projDir, { recursive: true });
@@ -144,15 +145,83 @@ test("get_project surfaces a NESTED member spec with its repo: as the working re
     thinkingSpaces: { list: () => [], resolve: () => undefined },
   };
   const res = (await getProject(ctx as never, "Platform", "rebrand")) as {
-    members: { thinking_space: string; handle: string; kind: string }[];
+    members: {
+      thinking_space: string;
+      repo: string;
+      handle: string;
+      kind: string;
+    }[];
   };
-  // The nested member is found location-based, and its `thinking space` is its WORKING
-  // repo (from repo:) — not the project — so the orchestrator knows where to branch.
+  // The nested member is found location-based. `thinking_space` is WHERE THE FILE
+  // LIVES — the project umbrella — so get_thinkube_file/write_spec target it; `repo`
+  // (from repo:) is the working repo the orchestrator branches a worktree in.
   const member = res.members.find((m) => m.handle === "TEP-1_SP-1");
   assert.ok(member, "the nested member spec must be surfaced");
+  assert.equal(member?.thinking_space, "Platform/projects/rebrand");
+  assert.equal(member?.repo, "Platform/extensions/thinkube-ai-integration");
+});
+
+test("resolve_project_space derives the umbrella namespace from a cwd under it", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-resolve-"));
+  const projDir = path.join(root, "Platform", "projects", "plugin-delivery");
+  fs.mkdirSync(projDir, { recursive: true });
+  fs.writeFileSync(path.join(projDir, "project.yaml"), "name: Delivery\n");
+  const ctx = { env: { thinkingSpaceRoot: root } };
+
+  // cwd IS the umbrella dir.
+  assert.deepEqual(resolveProjectSpace(ctx as never, projDir), {
+    namespace: "Platform/projects/plugin-delivery",
+    project: { product: "Platform", id: "plugin-delivery" },
+  });
+  // cwd is a DESCENDANT of the umbrella dir.
   assert.equal(
-    member?.thinking_space,
-    "Platform/extensions/thinkube-ai-integration",
+    (
+      resolveProjectSpace(ctx as never, path.join(projDir, "sub", "dir")) as {
+        namespace: string;
+      }
+    ).namespace,
+    "Platform/projects/plugin-delivery",
+  );
+});
+
+test("resolve_project_space returns null when cwd is under no project umbrella", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-resolve-null-"));
+  fs.mkdirSync(path.join(root, "Platform", "projects", "rebrand"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(root, "Platform", "projects", "rebrand", "project.yaml"),
+    "name: Rebrand\n",
+  );
+  const ctx = { env: { thinkingSpaceRoot: root } };
+  // A working-repo path, not under any umbrella.
+  const res = resolveProjectSpace(
+    ctx as never,
+    "/home/thinkube/thinkube-platform/extensions/thinkube-ai-integration",
+  ) as { namespace: null; reason: string };
+  assert.equal(res.namespace, null);
+  assert.equal(res.reason, "cwd-not-under-project-umbrella");
+});
+
+test("resolve_project_space rejects a non-absolute cwd and a missing root", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-resolve-guard-"));
+  assert.equal(
+    (
+      resolveProjectSpace({ env: { thinkingSpaceRoot: root } } as never, "rel/path") as {
+        namespace: null;
+        reason: string;
+      }
+    ).reason,
+    "cwd-not-absolute",
+  );
+  assert.equal(
+    (
+      resolveProjectSpace({ env: {} } as never, "/abs/path") as {
+        namespace: null;
+        reason: string;
+      }
+    ).reason,
+    "no-thinking-space-root",
   );
 });
 

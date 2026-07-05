@@ -750,9 +750,26 @@ const TOOL_DEFS = [
     },
   },
   {
+    name: "resolve_project_space",
+    description:
+      "Derive the project-umbrella thinking space for a working directory (TEP-6). Given the session's absolute `cwd`, returns `{ namespace: \"<product>/projects/<id>\", project }` when cwd is at/under a project umbrella, else `{ namespace: null, reason }`. Lets /spec-prepare and /slice pick `thinking_space` AUTOMATICALLY — precedence: an explicit thinking_space arg OVERRIDES; otherwise derive via this; otherwise ask. The server matches the passed cwd against the thinking-space root and never reads its own process.cwd().",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cwd: {
+          type: "string",
+          description:
+            "Absolute path of the session's working directory. The client passes its own cwd; the server never consults process.cwd().",
+        },
+      },
+      required: ["cwd"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_project",
     description:
-      "Get one Project's umbrella TEPs + its members (SP-tgvpbm). A Project is a code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose `implements:` resolves to one of those TEPs, plus their slices (inherited) — structural, not tags. Returns `{ project, teps: [TEP-id], members: [{ thinking space, handle, kind }] }`.",
+      "Get one Project's umbrella TEPs + its members (SP-tgvpbm). A Project is a code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose `implements:` resolves to one of those TEPs, plus their slices (inherited) — structural, not tags. Returns `{ project, teps: [TEP-id], members: [{ thinking_space, repo, handle, kind }] }` where `thinking_space` is WHERE THE FILE LIVES (the namespace to pass to get_thinkube_file/write_spec/create_slice — the project umbrella for a nested member) and `repo` is the WORKING repository the orchestrator branches a worktree in. For a legacy flat-model member the two coincide.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1311,6 +1328,8 @@ export async function dispatchTool(
   if (name === "list_tags") return listTags(ctx);
   if (name === "list_products") return listProducts(ctx);
   if (name === "list_projects") return listProjects(ctx);
+  if (name === "resolve_project_space")
+    return resolveProjectSpace(ctx, asString(args, "cwd"));
   if (name === "get_project")
     return getProject(ctx, asString(args, "product"), asString(args, "id"));
   if (name === "promote_tep") {
@@ -1908,6 +1927,47 @@ export function listProjects(ctx: HandlerContext): unknown {
 }
 
 /**
+ * `resolve_project_space` (TEP-6) — derive the project-umbrella thinking space
+ * from a session's working directory, so /spec-prepare and /slice can pick the
+ * right `thinking_space` AUTOMATICALLY instead of asking. Given an absolute `cwd`,
+ * returns the `<product>/projects/<id>` namespace whose umbrella dir contains it
+ * (the dir itself or any descendant), else `{ namespace: null, reason }` — the
+ * caller then applies an explicit override arg or asks.
+ *
+ * The match is against the PASSED cwd (the client hands in its own session root);
+ * the server never consults `process.cwd()`, preserving the cwd-agnostic invariant
+ * (a call can never silently act on the wrong thinking space). Longest umbrella
+ * match wins, so a nested project under another project's tree resolves precisely.
+ */
+export function resolveProjectSpace(ctx: HandlerContext, cwd: string): unknown {
+  const root = ctx.env.thinkingSpaceRoot;
+  if (!root) return { namespace: null, reason: "no-thinking-space-root" };
+  if (!cwd || !path.isAbsolute(cwd))
+    return { namespace: null, reason: "cwd-not-absolute" };
+  const abs = path.resolve(cwd);
+  let best: { namespace: string; product: string; id: string; len: number } | null =
+    null;
+  for (const p of discoverProjects(root)) {
+    const umbrella = path.join(root, p.product, "projects", p.id);
+    if (abs === umbrella || abs.startsWith(umbrella + path.sep)) {
+      if (!best || umbrella.length > best.len) {
+        best = {
+          namespace: `${p.product}/projects/${p.id}`,
+          product: p.product,
+          id: p.id,
+          len: umbrella.length,
+        };
+      }
+    }
+  }
+  if (!best) return { namespace: null, reason: "cwd-not-under-project-umbrella" };
+  return {
+    namespace: best.namespace,
+    project: { product: best.product, id: best.id },
+  };
+}
+
+/**
  * `get_project` — a Project's manifest + its members (SP-tgvpbm). A Project is a
  * code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose
  * `implements:` resolves to one of the project's umbrella TEPs, PLUS each such
@@ -1933,8 +1993,17 @@ export async function getProject(
     normalizeTepId,
   );
 
-  const members: { thinking_space: string; handle: string; kind: string }[] =
-    [];
+  // Two distinct axes per member (TEP-6): `thinking_space` = WHERE THE FILE LIVES
+  // (the namespace get_thinkube_file/write_spec/create_slice must target); `repo` =
+  // the WORKING repository the orchestrator branches a worktree in. For a
+  // project-nested member these differ (file under the umbrella, code in `repo:`);
+  // for a legacy flat-model member they coincide (both the repo thinking space).
+  const members: {
+    thinking_space: string;
+    repo: string;
+    handle: string;
+    kind: string;
+  }[] = [];
   // Per-umbrella-TEP implementing Specs (id + accepted stamp), for completeness.
   const implByTep = new Map<string, ImplementingSpec[]>();
   for (const t of tepIds) implByTep.set(t, []);
@@ -1954,8 +2023,11 @@ export async function getProject(
       ) {
         continue;
       }
+      // Legacy flat-model member: the file lives in this repo thinking space, so
+      // thinking_space === repo (no separate umbrella).
       members.push({
         thinking_space: b.id,
+        repo: b.id,
         handle: specHandle(spec),
         kind: "spec",
       });
@@ -1971,6 +2043,7 @@ export async function getProject(
         if (m)
           members.push({
             thinking_space: b.id,
+            repo: b.id,
             handle: sliceHandleFromMatch(m),
             kind: "slice",
           });
@@ -1979,10 +2052,12 @@ export async function getProject(
   }
   // Org-scoped tree: a project's member specs are NESTED under its umbrella TEPs
   // (`<project>/<org>/teps/TEP-n/SP-m/`) — promote_tep relocated them there. Read
-  // them location-based; each carries `repo:` = its WORKING repository (the repo
-  // the orchestrator branches a worktree in), which is what we surface as the
-  // member's `thinking space`. (The cross-thinking space sweep above only catches any legacy
-  // flat-model member still living in a repo thinking space with a qualified `implements:`.)
+  // them location-based. The FILE lives under the project umbrella, so that is the
+  // member's `thinking_space` (what get_thinkube_file/write_spec/create_slice must
+  // target); the spec's `repo:` frontmatter is the WORKING repository (where the
+  // orchestrator branches a worktree) and is surfaced separately as `repo`. (The
+  // cross-thinking space sweep above only catches any legacy flat-model member
+  // still living in a repo thinking space with a qualified `implements:`.)
   const projDir = path.join(thinkingSpaceRoot!, product, "projects", id);
   const projStore = new ThinkubeStore(projDir, projDir);
   for (const spec of await projStore.listSpecDirs()) {
@@ -1995,7 +2070,8 @@ export async function getProject(
         ? fm.repo.trim()
         : projectNamespace;
     members.push({
-      thinking_space: workingRepo,
+      thinking_space: projectNamespace,
+      repo: workingRepo,
       handle: specHandle(spec),
       kind: "spec",
     });
@@ -2009,7 +2085,8 @@ export async function getProject(
       const m = SLICE_PATH_RE.exec(rel);
       if (m)
         members.push({
-          thinking_space: workingRepo,
+          thinking_space: projectNamespace,
+          repo: workingRepo,
           handle: sliceHandleFromMatch(m),
           kind: "slice",
         });
