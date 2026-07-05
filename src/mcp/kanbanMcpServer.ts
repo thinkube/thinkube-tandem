@@ -96,6 +96,17 @@ import {
   type ParallelSliceInput,
 } from "../methodology/parallelSlices";
 import { buildUnitDag, type SliceForDag } from "../services/orchestratorCore";
+// Retired-symbol footprint gate (SP-6/15): the pure, injectable reverse-dependency
+// check. `create_slice` / the `update_slice` re-cut resolve the repo root (the same
+// root the footprint guard uses), read the repo's tracked source files, and run this
+// over the slice's declared `retires` symbols + its footprint union. The DECISION —
+// what counts as an uncovered importer and the violation shape — is owned there and
+// never re-spelled here; this handler only supplies the repo files and turns a
+// non-empty verdict into the refusal (mirroring the contractFirst/repo-guard split).
+import {
+  findUncoveredImporters,
+  type RepoFile,
+} from "../services/retiredSymbolFootprint";
 import {
   CONTROL_DIR_ENV,
   serializeControlRequest,
@@ -944,7 +955,7 @@ const TOOL_DEFS = [
   {
     name: "create_slice",
     description:
-      "Create a new slice under a Spec in the canonical shape. The server allocates the SL number (per-Spec, archive-aware) and serializes the file (frontmatter + `# title` heading + detail body) — callers never pick numbers or format files. Refused when the parent Spec is missing or has an empty `## Acceptance Criteria` (the → Ready gate, enforced at creation). Title limit: 70 chars — detail belongs in the body.",
+      "Create a new slice under a Spec in the canonical shape. The server allocates the SL number (per-Spec, archive-aware) and serializes the file (frontmatter + `# title` heading + detail body) — callers never pick numbers or format files. Refused when the parent Spec is missing or has an empty `## Acceptance Criteria` (the → Ready gate, enforced at creation). Declare any exported symbols the slice removes/narrows in `retires:` — the server refuses the slice unless every existing importer of a retired symbol is already inside its footprint (SP-6/15). Title limit: 70 chars — detail belongs in the body.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1034,6 +1045,12 @@ const TOOL_DEFS = [
           },
           description:
             "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), consumes? (files a sibling unit produces that this unit reads — the only dependency language), execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers is refused by the contract-first gate (route it through a shared contract file via `consumes`, or set the opt-out flag for a genuinely-independent test). Express every dependency as `consumes`.",
+        },
+        retires: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Exported symbol names this slice REMOVES or NARROWS (SP-6/15) — the machine-readable successor to the prose `// Retired: …` contract line (e.g. ["APPROVAL_TTL_MS", "verifyApproval.now"], plain tokens). Serialized to slice frontmatter `retires:` and surfaced by `get_slice`. Arms an author-time reverse-dependency gate: after the footprint/contract gates the server reads the working repo\'s source and REFUSES the slice unless EVERY existing importer of a retired symbol is already inside the slice\'s footprint (`files` + a work_unit `footprint`), naming each retired symbol and the uncovered importer path — so the removal\'s blast radius is footprinted before orchestration, not discovered when the whole-project compile breaks. Omit/empty for a slice that retires nothing (the default, unchanged path).',
         },
         docs: {
           type: "string",
@@ -1149,7 +1166,7 @@ const TOOL_DEFS = [
   {
     name: "update_slice",
     description:
-      "Update a slice in place, keeping its `SL-{m}` number. Pass `body` to replace the markdown body (frontmatter is preserved; the body's first line must be the `# title` heading — if the new body lacks one, the existing title is re-attached and the input is treated as detail, so a card can never become heading-less). **Re-cut (SP-th4wqd):** pass `files` / `satisfies` / `work_units` to REPLACE the slice's footprint fields without re-creating it — a re-scope. A provided field replaces wholesale (an empty array clears it); an omitted field is left untouched. A re-cut whose declared footprint (any `files` path or `work_units[].footprint` path) escapes the thinking space repo is REFUSED with the same rejection `create_slice` gives — the check routes through the shared repo guard, not a copy. `body` is optional: omit it for a pure re-cut and the body is left unchanged.",
+      "Update a slice in place, keeping its `SL-{m}` number. Pass `body` to replace the markdown body (frontmatter is preserved; the body's first line must be the `# title` heading — if the new body lacks one, the existing title is re-attached and the input is treated as detail, so a card can never become heading-less). **Re-cut (SP-th4wqd):** pass `files` / `satisfies` / `work_units` to REPLACE the slice's footprint fields without re-creating it — a re-scope. A provided field replaces wholesale (an empty array clears it); an omitted field is left untouched. A re-cut whose declared footprint (any `files` path or `work_units[].footprint` path) escapes the thinking space repo is REFUSED with the same rejection `create_slice` gives — the check routes through the shared repo guard, not a copy. Pass `retires` to (re)declare the exported symbols the re-cut removes/narrows — refused unless every existing importer of a retired symbol is inside the (post-re-cut) footprint (SP-6/15). `body` is optional: omit it for a pure re-cut and the body is left unchanged.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1184,6 +1201,12 @@ const TOOL_DEFS = [
           type: "string",
           description:
             "Re-cut: REPLACE the slice's design-time contract (SP-6/3 — the shared interface, compilable signatures, injected into every worker's prompt). Omit to leave unchanged. A re-scope that changes the seam must revise the contract here, never by hand-editing frontmatter.",
+        },
+        retires: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Re-cut (SP-6/15): REPLACE the slice's retired-symbol declaration — the exported symbol names the re-cut removes or narrows (plain tokens, e.g. [\"APPROVAL_TTL_MS\"]). Omit to leave `retires:` unchanged; pass `[]` to clear. When provided, arms the same author-time reverse-dependency gate `create_slice` runs: the re-cut is REFUSED unless every existing importer of a retired symbol is inside the slice's (post-re-cut) footprint, naming each retired symbol and the uncovered importer path — so widen `files`/`work_units` to cover them, or drop the symbol. Surfaced by `get_slice`.",
         },
         work_units: {
           type: "array",
@@ -1470,6 +1493,10 @@ export async function dispatchTool(
           docs_reason: optString(args, "docs_reason"),
           priority: optString(args, "priority"),
           tags: optStringArray(args, "tags"),
+          // Retired-symbol declaration (SP-6/15): forwarded verbatim; createSlice
+          // gates it against the working-repo's importers and serializes it to
+          // frontmatter `retires:`.
+          retires: optStringArray(args, "retires"),
         },
         // SP-6/1 provenance: hand `createSlice` the server signing secret so its
         // → Ready gate verifies the `ac_verifications` signature (not the
@@ -1605,6 +1632,9 @@ export async function dispatchTool(
             : undefined,
           contract: optString(args, "contract"),
         },
+        // Retired-symbol declaration (SP-6/15): forwarded verbatim; updateSlice gates
+        // the re-cut against the working-repo's importers and (re)serializes `retires:`.
+        optStringArray(args, "retires"),
       );
     case "write_tep": {
       writeGate(name);
@@ -2945,6 +2975,11 @@ export async function createSlice(
     docs?: string;
     docs_reason?: string;
     tags?: string[];
+    // Retired-symbol declaration (SP-6/15): exported symbol names this slice removes
+    // or narrows. Serialized to slice frontmatter `retires:` and gated — the slice is
+    // refused unless every existing importer of a retired symbol is inside its
+    // footprint. Optional/absent on every existing slice (backward-compatible).
+    retires?: string[];
   },
   /**
    * SP-6/1 (TEP-6) provenance: the server signing secret (loaded from globalStorage by `main`,
@@ -3354,6 +3389,19 @@ export async function createSlice(
     }
   }
 
+  // Retired-symbol footprint gate (SP-6/15). LAST of the footprint/contract gates:
+  // resolve the working-repo root (`store.workspaceRoot` — the SAME root the
+  // footprint guard above uses), read its tracked source files, and refuse the slice
+  // if any retired exported symbol still has an importer OUTSIDE `declaredFiles` (the
+  // union of `files:` + every work_unit `footprint`, computed for the repo-guard
+  // above). Zero retired symbols ⇒ short-circuit, so the no-retirement path is
+  // unchanged. The decision + violation shape live in `findUncoveredImporters`.
+  assertRetiredSymbolsFootprinted(
+    store.workspaceRoot,
+    args.retires ?? [],
+    declaredFiles,
+  );
+
   const sliceNumber = await store.nextSliceNumber(args.spec);
   const uid = await uniqueSlug(store, args.spec, title);
   const fm: Frontmatter = {
@@ -3372,6 +3420,10 @@ export async function createSlice(
   if (args.contract?.trim()) fm.contract = args.contract.trim();
   if (args.work_units?.length)
     fm.work_units = args.work_units as Frontmatter["work_units"];
+  // Retired-symbol declaration (SP-6/15): the machine-readable successor to the prose
+  // `// Retired: …` contract line. Serialized only when non-empty (absent on every
+  // slice that retires nothing); `get_slice` surfaces it verbatim from frontmatter.
+  if (args.retires?.length) fm.retires = args.retires;
   fm.docs = docsResult.value.docs;
   if (docsResult.value.docs_reason)
     fm.docs_reason = docsResult.value.docs_reason;
@@ -3724,6 +3776,121 @@ function repoStateForRunnableCheck(repoRoot: string): RepoState | undefined {
   return repoStateFromTsconfig(parsed);
 }
 
+/**
+ * Source-file extensions whose ES imports the retired-symbol scan reads (SP-6/15).
+ * Broad enough to catch every importer a whole-project TS/JS compile would break on
+ * when a retired export disappears.
+ */
+const RETIRE_SCAN_EXTS = new Set([
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+]);
+
+/** Directories the retired-symbol scan never descends — build output, VCS metadata,
+ *  and dependencies are not the slice's own source and would drown the scan. */
+const RETIRE_SCAN_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "out",
+  "out-test",
+  "build",
+  "coverage",
+  ".vscode-test",
+]);
+
+/**
+ * Read the working-repo's tracked source files as `{ path, content }` with
+ * repo-relative POSIX paths — the injected `repoFiles` the pure
+ * `findUncoveredImporters` scans (SP-6/15). A best-effort recursive walk (no git
+ * dependency, so a freshly-seeded probe repo scans identically to a checked-out one)
+ * that skips build/VCS/dependency dirs, hidden dirs, and non-source extensions.
+ * Unreadable entries are skipped rather than aborting the gate — the check fails
+ * toward asking the author to widen the footprint, never toward a hard error on an
+ * odd file. The `repoRoot` is the SAME root the footprint guard resolves.
+ */
+function readRepoSourceFiles(repoRoot: string): RepoFile[] {
+  const out: RepoFile[] = [];
+  const walk = (absDir: string): void => {
+    let entries: fsSync.Dirent[];
+    try {
+      entries = fsSync.readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (RETIRE_SCAN_SKIP_DIRS.has(e.name) || e.name.startsWith(".")) {
+          continue;
+        }
+        walk(path.join(absDir, e.name));
+        continue;
+      }
+      if (!e.isFile()) continue;
+      if (!RETIRE_SCAN_EXTS.has(path.extname(e.name))) continue;
+      const abs = path.join(absDir, e.name);
+      let content: string;
+      try {
+        content = fsSync.readFileSync(abs, "utf8");
+      } catch {
+        continue;
+      }
+      out.push({
+        path: path.relative(repoRoot, abs).split(path.sep).join("/"),
+        content,
+      });
+    }
+  };
+  walk(repoRoot);
+  return out;
+}
+
+/**
+ * Retired-symbol footprint gate (SP-6/15). After the footprint/repo-guard and
+ * contract-first gates, refuse a slice whose declared `retires` symbols still have
+ * importers OUTSIDE its footprint — the reverse-dependency blast radius TEP-6's
+ * load-bearing footprint left uncheckable until now. Because the symbol being removed
+ * and every file that references it are already on disk, a static scan finds them all
+ * before orchestration. The verdict is the pure `findUncoveredImporters` (repo files
+ * injected, decision owned there); a NON-EMPTY result TOTALLY refuses the write,
+ * naming each retired symbol and its uncovered importer path so the author widens the
+ * footprint (adds the file) or drops the symbol from `retires`. Empty/absent `retires`
+ * short-circuits with no scan and no disk read — the no-retirement path is
+ * byte-for-byte today's behaviour.
+ */
+function assertRetiredSymbolsFootprinted(
+  repoRoot: string,
+  retiredSymbols: string[],
+  footprintPaths: string[],
+): void {
+  if (retiredSymbols.length === 0) return; // short-circuit: no scan, no disk read
+  const violations = findUncoveredImporters({
+    retiredSymbols,
+    footprintPaths,
+    repoFiles: readRepoSourceFiles(repoRoot),
+  });
+  if (violations.length === 0) return;
+  const lines = violations
+    .map(
+      (v) =>
+        `  • retired symbol \`${v.symbol}\` is still imported by \`${v.importer}\``,
+    )
+    .join("\n");
+  throw new Error(
+    `Refusing the slice: a retired symbol still has importer(s) OUTSIDE the slice's ` +
+      `footprint — removing it would break every file below at whole-project compile ` +
+      `time, and no work unit owns them. Add each importer to the slice's \`files\` / ` +
+      `a work_unit \`footprint\` (so the slice edits it), or drop the symbol from ` +
+      `\`retires\`:\n${lines}`,
+  );
+}
+
 /** Normalize a raw `ac_verifications` map (AC ordinal → declaration) into the canonical
  *  `{ run, env? }` frontmatter shape, dropping entries without a non-empty `run` or a positive
  *  integer ordinal, and sorting the keys by ordinal for a stable, low-diff write. */
@@ -3764,6 +3931,12 @@ export async function updateSlice(
   body?: string,
   tags?: string[],
   recut?: SliceRecut,
+  // Retired-symbol declaration (SP-6/15): exported symbol names the re-cut removes or
+  // narrows. Provided replaces the slice's `retires:` frontmatter (empty clears it);
+  // omitted (`undefined`) leaves it untouched — the same replace/omit discipline the
+  // re-cut footprint fields follow. Gated against the working-repo's importers before
+  // the write, identically to `create_slice`.
+  retires?: string[],
 ): Promise<unknown> {
   const { specNumber, sliceNumber } = parseSliceHandle(handle);
   const rel = store.pathForSlice(specNumber, sliceNumber);
@@ -3792,6 +3965,31 @@ export async function updateSlice(
     );
     if (!result.ok) throw new Error(result.error);
     nextFm = result.frontmatter;
+  }
+
+  // Retired-symbol footprint gate (SP-6/15). After the re-cut repo guard — resolve
+  // the working-repo root (`store.workspaceRoot`, the SAME root the guard uses), read
+  // its tracked source, and refuse the re-cut if any retired exported symbol still has
+  // an importer OUTSIDE the slice's footprint. The footprint union is taken from the
+  // RESULTING frontmatter (post-re-cut `files:` + every work_unit `footprint`) so a
+  // re-cut that widens the footprint to cover the importer is accepted. `undefined`
+  // retires leaves `retires:` untouched and runs no scan; a provided (even empty)
+  // array replaces it — empty clears and short-circuits the gate.
+  if (retires !== undefined) {
+    const base: Frontmatter = { ...(nextFm ?? parsed.frontmatter ?? {}) };
+    const wus = (base.work_units ?? []) as { footprint?: string[] }[];
+    const footprintPaths = [
+      ...(Array.isArray(base.files) ? (base.files as string[]) : []),
+      ...wus.flatMap((wu) => wu?.footprint ?? []),
+    ];
+    assertRetiredSymbolsFootprinted(
+      store.workspaceRoot,
+      retires,
+      footprintPaths,
+    );
+    if (retires.length) base.retires = retires;
+    else delete base.retires;
+    nextFm = base;
   }
 
   // Body: optional. When provided, the heading guard (SP-4) applies — a body whose
