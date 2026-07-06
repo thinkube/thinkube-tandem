@@ -44,13 +44,6 @@ import "./installVscodeStub";
  *                             <root>/<container>/<rel>, not co-located.
  *   THINKUBE_FOLDERS          JSON [{name,path}] of workspace folders; the
  *                             folder name supplies the namespace container.
- *   THINKUBE_APPROVAL_DIR     arms the human-approval gate on `create_slice` /
- *                             spec→Ready (SP-6/3): the directory the approval
- *                             secret and the side-channel token store live under
- *                             (the host injects its globalStorage path). Read
- *                             PER CALL — never cached at boot — so arming or
- *                             disarming takes effect on the next call. Unset ⇒
- *                             gate off, legacy pre-approval path (ships dark).
  *
  * Logging: stderr only. VS Code captures it under the MCP server's output
  * channel; never print to stdout — that channel is the protocol stream.
@@ -171,8 +164,8 @@ import {
 } from "../services/acSignature";
 // SP-6/3 (TEP-6 mechanism 2): the human-approval gate on `create_slice` / spec→Ready. The review
 // webview's Approve button — a UI action only the maintainer can take — mints a short-lived,
-// content-bound token (HMAC'd with a server-only secret) into a side-channel store under
-// THINKUBE_APPROVAL_DIR; the gate reads and verifies it. The tool call carries NO token, so the
+// content-bound token (HMAC'd with a server-only secret) into a side-channel store under the
+// self-located approval dir; the gate reads and verifies it. The tool call carries NO token, so the
 // agent can neither present, forge, nor replay one — the approval is a signal it cannot synthesize.
 import {
   approvalContentHash,
@@ -1317,7 +1310,7 @@ const TOOL_DEFS = [
   {
     name: "open_review",
     description:
-      "Open the human review panel for a document (SP-6/3, TEP-6 mechanism 2) — the reusable, kind-agnostic review primitive. The MCP server is a detached process with no `vscode` API, so this bridges to the Extension Host via a one-shot control request (the same MCP→host filesystem channel `start_spec_worktree` uses); the host mounts the review webview on the resolved document for subjectKey `${kind}:${id}` (e.g. `spec:TEP-6/SP-3`). The panel renders the live markdown and carries the maintainer-only **Approve** button — a UI action the agent cannot take — which mints the short-lived, content-bound approval token into the side-channel store that `create_slice` / spec→Ready verifies when `THINKUBE_APPROVAL_DIR` arms the gate. The agent never sees or carries the token; this tool only opens the surface where the human grants it. Requires the Extension Host to be running.",
+      "Open the human review panel for a document (SP-6/3, TEP-6 mechanism 2) — the reusable, kind-agnostic review primitive. The MCP server is a detached process with no `vscode` API, so this bridges to the Extension Host via a one-shot control request (the same MCP→host filesystem channel `start_spec_worktree` uses); the host mounts the review webview on the resolved document for subjectKey `${kind}:${id}` (e.g. `spec:TEP-6/SP-3`). The panel renders the live markdown and carries the maintainer-only **Approve** button — a UI action the agent cannot take — which mints the short-lived, content-bound approval token into the side-channel store that `create_slice` / spec→Ready always verifies. The agent never sees or carries the token; this tool only opens the surface where the human grants it. Requires the Extension Host to be running.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2883,10 +2876,25 @@ export async function resolveCompositeSpecId(
 }
 
 /**
- * Human-approval gate (SP-6/3, TEP-6 mechanism 2): with `THINKUBE_APPROVAL_DIR` set, `create_slice`
- * refuses unless the side-channel store holds a **valid, recent, content-bound** maintainer
- * approval for this spec. `create_slice` IS the spec→Ready entry point (there is no separate
- * →Ready tool), so refusing here is refusing the transition.
+ * Self-locate the approval store dir (SP-6/17) from the server's own invocation path — purely
+ * LEXICAL, no `realpath` and no filesystem access. The server binary runs from
+ * `…/thinkube.thinkube-ai-integration/extension-current/dist/mcp/kanbanMcpServer.js`, so walking
+ * three segments up (mcp → dist → extension-current) lands at the globalStorage extension dir
+ * `…/thinkube.thinkube-ai-integration` — exactly where the host's Approve button writes tokens.
+ * Keeping it lexical preserves the `extension-current` symlink segment (a `realpath` would resolve
+ * it into the versioned install and walk out of globalStorage). Invariant to env; unit-testable
+ * with a constructed path. Production caller: `createSlice` passes `resolveApprovalDir(process.argv[1])`.
+ */
+export function resolveApprovalDir(invocationPath: string): string {
+  return path.resolve(path.dirname(invocationPath), "../../..");
+}
+
+/**
+ * Human-approval gate (SP-6/3, TEP-6 mechanism 2): `create_slice` refuses unless the side-channel
+ * store at `approvalDir` holds a **valid, content-bound** maintainer approval for this spec.
+ * `create_slice` IS the spec→Ready entry point (there is no separate →Ready tool), so refusing here
+ * is refusing the transition. The store dir is derived structurally (SP-6/17), so the gate is
+ * ALWAYS armed — there is no off state, no fail-open, no env-var skip.
  *
  * - subjectKey is the kind-namespaced `spec:TEP-<tep>/SP-<sp>` — an approval for another subject
  *   (a different spec, or a `tep:` approval) can never satisfy this gate.
@@ -2897,14 +2905,12 @@ export async function resolveCompositeSpecId(
  *   content binding — run in order and yield the first failure's reason. Time is not a rejection
  *   axis (SP-6/11), so there is no expiry: an approval for unchanged content is honored however long
  *   the maintainer took, while a `content-mismatch` reason means the spec changed since approval.
- *
- * The env var is read PER CALL — no import-time caching — so arming/disarming takes effect on the
- * next call. Unset ⇒ gate OFF: return without touching the secret or the store (the legacy
- * pre-approval path is preserved byte-for-byte; this ships dark).
  */
-function assertSpecApprovedForSlicing(specId: string, specBody: string): void {
-  const approvalDir = process.env.THINKUBE_APPROVAL_DIR?.trim();
-  if (!approvalDir) return; // gate OFF — legacy path unchanged.
+export function assertSpecApprovedForSlicing(
+  specId: string,
+  specBody: string,
+  approvalDir: string,
+): void {
   // `specId` is the composite `<tep>/<sp>` here (resolved + existence-checked by the caller).
   const [tep, sp] = specId.split("/");
   const subjectKey = `spec:TEP-${tep}/SP-${sp}`;
@@ -3119,7 +3125,11 @@ export async function createSlice(
   // with the approval error (not a downstream structural one) and no slice file
   // is ever created. Hashes the CURRENT parsed spec body, so an approval minted
   // over what the maintainer reviewed stops verifying the moment the body moves.
-  assertSpecApprovedForSlicing(args.spec, specDoc.body);
+  assertSpecApprovedForSlicing(
+    args.spec,
+    specDoc.body,
+    resolveApprovalDir(process.argv[1]),
+  );
   const acs = acceptanceCriteriaOrdinals(specDoc.body);
   if (acs.length === 0) {
     throw new Error(

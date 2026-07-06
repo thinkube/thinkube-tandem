@@ -10,8 +10,8 @@
 // this host class, which mints `mintApproval(subjectKey, approvalContentHash(current body),
 // Date.now(), loadOrCreateApprovalSecret(deps.storageDir))` and delivers it via
 // `createApprovalStore(deps.storageDir).put(subjectKey, token)` — the side-channel the gate
-// (`create_slice` / spec→Ready in the MCP server, pointed at the same directory as
-// `THINKUBE_APPROVAL_DIR`) reads back. The token never appears in a tool call and the agent
+// (`create_slice` / spec→Ready in the MCP server, which self-locates the same directory from its
+// own invocation path, SP-6/17) reads back. The token never appears in a tool call and the agent
 // never handles it.
 //
 // Content-binding drives the panel's state machine: every render recomputes
@@ -49,8 +49,8 @@ const md = new MarkdownIt({ html: false, linkify: true });
 export interface ReviewPanelDeps {
   /**
    * Where the approval secret + store live — the host's globalStorage path, the same directory
-   * the MCP server sees as `THINKUBE_APPROVAL_DIR`. This shared directory is how a token minted
-   * here becomes visible to the gate in the detached server process.
+   * the MCP server self-locates its approval store to (SP-6/17). This shared directory is how a
+   * token minted here becomes visible to the gate in the detached server process.
    */
   storageDir: string;
 }

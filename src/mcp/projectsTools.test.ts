@@ -23,6 +23,7 @@ import {
   createSlice,
   promoteTep,
 } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 /** A tmp thinking space root with two products; the `rebrand` project owns an umbrella TEP. */
 function thinkingSpaceRootWithProjects(): string {
@@ -93,6 +94,7 @@ test("get_project members = specs implementing the umbrella TEP + their slices (
   const a = await seededStore("1/1", "Platform/projects/rebrand:TEP-reb");
   // non-member: implements something else.
   const b = await seededStore("2/1", "Apps/projects/other:TEP-zzz");
+  await armApprovalForSlicing(a, "1/1");
   const sl = (await createSlice(a, {
     spec: "1/1",
     title: "a member slice",
@@ -207,7 +209,10 @@ test("resolve_project_space rejects a non-absolute cwd and a missing root", () =
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-resolve-guard-"));
   assert.equal(
     (
-      resolveProjectSpace({ env: { thinkingSpaceRoot: root } } as never, "rel/path") as {
+      resolveProjectSpace(
+        { env: { thinkingSpaceRoot: root } } as never,
+        "rel/path",
+      ) as {
         namespace: null;
         reason: string;
       }

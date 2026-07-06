@@ -5,8 +5,8 @@
 // transition verify it and refuse otherwise. This module is that mint+verify primitive: an HMAC
 // over the triple `(subjectKey, contentHash, issuedAt)` keyed by a secret only the host/server
 // process holds, plus the loader that reads/creates that secret under a storage directory the
-// agent never reads (the extension's `globalStorage`, injected as `THINKUBE_APPROVAL_DIR` on the
-// server side). It is `acSignature.ts` widened from `(spec, issuedAt)` to a generic,
+// agent never reads (the extension's `globalStorage`, which the server self-locates from its own
+// invocation path, SP-6/17). It is `acSignature.ts` widened from `(spec, issuedAt)` to a generic,
 // kind-namespaced subject plus a content hash.
 //
 // Why each binding exists:

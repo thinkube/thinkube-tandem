@@ -98,21 +98,27 @@ const createSlice = (store: ThinkubeStore, title: string) =>
     () => {},
   );
 
-/** Run `fn` with the gate ARMED on a fresh approval dir (the env var is read
- *  PER CALL), restoring the previous environment afterwards. */
+/** Run `fn` with the gate resolving to a fresh temp approval dir. `create_slice` self-locates its
+ *  store via `resolveApprovalDir(process.argv[1])` (SP-6/17), so we root `process.argv[1]` at an
+ *  install-shaped path whose three-up walk lands on `approvalDir`, restoring argv afterwards. */
 async function withArmedGate(
   fn: (approvalDir: string) => Promise<void>,
 ): Promise<void> {
   const approvalDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "tk-approval-dir-"),
   );
-  const prev = process.env.THINKUBE_APPROVAL_DIR;
-  process.env.THINKUBE_APPROVAL_DIR = approvalDir;
+  const prev = process.argv[1];
+  process.argv[1] = path.join(
+    approvalDir,
+    "extension-current",
+    "dist",
+    "mcp",
+    "kanbanMcpServer.js",
+  );
   try {
     await fn(approvalDir);
   } finally {
-    if (prev === undefined) delete process.env.THINKUBE_APPROVAL_DIR;
-    else process.env.THINKUBE_APPROVAL_DIR = prev;
+    process.argv[1] = prev;
   }
 }
 

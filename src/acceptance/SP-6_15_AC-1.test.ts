@@ -34,6 +34,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "../mcp/kanbanMcpServer";
+import { armApprovalForSlicing } from "../mcp/approvalGateTestSupport";
 
 // The composite spec id `<tep>/<spec>` and the tep-qualified slice-handle shape
 // `create_slice` returns on success.
@@ -100,10 +101,11 @@ const ctxFor = (store: ThinkubeStore) => ({
  * the SPEC CONTRACT; `files` is the slice's footprint. A single-file slice needs
  * no `contract` (that's only required for multi-unit slices).
  */
-function createSlice(
+async function createSlice(
   store: ThinkubeStore,
   args: { title: string; files: string[]; retires?: string[] },
 ): Promise<unknown> {
+  await armApprovalForSlicing(store, SPEC);
   return dispatchTool(
     "create_slice",
     {

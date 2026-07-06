@@ -41,6 +41,7 @@ import {
   type RepoFile,
   type RetiredSymbolViolation,
 } from "../services/retiredSymbolFootprint";
+import { armApprovalForSlicing } from "../mcp/approvalGateTestSupport";
 
 // ── the controlled repo fixture ──────────────────────────────────────────────
 // A retired exported symbol, the module that defines it (the slice edits this),
@@ -191,13 +192,15 @@ const ctxFor = (store: ThinkubeStore) => ({
   env: {} as never,
   thinkingSpaces: { resolve: () => store } as never,
 });
-const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
-  dispatchTool(
+const create = async (store: ThinkubeStore, args: Record<string, unknown>) => {
+  await armApprovalForSlicing(store, "1/1");
+  return dispatchTool(
     "create_slice",
     { spec: "1/1", ...args },
     ctxFor(store),
     () => {},
   );
+};
 const recut = (store: ThinkubeStore, args: Record<string, unknown>) =>
   dispatchTool("update_slice", args, ctxFor(store), () => {});
 

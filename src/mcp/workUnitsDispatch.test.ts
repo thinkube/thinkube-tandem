@@ -19,9 +19,12 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 async function seededStore(spec = "1/1"): Promise<ThinkubeStore> {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-wu-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-wu-thinking space-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
     store.pathForSpecDoc(spec),
@@ -39,6 +42,7 @@ test("create_slice through the dispatcher persists work_units", async () => {
     thinkingSpaces: { resolve: () => store } as never,
   };
 
+  await armApprovalForSlicing(store, "1/1");
   const res = (await dispatchTool(
     "create_slice",
     {

@@ -22,9 +22,12 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 async function seededStore(spec = "1/1"): Promise<ThinkubeStore> {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-dag-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-dag-thinking space-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
     store.pathForSpecDoc(spec),
@@ -39,15 +42,22 @@ const ctxFor = (store: ThinkubeStore) => ({
   thinkingSpaces: { resolve: () => store } as never,
 });
 
-const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
-  dispatchTool(
+const create = async (store: ThinkubeStore, args: Record<string, unknown>) => {
+  const spec = String(args.spec ?? "1/1");
+  await armApprovalForSlicing(store, spec);
+  return dispatchTool(
     "create_slice",
     // SP-6/3: a multi-unit slice requires a design-time contract — default one so these DAG-gate
     // fixtures exercise the graph checks, not the contract-required refusal.
-    { spec: "1/1", contract: "interface Contract { /* shared seam */ }", ...args },
+    {
+      spec: "1/1",
+      contract: "interface Contract { /* shared seam */ }",
+      ...args,
+    },
     ctxFor(store),
     () => {},
   );
+};
 
 test("create_slice REFUSES a slice-level depends_on, naming consumes", async () => {
   const store = await seededStore();

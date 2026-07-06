@@ -34,6 +34,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "../mcp/kanbanMcpServer";
+import { armApprovalForSlicing } from "../mcp/approvalGateTestSupport";
 
 // The composite spec id `<tep>/<spec>` and the tep-qualified slice-handle shape
 // `create_slice` returns on success (and `get_slice` reads).
@@ -83,10 +84,11 @@ const ctxFor = (store: ThinkubeStore) => ({
 });
 
 /** Invoke the real `create_slice` tool with the new optional `retires` param. */
-function createSlice(
+async function createSlice(
   store: ThinkubeStore,
   args: { title: string; files: string[]; retires?: string[] },
 ): Promise<unknown> {
+  await armApprovalForSlicing(store, SPEC);
   return dispatchTool(
     "create_slice",
     {

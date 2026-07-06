@@ -45,6 +45,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 // The retire status token is read from the shared contract (never re-spelled as
 // the bare literal), so this test and the `move_slice` wiring can never drift on
 // what a retired slice's `status:` actually says (sliceLifecycle's invariant).
@@ -52,7 +53,9 @@ import { RETIRED_STATUS } from "../methodology/sliceLifecycle";
 
 /** A fresh tmp thinking space store (its own dir, so `specs/` starts empty). */
 function freshStore(): ThinkubeStore {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-lifecycle-mint-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-lifecycle-mint-"),
+  );
   return new ThinkubeStore(thinkingSpace, thinkingSpace);
 }
 
@@ -243,7 +246,9 @@ const SPEC = "1/1";
  * entry) is satisfied — mirrors `workUnitsDispatch.test.ts`'s `seededStore`.
  */
 async function seededStore(): Promise<ThinkubeStore> {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-lifecycle-slice-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-lifecycle-slice-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
     store.pathForSpecDoc(SPEC),
@@ -266,6 +271,7 @@ async function createSliceVia(
   store: ThinkubeStore,
   args: Record<string, unknown> = {},
 ): Promise<string> {
+  await armApprovalForSlicing(store, SPEC);
   const res = (await dispatchTool(
     "create_slice",
     { spec: SPEC, title: "a slice", body: "detail", ...args },
@@ -429,7 +435,7 @@ test("update_slice re-cut replaces the design-time `contract` in place (SP-6/3 s
   const handle = await createSliceVia(store, { files: ["src/a.ts"] });
 
   const revised =
-    "export function gate(dir: string): boolean; // armed by THINKUBE_APPROVAL_DIR";
+    "export function gate(dir: string): boolean; // armed by the approval store";
   await dispatchTool(
     "update_slice",
     { slice: handle, contract: revised },
@@ -502,10 +508,18 @@ test("update_slice re-cut whose files escape the repo is refused with the SAME g
  *  - `promoteLocator` is the `write_spec` `implements:` seam, never consulted by
  *    `write_tep`; pinned to a no-op for type parity with the other contexts.
  */
-function promotedFixture(): { store: ThinkubeStore; thinkingSpaceRoot: string } {
-  const thinkingSpaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tk-promote-root-"));
+function promotedFixture(): {
+  store: ThinkubeStore;
+  thinkingSpaceRoot: string;
+} {
+  const thinkingSpaceRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-promote-root-"),
+  );
   const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "tk-promote-sess-"));
-  return { store: new ThinkubeStore(sessionDir, sessionDir), thinkingSpaceRoot };
+  return {
+    store: new ThinkubeStore(sessionDir, sessionDir),
+    thinkingSpaceRoot,
+  };
 }
 
 function ctxPromoted(store: ThinkubeStore, thinkingSpaceRoot: string) {
