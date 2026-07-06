@@ -1843,10 +1843,18 @@ export class OrchestratorService {
     const testConvention = isTest
       ? await this.resolveTestConvention(cwd)
       : undefined;
+    // SP-12: sibling to the test-convention wiring — a CODE worker gets the repo's sanctioned,
+    // non-mutating self-verify command (top-level `selfVerify` in `.tandem/conventions.json`) so it
+    // never has to improvise into shared build config to run tests. Undefined for a test unit (which
+    // renders none of the SP-12 blocks) or a repo that declares no command.
+    const selfVerifyCommand = isTest
+      ? undefined
+      : (await defaultAcceptanceRecipeResolver(cwd))?.selfVerify;
     const prompt = buildWorkerPrompt(unit, specNumber, {
       specBody: this.promptCtx.specBody,
       sliceBody: this.promptCtx.sliceBodies.get(unit.slice),
       testConvention,
+      selfVerifyCommand,
     });
     let success = false;
     let sessionId: string | undefined;

@@ -171,8 +171,8 @@ export function buildAuditPrompt(acs: AuditAc[], specBody?: string): string {
     "    merge or deploy that the gate it arms gates), or",
     "  - it fails CONTROLLABILITY: walk through the probe step by step — can it establish the",
     "    criterion's preconditions and drive the behaviour using ONLY seams the Spec's Design",
-    "    names? If the criterion hinges on a state the Design never says how to reach (\"with X",
-    "    configured\" but never how one configures it, \"when the feature is enabled\" with no named",
+    '    names? If the criterion hinges on a state the Design never says how to reach ("with X',
+    '    configured" but never how one configures it, "when the feature is enabled" with no named',
     "    enablement surface, an unnamed constant the assertion pivots on), the probe author must",
     "    INVENT that seam and the implementer will invent a DIFFERENT one — a guaranteed red",
     "    against a correct implementation. That is a Design defect: name the missing seam in `why`",
@@ -366,6 +366,13 @@ export interface AcceptanceRecipe {
    *  commands — e.g. `npx tsc -p tsconfig.test.json` for a compiled language whose `run` targets
    *  compiled output. A repo whose probes run from source (pytest, cargo test) declares none. */
   prepare?: string;
+  /** SP-12: the repo-declared, non-mutating build-and-test command a CODE-author worker runs to
+   *  self-verify its edits (targeting the gitignored `out-test/`, so it is guard-safe by construction).
+   *  Read from the TOP-LEVEL `selfVerify` string in `.tandem/conventions.json` (a PEER of
+   *  `acceptanceProbe`); `undefined` when absent or blank. Surfaced into the worker prompt's
+   *  VERIFICATION BLOCK by `OrchestratorService`, closing the gap that let a worker improvise into
+   *  shared build config to run tests. */
+  selfVerify?: string;
 }
 
 /** Fill `{spec}`/`{ac}` in an acceptance-probe template. `spec` is sanitized to a path-safe token
@@ -394,7 +401,10 @@ export async function defaultAcceptanceRecipeResolver(
       path.join(cwd, ".tandem", "conventions.json"),
       "utf8",
     );
-    const cfg = JSON.parse(raw) as { acceptanceProbe?: unknown };
+    const cfg = JSON.parse(raw) as {
+      acceptanceProbe?: unknown;
+      selfVerify?: unknown;
+    };
     const p = cfg.acceptanceProbe as Record<string, unknown> | undefined;
     if (
       p &&
@@ -407,7 +417,18 @@ export async function defaultAcceptanceRecipeResolver(
         typeof p.prepare === "string" && p.prepare.trim()
           ? p.prepare.trim()
           : undefined;
-      return { sourcePath: p.sourcePath.trim(), run: p.run.trim(), prepare };
+      // SP-12: the top-level `selfVerify` (a PEER of `acceptanceProbe`) — the code-author's sanctioned
+      // build-and-test command. Trimmed; undefined when absent or blank.
+      const selfVerify =
+        typeof cfg.selfVerify === "string" && cfg.selfVerify.trim()
+          ? cfg.selfVerify.trim()
+          : undefined;
+      return {
+        sourcePath: p.sourcePath.trim(),
+        run: p.run.trim(),
+        prepare,
+        selfVerify,
+      };
     }
     return undefined;
   } catch {

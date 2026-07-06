@@ -731,6 +731,11 @@ export function buildWorkerPrompt(
     specBody?: string;
     sliceBody?: string;
     testConvention?: string;
+    /** SP-12: the repo-declared, non-mutating build-and-test command a CODE-author runs to
+     *  self-verify (read from `.tandem/conventions.json`'s top-level `selfVerify`). Rendered as the
+     *  VERIFICATION BLOCK for code units when set; omitted entirely (block + `SELF-VERIFY` marker)
+     *  when absent/blank. A test unit renders none of the SP-12 blocks. */
+    selfVerifyCommand?: string;
   },
 ): string {
   const fp = unit.footprint.join(", ") || "(no declared footprint)";
@@ -783,6 +788,27 @@ export function buildWorkerPrompt(
   const contractBlock = unit.contract?.trim()
     ? `\n──── SPEC CONTRACT (the shared interface across the whole feature — implement and verify EXACTLY against this; do not rename, widen, or invent) ────\n${unit.contract.trim()}\n`
     : "";
+  // SP-12: a CODE unit carries the repo's sanctioned self-verify command PLUS two standing
+  // prohibitions, stated up front so the worker never has to improvise into shared build config or
+  // touch the held-out probes to figure out how to run tests. (A `test` unit renders NONE of these —
+  // it is the held-out verifier and already gets the `acceptance/` footprint + convention.)
+  //  1. VERIFICATION BLOCK — only when a self-verify command is supplied: the exact, non-mutating
+  //     build-and-test invocation, verbatim, under a distinct `SELF-VERIFY` marker so its absence is
+  //     grep-checkable. Omitted ENTIRELY (block + marker) when no command is declared.
+  //  2. FOOTPRINT PROHIBITION (unconditional) — files outside the declared footprint, shared
+  //     build/config (`tsconfig*.json`, etc.) included, are off-limits; the guard reverts a breach.
+  //  3. HELD-OUT PROHIBITION (unconditional) — the held-out `acceptance/` probes are the closing
+  //     gate's to grade; the worker must not build or run them.
+  const selfVerify = context?.selfVerifyCommand?.trim();
+  const verifyBlock =
+    !isTest && selfVerify
+      ? `\n──── SELF-VERIFY (after editing your files, run this non-mutating build-and-test command to check your work) ────\n${selfVerify}\n`
+      : "";
+  const prohibitionsBlock = !isTest
+    ? `\nSTANDING PROHIBITIONS (do not breach these to self-verify):\n` +
+      `- Stay inside your declared footprint. Never edit a file outside it — shared build/config (\`tsconfig*.json\`, other tsconfig files, etc.) included. The footprint guard hard-aborts and reverts an out-of-footprint write; do not improvise into shared build config to make tests run.\n` +
+      `- The held-out \`acceptance/\` probes are graded by the closing gate, not by you: do not build or run them.\n`
+    : "";
   // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
   // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
   // reach. SP-6 AC1 / SP-6/7 AC1: a `code` unit gets the INTENT VIEW only — the `## Acceptance Criteria`
@@ -811,6 +837,8 @@ export function buildWorkerPrompt(
       : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
     `\n${task}\n` +
     contractBlock +
+    verifyBlock +
+    prohibitionsBlock +
     conventionBlock +
     workspaceBlock +
     consumesBlock +

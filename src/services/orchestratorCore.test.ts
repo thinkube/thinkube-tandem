@@ -833,6 +833,98 @@ test("AC1: buildWorkerPrompt withholds the AC block even when it is the LAST sec
   assert.doesNotMatch(p, /never double-writes/);
 });
 
+// ── SP-12: code-author self-verify command + standing prohibitions ─────────────
+// A CODE unit's prompt carries (1) a VERIFICATION BLOCK with the repo's declared self-verify
+// command verbatim under a grep-checkable `SELF-VERIFY` marker — but ONLY when a command is
+// supplied — and (2)/(3) two UNCONDITIONAL prohibitions: never edit outside the footprint (shared
+// build/config, `tsconfig*.json` included) and never build/run the held-out `acceptance/` probes
+// (the closing gate grades them). A `test` unit renders NONE of these.
+
+test("SP-12: buildWorkerPrompt renders the SELF-VERIFY block verbatim + both prohibitions for a code unit", () => {
+  const unit: SchedUnit = {
+    id: "SP-12_SL-1#eu-0",
+    slice: "SP-12_SL-1",
+    footprint: ["src/foo.ts"],
+    requires: [],
+    shape: "serial",
+    role: "code",
+  };
+  const cmd = "npx tsc -p tsconfig.test.json && node --test out-test/";
+  const p = buildWorkerPrompt(unit, "12", { selfVerifyCommand: cmd });
+
+  // (1) VERIFICATION BLOCK — the `SELF-VERIFY` marker + the command VERBATIM.
+  assert.match(p, /SELF-VERIFY/);
+  assert.ok(p.includes(cmd), "renders the self-verify command verbatim");
+
+  // (2) FOOTPRINT PROHIBITION — contains `footprint` AND `tsconfig`.
+  assert.match(p, /footprint/);
+  assert.match(p, /tsconfig/);
+
+  // (3) HELD-OUT PROHIBITION — contains `acceptance/`, `closing gate`, and `do not build or run`.
+  assert.match(p, /acceptance\//);
+  assert.match(p, /closing gate/);
+  assert.match(p, /do not build or run/);
+});
+
+test("SP-12: buildWorkerPrompt trims the self-verify command and renders it once, trimmed", () => {
+  const unit: SchedUnit = {
+    id: "SP-12_SL-1#eu-1",
+    slice: "SP-12_SL-1",
+    footprint: ["src/foo.ts"],
+    requires: [],
+    shape: "serial",
+  };
+  const p = buildWorkerPrompt(unit, "12", {
+    selfVerifyCommand: "   npm run verify   ",
+  });
+  assert.match(p, /SELF-VERIFY/);
+  assert.ok(p.includes("npm run verify"), "renders the trimmed command");
+  assert.doesNotMatch(p, /SELF-VERIFY[\s\S]*\S   npm/); // no leading padding preserved
+});
+
+test("SP-12: buildWorkerPrompt omits the SELF-VERIFY block + marker when no command is declared, prohibitions still render", () => {
+  const unit: SchedUnit = {
+    id: "SP-12_SL-1#eu-2",
+    slice: "SP-12_SL-1",
+    footprint: ["src/foo.ts"],
+    requires: [],
+    shape: "serial",
+    role: "code",
+  };
+  // undeclared entirely
+  const p = buildWorkerPrompt(unit, "12");
+  assert.doesNotMatch(p, /SELF-VERIFY/); // marker omitted entirely
+  // prohibitions still render unconditionally
+  assert.match(p, /tsconfig/);
+  assert.match(p, /acceptance\//);
+  assert.match(p, /closing gate/);
+  assert.match(p, /do not build or run/);
+
+  // a blank/whitespace command is treated as absent too
+  const blank = buildWorkerPrompt(unit, "12", { selfVerifyCommand: "   " });
+  assert.doesNotMatch(blank, /SELF-VERIFY/);
+  assert.match(blank, /do not build or run/);
+});
+
+test("SP-12: buildWorkerPrompt renders NONE of the SP-12 blocks for a test unit", () => {
+  const unit: SchedUnit = {
+    id: "SP-12_SL-1#eu-3",
+    slice: "SP-12_SL-1",
+    footprint: ["src/acceptance/SP-12_AC-1.test.ts"],
+    requires: [],
+    shape: "serial",
+    role: "test",
+  };
+  // Even when a command is supplied, a held-out test unit renders no SP-12 block.
+  const p = buildWorkerPrompt(unit, "12", {
+    selfVerifyCommand: "npx tsc -p tsconfig.test.json && node --test out-test/",
+  });
+  assert.doesNotMatch(p, /SELF-VERIFY/);
+  assert.doesNotMatch(p, /STANDING PROHIBITIONS/);
+  assert.doesNotMatch(p, /closing gate/);
+  assert.doesNotMatch(p, /do not build or run/);
+});
+
 test("stripAcceptanceCriteria: removes the AC heading + its body up to the next same/higher heading; idempotent", () => {
   const body = [
     "# Title",
