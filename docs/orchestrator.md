@@ -4,7 +4,8 @@ The orchestrator drives a Spec to completion autonomously: it schedules the Spec
 work-units over their DAG, runs each as a worker, and — when every unit has landed —
 runs a **closing gate** before the Spec is allowed to reach Done. This document covers
 the closing half (SP-tgzyfy / TEP-tgzx3p): the mandatory per-AC verification, the
-auditable delivery report, and the human **Accept / Reject** exits.
+auditable delivery report, and the human exits — which are derived from the run's actual
+**terminal state** (SP-11/2), not a fixed pair glued onto every outcome.
 
 ## The closing gate
 
@@ -76,15 +77,45 @@ redacted). The human document itself is never redacted.
 
 The report auto-opens rendered in the Markdown preview when a run finishes.
 
-## Accept / Reject
+## Exit states and their actions
 
-The finished report surfaces two human exits on the acceptance/close surface:
+The post-orchestration surface derives its exits from the run's **terminal state** rather than
+offering a fixed Accept/Reject pair on every outcome. `orchestratorCore.deliveryExitState({
+committed, gatePassed })` is the single source of truth — it maps the run to one of two states,
+each carrying its own ordered exit set. Both the delivery report's `## Next` section and the
+graph's buttons render from _this same_ set (no second derivation), and "Reject" is retired from
+the UI vocabulary.
 
-- **Accept** performs the gated merge of `spec/SP-{n}` → `main`. It is **refused unless every
-  AC is checked** — there is no accepting an unverified Spec.
-- **Reject** opens a Claude session primed with the report's context — the spec-level analog
-  of `/attend` — to rework the Spec from the evidence of what failed.
+### Delivered
 
-The webview posts `accept` / `reject` messages (carrying the Spec id) that the host forwards
-to the corresponding `thinkube.*` commands, reusing the TEP-0010 acceptance close-card rather
-than a parallel mechanism.
+`committed && gatePassed` → **delivered**: the change committed and the closing gate passed. Its
+exits, in order:
+
+- **Accept & merge** (`accept`) — performs the gated merge of `spec/SP-{n}` → `main`. It is
+  **refused unless every AC is checked** — there is no accepting an unverified Spec.
+- **Request changes** (`request-changes`) — opens a Claude session primed with the report's
+  context (the spec-level `/attend` prefill) to steer the delivered change back in line with the
+  intent.
+
+### Stalled
+
+Anything short of delivered — not committed and/or the gate did not pass — is **stalled**. It
+offers the actions that actually apply to a run that did not deliver (no impossible Accept, no
+mislabeled Reject), in order:
+
+- **Attend** (`attend`) — opens a primed `/attend` session on the requires-attention slice(s) to
+  bring the behaviour back in line with the intent.
+- **Re-run** (`rerun`) — re-runs the orchestrator once the requires-attention slice(s) are
+  resolved.
+
+Every action gives instant pending feedback and is idempotent: a double-click is refused, never
+double-dispatched. The attend / rework prefills invoke the `/attend` skill (TEP-11/SP-1) —
+`buildAttendPrompt(handle, divergence)` at slice grain and `buildRejectPrompt(specId, divergence,
+projectThinkingSpaceId?)` at Spec grain each emit a `/attend …` invocation (plus the
+intent-divergence summary, routed through `stripFailingCheck` so the failing AC ordinal / command
+/ output never leak) rather than raw prose.
+
+The webview posts the chosen exit's `id` (carrying the Spec id) that the host forwards to the
+corresponding `thinkube.*` command, reusing the TEP-0010 acceptance close-card rather than a
+parallel mechanism. The `thinkube.reject` command may remain as a compatibility alias, but no
+surface labels an exit "Reject".

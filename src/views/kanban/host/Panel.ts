@@ -45,6 +45,7 @@ import {
   doneWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
+import { deliveryExitState } from "../../../services/orchestratorCore";
 import { ReviewPanel } from "../../review/ReviewPanel";
 
 interface PanelDeps {
@@ -386,6 +387,22 @@ export class KanbanPanel implements vscode.Disposable {
           this.log(`reject ${message.spec} failed: ${(err as Error).message}`);
         }
         break;
+      case "rerun":
+        // The stalled delivery's Re-run exit (SP-11/2): re-dispatch the makespan scheduler on
+        // the Spec — the SAME action as ▶ Orchestrate, surfaced as a state-derived exit. Carry
+        // THIS panel's thinking space and re-load + re-post as the orchestrate handler does; the
+        // fresh state push re-forwards the exit set, reconciling the button model's pending flag.
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.orchestrate",
+            message.spec,
+            this.adapter.thinkingSpaceContext?.(),
+          );
+          await this.reloadAndPost();
+        } catch (err) {
+          this.log(`rerun ${message.spec} failed: ${(err as Error).message}`);
+        }
+        break;
       case "notify":
         this.notify(message.level, message.text);
         break;
@@ -401,6 +418,38 @@ export class KanbanPanel implements vscode.Disposable {
         ? { ...message, thinkingSpace: this.withRunning(message.thinkingSpace) }
         : message;
     this.panel.webview.postMessage(out);
+    // Every state push re-derives + re-forwards each Spec's delivery exit set (SP-11/2), which
+    // doubles as the button model's reconcile status event. `delivery-exits` itself carries no
+    // `thinkingSpace`, so this never recurses.
+    if ("thinkingSpace" in out) this.postDeliveryExits(out.thinkingSpace);
+  }
+
+  /**
+   * Forward each Spec's state-derived delivery exit set (SP-11/2) to the webview. Derived once,
+   * here in the host, from the acceptance close-card via the shared `deliveryExitState` — the
+   * single source of truth the delivery report also consumes, so report and buttons never drift.
+   * The webview renders + dispatches its exit buttons from these ids + labels (never hardcoded);
+   * re-posting on every state push is also the status event that reconciles the button model
+   * (clears any pending action, re-enables the exits).
+   */
+  private postDeliveryExits(thinkingSpace: ThinkingSpace): void {
+    for (const t of Object.values(thinkingSpace.tasks)) {
+      if (!t.isAcceptance || !t.parentId) continue;
+      // committed ⇔ every slice of the Spec landed Done; gatePassed ⇔ the acceptance gate is
+      // armed (every slice Done + every AC checked = `acceptReady`). `deliveryExitState` folds
+      // them into delivered → [accept, request-changes] vs stalled → [attend, rerun].
+      const committed =
+        typeof t.slicesTotal === "number" &&
+        t.slicesTotal > 0 &&
+        t.slicesDone === t.slicesTotal;
+      const gatePassed = !!t.acceptReady;
+      const { exits } = deliveryExitState({ committed, gatePassed });
+      this.panel.webview.postMessage({
+        kind: "delivery-exits",
+        spec: t.parentId,
+        exits,
+      });
+    }
   }
 
   /** Flag tasks whose slice has a live Agent SDK worker (SP-tgs8nz SL-4). */

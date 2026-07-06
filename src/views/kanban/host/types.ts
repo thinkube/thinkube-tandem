@@ -7,6 +7,8 @@
  * data shape; the host side is authoritative for message names.
  */
 
+import type { ExitAction } from "../../../services/orchestratorCore";
+
 /**
  * An execution-unit node (SP-tgs8nz_SL-4): a slice's work units expanded to the
  * scheduler's execution units, so the control-center graph shows a node per worker
@@ -115,10 +117,23 @@ export type WebviewMessage =
   /** Accept the delivered Spec (SP-tgzyfy): host runs the gated merge spec/SP-{n} → main. */
   | { kind: "accept"; spec: string }
   /** Reject the delivered Spec: open a Claude session primed with the delivery report. */
-  | { kind: "reject"; spec: string };
+  | { kind: "reject"; spec: string }
+  /**
+   * Re-run a stalled delivery's exit set (SP-11/2, `rerun`): re-dispatch the makespan
+   * scheduler on the Spec — identical to `orchestrate`, surfaced as a state-derived exit.
+   */
+  | { kind: "rerun"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 
 export type HostMessage =
   | { kind: "state"; thinkingSpace: ThinkingSpace; mode: ModeFlag }
-  | { kind: "external-change"; thinkingSpace: ThinkingSpace; mode: ModeFlag };
+  | { kind: "external-change"; thinkingSpace: ThinkingSpace; mode: ModeFlag }
+  /**
+   * A Spec's state-derived delivery exit set (SP-11/2): the exact `ExitAction`
+   * ids + labels from `deliveryExitState`, forwarded so the webview renders and
+   * dispatches buttons from THEM (never hardcoded labels). Re-posted on every
+   * state push, so it doubles as the status event that reconciles the button
+   * model — clearing any pending action and re-enabling the exits.
+   */
+  | { kind: "delivery-exits"; spec: string; exits: ExitAction[] };

@@ -35,6 +35,7 @@ import {
   runAcVerifications,
   checkAcOrdinals,
   buildDeliveryReport,
+  deliveryExitState,
   reDispatchDecision,
   isEscalated,
   hasEscalationMarker,
@@ -56,6 +57,7 @@ import {
   type AssessContext,
   type Fault,
   type VerificationTraceEntry,
+  type ExitAction,
 } from "./orchestratorCore";
 import { validateDag } from "../methodology/parallelSlices";
 
@@ -286,12 +288,13 @@ test("SP-11/3: buildTestReworkContext returns the diagnosis VERBATIM only for ro
   assert.equal(buildTestReworkContext(diag, undefined), undefined);
 });
 
-test("buildAttendPrompt: names the slice, includes the diagnosis + the return-to-Ready exit", () => {
+test("buildAttendPrompt: is the /attend invocation for the slice + the divergence", () => {
   const p = buildAttendPrompt("SP-1_SL-2", "verifier red");
-  assert.match(p, /SP-1_SL-2/);
+  // SP-11/2: the prefill invokes the `/attend` skill for the slice, then the divergence.
+  assert.match(p, /^\/attend SP-1_SL-2/);
   assert.match(p, /verifier red/);
-  assert.match(p, /back to Ready/);
-  // No diagnosis → still names the slice + the exit, no dangling "diagnosis:" label.
+  // No divergence → the bare `/attend <handle>` invocation, no dangling "diagnosis:" label.
+  assert.equal(buildAttendPrompt("SP-1_SL-2"), "/attend SP-1_SL-2");
   assert.doesNotMatch(buildAttendPrompt("SP-1_SL-2"), /diagnosis/i);
 });
 
@@ -390,31 +393,30 @@ test("AC3: stripFailingCheck scrubs each leak channel in isolation", () => {
 
 test("AC3: buildAttendPrompt states the divergence and excludes the failing AC ordinal / command / output", () => {
   const p = buildAttendPrompt("SP-6_SL-3", RAW_EVIDENCE_WITH_INTENT);
-  // States the divergence, intent-framed.
-  assert.match(p, /diverged from the intent/i);
+  // SP-11/2: the `/attend` invocation for the slice, then the intent-divergence prose.
+  assert.match(p, /^\/attend SP-6_SL-3/);
   assert.match(p, /Unix epoch seconds/);
-  assert.match(p, /SP-6_SL-3/);
   // Excludes all three leak channels even when handed raw evidence.
   assertNoLeak(p);
 });
 
 test("AC3: buildRejectPrompt states the Spec-grain divergence and excludes the failing AC ordinal / command / output", () => {
   const p = buildRejectPrompt("6", RAW_EVIDENCE_WITH_INTENT);
-  assert.match(p, /SP-6/);
-  assert.match(p, /diverged from the intent/i);
+  // SP-11/2: the `/attend SP-<specId>` invocation, then the intent-divergence prose.
+  assert.match(p, /^\/attend SP-6/);
   assert.match(p, /Unix epoch seconds/);
   assertNoLeak(p);
 });
 
-test("AC3: a no-divergence rework prompt steers back to the intent — never to a failing check", () => {
-  // Slice grain: still names the slice + the return-to-Ready exit, no leaked channel.
+test("AC3: a no-divergence rework prompt is the bare /attend invocation — never a failing check", () => {
+  // SP-11/2: a no-divergence prefill is just the `/attend` skill invocation; the skill supplies
+  // the "re-read the intent, bring it back in line" workflow. No leaked channel, no dangling label.
   const attend = buildAttendPrompt("SP-6_SL-3");
-  assert.match(attend, /SP-6_SL-3/);
-  assert.match(attend, /intent/i);
+  assert.equal(attend, "/attend SP-6_SL-3");
   assertNoLeak(attend);
-  // Spec grain: the fallback points the worker at the Spec's intent, not at a failing run.
+  // Spec grain: the bare `/attend SP-<specId>` invocation, no trailing paragraph.
   const reject = buildRejectPrompt("6");
-  assert.match(reject, /intent/i);
+  assert.equal(reject, "/attend SP-6");
   assert.doesNotMatch(reject, /failing (?:check|run|command)/i);
   assertNoLeak(reject);
 });
@@ -1434,6 +1436,97 @@ test("SP-11/3: the per-AC fenced evidence blocks and the trace table live ONLY u
     !md.slice(0, appendixIdx).includes("```"),
     "no fenced evidence before the appendix",
   );
+});
+
+// ── SP-11/2: state-derived exit set + exits-driven `## Next` section ─────────
+// The exit set is derived from the run's terminal state — delivered vs stalled — never glued
+// on fixed: a delivered run offers accept / request-changes, a stalled run attend / rerun. One
+// model feeds both the report's `## Next` and the graph's buttons.
+
+test("deliveryExitState: delivered ⇔ committed && gatePassed → [accept, request-changes]", () => {
+  const d = deliveryExitState({ committed: true, gatePassed: true });
+  assert.equal(d.state, "delivered");
+  assert.deepEqual(d.exits, [
+    { id: "accept", label: "Accept & merge" },
+    { id: "request-changes", label: "Request changes" },
+  ]);
+});
+
+test("deliveryExitState: anything short of delivered is stalled → [attend, rerun]", () => {
+  const stalledExits: ExitAction[] = [
+    { id: "attend", label: "Attend" },
+    { id: "rerun", label: "Re-run" },
+  ];
+  for (const run of [
+    { committed: false, gatePassed: false },
+    { committed: true, gatePassed: false },
+    { committed: false, gatePassed: true },
+  ]) {
+    const s = deliveryExitState(run);
+    assert.equal(s.state, "stalled", JSON.stringify(run));
+    assert.deepEqual(s.exits, stalledExits, JSON.stringify(run));
+  }
+  // The retired "Reject" vocabulary never appears in a stalled exit label.
+  assert.doesNotMatch(
+    deliveryExitState({ committed: false, gatePassed: false })
+      .exits.map((e) => e.label)
+      .join(" "),
+    /reject/i,
+  );
+});
+
+test("buildDeliveryReport: renders `## Next` as numbered bold-label lines from the exits", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/2",
+    sha: "abc1234",
+    files: ["src/a.ts"],
+    units: [{ id: "SP-11_SL-1#eu-0", outcome: "success" }],
+    declared: [{ ac: 1, run: "test", env: "cluster" }],
+    acResults: [{ ac: 1, pass: true, evidence: "$ test → exit 0" }],
+    advanced: ["SP-11_SL-1"],
+    committed: true,
+    exits: deliveryExitState({ committed: true, gatePassed: true }).exits,
+  });
+  // The `## Next` items are numbered bold-label lines from the delivered exit set.
+  assert.match(md, /## Next/);
+  assert.match(md, /^1\. \*\*Accept & merge\*\* — /m);
+  assert.match(md, /^2\. \*\*Request changes\*\* — /m);
+  // "Reject" is retired from the surface — the delivered Next never labels an exit Reject.
+  const nextBlock = md.slice(md.indexOf("## Next"));
+  assert.doesNotMatch(nextBlock, /\bReject\b/);
+});
+
+test("buildDeliveryReport: a stalled exit set renders attend / rerun in `## Next`", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/2",
+    sha: "",
+    files: [],
+    units: [],
+    declared: [],
+    acResults: [],
+    advanced: [],
+    committed: false,
+    exits: deliveryExitState({ committed: false, gatePassed: false }).exits,
+  });
+  assert.match(md, /^1\. \*\*Attend\*\* — /m);
+  assert.match(md, /^2\. \*\*Re-run\*\* — /m);
+});
+
+test("buildDeliveryReport: exits omitted → the hard-coded Next text remains (backward compatible)", () => {
+  const md = buildDeliveryReport({
+    specNumber: "1",
+    sha: "abc1234",
+    files: ["src/a.ts"],
+    units: [{ id: "SP-1_SL-1#eu-0", outcome: "success" }],
+    declared: [{ ac: 1, run: "test", env: "cluster" }],
+    acResults: [{ ac: 1, pass: true, evidence: "$ test → exit 0" }],
+    advanced: ["SP-1_SL-1"],
+    committed: true,
+    // exits omitted
+  });
+  assert.match(md, /## Next/);
+  // The pre-SP-11/2 hard-coded committed text is unchanged when no exit set is supplied.
+  assert.match(md, /Review the `spec\/TEP-1` branch/);
 });
 
 // ── SP-6/6 AC5: bounded rework loop → escalation, NOT re-queue forever ──────

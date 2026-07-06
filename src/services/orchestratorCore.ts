@@ -1050,53 +1050,47 @@ export function stripFailingCheck(text: string): string {
 }
 
 /**
- * The chat prompt priming an `/attend` session (SP-6 AC3): the slice, an **intent-divergence**
- * description of how the behaviour diverged from what was intended, and the return-to-Ready exit.
- * The feedback is framed as a divergence (never "the failing check") and routed through
- * {@link stripFailingCheck}, so the fixer never sees the failing AC ordinal, the failing `run`
- * command, or its output and so cannot optimise "make assertion X pass." A no-`divergence` call
- * still names the slice + the exit, with no dangling label. Pure.
+ * The chat prefill priming an `/attend` session (SP-11/2 + SP-6 AC3): the `/attend` skill invocation
+ * for the requires-attention slice, followed — when a divergence is supplied — by an
+ * **intent-divergence** description of how the behaviour diverged from what was intended. The
+ * divergence is routed through {@link stripFailingCheck}, so the fixer never sees the failing AC
+ * ordinal, the failing `run` command, or its output and so cannot optimise "make assertion X pass."
+ * A no-`divergence` call is just the bare `/attend <handle>` invocation, with no dangling label. The
+ * `/attend` skill (TEP-11/SP-1) supplies the "re-read the intent, bring the behaviour back, return to
+ * Ready" workflow — this prefill no longer duplicates that prose. Pure.
  */
 export function buildAttendPrompt(handle: string, divergence?: string): string {
-  const clean = stripFailingCheck(divergence ?? "");
-  const body = clean
-    ? `\n\nHow the behaviour diverged from the intent:\n\n${clean}`
-    : "";
   return (
-    `Attend the requires-attention slice ${handle} in this worktree.${body}` +
-    `\n\nRe-read the slice's intent (goal / design / behaviour), bring the behaviour back in line ` +
-    `with it, verify at slice grain, then move ${handle} back to Ready so the loop can pick it up.`
+    `/attend ${handle}` +
+    (divergence ? `\n\n${stripFailingCheck(divergence)}` : "")
   );
 }
 
 /**
- * The chat prompt priming a Spec-level Reject session (SP-6 AC3) — the spec-level analog of
- * {@link buildAttendPrompt}, hosted here so the rework/divergence builders live in one pure place
- * (reuse, don't fork). It embeds an **intent-divergence** description of how the Spec's behaviour
- * diverged from its intent — NOT the `DELIVERY.md` per-AC table, its `run` commands, or their output
- * — routed through {@link stripFailingCheck}, so the reworking worker is steered by the intent and
- * never by the failing AC ordinal, the failing command, or its output. When the Spec lives on a
- * cross-repo project thinking space, `projectThinkingSpaceId` is surfaced so every kanban call
- * addresses it explicitly. Pure.
+ * The chat prefill priming a Spec-level `/attend` session (SP-11/2 + SP-6 AC3) — the spec-level
+ * analog of {@link buildAttendPrompt}, hosted here so the rework/divergence builders live in one
+ * pure place (reuse, don't fork). It is the `/attend SP-<specId>` skill invocation, followed —
+ * when the Spec lives on a cross-repo project thinking space — by the thinking-space note so every
+ * kanban call addresses it explicitly, then — when a divergence is supplied — by an
+ * **intent-divergence** description routed through {@link stripFailingCheck} (NOT the `DELIVERY.md`
+ * per-AC table, its `run` commands, or their output), so the reworking worker is steered by the
+ * intent and never by the failing AC ordinal, the failing command, or its output. No divergence ⇒
+ * no trailing paragraph. The `/attend` skill (TEP-11/SP-1) supplies the rework workflow. Pure.
  */
 export function buildRejectPrompt(
   specId: string,
   divergence?: string,
   projectThinkingSpaceId?: string,
 ): string {
-  const clean = stripFailingCheck(divergence ?? "");
-  const ctx = clean
-    ? `\n\nHow the Spec's behaviour diverged from the intent:\n\n${clean}`
-    : `\n\n(No divergence summary was supplied — re-read the Spec's intent and its slices to find what behaviour is off.)`;
   // For a cross-repo project member the Spec lives on the project thinking space, NOT on this
   // worktree's repo thinking space — so every kanban call must address it explicitly.
   const thinkingSpaceNote = projectThinkingSpaceId
     ? `\n\nIMPORTANT — this Spec lives on the project thinking space \`${projectThinkingSpaceId}\`, not on this worktree's repo. Pass \`thinking_space=${projectThinkingSpaceId}\` to EVERY kanban tool (get_thinkube_file / get_slice / list_thinking_space / move_slice / patch_spec_section / write_spec / create_slice). Your cwd's thinking space is the working repo where the code lives, which is NOT this Spec's thinking space.`
     : "";
-  return (
-    `Rework the rejected Spec SP-${specId} in this worktree.${thinkingSpaceNote}${ctx}` +
-    `\n\nBring the behaviour back in line with the Spec's intent, re-verify at Spec grain, then re-orchestrate so SP-${specId} can reach Done.`
-  );
+  const divergenceNote = divergence
+    ? `\n\n${stripFailingCheck(divergence)}`
+    : "";
+  return `/attend SP-${specId}` + thinkingSpaceNote + divergenceNote;
 }
 
 /**
@@ -1889,6 +1883,69 @@ export interface ReportUnit {
   outcome: "success" | "needs-input" | "failed";
 }
 
+/**
+ * SP-11/2 — the id of a post-orchestration exit. The exit SET is derived from the run's terminal
+ * state (see {@link deliveryExitState}), never glued on fixed: a **delivered** run offers
+ * `accept` / `request-changes`; a **stalled** run offers `attend` / `rerun` — no impossible
+ * `accept` on a stalled run, no mislabeled reject.
+ */
+export type ExitActionId = "accept" | "request-changes" | "attend" | "rerun";
+
+/** SP-11/2 — one post-orchestration exit: a stable `id` (dispatched on) + its human `label`. */
+export interface ExitAction {
+  id: ExitActionId;
+  label: string;
+}
+
+/**
+ * SP-11/2 — the SINGLE source of truth mapping a run's terminal state to its exit set. Both the
+ * delivery report's `## Next` section and the graph's buttons consume THIS (no second derivation):
+ *
+ *   • **delivered** ⇔ the change committed AND the closing gate passed → exits
+ *     `[accept ("Accept & merge"), request-changes ("Request changes")]`, in that order;
+ *   • **stalled** ⇔ anything else (not committed and/or the gate did not pass) → exits
+ *     `[attend ("Attend"), rerun ("Re-run")]`, in that order — the actions that actually apply to a
+ *     run that did not deliver (no impossible Accept, no mislabeled Reject).
+ *
+ * Labels are pinned exactly. Pure → unit-tested.
+ */
+export function deliveryExitState(run: {
+  committed: boolean;
+  gatePassed: boolean;
+}): { state: "delivered" | "stalled"; exits: ExitAction[] } {
+  return run.committed && run.gatePassed
+    ? {
+        state: "delivered",
+        exits: [
+          { id: "accept", label: "Accept & merge" },
+          { id: "request-changes", label: "Request changes" },
+        ],
+      }
+    : {
+        state: "stalled",
+        exits: [
+          { id: "attend", label: "Attend" },
+          { id: "rerun", label: "Re-run" },
+        ],
+      };
+}
+
+/**
+ * SP-11/2 — the one-line hint rendered after each exit's bold label in the delivery report's
+ * `## Next` section (`N. **<label>** — <hint>`). Keyed by {@link ExitActionId} so the report and
+ * the exit-state model can never drift on what each action means.
+ */
+const NEXT_HINTS: Record<ExitActionId, string> = {
+  accept:
+    "merge the Spec to `main` (gated on every AC checked) — the per-AC table above is the evidence.",
+  "request-changes":
+    "open a primed `/attend` session to steer the delivered change back in line with the intent.",
+  attend:
+    "open a primed session on the requires-attention slice(s) to bring the behaviour back in line.",
+  rerun:
+    "resolve the requires-attention slice(s), then re-run the orchestrator.",
+};
+
 /** Everything the auditable delivery report (DELIVERY.md) records (SP-tgzyfy). */
 export interface DeliveryReportInput {
   specNumber: string;
@@ -1926,6 +1983,11 @@ export interface DeliveryReportInput {
    *  paired with its unit id by the orchestrator. Rendered under `## Discoveries & recommendations`
    *  (both unit and text); empty/omitted ⇒ the literal "none reported". */
   discoveries?: { unit: string; text: string }[];
+  /** SP-11/2 — the run's state-derived exit set ({@link deliveryExitState}). When present,
+   *  `buildDeliveryReport` renders the `## Next` section as numbered bold-label lines
+   *  (`N. **<label>** — <hint>`) from it; omitted ⇒ the hard-coded Next text remains
+   *  (backward-compatible). */
+  exits?: ExitAction[];
 }
 
 /**
@@ -2069,6 +2131,22 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
     ? ["### Caught problems", "", ...problems.map((p) => `- ${p}`), ""]
     : [];
 
+  // SP-11/2 — the `## Next` items. With a state-derived exit set present, render numbered
+  // bold-label lines (`N. **<label>** — <hint>`) from it — one source of truth for the report
+  // and the graph's buttons. Omitted ⇒ the hard-coded text (backward-compatible).
+  const nextLines =
+    i.exits && i.exits.length
+      ? i.exits.map(
+          (e, idx) => `${idx + 1}. **${e.label}** — ${NEXT_HINTS[e.id] ?? ""}`,
+        )
+      : [
+          i.committed
+            ? `1. Review the \`${branch}\` branch (the committed change) — the acceptance criteria above and the evidence appendix are the proof.\n` +
+              `2. **Accept** to merge the Spec to \`main\` (gated on every AC checked), or **Reject** to open a primed session.`
+            : `1. The closing gate did not pass — see What happened above and the evidence appendix below.\n` +
+              `2. Resolve the requires-attention slice(s), then re-run the orchestrator.`,
+        ];
+
   const appendix = [
     "## Evidence appendix",
     "",
@@ -2100,11 +2178,7 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
     "",
     "## Next",
     "",
-    i.committed
-      ? `1. Review the \`${branch}\` branch (the committed change) — the acceptance criteria above and the evidence appendix are the proof.\n` +
-        `2. **Accept** to merge the Spec to \`main\` (gated on every AC checked), or **Reject** to open a primed session.`
-      : `1. The closing gate did not pass — see What happened above and the evidence appendix below.\n` +
-        `2. Resolve the requires-attention slice(s), then re-run the orchestrator.`,
+    ...nextLines,
     "",
     ...appendix,
     "",

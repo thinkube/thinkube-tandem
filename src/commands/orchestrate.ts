@@ -14,7 +14,7 @@ import * as path from "node:path";
 import {
   extractDiagnosis,
   buildAttendPrompt,
-  stripFailingCheck,
+  buildRejectPrompt,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
@@ -41,6 +41,15 @@ import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
 import type { SpecsProvider } from "../views/thinkingSpaces/SpecsProvider";
 import { workingRepoPath, specRepoNamespace } from "../store/workingRepo";
+import { ConcurrencyLock } from "../services/concurrencyLock";
+import { withSpecLock } from "../services/dispatchGuard";
+
+/**
+ * One module-scope dispatch lock shared by `thinkube.orchestrate` and `thinkube.accept`: a second
+ * invocation for the SAME Spec while one is in flight is refused via `withSpecLock`'s `onBusy`
+ * (an "already running" notice), never double-dispatched. Different Specs are independent.
+ */
+const dispatchLock = new ConcurrencyLock();
 
 /** Normalize a spec arg from the ▶ button / a card — the tep-qualified handle
  *  `TEP-n_SP-m` — (or a bare / `SP-`-prefixed id) into the composite spec id
@@ -76,7 +85,11 @@ export function registerOrchestrateCommands(
       "thinkube.orchestrate",
       async (
         specArg?: string,
-        thinkingSpaceCtx?: { root: string; thinkingSpaceDir: string; name: string },
+        thinkingSpaceCtx?: {
+          root: string;
+          thinkingSpaceDir: string;
+          name: string;
+        },
       ) => {
         // Prefer the panel's OWN thinking space (passed by the ▶ button) over the ambient sidebar
         // selection: the button must orchestrate the thinking space it's shown on, not whatever space
@@ -111,7 +124,9 @@ export function registerOrchestrateCommands(
           // undefined → empty, which is why orchestrate reported "No Specs" on every thinking space.
           const specs = await store.listSpecDirs();
           if (specs.length === 0) {
-            vscode.window.showInformationMessage("No Specs on this thinking space yet.");
+            vscode.window.showInformationMessage(
+              "No Specs on this thinking space yet.",
+            );
             return;
           }
           // From the ▶ button (control-center graph): a spec id is passed directly — skip the
@@ -139,66 +154,79 @@ export function registerOrchestrateCommands(
             spec = specId.replace(/^SP-/, "");
           }
 
-          const wrp = await workingRepoPath(store, spec, repoPath);
-          const canonical = (await worktrees.canonicalRepo(wrp)) ?? wrp;
-          const baseDir =
-            vscode.workspace
-              .getConfiguration("thinkube")
-              .get<string>("worktree.baseDir")
-              ?.trim() || undefined;
-          const thinkingSpaceRoot =
-            vscode.workspace
-              .getConfiguration("thinkube.thinkingSpace")
-              .get<string>("root")
-              ?.trim() || undefined;
+          // Guard against double-dispatch of the SAME Spec: a second orchestrate while one is in
+          // flight is refused (the notice), the dispatch body never runs twice. Other Specs are
+          // unaffected; the lock is released on completion and on throw.
+          await withSpecLock(
+            dispatchLock,
+            spec,
+            async () => {
+              const wrp = await workingRepoPath(store, spec, repoPath);
+              const canonical = (await worktrees.canonicalRepo(wrp)) ?? wrp;
+              const baseDir =
+                vscode.workspace
+                  .getConfiguration("thinkube")
+                  .get<string>("worktree.baseDir")
+                  ?.trim() || undefined;
+              const thinkingSpaceRoot =
+                vscode.workspace
+                  .getConfiguration("thinkube.thinkingSpace")
+                  .get<string>("root")
+                  ?.trim() || undefined;
 
-          const orchestrator = new OrchestratorService({
-            worktrees,
-            arbiter,
-            store,
-            output,
-            canonicalRepo: canonical,
-            thinkingSpaceRoot,
-            baseDir,
-            verifyCommand: vscode.workspace
-              .getConfiguration("thinkube.orchestrator")
-              .get<string>("verifyCommand")
-              ?.trim(),
-          });
-          output.show(true);
-          const cap =
-            vscode.workspace
-              .getConfiguration("thinkube.orchestrator")
-              .get<number>("maxConcurrent") ?? 4;
-          const r = await orchestrator.dispatchSpec(spec, cap);
-          if (!r.ok) {
-            vscode.window.showErrorMessage(
-              `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,
-            );
-          } else if (r.dispatched === 0) {
-            vscode.window.showInformationMessage(
-              `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied unit.`,
-            );
-          } else {
-            vscode.window.showInformationMessage(
-              `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
-                (r.needsInput.length
-                  ? `, ${r.needsInput.length} need input`
-                  : "") +
-                (r.attention.length
-                  ? `, ${r.attention.length} need attention`
-                  : "") +
-                (r.committed ? " — committed ✓" : ""),
-            );
-          }
-          // On a completed Spec, auto-open the delivery summary in the Markdown PREVIEW (rendered)
-          // — the post-execution "here's what was accomplished + what to do next" record.
-          if (r.deliveryDoc) {
-            void vscode.commands.executeCommand(
-              "markdown.showPreview",
-              vscode.Uri.file(path.join(thinkingSpaceDir, r.deliveryDoc)),
-            );
-          }
+              const orchestrator = new OrchestratorService({
+                worktrees,
+                arbiter,
+                store,
+                output,
+                canonicalRepo: canonical,
+                thinkingSpaceRoot,
+                baseDir,
+                verifyCommand: vscode.workspace
+                  .getConfiguration("thinkube.orchestrator")
+                  .get<string>("verifyCommand")
+                  ?.trim(),
+              });
+              output.show(true);
+              const cap =
+                vscode.workspace
+                  .getConfiguration("thinkube.orchestrator")
+                  .get<number>("maxConcurrent") ?? 4;
+              const r = await orchestrator.dispatchSpec(spec, cap);
+              if (!r.ok) {
+                vscode.window.showErrorMessage(
+                  `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,
+                );
+              } else if (r.dispatched === 0) {
+                vscode.window.showInformationMessage(
+                  `SP-${spec}: nothing to dispatch — no Ready + deps-satisfied unit.`,
+                );
+              } else {
+                vscode.window.showInformationMessage(
+                  `SP-${spec}: dispatched ${r.dispatched} unit(s), ${r.advanced.length} slice(s) Done` +
+                    (r.needsInput.length
+                      ? `, ${r.needsInput.length} need input`
+                      : "") +
+                    (r.attention.length
+                      ? `, ${r.attention.length} need attention`
+                      : "") +
+                    (r.committed ? " — committed ✓" : ""),
+                );
+              }
+              // On a completed Spec, auto-open the delivery summary in the Markdown PREVIEW (rendered)
+              // — the post-execution "here's what was accomplished + what to do next" record.
+              if (r.deliveryDoc) {
+                void vscode.commands.executeCommand(
+                  "markdown.showPreview",
+                  vscode.Uri.file(path.join(thinkingSpaceDir, r.deliveryDoc)),
+                );
+              }
+            },
+            () =>
+              vscode.window.showInformationMessage(
+                `SP-${spec} is already running.`,
+              ),
+          );
         } catch (err) {
           vscode.window.showErrorMessage(
             `Orchestrate failed: ${(err as Error).message}`,
@@ -214,7 +242,11 @@ export function registerOrchestrateCommands(
       "thinkube.attend",
       async (
         handle?: string,
-        thinkingSpaceCtx?: { root: string; thinkingSpaceDir: string; name: string },
+        thinkingSpaceCtx?: {
+          root: string;
+          thinkingSpaceDir: string;
+          name: string;
+        },
       ) => {
         let repoPath: string;
         let thinkingSpaceDir: string;
@@ -356,7 +388,11 @@ export function registerOrchestrateCommands(
       "thinkube.accept",
       async (
         spec?: string,
-        thinkingSpaceCtx?: { root: string; thinkingSpaceDir: string; name: string },
+        thinkingSpaceCtx?: {
+          root: string;
+          thinkingSpaceDir: string;
+          name: string;
+        },
       ) => {
         if (typeof spec !== "string" || !spec.trim()) {
           vscode.window.showErrorMessage("Accept: no Spec id provided.");
@@ -380,55 +416,70 @@ export function registerOrchestrateCommands(
           thinkingSpaceDir = repo.thinkingSpaceDir;
         }
         try {
-          const store = new ThinkubeStore(repoPath, thinkingSpaceDir);
-          const specRel = store.pathForSpecDoc(specId);
-          const specDoc = await store.getFile(specRel);
-          if (!specDoc) {
-            vscode.window.showErrorMessage(
-              `No spec at ${specRel} — nothing to accept.`,
-            );
-            return;
-          }
-          const sliceStatuses: string[] = [];
-          for (const rel of await store.listSlices(specId)) {
-            const parsed = await store.getFile(rel);
-            sliceStatuses.push(String(parsed?.frontmatter?.status ?? ""));
-          }
-          // Refuse unless every AC is checked (and every slice Done) — no accept of an
-          // unverified Spec.
-          const gate = gateSpecAcceptance({
-            specBody: specDoc.body,
-            sliceStatuses,
-          });
-          if (!gate.ok) {
-            vscode.window.showWarningMessage(`SP-${specId}: ${gate.reason}`);
-            return;
-          }
-          // Merge first, stamp second: a failed merge throws, and we must never leave a
-          // Spec stamped accepted while its branch is still open (mergeSpecPr returns
-          // without merging when there is simply no PR — shipped straight to main).
-          // Git ops run in the spec's WORKING repo (`repo:`), not the thinking space dir — a
-          // project member's branch/worktree live in a different repo than its thinking space.
-          const wrp = await workingRepoPath(store, specId, repoPath);
-          output.appendLine(
-            `▸ accept SP-${specId}: gate ok — merging in working repo ${wrp} (branch ${specBranch(specId)})…`,
-          );
-          const merge = await mergeSpecPr(specId, wrp);
-          output.appendLine(
-            `▸ accept SP-${specId}: merge result — ${JSON.stringify(merge)}`,
-          );
-          await store.writeFile(
-            specRel,
-            { ...specDoc.frontmatter, accepted: new Date().toISOString() },
-            specDoc.body,
-          );
-          const retireNote = merge.merged
-            ? await retireWorktreeNote(worktrees, wrp, specId)
-            : "";
-          vscode.window.showInformationMessage(
-            merge.merged
-              ? `Accepted SP-${specId} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.${retireNote}`
-              : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
+          // Guard against double-accept of the SAME Spec: a second accept while one is in flight
+          // is refused (the notice), the gated-merge body never runs twice. Released on completion
+          // and on throw.
+          await withSpecLock(
+            dispatchLock,
+            specId,
+            async () => {
+              const store = new ThinkubeStore(repoPath, thinkingSpaceDir);
+              const specRel = store.pathForSpecDoc(specId);
+              const specDoc = await store.getFile(specRel);
+              if (!specDoc) {
+                vscode.window.showErrorMessage(
+                  `No spec at ${specRel} — nothing to accept.`,
+                );
+                return;
+              }
+              const sliceStatuses: string[] = [];
+              for (const rel of await store.listSlices(specId)) {
+                const parsed = await store.getFile(rel);
+                sliceStatuses.push(String(parsed?.frontmatter?.status ?? ""));
+              }
+              // Refuse unless every AC is checked (and every slice Done) — no accept of an
+              // unverified Spec.
+              const gate = gateSpecAcceptance({
+                specBody: specDoc.body,
+                sliceStatuses,
+              });
+              if (!gate.ok) {
+                vscode.window.showWarningMessage(
+                  `SP-${specId}: ${gate.reason}`,
+                );
+                return;
+              }
+              // Merge first, stamp second: a failed merge throws, and we must never leave a
+              // Spec stamped accepted while its branch is still open (mergeSpecPr returns
+              // without merging when there is simply no PR — shipped straight to main).
+              // Git ops run in the spec's WORKING repo (`repo:`), not the thinking space dir — a
+              // project member's branch/worktree live in a different repo than its thinking space.
+              const wrp = await workingRepoPath(store, specId, repoPath);
+              output.appendLine(
+                `▸ accept SP-${specId}: gate ok — merging in working repo ${wrp} (branch ${specBranch(specId)})…`,
+              );
+              const merge = await mergeSpecPr(specId, wrp);
+              output.appendLine(
+                `▸ accept SP-${specId}: merge result — ${JSON.stringify(merge)}`,
+              );
+              await store.writeFile(
+                specRel,
+                { ...specDoc.frontmatter, accepted: new Date().toISOString() },
+                specDoc.body,
+              );
+              const retireNote = merge.merged
+                ? await retireWorktreeNote(worktrees, wrp, specId)
+                : "";
+              vscode.window.showInformationMessage(
+                merge.merged
+                  ? `Accepted SP-${specId} — ${merge.opened ? "opened + merged" : "merged"} ${merge.branch}${merge.output ? `: ${merge.output}` : ""}.${retireNote}`
+                  : `Accepted SP-${specId} — no PR to merge (shipped straight to main).`,
+              );
+            },
+            () =>
+              vscode.window.showInformationMessage(
+                `SP-${specId} is already running.`,
+              ),
           );
         } catch (err) {
           // Durable diagnostics (the toast is transient): log the full error + stack to the
@@ -451,7 +502,11 @@ export function registerOrchestrateCommands(
       "thinkube.reject",
       async (
         spec?: string,
-        thinkingSpaceCtx?: { root: string; thinkingSpaceDir: string; name: string },
+        thinkingSpaceCtx?: {
+          root: string;
+          thinkingSpaceDir: string;
+          name: string;
+        },
       ) => {
         if (typeof spec !== "string" || !spec.trim()) {
           vscode.window.showErrorMessage("Reject: no Spec id provided.");
@@ -535,27 +590,6 @@ export function registerOrchestrateCommands(
         }
       },
     ),
-  );
-}
-
-/** The chat prompt priming a Spec-level Reject session: the rejected Spec + its delivery report
- *  (the spec-level analog of `buildAttendPrompt`'s slice diagnosis). */
-function buildRejectPrompt(
-  specId: string,
-  report?: string,
-  projectThinkingSpaceId?: string,
-): string {
-  const ctx = report
-    ? `\n\nThe orchestrator's delivery report (DELIVERY.md — the failing commands, their output, and the AC ordinals are stripped so the rework targets the intent, not the red check):\n\n${stripFailingCheck(report)}`
-    : `\n\n(No delivery report was found — inspect the Spec and its slices to find what needs rework.)`;
-  // For a cross-repo project member the Spec lives on the project thinking space, NOT on
-  // this worktree's repo thinking space — so every kanban call must address it explicitly.
-  const thinkingSpaceNote = projectThinkingSpaceId
-    ? `\n\nIMPORTANT — this Spec lives on the project thinking space \`${projectThinkingSpaceId}\`, not on this worktree's repo. Pass \`thinking_space=${projectThinkingSpaceId}\` to EVERY kanban tool (get_thinkube_file / get_slice / list_thinking_space / move_slice / patch_spec_section / write_spec / create_slice). Your cwd's thinking space is the working repo where the code lives, which is NOT this Spec's thinking space.`
-    : "";
-  return (
-    `Rework the rejected Spec SP-${specId} in this worktree.${thinkingSpaceNote}${ctx}` +
-    `\n\nRework so the Spec's intent holds — address the behaviours the report flags as diverging — then re-verify at Spec grain and re-orchestrate so SP-${specId} can reach Done.`
   );
 }
 
