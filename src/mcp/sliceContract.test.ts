@@ -15,6 +15,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 import { buildUnitDag, buildWorkerPrompt } from "../services/orchestratorCore";
 
 const CONTRACT =
@@ -31,7 +32,11 @@ test("buildWorkerPrompt injects the slice contract into BOTH code and test units
       files: [],
       contract: CONTRACT,
       workUnits: [
-        { footprint: ["src/approvalToken.ts"], execution: "fan-out", note: "impl" },
+        {
+          footprint: ["src/approvalToken.ts"],
+          execution: "fan-out",
+          note: "impl",
+        },
         {
           footprint: ["src/acceptance/SP-6_3_AC-1.test.ts"],
           execution: "fan-out",
@@ -52,8 +57,16 @@ test("buildWorkerPrompt injects the slice contract into BOTH code and test units
   ] as const) {
     assert.equal(u.contract, CONTRACT, `${label} unit carries the contract`);
     const prompt = buildWorkerPrompt(u, "6/3");
-    assert.match(prompt, /SPEC CONTRACT/, `${label} prompt frames the contract`);
-    assert.match(prompt, /ApprovalToken\.mint/, `${label} prompt has the contract text`);
+    assert.match(
+      prompt,
+      /SPEC CONTRACT/,
+      `${label} prompt frames the contract`,
+    );
+    assert.match(
+      prompt,
+      /ApprovalToken\.mint/,
+      `${label} prompt has the contract text`,
+    );
   }
 });
 
@@ -67,7 +80,9 @@ test("the contract is Spec-wide: a unit in one slice sees a contract another sli
       requires: [],
       files: [],
       contract: "ApprovalToken.verify(token, ctx) -> boolean",
-      workUnits: [{ footprint: ["src/approvalToken.ts"], execution: "fan-out" }],
+      workUnits: [
+        { footprint: ["src/approvalToken.ts"], execution: "fan-out" },
+      ],
       satisfies: [1],
     },
     {
@@ -101,10 +116,14 @@ async function seededStore(spec: string): Promise<ThinkubeStore> {
   );
   return store;
 }
-const ctxFor = (store: ThinkubeStore) =>
-  ({ env: {} as never, thinkingSpaces: { resolve: () => store } as never });
-const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
-  dispatchTool("create_slice", args, ctxFor(store), () => {});
+const ctxFor = (store: ThinkubeStore) => ({
+  env: {} as never,
+  thinkingSpaces: { resolve: () => store } as never,
+});
+const create = async (store: ThinkubeStore, args: Record<string, unknown>) => {
+  await armApprovalForSlicing(store, String(args.spec));
+  return dispatchTool("create_slice", args, ctxFor(store), () => {});
+};
 
 const UNITS = [
   { footprint: ["src/gate.ts"], execution: "fan-out", note: "impl" },

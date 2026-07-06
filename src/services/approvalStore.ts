@@ -5,8 +5,8 @@
 // `create_slice` gate `get`s it back and verifies. The token therefore travels host → disk →
 // server — it is **never presented through a tool call**, so the agent cannot carry, forge,
 // or replay it. This module is that disk hop: a tiny file-per-subject store persisted under
-// `storageDir` (in production the extension's `globalStorage` path, which the server sees as
-// `THINKUBE_APPROVAL_DIR`), keyed by the kind-namespaced `subjectKey` (e.g. `spec:TEP-6/SP-3`).
+// `storageDir` (in production the extension's `globalStorage` path, which the server self-locates
+// from its own invocation path, SP-6/17), keyed by the kind-namespaced `subjectKey` (e.g. `spec:TEP-6/SP-3`).
 //
 // Design notes:
 //   - **One file per subject** under `<storageDir>/approvals/`, so approvals for different
@@ -41,8 +41,8 @@ export const APPROVAL_STORE_DIR = "approvals";
 /**
  * The side-channel token store: `put` is called by the host on Approve, `get` by the gate at
  * `create_slice` / spec→Ready. Both ends construct it over the same `storageDir`
- * (`THINKUBE_APPROVAL_DIR`), which is how the token crosses the process boundary without ever
- * appearing in a tool call.
+ * (the host's globalStorage path, which the server self-locates, SP-6/17), which is how the token
+ * crosses the process boundary without ever appearing in a tool call.
  */
 export interface ApprovalStore {
   put(subjectKey: string, token: ApprovalToken): void;

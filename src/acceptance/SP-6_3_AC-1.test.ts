@@ -5,16 +5,19 @@
  * live MCP server runs) — the sole entry point of the spec→Ready gate (there is no
  * separate →Ready tool; refusing `create_slice` IS refusing the transition).
  *
- * What this proves, with the gate ARMED (`THINKUBE_APPROVAL_DIR` set):
- *   1. REFUSED — with NO approval in the side-channel store, `create_slice` throws,
+ * The gate is ALWAYS armed (SP-6/17): `create_slice` self-locates its approval store from its own
+ * invocation path (`resolveApprovalDir(process.argv[1])`), so these tests root `process.argv[1]` at
+ * an install-shaped path under a fresh temp store rather than injecting an env var. There is no
+ * disarmed/off state to control for — the arming is structural.
+ *
+ * What this proves:
+ *   1. REFUSED — with NO approval in the self-located store, `create_slice` throws,
  *      the refusal names the missing approval and directs to the Approve action,
  *      and NO slice file is created (the refusal is total).
  *   2. Positive control — the *same* call clears the gate once a valid approval
  *      (minted for this subject + the current spec content, under the server
- *      approval secret, fresh within TTL) sits in the store — proving the refusal
- *      in (1) was specifically the missing approval, not an always-failing gate.
- *   3. Disarmed control — with `THINKUBE_APPROVAL_DIR` unset the legacy path still
- *      creates the slice — proving the arming (read per call) is what refuses.
+ *      approval secret) sits in the store — proving the refusal in (1) was
+ *      specifically the missing approval, not an always-failing gate.
  *
  * This test CONSUMES the approval-token contract (`mintApproval`,
  * `approvalContentHash`, `loadOrCreateApprovalSecret` from approvalToken.ts and
@@ -74,22 +77,28 @@ const createSlice = (store: ThinkubeStore) =>
     () => {},
   );
 
-/** Run `fn` with the gate ARMED on a fresh approval dir (the env var is read
- *  PER CALL, so setting it just before the call is exactly the live arming),
- *  restoring the previous environment afterwards so tests can't cross-pollute. */
+/** Run `fn` with the gate resolving to a fresh temp approval dir. `create_slice` self-locates its
+ *  store via `resolveApprovalDir(process.argv[1])` (SP-6/17), so we root `process.argv[1]` at an
+ *  install-shaped path (`…/extension-current/dist/mcp/kanbanMcpServer.js`) whose three-up walk lands
+ *  on `approvalDir`, restoring argv afterwards so tests can't cross-pollute. */
 async function withArmedGate(
   fn: (approvalDir: string) => Promise<void>,
 ): Promise<void> {
   const approvalDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "tk-approval-dir-"),
   );
-  const prev = process.env.THINKUBE_APPROVAL_DIR;
-  process.env.THINKUBE_APPROVAL_DIR = approvalDir;
+  const prev = process.argv[1];
+  process.argv[1] = path.join(
+    approvalDir,
+    "extension-current",
+    "dist",
+    "mcp",
+    "kanbanMcpServer.js",
+  );
   try {
     await fn(approvalDir);
   } finally {
-    if (prev === undefined) delete process.env.THINKUBE_APPROVAL_DIR;
-    else process.env.THINKUBE_APPROVAL_DIR = prev;
+    process.argv[1] = prev;
   }
 }
 
@@ -170,22 +179,4 @@ test("ARMED + a valid approval in the store: the same create_slice clears the ga
       "the approved create_slice must persist the slice file",
     );
   });
-});
-
-// ── Disarmed control: the env var is causal (read per call; legacy path kept) ─
-
-test("DISARMED (THINKUBE_APPROVAL_DIR unset): create_slice succeeds with no approval — the arming is what refuses", async () => {
-  const prev = process.env.THINKUBE_APPROVAL_DIR;
-  delete process.env.THINKUBE_APPROVAL_DIR;
-  try {
-    const store = await seededStore();
-    const res = (await createSlice(store)) as { slice: string };
-    assert.match(
-      res.slice,
-      /^TEP-1_SP-1_SL-\d+$/,
-      "with the gate off the legacy pre-approval path must be preserved",
-    );
-  } finally {
-    if (prev !== undefined) process.env.THINKUBE_APPROVAL_DIR = prev;
-  }
 });

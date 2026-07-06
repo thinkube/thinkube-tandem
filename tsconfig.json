@@ -11,6 +11,11 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "exclude": ["node_modules", ".vscode-test", "src/**/*.test.ts"],
+  "exclude": [
+    "node_modules",
+    ".vscode-test",
+    "src/**/*.test.ts",
+    "src/mcp/approvalGateTestSupport.ts"
+  ],
   "include": ["src/**/*"]
 }

@@ -61,8 +61,8 @@ interface PanelDeps {
   onAcceptSpec?: (spec: string) => void | Promise<void>;
   /**
    * Where the approval secret + side-channel token store live — the host's
-   * globalStorage path, the same directory the MCP server sees as
-   * `THINKUBE_APPROVAL_DIR` (SP-6/3). Enables the "Approve spec" review
+   * globalStorage path, the same directory the MCP server self-locates its
+   * approval store to (SP-6/17). Enables the "Approve spec" review
    * affordance (the PRE-slicing approval that arms `create_slice`/→Ready —
    * distinct from `onAcceptSpec` above, the end-of-lifecycle merge gate).
    * Absent → the affordance reports unavailable; the approval gate ships dark.
@@ -588,7 +588,7 @@ export interface OpenReviewRequest {
 export interface OpenReviewHostDeps {
   /**
    * Where the approval secret + token store live — the host's globalStorage
-   * path, i.e. the directory the MCP server sees as `THINKUBE_APPROVAL_DIR`.
+   * path, i.e. the directory the MCP server self-locates its approval store to (SP-6/17).
    */
   storageDir: string;
   /**

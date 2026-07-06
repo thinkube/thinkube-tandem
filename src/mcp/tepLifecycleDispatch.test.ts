@@ -28,6 +28,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool, getProject } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 const ALLOW = () => {}; // writeGate: AI writes permitted.
 const AC_BODY = "# Demo\n\n## Acceptance Criteria\n\n- [ ] x\n";
@@ -76,7 +77,10 @@ async function singleThinkingSpaceFixture(opts: {
 // ── AC#1: approval gate ──────────────────────────────────────────────────────
 
 test("approval: create_slice → Ready is refused while the implements: TEP is proposed", async () => {
-  const { ctx } = await singleThinkingSpaceFixture({ tepStatus: "proposed" });
+  const { ctx, store } = await singleThinkingSpaceFixture({
+    tepStatus: "proposed",
+  });
+  await armApprovalForSlicing(store, "1/1");
   await assert.rejects(
     () =>
       dispatchTool(
@@ -101,7 +105,10 @@ test("approval: create_slice → Ready is refused while the implements: TEP is p
 });
 
 test("approval: create_slice succeeds once the implements: TEP is accepted", async () => {
-  const { ctx } = await singleThinkingSpaceFixture({ tepStatus: "accepted" });
+  const { ctx, store } = await singleThinkingSpaceFixture({
+    tepStatus: "accepted",
+  });
+  await armApprovalForSlicing(store, "1/1");
   const res = (await dispatchTool(
     "create_slice",
     {

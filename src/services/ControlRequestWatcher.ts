@@ -37,7 +37,7 @@ export class ControlRequestWatcher implements vscode.Disposable {
     private readonly dir: string,
     private readonly log: (msg: string) => void = () => {},
     /** The approval-token store dir (globalStorage) the `open_review` panel mints
-     *  into — the same directory the MCP server sees as THINKUBE_APPROVAL_DIR.
+     *  into — the same directory the MCP server self-locates its approval store to (SP-6/17).
      *  Absent → the panel opens but its Approve affordance reports itself off. */
     private readonly approvalDir?: string,
   ) {}

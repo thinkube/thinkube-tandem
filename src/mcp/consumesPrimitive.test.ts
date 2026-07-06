@@ -29,6 +29,7 @@ import * as path from "node:path";
 
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 import {
   type Frontmatter,
   parseFrontmatter,
@@ -38,7 +39,9 @@ import { buildUnitDag, buildWorkerPrompt } from "../services/orchestratorCore";
 
 // ── tmp-store scaffolding (mirrors createSliceContractFirst.test.ts) ─────────
 async function seededStore(spec = "1/1"): Promise<ThinkubeStore> {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-consumes-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-consumes-thinking space-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
     store.pathForSpecDoc(spec),
@@ -53,16 +56,23 @@ const ctxFor = (store: ThinkubeStore) => ({
   thinkingSpaces: { resolve: () => store } as never,
 });
 
-const create = (store: ThinkubeStore, args: Record<string, unknown>) =>
-  dispatchTool(
+const create = async (store: ThinkubeStore, args: Record<string, unknown>) => {
+  const spec = String(args.spec ?? "1/1");
+  await armApprovalForSlicing(store, spec);
+  return dispatchTool(
     "create_slice",
     // SP-6/3: a multi-unit slice requires a design-time contract; supply a default so these
     // fixtures exercise the consumes gates, not the contract-required refusal. (A caller may
     // override.)
-    { spec: "1/1", contract: "interface Contract { /* shared seam */ }", ...args },
+    {
+      spec: "1/1",
+      contract: "interface Contract { /* shared seam */ }",
+      ...args,
+    },
     ctxFor(store),
     () => {},
   );
+};
 
 // ── AC#1: typed round-trip — consumes survives by design, not by luck ────────
 test("consumes round-trip — serialize + parseFrontmatter returns it on the typed work_units shape", () => {
@@ -177,7 +187,11 @@ test("create_slice accepts a CROSS-SLICE consumes — the work-unit DAG is Spec-
     title: "producer slice",
     body: "detail",
     work_units: [
-      { footprint: ["src/contract.ts"], execution: "fan-out", note: "producer" },
+      {
+        footprint: ["src/contract.ts"],
+        execution: "fan-out",
+        note: "producer",
+      },
     ],
   });
 
@@ -209,7 +223,11 @@ test("create_slice still refuses a consumes produced by NO unit in the whole Spe
     title: "producer slice",
     body: "detail",
     work_units: [
-      { footprint: ["src/contract.ts"], execution: "fan-out", note: "producer" },
+      {
+        footprint: ["src/contract.ts"],
+        execution: "fan-out",
+        note: "producer",
+      },
     ],
   });
   // Consumes a path no unit in SL-1 or SL-2 produces → still dangling.

@@ -25,7 +25,7 @@ import {
   JournalClaimStore,
   type ClaimStore,
 } from "./services/OwnershipArbiter";
-import { mcpWithKanbanEnv, WorktreeService } from "./services/WorktreeService";
+import { WorktreeService } from "./services/WorktreeService";
 import {
   ControlRequestWatcher,
   controlDir,
@@ -35,10 +35,7 @@ import { LauncherService } from "./services/LauncherService";
 import { SessionLinkService } from "./services/SessionLinkService";
 import { initSessions } from "./services/orchestratorSessions";
 import { ConfigTreeProvider } from "./views/sidebar/ConfigTreeProvider";
-import {
-  discoverRepos,
-  ThinkingSpaceNavigatorProvider,
-} from "./views/thinkingSpaces/ThinkingSpaceNavigatorProvider";
+import { ThinkingSpaceNavigatorProvider } from "./views/thinkingSpaces/ThinkingSpaceNavigatorProvider";
 import { SpecsProvider } from "./views/thinkingSpaces/SpecsProvider";
 import { TepsProvider } from "./views/thinkingSpaces/TepsProvider";
 import { ThinkubeStore } from "./store/ThinkubeStore";
@@ -198,27 +195,13 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
-  // Approval directory (SP-10): the ONE machine-local directory both sides of
-  // the human-approval gate agree on — the kanban panel's Approve mints tokens
-  // into it (as `approvalStorageDir`), the kanban MCP server reads them back via
-  // the `THINKUBE_APPROVAL_DIR` env it is armed with. Derived from globalStorage,
-  // so it is machine-specific and must never be committed into a repo.
+  // Approval directory: the ONE machine-local directory both sides of the
+  // human-approval gate agree on — the kanban panel's Approve mints tokens into it
+  // (as `approvalStorageDir`), and the kanban MCP server self-locates the very same
+  // directory from its own invocation path (SP-6/17). Derived from globalStorage,
+  // so it is machine-specific and must never be committed into a repo. No env
+  // injection is needed to arm the gate: self-location makes it always armed.
   const approvalDir = context.globalStorageUri.fsPath;
-
-  // Arm the approval gate for ordinary (non-worktree) sessions — where
-  // /spec-prepare and create_slice actually run (SP-10, always-on): inject
-  // THINKUBE_APPROVAL_DIR (alongside THINKUBE_THINKING_SPACE_ROOT when
-  // configured) into every enabled thinking-space repo's `.mcp.json` kanban env.
-  // Unconditional by decision (2026-07-03): no setting or flag gates it — the
-  // only disarm is manual surgery on the env itself. Async best-effort; nothing
-  // below depends on it landing.
-  armEnabledRepoMcpConfigs(approvalDir, (m) =>
-    kanbanOutput.appendLine(m),
-  ).catch((err) => {
-    kanbanOutput.appendLine(
-      `[thinkube] approval-gate arming failed: ${(err as Error).message}`,
-    );
-  });
 
   // No activation-time ThinkubeStore: there is no single configured
   // methodology root anymore (ADR-0006). Stores are built per-repo where
@@ -435,8 +418,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // "Start Spec in Worktree": create the Spec's git worktree and open a session
   // rooted there, so parallel Specs never share a working tree (SP-5).
-  // approvalDir rides along (SP-10) so the create path arms the fresh worktree's
-  // .mcp.json kanban env with THINKUBE_APPROVAL_DIR, like the orchestrator path.
+  // approvalDir rides along for the control-request/Approve mint path; the gate
+  // itself is self-located by the MCP server (SP-6/17), not env-armed.
   const worktreeDeps = { launcher, approvalDir };
   registerWorktreeCommands(context, worktreeDeps);
 
@@ -447,9 +430,9 @@ export function activate(context: vscode.ExtensionContext) {
   initSessions(
     nodePath.join(context.globalStorageUri.fsPath, "orchestrator-sessions"),
   );
-  // approvalDir (SP-10): the orchestrator threads it into WorktreeService
-  // create/reset alongside thinkingSpaceRoot, so every spec worktree's kanban
-  // MCP env is armed with THINKUBE_APPROVAL_DIR at both lifecycle points.
+  // approvalDir: threaded to the orchestrator/WorktreeService for the Approve-mint
+  // path; it no longer arms the gate via env injection — the MCP server
+  // self-locates its approval store (SP-6/17).
   const orchestrateDeps = {
     specsProvider,
     getArbiter: () => ownershipArbiter,
@@ -500,58 +483,6 @@ async function activateOwnershipArbiter(
   const arbiter = new OwnershipArbiter(store);
   await arbiter.rehydrate();
   return arbiter;
-}
-
-/**
- * Arm the approval gate on every enabled thinking-space repo (SP-10, always-on):
- * apply the machine-local kanban env injection ({@link mcpWithKanbanEnv} — the
- * same transform the worktree lifecycle uses) to each repo's `.mcp.json`,
- * setting `THINKUBE_APPROVAL_DIR` and, when configured, `THINKUBE_THINKING_SPACE_ROOT`.
- * This covers ordinary non-worktree sessions — where `/spec-prepare` and
- * `create_slice` actually run — not just orchestrator worktrees.
- *
- * Unconditional: no setting gates it. Best-effort and idempotent per repo:
- * a repo without `.mcp.json`, or whose config the transform leaves unchanged
- * (no kanban server entry / already armed with these values), is not rewritten;
- * one repo's failure never blocks the rest. The injected values are
- * machine-specific and stay uncommitted local edits (the established
- * THINKUBE_THINKING_SPACE_ROOT policy) — never commit them.
- */
-async function armEnabledRepoMcpConfigs(
-  approvalDir: string,
-  log: (message: string) => void,
-): Promise<void> {
-  const thinkingSpaceRoot =
-    vscode.workspace
-      .getConfiguration("thinkube.thinkingSpace")
-      .get<string>("root")
-      ?.trim() || undefined;
-  for (const repo of discoverRepos().filter((r) => r.enabled)) {
-    const mcpPath = nodePath.join(repo.path, ".mcp.json");
-    let raw: string;
-    try {
-      raw = await nodeFs.readFile(mcpPath, "utf8");
-    } catch {
-      continue; // no .mcp.json — nothing to arm in this repo
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      const next = mcpWithKanbanEnv(parsed, { thinkingSpaceRoot, approvalDir });
-      // Idempotence: only rewrite when the injection actually changed something,
-      // so repeated activations don't churn an already-armed (or kanban-less) file.
-      if (JSON.stringify(next) === JSON.stringify(parsed)) continue;
-      await nodeFs.writeFile(
-        mcpPath,
-        JSON.stringify(next, null, 2) + "\n",
-        "utf8",
-      );
-    } catch (err) {
-      // Malformed JSON or an unwritable file: skip — never clobber what's there.
-      log(
-        `[thinkube] approval-arm skipped for ${repo.path}: ${(err as Error).message}`,
-      );
-    }
-  }
 }
 
 export function deactivate() {

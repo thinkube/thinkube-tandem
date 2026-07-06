@@ -25,11 +25,14 @@ import * as path from "node:path";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "./kanbanMcpServer";
 import { CANONICAL_SECTIONS } from "../methodology/specStructure";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 // ── tmp-store scaffolding (mirrors workUnitsDispatch.test.ts) ────────────────
 // A fresh thinking space; `write_spec` creates the spec doc itself, so no seeding needed.
 function freshStore(): ThinkubeStore {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-sections-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-sections-thinking space-"),
+  );
   return new ThinkubeStore(thinkingSpace, thinkingSpace);
 }
 
@@ -131,7 +134,9 @@ async function seededRunnableStore(opts: {
   run: string;
   include: string[];
 }): Promise<ThinkubeStore> {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-runnable-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-runnable-thinking space-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   fs.writeFileSync(
     path.join(store.workspaceRoot, "tsconfig.test.json"),
@@ -150,13 +155,18 @@ async function seededRunnableStore(opts: {
 
 // Reuses the file-level `ctxFor` (its `promoteLocator` is a harmless superset for
 // create_slice, which never consults it).
-const createSliceVia = (store: ThinkubeStore, args: Record<string, unknown>) =>
-  dispatchTool(
+const createSliceVia = async (
+  store: ThinkubeStore,
+  args: Record<string, unknown>,
+) => {
+  await armApprovalForSlicing(store, SPEC);
+  return dispatchTool(
     "create_slice",
     { spec: SPEC, ...args },
     ctxFor(store),
     () => {},
   );
+};
 
 // A file-pinned verification target as it appears in an `ac_verifications` `run`
 // command (`node --test out-test/mcp/<name>.test.js`) and the matching `include`
@@ -248,7 +258,9 @@ test("create_slice accepts a slice whose AC verification target IS registered in
 // only gate left to exercise is the AC-hash re-audit. The spec itself is authored
 // through `write_spec` below (the tool under test), not pre-seeded.
 function reauditStore(): ThinkubeStore {
-  const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-reaudit-thinking space-"));
+  const thinkingSpace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "tk-reaudit-thinking space-"),
+  );
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   fs.writeFileSync(
     path.join(store.workspaceRoot, "tsconfig.test.json"),

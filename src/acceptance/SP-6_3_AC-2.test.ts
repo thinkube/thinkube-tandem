@@ -1,9 +1,9 @@
 /**
  * SP-6/3 (TEP-6) AC2 — **a forged or wrong-subject approval is rejected**,
  * driven through the real `create_slice` TOOL CALL (`dispatchTool`, the layer the
- * live MCP server runs), with the approval gate ARMED via `THINKUBE_APPROVAL_DIR`
- * (read per call — no import-time caching — so setting it inside a test takes
- * effect on that test's calls).
+ * live MCP server runs). The gate is always armed and self-locates its store from
+ * `process.argv[1]` (SP-6/17), so each test roots argv at an install-shaped path under a fresh
+ * temp store to make the gate resolve there.
  *
  * What this proves, per defect (each token is valid in EVERY dimension except the
  * one under test, so the refusal is attributable to that defect alone):
@@ -115,20 +115,26 @@ const createSlice = (store: ThinkubeStore, title: string) =>
     () => {},
   );
 
-/** Run `fn` with the approval gate ARMED (THINKUBE_APPROVAL_DIR set), restoring
- *  the environment afterwards — the env var is read per call, so this scopes the
- *  arming to exactly the calls inside `fn`. */
+/** Run `fn` with the gate resolving to `approvalDir`. `create_slice` self-locates its store via
+ *  `resolveApprovalDir(process.argv[1])` (SP-6/17), so we root `process.argv[1]` at an install-shaped
+ *  path whose three-up walk lands on `approvalDir`, restoring argv afterwards so the scope is exactly
+ *  the calls inside `fn`. */
 async function withArmedGate<T>(
   approvalDir: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const prev = process.env.THINKUBE_APPROVAL_DIR;
-  process.env.THINKUBE_APPROVAL_DIR = approvalDir;
+  const prev = process.argv[1];
+  process.argv[1] = path.join(
+    approvalDir,
+    "extension-current",
+    "dist",
+    "mcp",
+    "kanbanMcpServer.js",
+  );
   try {
     return await fn();
   } finally {
-    if (prev === undefined) delete process.env.THINKUBE_APPROVAL_DIR;
-    else process.env.THINKUBE_APPROVAL_DIR = prev;
+    process.argv[1] = prev;
   }
 }
 

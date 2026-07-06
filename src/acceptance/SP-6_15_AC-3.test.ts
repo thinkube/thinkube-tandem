@@ -46,6 +46,7 @@ import * as path from "node:path";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { dispatchTool } from "../mcp/kanbanMcpServer";
 import { findUncoveredImporters } from "../services/retiredSymbolFootprint";
+import { armApprovalForSlicing } from "../mcp/approvalGateTestSupport";
 
 // The composite spec id `<tep>/<spec>` used across the tool-level cases. Its
 // slices carry the tep-qualified handle `TEP-1_SP-1_SL-{k}`.
@@ -185,6 +186,7 @@ test("SP-6/15 AC3 — create_slice with a `retires` declaration is ACCEPTED when
     // file — src/shadow.ts (the bare local) is deliberately uncovered. A
     // specifier-based scan finds no importer of the retired export, so the gate
     // must not refuse.
+    await armApprovalForSlicing(store, SPEC);
     const res = (await dispatchTool(
       "create_slice",
       {
@@ -224,6 +226,7 @@ test("SP-6/15 AC3 — a slice that declares NO retired symbols is created exactl
     const store = await seedSpecInto(dir);
     // No `retires` → the gate short-circuits before any repo scan, so a plain
     // (non-git) thinking-space dir is sufficient, exactly like today's tests.
+    await armApprovalForSlicing(store, SPEC);
     const res = (await dispatchTool(
       "create_slice",
       {
@@ -251,6 +254,7 @@ test("SP-6/15 AC3 — a slice that declares NO retired symbols is re-cut (update
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tk-sp615-ac3-recut-"));
   try {
     const store = await seedSpecInto(dir);
+    await armApprovalForSlicing(store, SPEC);
     const created = (await dispatchTool(
       "create_slice",
       {

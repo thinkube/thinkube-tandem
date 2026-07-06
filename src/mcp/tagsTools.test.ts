@@ -24,6 +24,7 @@ import {
   writeTep,
   aggregateTagsAcrossThinkingSpaces,
 } from "./kanbanMcpServer";
+import { armApprovalForSlicing } from "./approvalGateTestSupport";
 
 /**
  * A tmp thinking space dir seeded with one Spec that has acceptance criteria. The spec id
@@ -70,6 +71,7 @@ function cardFor(
 
 test("create_slice persists tags; they appear in get_slice and on the list_thinking_space card", async () => {
   const store = await seededStore();
+  await armApprovalForSlicing(store, "1/1");
   const res = (await createSlice(store, {
     spec: "1/1",
     title: "A tagged slice",
@@ -90,6 +92,7 @@ test("create_slice persists tags; they appear in get_slice and on the list_think
 
 test("update_slice replaces tags; omitting them leaves tags unchanged", async () => {
   const store = await seededStore();
+  await armApprovalForSlicing(store, "1/1");
   const res = (await createSlice(store, {
     spec: "1/1",
     title: "Slice to retag",
@@ -111,6 +114,7 @@ test("update_slice replaces tags; omitting them leaves tags unchanged", async ()
 
 test("list_thinking_space card folds a legacy `theme` into the card tags (back-compat)", async () => {
   const store = await seededStore();
+  await armApprovalForSlicing(store, "1/1");
   const res = (await createSlice(store, {
     spec: "1/1",
     title: "Slice with a legacy theme",
@@ -145,12 +149,14 @@ test("write_tep persists tags on the TEP frontmatter", async () => {
 test("list_tags aggregates tagged items across thinkingSpaces (SL-3, AC3+AC4)", async () => {
   const a = await seededStore("1/1");
   const b = await seededStore("2/1");
+  await armApprovalForSlicing(a, "1/1");
   await createSlice(a, {
     spec: "1/1",
     title: "A slice",
     body: "d",
     tags: ["security", "auth"],
   });
+  await armApprovalForSlicing(b, "2/1");
   await createSlice(b, {
     spec: "2/1",
     title: "B slice",
