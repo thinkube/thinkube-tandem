@@ -112,6 +112,20 @@ export interface ThinkingSpace {
 }
 
 /**
+ * A state-derived delivery exit (SP-11/2). Mirrors `ExitAction` in
+ * `src/services/orchestratorCore.ts` — the host derives the exit set from the
+ * run's terminal state (`delivered` → [accept, request-changes]; `stalled` →
+ * [attend, rerun]) and forwards ids + labels; the webview renders buttons from
+ * THESE (never hardcoded labels). "Reject" is retired from the UI vocabulary.
+ */
+export type ExitActionId = "accept" | "request-changes" | "attend" | "rerun";
+export interface ExitAction {
+  id: ExitActionId;
+  /** Human label, e.g. "Accept & merge" / "Request changes" / "Attend" / "Re-run". */
+  label: string;
+}
+
+/**
  * Messages exchanged between the host and the webview. The host owns the
  * storage adapter; the webview is a thin renderer that asks for state and
  * pushes mutations.
@@ -137,11 +151,23 @@ export type WebviewMessage =
   | { kind: "orchestrate"; spec: string }
   /** Accept the delivered Spec (SP-tgzyfy): host runs the gated merge spec/SP-{n} → main. */
   | { kind: "accept"; spec: string }
-  /** Reject the delivered Spec: open a Claude session primed with the delivery report. */
-  | { kind: "reject"; spec: string };
+  /** Open a Claude session primed with the delivery report to rework the Spec
+   *  (the `request-changes` / stalled `attend` exit — the spec-level analog of /attend). */
+  | { kind: "reject"; spec: string }
+  /** Re-run a stalled delivery's exit set (SP-11/2, `rerun`): re-dispatch the makespan
+   *  scheduler on the Spec — the same action as ▶ Orchestrate, surfaced as a state-derived exit. */
+  | { kind: "rerun"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 
 export type HostMessage =
   | { kind: "state"; thinkingSpace: ThinkingSpace; mode: ModeFlag }
-  | { kind: "external-change"; thinkingSpace: ThinkingSpace; mode: ModeFlag };
+  | { kind: "external-change"; thinkingSpace: ThinkingSpace; mode: ModeFlag }
+  /**
+   * A Spec's state-derived delivery exit set (SP-11/2): the exact `ExitAction`
+   * ids + labels from `deliveryExitState`, forwarded so the webview renders and
+   * dispatches buttons from THEM (never hardcoded labels). Re-posted on every
+   * state push, so it doubles as the status event that reconciles the button
+   * model — clearing any pending action and re-enabling the exits.
+   */
+  | { kind: "delivery-exits"; spec: string; exits: ExitAction[] };

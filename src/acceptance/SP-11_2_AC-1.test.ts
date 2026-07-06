@@ -49,15 +49,19 @@ const STALLED_EXITS: ExitAction[] = [
 ];
 
 /**
- * Extract the numbered bold-labels of the report's `## Next` section, in order. Per the contract,
- * `## Next` items are numbered bold-label lines (`1. **<label>** — <hint>`), and the section runs
- * until the next `## ` heading or EOF. We slice exactly that window and pull each `**<label>**`.
+ * Slice the report's `## Next` window, using EXACTLY the contract's CANONICAL `## Next` LABEL
+ * EXTRACTION snippet — never a bespoke boundary regex. The contract is explicit about why: under
+ * the `/m` flag `$` matches end-of-LINE (not end-of-input), and a hand-rolled `(?:\n## |$)` boundary
+ * has already caused two false-red rounds. We split on the heading line, then take up to the next
+ * `## ` section (or EOF), then pull each numbered bold label — verbatim from the contract.
  */
-function nextLabels(md: string): string[] {
-  const m = /^## Next[^\n]*\n([\s\S]*?)(?:\n## |$)/m.exec(md);
-  assert.ok(m, "the delivery report must contain a `## Next` section");
-  const section = m![1];
-  return [...section.matchAll(/^\s*\d+\.\s+\*\*(.+?)\*\*/gm)].map((x) => x[1]);
+function nextSection(report: string): string {
+  const after = report.split(/^## Next[ \t]*$/m)[1] ?? "";
+  return after.split(/\n## /)[0]; // up to the next section or EOF
+}
+function nextLabels(report: string): string[] {
+  const section = nextSection(report);
+  return [...section.matchAll(/^\d+\.\s+\*\*(.+?)\*\*/gm)].map((m) => m[1]);
 }
 
 /** A minimal-but-valid stalled `DeliveryReportInput`, parameterized by the forwarded exit set. */
@@ -121,7 +125,8 @@ test("SP-11/2 AC1 — buildDeliveryReport's `## Next` renders exactly the stalle
   );
 
   // Belt-and-braces: the retired / impossible vocabulary never appears in the Next section.
-  const section = /^## Next[^\n]*\n([\s\S]*?)(?:\n## |$)/m.exec(md)![1];
+  // Same CANONICAL extraction — no bespoke boundary regex.
+  const section = nextSection(md);
   assert.doesNotMatch(section, /reject/i, "`## Next` never says Reject");
   assert.doesNotMatch(
     section,

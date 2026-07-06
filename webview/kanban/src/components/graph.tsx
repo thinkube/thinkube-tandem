@@ -8,11 +8,12 @@
  * worker's* JSON-log, and a parked (needs-input) node answers it via `/attend`. Pure
  * presentation over the thinking space the host already sends.
  */
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import { useGlobalState } from "../utils/context";
 import { postToHost } from "../utils/vscode";
 import { lookupPalette } from "../utils/palette";
-import { TaskCard, WorkUnitNode } from "../types";
+import { DeliveryExitsContext } from "../App";
+import { ExitActionId, TaskCard, WorkUnitNode } from "../types";
 
 /** Base node colour by the parent slice's column (status). */
 const STATUS_SLUG: Record<string, string> = {
@@ -44,12 +45,7 @@ function shortId(id: string): string {
 }
 
 type UnitState =
-  | "running"
-  | "parked"
-  | "done"
-  | "attention"
-  | "active"
-  | "ready";
+  "running" | "parked" | "done" | "attention" | "active" | "ready";
 
 interface UnitNode {
   id: string;
@@ -87,6 +83,10 @@ function accentFor(state: UnitState, card: TaskCard): string {
 
 export function GraphView(): JSX.Element {
   const { state } = useGlobalState();
+  // State-derived delivery exit sets forwarded by the host (SP-11/2), reduced through the
+  // shared button model. The graph renders + dispatches exit buttons SOLELY from these.
+  const { models: exitModels, dispatch: dispatchExit } =
+    useContext(DeliveryExitsContext);
 
   const { nodes, edges, specs, width, height } = useMemo(() => {
     // Slice cards only — exclude the auto-derived acceptance close-cards.
@@ -180,11 +180,11 @@ export function GraphView(): JSX.Element {
       if (t.isAcceptance && t.parentId) acceptCards.set(t.parentId, t);
     // A Spec is orchestratable iff it has a dispatchable slice — ready (fresh) or
     // requires-attention (re-runnable). All-Done (or only in-flight) → nothing to dispatch.
-    // Accept/Reject (SP-tgzyfy_SL-2) are the human exits on the delivery report: Accept the
-    // gated merge (enabled only when every AC is checked), Reject opens a primed rework session.
+    // The delivery exits (Accept & merge / Request changes / Attend / Re-run) are NOT derived
+    // here: the host forwards them per-Spec via `delivery-exits`, state-derived by
+    // `deliveryExitState`, and the webview renders those ids + labels (never hardcoded).
     const specs = specIds.map((id) => {
       const acc = acceptCards.get(id);
-      const accepted = !!acc?.accepted;
       // SP-6/14: a superseded Spec is not advanceable — its Orchestrate action is
       // disabled (the host command also refuses, this just hides the dead button).
       const superseded = !!acc?.superseded;
@@ -199,9 +199,6 @@ export function GraphView(): JSX.Element {
               (c.columnId === "column-ready" ||
                 c.columnId === "column-attention"),
           ),
-        accepted,
-        canAccept: !!acc?.acceptReady && !accepted,
-        canReject: !!acc && !accepted,
       };
     });
     return {
@@ -253,9 +250,13 @@ export function GraphView(): JSX.Element {
             fontSize: 12,
             fontWeight: 600,
           });
-          // Show the Accept/Reject exits once the Spec has an acceptance card (a delivery to
-          // act on) — Accept gated on every AC checked, Reject opens a primed rework session.
-          const showExits = s.canAccept || s.canReject || s.accepted;
+          // The delivery exits arrive from the host, state-derived (delivered → Accept & merge /
+          // Request changes; stalled → Attend / Re-run). Render buttons from THOSE ids + labels —
+          // never hardcoded — and dispatch through the shared button model: a click marks the
+          // action pending (disabling the set), and the next `delivery-exits` push reconciles it.
+          const model = exitModels[s.id];
+          const exits = model?.exits ?? [];
+          const pending = model?.pending ?? null;
           return (
             <span
               key={s.id}
@@ -279,44 +280,30 @@ export function GraphView(): JSX.Element {
               >
                 ▶ SP-{s.id}
               </button>
-              {showExits && (
-                <>
+              {exits.map((exit) => {
+                // Idempotent: while ANY action is pending the whole set is disabled, so a
+                // double-click is refused (the reducer no-ops) rather than double-dispatched.
+                const isPending = pending === exit.id;
+                const enabled = pending === null;
+                // The primary/affirmative exit (merge) gets the primary palette; the rest
+                // (rework / attend / re-run) read as secondary.
+                const secondary = exit.id !== "accept";
+                return (
                   <button
-                    disabled={!s.canAccept}
-                    title={
-                      s.accepted
-                        ? `SP-${s.id} is already accepted`
-                        : s.canAccept
-                          ? `Accept SP-${s.id} — merge spec/SP-${s.id} → main (every AC checked)`
-                          : `SP-${s.id}: can't accept yet — every slice must be Done and every AC checked`
-                    }
+                    key={exit.id}
+                    disabled={!enabled}
+                    title={`SP-${s.id}: ${exit.label}`}
                     onClick={
-                      s.canAccept
-                        ? () => postToHost({ kind: "accept", spec: s.id })
+                      enabled
+                        ? () => dispatchExit(s.id, exit.id as ExitActionId)
                         : undefined
                     }
-                    style={btn(s.canAccept)}
+                    style={btn(enabled, secondary)}
                   >
-                    {s.accepted ? "✓ Accepted" : "✓ Accept"}
+                    {isPending ? `${exit.label}…` : exit.label}
                   </button>
-                  <button
-                    disabled={!s.canReject}
-                    title={
-                      s.canReject
-                        ? `Reject SP-${s.id} — open a Claude session primed with the delivery report to rework it`
-                        : `SP-${s.id}: nothing to reject`
-                    }
-                    onClick={
-                      s.canReject
-                        ? () => postToHost({ kind: "reject", spec: s.id })
-                        : undefined
-                    }
-                    style={btn(s.canReject, true)}
-                  >
-                    ✗ Reject
-                  </button>
-                </>
-              )}
+                );
+              })}
             </span>
           );
         })}

@@ -20,9 +20,12 @@
  *     (`1. **<label>** — <hint>`), listing exactly those two labels and no others.
  *   - Neither the delivered NOR the stalled exit set carries a label matching /reject/i.
  *
- * The test CONSUMES the exit-state contract — it never re-derives the label strings or the
- * ordering, so any contract drift (a renamed id, a widened exit set, a reordered pair, a
- * resurrected "Reject") surfaces here.
+ * The `## Next` labels are read out of the report with EXACTLY the contract's canonical
+ * extraction snippet (below) — never a homegrown section-boundary regex. `$` under the /m flag
+ * matches end-of-LINE, not end-of-input, and a bespoke `(?:\n## |$)` boundary has already caused
+ * two false-red rounds; the canonical `split` avoids it. The test otherwise CONSUMES the exit-state
+ * contract — it never re-derives the label strings or the ordering, so any contract drift (a renamed
+ * id, a widened exit set, a reordered pair, a resurrected "Reject") surfaces here.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -41,15 +44,27 @@ const DELIVERED_EXITS: ExitAction[] = [
 ];
 
 /**
- * Extract the numbered bold-labels of the report's `## Next` section, in order. Per the contract,
- * `## Next` items are numbered bold-label lines (`1. **<label>** — <hint>`), and the section runs
- * until the next `## ` heading or EOF. We slice exactly that window and pull each `**<label>**`.
+ * The CANONICAL `## Next` LABEL EXTRACTION snippet, verbatim from the SPEC CONTRACT. Both the
+ * implementation's output and this test read the section this exact way — no invented regex for the
+ * section boundary. Note `/^## Next[ \t]*$/m` (end-of-LINE), then `split(/\n## /)` for the section
+ * window (up to the next heading or EOF), then the numbered bold-label match.
  */
-function nextLabels(md: string): string[] {
-  const m = /^## Next[^\n]*\n([\s\S]*?)(?:\n## |$)/m.exec(md);
-  assert.ok(m, "the delivery report must contain a `## Next` section");
-  const section = m![1];
-  return [...section.matchAll(/^\s*\d+\.\s+\*\*(.+?)\*\*/gm)].map((x) => x[1]);
+function nextLabels(report: string): string[] {
+  const after = report.split(/^## Next[ \t]*$/m)[1] ?? "";
+  const section = after.split(/\n## /)[0]; // up to the next section or EOF
+  const labels = [...section.matchAll(/^\d+\.\s+\*\*(.+?)\*\*/gm)].map(
+    (m) => m[1],
+  );
+  return labels;
+}
+
+/**
+ * The `## Next` section body (up to the next heading / EOF), sliced with the SAME canonical
+ * boundary as {@link nextLabels} — used for the belt-and-braces "never says Reject" scan.
+ */
+function nextSection(report: string): string {
+  const after = report.split(/^## Next[ \t]*$/m)[1] ?? "";
+  return after.split(/\n## /)[0];
 }
 
 /** A minimal-but-valid delivered `DeliveryReportInput`, parameterized by the forwarded exit set. */
@@ -104,9 +119,8 @@ test("SP-11/2 AC2 — buildDeliveryReport's `## Next` renders exactly the delive
   );
 
   // Belt-and-braces: the retired "Reject" vocabulary never appears in the Next section.
-  const section = /^## Next[^\n]*\n([\s\S]*?)(?:\n## |$)/m.exec(md)![1];
   assert.doesNotMatch(
-    section,
+    nextSection(md),
     /reject/i,
     "a delivered `## Next` never says Reject",
   );
