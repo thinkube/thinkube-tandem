@@ -34,6 +34,7 @@ import {
   verifyApproval,
 } from "../../services/approvalToken";
 import { createApprovalStore } from "../../services/approvalStore";
+import { parseFrontmatter } from "../../store/frontmatter";
 
 // markdown-it ships no bundled types; load it untyped (the extension is CommonJS) — same
 // convention as `commands/orchestrate.ts`. `html: false` so raw HTML in the reviewed document is
@@ -133,8 +134,12 @@ export class ReviewPanel {
    */
   private approve(): void {
     try {
-      const body = fs.readFileSync(this.docPath, "utf8");
-      const contentHash = approvalContentHash(body);
+      // Hash the BODY only (frontmatter parsed out) — exactly what `create_slice`'s gate hashes
+      // (`approvalContentHash(specDoc.body)`). Hashing the raw file, frontmatter included, minted a
+      // token the gate could never verify — a mint/verify mismatch that stayed latent while the gate
+      // shipped dark, until SP-17 armed it (TEP-6 mechanism 6).
+      const raw = fs.readFileSync(this.docPath, "utf8");
+      const contentHash = approvalContentHash(parseFrontmatter(raw).body);
       const secret = loadOrCreateApprovalSecret(this.deps.storageDir);
       const token = mintApproval(
         this.subjectKey,
@@ -161,14 +166,14 @@ export class ReviewPanel {
   private refresh(): void {
     if (this.disposed) return;
 
-    let body: string | undefined;
+    let raw: string | undefined;
     try {
-      body = fs.readFileSync(this.docPath, "utf8");
+      raw = fs.readFileSync(this.docPath, "utf8");
     } catch {
-      body = undefined;
+      raw = undefined;
     }
 
-    if (body === undefined) {
+    if (raw === undefined) {
       this.postUpdate(
         "missing-doc",
         "",
@@ -177,9 +182,9 @@ export class ReviewPanel {
       return;
     }
 
-    const contentHash = approvalContentHash(body);
+    const contentHash = approvalContentHash(parseFrontmatter(raw).body);
     const state = this.evaluate(contentHash);
-    this.postUpdate(state, contentHash, md.render(body));
+    this.postUpdate(state, contentHash, md.render(raw));
   }
 
   /**
