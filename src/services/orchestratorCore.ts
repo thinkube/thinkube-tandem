@@ -711,17 +711,74 @@ export function stripSatisfies(body: string): string {
  * modifications simply do not exist — so its Read/Glob are unrestricted (there is nothing to hide in
  * its tree; it needs the base code to write a well-integrated test). The tool denial is the
  * SECONDARY control (the maintainer's layering: inform → structure → fence):
- *   • **Bash** — the roam vector (`cd` into the code worktree / other repos / session transcripts);
- *   • **Grep** — pathless content-search outside its tree via an absolute path;
+ *   • **Bash** — the roam vector (`cd` into the code worktree / other repos / session transcripts):
+ *     an arbitrary shell command is NOT lexically containable, so it stays denied;
  *   • **WebFetch / WebSearch / Task** — no need, and Task could spawn an unfenced sub-agent.
- * A `code` worker keeps the full set (its footprint fence stops it authoring the `acceptance/`
- * grader, and `codeReadFence` stops it reading copied-in probes during rework). Pure → the caller
- * passes the result as the SDK query's `disallowedTools`.
+ * SP-6/16 Part B: **Grep** is no longer denied wholesale — a pathless/absolute-path search was its only
+ * escape route, and that is now closed LEXICALLY by {@link grepWithinCwd} (scoping the search to the
+ * worker's own cwd snapshot) rather than by removing the tool. In-tree search is fair use (the tester
+ * only ever reads within its own snapshot), so `Grep` is restored as an available tool + cwd guard.
+ * A `code` worker keeps unrestricted `Grep` (it already has `Bash`, so scoping its `Grep` buys nothing;
+ * its footprint fence stops it authoring the `acceptance/` grader, and `codeReadFence` stops it reading
+ * copied-in probes during rework). Pure → the caller passes the result as the SDK query's `disallowedTools`.
  */
 export function disallowedToolsForRole(role?: "code" | "test"): string[] {
-  return role === "test"
-    ? ["Bash", "Grep", "WebFetch", "WebSearch", "Task"]
-    : [];
+  return role === "test" ? ["Bash", "WebFetch", "WebSearch", "Task"] : [];
+}
+
+/**
+ * SP-6/16 Part B — the PURE, lexical cwd-containment guard for a `role: test` worker's `Grep` (the
+ * tool un-denied above). A tester's `cwd` is its base-commit snapshot worktree, a sibling of the code
+ * worktree where the graded implementation lives; the original blanket deny existed only to stop a
+ * pathless / absolute-path search reaching that sibling. This restores in-tree search while closing
+ * exactly that escape: a `Grep` whose `path` argument is absolute or `..`-escapes `cwd` is DENIED; an
+ * omitted path (searches cwd) or a path that resolves within cwd is ALLOWED; a non-`Grep` tool is
+ * always allowed (this guard governs `Grep` only). Purely lexical — `path.resolve`/`path.relative`
+ * against `cwd`, the SAME rule as {@link sliceFilesResolveInRepo}; no `realpath`/`fs` (the low-likelihood
+ * symlink-escape gap is accepted, out of scope). The caller applies this in the PreToolUse hook only
+ * when `isTest`, returning the same `permissionDecision: "deny"` shape on `{ allow: false }`.
+ */
+export function grepWithinCwd(
+  toolName: string,
+  toolInput: unknown,
+  cwd: string,
+): { allow: true } | { allow: false; reason: string } {
+  // This guard governs Grep only — any other tool is outside its remit.
+  if (toolName !== "Grep") return { allow: true };
+  const rawPath = (toolInput as { path?: unknown } | null | undefined)?.path;
+  // No `path` (or a blank one) → the Grep searches cwd itself → contained → allowed.
+  if (rawPath == null || (typeof rawPath === "string" && !rawPath.trim())) {
+    return { allow: true };
+  }
+  // A non-string path can't be reasoned about lexically — deny fail-safe.
+  if (typeof rawPath !== "string") {
+    return {
+      allow: false,
+      reason: `Grep path must be a string inside the working directory; got ${typeof rawPath}.`,
+    };
+  }
+  const root = path.resolve(cwd);
+  const target = rawPath.trim();
+  // Absolute paths are denied even if they happen to point inside — mirrors sliceFilesResolveInRepo:
+  // the search must be declared relative to the worker's snapshot, never as an absolute checkout path.
+  if (path.isAbsolute(target)) {
+    return {
+      allow: false,
+      reason: `Grep path must stay inside the working directory (${root}); absolute paths are denied: ${rawPath}`,
+    };
+  }
+  // Resolve against cwd and require it to stay under root. `path.relative` yields a leading `..` (or an
+  // absolute path on a drive change) when the target escapes; `""` means the path IS cwd — allowed for a
+  // search (unlike a slice footprint, cwd is a searchable directory).
+  const resolved = path.resolve(root, target);
+  const rel = path.relative(root, resolved);
+  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
+    return {
+      allow: false,
+      reason: `Grep path escapes the working directory (${root}): ${rawPath}`,
+    };
+  }
+  return { allow: true };
 }
 
 export function buildWorkerPrompt(
@@ -736,6 +793,11 @@ export function buildWorkerPrompt(
      *  VERIFICATION BLOCK for code units when set; omitted entirely (block + `SELF-VERIFY` marker)
      *  when absent/blank. A test unit renders none of the SP-12 blocks. */
     selfVerifyCommand?: string;
+    /** SP-6/16 Part A: the repo's canonical example test CONTENT — the file declared as a repo-relative
+     *  `testExample` in `.tandem/conventions.json`, its content read by `defaultAcceptanceRecipeResolver`.
+     *  Rendered VERBATIM under the `EXAMPLE TEST` marker into a `role: "test"` prompt ONLY; omitted
+     *  entirely (block + marker) when absent/blank, and NEVER rendered for a code unit. */
+    exampleTest?: string;
   },
 ): string {
   const fp = unit.footprint.join(", ") || "(no declared footprint)";
@@ -772,6 +834,16 @@ export function buildWorkerPrompt(
   const conventionBlock =
     isTest && context?.testConvention?.trim()
       ? `\nTest convention: ${context.testConvention.trim()}\n`
+      : "";
+  // SP-6/16 Part A — the repo's CANONICAL EXAMPLE TEST, injected so a test unit writes its probe
+  // straight from prompt + contract instead of independently rediscovering the repo's test idiom
+  // (reading whole files to reverse-engineer the fixture/assertion pattern). Rendered VERBATIM under a
+  // distinct `EXAMPLE TEST` marker for test units ONLY; omitted entirely (block + marker) when
+  // exampleTest is absent/blank, and NEVER rendered for a code unit. Independent of `conventionBlock`
+  // above (that carries the framework + run hint; this carries the idiom to mirror).
+  const exampleBlock =
+    isTest && context?.exampleTest?.trim()
+      ? `\n──── EXAMPLE TEST (the repo's canonical test idiom — mirror its structure / fixtures / assertions; do NOT reuse its subject) ────\n${context.exampleTest}\n`
       : "";
   // SP-6/7 — the tester's workspace, stated PLAINLY (inform first): ONE directory — its cwd is a
   // snapshot of the codebase taken before this feature's changes (structural independence: the
@@ -840,6 +912,7 @@ export function buildWorkerPrompt(
     verifyBlock +
     prohibitionsBlock +
     conventionBlock +
+    exampleBlock +
     workspaceBlock +
     consumesBlock +
     specBlock +

@@ -25,6 +25,7 @@ import {
   readyFrontier,
   buildWorkerPrompt,
   disallowedToolsForRole,
+  grepWithinCwd,
   stripAcceptanceCriteria,
   stripSatisfies,
   extractNeedsInput,
@@ -1850,10 +1851,19 @@ export class OrchestratorService {
     const selfVerifyCommand = isTest
       ? undefined
       : (await defaultAcceptanceRecipeResolver(cwd))?.selfVerify;
+    // SP-16: sibling to the test-convention wiring — a held-out `role: test` worker gets the repo's
+    // canonical EXAMPLE TEST content (top-level `testExample` path in `.tandem/conventions.json`, read
+    // by the resolver so no `fs` lives in the shell) so it authors its probe from prompt + contract
+    // instead of independently rediscovering the repo's test idiom. Undefined for a code unit or a repo
+    // that declares/reads no example.
+    const exampleTest = isTest
+      ? (await defaultAcceptanceRecipeResolver(cwd))?.testExample
+      : undefined;
     const prompt = buildWorkerPrompt(unit, specNumber, {
       specBody: this.promptCtx.specBody,
       sliceBody: this.promptCtx.sliceBodies.get(unit.slice),
       testConvention,
+      exampleTest,
       selfVerifyCommand,
     });
     let success = false;
@@ -1928,8 +1938,16 @@ export class OrchestratorService {
                     const r = !isTest
                       ? codeReadFence(inp.tool_name ?? "", inp.tool_input, cwd)
                       : ({ allow: true } as const);
-                    if (d.allow && r.allow) return {};
-                    const deny = !d.allow ? d : r;
+                    // SP-16: `Grep` is no longer denied to a `role: test` worker (dropped from
+                    // `disallowedToolsForRole`) — instead it is scoped to the worker's own cwd
+                    // snapshot. Purely lexically deny a Grep whose `path` is absolute or `..`-escapes
+                    // cwd (an omitted/in-tree path is fair use); confines search to the tester
+                    // snapshot so it cannot reach the sibling code worktree. Code units are unaffected.
+                    const g = isTest
+                      ? grepWithinCwd(inp.tool_name ?? "", inp.tool_input, cwd)
+                      : ({ allow: true } as const);
+                    if (d.allow && r.allow && g.allow) return {};
+                    const deny = !d.allow ? d : !r.allow ? r : g;
                     if (deny.allow) return {};
                     this.deps.output.appendLine(
                       `  ⛔ [${unit.id}] denied: ${deny.reason.split("\n")[0]}`,

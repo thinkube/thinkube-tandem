@@ -373,6 +373,13 @@ export interface AcceptanceRecipe {
    *  VERIFICATION BLOCK by `OrchestratorService`, closing the gap that let a worker improvise into
    *  shared build config to run tests. */
   selfVerify?: string;
+  /** SP-16: the CONTENT of the repo's canonical example test file — declared as a repo-relative
+   *  `testExample` path in `.tandem/conventions.json` (a PEER of `acceptanceProbe` / `selfVerify`),
+   *  resolved against the audit cwd and read by {@link defaultAcceptanceRecipeResolver}. `undefined`
+   *  when the key is absent/blank OR the target file is unreadable. Forwarded by `OrchestratorService`
+   *  into a `role: test` worker's prompt so the author writes its probe straight from prompt + contract
+   *  instead of rediscovering the repo's test idiom every run. */
+  testExample?: string;
 }
 
 /** Fill `{spec}`/`{ac}` in an acceptance-probe template. `spec` is sanitized to a path-safe token
@@ -404,6 +411,7 @@ export async function defaultAcceptanceRecipeResolver(
     const cfg = JSON.parse(raw) as {
       acceptanceProbe?: unknown;
       selfVerify?: unknown;
+      testExample?: unknown;
     };
     const p = cfg.acceptanceProbe as Record<string, unknown> | undefined;
     if (
@@ -423,11 +431,27 @@ export async function defaultAcceptanceRecipeResolver(
         typeof cfg.selfVerify === "string" && cfg.selfVerify.trim()
           ? cfg.selfVerify.trim()
           : undefined;
+      // SP-16: the top-level `testExample` (a PEER of `acceptanceProbe` / `selfVerify`) — a repo-relative
+      // path to the repo's canonical example test file. Resolve it against `cwd`, read it, and carry its
+      // CONTENT (not the path) so the test-worker prompt injects the real idiom. A missing/blank key or
+      // an unreadable target leaves `testExample` undefined WITHOUT failing the rest of the recipe.
+      let testExample: string | undefined;
+      if (typeof cfg.testExample === "string" && cfg.testExample.trim()) {
+        try {
+          testExample = await fs.readFile(
+            path.resolve(cwd, cfg.testExample.trim()),
+            "utf8",
+          );
+        } catch {
+          testExample = undefined;
+        }
+      }
       return {
         sourcePath: p.sourcePath.trim(),
         run: p.run.trim(),
         prepare,
         selfVerify,
+        testExample,
       };
     }
     return undefined;
