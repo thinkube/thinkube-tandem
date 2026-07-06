@@ -44,14 +44,36 @@ unit-testable without a live cluster.
 
 On **every** completion — pass or fail — the gate writes a durable, non-ephemeral report to
 `specs/SP-{n}/DELIVERY.md` (kept out of the Spec body so it never trips the staleness hash
-on the Done slices). It records:
+on the Done slices). It is the **operator's document**, written human-first: the plain-language
+"what happened" leads, the criteria read in the Spec's own words, and the raw runner output is
+demoted to a trailing appendix. Its sections appear in a fixed order:
 
-- the commit the Spec landed at (or "not committed" on a red gate),
-- each execution unit's outcome,
-- any worker-reported problem caught this run,
-- a **per-AC pass/fail table with the verification evidence** — proof of _how_ each AC was
-  verified (and, on a failure, proof of _why_ the gate stalled),
-- the union of the units' touched files.
+1. **`# Delivery — …`** — the title, then a one-line orchestration summary (branch, sha, slices
+   advanced, units run, committed or not).
+2. **`## What happened`** — plain language. On a **failure** (nothing committed _or_ any AC red)
+   this is the closing-gate judge's diagnosis rendered **verbatim and unclipped** — the flowing
+   prose an operator reads first, never truncated. On **success** it is a plain summary of what was
+   delivered.
+3. **`## Acceptance criteria`** — one row per declared AC. When the gate passes the Spec's criterion
+   lines (`acTexts`), each row reads `#k — <criterion text> — <verdict>` (`✓ pass` / `✗ fail` /
+   `· not run`); otherwise the older ordinal-only table (`| AC | Verified by | Env | Result |`)
+   remains. When no `ac_verifications` are declared, the no-skip warning takes this section's place.
+4. **`## Discoveries & recommendations`** — each out-of-scope finding a worker reported (under a
+   trailing `## Discoveries` heading in its output), rendered with **both** its unit id and its text,
+   collected verbatim (no model-side summarizing). Empty ⇒ the literal `none reported`.
+5. **`## Files`** — the union of the units' touched files.
+6. **`## Next`** — the operator's exits (Accept / Reject on a committed Spec; resolve + re-run on a
+   red gate).
+7. **`## Evidence appendix`** — the demoted machine/audit record: per-AC **fenced evidence blocks**
+   (the raw runner output, proof of _how_ each AC was verified and, on a failure, _why_ it stalled),
+   the structured **verification trace** table (per AC, per rework round), the per-unit outcomes, and
+   any caught problems. Demoted — not deleted.
+
+The judge's diagnosis no longer dies unused: the full text renders in **What happened**, the
+intent-framed divergence that primes attended `/attend` and Spec-level Reject sessions is derived
+from it (`stripFailingCheck(extractDiagnosis(report))`), and on a **fault-test** verdict it reaches
+the next test author (`buildTestReworkContext` — `route: "test"` only; code authors stay fully
+redacted). The human document itself is never redacted.
 
 The report auto-opens rendered in the Markdown preview when a run finishes.
 

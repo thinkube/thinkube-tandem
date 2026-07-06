@@ -13,6 +13,8 @@ import {
   runWithConcurrency,
   batchExecutionUnits,
   extractDiagnosis,
+  extractDiscoveries,
+  buildTestReworkContext,
   buildAttendPrompt,
   buildRejectPrompt,
   stripFailingCheck,
@@ -215,6 +217,75 @@ test("extractDiagnosis: reads the ⚑ section, undefined when absent", () => {
     "# A slice\n\nbody text\n\n## ⚑ Requires attention\n\nThe verifier was red.\n";
   assert.equal(extractDiagnosis(body), "The verifier was red.");
   assert.equal(extractDiagnosis("# A slice\n\nno flag here"), undefined);
+});
+
+test("SP-11/3: extractDiagnosis matches `## What happened` FIRST (delivery report), still falls back to `## ⚑ Requires attention`", () => {
+  // A delivery report leads with `## What happened`; extractDiagnosis reads its prose, bounded by the
+  // next `##` heading, so the divergence-priming caller can derive from the report itself.
+  const report =
+    "# Delivery — TEP-11_SP-3\n\nintro\n\n## What happened\n\nAC #2 diverged: the store never emits on reload.\n\n## Acceptance criteria\n\n- #1 — x — ✓ pass\n";
+  assert.equal(
+    extractDiagnosis(report),
+    "AC #2 diverged: the store never emits on reload.",
+  );
+  // The existing slice-body caller (commands/orchestrate.ts) keeps working: no `## What happened` ⇒
+  // the `## ⚑ Requires attention` heading is used.
+  assert.equal(
+    extractDiagnosis(
+      "# A slice\n\n## ⚑ Requires attention\n\nThe verifier was red.\n",
+    ),
+    "The verifier was red.",
+  );
+  // An empty `## What happened` falls through to the ⚑ heading rather than returning "".
+  assert.equal(
+    extractDiagnosis(
+      "## What happened\n\n\n## ⚑ Requires attention\n\nfallback text\n",
+    ),
+    "fallback text",
+  );
+});
+
+test("SP-11/3: divergence for an attended session = stripFailingCheck(extractDiagnosis(report))", () => {
+  // The report's What-happened prose may carry a failing AC ordinal; the divergence handed to the
+  // attend/reject prompt must be scrubbed of it (stripFailingCheck), never fed raw.
+  const report =
+    "# Delivery — TEP-11_SP-3\n\nintro\n\n## What happened\n\nAC #3 diverged: the token is dropped on reload.\n\n## Files\n\n- `a.ts`\n";
+  const diagnosis = extractDiagnosis(report);
+  assert.ok(diagnosis);
+  const divergence = stripFailingCheck(diagnosis!);
+  assert.doesNotMatch(divergence, /#?3\b/); // the ordinal is scrubbed
+  assert.match(divergence, /token is dropped on reload/); // the intent-divergence survives
+});
+
+test("SP-11/3: extractDiscoveries pulls items under a trailing `## Discoveries` heading, strips markers; [] when absent", () => {
+  assert.deepEqual(extractDiscoveries("## Discoveries\n- a\n- b"), ["a", "b"]);
+  // Mixed markers + numbered + paragraph lines, all trimmed and marker-stripped.
+  assert.deepEqual(
+    extractDiscoveries(
+      "done the work.\n\n## Discoveries\n* first finding\n1. second finding\na bare paragraph line\n",
+    ),
+    ["first finding", "second finding", "a bare paragraph line"],
+  );
+  // The section ends at the next heading; earlier content is ignored.
+  assert.deepEqual(
+    extractDiscoveries("## Discoveries\n- keep me\n## After\n- drop me"),
+    ["keep me"],
+  );
+  // A repeated heading → the TRAILING one wins.
+  assert.deepEqual(
+    extractDiscoveries("## Discoveries\n- old\n\n## Discoveries\n- new"),
+    ["new"],
+  );
+  assert.deepEqual(extractDiscoveries("no discoveries heading here"), []);
+  assert.deepEqual(extractDiscoveries(""), []);
+});
+
+test("SP-11/3: buildTestReworkContext returns the diagnosis VERBATIM only for route `test`, undefined otherwise", () => {
+  const diag =
+    "The probe asserts stale-store state that the contract never guarantees.";
+  assert.equal(buildTestReworkContext(diag, "test"), diag); // verbatim
+  assert.equal(buildTestReworkContext(diag, "code"), undefined);
+  assert.equal(buildTestReworkContext(diag, undefined), undefined);
 });
 
 test("buildAttendPrompt: is the /attend invocation for the slice + the divergence", () => {
@@ -1143,10 +1214,10 @@ test("buildDeliveryReport: carries the per-AC pass/fail table + evidence (audita
     attention: [],
     committed: true,
   });
-  assert.match(md, /Acceptance-criteria verification/);
-  assert.match(md, /#1 \|.*✓ pass/);
+  assert.match(md, /## Acceptance criteria/);
+  assert.match(md, /#1 \|.*✓ pass/); // ordinal-only table form (no acTexts supplied)
   assert.match(md, /#2 \|.*✗ fail/);
-  assert.match(md, /assertion failed/); // evidence excerpt present
+  assert.match(md, /assertion failed/); // evidence excerpt present (in the appendix)
   assert.match(md, /Caught problems/);
   assert.match(md, /worker X hit a wall/);
   assert.match(md, /abc1234/);
@@ -1166,6 +1237,205 @@ test("buildDeliveryReport: no declared verifications → the no-skip warning, no
   assert.match(md, /No `ac_verifications` declared/);
   assert.match(md, /requires-attention/);
   assert.match(md, /not committed/);
+});
+
+// ── SP-11/3: human-first delivery report — What happened / criterion text / discoveries / appendix ──
+
+test("SP-11/3: buildDeliveryReport section order — What happened → Acceptance criteria → Discoveries → Files → Next → Evidence appendix", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "abc1234",
+    files: ["src/a.ts"],
+    units: [{ id: "SP-11_SP-3_SL-1#eu-0", outcome: "success" }],
+    declared: [{ ac: 1, run: "probe", env: "local" }],
+    acResults: [{ ac: 1, pass: true, evidence: "$ probe → exit 0" }],
+    advanced: ["SP-11_SP-3_SL-1"],
+    committed: true,
+  });
+  const order = [
+    "# Delivery — TEP-11_SP-3",
+    "## What happened",
+    "## Acceptance criteria",
+    "## Discoveries & recommendations",
+    "## Files",
+    "## Next",
+    "## Evidence appendix",
+  ].map((h) => md.indexOf(h));
+  order.forEach((idx, k) =>
+    assert.ok(idx !== -1, `heading ${k} present in the report`),
+  );
+  const sorted = [...order].sort((a, b) => a - b);
+  assert.deepEqual(order, sorted, "headings appear in the contract's order");
+});
+
+test("SP-11/3: on failure What happened renders the judge's diagnosis VERBATIM and UNCLIPPED", () => {
+  // A long, specific diagnosis — the report must carry it whole (no trace-table clip), as flowing prose.
+  const longText =
+    "The reload path never re-emits: buildAttendPrompt is called with the slice-body diagnosis, but on an attended session the store's subscription is torn down before the replayed event lands, so the panel shows a stale token indefinitely — this is the exact mechanism SP-11/2 lost when the diagnosis was clipped to 160 chars for the trace table.";
+  const md = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "",
+    files: ["src/a.ts"],
+    units: [{ id: "u#eu-0", outcome: "failed" }],
+    declared: [{ ac: 2, run: "probe", env: "local" }],
+    acResults: [{ ac: 2, pass: false, evidence: "$ probe → exit 1" }],
+    diagnosis: [{ ac: 2, text: longText }],
+    advanced: [],
+    committed: false,
+  });
+  // The full text is present under What happened, before the Acceptance-criteria heading.
+  const whStart = md.indexOf("## What happened");
+  const acStart = md.indexOf("## Acceptance criteria");
+  assert.ok(md.includes(longText), "diagnosis rendered verbatim, unclipped");
+  const whIdx = md.indexOf(longText);
+  assert.ok(
+    whIdx > whStart && whIdx < acStart,
+    "the diagnosis sits inside the What-happened section",
+  );
+});
+
+test("SP-11/3: multiple diagnosis texts join as prose, each verbatim", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "",
+    files: [],
+    units: [],
+    declared: [
+      { ac: 1, run: "p1", env: "local" },
+      { ac: 3, run: "p3", env: "local" },
+    ],
+    acResults: [
+      { ac: 1, pass: false, evidence: "e1" },
+      { ac: 3, pass: false, evidence: "e3" },
+    ],
+    diagnosis: [
+      { ac: 1, text: "First: the guard rejects a valid path." },
+      { ac: 3, text: "Third: the token never reaches the re-author." },
+    ],
+    advanced: [],
+    committed: false,
+  });
+  assert.match(md, /First: the guard rejects a valid path\./);
+  assert.match(md, /Third: the token never reaches the re-author\./);
+});
+
+test("SP-11/3: Acceptance criteria rows carry the criterion TEXT + verdict when acTexts is supplied (ordinal token kept)", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "abc",
+    files: [],
+    units: [],
+    declared: [
+      { ac: 1, run: "p1", env: "local" },
+      { ac: 2, run: "p2", env: "local" },
+      { ac: 3, run: "p3", env: "local" },
+    ],
+    acResults: [
+      { ac: 1, pass: true, evidence: "ok" },
+      { ac: 2, pass: false, evidence: "bad" },
+      // AC3 not run
+    ],
+    acTexts: [
+      "The report opens with What happened",
+      "AC rows carry the criterion text",
+      "Discoveries surface out-of-scope findings",
+    ],
+    advanced: [],
+    committed: false,
+  });
+  assert.match(md, /#1 — The report opens with What happened — ✓ pass/);
+  assert.match(md, /#2 — AC rows carry the criterion text — ✗ fail/);
+  assert.match(
+    md,
+    /#3 — Discoveries surface out-of-scope findings — · not run/,
+  );
+  // The criterion-text form replaces the ordinal table (no `| Verified by |` header).
+  assert.doesNotMatch(md, /\| Verified by \|/);
+});
+
+test("SP-11/3: Discoveries renders BOTH unit and text; empty/omitted → 'none reported'", () => {
+  const withDisc = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "abc",
+    files: [],
+    units: [],
+    declared: [{ ac: 1, run: "p", env: "local" }],
+    acResults: [{ ac: 1, pass: true, evidence: "ok" }],
+    discoveries: [
+      {
+        unit: "SP-11_SP-3_SL-1#eu-0",
+        text: "the settings merge drops unknown keys",
+      },
+    ],
+    advanced: ["SP-11_SP-3_SL-1"],
+    committed: true,
+  });
+  assert.match(withDisc, /## Discoveries & recommendations/);
+  assert.match(withDisc, /SP-11_SP-3_SL-1#eu-0/); // the unit id
+  assert.match(withDisc, /the settings merge drops unknown keys/); // the text
+  assert.doesNotMatch(withDisc, /none reported/);
+
+  const withoutDisc = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "abc",
+    files: [],
+    units: [],
+    declared: [{ ac: 1, run: "p", env: "local" }],
+    acResults: [{ ac: 1, pass: true, evidence: "ok" }],
+    advanced: [],
+    committed: true,
+  });
+  const discIdx = withoutDisc.indexOf("## Discoveries & recommendations");
+  const filesIdx = withoutDisc.indexOf("## Files");
+  assert.ok(
+    withoutDisc.slice(discIdx, filesIdx).includes("none reported"),
+    "empty discoveries render the literal fallback",
+  );
+});
+
+test("SP-11/3: the per-AC fenced evidence blocks and the trace table live ONLY under the Evidence appendix", () => {
+  const md = buildDeliveryReport({
+    specNumber: "11/3",
+    sha: "abc",
+    files: ["src/a.ts"],
+    units: [{ id: "u#eu-0", outcome: "failed" }],
+    declared: [{ ac: 1, run: "probe.js", env: "local" }],
+    acResults: [
+      {
+        ac: 1,
+        pass: false,
+        evidence: "$ probe.js → exit 1\nboom the assertion blew up",
+      },
+    ],
+    diagnosis: [
+      { ac: 1, text: "the probe expects state the contract never guarantees" },
+    ],
+    acTexts: ["The probe grades the real behaviour"],
+    advanced: [],
+    committed: false,
+    trace: [
+      {
+        ac: 1,
+        round: 1,
+        kind: "probe",
+        verdict: "fail",
+        rationale: "never green",
+        route: "test",
+      },
+    ],
+  });
+  const appendixIdx = md.indexOf("## Evidence appendix");
+  assert.ok(appendixIdx !== -1);
+  // Raw evidence (the fenced block) appears, and only after the appendix heading.
+  assert.ok(md.indexOf("boom the assertion blew up") > appendixIdx);
+  // The verification trace table is demoted under the appendix too.
+  const traceIdx = md.indexOf("Verification trace");
+  assert.ok(traceIdx > appendixIdx, "trace table sits inside the appendix");
+  // The human sections above carry NO fenced runner output.
+  assert.ok(
+    !md.slice(0, appendixIdx).includes("```"),
+    "no fenced evidence before the appendix",
+  );
 });
 
 // ── SP-11/2: state-derived exit set + exits-driven `## Next` section ─────────

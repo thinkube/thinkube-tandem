@@ -949,15 +949,64 @@ export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Extract a requires-attention slice's failure diagnosis from its body — the text the
- * orchestrator appended under the `## ⚑ Requires attention` heading (SP-tgs8nz AC4). Returns
- * undefined if absent. `/attend` uses it to prime the resolution session.
+ * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending SP-tgs8nz
+ * AC4). Matches the delivery report's plain-language `## What happened` prose FIRST; if that heading
+ * is absent (or empty), falls back to the slice body's `## ⚑ Requires attention` heading — so the
+ * existing `/attend` slice-diagnosis caller keeps working unchanged. Returns undefined when neither is
+ * present. The attended-session divergence is `stripFailingCheck(extractDiagnosis(report))`.
  */
 export function extractDiagnosis(body: string): string | undefined {
+  const text = body ?? "";
+  // Consume ONLY the heading's own line-break (not the blank separator) so an EMPTY What-happened
+  // section captures "" and correctly falls through to the ⚑ heading below.
+  const wh = /##\s*What happened[ \t]*\r?\n([\s\S]*?)(?:\r?\n##\s|$)/.exec(
+    text,
+  );
+  if (wh?.[1]?.trim()) return wh[1].trim();
   const m = /##\s*⚑\s*Requires attention\s*\n+([\s\S]*?)(?:\n##\s|$)/.exec(
-    body ?? "",
+    text,
   );
   return m?.[1]?.trim() || undefined;
+}
+
+/**
+ * Extract a worker's out-of-scope findings (SP-11/3) — the list items / paragraphs under a **trailing**
+ * `## Discoveries` heading of its final output — with list markers stripped and each line trimmed.
+ * `"## Discoveries\n- a\n- b"` → `["a","b"]`; the heading absent ⇒ `[]`. The convention is declared
+ * (the discovery channel): the orchestrator pairs each returned item with its unit id and feeds them —
+ * verbatim, no model-side summarizing — into the report's `## Discoveries & recommendations`. Pure.
+ */
+export function extractDiscoveries(finalOutput: string): string[] {
+  const text = finalOutput ?? "";
+  // The TRAILING `## Discoveries` heading — take the last one if a body repeats it.
+  const re = /^##\s+Discoveries\s*$/gim;
+  let start = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) start = m.index + m[0].length;
+  if (start === -1) return [];
+  const items: string[] = [];
+  for (const line of text.slice(start).split(/\r?\n/)) {
+    if (/^\s*#{1,6}\s+/.test(line)) break; // the next heading ends the section
+    const stripped = line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim();
+    if (stripped) items.push(stripped);
+  }
+  return items;
+}
+
+/**
+ * The fault-test rework context seam (SP-11/3): the ONLY deliberate exception to the redaction
+ * boundary. When a failed acceptance run is judged `route === "test"` — the held-out probe itself is
+ * broken and the TEST author owns the check — the test re-author gets the judge's diagnosis of the
+ * mechanism VERBATIM (redacting a broken check's mechanism from the person rewriting the check caused
+ * two identical false-red rounds on SP-11/2). For any other route (`code` / undefined) this returns
+ * undefined: code authors stay fully redacted (SP-6/9 behaviour unchanged). `OrchestratorService`
+ * feeds the result into the `role: "test"` re-author's prompt ONLY. Pure.
+ */
+export function buildTestReworkContext(
+  diagnosis: string,
+  route: "code" | "test" | undefined,
+): string | undefined {
+  return route === "test" ? diagnosis : undefined;
 }
 
 /**
@@ -1922,42 +1971,118 @@ export interface DeliveryReportInput {
    *  verdict, rationale, and any code-vs-test route. Rendered as an auditable table; omitted/empty ⇒
    *  the trace section is left off (backward-compatible with pre-AC5 reports). */
   trace?: VerificationTraceEntry[];
+  /** SP-11/3: the closing-gate judge's UNCLIPPED per-AC rationale. On a failed run these texts are
+   *  rendered VERBATIM (never truncated) as the flowing `## What happened` prose — the diagnosis stops
+   *  dying after the trace-table clip. Omitted ⇒ a plain failure/success summary is synthesized. */
+  diagnosis?: { ac: number; text: string }[];
+  /** SP-11/3: the Spec's criterion lines, index k-1 ↔ AC k. When supplied, the `## Acceptance criteria`
+   *  rows carry the criterion's TEXT (`#k — <acTexts[k-1]> — <verdict>`) instead of a bare ordinal
+   *  table; omitted ⇒ today's ordinal-only table form remains. */
+  acTexts?: string[];
+  /** SP-11/3: out-of-scope findings workers reported under a trailing `## Discoveries` heading, each
+   *  paired with its unit id by the orchestrator. Rendered under `## Discoveries & recommendations`
+   *  (both unit and text); empty/omitted ⇒ the literal "none reported". */
+  discoveries?: { unit: string; text: string }[];
   /** SP-11/2 — the run's state-derived exit set ({@link deliveryExitState}). When present,
    *  `buildDeliveryReport` renders the `## Next` section as numbered bold-label lines
-   *  (`N. **<label>** — <hint>`) from it; omitted ⇒ the current hard-coded Next text remains
+   *  (`N. **<label>** — <hint>`) from it; omitted ⇒ the hard-coded Next text remains
    *  (backward-compatible). */
   exits?: ExitAction[];
 }
 
 /**
- * Build the auditable delivery report (DELIVERY.md) — the durable, non-ephemeral record the
- * closing gate writes on EVERY completion (pass or fail): the commit, each execution unit's
- * outcome, the caught problems, and — the SP-tgzyfy addition — a **per-AC pass/fail table with
- * its verification evidence**, so a completed Spec carries proof of *how* each AC was verified
- * (and a failed one carries proof of *why* it stalled). Pure → unit-tested.
+ * Build the auditable delivery report (DELIVERY.md) — the operator's document (SP-11/3). The
+ * closing gate writes it on EVERY completion (pass or fail), in a human-first section order:
+ *
+ *   `# Delivery —` → `## What happened` → `## Acceptance criteria` →
+ *   `## Discoveries & recommendations` → `## Files` → `## Next` → `## Evidence appendix`
+ *
+ * **What happened** opens in plain language: on a FAILURE (nothing committed OR any AC red) it is the
+ * closing-gate judge's diagnosis (`i.diagnosis`) rendered VERBATIM and unclipped as flowing prose; on
+ * SUCCESS it is a plain summary of what was delivered. **Acceptance criteria** carries the criterion's
+ * TEXT (`#k — <acTexts[k-1]> — <verdict>`) when `i.acTexts` is supplied, else today's ordinal-only
+ * table. **Discoveries & recommendations** surfaces workers' out-of-scope findings ("none reported"
+ * when empty). The raw runner output (per-AC fenced evidence blocks) and the machine-readable
+ * verification trace table are DEMOTED — not deleted — into the trailing **Evidence appendix**, along
+ * with the per-unit outcomes and any caught problems. Pure → unit-tested.
  */
 export function buildDeliveryReport(i: DeliveryReportInput): string {
-  const glyph = (o: ReportUnit["outcome"]) =>
-    o === "success" ? "✓" : o === "needs-input" ? "❓" : "✗";
-  const units = i.units.length
-    ? i.units
-        .map((u) => `| \`${u.id}\` | ${glyph(u.outcome)} ${u.outcome} |`)
-        .join("\n")
-    : "| — | (none) |";
+  const tep = `TEP-${i.specNumber.replace("/", "_SP-")}`;
+  const branch = `spec/${tep}`;
+  const failed = !i.committed || i.acResults.some((r) => !r.pass);
+
+  // ── ## What happened — plain-language, diagnosis VERBATIM on failure ──────────
+  // On failure the judge's per-AC diagnosis texts are joined as prose, each one UNCLIPPED (the
+  // diagnosis stops dying after the trace-table clip). On success a plain delivery summary.
+  const diagTexts = (i.diagnosis ?? [])
+    .map((d) => d?.text)
+    .filter((t): t is string => !!t && !!t.trim());
+  const whatHappened = failed
+    ? diagTexts.length
+      ? diagTexts.join("\n\n")
+      : "The closing gate did not pass. The acceptance criteria below record which criteria are red; the evidence appendix carries the raw runner output for why."
+    : `Delivered ${i.advanced.length} slice(s) to Done across ${i.units.length} execution unit(s), committed to \`${branch}\`${i.sha ? ` at \`${i.sha}\`` : ""}.`;
+
+  // ── ## Acceptance criteria — criterion text + verdict, or the ordinal table ───
+  const resultFor = new Map(i.acResults.map((r) => [r.ac, r]));
+  const verdictOf = (ac: number): string => {
+    const r = resultFor.get(ac);
+    return !r ? "· not run" : r.pass ? "✓ pass" : "✗ fail";
+  };
+  const hasAcTexts = !!(i.acTexts && i.acTexts.length);
+  let acSection: string[];
+  if (!i.declared.length) {
+    acSection = [
+      "## Acceptance criteria",
+      "",
+      "**No `ac_verifications` declared on the Spec — the closing gate could not run.** " +
+        "The acceptance criteria were NOT verified; the Spec is left `requires-attention` " +
+        "(no skip, TEP-tgzx3p). Declare a per-AC verification map on the Spec, then re-run.",
+    ];
+  } else if (hasAcTexts) {
+    // Criterion-text rows: keep today's `#k` ordinal token, carry the Spec's criterion line.
+    acSection = [
+      "## Acceptance criteria",
+      "",
+      ...i.declared.map((v) => {
+        const text =
+          (i.acTexts?.[v.ac - 1] ?? "").trim() ||
+          "(criterion text unavailable)";
+        return `- #${v.ac} — ${text} — ${verdictOf(v.ac)}`;
+      }),
+    ];
+  } else {
+    // Ordinal-only table form (acTexts omitted) — unchanged.
+    acSection = [
+      "## Acceptance criteria",
+      "",
+      "| AC | Verified by | Env | Result |",
+      "| --- | --- | --- | --- |",
+      ...i.declared.map(
+        (v) =>
+          `| #${v.ac} | \`${v.run.replace(/\|/g, "\\|")}\` | ${v.env ?? "—"} | ${verdictOf(v.ac)} |`,
+      ),
+    ];
+  }
+
+  // ── ## Discoveries & recommendations — both unit and text, "none reported" empty ─
+  const discoveries = (i.discoveries ?? []).filter(
+    (d) => d && ((d.text ?? "").trim() || (d.unit ?? "").trim()),
+  );
+  const discSection = [
+    "## Discoveries & recommendations",
+    "",
+    ...(discoveries.length
+      ? discoveries.map((d) => `- \`${d.unit}\` — ${d.text}`)
+      : ["none reported"]),
+  ];
+
+  // ── ## Files ──────────────────────────────────────────────────────────────────
   const fileList = i.files.length
     ? i.files.map((f) => `- \`${f}\``).join("\n")
     : "- (none)";
 
-  const resultFor = new Map(i.acResults.map((r) => [r.ac, r]));
-  const acRows = i.declared.length
-    ? i.declared
-        .map((v) => {
-          const r = resultFor.get(v.ac);
-          const verdict = !r ? "· not run" : r.pass ? "✓ pass" : "✗ fail";
-          return `| #${v.ac} | \`${v.run.replace(/\|/g, "\\|")}\` | ${v.env ?? "—"} | ${verdict} |`;
-        })
-        .join("\n")
-    : null;
+  // ── ## Evidence appendix — raw runner output + trace + unit outcomes, demoted ──
   const acEvidenceBlocks = i.acResults.length
     ? i.acResults
         .map(
@@ -1965,33 +2090,13 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
             `**AC #${r.ac}** — ${r.pass ? "✓ pass" : "✗ fail"}\n\n\`\`\`\n${r.evidence}\n\`\`\``,
         )
         .join("\n\n")
-    : "";
+    : "_No per-AC evidence captured this run._";
 
-  const verifySection = acRows
-    ? [
-        "## Acceptance-criteria verification",
-        "",
-        "| AC | Verified by | Env | Result |",
-        "| --- | --- | --- | --- |",
-        acRows,
-        "",
-        acEvidenceBlocks,
-      ]
-    : [
-        "## Acceptance-criteria verification",
-        "",
-        "**No `ac_verifications` declared on the Spec — the closing gate could not run.** " +
-          "The acceptance criteria were NOT verified; the Spec is left `requires-attention` " +
-          "(no skip, TEP-tgzx3p). Declare a per-AC verification map on the Spec, then re-run.",
-      ];
-
-  // SP-6/7 AC5: the durable, structured verification trace — per AC, per rework round, kind, verdict,
-  // rationale, and any code-vs-test route. Surfaced here so a completed (or stalled) Spec carries the
-  // machine-readable record of HOW each criterion was verified across every round, for inspection.
+  // SP-6/7 AC5: the durable, structured verification trace — demoted into the evidence appendix.
   const trace = i.trace ?? [];
-  const traceSection = trace.length
+  const traceBlock = trace.length
     ? [
-        "## Verification trace",
+        "### Verification trace",
         "",
         "| AC | Round | Kind | Verdict | Route | Rationale |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -2007,14 +2112,28 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
       ]
     : [];
 
+  const glyph = (o: ReportUnit["outcome"]) =>
+    o === "success" ? "✓" : o === "needs-input" ? "❓" : "✗";
+  const unitRows = i.units.length
+    ? i.units.map((u) => `| \`${u.id}\` | ${glyph(u.outcome)} ${u.outcome} |`)
+    : ["| — | (none) |"];
+  const unitBlock = [
+    "### Execution units",
+    "",
+    "| Unit | Outcome |",
+    "| --- | --- |",
+    ...unitRows,
+    "",
+  ];
+
   const problems = (i.problems ?? []).filter(Boolean);
-  const problemSection = problems.length
-    ? ["## Caught problems", "", ...problems.map((p) => `- ${p}`), ""]
+  const problemBlock = problems.length
+    ? ["### Caught problems", "", ...problems.map((p) => `- ${p}`), ""]
     : [];
 
   // SP-11/2 — the `## Next` items. With a state-derived exit set present, render numbered
   // bold-label lines (`N. **<label>** — <hint>`) from it — one source of truth for the report
-  // and the graph's buttons. Omitted ⇒ the pre-SP-11/2 hard-coded text (backward-compatible).
+  // and the graph's buttons. Omitted ⇒ the hard-coded text (backward-compatible).
   const nextLines =
     i.exits && i.exits.length
       ? i.exits.map(
@@ -2022,36 +2141,46 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
         )
       : [
           i.committed
-            ? `1. Review the \`spec/TEP-${i.specNumber.replace("/", "_SP-")}\` branch (the committed change) — the per-AC table above is the evidence.\n` +
+            ? `1. Review the \`${branch}\` branch (the committed change) — the acceptance criteria above and the evidence appendix are the proof.\n` +
               `2. **Accept** to merge the Spec to \`main\` (gated on every AC checked), or **Reject** to open a primed session.`
-            : `1. The closing gate did not pass — see the per-AC table / caught problems above.\n` +
+            : `1. The closing gate did not pass — see What happened above and the evidence appendix below.\n` +
               `2. Resolve the requires-attention slice(s), then re-run the orchestrator.`,
         ];
 
-  return [
-    `# Delivery — TEP-${i.specNumber.replace("/", "_SP-")}`,
+  const appendix = [
+    "## Evidence appendix",
     "",
-    `Orchestrated to branch \`spec/TEP-${i.specNumber.replace("/", "_SP-")}\`${i.sha ? ` at \`${i.sha}\`` : ""}. ` +
+    acEvidenceBlocks,
+    "",
+    ...traceBlock,
+    ...unitBlock,
+    ...problemBlock,
+  ];
+
+  return [
+    `# Delivery — ${tep}`,
+    "",
+    `Orchestrated to branch \`${branch}\`${i.sha ? ` at \`${i.sha}\`` : ""}. ` +
       `${i.advanced.length} slice(s) advanced to Done; ${i.units.length} execution unit(s) ran` +
       `${i.committed ? " — committed ✓" : " — not committed"}.`,
     "",
-    "## Execution units",
+    "## What happened",
     "",
-    "| Unit | Outcome |",
-    "| --- | --- |",
-    units,
+    whatHappened,
     "",
-    ...verifySection,
+    ...acSection,
     "",
-    ...traceSection,
-    ...problemSection,
-    `## Files (${i.files.length})`,
+    ...discSection,
+    "",
+    "## Files",
     "",
     fileList,
     "",
     "## Next",
     "",
     ...nextLines,
+    "",
+    ...appendix,
     "",
   ].join("\n");
 }

@@ -36,6 +36,9 @@ import {
   runAcVerifications,
   checkAcOrdinals,
   buildDeliveryReport,
+  extractDiscoveries,
+  extractDiagnosis,
+  buildTestReworkContext,
   buildVerificationTrace,
   mergeVerificationTrace,
   finalizationVerdict,
@@ -251,6 +254,9 @@ export interface WorkerResult {
    *  clean boolean (NOT a reason-string match) so `dispatchSpec`'s run-halt policy (SP-2/TEP-6 AC5) can
    *  halt the run on the FIRST footprint violation, distinct from the per-failure threshold. */
   containment?: boolean;
+  /** SP-11/3: the worker's final output text, mined by `dispatchSpec` for a trailing `## Discoveries`
+   *  block (out-of-scope findings) via `extractDiscoveries`. Any outcome may carry it. */
+  finalOutput?: string;
 }
 
 export type UnitOutcome = "success" | "needs-input" | "failed";
@@ -294,6 +300,14 @@ export interface SpecRunResult {
    *  round: kind (probe/assessment), verdict, rationale, and any code-vs-test route. Persisted alongside
    *  DELIVERY.md and surfaced in the delivery report; empty when the closing gate could not run. */
   verificationTrace: VerificationTraceEntry[];
+  /** SP-11/3: the closing-gate judge's UNCLIPPED per-AC rationale (`{ ac, text }` per red AC), kept
+   *  whole here rather than discarded after the trace-table clip, so `buildDeliveryReport`'s
+   *  "What happened" renders each diagnosis VERBATIM. Empty until a red AC is judged. */
+  diagnosis: { ac: number; text: string }[];
+  /** SP-11/3: out-of-scope findings workers reported under a trailing `## Discoveries` heading in their
+   *  final output, each paired with the reporting unit id (collected verbatim via `extractDiscoveries`,
+   *  no model-side summarizing). Rendered in the report's "Discoveries & recommendations" section. */
+  discoveries: { unit: string; text: string }[];
 }
 
 // Leading/trailing shell punctuation to peel off a `run`-command token (quotes,
@@ -883,6 +897,8 @@ export class OrchestratorService {
       committed: false,
       acResults: [],
       verificationTrace: [],
+      diagnosis: [],
+      discoveries: [],
     };
 
     // Superseded gate (SP-6/14, completing "a superseded Spec is not advanceable"):
@@ -1234,6 +1250,14 @@ export class OrchestratorService {
       unparkWorker(d.id);
       (footprintsOf.get(d.id) ?? []).forEach((f) => state.running.delete(f));
       result.results.push({ id: d.id, slice: d.slice, outcome: d.outcome });
+
+      // SP-11/3: collect this unit's out-of-scope findings — the list items under a trailing
+      // `## Discoveries` heading in its final output — verbatim, pairing each with the unit id (the
+      // declared discovery channel; no model-side summarizing between worker and report). Independent
+      // of outcome: a unit that failed may still have surfaced a real finding worth reporting.
+      if (d.finalOutput)
+        for (const text of extractDiscoveries(d.finalOutput))
+          result.discoveries.push({ unit: d.id, text });
 
       if (d.outcome === "needs-input") {
         // Non-resident needs-input: a worker that RETURNED a question instead of parking its live
@@ -1709,6 +1733,11 @@ export class OrchestratorService {
           );
         }
         for (const n of failedAcs) routes.set(n, fault);
+        // SP-11/3: keep the judge's UNCLIPPED per-AC rationale on the run result so the delivery
+        // report's "What happened" renders it verbatim — instead of it dying after the trace-table
+        // clip (`buildVerificationTrace` truncates it for the audit row; here it stays whole).
+        for (const n of failedAcs)
+          result.diagnosis.push({ ac: n, text: rationale || why });
         // The diagnosis lands on the slice and is INJECTED INTO THE REWORK ROUND's worker prompt
         // (the slice body travels there) — so it must carry what actually failed: the judge's
         // rationale and the failing evidence. Without them the re-author starts from zero and the
@@ -1864,6 +1893,7 @@ export class OrchestratorService {
         sessionId: wr.sessionId,
         attention: wr.attention,
         containment: wr.containment,
+        finalOutput: wr.finalOutput,
       };
     } finally {
       endSession(unit.id);
@@ -1946,7 +1976,25 @@ export class OrchestratorService {
       exampleTest,
       selfVerifyCommand,
     });
+    // SP-11/3 fault-test rework routing: on a rework round the slice body carries the judge's
+    // diagnosis under `## ⚑ Requires attention`. The `role: test` re-author OWNS the check, so it
+    // gets that judged mechanism verbatim in its prompt (`buildTestReworkContext` returns it ONLY for
+    // route "test"); a `code` author's route yields undefined, so this appends nothing and the code
+    // prompt is untouched (the SP-6/9 redaction boundary is kept for them). A first (non-rework) run
+    // has no `## ⚑ Requires attention` block, so `extractDiagnosis` is undefined and nothing is added.
+    const priorDiagnosis = extractDiagnosis(
+      this.promptCtx.sliceBodies.get(unit.slice) ?? "",
+    );
+    const reworkContext = priorDiagnosis
+      ? buildTestReworkContext(priorDiagnosis, unit.role)
+      : undefined;
+    const workerPrompt = reworkContext
+      ? `${prompt}\n\n${reworkContext}`
+      : prompt;
     let success = false;
+    // SP-11/3: the worker's final output text (last `result` message), mined below for a trailing
+    // `## Discoveries` block so `dispatchSpec` can surface out-of-scope findings in the report.
+    let finalOutput = "";
     let sessionId: string | undefined;
     let turnText = "";
     let parkedOnce = false;
@@ -1969,7 +2017,7 @@ export class OrchestratorService {
       parent_tool_use_id: null,
     });
     const input = (async function* () {
-      yield userMsg(prompt);
+      yield userMsg(workerPrompt);
       const a = await nextInput;
       if (a != null) yield userMsg(a);
     })();
@@ -2098,6 +2146,8 @@ export class OrchestratorService {
           turnText += line + "\n";
         }
         if (isResultSuccess(rec)) success = true;
+        if (rec.type === "result" && typeof rec.result === "string")
+          finalOutput = rec.result;
         if (rec.type === "result") {
           // A turn ended. Finish on success; otherwise park once on a question; otherwise stop.
           if (success) {
@@ -2142,8 +2192,8 @@ export class OrchestratorService {
         containment: true,
       };
     return success
-      ? { outcome: "success", sessionId }
-      : { outcome: "failed", sessionId };
+      ? { outcome: "success", sessionId, finalOutput }
+      : { outcome: "failed", sessionId, finalOutput };
   }
 
   /** Post-tool footprint containment (SP-6/2 AC3): diff the worktree against `footprint` and revert
@@ -2355,6 +2405,7 @@ export class OrchestratorService {
     result: SpecRunResult,
     verifs: AcVerification[],
     trace: VerificationTraceEntry[],
+    acTexts?: string[],
   ): string {
     // Caught problems for the audit trail: each failed / parked unit, surfaced from the run.
     const problems = result.results
@@ -2374,6 +2425,11 @@ export class OrchestratorService {
       advanced: result.advanced,
       attention: result.attention,
       committed: result.committed,
+      // SP-11/3: the judge's unclipped per-AC rationale (→ "What happened"), the Spec's criterion
+      // lines (→ AC-row text; acTexts[k-1] ↔ AC k), and the workers' out-of-scope discoveries.
+      diagnosis: result.diagnosis,
+      acTexts,
+      discoveries: result.discoveries,
       // SP-6/7 AC5: the durable, accumulated verification trace — surfaced in the delivery report
       // (which the panel renders) so a completed / stalled Spec carries the per-AC, per-round record.
       trace,
@@ -2397,6 +2453,16 @@ export class OrchestratorService {
       const verifs = parseAcVerifications(
         specDoc?.frontmatter?.ac_verifications,
       );
+      // SP-11/3: the Spec's acceptance-criterion lines, indexed so `acTexts[k-1]` is AC k's text — the
+      // gate already holds the spec body, so the AC rows can carry the criterion prose rather than a
+      // bare ordinal. Built dense up to the highest declared ordinal (gaps → ""); no `## Acceptance
+      // Criteria` block ⇒ undefined, and the report keeps its ordinal-only table.
+      const acTextMap = acTextByOrdinal(specDoc?.body ?? "");
+      const maxAc = acTextMap.size ? Math.max(...acTextMap.keys()) : 0;
+      const acTexts =
+        maxAc > 0
+          ? Array.from({ length: maxAc }, (_, i) => acTextMap.get(i + 1) ?? "")
+          : undefined;
       // SP-6/7 AC5: persist the DURABLE, structured verification trace alongside DELIVERY.md, merging
       // this run's entries into the accumulated per-Spec file (keyed by AC + rework round) so the record
       // grows across runs rather than being overwritten. The merged trace is what the report renders.
@@ -2420,6 +2486,7 @@ export class OrchestratorService {
         result,
         verifs,
         trace,
+        acTexts,
       );
       const rel = this.deps.store
         .pathForSpecDoc(specNumber)
@@ -2662,4 +2729,6 @@ interface UnitDone {
   /** True when this `failed` outcome is a footprint VIOLATION (the containment hard-stop aborted the
    *  unit), distinct from an ordinary failure — the run-halt policy halts on the first one (SP-2 AC5). */
   containment?: boolean;
+  /** SP-11/3: the worker's final output text, mined for its trailing `## Discoveries` block. */
+  finalOutput?: string;
 }

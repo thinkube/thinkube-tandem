@@ -2693,3 +2693,153 @@ test("SP-6/9: a `contract`-routed red gate writes CONTRACT_DEFECT_MARKER, thread
   assert.equal(r.committed, false);
   assert.ok(r.attention.includes("TEP-1_SP-1_SL-1"));
 });
+
+// ── SP-11/3: human-first delivery report — diagnosis / AC text / discoveries wiring ─────────
+//
+// The orchestrator (a) keeps the judge's UNCLIPPED per-AC rationale on the run result and passes it to
+// the report builder as `diagnosis`, (b) passes the Spec's criterion lines as `acTexts`, and (c) mines
+// each unit's final output for a trailing `## Discoveries` block (via `extractDiscoveries`), pairing
+// each finding with its unit id. All three land in DELIVERY.md.
+test("SP-11/3: the closing gate carries the judge's UNCLIPPED diagnosis, the AC criterion text, and workers' discoveries into DELIVERY.md", async () => {
+  const longRationale = (
+    "JUDGED-MECHANISM: " +
+    "the held-out probe asserts a shape the contract never defined. ".repeat(12)
+  ).trim();
+  const specBody =
+    "## Acceptance Criteria\n\n" +
+    "- [ ] The gate keeps the judge's full rationale in the report\n";
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        files: ["src/a.ts"],
+        satisfies: [1],
+      },
+    },
+    {
+      acPass: { 1: false }, // a red AC → the judge fires and the report is a failure
+      run: async () => ({
+        outcome: "success",
+        finalOutput:
+          "All done.\n\n## Discoveries\n" +
+          "- The neighbouring helper `foo` has an unrelated off-by-one\n" +
+          "- Config `bar.json` is stale\n",
+      }),
+    },
+  );
+  // Give the spec doc a real body so `acTextByOrdinal` yields the criterion line (makeDeps returns "").
+  const baseGetFile = deps.store.getFile.bind(deps.store);
+  deps.store.getFile = (async (rel: string) => {
+    const f = await baseGetFile(rel);
+    return rel === SPEC_DOC && f ? { ...f, body: specBody } : f;
+  }) as typeof deps.store.getFile;
+  // A judge whose rationale is far longer than the audit trace's clip — the report must keep it whole.
+  deps.judgeFailure = async () => ({ fault: "code", rationale: longRationale });
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+  assert.equal(r.committed, false, "a red AC blocks the commit");
+  assert.ok(r.deliveryDoc, "a delivery report is written");
+  const unitId = r.results[0]!.id;
+  const report = fs.readFileSync(
+    path.join(calls.thinkubeDir, r.deliveryDoc!),
+    "utf8",
+  );
+
+  // (1) the judge's rationale survives VERBATIM — the trace-table clip did not eat it.
+  assert.ok(
+    report.includes(longRationale),
+    "the full, unclipped judge rationale is in the report",
+  );
+  // (2) the AC row carries the criterion's TEXT, not just its ordinal.
+  assert.ok(
+    report.includes("The gate keeps the judge's full rationale in the report"),
+    "the AC row carries the criterion text",
+  );
+  // (3) both discoveries are surfaced verbatim, and the finding names its reporting unit.
+  assert.ok(
+    report.includes("unrelated off-by-one") &&
+      report.includes("Config `bar.json` is stale"),
+    "the workers' discoveries are surfaced verbatim",
+  );
+  assert.ok(
+    report.includes(unitId),
+    "a discovery is paired with its reporting unit id",
+  );
+});
+
+// SP-11/3 fault-test rework routing: on a rework round (the slice body carries the judge's diagnosis
+// under `## ⚑ Requires attention`), OrchestratorService appends `buildTestReworkContext`'s result —
+// the diagnosis verbatim — to the `role: "test"` re-author's prompt ONLY. The code author's prompt is
+// untouched (full redaction kept: `buildTestReworkContext` returns undefined for route "code").
+test("SP-11/3 rework routing: a role:test re-author's prompt gets the judged mechanism; the code author's is untouched", async () => {
+  const diagnosis =
+    "JUDGE: the held-out probe pins an internal detail the contract never named — rewrite the check.";
+  const slice = "TEP-1_SP-1_SL-1";
+  const sliceBody = `Some slice intent.\n\n## ⚑ Requires attention\n\n${diagnosis}\n`;
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "tk-rework-"));
+
+  const capturePromptFor = async (role: "code" | "test"): Promise<string> => {
+    const { deps } = makeDeps({});
+    const svc = new OrchestratorService(deps) as unknown as {
+      promptCtx: { specBody: string; sliceBodies: Map<string, string> };
+      runViaSdk: (
+        u: SchedUnit,
+        s: string,
+        c: string,
+        p: OnPark,
+      ) => Promise<WorkerResult>;
+    };
+    // Seed promptCtx exactly as loadPromptContext would after a red round: the reworking slice body
+    // carries the judge's diagnosis under `## ⚑ Requires attention`.
+    svc.promptCtx = {
+      specBody: "",
+      sliceBodies: new Map([[slice, sliceBody]]),
+    };
+    const captured = { text: "" };
+    deps.sdkQuery = ({ prompt }) => {
+      async function* gen(): AsyncGenerator<unknown> {
+        for await (const m of prompt as AsyncIterable<unknown>) {
+          const content = (m as { message?: { content?: unknown } }).message
+            ?.content;
+          if (typeof content === "string") captured.text = content;
+          break; // the first user message IS the worker prompt
+        }
+        yield { type: "assistant", session_id: "cap" };
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "ok",
+          session_id: "cap",
+        };
+      }
+      return gen();
+    };
+    const unit: SchedUnit = {
+      id: `${slice}#eu-0`,
+      slice,
+      footprint: role === "test" ? ["acceptance/x.test.ts"] : ["src/x.ts"],
+      requires: [],
+      shape: "fan-out",
+      role,
+    };
+    await svc.runViaSdk(unit, "1/1", cwd, () => {});
+    return captured.text;
+  };
+
+  const testPrompt = await capturePromptFor("test");
+  const codePrompt = await capturePromptFor("code");
+  const count = (hay: string, needle: string) => hay.split(needle).length - 1;
+
+  assert.ok(
+    testPrompt.includes(diagnosis),
+    "the test re-author's prompt carries the judge's diagnosis",
+  );
+  // Both prompts embed the slice body once; ONLY the test prompt appends buildTestReworkContext's
+  // result — so the diagnosis appears exactly one MORE time for the test author than the code author.
+  assert.equal(
+    count(testPrompt, diagnosis),
+    count(codePrompt, diagnosis) + 1,
+    "buildTestReworkContext is appended for the test author and NOTHING is added for the code author",
+  );
+});
