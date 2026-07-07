@@ -711,9 +711,12 @@
     "test": "tsc -p tsconfig.test.json && node --test out-test/",
     "test:vscode": "node ./dist/test/runTest.js",
     "publish:ovsx": "ovsx publish",
-    "prepublish:ovsx": "npm run compile && npm run package"
+    "prepublish:ovsx": "npm run compile && npm run package",
+    "docs:build": "node scripts/docs-build.mjs"
   },
   "devDependencies": {
+    "antora": "^3.1.0",
+    "asciidoctor-kroki": "^0.18.1",
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
     "@vscode/vsce": "^2.22.0",

@@ -1,0 +1,88 @@
+= Work units and parallel execution
+:page-type: concept
+:page-docref: px3w
+
+Cutting a slice answers _what is one coherent change_. It does not decide how the work inside that change runs. That is a second, separate question — and keeping the two apart is the single most common first-use mistake. This page is the model of both axes: how a slice is one demonstrable "done," and how the work inside it fans out across many workers at once, safely.
+
+If you have not yet read xref:hierarchy.adoc[TEPs, Specs, and Slices], start there — this page assumes you know what a slice is.
+
+== Two axes, held apart
+
+Two orthogonal decisions govern a slice. Conflate them and you either shatter one capability into fragments or serialize work that could have run in parallel.
+
+* *Coherence decides what a slice _is_.* A slice is a vertical, demonstrable capability with a single statable "done" — one green from the verifier. "Email/password login end-to-end" is a slice; "add the session store" is a fragment. Coherence is a judgement about behaviour, and it is the subject of xref:hierarchy.adoc[TEPs, Specs, and Slices].
+* *Footprint decides how the slice's work _parallelizes_.* Inside the slice, the work splits into *work units* (the schedulable atoms the orchestrator runs across many workers). Footprint (the list of files a unit may edit) is what decides which units can run at the same time and which must wait for each other.
+
+The rest of this page is the second axis.
+
+== Work units are the schedulable atoms
+
+A slice is the validation envelope — one coherent "done," verified once, and it can span many files. A work unit is an authoring task _inside_ that envelope. Each unit is a small record:
+
+----
+{ footprint, execution, role?, consumes?, note? }
+----
+
+* `footprint` — the exact files this unit may edit, spelled out one by one. A footprint is a list of files, never a folder: the write guard matches files, so a folder entry guards nothing.
+* `execution` — how the unit runs relative to its siblings: `serial`, `mechanize`, or `fan-out`.
+* `role` — which hand writes the artifact: `code` (the default, the implementation) or `test` (the independent grade).
+* `consumes` — the rare case where a unit reads another unit's produced output.
+* `note` — the per-unit task, injected straight into that worker's prompt so it is self-describing.
+
+The orchestrator schedules these units; many run at the same time. A single work unit is never graded on its own — the slice is still the only thing that reaches a "done."
+
+== Footprint is the only thing that serializes
+
+Here is the one rule that decides parallelism: *two units must wait for each other only when they edit the same file* — a shared footprint. Units with disjoint files run in parallel. Nothing else serializes them.
+
+In particular, a *runtime, deploy, import, or logical order does not serialize authoring*. If module B imports module A, or playbook B runs after playbook A at deploy time, that says nothing about the order in which the two files are _written_. The workers are not running the pipeline; they are writing files, and disjoint files are written at the same time. Treating "runs in sequence" as "author in sequence" is the trap this whole axis exists to help you avoid. A multi-file slice that fans out into one unit per file is the norm, not a smell.
+
+== One mechanical change, or many different tasks
+
+Once you know footprint is the axis, classifying a slice's files is mechanical. Walk the files and group them:
+
+* *The same edit repeated over many files* — a rename across eight modules, a codemod that sets one field everywhere — is *one `mechanize` unit* whose footprint is all of those files. You author the transform once and apply it across the set; you do not mint a unit per file.
+* *Heterogeneous per-file work* — each file is a genuinely different task — *fans out*: one `fan-out` unit per file, each carrying its own `note`, all running in parallel because their footprints are disjoint. A service's `models.py`, `routes.py`, and `handlers.py`, or a component's several lifecycle files, are one coherent slice whose units fan out.
+* *An ordered chain inside one file* is the only `serial` case — steps that share a footprint and must be authored in one ordered session. "Serial" means shared footprint, never "runs in sequence at runtime."
+
+A closing pass *clusters by footprint*: if grouping leaves two units that would touch the same file, merge them into one, so each file has exactly one owner. Two authors on one file is precisely the shared-footprint conflict the footprint test exists to prevent.
+
+== The contract: agreeing on interfaces without reading each other's code
+
+Disjoint footprints let units run in parallel, but they raise a problem: units that never see each other's files still have to agree on the seam between them — an interface, a type, a key, a message shape, a flag name. Loose prose is not enough. A prose-described interface drifts: one worker writes `putApproval(key, token)` while another builds against `createApprovalStore(dir)`, and the checks written to the first shape do not even compile against the second.
+
+The fix is the slice's *contract* — the shared interface it introduces, written as *compilable signatures in the repo's own language*: the exact export names, the parameter and return shapes, and one-line behaviour notes, pinned when the slice is designed. It is never prose pseudo-code, because prose invites a worker to "improve" the shape.
+
+The reach of the contract is what makes the fan-out work. The orchestrator injects the union of _every_ slice's contract into _every_ worker's prompt, across the whole Spec. So a unit builds against an interface another slice defines without ever reading that slice's code. Independent workers converge on one precise authority instead of on a sentence that each reads slightly differently. A well-contracted feature needs no cross-unit coordination at all — every unit builds to the shared contract and they all run in parallel.
+
+=== `consumes` is a produced-artifact dependency, not interface agreement
+
+`consumes` is reserved for one honest case: a unit that literally reads another unit's *produced output* — a generated file, a schema, a migration seed. Real data on disk, not an interface. You name the artifact, and the orchestrator resolves the edge globally by matching it against whichever unit's footprint produces it.
+
+Interface agreement is *not* a `consumes` — that is the contract's job. Because the contract carries the agreement, a well-contracted feature has *zero* `consumes` and its units are fully parallel. And a later slice is never, by itself, a dependency: if you cannot name a concrete produced artifact, there is no edge.
+
+== The test role: a grade the code author cannot tilt
+
+A worker that writes both the code and the check that grades it tends to encode the same misreading into both, or to write the check to pass the code it just wrote. The *test role* removes that conflict of interest.
+
+Alongside the `code` units, a slice carries one or more `role: "test"` units. Each writes the slice's acceptance check — one per acceptance criterion the slice satisfies — built against the *contract plus the criteria*, and nothing else. It `consumes` nothing, so it runs fully in parallel with the code authors.
+
+Its independence is structural, not a matter of discipline. The orchestrator runs each test unit in an *isolated snapshot worktree* — a detached checkout at the branch's committed state, where the code authors' in-progress edits simply do not exist. The test author cannot see the implementation being written, so its checks commit to the _contract's_ meaning rather than to the code's quirks. When the slice's units all land, the finished checks are copied into the code worktree and run as the grade. A green then means the implementation meets the agreed shape — not that one author agreed with themselves. See xref:gates.adoc[Gates and verification] for how that grade arms the slice's move to Done.
+
+== Safe by construction
+
+Running many workers at once only works if two of them can never quietly write the same file. Tandem enforces disjointness at four levels, so a conflict is prevented rather than discovered at merge time.
+
+* *A worktree per Spec.* Each Spec runs in its own git worktree — an isolated checkout on the Spec's branch. One Spec's in-progress edits are invisible to another's, and a slice's verifier runs against that isolated checkout, never against the main tree or another Spec's uncommitted work.
+* *Parallel groups with disjoint file sets.* Slices meant to run at the same time share a `parallel_group:` name and declare the files they own. The board refuses to write a group whose members' file sets overlap, naming the conflicting files — so an overlapping group can never exist on disk.
+* *The ownership arbiter.* At runtime, a single arbiter is the authority over which slice owns which file. It grants a set of files to a slice only if no other slice holds any of them; otherwise the claim is denied whole. Claims are durable — they survive a window reload — and files held by an abandoned worktree are reclaimed automatically.
+* *The edit-guard hook.* A hook runs before every write. If the active slice owns the target file, the write proceeds; if the file belongs to another slice, or falls outside the active slice's claimed set, the write is blocked and the reason is reported. This catches a stray write the moment it is attempted, not at merge time. Where no parallel work is engaged, the guard stays out of the way.
+
+Together these mean the parallelism is safe by construction: the file sets are disjoint on paper, the arbiter enforces it at runtime, and the guard stops the one write that would break it.
+
+== Where to go next
+
+* xref:lifecycle.adoc[The Spec lifecycle] — how a Spec runs from authoring to a merged PR, with the orchestrator driving the units this page describes.
+* xref:gates.adoc[Gates and verification] — how the test role's grade and the acceptance criteria arm each transition.
+* xref:artifacts.adoc[Artifact shapes] — the exact on-disk shape of a slice, its `files` set, and its work units.
+* xref:toolkit.adoc[Skills, subagents, and tools] — the skills that cut slices and the subagents that verify them.

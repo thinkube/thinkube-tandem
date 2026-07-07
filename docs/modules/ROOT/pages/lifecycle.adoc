@@ -1,0 +1,107 @@
+= The Spec lifecycle
+:page-type: concept
+:page-docref: lc9v
+
+A Spec is the unit that runs the full arc from an idea to a merged change. You define it and its acceptance criteria up front, approve it once, and accept it once at the end; between those two points the pair and the orchestrator carry it through slicing, execution, and verification without pausing for you. This page walks that arc and names who acts at each stage, which gate stands between the stages, and what each gate refuses.
+
+== The arc from idea to merge
+
+The whole path, from the first proposal to the merged PR, looks like this. The pair (you and Claude) authors; you alone approve, orchestrate, and accept; the orchestrator runs the work and the closing gate.
+
+[mermaid]
+----
+flowchart TD
+    A["Pair authors the TEP"] --> B["Pair authors the Spec, acceptance criteria first"]
+    B --> V{"Every AC certified verifiable or assessment, each with a verification entry?"}
+    V -->|"no — blocks Ready"| B
+    V -->|"yes — slices may reach Ready"| C["Pair cuts vertical slices, status ready"]
+    C --> D{"Human approves the Spec in the review panel"}
+    D -->|"Approve"| E["Human runs Orchestrate"]
+    E --> F["Orchestrator runs each slice's work units on branch spec/SP-n, in its own worktree"]
+    F --> G["Closing gate at quiescence: run every declared AC verification"]
+    G --> H{"All green?"}
+    H -->|"yes — ACs checked, slices Done, one commit"| I{"Human accepts"}
+    H -->|"any red — requires-attention, nothing committed"| J["Attend, then re-run"]
+    J --> E
+    I -->|"Accept & merge"| K["One PR: spec/SP-n merges to main"]
+    I -->|"Request changes"| J
+----
+
+== Define the work: a TEP, then a Spec
+
+The arc starts with a TEP (Tandem Enhancement Proposal) — the reason above the work, the goal and the forces recorded before any Spec. The Specs that carry out the work nest beneath it.
+
+A Spec is authored acceptance-criteria-first. You give the user-observable outcomes before any design; a good criterion reads like an outcome you could check, not a step you would take. With the criteria agreed, the pair drafts the constraints, the design, and a file plan against your codebase, then runs a verifiability audit over the criteria. Each criterion is interrogated for whether it can be checked, by which actor, and in which environment, before the gate it guards — and is certified either _verifiable_ (a runnable command proves it) or an _assessment_ (an independent reader judges it). Every certified criterion carries a verification entry recording how it is checked.
+
+That full set of entries is the → Ready gate. A Spec's slices may reach Ready only when every acceptance criterion is certified and carries its entry; an undeclared or unresolved criterion blocks the gate and names the offending ordinal. Nothing runs until this passes.
+
+== Approve the Spec
+
+Writing the slices crystallizes the artifacts; it does not start the build. To advance, you open the review panel and approve the Spec. This is a maintainer-only button: Claude can open the review surface for you, but it cannot approve on your behalf, because approving mints the content-bound token the board requires before any slice runs. Approval is one of the two points in the whole arc where the human acts on the substance.
+
+== Slice the Spec
+
+The pair cuts the Spec into slices — each a coherent, vertical, end-to-end change you verify and commit as a single "done," sized by coherence rather than by layer or file. A slice that spans more than one file pins a shared contract so every worker builds to the same seam, and decomposes into work units the orchestrator can schedule. Each slice is written to the board at status `ready`, and every acceptance criterion maps to at least one slice. See xref:parallel-execution.adoc[Work units and parallel execution] for how the units fan out.
+
+== Orchestrated execution
+
+The whole Spec runs on one branch, `spec/SP-n`, in its own worktree so parallel Specs never collide. Every slice lands as commits on that branch — no per-slice branch, no per-slice PR.
+
+Once you run Orchestrate, the slices execute consecutively and autonomously. You defined the goal up front; the orchestrator now runs the Ready slices through to completion without pausing between them and without asking you to sign off on each one. There is no mid-run bless point — the per-slice verification stays automated, and the single human gate waits at the end.
+
+== The closing gate
+
+When every work unit has landed — Spec quiescence — the orchestrator does not silently mark the Spec Done. It runs the acceptance criteria's declared verifications as one complete plan, in dependency order, and attributes each result back to the criterion it proves. The outcome gates both Done and the commit:
+
+* *All green* — it checks exactly the satisfied criteria on the Spec, advances the slices to Done, and commits the worktree to `spec/SP-n` once.
+* *Any red or un-runnable* — it leaves the Spec _requires-attention_ and commits nothing; the failure stays auditable.
+
+There is no skip. A Spec whose criteria cannot all be verified is never advanced to Done on an un-run verification.
+
+== The delivery report
+
+On every completion, pass or fail, the gate writes a durable report to the Spec's `DELIVERY.md`. It is the operator's document, written plain-language first: a one-line orchestration summary, then _what happened_ (on a failure, the closing gate's diagnosis in full), the acceptance criteria each with its verdict, any out-of-scope findings the workers reported, the touched files, your available exits, and a demoted evidence appendix holding the raw per-criterion runner output. The report opens rendered in the Markdown preview when the run finishes, so you read the outcome before you choose an exit.
+
+== Acceptance: the one human bless point
+
+Acceptance is the single point where you sign off on the assembled result — the one human bless point in the arc. The exits you are offered are derived from the run's terminal state, not a fixed pair glued onto every outcome.
+
+A *delivered* Spec — committed, gate green — offers two:
+
+* *Accept & merge* performs the gated merge of `spec/SP-n` into `main`. It is refused unless every criterion is checked; there is no accepting an unverified Spec.
+* *Request changes* opens a primed session to steer the delivered change back toward the intent.
+
+A *stalled* run — nothing committed, or the gate did not pass — offers the actions that apply to a run that did not deliver:
+
+* *Attend* opens a primed session on the requires-attention slice to bring the behaviour back in line with the intent.
+* *Re-run* re-runs the orchestrator once the requires-attention slice is resolved.
+
+The exit states and their actions map out like this:
+
+[mermaid]
+----
+stateDiagram-v2
+    [*] --> Quiescence: all work units landed
+    Quiescence --> Delivered: all green — ACs checked, slices Done, one commit
+    Quiescence --> Stalled: any red or uncommitted — nothing committed
+    Delivered --> Merged: Accept & merge (refused unless every AC checked)
+    Delivered --> Stalled: Request changes
+    Stalled --> Quiescence: Attend, then Re-run
+    Merged --> [*]
+----
+
+== One PR per Spec
+
+A Spec produces exactly one PR. Every slice's commits sit on the one `spec/SP-n` branch, and acceptance merges that branch to `main` as a single reviewed change — a verified Spec, built and checked end to end.
+
+== When a Spec goes stale
+
+A Done slice can go stale after the fact when its parent Spec changes. Only substantive edits count: changes to the acceptance criteria text, the design, or the constraints mark the Spec's Done slices stale for re-verification, because they change what "correct" means. Metadata edits — column moves, theme, priority, due date — and ticking an acceptance checkbox never mark a slice stale, because they record completion or bookkeeping, not a changed requirement. Staleness is measured from a hash of the Spec's requirement sections with the checkbox state stripped, so ticking a box can never trip it. A re-run re-verifies the stale slices against the current Spec before the Spec can reach Done again.
+
+== Where to go next
+
+* xref:hierarchy.adoc[TEPs, Specs, and Slices] — the tiers this lifecycle moves through.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice's units run across workers.
+* xref:gates.adoc[Gates and verification] — every gate and exactly what it refuses.
+* xref:working-style.adoc[How the pair works] — the two human inputs and who acts between them.
+* xref:troubleshooting.adoc[When something goes wrong] — what to do when the closing gate goes red.

@@ -1,0 +1,6 @@
+name: tandem
+title: Tandem Methodology
+version: ~
+start_page: index.adoc
+nav:
+  - modules/ROOT/nav.adoc
