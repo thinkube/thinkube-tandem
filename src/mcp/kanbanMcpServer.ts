@@ -1699,12 +1699,8 @@ export async function dispatchTool(
  * SL-7). Reuses the thinking space's filesystem MCP→host channel — not the tmux bridge.
  */
 async function startSpecWorktree(spec: string, repo: string): Promise<unknown> {
-  const dir = process.env[CONTROL_DIR_ENV];
-  if (!dir) {
-    throw new Error(
-      `${CONTROL_DIR_ENV} is not set, so the worktree hand-off can't reach the extension. Open the worktree from the Specs view button, or re-install the methodology bundle so the MCP env carries it.`,
-    );
-  }
+  const dir =
+    process.env[CONTROL_DIR_ENV]?.trim() || resolveControlDir(process.argv[1]);
   await fsSync.promises.mkdir(dir, { recursive: true });
   const file = path.join(dir, startWorktreeRequestFile(spec));
   await fsSync.promises.writeFile(
@@ -1803,12 +1799,8 @@ async function openReview(
     subjectKey = `tep:${canonicalId}`;
     docRel = found;
   }
-  const dir = process.env[CONTROL_DIR_ENV];
-  if (!dir) {
-    throw new Error(
-      `${CONTROL_DIR_ENV} is not set, so the review-panel hand-off can't reach the extension host. Re-install the methodology bundle so the MCP env carries it, or have the maintainer open the review panel from the Kanban view.`,
-    );
-  }
+  const dir =
+    process.env[CONTROL_DIR_ENV]?.trim() || resolveControlDir(process.argv[1]);
   await fsSync.promises.mkdir(dir, { recursive: true });
   const docPath = path.join(store.thinkubeDir, docRel);
   const file = path.join(dir, openReviewRequestFile(subjectKey));
@@ -2897,6 +2889,19 @@ export async function resolveCompositeSpecId(
  */
 export function resolveApprovalDir(invocationPath: string): string {
   return path.resolve(path.dirname(invocationPath), "../../..");
+}
+
+/**
+ * Self-locate the control-request dir the host's ControlRequestWatcher watches — the SAME
+ * structural derivation as {@link resolveApprovalDir} (SP-6/17), one directory deeper. The host
+ * publishes it as `<globalStorage>/control` (machineConfig), so deriving it from the server's own
+ * invocation path makes the open-review / start-worktree hand-off ALWAYS reachable, independent of
+ * whether `THINKUBE_CONTROL_DIR` was injected into the MCP registration this session happened to
+ * resolve against (a workspace-root registration that omitted the var previously broke it). The env
+ * var remains an optional override for a non-standard layout.
+ */
+export function resolveControlDir(invocationPath: string): string {
+  return path.join(resolveApprovalDir(invocationPath), "control");
 }
 
 /**
