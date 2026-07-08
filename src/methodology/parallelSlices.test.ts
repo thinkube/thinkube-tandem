@@ -12,6 +12,7 @@ import {
   validateDag,
   footprintGuard,
   codeReadFence,
+  codeTestFence,
   acquireClaim,
   releaseClaim,
   reconcileOwnership,
@@ -1105,4 +1106,48 @@ test("resolveRoleFootprint: honours a custom acceptance-evidence predicate for b
   const declared = ["held/probe.test.ts", "src/x.ts"];
   assert.deepEqual(resolveRoleFootprint("test", declared, opts), ["held/probe.test.ts"]);
   assert.deepEqual(resolveRoleFootprint("code", declared, opts), ["src/x.ts"]);
+});
+
+// ── codeTestFence (tests-first belt, 2026-07-08): a code worker never touches tests ──
+
+test("codeTestFence: a write to any *.test.* or acceptance/ path is denied regardless of footprint", () => {
+  for (const fp of [
+    "src/services/workerModel.test.ts",
+    "src/acceptance/SP-17_1_AC-1.test.ts",
+    "acceptance/probe.test.ts",
+  ]) {
+    for (const tool of ["Edit", "Write", "MultiEdit"]) {
+      const d = codeTestFence(tool, { file_path: fp }, false);
+      assert.equal(d.allow, false, `${tool} → ${fp} must be denied`);
+    }
+  }
+  // an ordinary source write passes through untouched
+  assert.deepEqual(
+    codeTestFence("Write", { file_path: "src/services/workerModel.ts" }, true),
+    { allow: true },
+  );
+});
+
+test("codeTestFence: with the oracle armed, Bash that reaches tests or the toolchain is denied", () => {
+  const denied = [
+    "cat ../thinkube-ai-integration-worktrees/TEP-17_SP-1-test/src/acceptance/SP-17_1_AC-1.test.ts",
+    "grep -rn model src/acceptance/",
+    "npm install",
+    "npx tsc -p tsconfig.test.json",
+    "node --test out-test/",
+    "sed -n 1,20p src/x.test.ts",
+  ];
+  for (const command of denied) {
+    const d = codeTestFence("Bash", { command }, true);
+    assert.equal(d.allow, false, `oracle-armed Bash must deny: ${command}`);
+  }
+  const allowed = ["ls src/services", "git status --porcelain", "node -e \"console.log(1)\""];
+  for (const command of allowed) {
+    assert.deepEqual(codeTestFence("Bash", { command }, true), { allow: true }, `must allow: ${command}`);
+  }
+});
+
+test("codeTestFence: without the oracle, Bash is untouched (selfVerify still legitimate) but test writes stay denied", () => {
+  assert.deepEqual(codeTestFence("Bash", { command: "npm test" }, false), { allow: true });
+  assert.equal(codeTestFence("Write", { file_path: "a/b.test.ts" }, false).allow, false);
 });

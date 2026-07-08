@@ -44,7 +44,7 @@ All must pass (exit 0) for a green. The test runner is the built-in **`node:test
 A fresh worktree (TEP-0008) is a clean checkout: it has the committed source but **none** of the gitignored dependencies a verify needs (`node_modules/`). Before the verification recipe can run green there, the orchestrator (th4wqh) **provisions** the worktree by running the single command declared in the `setup` block below, once, from the worktree root.
 
 ```setup
-npm ci
+npm ci --prefer-offline --no-audit --no-fund
 ```
 
 (produces `node_modules/`, which is gitignored — and must be matched as both a directory and a symlink so a symlinked dependency tree never leaks into `git status`.)

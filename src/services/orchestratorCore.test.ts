@@ -434,19 +434,27 @@ test("AC3: the rework prompt never frames feedback as 'the failing check'", () =
   }
 });
 
-test("batchExecutionUnits: serial units collapse to one; mechanize/fan-out stay separate", () => {
+test("batchExecutionUnits: ALL code units collapse to ONE coder; test units keep per-AC fan-out", () => {
+  // Tests-first (2026-07-08): the slice is the unit of code scheduling — serial,
+  // mechanize and fan-out code units alike become one execution unit (one coder per
+  // slice), while role:test units keep their per-AC granularity.
   const units: WorkUnit[] = [
     { footprint: ["a"], execution: "serial" },
     { footprint: ["b"], execution: "serial" },
     { footprint: ["c"], execution: "mechanize" },
     { footprint: ["d"], execution: "fan-out" },
     { footprint: ["e"], execution: "fan-out" },
+    { footprint: ["t1"], execution: "fan-out", role: "test" },
+    { footprint: ["t2"], execution: "fan-out", role: "test" },
   ];
   const eu = batchExecutionUnits(units);
-  assert.equal(eu.length, 4); // 1 serial batch + 1 mechanize + 2 fan-out
+  assert.equal(eu.length, 3); // 1 collapsed coder + 2 test fan-outs
   assert.equal(eu[0].shape, "serial");
-  assert.equal(eu[0].units.length, 2);
-  assert.deepEqual(eu.filter((u) => u.shape === "fan-out").length, 2);
+  assert.equal(eu[0].units.length, 5); // every code unit, in authored order
+  assert.ok(eu[0].units.every((u) => (u.role ?? "code") !== "test"));
+  const testEus = eu.filter((e) => e.units.some((u) => u.role === "test"));
+  assert.equal(testEus.length, 2);
+  assert.ok(testEus.every((e) => e.units.length === 1 && e.shape === "fan-out"));
 });
 
 // ── buildUnitDag + readyFrontier (SP-tgs8nz makespan scheduler) ────────────
@@ -470,7 +478,7 @@ test("buildUnitDag: a unit-less slice becomes ONE serial node (legacy)", () => {
   assert.deepEqual(dag[0].footprint, ["a.ts", "b.ts"]);
 });
 
-test("buildUnitDag: serial units of a slice collapse into one node; fan-out splits", () => {
+test("buildUnitDag: a slice's code units collapse into ONE coder node (union footprint, notes in order); test units split per-AC and gate the coder", () => {
   const dag = buildUnitDag([
     slice("SP-1_SL-1", {
       workUnits: [
@@ -478,16 +486,30 @@ test("buildUnitDag: serial units of a slice collapse into one node; fan-out spli
         { footprint: ["b.ts"], execution: "serial" },
         { footprint: ["c.ts"], execution: "fan-out", note: "do c" },
         { footprint: ["d.ts"], execution: "fan-out", note: "do d" },
+        { footprint: ["t1.test.ts"], execution: "fan-out", role: "test", note: "assert AC1" },
+        { footprint: ["t2.test.ts"], execution: "fan-out", role: "test", note: "assert AC2" },
       ],
     }),
   ]);
-  // 1 serial node (a+b) + 2 fan-out nodes = 3
+  // 1 collapsed coder + 2 per-AC test nodes = 3
   assert.equal(dag.length, 3);
-  const serial = dag.find((u) => u.shape === "serial")!;
-  assert.deepEqual(serial.footprint.sort(), ["a.ts", "b.ts"]);
-  const fans = dag.filter((u) => u.shape === "fan-out");
-  assert.equal(fans.length, 2);
-  assert.equal(fans[0].note, "do c");
+  const coder = dag.find((u) => u.role !== "test")!;
+  assert.deepEqual(coder.footprint.slice().sort(), [
+    "a.ts",
+    "b.ts",
+    "c.ts",
+    "d.ts",
+  ]);
+  assert.equal(coder.note, "do c; do d");
+  const tests = dag.filter((u) => u.role === "test");
+  assert.equal(tests.length, 2);
+  // Tests-first: the coder waits on every same-slice test unit.
+  assert.deepEqual(
+    coder.requires.slice().sort(),
+    tests.map((t) => t.id).sort(),
+  );
+  // Test units have no implicit edge back (they dispatch first).
+  for (const t of tests) assert.deepEqual(t.requires, []);
 });
 
 test("buildUnitDag: units from multiple slices pool into one DAG; a `consumes` edge crosses the slice boundary", () => {
@@ -502,30 +524,33 @@ test("buildUnitDag: units from multiple slices pool into one DAG; a `consumes` e
       ],
     }),
   ]);
-  // one node for SL-1, two for SL-2 — pooled into one DAG across slices
-  assert.equal(dag.length, 3);
-  // both SL-2 units read a.ts → both depend on its (cross-slice) producer, by edge not by inheritance
-  for (const u of dag.filter((u) => u.slice === "SP-1_SL-2"))
-    assert.deepEqual(u.requires, ["SP-1_SL-1#eu-0"]);
+  // one coder node per slice (SL-2's two code units collapse) — pooled across slices
+  assert.equal(dag.length, 2);
+  // SL-2's coder reads a.ts → depends on its (cross-slice) producer, by edge not by inheritance
+  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
+  assert.deepEqual(sl2.footprint.slice().sort(), ["b.ts", "c.ts"]);
+  assert.deepEqual(sl2.requires, ["SP-1_SL-1#eu-0"]);
 });
 
-test("buildUnitDag: a cross-slice `consumes` resolves to the EXACT producing #eu-k, not all-to-all (AC1)", () => {
+test("buildUnitDag: a cross-slice `consumes` resolves to the EXACT producing node, not all-to-all (AC1)", () => {
+  // Producers live in two different slices (intra-slice code units now collapse into one
+  // coder, so the exact-producer invariant is pinned across slices — where it matters).
   const dag = buildUnitDag([
     slice("SP-1_SL-1", {
-      workUnits: [
-        { footprint: ["a.ts"], execution: "fan-out" }, // produces a.ts → #eu-0
-        { footprint: ["b.ts"], execution: "fan-out" }, // produces b.ts → #eu-1
-      ],
+      workUnits: [{ footprint: ["a.ts"], execution: "fan-out" }], // produces a.ts
     }),
     slice("SP-1_SL-2", {
+      workUnits: [{ footprint: ["b.ts"], execution: "fan-out" }], // produces b.ts
+    }),
+    slice("SP-1_SL-3", {
       workUnits: [
         { footprint: ["c.ts"], execution: "fan-out", consumes: ["a.ts"] },
       ],
     }),
   ]);
-  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
-  // lands on the producer of a.ts ONLY (#eu-0) — NOT the sibling #eu-1, NOT a coarse slice-wide fan-in
-  assert.deepEqual(sl2.requires, ["SP-1_SL-1#eu-0"]);
+  const sl3 = dag.find((u) => u.slice === "SP-1_SL-3")!;
+  // lands on the producer of a.ts ONLY — NOT b.ts's producer, NOT a coarse all-to-all fan-in
+  assert.deepEqual(sl3.requires, ["SP-1_SL-1#eu-0"]);
   // and the pooled DAG validates — the edge is a real, resolvable node id
   const verdict = validateDag(
     dag.map((u) => ({ id: u.id, requires: u.requires })),
@@ -534,24 +559,26 @@ test("buildUnitDag: a cross-slice `consumes` resolves to the EXACT producing #eu
 });
 
 test("buildUnitDag: a file produced by TWO units makes a consumer depend on BOTH (AC2)", () => {
+  // Two writers of the same file in two different slices (intra-slice writers collapse
+  // into one coder, so multi-writer fan-in is a cross-slice phenomenon now).
   const dag = buildUnitDag([
     slice("SP-1_SL-1", {
-      workUnits: [
-        { footprint: ["shared.ts"], execution: "fan-out" }, // producer 1 → #eu-0
-        { footprint: ["shared.ts", "x.ts"], execution: "fan-out" }, // producer 2 → #eu-1
-      ],
+      workUnits: [{ footprint: ["shared.ts"], execution: "fan-out" }], // producer 1
     }),
     slice("SP-1_SL-2", {
+      workUnits: [{ footprint: ["shared.ts", "x.ts"], execution: "fan-out" }], // producer 2
+    }),
+    slice("SP-1_SL-3", {
       workUnits: [
         { footprint: ["c.ts"], execution: "fan-out", consumes: ["shared.ts"] },
       ],
     }),
   ]);
-  const sl2 = dag.find((u) => u.slice === "SP-1_SL-2")!;
+  const sl3 = dag.find((u) => u.slice === "SP-1_SL-3")!;
   // shared.ts has two writers → the consumer waits on EVERY writer (reads it fully written)
-  assert.deepEqual(sl2.requires.slice().sort(), [
+  assert.deepEqual(sl3.requires.slice().sort(), [
     "SP-1_SL-1#eu-0",
-    "SP-1_SL-1#eu-1",
+    "SP-1_SL-2#eu-0",
   ]);
 });
 
@@ -579,13 +606,16 @@ const emptyState = (over: Partial<SchedulerState> = {}): SchedulerState => ({
 });
 
 test("readyFrontier: independent disjoint units are all ready (max parallelism)", () => {
+  // Parallelism lives BETWEEN slices now: three file-disjoint slices → three ready coders.
   const dag = buildUnitDag([
     slice("SP-1_SL-1", {
-      workUnits: [
-        { footprint: ["a.ts"], execution: "fan-out" },
-        { footprint: ["b.ts"], execution: "fan-out" },
-        { footprint: ["c.ts"], execution: "fan-out" },
-      ],
+      workUnits: [{ footprint: ["a.ts"], execution: "fan-out" }],
+    }),
+    slice("SP-1_SL-2", {
+      workUnits: [{ footprint: ["b.ts"], execution: "fan-out" }],
+    }),
+    slice("SP-1_SL-3", {
+      workUnits: [{ footprint: ["c.ts"], execution: "fan-out" }],
     }),
   ]);
   const f = readyFrontier(dag, emptyState());
@@ -708,12 +738,13 @@ test("readyFrontier: footprint conflicts serialize (running blocks an overlap)",
 });
 
 test("readyFrontier: a running footprint excludes an overlapping unit", () => {
+  // Overlap arbitration is inter-slice now (a slice's code side is one coder).
   const dag = buildUnitDag([
     slice("SP-1_SL-1", {
-      workUnits: [
-        { footprint: ["a.ts"], execution: "fan-out" },
-        { footprint: ["b.ts"], execution: "fan-out" },
-      ],
+      workUnits: [{ footprint: ["a.ts"], execution: "fan-out" }],
+    }),
+    slice("SP-1_SL-2", {
+      workUnits: [{ footprint: ["b.ts"], execution: "fan-out" }],
     }),
   ]);
   const f = readyFrontier(dag, emptyState({ running: new Set(["a.ts"]) }));
@@ -1599,12 +1630,14 @@ test("AC5: isEscalated trips at/above the bound, false below, fail-safe on junk"
 });
 
 test("AC5: readyFrontier DROPS every unit of a slice that has reached its rework bound (escalated, not re-dispatched)", () => {
-  // A slice with two units, otherwise perfectly dispatchable (no deps, disjoint footprints).
+  // A slice with a coder AND a held-out test unit (disjoint footprints). Tests-first, the
+  // frontier at rest holds only the test unit (the coder waits on it) — the invariant here
+  // is that escalation drops EVERY unit the slice owns, test units included.
   const dag = buildUnitDag([
     slice("SP-6_SL-9", {
       workUnits: [
         { footprint: ["a.ts"], execution: "fan-out" },
-        { footprint: ["b.ts"], execution: "fan-out" },
+        { footprint: ["t.test.ts"], execution: "fan-out", role: "test" },
       ],
     }),
   ]);
@@ -1616,8 +1649,8 @@ test("AC5: readyFrontier DROPS every unit of a slice that has reached its rework
   });
   assert.equal(
     belowBound.length,
-    2,
-    "a slice below its rework bound is still re-dispatchable",
+    1,
+    "a slice below its rework bound is still re-dispatchable (its test unit leads)",
   );
 
   // At the bound (3 attempts, default) → the WHOLE slice is excluded from the frontier.
@@ -1631,8 +1664,8 @@ test("AC5: readyFrontier DROPS every unit of a slice that has reached its rework
     "an escalated slice is no longer auto-re-dispatchable — every unit it owns is dropped",
   );
 
-  // Sanity: with no attempts recorded the pre-SP-6 behaviour is unchanged (fully dispatchable).
-  assert.equal(readyFrontier(dag, emptyState()).length, 2);
+  // Sanity: with no attempts recorded the behaviour is unchanged (test unit dispatchable).
+  assert.equal(readyFrontier(dag, emptyState()).length, 1);
 });
 
 test("AC5: readyFrontier respects a custom attemptBound when deciding escalation", () => {

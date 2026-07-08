@@ -696,6 +696,62 @@ export function codeReadFence(
   };
 }
 
+/**
+ * Tests-first belt (repair window, 2026-07-08): a `role: code` worker never touches tests.
+ * Two prongs, both terse and mechanism-silent like the fences above:
+ *  - a WRITE (Edit/Write/MultiEdit/NotebookEdit) targeting any test file — `*.test.*` or an
+ *    `acceptance/` path — is denied regardless of footprint (test authorship is another
+ *    role's job, always);
+ *  - when the verify oracle is wired (`oracleWired`), a BASH command that reaches for test
+ *    files, a tester snapshot (`…-test/`), or the build/test toolchain (npm/npx/tsc/test
+ *    runners) is denied too — the oracle is the coder's whole feedback loop, and the
+ *    worktree deliberately has no toolchain for it.
+ * Pure decision; the SDK PreToolUse hook calls it for code units only.
+ */
+export function codeTestFence(
+  toolName: string,
+  toolInput: unknown,
+  oracleWired: boolean,
+): FootprintDecision {
+  const TEST_PATH = /(^|\/)acceptance\/|\.test\.[cm]?[jt]sx?$/;
+  if (GUARDED_TOOLS.has(toolName)) {
+    const inp = toolInput as { file_path?: unknown; notebook_path?: unknown };
+    const fp =
+      typeof inp?.file_path === "string" ? inp.file_path : inp?.notebook_path;
+    if (typeof fp === "string" && TEST_PATH.test(fp.trim()))
+      return {
+        allow: false,
+        reason:
+          `Out-of-scope write: ${fp.trim()} is a test file, which is not part of this ` +
+          `unit's task. Implement within your footprint; if you believe a test must ` +
+          `change, stop and state the question.`,
+      };
+    return { allow: true };
+  }
+  if (oracleWired && toolName === "Bash") {
+    const cmd = (toolInput as { command?: unknown })?.command;
+    if (typeof cmd !== "string" || !cmd.trim()) return { allow: true };
+    const reachesTests =
+      /(^|[\s/'"`(=])acceptance\//.test(cmd) ||
+      /\.test\.[cm]?[jt]sx?\b/.test(cmd) ||
+      /-test\//.test(cmd);
+    const runsToolchain =
+      /(^|[\s;&|(])(npm|npx|yarn|pnpm|tsc)(\s|$)/.test(cmd) ||
+      /\bnode\s+--test\b/.test(cmd) ||
+      /(^|[\s;&|(])(vitest|jest|mocha|pytest)(\s|$)/.test(cmd) ||
+      /\b(cargo|go)\s+test\b/.test(cmd);
+    if (reachesTests || runsToolchain)
+      return {
+        allow: false,
+        reason:
+          `Out-of-scope command: builds, test runs and test files are not part of this ` +
+          `unit's task — call the verify tool for feedback instead. If you genuinely ` +
+          `need this command, stop and state the question.`,
+      };
+  }
+  return { allow: true };
+}
+
 // ── Bash-inclusive post-tool footprint containment (SP-6/2 AC3) ─────────────
 //
 // The PreToolUse `footprintGuard` above fences only Edit/Write/MultiEdit — tools

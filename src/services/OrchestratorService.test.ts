@@ -366,7 +366,13 @@ test("SP-6/14: a superseded Spec is NOT orchestrated — dispatchSpec refuses be
   assert.deepEqual(calls.acquired, [], "no unit acquired");
 });
 
-test("dispatchSpec: a slice's fan-out units dispatch as SEPARATE workers; gate advances after all land", async () => {
+test("dispatchSpec: a slice's code fan-out units collapse into ONE coder; gate advances after it lands", async () => {
+  // Tests-first (2026-07-08): the slice is the unit of code scheduling — its code units
+  // become one worker with the union footprint and both task notes.
+  const capture: { notes: (string | undefined)[]; footprints: string[][] } = {
+    notes: [],
+    footprints: [],
+  };
   const { deps, calls } = makeDeps({
     "teps/TEP-1/SP-1/SL-1.md": {
       status: "ready",
@@ -376,11 +382,19 @@ test("dispatchSpec: a slice's fan-out units dispatch as SEPARATE workers; gate a
       ],
     },
   });
+  const inner = deps.runUnit!;
+  deps.runUnit = async (unit, spec, cwd, onPark) => {
+    capture.notes.push(unit.note);
+    capture.footprints.push(unit.footprint.slice().sort());
+    return inner(unit, spec, cwd, onPark);
+  };
   const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
-  assert.equal(r.dispatched, 2, "two fan-out units → two workers");
-  assert.deepEqual(r.advanced, ["TEP-1_SP-1_SL-1"]); // slice advances once after BOTH units + the gate
+  assert.equal(r.dispatched, 1, "two code fan-out units → ONE coder");
+  assert.deepEqual(capture.footprints, [["src/a.ts", "src/b.ts"]]);
+  assert.equal(capture.notes[0], "do a; do b");
+  assert.deepEqual(r.advanced, ["TEP-1_SP-1_SL-1"]);
   assert.equal(r.committed, true);
-  assert.equal(calls.acquired.length, 2);
+  assert.equal(calls.acquired.length, 1);
 });
 
 test("dispatchSpec: serial units of a slice collapse into ONE worker", async () => {
@@ -680,25 +694,21 @@ test("dispatchSpec: a requires-attention slice is re-dispatchable (retry on a ne
 });
 
 test("dispatchSpec: the worker pool never exceeds the cap", async () => {
+  // Parallelism is inter-slice now: five file-disjoint slices → five coders over cap 2.
   const track = { inFlight: 0, max: 0 };
   const { deps } = makeDeps(
     {
-      "teps/TEP-1/SP-1/SL-1.md": {
-        status: "ready",
-        work_units: [
-          { footprint: ["a.ts"], execution: "fan-out" },
-          { footprint: ["b.ts"], execution: "fan-out" },
-          { footprint: ["c.ts"], execution: "fan-out" },
-          { footprint: ["d.ts"], execution: "fan-out" },
-          { footprint: ["e.ts"], execution: "fan-out" },
-        ],
-      },
+      "teps/TEP-1/SP-1/SL-1.md": { status: "ready", files: ["a.ts"] },
+      "teps/TEP-1/SP-1/SL-2.md": { status: "ready", files: ["b.ts"] },
+      "teps/TEP-1/SP-1/SL-3.md": { status: "ready", files: ["c.ts"] },
+      "teps/TEP-1/SP-1/SL-4.md": { status: "ready", files: ["d.ts"] },
+      "teps/TEP-1/SP-1/SL-5.md": { status: "ready", files: ["e.ts"] },
     },
     { run: runTracked(track) },
   );
   const r = await new OrchestratorService(deps).dispatchSpec("1/1", 2);
-  assert.equal(r.dispatched, 5, "all five units run");
-  assert.deepEqual(r.advanced, ["TEP-1_SP-1_SL-1"]);
+  assert.equal(r.dispatched, 5, "all five slices run");
+  assert.equal(r.advanced.length, 5);
   assert.ok(track.max <= 2, `peak concurrency ${track.max} should be ≤ cap 2`);
 });
 
@@ -725,14 +735,17 @@ test("dispatchSpec: a worker that RETURNS needs-input parks the slice (not faile
 });
 
 test("dispatchSpec: a resident worker PARKS (frees its slot), then an external answer resumes it → gate → Done + commit", async () => {
+  // The parked coder and the answering coder live in two file-disjoint SLICES (a slice's
+  // code side is one worker now, so concurrency — and the freed slot — is inter-slice).
   const parkedId = "TEP-1_SP-1_SL-1#eu-0";
   const { deps, calls } = makeDeps({
     "teps/TEP-1/SP-1/SL-1.md": {
       status: "ready",
-      work_units: [
-        { footprint: ["a.ts"], execution: "fan-out", note: "asks" },
-        { footprint: ["b.ts"], execution: "fan-out", note: "runs" },
-      ],
+      work_units: [{ footprint: ["a.ts"], execution: "fan-out", note: "asks" }],
+    },
+    "teps/TEP-1/SP-1/SL-2.md": {
+      status: "ready",
+      work_units: [{ footprint: ["b.ts"], execution: "fan-out", note: "runs" }],
     },
   });
   deps.runUnit = async (unit, _spec, _cwd, onPark) => {
@@ -748,8 +761,8 @@ test("dispatchSpec: a resident worker PARKS (frees its slot), then an external a
   assert.equal(r.dispatched, 2);
   assert.ok(r.needsInput.includes("TEP-1_SP-1_SL-1"), "parked at least once");
   assert.deepEqual(
-    r.advanced,
-    ["TEP-1_SP-1_SL-1"],
+    r.advanced.slice().sort(),
+    ["TEP-1_SP-1_SL-1", "TEP-1_SP-1_SL-2"],
     "resumed + verified by the gate after the answer",
   );
   assert.equal(r.committed, true);

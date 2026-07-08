@@ -421,7 +421,21 @@ export class WorktreeService {
     // gitignored deps — can run its tooling. Language-agnostic: this replaces the old
     // hardcoded Node-only node_modules symlink, which didn't generalize and leaked
     // into git (SP-th4wqh, #16/#24). No recipe declared → provisions nothing.
-    await provisionWorktree(canonicalRepo, worktreePath);
+    //
+    // LOUD, never silent (repair window, 2026-07-08): a failed provisioning used to be
+    // discarded here, so the first visible symptom was a worker breaching the footprint
+    // fence trying to `npm install` its own toolchain. A red recipe now THROWS with the
+    // command + output tail — the run fails at worktree creation with the real cause,
+    // before any worker spends a token in a broken environment.
+    const prov = await provisionWorktree(canonicalRepo, worktreePath, {
+      timeoutMs: 900_000, // a cold `npm ci` can exceed the default bound
+    });
+    if (prov.ran && prov.code !== 0) {
+      const tail = (prov.output ?? "").slice(-2000);
+      throw new Error(
+        `worktree provisioning failed (exit ${prov.code}): $ ${prov.command}\n${tail}`,
+      );
+    }
     return worktreePath;
   }
 

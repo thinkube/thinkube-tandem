@@ -17,6 +17,9 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import type * as vscode from "vscode";
+// Type-only (erased at runtime — the SDK itself stays lazy-imported): the mcpServers value
+// type for the in-process verify-oracle server (tests-first, 2026-07-08).
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { WorktreeService } from "./WorktreeService";
 import type { OwnershipArbiter } from "./OwnershipArbiter";
 import type { ThinkubeStore } from "../store/ThinkubeStore";
@@ -65,18 +68,26 @@ import {
   type VerificationTraceEntry,
   type FinalizationState,
   type SliceOutcome,
+  runBounded,
 } from "./orchestratorCore";
 import {
   validateDag,
   footprintGuard,
   footprintContainment,
   codeReadFence,
+  codeTestFence,
   resolveFootprint,
   resolveRoleFootprint,
   normalizeFilePath,
   type ContainmentResult,
 } from "../methodology/parallelSlices";
 import { defaultAcceptanceRecipeResolver } from "./auditorRunner";
+import {
+  createVerifyOracle,
+  formatVerifyReply,
+  runnerPath,
+  type VerifyOracle,
+} from "./verifyOracle";
 // Closing-gate full-suite regression backstop (SP-6/18): pure primitives that resolve the repo's
 // whole-suite command, read a completed run into a verdict, and fail-closed-block every green-eligible
 // landed slice on a red suite. The DECISION lives there; the closing gate wires the runner seam.
@@ -296,6 +307,11 @@ export interface SpecRunResult {
   deliveryDoc?: string;
   /** The closing gate's per-AC verification results (pass/fail + evidence); empty when it couldn't run. */
   acResults: AcResult[];
+  /** The build (`prepare`) failure that stopped the closing gate before ANY AC could run
+   *  (repair window, 2026-07-08): the command + its bounded raw output. Rendered as a
+   *  first-class section in DELIVERY.md — without it the report reads "every AC not run,
+   *  no evidence" while the real cause lives only on the slice's attention note. */
+  buildFailure?: { command: string; output: string };
   /** The durable, structured verification trace this run produced (SP-6/7 AC5) — per AC and per rework
    *  round: kind (probe/assessment), verdict, rationale, and any code-vs-test route. Persisted alongside
    *  DELIVERY.md and surfaced in the delivery report; empty when the closing gate could not run. */
@@ -812,6 +828,9 @@ export class OrchestratorService {
    *  at seed time so `readyFrontier` never auto-re-dispatches them; only a human (clearing the marker)
    *  re-opens the loop. Loaded once per dispatchSpec. */
   private escalatedSlices: Set<string> = new Set();
+  /** Live workers' abort controllers, keyed by unit id — a HALT aborts them all immediately
+   *  (fast abort, 2026-07-08) instead of draining a doomed run at full token burn. */
+  private liveAborts = new Map<string, AbortController>();
 
   /**
    * Fetch the parent spec doc + each slice body from the thinking space, to embed in worker prompts.
@@ -1126,6 +1145,44 @@ export class OrchestratorService {
           `▸ SP-${specNumber}: tester snapshot at ${testerPath} (base commit; implementation-in-progress absent by construction).`,
         );
     }
+
+    // ── The black-box verify oracle (tests-first repair, 2026-07-08) ─────────
+    // A slice's coder verifies exclusively through an orchestrator-mediated `verify` tool:
+    // its current worktree delta + the tester-owned probes are compiled together in an
+    // ISOLATED runner (a second detached snapshot, provisioned with the canonical repo's
+    // node_modules) and the structured results come back — never the probe source. Built
+    // lazily per slice, and FAIL-SOFT: when anything it needs is missing (no tester, no
+    // recipe, no runnable verifications, no probe files) the coder simply runs without the
+    // tool, exactly as before.
+    const specVerifs = parseAcVerifications(
+      specDoc?.frontmatter?.ac_verifications,
+    );
+    const oracleCache = new Map<string, Promise<VerifyOracle | undefined>>();
+    const oracleFor = (
+      sliceHandle: string,
+    ): Promise<VerifyOracle | undefined> => {
+      let p = oracleCache.get(sliceHandle);
+      if (!p) {
+        p = this.buildSliceOracle({
+          sliceHandle,
+          specNumber,
+          worktreePath,
+          testerPath,
+          slices,
+          unitsBySlice,
+          verifs: specVerifs,
+          log: (l) => output.appendLine(l),
+        }).catch((err) => {
+          output.appendLine(
+            `▸ ${sliceHandle}: verify oracle unavailable (${(err as Error).message}) — coder runs without it.`,
+          );
+          return undefined;
+        });
+        oracleCache.set(sliceHandle, p);
+      }
+      return p;
+    };
+
     const limit = Math.max(1, Math.floor(cap));
     output.appendLine(
       `▸ SP-${specNumber}: scheduling ${dag.length} unit(s) over cap ${limit} in ${worktreePath}`,
@@ -1210,6 +1267,7 @@ export class OrchestratorService {
               : worktreePath,
             onPark,
             unionFootprint,
+            oracleFor,
           ),
         );
         result.dispatched++;
@@ -1347,16 +1405,27 @@ export class OrchestratorService {
         // reaches the threshold N. Once halted, `fill()` (below) stops dispatching new units; the loop
         // drains the in-flight ones, then finalizes + returns. In-flight units are never killed.
         if (!halt) {
+          // Fast abort (2026-07-08): on halt, ABORT every in-flight worker's SDK query
+          // immediately — a doomed run must not keep burning tokens while it "drains".
+          // The aborted workers surface as non-success and the loop still collects them.
+          const abortInFlight = () => {
+            for (const [id, ac] of this.liveAborts) {
+              ac.abort();
+              output.appendLine(`■ aborting in-flight ${id}`);
+            }
+          };
           if (d.containment) {
             halt = true;
             output.appendLine(
-              `■ SP-${specNumber}: footprint violation in ${d.id} → run halted (no new units dispatched; draining ${activeCount()} in-flight).`,
+              `■ SP-${specNumber}: footprint violation in ${d.id} → run halted (no new units dispatched; aborting ${activeCount()} in-flight).`,
             );
+            abortInFlight();
           } else if (++failCount >= threshold) {
             halt = true;
             output.appendLine(
-              `■ SP-${specNumber}: ${failCount} unit failure(s) reached the halt threshold (${threshold}) → run halted (no new units dispatched; draining ${activeCount()} in-flight).`,
+              `■ SP-${specNumber}: ${failCount} unit failure(s) reached the halt threshold (${threshold}) → run halted (no new units dispatched; aborting ${activeCount()} in-flight).`,
             );
+            abortInFlight();
           }
         }
       } else {
@@ -1623,6 +1692,13 @@ export class OrchestratorService {
         const diagnosis =
           `The assembled change does not build: the repo's acceptance prepare step failed.\n` +
           `$ ${recipe.prepare}\n${prep.output.slice(-4000)}`;
+        // Surface the cause in DELIVERY.md too (repair window, 2026-07-08): this single
+        // failure blocks EVERY AC, so the report must lead with it instead of rendering a
+        // blank "all ACs not run / no evidence".
+        result.buildFailure = {
+          command: recipe.prepare,
+          output: prep.output.slice(-4000),
+        };
         for (const s of slices)
           if (landed.has(s.handle)) await blockSlice(s.handle, diagnosis);
         output.appendLine(
@@ -1923,6 +1999,7 @@ export class OrchestratorService {
     worktreePath: string,
     onPark: OnPark,
     unionFootprint?: string[],
+    oracleFor?: (slice: string) => Promise<VerifyOracle | undefined>,
   ): Promise<UnitDone> {
     const claim = await this.deps.arbiter.acquire(unit.id, unit.footprint);
     if (!claim.ok) {
@@ -1948,6 +2025,7 @@ export class OrchestratorService {
         onPark,
         unionFootprint,
         baseline,
+        oracleFor,
       );
       return {
         id: unit.id,
@@ -1960,9 +2038,100 @@ export class OrchestratorService {
         finalOutput: wr.finalOutput,
       };
     } finally {
+      this.liveAborts.delete(unit.id);
       endSession(unit.id);
       await this.deps.arbiter.release(unit.id);
     }
+  }
+
+  /**
+   * Assemble the black-box verify oracle for ONE slice's coder (tests-first, 2026-07-08) —
+   * or `undefined` when any ingredient is missing (fail-soft; the coder then runs without
+   * the tool, exactly as before). The runner is a SECOND detached snapshot of the spec
+   * branch (`createTester` with an `oracle/` baseDir so it never collides with the tester),
+   * provisioned by symlinking the canonical repo's `node_modules`; each verify round
+   * re-snapshots it, overlays the coder's dirty delta + the tester-owned probe sources,
+   * builds (`recipe.prepare`) and runs the slice's runnable per-AC verifications.
+   */
+  private async buildSliceOracle(args: {
+    sliceHandle: string;
+    specNumber: string;
+    worktreePath: string;
+    testerPath?: string;
+    slices: SliceForDag[];
+    unitsBySlice: Map<string, SchedUnit[]>;
+    verifs: AcVerification[];
+    log: (line: string) => void;
+  }): Promise<VerifyOracle | undefined> {
+    const createTester = this.deps.worktrees.createTester?.bind(
+      this.deps.worktrees,
+    );
+    if (!createTester || !args.testerPath) return undefined;
+    const recipe =
+      (await defaultAcceptanceRecipeResolver(this.deps.canonicalRepo)) ??
+      (await defaultAcceptanceRecipeResolver(args.worktreePath));
+    const satisfies =
+      args.slices.find((s) => s.handle === args.sliceHandle)?.satisfies ?? [];
+    const sliceVerifs = args.verifs.filter(
+      (v) => satisfies.includes(v.ac) && v.env !== "assessment" && !!v.run,
+    );
+    const probeFiles = (args.unitsBySlice.get(args.sliceHandle) ?? [])
+      .filter((u) => (u.role ?? "code") === "test")
+      .flatMap((u) => u.footprint);
+    if (!recipe?.prepare || sliceVerifs.length === 0 || probeFiles.length === 0)
+      return undefined;
+    // The runner: a detached snapshot of the same spec branch, in its own baseDir so its
+    // path never collides with the real tester snapshot. `createTester` is idempotent and
+    // re-snapshots (reset --hard + clean -fd, node_modules survives) on reuse — which is
+    // exactly the per-round reset the oracle needs.
+    const oracleBase = path.join(
+      args.testerPath ? path.dirname(args.testerPath) : this.deps.canonicalRepo,
+      "oracle-runners",
+    );
+    const runnerDir = await createTester(
+      this.deps.canonicalRepo,
+      args.specNumber,
+      oracleBase,
+    );
+    // Provision the runner's toolchain: symlink the canonical repo's node_modules
+    // (idempotent + self-link-guarded). A repo with no node_modules degrades to the
+    // recipe's own behaviour (prepare will say what's missing, loudly).
+    try {
+      const { linkNodeModules } = await import("./WorktreeService");
+      await linkNodeModules(
+        path.join(this.deps.canonicalRepo, "node_modules"),
+        runnerDir,
+      );
+    } catch {
+      /* provisioning is best-effort; prepare reports the truth */
+    }
+    args.log(
+      `▸ ${args.sliceHandle}: verify oracle armed (runner ${runnerDir}; ${sliceVerifs.length} check(s), ${probeFiles.length} probe file(s)).`,
+    );
+    const exec = (cmd: string, cwd: string) =>
+      runBounded(cmd, cwd, { timeoutMs: 600_000, env: process.env });
+    return createVerifyOracle({
+      codeWorktree: args.worktreePath,
+      testerWorktree: args.testerPath,
+      runnerDir,
+      probeFiles,
+      prepare: recipe.prepare,
+      verifications: sliceVerifs,
+      exec,
+      porcelain: (cwd) => this.gitPorcelain(cwd),
+      resetRunner: async () => {
+        await createTester(this.deps.canonicalRepo, args.specNumber, oracleBase);
+      },
+      copyIn: async (fromRoot, rel) => {
+        const dst = runnerPath(runnerDir, rel);
+        await fs.promises.mkdir(path.dirname(dst), { recursive: true });
+        await fs.promises.copyFile(runnerPath(fromRoot, rel), dst);
+      },
+      removeIn: async (rel) => {
+        await fs.promises.rm(runnerPath(runnerDir, rel), { force: true });
+      },
+      log: args.log,
+    });
   }
 
   /**
@@ -1976,10 +2145,19 @@ export class OrchestratorService {
     onPark: OnPark,
     unionFootprint?: string[],
     baseline?: string[],
+    oracleFor?: (slice: string) => Promise<VerifyOracle | undefined>,
   ): Promise<WorkerResult> {
     return this.deps.runUnit
       ? this.deps.runUnit(unit, specNumber, cwd, onPark)
-      : this.runViaSdk(unit, specNumber, cwd, onPark, unionFootprint, baseline);
+      : this.runViaSdk(
+          unit,
+          specNumber,
+          cwd,
+          onPark,
+          unionFootprint,
+          baseline,
+          oracleFor,
+        );
   }
 
   /**
@@ -2009,8 +2187,14 @@ export class OrchestratorService {
     onPark: OnPark,
     unionFootprint?: string[],
     baseline?: string[],
+    oracleFor?: (slice: string) => Promise<VerifyOracle | undefined>,
   ): Promise<WorkerResult> {
     const isTest = (unit.role ?? "code") === "test";
+    // Tests-first (2026-07-08): a CODE unit gets the black-box verify oracle when the run
+    // could assemble one (fail-soft otherwise). With the oracle wired, the coder's ONLY
+    // feedback channel is the `verify` tool — selfVerify is not injected and the Bash
+    // toolchain fence arms.
+    const oracle = isTest ? undefined : await oracleFor?.(unit.slice);
     // SP-6/7 structural independence: for a `role: test` unit, `cwd` IS the tester snapshot (a
     // detached base-commit worktree) — one directory to read AND write, with the in-progress
     // implementation absent by construction. No read fence, no base-dir split. It has no Bash to
@@ -2021,10 +2205,12 @@ export class OrchestratorService {
     // SP-12: sibling to the test-convention wiring — a CODE worker gets the repo's sanctioned,
     // non-mutating self-verify command (top-level `selfVerify` in `.tandem/conventions.json`) so it
     // never has to improvise into shared build config to run tests. Undefined for a test unit (which
-    // renders none of the SP-12 blocks) or a repo that declares no command.
-    const selfVerifyCommand = isTest
-      ? undefined
-      : (await defaultAcceptanceRecipeResolver(cwd))?.selfVerify;
+    // renders none of the SP-12 blocks), a repo that declares no command, or an oracle-armed coder
+    // (the oracle replaces the self-run command entirely).
+    const selfVerifyCommand =
+      isTest || oracle
+        ? undefined
+        : (await defaultAcceptanceRecipeResolver(cwd))?.selfVerify;
     // SP-16: sibling to the test-convention wiring — a held-out `role: test` worker gets the repo's
     // canonical EXAMPLE TEST content (top-level `testExample` path in `.tandem/conventions.json`, read
     // by the resolver so no `fs` lives in the shell) so it authors its probe from prompt + contract
@@ -2039,6 +2225,7 @@ export class OrchestratorService {
       testConvention,
       exampleTest,
       selfVerifyCommand,
+      oracleAvailable: !!oracle,
     });
     // SP-11/3 fault-test rework routing: on a rework round the slice body carries the judge's
     // diagnosis under `## ⚑ Requires attention`. The `role: test` re-author OWNS the check, so it
@@ -2066,8 +2253,11 @@ export class OrchestratorService {
     // change: its diagnosis names the offending path and makes the unit fail → requires-attention.
     // Once set, the run is terminal — it takes precedence over any later `success`.
     let containmentReason: string | undefined;
-    // Aborts the live `query()` the instant containment fires (SDK `Options.abortController`).
+    // Aborts the live `query()` the instant containment fires (SDK `Options.abortController`) —
+    // and registered run-wide so a HALT aborts every in-flight worker immediately (fast abort,
+    // 2026-07-08) instead of letting a doomed run drain at full token burn.
     const abort = new AbortController();
+    this.liveAborts.set(unit.id, abort);
 
     // Streaming-input session (SL-3 resident standby): yield the task; when the agent ends a turn
     // with a `⟦NEEDS-INPUT⟧` question, the session stays alive (suspended at `await nextInput`) and
@@ -2090,11 +2280,50 @@ export class OrchestratorService {
       const query =
         this.deps.sdkQuery ??
         (await import("@anthropic-ai/claude-agent-sdk")).query;
+      // Tests-first (2026-07-08): expose the black-box `verify` tool to an oracle-armed coder
+      // as an in-process SDK MCP server. The handler runs in THIS process (the orchestrator):
+      // it overlays the coder's delta + the tester-owned probes into the isolated runner,
+      // builds, runs the slice's checks, and returns the structured verdict — never probe
+      // source. Best-effort: if the SDK tool surface is unavailable the coder just runs
+      // without the tool (its prompt then carries no VERIFY block either? no — the prompt is
+      // already built; the fail path is logged and the worker falls back to intent-only work).
+      let oracleServers: Record<string, McpServerConfig> | undefined;
+      if (oracle) {
+        try {
+          const m = await import("@anthropic-ai/claude-agent-sdk");
+          const verifyTool = m.tool(
+            "verify",
+            "Build the current state of your work together with this slice's acceptance checks in an isolated runner and return the results: compile errors, or per-check PASS/FAIL with the failing assertion. Call it after each meaningful edit and iterate until everything passes.",
+            {},
+            async () => ({
+              content: [
+                {
+                  type: "text" as const,
+                  text: formatVerifyReply(await oracle.verify()),
+                },
+              ],
+            }),
+          );
+          oracleServers = {
+            oracle: m.createSdkMcpServer({
+              name: "oracle",
+              version: "1.0.0",
+              tools: [verifyTool],
+            }),
+          };
+        } catch (err) {
+          this.deps.output.appendLine(
+            `  [${unit.id}] verify tool unavailable (${(err as Error).message}) — coder runs without it.`,
+          );
+        }
+      }
       for await (const msg of query({
         prompt: input,
         options: {
           cwd,
           permissionMode: "bypassPermissions",
+          // Tests-first: the in-process oracle server carrying the `verify` tool (code units only).
+          ...(oracleServers ? { mcpServers: oracleServers } : {}),
           // SP-6/7: scope the worker's tools by role. A held-out `role: test` worker loses
           // Bash/Grep/Glob/Read/web/Task — it cannot see the implementation, other workers' session
           // transcripts, or the fence source, and cannot route a write through Bash. The restriction
@@ -2138,8 +2367,15 @@ export class OrchestratorService {
                     const g = isTest
                       ? grepWithinCwd(inp.tool_name ?? "", inp.tool_input, cwd)
                       : ({ allow: true } as const);
-                    if (d.allow && r.allow && g.allow) return {};
-                    const deny = !d.allow ? d : !r.allow ? r : g;
+                    // Tests-first belt (2026-07-08): a CODE worker never touches tests — any
+                    // write to a `*.test.*` / `acceptance/` path is denied regardless of
+                    // footprint, and (when the oracle is armed) so is any Bash command that
+                    // reaches for test files, the tester snapshot, or the build/test toolchain.
+                    const t = !isTest
+                      ? codeTestFence(inp.tool_name ?? "", inp.tool_input, !!oracle)
+                      : ({ allow: true } as const);
+                    if (d.allow && r.allow && g.allow && t.allow) return {};
+                    const deny = !d.allow ? d : !r.allow ? r : !g.allow ? g : t;
                     if (deny.allow) return {};
                     this.deps.output.appendLine(
                       `  ⛔ [${unit.id}] denied: ${deny.reason.split("\n")[0]}`,
@@ -2494,6 +2730,8 @@ export class OrchestratorService {
       diagnosis: result.diagnosis,
       acTexts,
       discoveries: result.discoveries,
+      // Repair window (2026-07-08): the prepare failure that blocked every AC, first-class.
+      buildFailure: result.buildFailure,
       // SP-6/7 AC5: the durable, accumulated verification trace — surfaced in the delivery report
       // (which the panel renders) so a completed / stalled Spec carries the per-AC, per-round record.
       trace,
