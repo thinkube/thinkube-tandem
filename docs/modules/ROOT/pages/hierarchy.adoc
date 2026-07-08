@@ -1,0 +1,103 @@
+= TEPs, Specs, and Slices
+:page-type: concept
+:page-docref: hy2p
+
+Tandem has three kinds of artifact: a TEP records _why_ the work is worth doing, a Spec documents _what_ counts as done, and a slice is the single coherent change you build and verify. They nest — Specs under the TEP they carry out, slices under their Spec — and only slices flow across the board. This page is the mental model of the three and how they fit together.
+
+If you have not yet read xref:index.adoc[What Tandem is], start there: the two axioms — a pair on a repo, and the committed repo _is_ the board — are what let the hierarchy stop at two working tiers instead of the usual four.
+
+== The three artifacts at a glance
+
+[cols="1,2,2",options="header"]
+|===
+| Artifact | Answers | Is it a card?
+
+| TEP
+| Why do this work at all?
+| No — the reason above the work, linked to the Specs that carry it out.
+
+| Spec
+| What does "done" mean here?
+| No — a document with acceptance criteria, constraints, design, and a file plan.
+
+| Slice
+| What is the one change to build next?
+| Yes — one coherent, verified change that flows Ready → Doing → Done.
+|===
+
+== A TEP records the why
+
+A TEP — a Tandem Enhancement Proposal — captures the reason for a piece of work _before_ any of it happens. It holds the goal in a sentence or two, the user expectation (who this is for and what they should be able to do), the context (what is broken, missing, or in tension), the decision you settled on, and the alternatives you weighed and set aside.
+
+A TEP is not a board card. It does not move through Ready, Doing, and Done; it is not something you "finish." It is the standing record of intent that the work refers back to. Read it later and you learn why the code looks the way it does — the goal and the forces, not just the diff.
+
+A TEP is linked to the Specs that carry it out, both ways: the TEP lists its Specs under `implemented_by`, and each Spec names its TEP under `implements`. Follow the link down and you go from a reason to the units of work that deliver it; follow it up and you go from a change back to the reason it exists.
+
+== A Spec is the documented unit of work
+
+A Spec is the unit of work, written down. It carries four load-bearing sections:
+
+* *Acceptance criteria* — the user-observable outcomes that define done. "A new user receives a welcome email within 30 seconds of signing up" is a criterion; "add a session store" is work, not a criterion.
+* *Constraints* — the limits the work must respect: performance, compatibility, security, a deadline.
+* *Design* — the approach, the key data structures, and the seams where the change integrates.
+* *File plan* — the files the change will touch, and why each one.
+
+A Spec nests under the TEP it implements. One TEP can have several Specs, each a self-contained landing with its own acceptance criteria. The Spec is where a criterion belongs: if a would-be slice turns out to have its own distinct acceptance criteria and design, it is not a slice — it is a Spec.
+
+== A slice is the card that flows the board
+
+A slice is the only artifact that moves across the board. It is one coherent, *vertical* change — an end-to-end behaviour that, once green, you can demonstrate on its own — that you verify and commit as a single "done." Its parent is a Spec; several slices together deliver that Spec.
+
+Two boundaries keep a slice the right size:
+
+* *A slice is vertical, not a layer or a file.* "Add the store layer" is a fragment, not a slice — it delivers no behaviour on its own. Slicing by layer or file just recreates the pile of tiny tasks the slice exists to prevent.
+* *A slice is sized by coherence, not the clock.* You never split a slice to fit a time box. If you cannot state a single "done" for it, it is more than one slice — split it. If it has its own distinct acceptance criteria, it is a Spec, not a slice.
+
+A spike or an investigation — "confirm X works," with no verifiable output — is not a slice at all. It has no single green, so it lives in the parent Spec's design or constraints, not on the board.
+
+== Where the artifacts live
+
+Every artifact is committed markdown in the central Tandem sidecar — the thinking-space repo that sits beside your code. Because the repo _is_ the board, cloning it gives you the whole board, its history, and its memory; there is nothing else to back up.
+
+Inside the sidecar, each thinking space is scoped by organisation, and within that scope the artifacts form a sequential tree that mirrors the nesting:
+
+----
+<org>/teps/TEP-n/tep.md          the proposal
+<org>/teps/TEP-n/SP-m/spec.md    a Spec under it
+<org>/teps/TEP-n/SP-m/SL-k.md    a slice under the Spec
+----
+
+The path _is_ the hierarchy: a slice file living inside `TEP-n/SP-m/` is exactly what makes it a slice of that Spec under that TEP.
+
+== Ids, handles, and identity
+
+Ids are *sequential*, minted per thinking space and org — `TEP-1`, `TEP-2`, …; `SP-1`, `SP-2`, …; slices restart per Spec, so every Spec begins at `SL-1` and the numbers stay small. They are never opaque or hashed; you can say them out loud.
+
+The everyday reference for a slice is its *handle*, `SP-\{n}_SL-\{m}` — for example `SP-3_SL-42`. A hyphen sits inside each id and an underscore joins them. The same handle is the filename, the chip on the board, the thing you type ("work on `SP-3_SL-42`"), and how the work refers back to it.
+
+Behind the handle is a *uid* — a stable internal id that never changes. The uid is identity; the handle is the human-facing reference. This split matters when a slice is reparented: moving it under a different Spec renumbers its handle but leaves its uid untouched, so links and history survive the move. Identity follows the uid, not the number.
+
+Numbers are *never reused*. A slice that is finished or abandoned is archived — its status set to `archived`, its file kept — never deleted. Git history is the archive, and because nothing is removed, the "next number" allocator can never hand out an id that once meant something else.
+
+== Grouping, deliberately, stops at the Spec
+
+There is no planning tier above a Spec. When several Specs belong to a larger theme, you group them with a `theme:` tag (optionally a one-paragraph roadmap note), not a new level of the hierarchy. The tag is a label you filter by; it is not a card, it has no lifecycle, and nothing "rolls up" into it.
+
+This is a choice, not an omission. Grouping tiers above the task exist to divide and align work across many people. A pair sharing one context does not divide work that way, so Tandem stops the hierarchy at Spec → Slice and lets a tag do the grouping. See xref:index.adoc[What Tandem is] for why the pair's two axioms remove those tiers.
+
+== The three columns
+
+A slice's column is not scraped from prose — it is the `status:` field in the slice's frontmatter, read as data. Three values, three columns:
+
+* *Ready* — the parent Spec is complete (its gate passes) and the slice is available to pull.
+* *Doing* — the pair is actively working the slice. Keep one slice in flight per Spec.
+* *Done* — the verifier is green for the slice, and the acceptance criterion it satisfies is checked on the Spec.
+
+Editing that one frontmatter field moves the card. The board you see is just the slice files, read and grouped by their `status:`.
+
+== Where to go next
+
+* xref:lifecycle.adoc[The Spec lifecycle] — how a Spec runs from authoring to a merged PR.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice fans out into units the orchestrator runs.
+* xref:artifacts.adoc[Artifact shapes] — the exact on-disk shape of a TEP, a Spec, and a slice.
+* xref:gates.adoc[Gates and verification] — the checks each board transition enforces.

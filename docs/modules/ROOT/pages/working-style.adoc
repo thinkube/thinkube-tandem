@@ -1,0 +1,119 @@
+= How the pair works
+:page-type: concept
+:page-docref: ws6q
+
+Tandem is a pair: one human and one AI, working a single git repo together. That is not a slogan — it decides who does what, who writes what, and where the human's attention is worth spending. This page is the mental model of that working relationship: the modes that govern write authority, how work is divided, how authoring decisions are paced, what the AI may offer and what it must hand off, and how much ceremony a given piece of work carries.
+
+If you have not yet read xref:index.adoc[What Tandem is], start there: the two axioms — a pair on a repo, and the committed repo _is_ the board — are what make this working style possible in the first place.
+
+== Two hands, one context
+
+The pair shares one working context, but the two hands do different jobs.
+
+The human steers _substance_: what the work is for, which approach to take, whether an artifact reads true, when a change is good enough to accept. These are the decisions that need judgment, taste, and knowledge the AI does not hold.
+
+The AI carries _mechanics_: bookkeeping the board, running the checks, keeping records accurate, and drafting the work under the human's direction. It does this work and then _reports the result with evidence_ — not "done," but done and here is what proves it.
+
+The human intervenes _by exception_. In the normal case the AI advances the mechanics on its own; the human does not have to nudge it card by card. That inversion — the AI drives the bookkeeping, the human watches for the moments that matter — is what keeps a pair fast without losing control.
+
+== Modes govern write authority
+
+A single setting, the kanban mode, decides how much the AI may write to the board. It has three values:
+
+* *Navigator* — the AI reads and _proposes_, but does not write the board itself. It surfaces the next move; the human makes it. This is the read-and-suggest mode.
+* *Driver* — the AI writes the board directly: it moves cards, checks criteria, stamps verification.
+* *Both* — the AI writes, and the human writes alongside it. Shared authority over the same board.
+
+The mode is the master switch on AI write authority. In `navigator` the proposing-and-writing relationship inverts: the AI still reads, reasons, and proposes, but the human holds the pen. In `driver` and `both` the AI holds it. Everything below about "the AI's job" describes `driver` / `both`; under `navigator`, read those as things the AI _proposes_ and the human commits.
+
+== Board bookkeeping is the AI's job
+
+Inside a running piece of work, the bookkeeping _is_ the AI's job — not something it asks the human to do:
+
+* moving a slice across Ready, Doing, and Done;
+* checking the acceptance criterion a slice satisfies;
+* stamping provenance and verification evidence.
+
+The AI does these and reports each with the evidence behind it. It never asks the human to move a card or re-run a command just to advance the mechanics — that would spend the human's attention on work the AI is meant to carry.
+
+There are exactly three moments where the AI stops and waits for the human:
+
+* a *bless point* — a marked place where the human's approval is required to go on;
+* a *gate refusal* — a quality check said no, and the AI cannot honestly proceed;
+* a *failed precondition* — something the work depends on is not true yet.
+
+Away from those three, the AI keeps moving. The human's presence is a steering wheel, not a crank the mechanics need turned.
+
+== The decision-point protocol for authoring
+
+Authoring — writing a TEP, preparing a Spec, cutting slices — is where substance lives, so it runs on the human's clock, not the AI's. At an authoring decision point the AI works _understand before create_:
+
+. *Converse* — talk through what the work is and what it is for.
+. *Options* — lay out the real choices as prose, not a menu of bare labels.
+. *Research* — go read what is needed to make the choice well.
+. *Read-back* — reflect its understanding back for correction before acting.
+. *The human's explicit go* — advance only on a clear yes.
+
+Each option the AI puts to the human carries three things: the situation that forces the choice, what each option means, and each option's trade-offs. A bare "A or B?" hides the very substance the human is there to steer, so the AI never offers one. It spells out the context it holds and the human may not — assume no shared background and state it plainly.
+
+Two rules keep this from turning into ceremony:
+
+* *Approve is not execute.* Converging the content _crystallizes the artifact_ — it writes the TEP, the Spec, the slices. It does not start the build. Building is a separate, later step the human pulls when ready.
+* *The go carries continuation.* Once the human says go, the AI proceeds — no redundant second command to confirm what was already approved.
+
+This protocol governs _substance_ decisions only. Mechanical bookkeeping — column moves, criterion checks, stamps — stays on the AI's automatic path; it is not a decision point.
+
+== The capability boundary
+
+An offer — "want me to do X?" — is legitimate only when `X` maps to a tool the AI can actually call. If the next step is a human-only action, the AI states it as a _handoff_ ("you do X in the extension"), never as a self-offer, and never flips a status label as a stand-in for it — that only desyncs the board from what is real.
+
+Three actions in this lifecycle are the human's alone, and the AI presents each as a handoff:
+
+* *Approve* — the maintainer-only button that mints the approval. The AI can open the review surface, but it cannot press the button; it cannot manufacture the human's "go."
+* *Orchestrate* — running the workers over a Spec's ready slices is a board command, not a tool the AI holds. The AI writes slices to ready and hands off; it does not "start" the run.
+* *Reload the window* — activating a rebuilt extension is an editor action the human takes.
+
+When phrasing is in doubt, the AI checks its own tool inventory first. A handoff line describing the human's next move is a description, not a menu of things the AI is volunteering to do.
+
+== The ceremony lever
+
+Not every change deserves the same wrapping. At the start of a piece of work the AI _proposes_ two levels and the human owns the call:
+
+* *Risk* — consequence multiplied by how hard a mistake is to recover from.
+* *Nature* — is this a proof-of-concept, a production fix, or professional work?
+
+The two levels pull different wrapping. *Risk floors the safety wrapping* — how deep the verification goes, whether a change needs a PR or can land on `main`, how reversible it must be. *Nature ceilings the process wrapping* — how much documentation, how fine the slicing, how formal the acceptance and the criteria.
+
+A low-risk proof-of-concept is the *express lane*: minimal wrapping, write then verify then ship. But the express lane is minimal _wrapping_, never minimal _verification_. The lever adjusts ceremony; it never touches the checks. These stay invariant at every level:
+
+* acceptance criteria are AI-verifiable;
+* the work is green before it is done;
+* the path from proposal to Spec to slice to a passing build holds.
+
+The AI proposes the levels and surfaces the reasoning; it never blocks on its own assessment, and the human overrides either at will.
+
+== Saving the board is part of authoring
+
+The committed repo _is_ the board, and its host is the only backup — so unsaved board state is not "clean scoping," it is data-loss risk. Saving the board is therefore part of authoring, never a separate thing to ask about.
+
+A turn-end hook automates it. At the end of every turn it stages the whole board working tree, commits, and pushes the thinking-space repo. The AI does not issue the commit by hand, and it never asks the human whether to save — the save already happened. Staging the _whole_ tree is deliberate: the human's own uncommitted board edits are board state too, and saving selectively would silently drop them.
+
+Under `navigator` mode the autosave still runs — protecting board state from loss is not discretionary — even though discretionary board writes remain the human's to make.
+
+== The retro habit
+
+Alongside the work, the pair keeps a light journal. The `/retro` habit appends a short, timestamped note to today's retro file under one of four lenses:
+
+* *kept* — a practice that worked and is worth keeping;
+* *changed* — a decision to do something differently from here on;
+* *learned* — a fact or insight the work surfaced;
+* *blocked* — a recurring obstacle worth naming for next time.
+
+It is deliberately low-ceremony: one note per call, the human's words kept rather than paraphrased, no formal end-of-cycle meeting. Retros accumulate as a running record of _when you reflected_, so the reasoning behind how the pair works keeps growing next to the work itself.
+
+== Where to go next
+
+* xref:lifecycle.adoc[The Spec lifecycle] — how a Spec runs from authoring to a merged PR, and where the bless points sit.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice fans out into units the orchestrator runs.
+* xref:gates.adoc[Gates and verification] — the checks each board transition enforces, and why the lever never weakens them.
+* xref:toolkit.adoc[Skills, subagents, and tools] — the skills and agents the pair reaches for, including `/retro`.

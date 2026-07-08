@@ -21,7 +21,7 @@ Four features ship in one extension:
 2. **Configure your project.** Command palette → **Thinkube Kanban: Configure Project**. Sets `thinkube.kanban.repo` (`owner/repo`) and `thinkube.kanban.projectNumber` (Projects v2 number). The wizard verifies your Projects v2 Status field has the six methodology options.
 3. **Install the methodology bundle.** **Thinkube Kanban: Install Methodology Bundle**. Drops `.claude/skills/*`, `.claude/agents/*`, merges permissions into `.claude/settings.json`, adds the MCP server to `.mcp.json`, and inserts the methodology block into `CLAUDE.md`.
 4. **Open a Claude Code session.** The methodology skills are now available: `/epic-new`, `/story-new`, `/spec-prepare`, `/tasks-decompose`, `/tasks-materialize`, `/pair-start`, `/pair-next`, `/pair-start-quick`, `/board`, `/retro`.
-5. **Read `docs/METHODOLOGY.md`** to understand the end-to-end flow.
+5. **Read the Tandem methodology docs** — the `tandem` Antora component under `docs/modules/ROOT/` (`npm run docs:build` renders it locally) — to understand the end-to-end flow.
 
 ## Settings reference
 

@@ -1,0 +1,79 @@
+= What Tandem is
+:page-type: concept
+:page-docref: td4k
+
+Tandem is a development methodology for a team of two: one human and one AI, working on a git repo. It is designed from scratch for that pair, not trimmed down from a methodology built for a group of people. Most of a team methodology's machinery exists to coordinate people; when the team is one person and one model sharing one source of truth, that machinery never needs to exist.
+
+This page is the mental model — why Tandem has the shape it does. The pages linked at the end walk through how you actually use it.
+
+== Two axioms
+
+Everything in Tandem follows from two starting assumptions:
+
+. The team is one human and one AI pair — not a group of people. You navigate and make the calls; the AI drives — drafting specs, slicing them, writing code, and running the loop.
+. The committed git repo is the single source of truth _and_ the board — not an external tracker. Every spec, slice, and note is committed markdown. Clone the repo and you have the whole board, its history, and its memory; there is nothing else to back up.
+
+== What the two axioms remove
+
+Tandem is not "agile, but lighter." It starts from different axioms, so it has a different shape. Each row below shows a piece of team machinery, why a team of people needs it, and what a pair on a repo gets instead.
+
+[cols="1,1,1",options="header"]
+|===
+| A team methodology has | Because | A pair on a repo gets instead
+
+| Coarse planning tiers above the task
+| Teams divide and align work across many people
+| Nothing extra — a pair doesn't split work across people. Spec → Slice is enough.
+
+| An external issue tracker
+| People need a shared place to coordinate
+| The repo _is_ the board. Slices are committed files.
+
+| Review and verify handoff lanes
+| Work passes between a reviewer and a verifier
+| One shared context. The columns collapse to Ready → Doing → Done.
+
+| Sign-off comments and approvals
+| A second human needs an async record of the decision
+| No second human, so it is dropped. Done is green, not sign-off.
+
+| Clock-sized, estimated tasks
+| Teams forecast velocity and sprint capacity
+| No forecasting — slices are sized by coherence, not the clock.
+|===
+
+The two working tiers that remain are the Spec and the Slice. A Spec is the documented unit of work — its acceptance criteria, constraints, design, and file plan. A slice is one coherent end-to-end change you verify and commit as a single "done." You split work only when it stops being one coherent outcome, never to hit a time box. See xref:hierarchy.adoc[TEPs, Specs, and Slices] for the full hierarchy.
+
+== The team of two
+
+You set direction and make the calls. A mode flag — navigator, driver, or both — controls how much authority the AI has to move the board and edit files, the way a pilot and a stoker share a tandem bike.
+
+The AI is your pair. To keep it honest and its context lean, it works through three focused subagents:
+
+* explorer — read-only codebase research; it locates and reports what exists, and never writes.
+* reviewer — adversarial review of a diff against the Spec's acceptance criteria.
+* verifier — runs the repo's tests, lint, and typecheck and returns pass or fail. It gates every move to Done.
+
+For how these fit together day to day, see xref:working-style.adoc[How the pair works] and xref:toolkit.adoc[Skills, subagents, and tools].
+
+== The one rule above all
+
+One rule sits above every other convention: *no green = not done.* Tests, lint, and typecheck pass before a slice moves to Done — checked by the verifier, with no override. This is also what defines a slice in the first place: one coherent change that reaches a single green. See xref:gates.adoc[Gates and verification].
+
+== Who it's for, and who it isn't
+
+Tandem is for a developer who works closely with an AI and lives in an editor and git — one person, or a very small co-located group, treating the AI as the other half of the pair.
+
+It is not for a team coordinating work across many people and sprints. There, the ceremony Tandem removes — the trackers, the handoff lanes, the sign-offs, the estimates — is doing real coordination work for you; use the team tools built for it. Tandem optimizes for the team of two.
+
+== Where to go next
+
+* xref:getting-started.adoc[Getting started with Tandem] — a first pass through the whole arc, from spec to merge.
+* xref:hierarchy.adoc[TEPs, Specs, and Slices] — the two working tiers and the proposal that frames them.
+* xref:lifecycle.adoc[The Spec lifecycle] — how a Spec runs from authoring to a merged PR.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice fans out into units the orchestrator runs.
+* xref:working-style.adoc[How the pair works] — decision points, the lever, and who does what.
+* xref:troubleshooting.adoc[When something goes wrong] — what to do when a gate refuses or a slice stalls.
+* xref:gates.adoc[Gates and verification] — the checks each board transition enforces.
+* xref:artifacts.adoc[Artifact shapes] — the on-disk shape of a TEP, a Spec, and a slice.
+* xref:toolkit.adoc[Skills, subagents, and tools] — the skills and subagents the pair drives.

@@ -1,0 +1,86 @@
+= When something goes wrong
+:page-type: how-to
+:page-docref: tb8r
+
+Most of a Spec's arc runs without you. When a gate refuses, a run stalls, or a tool goes missing, the fix is usually small and specific — the board and the closing gate tell you what blocked, and each block has one right response. This page is a set of recipes: for each symptom, what causes it and what you do. Work the matching recipe rather than forcing the board past the block.
+
+The recipes assume the arc in xref:lifecycle.adoc[The Spec lifecycle] and the gates in xref:gates.adoc[Gates and verification]; jump to either when a recipe points you there.
+
+== A slice won't reach Ready
+
+*Symptom.* You cannot advance the Spec's slices to Ready — the → Ready gate refuses and names an acceptance criterion by its ordinal.
+
+*Cause.* A slice reaches Ready only when every acceptance criterion on its parent Spec is certified — judged either _verifiable_ (a command can prove it) or an _assessment_ (an independent reader can judge it) — and carries a matching verification entry. A criterion that is undeclared, still marked _needs-reframe_, or missing its entry blocks the whole batch, and the gate names the offending ordinal.
+
+*What you do.* Re-run the Spec's verifiability audit with `/spec-prepare`. The audit re-interrogates each criterion — which actor checks it, in which environment, and whether that is available before the gate it guards — and re-emits the verification map with one certified entry per criterion. Reframe or replace the named criterion until it certifies; a criterion no verifier can check is not an acceptance criterion. Do not hand-edit the verification map in the Spec's frontmatter — it is authored only through the skill, one entry per criterion, every ordinal present. See xref:toolkit.adoc[Skills, subagents, and tools] for the skill.
+
+== A Spec is Ready but nothing runs
+
+*Symptom.* The slices sit at Ready, but Orchestrate does not start the work.
+
+*Cause.* No approval is on file. Approval is the maintainer-only button in the review panel that mints the content-bound token the board requires before any slice runs. Writing the slices crystallizes the artifacts; it does not start the build.
+
+*What you do.* Open the review panel and approve the Spec. Claude can open the review surface for you, but it cannot press Approve — approving is one of the two points in the arc where the human acts on the substance, and the token is bound to the content you approve. Once the token is on file, run Orchestrate.
+
+== A slice won't reach Done
+
+*Symptom.* The closing gate keeps a slice out of Done after its work has landed.
+
+*Cause.* One of two things is unmet: an acceptance criterion the slice satisfies is not checked on the Spec, or the slice's verifier is red. The gate requires both — a green verifier and the satisfied criterion checked — before a slice is Done.
+
+*What you do.* Read the verifier output, fix the implementation, and re-verify until it is green. Green must come from the code: *never edit the acceptance tests to make them pass.* The tests grade the slice, and a run in a snapshot workspace keeps them independent of the in-progress code — editing them to go green defeats the only check that says the slice works. If a criterion is genuinely satisfied but unchecked, check it on the Spec; if it maps to no slice, the gap is in the slicing, not the test.
+
+== A docs obligation is unmet
+
+*Symptom.* The → Done docs gate warns about, or refuses, a slice whose documentation is not settled.
+
+*Cause.* Every slice carries a documentation obligation. A user-facing change — a feature, a command, an API, a config surface, an install or upgrade step, or observable template behavior — defaults to `docs: required` and must update its doc module before Done. A slice marked `docs: n/a` must carry a one-line reason; the board rejects an `n/a` with no reason, so skipping docs is always deliberate and visible.
+
+*What you do.* If the change is user-facing, update its documentation module in the same commit as the code — docs live with the code and aggregate into the site — then attest the docs are done as you move the slice. If the change is genuinely internal (a refactor, test-only, or infrastructure), mark it `docs: n/a` with a one-line reason. How hard the gate pushes depends on its mode: *advisory* (the default) lets the move through with a warning; *blocking* refuses an unsatisfied obligation until you resolve it. If unsure whether a change is observable, treat it as `required`.
+
+== An orchestration stalls with nothing committed
+
+*Symptom.* A run ends with the Spec left _requires-attention_ and no commit on `spec/SP-n`.
+
+*Cause.* At the closing gate an acceptance criterion came back red or could not be run. The gate does not commit a Spec it cannot fully verify, so it leaves the Spec _requires-attention_, commits nothing, and writes the delivery report anyway — the failure stays auditable. There is no skip.
+
+*What you do.* Open the Spec's `DELIVERY.md` and read *What happened* first — on a failure it holds the closing gate's diagnosis in full, in plain language, the operator's account of why the run stalled. Then take one of the two exits a stalled run offers. *Attend* opens a primed session on the requires-attention slice to bring its behaviour back in line with the intent. *Re-run* re-runs the orchestrator — but only once the slice is actually resolved; re-running before you have fixed the cause reproduces the same red. The evidence appendix in the report holds the raw per-criterion output if you need to see exactly which check failed.
+
+== Done slices are flagged stale after a Spec edit
+
+*Symptom.* Slices you already finished show a stale badge and ask to be re-verified.
+
+*Cause.* A substantive edit to the parent Spec changed what "correct" means. Changes to the acceptance criteria text, the design, or the constraints mark that Spec's Done slices stale, because a finished slice was verified against the old requirement.
+
+*What you do.* Re-run the Spec. The re-run re-verifies the stale slices against the current Spec before it can reach Done again. You do not need to re-slice for a wording change — only to re-verify. Note what does _not_ trip staleness: metadata edits (column moves, theme, priority, due date) and ticking an acceptance checkbox never mark a slice stale. Staleness is measured from a hash of the Spec's requirement sections with the checkbox state stripped, so checking a box can never flag your own done work.
+
+== The board tools are missing from a session
+
+*Symptom.* A skill stops and says the board tools — the ones that write Specs, create slices, or move cards — are not available, and refuses to continue rather than writing files by hand.
+
+*Cause.* The session was not started inside the repo, so its `.mcp.json` did not load the kanban server that provides those tools. The skill stops on purpose: falling back to a raw file write would put board artifacts in the code repo instead of the central thinking-space sidecar, wrongly numbered and orphaned.
+
+*What you do.* Start a fresh session rooted in the repo so `.mcp.json` loads the kanban server, then re-run the skill. Do not work around the missing tools with a plain file write — the stop is protecting the board's single source of truth, not blocking you.
+
+== A worktree is orphaned after a crash
+
+*Symptom.* A Spec's worktree session died mid-run — a crash or a window reload — and its slices still carry an assignee and sit open.
+
+*Cause.* The session ended without releasing the files it had claimed. On the next activation the ownership arbiter reconciles: it reclaims files held by a worktree that is no longer live, and it recognises the signature of an orphaned worktree — slices stamped with an assignee, still open, with no live holder.
+
+*What you do.* Let the board resume it. When it detects the orphaned worktree, it offers to resume that Spec's worktree rather than start fresh; take the resume, and the ownership map, the assignee stamps, and the worktree on disk all reconstruct so the run continues where it stopped. Done and archived slices are finished work and are never orphaned, so a stale badge there is a different case — see the staleness recipe above.
+
+== A parallel group is rejected
+
+*Symptom.* Creating slices refuses a parallel group and names the files two members share.
+
+*Cause.* Slices in one parallel group run at the same time, so they must own disjoint file sets — no two may claim the same file. The board refuses a group whose members overlap, because two workers editing one file is exactly the collision the group is meant to prevent. See xref:parallel-execution.adoc[Work units and parallel execution] for how the file sets become claims.
+
+*What you do.* Re-cut the overlapping slices so their declared file sets are disjoint, then create the group again. If the overlap exists because one slice truly needs another's output, that is not a reason to share a file: name the produced artifact as a dependency and the orchestrator resolves it across the whole Spec — a later slice is never a scheduling edge by itself. Surface the refusal text verbatim, fix the file sets it named, and retry.
+
+== Where to go next
+
+* xref:lifecycle.adoc[The Spec lifecycle] — the arc these gates sit on, and the delivery report's exits.
+* xref:gates.adoc[Gates and verification] — every gate and exactly what it refuses.
+* xref:parallel-execution.adoc[Work units and parallel execution] — file sets, claims, and the ownership arbiter.
+* xref:working-style.adoc[How the pair works] — who acts, and where the human steers.

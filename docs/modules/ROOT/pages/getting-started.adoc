@@ -1,0 +1,98 @@
+= Getting started with Tandem
+:page-type: tutorial
+:page-docref: gs7m
+
+This walkthrough takes you from a project that has the Thinkube AI extension installed to your first accepted Spec, merged to `main`. You author the reason for the work, turn it into a verifiable Spec, approve it, cut it into slices, let the orchestrator build and verify it, and accept the result. Follow the steps in order; each one hands off to the next.
+
+The whole journey looks like this:
+
+[mermaid]
+----
+flowchart TD
+    S["Open your project session"] --> T["/tep: author the why, accept it"]
+    T --> P["/spec-prepare: acceptance criteria first"]
+    P -->|"you: Approve spec"| A["Approval in the review panel"]
+    A --> L["/slice: vertical slices + contracts, status ready"]
+    L -->|"you: Orchestrate"| O["Workers build the work units"]
+    O --> G{"Closing gate: every AC verified?"}
+    G -->|"all green, delivered"| M["Accept & merge to main"]
+    G -->|"any red, stalled"| R["Attend, then re-run"]
+----
+
+The pair (you and Claude) authors the TEP, the Spec, and the slices together. You alone press Approve, run Orchestrate, and Accept. The orchestrator runs the workers and the closing gate.
+
+== What you need
+
+* Your project open in code-server, with the Thinkube AI extension installed.
+* A Claude session rooted in the project folder, so the Tandem skills and the thinking-space board are reachable from the session.
+
+== 1. Open your project session
+
+In the Explorer, right-click your project folder and choose *Open Here*. This starts a Claude session rooted in that folder, which loads the project's tools — including the thinking-space board the methodology skills read and write.
+
+Everything below happens in this session.
+
+== 2. Author the why with /tep
+
+Run `/tep`. Claude opens with an interview: it asks what you want to enhance and draws out the goal, who it is for, and the forces in play. As you talk, it drafts the proposal into the board (for example `teps/TEP-1/tep.md`) and keeps it current.
+
+Before it settles anything, Claude reads its understanding back to you for correction. It writes nothing final until your explicit go. When you accept the proposal, it sets the status to `accepted`.
+
+A TEP (Tandem Enhancement Proposal) is the reason above the work — the goal and the forces, recorded before any Spec. The Specs that carry out the work nest beneath it. You do not commit anything by hand; the board saves itself at the end of the turn.
+
+== 3. Prepare the Spec with /spec-prepare
+
+Run `/spec-prepare`. It asks you for the Spec's acceptance criteria first — user-observable outcomes, not implementation steps. A good criterion reads like "a new user receives an email within 30 seconds of submitting the form"; "add a session store" is work, not a criterion.
+
+With the criteria agreed, Claude drafts the constraints, the design, and a file plan, grounding them against your codebase. Then it runs a verifiability audit: each criterion is interrogated for whether it can be checked, by which actor, and in which environment, before the gate it guards. When every criterion is judged verifiable or an assessment, Claude writes a per-AC verification map — one entry per criterion.
+
+Emitting that full map is what arms the Spec's → Ready gate. After this step the Spec is ready for your review.
+
+== 4. Approve the Spec
+
+Preparing the Spec crystallizes the plan; it does not start the build. To advance, open the review panel and press *Approve spec*.
+
+This is yours to press — a maintainer-only button. Claude can open the review surface for you, but it cannot approve on your behalf; approving mints the token that slice creation verifies, so no slice can be cut until you approve.
+
+== 5. Cut slices with /slice
+
+Run `/slice`. Claude reads the approved Spec and cuts it into coherent, vertical slices — each an end-to-end change you can verify and commit as a single "done." Slices are sized by coherence, not by layer or file.
+
+A slice that spans more than one file carries two things:
+
+* a *contract* — the shared interface it introduces, written as compilable signatures so every worker builds to the same seam;
+* *work units* — the schedulable pieces the orchestrator runs across workers, split by which files they touch so disjoint files run in parallel.
+
+Each slice is written to the board at status `ready`, and every acceptance criterion maps to at least one slice.
+
+== 6. Orchestrate the slices
+
+From the board, run the *Orchestrate* command. This is a human action: Claude hands off here — it writes the slices to `ready` and stops, because it cannot orchestrate itself.
+
+Orchestrate schedules the slices' work units over their dependency graph and runs each one as a worker, in parallel wherever the graph allows.
+
+== 7. Let the closing gate verify every criterion
+
+When every work unit has landed, the orchestrator runs the *closing gate*. It runs each acceptance criterion's declared verification and attributes each result back to the criterion it proves. Either way, it writes a delivery report to `DELIVERY.md` and opens it in the Markdown preview.
+
+* *All green* — the gate checks the satisfied criteria on the Spec, advances the slices to Done, and commits the change once to the Spec branch (`spec/SP-1`). The Spec is *delivered*.
+* *Any red or un-runnable* — the Spec is left *requiring attention* and nothing is committed. The report records what stalled and why, so you can *Attend* the failing slice and then *Re-run*.
+
+On the happy path, every criterion is green and the Spec is delivered.
+
+== 8. Accept and merge
+
+A delivered Spec — committed, gate green — offers two exits:
+
+* *Accept & merge* performs the gated merge of `spec/SP-1` into `main`. It is refused unless every criterion is checked, so there is no accepting an unverified Spec.
+* *Request changes* opens a primed session to steer the delivered change back toward the intent.
+
+Choose *Accept & merge*. Your first Spec lands on `main` — a verified change, built and checked end to end.
+
+== Where to go next
+
+* xref:lifecycle.adoc[The Spec lifecycle] — the full arc from TEP to merge, with both gate diagrams.
+* xref:hierarchy.adoc[TEPs, Specs, and Slices] — how the three tiers nest.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice's units run across workers.
+* xref:gates.adoc[Gates and verification] — every gate and what it checks.
+* xref:troubleshooting.adoc[When something goes wrong] — what to do when the gate goes red.

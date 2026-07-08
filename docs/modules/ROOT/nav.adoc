@@ -1,0 +1,11 @@
+.Tandem Methodology
+* xref:index.adoc[What Tandem is]
+* xref:getting-started.adoc[Getting started with Tandem]
+* xref:hierarchy.adoc[TEPs, Specs, and Slices]
+* xref:lifecycle.adoc[The Spec lifecycle]
+* xref:parallel-execution.adoc[Work units and parallel execution]
+* xref:working-style.adoc[How the pair works]
+* xref:troubleshooting.adoc[When something goes wrong]
+* xref:gates.adoc[Gates and verification]
+* xref:artifacts.adoc[Artifact shapes]
+* xref:toolkit.adoc[Skills, subagents, and tools]

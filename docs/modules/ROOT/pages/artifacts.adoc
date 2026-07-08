@@ -1,0 +1,286 @@
+= Artifact shapes
+:page-type: reference
+:page-docref: af1z
+
+Every Tandem artifact is committed markdown with a fixed shape: a frontmatter block of machine-read fields and a body of named sections. The gates, the staleness hash, and the orchestrator read those fields and section headers by name, so the shapes are load-bearing — a renamed header or a dropped field breaks a check. This page is the exact on-disk shape of each artifact: the tree they live in, then a TEP, a Spec, a slice, a retro, the delivery report, and the per-repo conventions file.
+
+For the mental model behind these shapes — what a TEP, Spec, and slice _are_ — see xref:hierarchy.adoc[TEPs, Specs, and Slices]. This page assumes it.
+
+== The org-scoped tree
+
+All artifacts are committed markdown in the central Tandem sidecar repo — the thinking-space repo beside your code. Within the sidecar each thinking space is namespaced, and within a namespace it is scoped by organisation. Under that org scope the artifacts form a sequential tree that mirrors the nesting:
+
+----
+<org>/
+  teps/
+    TEP-1/
+      tep.md              the proposal
+      SP-1/
+        spec.md           a Spec that implements TEP-1
+        SL-1.md           a slice of SP-1
+        SL-2.md
+      SP-2/
+        spec.md
+        SL-1.md
+    TEP-2/
+      tep.md
+  retros/
+    2026-07-07.md         a day's retro journal
+----
+
+The path _is_ the hierarchy. A `spec.md` inside `TEP-1/SP-1/` is a Spec of that TEP; an `SL-k.md` beside it is a slice of that Spec. Ids are sequential and minted per thinking space and org — `TEP-1`, `TEP-2`, …; `SP-1`, `SP-2`, … per TEP; `SL-1`, `SL-2`, … per Spec. They are never opaque or hashed. Retros live outside the `teps/` tree, one file per day under `retros/`.
+
+== TEP
+
+A TEP — a Tandem Enhancement Proposal — records _why_ the work is worth doing. It lives at `<org>/teps/TEP-n/tep.md`. It is not a board card; it has no `Ready → Doing → Done` lifecycle.
+
+=== Frontmatter
+
+----
+---
+kind: tep
+id: TEP-1
+status: proposed
+implemented_by: [SP-1, SP-2]
+---
+----
+
+* `kind` — always `tep`.
+* `id` — the sequential TEP id.
+* `status` — advances `proposed` → `accepted` → `implemented`. A TEP opens `proposed`; it becomes `accepted` when the human accepts the proposal, and `implemented` once its Specs land.
+* `implemented_by` — the list of Specs that carry the TEP out, kept in sync with each Spec's `implements` field. Empty until the first Spec is cut.
+
+=== Body sections
+
+The section headers are canonical — the template scaffolds them and they are not renamed:
+
+[cols="1,3",options="header"]
+|===
+| Section | Holds
+
+| `## Goal` | The outcome in one or two sentences.
+| `## User Expectation` | One or more user stories — the same lens as a Spec's acceptance criteria; the TEP's user story seeds the ACs of the Specs that implement it.
+| `## Context` | The forces: what is broken, missing, or in tension.
+| `## Decision` | The crisp choice that was settled on.
+| `## Detailed Description` | The decision worked out in full.
+| `## Consequences` | The results, positive and negative.
+| `## Alternatives Considered` | The options weighed and set aside, and why.
+| `## Implemented By` | Landing traceability — each implementing Spec named by the capability it delivers, paired with its `SP-n` and PR once known.
+|===
+
+`## Implemented By` is prose for the reader; the `implemented_by` frontmatter list is the machine-read link. Keep the two consistent.
+
+== Spec
+
+A Spec documents _what_ counts as done. It lives at `<org>/teps/TEP-n/SP-m/spec.md`, nested under the TEP it implements. It is a document, not a board card.
+
+=== Frontmatter
+
+----
+---
+kind: spec
+implements: TEP-1
+repo: Platform/extensions/example-repo
+ac_verifications:
+  1: { run: "node --test out-test/acceptance/SP-1_1_AC-1.test.js", env: local }
+  2: { env: assessment }
+  3: { run: "ansible-playbook 18_test.yaml", env: cluster }
+---
+----
+
+* `kind` — always `spec`.
+* `implements` — the parent TEP. It nests the file (`\{t}` in the path) and pairs with the TEP's `implemented_by`.
+* `repo` — the working repo where the Spec's code lands, in the workspace-folder-name form (for example `Platform/extensions/example-repo`). This is separate from where the file lives (the thinking space under the TEP).
+* `ac_verifications` — the per-criterion verification map: one entry per acceptance criterion, keyed by its *1-based ordinal*, every ordinal `1..N` present.
+
+==== The verification map's signature
+
+Each entry is one of two shapes:
+
+* *Runnable probe* — `{ run, env }`. `run` is a shell command or playbook; `env` is `local` (the repo or a shell) or `cluster` (an infra lifecycle). The command is auto-authored from the repo's acceptance-probe recipe (see <<conventions>>), not hand-written.
+* *Assessment* — `{ env: assessment }`, no `run`. For a prose, UX, or skill criterion that no probe fits; an independent assessor reads the artifact and grades it at the closing gate.
+
+The map is emitted only through the authoring tool, which normalises each entry to this frontmatter. A Spec reaches Ready only when every ordinal is present and certified; a missing, un-audited, or reframe-pending ordinal blocks the gate, named. See xref:gates.adoc[Gates and verification] for how the closing gate runs the map.
+
+=== Body sections
+
+Four load-bearing sections, in this order. The gates and the staleness hash look for these exact headers:
+
+----
+# <spec title>
+
+<one-paragraph summary>
+
+## Acceptance Criteria
+
+- [ ] <criterion 1 — a user-observable outcome>
+- [ ] <criterion 2>
+
+## Constraints
+
+- <performance / compatibility / security / deadline limit>
+
+## Design
+
+<approach + key data structures + integration seams — 1 to 3 paragraphs>
+
+## File Structure Plan
+
+- `path/to/file.ts` — <why this file is touched>
+- `other/file.ts` — <why>
+----
+
+* *Acceptance Criteria* — user-observable outcomes as a checkbox list. A checked box records completion; toggling it is not a requirement change. Each criterion has one `ac_verifications` entry.
+* *Constraints* — the limits the work must respect.
+* *Design* — the approach at the depth needed to start slicing, not a full implementation guide. Spikes and investigations land here, not as slices.
+* *File Structure Plan* — the files the Spec expects to create or modify, one line of why each.
+
+Edits to the criterion text, Design, or Constraints are *substantive* — they change the requirement hash and mark done slices stale. Status moves, theme, priority, and checkbox toggles are *metadata* and never mark a slice stale.
+
+== Slice
+
+A slice is the one artifact that flows the board. It lives at `<org>/teps/TEP-n/SP-m/SL-k.md`, beside its Spec.
+
+=== Frontmatter
+
+----
+---
+uid: <stable-internal-id>
+parent: SP-1
+status: ready
+satisfies: [1, 2]
+files:
+  - src/example/thing.ts
+  - src/example/thing.test.ts
+parallel: true
+parallel_group: example-fanout
+docs: required
+docs_reason:
+contract: |
+  export function doThing(input: ThingInput): ThingResult
+  // returns Ok on a valid input; throws ThingError on a missing field
+work_units:
+  - footprint: [src/example/thing.ts]
+    execution: fan-out
+    note: implement doThing to the contract
+  - footprint: [src/acceptance/SP-1_1_AC-1.test.ts]
+    execution: fan-out
+    role: test
+    note: doThing returns Ok on a valid input and errors on a missing field
+---
+----
+
+* `uid` — the stable internal id, set once and never changed; it is the board's link key. Reparenting a slice renumbers its handle but leaves the `uid` untouched.
+* `parent` — the parent Spec, `SP-m`.
+* `status` — the board column, read as data: `ready` | `doing` | `done` | `archived`. A finished or abandoned slice is archived, never deleted, so numbers are never reused.
+* `satisfies` — the 1-based AC ordinals this slice delivers, for example `[1, 2]`. This arms the Done gate: the slice cannot reach Done until those boxes are checked on the Spec.
+* `files` — the repo-relative files the slice will edit, drawn from the Spec's File Structure Plan.
+* `parallel` — `true` marks the slice as parallel-eligible (it shares no files or state with its siblings). Optional.
+* `parallel_group` — a name shared by slices meant to run concurrently. Their `files` sets must be disjoint; an overlapping group is refused, naming the conflict.
+* `docs` — the documentation obligation: `required` (the default for user-facing work) or `n/a`. An `n/a` requires a one-line `docs_reason`.
+* `contract` — the shared interface a multi-unit slice introduces, written as compilable signatures in the repo's language with one-line behaviour notes, not prose pseudo-code. Required for any multi-unit slice.
+* `work_units` — the schedulable atoms, each `{ footprint, execution, role?, note?, consumes? }`. `execution` is `serial`, `mechanize`, or `fan-out`. `role` defaults to `code`; a `role: test` unit writes the slice's acceptance tests. Units serialise only on a shared footprint.
+
+=== Title and body
+
+Below the frontmatter, a slice has a short `#` title heading and a brief detail body — kept separate, never merged into one line:
+
+----
+# Email and password login end-to-end
+
+A signed-up user logs in with email and password and lands on their dashboard;
+a wrong password returns a 401 with a clear message. Done: the login flow is
+green end-to-end and the session persists across a reload.
+----
+
+The title is the concrete capability the slice delivers (not a layer or a file, not a vague whole-feature outcome), kept under roughly 70 characters. The body is two to four lines: what the coherent change includes and what the observable "done" looks like.
+
+== Retro
+
+A retro is a light journal of what the pair learned, one file per day at `<org>/retros/YYYY-MM-DD.md`. Notes accumulate through the day rather than waiting for a formal meeting.
+
+----
+---
+kind: retro
+repo: <owner>/<name>
+status: active
+created: 2026-07-07
+---
+
+# Retro — 2026-07-07
+
+## 2026-07-07 14:32
+
+### learned
+
+A GIN index on a JSONB column needs an opclass. Spent 40 minutes on this.
+
+## 2026-07-07 16:08
+
+### kept
+
+Pairing on the auth-callback slice caught two off-by-one cases in the state check.
+----
+
+* Frontmatter: `kind: retro`, `repo`, `status`, and the `created` date.
+* Body: a `# Retro — <date>` heading, then a `## <timestamp>` section per note, each carrying one lens heading: `### kept`, `### changed`, `### learned`, or `### blocked` (an unclassified note goes under `## misc`).
+
+The file is a journal of _when you reflected_, so a note about an earlier day still lands in today's file.
+
+== Delivery report
+
+On every orchestration run — pass or fail — the closing gate writes a durable report, `DELIVERY.md`, beside the Spec it ran. It is the operator's document: plain-language summary first, raw runner output demoted to the end. Its sections appear in a fixed order:
+
+[cols="1,3",options="header"]
+|===
+| Section | Holds
+
+| `# Delivery — …` | The title, then a one-line summary: branch, sha, slices advanced, units run, committed or not.
+| `## What happened` | Plain language. On a failure, the closing-gate judge's diagnosis rendered verbatim and unclipped. On success, a plain summary of what was delivered.
+| `## Acceptance criteria` | One row per declared AC — the criterion in the Spec's own words and its verdict (`✓ pass`, `✗ fail`, or `· not run`).
+| `## Discoveries & recommendations` | Each out-of-scope finding a worker reported under a trailing `## Discoveries` heading, rendered with its unit id and text, collected verbatim. Empty ⇒ the literal `none reported`.
+| `## Files` | The union of the units' touched files.
+| `## Next` | The operator's exits, derived from the run's terminal state (delivered ⇒ Accept & merge / Request changes; stalled ⇒ Attend / Re-run).
+| `## Evidence appendix` | The demoted machine record: per-AC fenced evidence blocks, the verification trace table, per-unit outcomes, and any caught problems.
+|===
+
+The report is kept out of the Spec body so it never trips the staleness hash, and it opens rendered in the Markdown preview when a run finishes. See xref:gates.adoc[Gates and verification] for how the exits are derived.
+
+[#conventions]
+== Per-repo conventions
+
+Each working repo declares how its work is built and graded in `.tandem/conventions.json` at the repo root. The methodology reads it so the same workflow runs against a TypeScript extension, a Python package, or an Ansible role — only this file changes.
+
+----
+{
+  "selfVerify": "npx tsc -p tsconfig.test.json && node --test out-test/",
+  "testExample": "src/services/auditorRunner.test.ts",
+  "acceptanceProbe": {
+    "sourcePath": "src/acceptance/SP-{spec}_AC-{ac}.test.ts",
+    "prepare": "rm -rf out-test/acceptance && npx tsc -p tsconfig.test.json",
+    "run": "node --test out-test/acceptance/SP-{spec}_AC-{ac}.test.js"
+  }
+}
+----
+
+* `selfVerify` — the non-mutating build-and-test command a code-author worker runs to check its own edits before the gate.
+* `testExample` — a repo-relative path to a canonical example test. Its _content_ is injected into every test-author's prompt so it writes to the repo's fixture-and-assertion idiom.
+* `acceptanceProbe` — the held-out per-AC probe recipe:
+** `sourcePath` — where a test-author writes the probe.
+** `prepare` — an optional build step the closing gate runs once before the per-AC commands; omit it for a from-source runner.
+** `run` — what the gate executes per AC.
+
+=== Placeholder rules
+
+`sourcePath` and `run` carry two placeholders the methodology fills:
+
+* `\{spec}` — the *sanitized composite spec id*: the `<tep>/<sp>` pair with every run of non-`[A-Za-z0-9._-]` characters replaced by `_`. So the Spec `SP-1` under `TEP-1` fills as `1_1`, and a Spec addressed `6/3` fills as `6_3`. The TEP segment keeps probes from colliding across TEPs.
+* `\{ac}` — the 1-based AC ordinal.
+
+Filled with those, `sourcePath` for AC 1 of that Spec becomes `src/acceptance/SP-1_1_AC-1.test.ts`, and the matching `ac_verifications` entry's `run` targets its compiled output. A repo with no `acceptanceProbe` recipe falls back to its whole-suite command, self-graded — declaring the recipe is what turns per-AC independent grading on.
+
+== Where to go next
+
+* xref:hierarchy.adoc[TEPs, Specs, and Slices] — the model behind these shapes.
+* xref:gates.adoc[Gates and verification] — the checks that read these fields.
+* xref:parallel-execution.adoc[Work units and parallel execution] — how a slice's `work_units` are scheduled.

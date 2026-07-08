@@ -1,0 +1,263 @@
+= Gates and verification
+:page-type: reference
+:page-docref: gt5n
+
+A Spec passes through a fixed sequence of gates on its way from approval to
+merge. Each gate has one condition, one actor, and one outcome on failure. This
+page states every gate exactly. For the flow that connects them, see
+xref:lifecycle.adoc[The Spec lifecycle]; for the artifacts the gates read, see
+xref:artifacts.adoc[Artifact shapes].
+
+== Gates at a glance
+
+[cols="1,3,1,1",options="header"]
+|===
+| Gate | Passes when | Actor | On failure
+
+| Spec approval
+| A maintainer presses **Approve**, minting a content-bound token for the Spec's current content.
+| Human (maintainer)
+| No token — slice creation and → Ready are refused.
+
+| Slice → Ready
+| The parent Spec has a non-empty `## Acceptance Criteria` **and** every criterion carries a certified verification entry.
+| Server (automatic)
+| Refused, naming the offending criterion ordinal.
+
+| Slice → Done
+| The verifier is green **and** the criteria the slice satisfies are checked on the Spec.
+| Verifier (AI, automatic)
+| Slice stays in Doing; not verified = not done.
+
+| Docs gate
+| A `docs: required` slice has its docs updated (attested `docs_done: true`); an `n/a` slice carries a reason.
+| Server (automatic)
+| Advisory: warns and lets the move through. Blocking: refuses.
+
+| Closing gate
+| Every declared verification runs green at Spec quiescence.
+| Orchestrator (automatic)
+| Spec left `requires-attention`; nothing committed.
+
+| Acceptance
+| Every criterion is checked and the closing gate passed.
+| Human
+| Accept & merge is refused; the run offers Request changes or Attend / Re-run.
+|===
+
+== Spec approval
+
+Slice creation is gated on an explicit human approval of the Spec's content.
+
+* The pair opens the review surface; a **maintainer** presses **Approve**. The AI
+  cannot press it — it opens the surface but never synthesizes the human's go.
+* Approve mints a **content-bound approval token**: the token is bound to the exact
+  Spec content that was reviewed, so it no longer applies once that content changes.
+* Both **slice creation** and the **Spec → Ready** transition are refused unless a
+  valid approval token covers the current content. Editing the reviewed Spec
+  requires a fresh Approve.
+
+== Slice → Ready
+
+A slice becomes available to pull only when its parent Spec is complete:
+
+* The Spec's `## Acceptance Criteria` section is **non-empty**, and
+* **every** criterion `1..N` carries a certified verification entry — a runnable
+  probe or an assessment (see <<verification-map>>).
+
+The gate refuses a Spec with any undeclared, unaudited, or `needs-reframe`
+criterion, and names the offending ordinal. A non-empty checklist alone is not
+enough — the verification map must be complete.
+
+== Slice → Done
+
+A slice reaches Done when both hold:
+
+* the **verifier** is green for the slice's change, and
+* the criteria the slice satisfies are **checked** on the Spec.
+
+The reviewer and the verifier both run inside this **single** gate — there are no
+separate Review and Verify columns. Green is the definition of done; no green means
+not done.
+
+[[docs-gate]]
+== Docs gate
+
+Every slice carries a documentation obligation, stamped when the slice is created:
+
+[cols="1,3",options="header"]
+|===
+| Obligation | Meaning
+
+| `required`
+| The default for **user-facing** work — a feature, CLI, API, config surface, install or upgrade step, or observable template behaviour. Its docs must be updated before Done.
+| `n/a` + `docs_reason`
+| Work that changes nothing a reader observes (internal refactor, test-only, infra). A one-line reason is mandatory — the server rejects an `n/a` with no reason, so a skip is always deliberate and visible.
+|===
+
+A `required` slice satisfies the obligation by updating its documentation module
+(docs live with the code, in the same commit), attested at the move with
+`docs_done: true`. The gate has two modes, selected by the `docsGateMode` setting:
+
+[cols="1,3",options="header"]
+|===
+| Mode | Behaviour
+
+| `advisory` (default) | Lets an unsatisfied obligation through with a warning.
+| `blocking`           | Refuses the move until the obligation is met.
+|===
+
+== Closing gate
+
+At **Spec quiescence** — every work unit landed in the worktree — the orchestrator
+does not silently mark the Spec Done. It runs the **union** of the Spec's declared
+verifications as one plan, in dependency order, and gates Done and the commit on the
+result:
+
+[cols="1,3",options="header"]
+|===
+| Result | What the gate does
+
+| All green
+| Checks exactly the satisfied criterion ordinals on the Spec, advances the slices to Done, commits the worktree to `spec/SP-\{n}` **once**, and writes the delivery report.
+| Any red or un-runnable
+| Leaves the Spec `requires-attention`, commits **nothing**, and still writes the report (the failure is auditable).
+|===
+
+There is **no skip**. A Spec whose criteria cannot all be verified is never advanced
+to Done on an un-run verification.
+
+== Acceptance
+
+The post-run surface derives its actions from the run's terminal state, not a fixed
+pair on every outcome.
+
+=== Delivered
+
+The change committed and the closing gate passed. In order:
+
+[cols="1,3",options="header"]
+|===
+| Action | Effect
+
+| **Accept & merge**
+| Performs the gated merge of `spec/SP-\{n}` into `main`. **Refused unless every criterion is checked** — there is no accepting an unverified Spec.
+| **Request changes**
+| Opens a session primed with the report's context to steer the delivered change back to the intent.
+|===
+
+=== Stalled
+
+Anything short of delivered — not committed, or the gate did not pass. In order:
+
+[cols="1,3",options="header"]
+|===
+| Action | Effect
+
+| **Attend**
+| Opens a primed fix session on the `requires-attention` slice(s) to bring the behaviour back to the intent.
+| **Re-run**
+| Re-runs the orchestrator once the `requires-attention` slice(s) are resolved.
+|===
+
+Every action gives instant pending feedback and is idempotent: a double-click is
+refused, never double-dispatched. For the failure paths the actions lead into, see
+xref:troubleshooting.adoc[When something goes wrong].
+
+[[verification-map]]
+== The verification map
+
+A Spec declares a verification map — one entry per criterion, keyed by its 1-based
+ordinal, every ordinal `1..N` present. Each entry is one of two shapes:
+
+[cols="1,2,2",options="header"]
+|===
+| Entry | Shape | Graded by
+
+| Runnable probe
+| `{ run, env }` where `env` is `local` or `cluster`
+| The orchestrator runs `run` — a shell command or playbook — and attributes the result to the criterion.
+| Assessment
+| `{ env: assessment }` — no `run`
+| An independent assessor reads the artifact and grades the prose, UX, or skill criterion.
+|===
+
+`local` runs in the repo or a shell; `cluster` runs a real infra lifecycle (for
+example `install → test → rollback → re-install`). The closing gate runs the union
+of these entries and gates Done on all-green.
+
+=== The verifiability auditor
+
+Before → Ready, an auditor interrogates each criterion — actor, environment,
+availability before the gate it arms, and controllability — and returns one of three
+verdicts:
+
+[cols="1,3",options="header"]
+|===
+| Verdict | Meaning
+
+| `verifiable`
+| A runnable criterion. The auditor returns the `env`; the runnable `run` command is authored from the repo's held-out per-criterion probe recipe, not a whole-suite default.
+| `assessment`
+| A prose, UX, or skill criterion no probe fits. Emits `{ env: assessment }`, graded by the independent assessor at the closing gate.
+| `needs-reframe`
+| No AI actor and environment can check it before its gate. It is reworked or dropped, and **never** gets a verification entry.
+|===
+
+The map is emitted only when every criterion is `verifiable` or `assessment`.
+
+=== Rejected criterion patterns
+
+Two shapes are always rejected as `needs-reframe`:
+
+[cols="1,2,2",options="header"]
+|===
+| Pattern | Why it fails | Reframe
+
+| Human-executed
+| "The human confirms in a fresh session." The human's only gate is acceptance, never running a check.
+| Gate a controllable proxy plus an AI-run probe; if it genuinely cannot be AI-verified, move it to a Design or Constraints note.
+| Deploy-circular
+| "After deploying, the live endpoint returns 200." Verifiable only by performing the merge or deploy the criterion is meant to authorize — the loop deadlocks.
+| Split into a pre-merge criterion checked in a local run or preview, plus a non-gating post-deploy smoke check.
+|===
+
+== The delivery report
+
+On **every** completion — pass or fail — the closing gate writes a durable report
+(`DELIVERY.md`) with sections in this fixed order:
+
+[cols="1,2,3",options="header"]
+|===
+| # | Section | Contents
+
+| 1 | Title + summary | One-line orchestration summary: branch, sha, slices advanced, units run, committed or not.
+| 2 | What happened | Plain language. On failure, the closing-gate judge's diagnosis, verbatim and unclipped. On success, a plain summary of what was delivered.
+| 3 | Acceptance criteria | One row per declared criterion, each with its verdict (`✓ pass` / `✗ fail` / `· not run`).
+| 4 | Discoveries & recommendations | Each out-of-scope finding a worker reported, with its unit id and text, verbatim. Empty ⇒ the literal `none reported`.
+| 5 | Files | The union of the units' touched files.
+| 6 | Next | The operator's exits for the run's terminal state.
+| 7 | Evidence appendix | The demoted machine record: per-criterion evidence blocks, the verification trace table, per-unit outcomes, and any caught problems.
+|===
+
+== Staleness
+
+A `done` slice goes **stale** — and is re-opened before the next slice starts —
+when its parent Spec changes substantively. Change is classified by what it touches:
+
+[cols="1,2,1",options="header"]
+|===
+| Class | What it covers | Marks stale?
+
+| `requirements`
+| Edits to the Spec's `## Acceptance Criteria` text, `## Design`, or `## Constraints`.
+| Yes
+| `metadata`
+| Column and status moves, theme / priority / due edits, and criterion checkbox toggles (`- [ ]` ↔ `- [x]`).
+| No
+|===
+
+Staleness is a normalized hash of the Spec's requirement sections with checkbox
+state stripped. Each verified slice records the requirement hash it validated
+against; a slice is stale when the current hash differs. A slice with no recorded
+baseline is never flagged.
