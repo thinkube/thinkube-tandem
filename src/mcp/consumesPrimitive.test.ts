@@ -117,25 +117,22 @@ test("consumes round-trip — serialize + parseFrontmatter returns it on the typ
 });
 
 // ── AC#2: a dangling consumes is refused; a real sibling consumes is accepted ─
-test("create_slice refuses a dangling consumes and accepts a real-sibling consumes", async () => {
+test("create_slice refuses a dangling consumes and accepts a cross-slice consumes", async () => {
   const store = await seededStore();
 
-  // Dangling: the consumed file matches NO sibling unit's footprint → refused,
+  // Dangling: the consumed file matches NO producer anywhere in the Spec → refused,
   // naming the offending unit (its footprint) + the dangling consumed file.
+  // (One coder per slice, 2026-07-08: the consumer is the slice's single code unit; a
+  // test-role unit can never consume the coder's output — tests dispatch FIRST.)
   await assert.rejects(
     create(store, {
-      title: "bad: consumes a file no sibling produces",
+      title: "bad: consumes a file nothing produces",
       body: "detail",
       work_units: [
         {
-          footprint: ["src/contract.ts"],
-          execution: "fan-out",
-          note: "producer",
-        },
-        {
-          footprint: ["src/flow.test.ts"],
-          execution: "fan-out",
-          consumes: ["src/nope.ts"], // produced by no sibling
+          footprint: ["src/flow.ts"],
+          execution: "serial",
+          consumes: ["src/nope.ts"], // produced by nothing
           note: "consumer",
         },
       ],
@@ -145,7 +142,7 @@ test("create_slice refuses a dangling consumes and accepts a real-sibling consum
       assert.match(msg, /consumes/i, "refusal mentions consumes");
       assert.match(
         msg,
-        /flow\.test\.ts/,
+        /flow\.ts/,
         "refusal names the offending unit by its footprint",
       );
       assert.match(msg, /nope\.ts/, "refusal names the dangling consumed file");
@@ -153,20 +150,23 @@ test("create_slice refuses a dangling consumes and accepts a real-sibling consum
     },
   );
 
-  // Accepted: the SAME shape, but `consumes` now names a real sibling footprint.
+  // Accepted: the surviving legitimate shape — the producer lives in a SIBLING SLICE
+  // (parallelism is inter-slice now); the consumer is another slice's single coder.
+  await create(store, {
+    title: "producer slice",
+    body: "detail",
+    work_units: [
+      { footprint: ["src/contract.ts"], execution: "serial", note: "producer" },
+    ],
+  });
   const res = (await create(store, {
-    title: "good: consumes a real sibling footprint",
+    title: "good: consumes the sibling slice's artifact",
     body: "detail",
     work_units: [
       {
-        footprint: ["src/contract.ts"],
-        execution: "fan-out",
-        note: "producer",
-      },
-      {
-        footprint: ["src/flow.test.ts"],
-        execution: "fan-out",
-        consumes: ["src/contract.ts"], // produced by the sibling above
+        footprint: ["src/flow.ts"],
+        execution: "serial",
+        consumes: ["src/contract.ts"], // produced by the sibling slice above
         note: "consumer",
       },
     ],
@@ -174,7 +174,7 @@ test("create_slice refuses a dangling consumes and accepts a real-sibling consum
   assert.match(
     res.slice,
     /^TEP-1_SP-1_SL-\d+$/,
-    "a consumes naming a real sibling footprint is accepted",
+    "a consumes naming a real producer (in a sibling slice) is accepted",
   );
 });
 
@@ -273,6 +273,7 @@ test("buildWorkerPrompt surfaces the consumed file as a contract dependency to i
         {
           footprint: ["src/flow.test.ts"],
           execution: "fan-out",
+          role: "test",
           consumes: ["src/contract.ts"],
           note: "consumer",
         },

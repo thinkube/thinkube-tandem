@@ -600,7 +600,13 @@ export function resolveRoleFootprint(
   opts?: AcceptanceEvidenceOpts,
 ): string[] {
   if (role === "test")
-    return (footprint ?? []).filter((f) => isAcceptanceEvidencePath(f, opts));
+    // Tests-first (2026-07-08): the test role owns ALL tests — the held-out acceptance
+    // probes AND ordinary `*.test.*` files (e.g. updating an existing unit test to a
+    // changed contract). A code unit still owns neither (stripped below + codeTestFence).
+    return (footprint ?? []).filter(
+      (f) =>
+        isAcceptanceEvidencePath(f, opts) || /\.test\.[cm]?[jt]sx?$/.test(f),
+    );
   return resolveFootprint(footprint, opts);
 }
 

@@ -1172,11 +1172,6 @@ export class OrchestratorService {
           unitsBySlice,
           verifs: specVerifs,
           log: (l) => output.appendLine(l),
-        }).catch((err) => {
-          output.appendLine(
-            `▸ ${sliceHandle}: verify oracle unavailable (${(err as Error).message}) — coder runs without it.`,
-          );
-          return undefined;
         });
         oracleCache.set(sliceHandle, p);
       }
@@ -2194,7 +2189,19 @@ export class OrchestratorService {
     // could assemble one (fail-soft otherwise). With the oracle wired, the coder's ONLY
     // feedback channel is the `verify` tool — selfVerify is not injected and the Bash
     // toolchain fence arms.
-    const oracle = isTest ? undefined : await oracleFor?.(unit.slice);
+    let oracle: VerifyOracle | undefined;
+    if (!isTest && oracleFor) {
+      try {
+        oracle = await oracleFor(unit.slice);
+      } catch (err) {
+        // LOUD, never silent (2026-07-08): the coder's feedback channel could not be
+        // built — fail the unit with the real reason instead of quietly degrading to a
+        // self-run toolchain the fences would then fight.
+        const reason = `verify oracle could not be built for ${unit.slice}: ${(err as Error).message}`;
+        this.deps.output.appendLine(`⛔ [${unit.id}] ${reason}`);
+        return { outcome: "failed", finalOutput: reason };
+      }
+    }
     // SP-6/7 structural independence: for a `role: test` unit, `cwd` IS the tester snapshot (a
     // detached base-commit worktree) — one directory to read AND write, with the in-progress
     // implementation absent by construction. No read fence, no base-dir split. It has no Bash to
@@ -2207,8 +2214,12 @@ export class OrchestratorService {
     // never has to improvise into shared build config to run tests. Undefined for a test unit (which
     // renders none of the SP-12 blocks), a repo that declares no command, or an oracle-armed coder
     // (the oracle replaces the self-run command entirely).
+    // In an orchestrated run (oracleFor supplied) selfVerify is NEVER injected — the
+    // oracle is the feedback channel, and a slice with nothing runnable to verify gets no
+    // self-run crutch either (loud absence, not a silent substitute). The legacy selfVerify
+    // path remains only for direct runViaSdk callers that supply no oracle factory.
     const selfVerifyCommand =
-      isTest || oracle
+      isTest || oracleFor
         ? undefined
         : (await defaultAcceptanceRecipeResolver(cwd))?.selfVerify;
     // SP-16: sibling to the test-convention wiring — a held-out `role: test` worker gets the repo's

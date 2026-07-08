@@ -3274,6 +3274,27 @@ export async function createSlice(
     if (!result.ok) throw new Error(result.reason);
   }
 
+  // ONE CODER PER SLICE (tests-first, 2026-07-08): the code side of a slice is a single
+  // work unit — the slice is the unit of code scheduling (ACs and probes exist at slice
+  // granularity, so a test-driven loop only closes for one accountable coder). A slice
+  // authored with more than one `role: code` unit is REFUSED at the door — loudly, never
+  // silently reinterpreted. Test units keep their per-AC fan-out.
+  {
+    const codeUnits = (args.work_units ?? []).filter(
+      (u) => ((u as { role?: string }).role ?? "code") !== "test",
+    );
+    if (codeUnits.length > 1) {
+      throw new Error(
+        `This slice declares ${codeUnits.length} code work units — the code side of a slice is ONE unit ` +
+          `(tests-first, 2026-07-08): one coder owns the whole coherent change with the union footprint ` +
+          `and a single task note, and iterates against the slice's probes through the verify tool. ` +
+          `Merge the code units into one { footprint: <union, every file spelled out>, execution: "serial", ` +
+          `note: <one coherent task> }; keep the role:"test" units per-AC. Parallelism belongs BETWEEN ` +
+          `slices (parallel_group with disjoint files), never inside one.`,
+      );
+    }
+  }
+
   // Authoring-time DAG gate (TEP-th3i18 #17): build the Spec's work-unit DAG —
   // this new slice plus its siblings — and reject a malformed graph (a dangling
   // dependency or a cycle) **at creation**, not when a run is dispatched and

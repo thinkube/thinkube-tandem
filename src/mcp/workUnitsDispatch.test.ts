@@ -52,8 +52,14 @@ test("create_slice through the dispatcher persists work_units", async () => {
       // SP-6/3: a multi-unit slice requires a design-time contract.
       contract: "interface Contract { /* shared seam */ }",
       work_units: [
+        // One coder per slice (2026-07-08): one code unit + a test-role sibling.
         { footprint: ["a.yaml"], execution: "fan-out", note: "author a" },
-        { footprint: ["b.yaml"], execution: "fan-out", note: "author b" },
+        {
+          footprint: ["a.test.ts"],
+          execution: "fan-out",
+          role: "test",
+          note: "assert a",
+        },
       ],
     },
     ctx,
@@ -75,5 +81,5 @@ test("create_slice through the dispatcher persists work_units", async () => {
   assert.deepEqual(wu![0].footprint, ["a.yaml"]);
   assert.equal(wu![0].execution, "fan-out");
   assert.equal(wu![0].note, "author a");
-  assert.equal(wu![1].footprint[0], "b.yaml");
+  assert.equal(wu![1].footprint[0], "a.test.ts");
 });

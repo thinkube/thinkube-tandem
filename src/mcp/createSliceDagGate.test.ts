@@ -108,7 +108,13 @@ test("create_slice ACCEPTS a well-formed slice with disjoint fan-out units", asy
     body: "detail",
     work_units: [
       { footprint: ["src/a.ts"], execution: "fan-out", note: "a" },
-      { footprint: ["src/a.test.ts"], execution: "fan-out", note: "test a" },
+      // One coder per slice (2026-07-08): the sibling is the held-out test author.
+      {
+        footprint: ["src/a.test.ts"],
+        execution: "fan-out",
+        role: "test",
+        note: "test a",
+      },
     ],
   })) as { slice: string };
   assert.match(res.slice, /^TEP-1_SP-1_SL-\d+$/);
@@ -116,23 +122,24 @@ test("create_slice ACCEPTS a well-formed slice with disjoint fan-out units", asy
 
 test("create_slice ACCEPTS a unit dependency expressed via consumes (the grounded replacement)", async () => {
   const store = await seededStore();
-  // The grounded form depends_on is replaced by: a unit READS a file a SIBLING
-  // unit produces, expressed as `consumes`. `buildUnitDag` resolves it into a
-  // real edge on the producing unit, so the gate accepts it where the ungrounded
-  // `depends_on` handle is refused.
+  // The grounded form: a slice's coder READS a file a SIBLING SLICE produces, expressed
+  // as `consumes` (one coder per slice, 2026-07-08 — intra-slice ordering is moot, and a
+  // test unit can never consume the coder's output because tests dispatch first).
+  await create(store, {
+    title: "producer: the contract module",
+    body: "detail",
+    work_units: [
+      { footprint: ["src/contract.ts"], execution: "serial", note: "contract" },
+    ],
+  });
   const res = (await create(store, {
-    title: "good: consumes a sibling's artifact",
+    title: "good: consumes a sibling slice's artifact",
     body: "detail",
     work_units: [
       {
-        footprint: ["src/contract.ts"],
-        execution: "fan-out",
-        note: "contract",
-      },
-      {
         footprint: ["src/impl.ts"],
         consumes: ["src/contract.ts"],
-        execution: "fan-out",
+        execution: "serial",
         note: "impl reads the contract",
       },
     ],
