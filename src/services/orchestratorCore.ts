@@ -851,7 +851,11 @@ export function buildWorkerPrompt(
   // pre-feature snapshot that never contains the implementer's work — but it is a fact stated,
   // not a secret kept: transparency about the process never exposes the graded content.
   const task = isTest
-    ? `You are the TEST AUTHOR for this slice. Write the acceptance test(s) at [${fp}] UP FRONT — the implementation does not exist yet; a separate implementer will build to the same SPEC CONTRACT after you. ${unit.note ? `Assert: ${unit.note.replace(/\s*\.?\s*$/, "")}.` : "Assert the behaviours in the Acceptance criteria below."} Exercise ONLY the public interface in the SPEC CONTRACT below — write to that interface, do not assume any particular internal implementation.`
+    ? `You are the TEST AUTHOR for this slice. Write the acceptance test(s) at [${fp}] UP FRONT — the implementation does not exist yet; a separate implementer will build to the same SPEC CONTRACT after you. ${unit.note ? `Assert: ${unit.note.replace(/\s*\.?\s*$/, "")}.` : "Assert the behaviours in the Acceptance criteria below."} Exercise ONLY the public interface in the SPEC CONTRACT below — write to that interface, do not assume any particular internal implementation. ` +
+      // Carry the WHY (2026-07-08): every check must state, in the artifact, why it exists — so a
+      // reader years later knows whether its job is still live or already finished. This is what
+      // separates a durable INVARIANT from a spent TRANSITION check.
+      `Head each test with a one-line comment stating its WHY in plain words drawn from the acceptance criterion — the behaviour or change it proves — and label that why as either a one-time TRANSITION (it proves a change happened: something removed, added, renamed — its job is done once the change ships) or a standing INVARIANT (a behaviour that must always hold — it lives forever). A future reader must be able to tell from the test alone why it exists and whether its work is already complete.`
     : unit.shape === "mechanize"
       ? `This is a MECHANIZE unit: author ONE transform and apply it across all of [${fp}] — do not hand-edit each object.`
       : unit.shape === "fan-out"
