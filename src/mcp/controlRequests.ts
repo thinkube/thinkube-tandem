@@ -132,9 +132,6 @@ export function routeControlRequest<T>(
   }
 }
 
-/** The env var carrying the watched control dir, published host → MCP process. */
-export const CONTROL_DIR_ENV = "THINKUBE_CONTROL_DIR";
-
 /** The filename for a start-worktree request (one file per Spec, fire-once). */
 export function startWorktreeRequestFile(spec: string): string {
   // Encode the spec so an exotic id can't escape the control dir.

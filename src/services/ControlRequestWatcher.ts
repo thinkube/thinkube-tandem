@@ -24,8 +24,9 @@ import {
 } from "../mcp/controlRequests";
 import { openReviewFromHost } from "../views/kanban/host/Panel";
 
-/** The shared control dir, derived from globalStorage so the MCP env and the
- *  watcher agree on one location (published to the MCP as THINKUBE_CONTROL_DIR). */
+/** The shared control dir. Both ends derive `<globalStorage>/control` structurally
+ *  (SP-6/20): the watcher from `context.globalStorageUri` here, the MCP server from its
+ *  own invocation path (`resolveControlDir(process.argv[1])`) — no env var bridges them. */
 export function controlDir(context: vscode.ExtensionContext): string {
   return path.join(context.globalStorageUri.fsPath, "control");
 }

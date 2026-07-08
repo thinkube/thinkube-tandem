@@ -17,7 +17,8 @@ import { stableExtensionSubpath } from "./stableServerPath";
 
 /** `<CLAUDE_CONFIG_DIR or ~/.claude>/thinkube-mcp.json`. */
 export function machineConfigPath(): string {
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  const dir =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
   return path.join(dir, "thinkube-mcp.json");
 }
 
@@ -39,7 +40,9 @@ export async function writeMachineMcpConfig(): Promise<void> {
   const kanbanCfg = vscode.workspace.getConfiguration("thinkube.kanban");
   const mode = kanbanCfg.get<string>("mode") ?? "both";
   const allowAIWrites =
-    mode === "navigator" ? false : (kanbanCfg.get<boolean>("allowAIWrites") ?? true);
+    mode === "navigator"
+      ? false
+      : (kanbanCfg.get<boolean>("allowAIWrites") ?? true);
   const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
     name: f.name,
     path: f.uri.fsPath,
@@ -110,7 +113,6 @@ export function kanbanServerEntry(
     // host env; match it (NOT the deleted provider's bare globalStorage) so the audit
     // signs with — and readyGate verifies against — the one live key.
     THINKUBE_SIGNING_KEY_DIR: path.join(gs, "signing"),
-    THINKUBE_CONTROL_DIR: path.join(gs, "control"),
   };
   if (roots) env.THINKUBE_ROOTS = roots;
   if (folders.length) env.THINKUBE_FOLDERS = JSON.stringify(folders);
@@ -118,7 +120,9 @@ export function kanbanServerEntry(
 
   return {
     command: "node",
-    args: [stableExtensionSubpath(context, "dist", "mcp", "kanbanMcpServer.js")],
+    args: [
+      stableExtensionSubpath(context, "dist", "mcp", "kanbanMcpServer.js"),
+    ],
     env,
   };
 }

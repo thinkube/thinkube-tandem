@@ -111,7 +111,6 @@ import {
   buildTestImpactRefusal,
 } from "../services/testImpactFootprint";
 import {
-  CONTROL_DIR_ENV,
   serializeControlRequest,
   startWorktreeRequestFile,
 } from "./controlRequests";
@@ -1693,18 +1692,13 @@ export async function dispatchTool(
 /**
  * Hand off "open this Spec's worktree session" to the Extension Host (AC8). The
  * MCP process can't open a VS Code session itself, so it writes a one-shot
- * control request into the host-published `THINKUBE_CONTROL_DIR`; the host's
+ * control request into the self-located `<globalStorage>/control` dir; the host's
  * file watcher consumes it and runs `thinkube.specs.startWorktree` (the same
  * create-or-reuse + thinking space-root inject + open-session machinery as the button,
  * SL-7). Reuses the thinking space's filesystem MCP→host channel — not the tmux bridge.
  */
 async function startSpecWorktree(spec: string, repo: string): Promise<unknown> {
-  const dir = process.env[CONTROL_DIR_ENV];
-  if (!dir) {
-    throw new Error(
-      `${CONTROL_DIR_ENV} is not set, so the worktree hand-off can't reach the extension. Open the worktree from the Specs view button, or re-install the methodology bundle so the MCP env carries it.`,
-    );
-  }
+  const dir = resolveControlDir(process.argv[1]);
   await fsSync.promises.mkdir(dir, { recursive: true });
   const file = path.join(dir, startWorktreeRequestFile(spec));
   await fsSync.promises.writeFile(
@@ -1729,7 +1723,7 @@ function openReviewRequestFile(subjectKey: string): string {
  * `open_review({kind, id})` (SP-6/3, TEP-6 mechanism 2): hand "open the review
  * panel for this document" to the Extension Host. This process has no `vscode`
  * API, so — exactly like `startSpecWorktree` above — it writes a one-shot
- * control request into the host-published `THINKUBE_CONTROL_DIR`; the host's
+ * control request into the self-located `<globalStorage>/control` dir; the host's
  * watcher consumes it and mounts `ReviewPanel.open(subjectKey, docPath, deps)`.
  * The request carries the resolved arguments (the server resolves the
  * thinking-space doc path here, where the store lives, so the host needn't
@@ -1803,12 +1797,7 @@ async function openReview(
     subjectKey = `tep:${canonicalId}`;
     docRel = found;
   }
-  const dir = process.env[CONTROL_DIR_ENV];
-  if (!dir) {
-    throw new Error(
-      `${CONTROL_DIR_ENV} is not set, so the review-panel hand-off can't reach the extension host. Re-install the methodology bundle so the MCP env carries it, or have the maintainer open the review panel from the Kanban view.`,
-    );
-  }
+  const dir = resolveControlDir(process.argv[1]);
   await fsSync.promises.mkdir(dir, { recursive: true });
   const docPath = path.join(store.thinkubeDir, docRel);
   const file = path.join(dir, openReviewRequestFile(subjectKey));
@@ -2897,6 +2886,18 @@ export async function resolveCompositeSpecId(
  */
 export function resolveApprovalDir(invocationPath: string): string {
   return path.resolve(path.dirname(invocationPath), "../../..");
+}
+
+/**
+ * Self-locate the control-request dir (SP-6/20) — the `<globalStorage>/control` folder the host's
+ * `ControlRequestWatcher` watches, derived lexically from the server's own invocation path exactly
+ * like {@link resolveApprovalDir}. Both `open_review` and `start_spec_worktree` write here, so the
+ * derivation retires the old control-dir env var: if present it is ignored, and the tools
+ * work in any session — including a project-scope `.mcp.json` that by design carries no machine-local
+ * dirs. Pure lexical, no filesystem probing.
+ */
+export function resolveControlDir(invocationPath: string): string {
+  return path.join(resolveApprovalDir(invocationPath), "control");
 }
 
 /**
