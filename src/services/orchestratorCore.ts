@@ -1980,7 +1980,7 @@ const NEXT_HINTS: Record<ExitActionId, string> = {
   attend:
     "open a primed session on the requires-attention slice(s) to bring the behaviour back in line.",
   rerun:
-    "resolve the requires-attention slice(s), then re-run the orchestrator.",
+    "resolve the requires-attention slice(s), then re-run Orchestrate on the Spec.",
 };
 
 /** Everything the auditable delivery report (DELIVERY.md) records (SP-tgzyfy). */
@@ -2203,7 +2203,7 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
             ? `1. Review the \`${branch}\` branch (the committed change) — the acceptance criteria above and the evidence appendix are the proof.\n` +
               `2. **Accept** to merge the Spec to \`main\` (gated on every AC checked), or **Reject** to open a primed session.`
             : `1. The closing gate did not pass — see What happened above and the evidence appendix below.\n` +
-              `2. Resolve the requires-attention slice(s), then re-run the orchestrator.`,
+              `2. Resolve the requires-attention slice(s), then re-run Orchestrate on the Spec.`,
         ];
 
   const appendix = [

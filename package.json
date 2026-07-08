@@ -73,7 +73,7 @@
     "commands": [
       {
         "command": "thinkube.orchestrate",
-        "title": "Orchestrate Next Slice",
+        "title": "Orchestrate Spec",
         "category": "Thinkube"
       },
       {
@@ -678,7 +678,7 @@
           "type": "number",
           "default": 4,
           "minimum": 1,
-          "description": "Maximum concurrent Agent SDK workers per Spec when \"Orchestrate Next Slice\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
+          "description": "Maximum concurrent Agent SDK workers per Spec when \"Orchestrate Spec\" dispatches the ready frontier (SP-tgs8nz). A wider footprint-disjoint frontier queues and drains as slots free."
         },
         "thinkube.orchestrator.verifyCommand": {
           "type": "string",
