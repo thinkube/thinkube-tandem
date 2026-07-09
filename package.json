@@ -707,6 +707,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable Claude Code's experimental agent teams in VS Code (SP-tgnb5o). When on, the extension exports `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + a synthetic `$TMUX` to Claude sessions/terminals and installs a fake-`tmux` shim on PATH so teammates render as native VS Code terminal panes. Off by default: it shadows `tmux` on the terminal PATH and sets `$TMUX`, so opt in deliberately. Takes effect for sessions/terminals started after a window reload."
+        },
+        "thinkube.orchestrator.rtk": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable RTK (Rust Token Killer) command-output compression for orchestrated Agent SDK workers (SP-17/2). When true, supported Bash commands (`git status`, `git diff`, `git log`, `grep`, `rg`, `find`, `ls`, `cat`, `wc`, `du`) are wrapped as `rtk <command>` in every worker's PreToolUse hook, compressing command output before it enters the model's context (~89% average noise reduction on supported commands). Explicit and loud: if enabled but the `rtk` binary is absent from PATH, orchestration refuses immediately — it never silently degrades. Defaults to `false` until the binary is installed."
         }
       }
     }

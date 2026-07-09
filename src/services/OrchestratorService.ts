@@ -83,6 +83,7 @@ import {
 } from "../methodology/parallelSlices";
 import { defaultAcceptanceRecipeResolver } from "./auditorRunner";
 import { resolveWorkerModel, type WorkerModelConfig } from "./workerModel";
+import { rtkRewrite } from "./rtkRewrite";
 import {
   createVerifyOracle,
   formatVerifyReply,
@@ -232,12 +233,29 @@ export interface OrchestratorDeps {
    *  onto `SchedulerState.attemptBound`; defaults to the core's `MAX_REWORK_ATTEMPTS` when omitted.
    *  Overridable so a test can set a smaller bound (e.g. 2). The bound is control-plane — no model. */
   attemptBound?: number;
+  /** SP-17/2 — enable RTK (Rust Token Killer) command-output compression in every worker's
+   *  PreToolUse hook. Read from `thinkube.orchestrator.rtk` at the extension boundary; threaded
+   *  here so tests can drive the hook with no live VS Code configuration. */
+  rtkEnabled?: boolean;
+  /** SP-17/2 — probe whether the `rtk` binary is present on PATH. Defaults to a `which rtk`
+   *  PATH lookup; tests inject a fake so the loud guard is exercisable with no live binary. */
+  rtkBinaryPresent?: () => boolean | Promise<boolean>;
 }
 
 /** The default run-halt failure threshold (SP-2/TEP-6 AC5): a small N of ordinary unit failures across
  *  a run after which no new units are dispatched. Kept low so a systemic failure can't burn a whole
  *  doomed run before the human can interrupt it; overridable via the dep / the `dispatchSpec` arg. */
 export const DEFAULT_FAIL_THRESHOLD = 3;
+
+/** Default PATH lookup for the `rtk` binary (SP-17/2): used when `OrchestratorDeps.rtkBinaryPresent`
+ *  is not supplied. Runs `which rtk`; resolves `false` on any error (binary absent). */
+function defaultRtkBinaryPresent(): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const proc = spawn("which", ["rtk"], { stdio: "ignore" });
+    proc.on("error", () => resolve(false));
+    proc.on("close", (code) => resolve(code === 0));
+  });
+}
 
 /** What a worker run resolved to — the third outcome carries the escalated question + session id. */
 export interface WorkerResult {
@@ -1079,6 +1097,21 @@ export class OrchestratorService {
       diagnosis: [],
       discoveries: [],
     };
+
+    // RTK loud guard (SP-17/2): when RTK is enabled but the binary is absent, refuse UP FRONT
+    // before any store slice listing or buildSlices. Explicit and loud — no silent degradation.
+    if (this.deps.rtkEnabled === true) {
+      const binaryPresent =
+        this.deps.rtkBinaryPresent ?? defaultRtkBinaryPresent;
+      if (!(await binaryPresent())) {
+        const reason =
+          `rtk binary not found on PATH. The thinkube.orchestrator.rtk setting is enabled ` +
+          `but the rtk binary must be installed before orchestrating. ` +
+          `Disable thinkube.orchestrator.rtk or install the rtk binary, then re-run.`;
+        output.appendLine(`✗ ${reason}`);
+        return { ...result, ok: false, reason };
+      }
+    }
 
     // Superseded gate (SP-6/14, completing "a superseded Spec is not advanceable"):
     // orchestration is an advance path just like `create_slice`, so a non-empty
@@ -2486,7 +2519,36 @@ export class OrchestratorService {
                         !!oracle,
                       )
                     : ({ allow: true } as const);
-                  if (d.allow && r.allow && g.allow && t.allow) return {};
+                  if (d.allow && r.allow && g.allow && t.allow) {
+                    // SP-17/2: RTK rewrite on fence-ALLOWED Bash calls. The fences always
+                    // screen the ORIGINAL command; a denied call never reaches this branch.
+                    if (
+                      this.deps.rtkEnabled === true &&
+                      inp.tool_name === "Bash"
+                    ) {
+                      const ti = inp.tool_input as
+                        Record<string, unknown> | undefined;
+                      const cmd =
+                        typeof ti?.command === "string"
+                          ? ti.command
+                          : undefined;
+                      if (cmd !== undefined) {
+                        const rewritten = rtkRewrite(cmd);
+                        if (rewritten !== undefined) {
+                          return {
+                            hookSpecificOutput: {
+                              hookEventName: "PreToolUse" as const,
+                              updatedInput: {
+                                ...(ti ?? {}),
+                                command: rewritten,
+                              },
+                            },
+                          };
+                        }
+                      }
+                    }
+                    return {};
+                  }
                   const deny = !d.allow ? d : !r.allow ? r : !g.allow ? g : t;
                   if (deny.allow) return {};
                   this.deps.output.appendLine(
