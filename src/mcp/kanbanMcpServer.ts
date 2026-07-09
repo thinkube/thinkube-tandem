@@ -268,24 +268,27 @@ async function main(): Promise<void> {
     { capabilities: { tools: {}, resources: {} } },
   );
 
-  // SP-6/1 (TEP-6): turn on the `ac_verifications` provenance path when the extension hands us a
-  // private globalStorage dir for the signing key. The secret never leaves this process; the audit
-  // runner is the real headless-Claude one (lazy SDK import, so no cost until a `write_spec` runs).
-  // Absent dir ⇒ signing stays off and `write_spec` keeps the legacy param path (forward-compatible).
-  let signingSecret: Buffer | undefined;
-  let auditRunner: AuditRunner | undefined;
+  // SP-6/1 (TEP-6): `ac_verifications` provenance signing is MANDATORY for the live server — there
+  // is no off mode. The extension host always publishes `THINKUBE_SIGNING_KEY_DIR` two ways over
+  // (LauncherService sets it on the host env; machineConfig writes it into the server's registration
+  // env), both derived from globalStorage — a dir code-server always provides. So an absent/empty dir
+  // or an unloadable key is a real misconfiguration, not a "signing off" mode: REFUSE TO BOOT rather
+  // than fall silently to the legacy path where an agent's unsigned, self-authored map is trusted.
+  // The secret never leaves this process; the audit runner is the real headless-Claude one (lazy SDK
+  // import, so no cost until a `write_spec` runs). (`ctx.auditRunner`/`signingSecret` stay OPTIONAL on
+  // the type only as the unit-test injection seam — dispatch tests build a ctx without them to
+  // exercise non-signing mechanics in isolation; that fixture is never the running MCP server.)
   const signingKeyDir = process.env.THINKUBE_SIGNING_KEY_DIR?.trim();
-  if (signingKeyDir) {
-    try {
-      signingSecret = loadOrCreateSecret(signingKeyDir);
-      auditRunner = createSdkAuditRunner({ log });
-      log("ac_verifications signing: on (secret loaded from globalStorage)");
-    } catch (err) {
-      signingSecret = undefined;
-      auditRunner = undefined;
-      log(`ac_verifications signing: off (${(err as Error).message})`);
-    }
+  if (!signingKeyDir) {
+    throw new Error(
+      "THINKUBE_SIGNING_KEY_DIR is not set — the kanban MCP server cannot certify ac_verifications " +
+        "without a signing key, and it will not run an unsigned (forgeable) certification path. The " +
+        "extension host must publish the key dir (globalStorage/signing). Refusing to boot.",
+    );
   }
+  const signingSecret: Buffer = loadOrCreateSecret(signingKeyDir);
+  const auditRunner: AuditRunner = createSdkAuditRunner({ log });
+  log("ac_verifications signing: on (mandatory; secret loaded from globalStorage)");
 
   const ctx: HandlerContext = {
     env,

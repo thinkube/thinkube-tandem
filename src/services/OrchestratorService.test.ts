@@ -2328,6 +2328,28 @@ test("SP-6/7 AC3: parseAssessment reads pass + rationale, tolerates a fence, fai
   const junk = parseAssessment("I think it is probably fine");
   assert.equal(junk.pass, false);
   assert.match(junk.rationale, /no parseable verdict/);
+
+  // SP-17/1 regression: a verdict whose RATIONALE STRING contains braces (here a config default of
+  // `{}`) must not be mis-parsed. The prior raw brace-pair scan returned the inner `{}` as an empty
+  // object, so this PASSING assessment was recorded as `fail: (no rationale)` — the exact AC-3 red.
+  assert.deepEqual(
+    parseAssessment(
+      '{"pass": true, "rationale": "package.json contributes `thinkube.orchestrator.workerModelByRole` (type object, default {}) under contributes.configuration, exactly matching the criterion."}',
+    ),
+    {
+      pass: true,
+      rationale:
+        "package.json contributes `thinkube.orchestrator.workerModelByRole` (type object, default {}) under contributes.configuration, exactly matching the criterion.",
+    },
+  );
+  // Reasoning that QUOTES JSON (e.g. a snippet of package.json) before the final verdict → the
+  // verdict is the LAST top-level object, not the quoted snippet.
+  assert.deepEqual(
+    parseAssessment(
+      'Let me inspect package.json:\n{"thinkube.orchestrator.workerModel": {"default": "sonnet"}}\nVerdict:\n{"pass": false, "rationale": "the setting is absent"}',
+    ),
+    { pass: false, rationale: "the setting is absent" },
+  );
 });
 
 test("SP-6/7 AC3: buildAssessPrompt frames an INDEPENDENT judge over the AC intent + artifact", () => {

@@ -495,24 +495,50 @@ export function buildAssessPrompt(
 }
 
 /** Extract the last top-level `{ ... }` object from arbitrary text (tolerant of a ```json fence /
- *  surrounding prose). Returns the parsed value, or null when nothing parses. */
+ *  surrounding prose). Returns the parsed value, or null when nothing parses.
+ *
+ *  STRING-LITERAL-AWARE (SP-17/1): the scan tracks string state + escapes, so a brace INSIDE a
+ *  string value never reads as structure. A prior raw `{`/`}` char scan returned the inner `{}` of a
+ *  rationale string ("…default {} under contributes.configuration…") as an empty verdict object, so a
+ *  PASSING assessment was recorded as `fail: (no rationale)` (AC-3, the first assessment AC ever run —
+ *  its subject is a config default of `{}`). We collect every BALANCED top-level object and return the
+ *  LAST one that parses to a plain object — the verdict is emitted last, after any reasoning/quoted JSON. */
 function extractJsonObject(text: string): unknown {
   if (!text) return null;
-  const starts: number[] = [];
-  for (let i = 0; i < text.length; i++) if (text[i] === "{") starts.push(i);
-  for (let s = starts.length - 1; s >= 0; s--) {
-    const start = starts[s];
-    for (let e = text.lastIndexOf("}"); e > start; e--) {
-      if (text[e] !== "}") continue;
-      try {
-        const v = JSON.parse(text.slice(start, e + 1));
-        if (v && typeof v === "object" && !Array.isArray(v)) return v;
-      } catch {
-        /* try a shorter close */
+  let last: unknown = null;
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === "}" && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try {
+          const v = JSON.parse(text.slice(start, i + 1));
+          if (v && typeof v === "object" && !Array.isArray(v)) last = v;
+        } catch {
+          /* not valid JSON — keep scanning for a later top-level object */
+        }
+        start = -1;
       }
     }
   }
-  return null;
+  return last;
 }
 
 /**

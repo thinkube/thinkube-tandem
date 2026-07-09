@@ -142,17 +142,21 @@ export function computePassed(
  * The auditor flags an AC `needs-reframe` when its verifying actor is a human (no AI evidence is
  * producible), its check is deploy/merge-circular (it can't be checked before the gate it arms),
  * or it fails **controllability** — the probe cannot establish the AC's preconditions using only
- * what the Design defines (an undefined arming/config seam); otherwise `verifiable` with the
- * concrete proof command.
+ * what the Design defines (an undefined arming/config seam); it routes an AC to `assessment` when
+ * no runnable command fits (a prose / UX / skill AC) OR its **lifecycle** is a one-time TRANSITION
+ * (a change that ships once — a setting added, a variable removed — whose probe would rot into a
+ * trivially-passing false positive); otherwise `verifiable` with the concrete proof command.
  *
  * DRIFT GUARD: this rubric is DUPLICATED in the `/spec-prepare` skill's step 7
- * (`plugins/tandem-methodology/skills/spec-prepare/SKILL.md` + `reference.md`, "the four
- * questions") — and THIS copy is the authoritative one, because only this audit's verdicts get
- * signed into `ac_verifications` (SP-6/1; the skill-level Task pass is interactive/advisory).
- * They have drifted once already: the controllability question was added to the skill after a
- * real run lost 4/4 of an AC's tests to an undefined arming seam ("with a secret configured" —
- * how?), while this prompt kept asking only the first two questions, so the WEAKER rubric held
- * the signing pen. When you change the questions in either place, change both.
+ * (`plugins/tandem-methodology/skills/spec-prepare/SKILL.md` + `reference.md`, "the five
+ * questions": actor / environment / availability / controllability / lifecycle) — and THIS copy is
+ * the authoritative one, because only this audit's verdicts get signed into `ac_verifications`
+ * (SP-6/1; the skill-level Task pass is interactive/advisory). They have drifted twice already:
+ * the controllability question was added to the skill after a real run lost 4/4 of an AC's tests to
+ * an undefined arming seam ("with a secret configured" — how?), and the lifecycle question after a
+ * transition AC ("the setting was added to package.json") was wrongly signed `verifiable` and would
+ * have minted a package.json `grep` that passes forever — while this prompt kept the WEAKER rubric
+ * and so held the signing pen. When you change the questions in either place, change both.
  */
 export function buildAuditPrompt(acs: AuditAc[], specBody?: string): string {
   const acBlock = acs
@@ -178,11 +182,22 @@ export function buildAuditPrompt(acs: AuditAc[], specBody?: string): string {
     "    against a correct implementation. That is a Design defect: name the missing seam in `why`",
     "    (the fix is naming it in the Design — a config env var, an injectable parameter, a setup",
     "    call — then re-auditing).",
-    "When a criterion CAN be judged before merge but no runnable command fits it (a prose / UX /",
-    "skill / judgment AC), call it `assessment`: an independent assessor session will read the",
-    "delivered artifact and grade it pass/fail with a rationale — this is DISTINCT from",
-    "`needs-reframe` (which leaves the AC un-gateable). Otherwise call it `verifiable` and give the",
-    'single command (`run`) that proves it, and where it runs (`env`: "local" or "cluster").',
+    "When a criterion CAN be judged before merge but no runnable command fits it, call it",
+    "`assessment` — an independent assessor session reads the delivered artifact and grades it",
+    "pass/fail with a rationale (DISTINCT from `needs-reframe`, which leaves the AC un-gateable).",
+    "TWO cases earn `assessment`:",
+    "  - a prose / UX / skill / judgment AC that no runnable command fits, OR",
+    "  - LIFECYCLE — the criterion is a one-time TRANSITION, not a standing invariant. Ask of each",
+    "    AC: does it assert that a change HAPPENED ONCE (something was added / removed / renamed — a",
+    "    setting now exists, a variable is gone, a field was introduced), or that a behaviour must",
+    "    ALWAYS HOLD? A transition's truth is settled the instant it ships, so a runnable probe for it",
+    "    (a `grep` that the setting is present, that the symbol is absent) passes trivially FOREVER",
+    "    and rots into a false positive nobody remembers — the mystery check still running years",
+    "    later. Route every transition to `assessment`: the assessor confirms it ONCE at the gate and",
+    "    leaves NOTHING in the permanent suite. Only a true INVARIANT — a behaviour that must hold for",
+    "    the life of the code — earns a `verifiable` probe worth living in the suite.",
+    "Otherwise call it `verifiable` and give the single command (`run`) that proves it, and where it",
+    'runs (`env`: "local" or "cluster").',
     "",
     "Acceptance Criteria:",
     acBlock,
