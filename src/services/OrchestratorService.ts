@@ -82,6 +82,7 @@ import {
   type ContainmentResult,
 } from "../methodology/parallelSlices";
 import { defaultAcceptanceRecipeResolver } from "./auditorRunner";
+import { resolveWorkerModel, type WorkerModelConfig } from "./workerModel";
 import {
   createVerifyOracle,
   formatVerifyReply,
@@ -119,6 +120,11 @@ export interface OrchestratorDeps {
   output: vscode.OutputChannel;
   /** Absolute path to the canonical (non-worktree) code repo. */
   canonicalRepo: string;
+  /** SP-17/1 — the pinned, decoupled worker-model configuration (read from `thinkube.orchestrator` →
+   *  `workerModel` / `workerModelByRole` at the command boundary). REQUIRED: every construction (production
+   *  AND test) supplies it, so no worker can silently inherit the session/env model — the resolved model is
+   *  threaded into every worker spawn via {@link resolveWorkerModel}. There is no `?? {}` fallback. */
+  workerModel: WorkerModelConfig;
   /** `thinkube.thinkingSpace.root` — injected into the worktree's `.mcp.json`. */
   thinkingSpaceRoot?: string;
   /** `thinkube.worktree.baseDir` — where linked worktrees are created. */
@@ -441,11 +447,13 @@ export function verificationIsWholeSuite(run: string): boolean {
 // rationale. `runAcVerifications` calls it (via `AssessContext`) for any AC declared `env:
 // "assessment"`. Injectable end-to-end — tests wire `deps.assessAc` with a fake so no live model runs.
 
-/** Minimal structural type of the Agent SDK `query()` the assessor depends on (loose so the lazy
- *  import doesn't pull SDK types into the module graph). A one-shot string prompt, read-only session. */
-type AssessorSdkQuery = (args: {
-  prompt: string;
-  options: { cwd: string; permissionMode: "bypassPermissions" };
+/** Minimal structural type of the Agent SDK `query()` the assessor/judge/worker depend on (loose so the
+ *  lazy import doesn't pull SDK types into the module graph). `prompt` accepts a one-shot string (assessor
+ *  / judge) OR a streaming `AsyncIterable` (the code/test-author worker), and `options` is a `Record` so a
+ *  caller may spread extra fields (SP-17/1: `options.model`) without re-typing the seam. */
+export type AssessorSdkQuery = (args: {
+  prompt: string | AsyncIterable<unknown>;
+  options: Record<string, unknown>;
 }) => AsyncIterable<unknown>;
 
 /** Deps for {@link createSdkAssessor} — the worktree cwd the assessor reads, plus injectable SDK
@@ -453,6 +461,10 @@ type AssessorSdkQuery = (args: {
 export interface SdkAssessorDeps {
   /** Working directory for the headless assessor session (the worktree carrying the delivered change). */
   cwd: string;
+  /** SP-17/1 — the pinned worker model spread into `options.model` at the assessor/judge `query()` call
+   *  so neither inherits the session/environment model (`ANTHROPIC_MODEL`). REQUIRED: every caller passes
+   *  it explicitly (omission is a compile error — the loud guarantee), so there is no default. */
+  model: string;
   /** Loads the SDK `query`. Defaults to a lazy `import("@anthropic-ai/claude-agent-sdk")`. */
   loadQuery?: () => Promise<AssessorSdkQuery>;
   /** Progress sink. Defaults to a no-op. */
@@ -590,7 +602,12 @@ export function createSdkAssessor(deps: SdkAssessorDeps): AssessAc {
       const query = await loadQuery();
       for await (const msg of query({
         prompt,
-        options: { cwd: deps.cwd, permissionMode: "bypassPermissions" },
+        // SP-17/1: pin the assessor's model explicitly so it never inherits the session/env model.
+        options: {
+          cwd: deps.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
       })) {
         const rec = msg as Record<string, unknown>;
         const line = summarizeEvent(rec);
@@ -755,7 +772,12 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
       const query = await loadQuery();
       for await (const msg of query({
         prompt,
-        options: { cwd: deps.cwd, permissionMode: "bypassPermissions" },
+        // SP-17/1: pin the judge's model explicitly so it never inherits the session/env model.
+        options: {
+          cwd: deps.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
       })) {
         const rec = msg as Record<string, unknown>;
         const line = summarizeEvent(rec);
@@ -785,6 +807,81 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
       };
     return parseJudgment(resultText || assistantText);
   };
+}
+
+// ── The code/test-author worker query seam (SP-17/1) ───────────────────────
+//
+// Extracted out of the private {@link OrchestratorService.runViaSdk} into an exported, vscode-free
+// function mirroring {@link createSdkAssessor} / {@link createSdkJudge}, so a held-out probe can wire a
+// fake `query` and assert on the `options` (chiefly `options.model`) WITHOUT constructing an
+// `OrchestratorService` or provisioning a worktree. Like the assessor, its `model` is a REQUIRED dep
+// spread into `options.model`, so the code/test-author worker never inherits the session/env model.
+
+/** Deps for {@link createSdkWorker} — the per-worker spawn inputs `runViaSdk` supplies. `cwd` + `model`
+ *  are required; `loadQuery` is injectable (a fake captures the options it is called with); the rest are
+ *  production pass-throughs (`hooks` / `abortController` / `mcpServers` / `disallowedTools`) a probe may
+ *  omit. */
+export interface SdkWorkerDeps {
+  /** Working directory for the headless worker session (the code/test worktree). */
+  cwd: string;
+  /** SP-17/1 — the pinned worker model spread into `options.model` so the worker never inherits the
+   *  session/environment model (`ANTHROPIC_MODEL`). REQUIRED (omission is a compile error). */
+  model: string;
+  /** Loads the SDK `query`. Defaults to a lazy `import("@anthropic-ai/claude-agent-sdk")`; a test injects
+   *  a fake that records the `options` it is called with. */
+  loadQuery?: () => Promise<AssessorSdkQuery>;
+  /** SDK `Options.hooks` (PreToolUse footprint guard + PostToolUse containment) — passed through verbatim
+   *  when supplied; a probe may omit it. */
+  hooks?: unknown;
+  /** SDK `Options.abortController` — the run-wide hard-stop for a containment breach / HALT. */
+  abortController?: AbortController;
+  /** SDK `Options.mcpServers` — the in-process verify-oracle server for an oracle-armed code worker. */
+  mcpServers?: Record<string, unknown>;
+  /** SDK `Options.disallowedTools` — the role-scoped tool restriction (`disallowedToolsForRole`). */
+  disallowedTools?: string[];
+  /** Progress sink. Defaults to a no-op. */
+  log?: (line: string) => void;
+}
+
+/** A lazy async-iterable worker: consuming its stream triggers the `query()` call (and thus the
+ *  `options.model` capture). See {@link createSdkWorker}. */
+export type RunWorker = (
+  prompt: AsyncIterable<unknown>,
+) => AsyncIterable<unknown>;
+
+/**
+ * The code/test-author worker query (SP-17/1) — extracted from {@link OrchestratorService.runViaSdk}.
+ * Returns a LAZY {@link RunWorker}: it awaits `loadQuery()` and calls `query({ prompt, options })` only
+ * ON FIRST ITERATION, where `options = { cwd, model: deps.model, permissionMode: "bypassPermissions",
+ * disallowedTools, ...hooks/abortController/mcpServers }`. Because the query call (and the `options.model`
+ * capture) fires only when the stream is consumed, a test asserting on the captured options must drive the
+ * stream first (`for await (const _ of createSdkWorker(deps)(prompt)) {}`) then assert.
+ */
+export function createSdkWorker(deps: SdkWorkerDeps): RunWorker {
+  const loadQuery =
+    deps.loadQuery ??
+    (async () =>
+      (await import("@anthropic-ai/claude-agent-sdk"))
+        .query as unknown as AssessorSdkQuery);
+  return (prompt: AsyncIterable<unknown>): AsyncIterable<unknown> =>
+    (async function* () {
+      // Lazy: nothing is spawned until the caller consumes the stream — the query() call (and the
+      // options.model capture) fires here on first iteration.
+      const query = await loadQuery();
+      const options: Record<string, unknown> = {
+        cwd: deps.cwd,
+        // SP-17/1: pin the worker's model explicitly so it never inherits the session/env model.
+        model: deps.model,
+        permissionMode: "bypassPermissions",
+        disallowedTools: deps.disallowedTools,
+        ...(deps.mcpServers ? { mcpServers: deps.mcpServers } : {}),
+        ...(deps.abortController
+          ? { abortController: deps.abortController }
+          : {}),
+        ...(deps.hooks !== undefined ? { hooks: deps.hooks } : {}),
+      };
+      for await (const msg of query({ prompt, options })) yield msg;
+    })();
 }
 
 /**
@@ -1767,6 +1864,8 @@ export class OrchestratorService {
       this.deps.assessAc ??
       createSdkAssessor({
         cwd: worktreePath,
+        // SP-17/1: the independent assessor runs on the pinned worker model (role "assessor" may raise it).
+        model: resolveWorkerModel(this.deps.workerModel, "assessor"),
         log: (l) => output.appendLine(l),
       });
     const acText = acTextByOrdinal(specDoc?.body ?? "");
@@ -1848,7 +1947,12 @@ export class OrchestratorService {
     // the re-dispatch both record it.
     const judge =
       this.deps.judgeFailure ??
-      createSdkJudge({ cwd: worktreePath, log: (l) => output.appendLine(l) });
+      createSdkJudge({
+        cwd: worktreePath,
+        // SP-17/1: the independent code-vs-test judge runs on the pinned worker model (role "judge").
+        model: resolveWorkerModel(this.deps.workerModel, "judge"),
+        log: (l) => output.appendLine(l),
+      });
     const routes = new Map<number, Fault>();
 
     // Per slice: green iff every AC it satisfies ran green. A slice with no `satisfies` rides on the
@@ -2100,7 +2204,11 @@ export class OrchestratorService {
       exec,
       porcelain: (cwd) => this.gitPorcelain(cwd),
       resetRunner: async () => {
-        await createTester(this.deps.canonicalRepo, args.specNumber, oracleBase);
+        await createTester(
+          this.deps.canonicalRepo,
+          args.specNumber,
+          oracleBase,
+        );
       },
       copyIn: async (fromRoot, rel) => {
         const dst = runnerPath(runnerDir, rel);
@@ -2273,9 +2381,9 @@ export class OrchestratorService {
     })();
 
     try {
-      const query =
-        this.deps.sdkQuery ??
-        (await import("@anthropic-ai/claude-agent-sdk")).query;
+      // SP-17/1: the code/test-author worker runs on the pinned worker model resolved from the unit's
+      // role — never the session/env model. The query() call is the exported createSdkWorker seam below.
+      const model = resolveWorkerModel(this.deps.workerModel, unit.role);
       // Tests-first (2026-07-08): expose the black-box `verify` tool to an oracle-armed coder
       // as an in-process SDK MCP server. The handler runs in THIS process (the orchestrator):
       // it overlays the coder's delta + the tester-owned probes into the isolated runner,
@@ -2313,126 +2421,132 @@ export class OrchestratorService {
           );
         }
       }
-      for await (const msg of query({
-        prompt: input,
-        options: {
-          cwd,
-          permissionMode: "bypassPermissions",
-          // Tests-first: the in-process oracle server carrying the `verify` tool (code units only).
-          ...(oracleServers ? { mcpServers: oracleServers } : {}),
-          // SP-6/7: scope the worker's tools by role. A held-out `role: test` worker loses
-          // Bash/Grep/Glob/Read/web/Task — it cannot see the implementation, other workers' session
-          // transcripts, or the fence source, and cannot route a write through Bash. The restriction
-          // is structural and never announced (the worker stays unaware of the independence boundary).
-          disallowedTools: disallowedToolsForRole(unit.role),
-          // Aborting this stops the query the moment the post-tool containment check fires (AC3).
-          abortController: abort,
-          hooks: {
-            // The cheap early guardrail (SL-6): a PreToolUse hook runs FIRST and denies any Edit/Write
-            // outside this unit's footprint — silently, no prompt. Must be a hook, not
-            // `canUseTool`, which bypassPermissions/acceptEdits skip for edits.
-            PreToolUse: [
-              {
-                hooks: [
-                  async (input: unknown) => {
-                    const inp = input as {
-                      tool_name?: string;
-                      tool_input?: unknown;
-                    };
-                    // Screen an Edit/Write against the unit's ROLE-effective footprint (SP-6/7): a
-                    // `test` unit may only touch its held-out `acceptance/` probe; a `code` unit can
-                    // never touch `acceptance/` — so the two hands can't reach into each other's work.
-                    const d = footprintGuard(
-                      inp.tool_name ?? "",
-                      inp.tool_input,
-                      resolveRoleFootprint(unit.role, unit.footprint),
-                      cwd,
-                    );
-                    // SP-6/7 reverse-leak closure: a `role: code` worker must not read the grading
-                    // probes once they've been copied into the code worktree (rework rounds) — deny
-                    // a Read of an acceptance-evidence path, tersely. A test unit needs no read
-                    // fence at all: its cwd is the tester snapshot (nothing to hide in its tree).
-                    const r = !isTest
-                      ? codeReadFence(inp.tool_name ?? "", inp.tool_input, cwd)
-                      : ({ allow: true } as const);
-                    // SP-16: `Grep` is no longer denied to a `role: test` worker (dropped from
-                    // `disallowedToolsForRole`) — instead it is scoped to the worker's own cwd
-                    // snapshot. Purely lexically deny a Grep whose `path` is absolute or `..`-escapes
-                    // cwd (an omitted/in-tree path is fair use); confines search to the tester
-                    // snapshot so it cannot reach the sibling code worktree. Code units are unaffected.
-                    const g = isTest
-                      ? grepWithinCwd(inp.tool_name ?? "", inp.tool_input, cwd)
-                      : ({ allow: true } as const);
-                    // Tests-first belt (2026-07-08): a CODE worker never touches tests — any
-                    // write to a `*.test.*` / `acceptance/` path is denied regardless of
-                    // footprint, and (when the oracle is armed) so is any Bash command that
-                    // reaches for test files, the tester snapshot, or the build/test toolchain.
-                    const t = !isTest
-                      ? codeTestFence(inp.tool_name ?? "", inp.tool_input, !!oracle)
-                      : ({ allow: true } as const);
-                    if (d.allow && r.allow && g.allow && t.allow) return {};
-                    const deny = !d.allow ? d : !r.allow ? r : !g.allow ? g : t;
-                    if (deny.allow) return {};
-                    this.deps.output.appendLine(
-                      `  ⛔ [${unit.id}] denied: ${deny.reason.split("\n")[0]}`,
-                    );
-                    return {
-                      hookSpecificOutput: {
-                        hookEventName: "PreToolUse" as const,
-                        permissionDecision: "deny" as const,
-                        permissionDecisionReason: deny.reason,
-                      },
-                    };
-                  },
-                ],
-              },
-            ],
-            // The authority (AC3): after EVERY tool call — Bash included — diff the worktree vs the
-            // footprint and hard-stop on any out-of-footprint change. This is terminal (abort +
-            // revert-only-the-offending-path → requires-attention), NOT a recoverable deny: a Bash
-            // `rm`/`mv`/`sed -i`/redirect carries no `file_path` for the PreToolUse guard to screen,
-            // so the post-tool diff is what closes the stub-and-`rm` hole.
-            PostToolUse: [
-              {
-                hooks: [
-                  async () => {
-                    // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
-                    if (containmentReason) return {};
-                    // AC4: diff the whole tree against the run-level UNION of every dispatched unit's
-                    // footprint (NOT this unit's alone). The backstop cannot attribute a shared-tree
-                    // change to a unit, so a change is a violation only when it falls outside ALL
-                    // declared territory. A sibling's in-footprint change — running OR finished — is in
-                    // the union and exempt; `baseline` additionally exempts pre-existing dirt.
-                    // SP-6/7: pass THIS unit's own role-effective footprint as its territory, and the
-                    // run-level union as `running`. A non-acceptance sibling change stays exempt (union);
-                    // a held-out acceptance probe is exempt ONLY for the unit that owns it — so a
-                    // code-author can't slip its own grader in through the shared-tree union.
-                    const verdict = await this.containmentCheck(
-                      cwd,
-                      resolveRoleFootprint(unit.role, unit.footprint),
-                      {
-                        running: unionFootprint ?? unit.footprint,
-                        baseline: baseline ?? [],
-                      },
-                    );
-                    if (verdict.ok) return {};
-                    containmentReason = verdict.reason;
-                    this.deps.output.appendLine(
-                      `  ⛔ [${unit.id}] footprint breach — aborting + reverting ${verdict.violations
-                        .map((v) => `${v.change} ${v.file}`)
-                        .join(", ")}.`,
-                    );
-                    // Settle the streaming-input generator and tear down the live query.
-                    resolveNext(null);
-                    abort.abort();
-                    return {};
-                  },
-                ],
-              },
-            ],
-          },
+      const runWorker = createSdkWorker({
+        cwd,
+        model,
+        // Inject a test's fake query when supplied; else createSdkWorker lazy-imports the real SDK.
+        loadQuery: this.deps.sdkQuery
+          ? async () => this.deps.sdkQuery as unknown as AssessorSdkQuery
+          : undefined,
+        // Tests-first: the in-process oracle server carrying the `verify` tool (code units only).
+        mcpServers: oracleServers,
+        // SP-6/7: scope the worker's tools by role. A held-out `role: test` worker loses
+        // Bash/Grep/Glob/Read/web/Task — it cannot see the implementation, other workers' session
+        // transcripts, or the fence source, and cannot route a write through Bash. The restriction
+        // is structural and never announced (the worker stays unaware of the independence boundary).
+        disallowedTools: disallowedToolsForRole(unit.role),
+        // Aborting this stops the query the moment the post-tool containment check fires (AC3).
+        abortController: abort,
+        hooks: {
+          // The cheap early guardrail (SL-6): a PreToolUse hook runs FIRST and denies any Edit/Write
+          // outside this unit's footprint — silently, no prompt. Must be a hook, not
+          // `canUseTool`, which bypassPermissions/acceptEdits skip for edits.
+          PreToolUse: [
+            {
+              hooks: [
+                async (input: unknown) => {
+                  const inp = input as {
+                    tool_name?: string;
+                    tool_input?: unknown;
+                  };
+                  // Screen an Edit/Write against the unit's ROLE-effective footprint (SP-6/7): a
+                  // `test` unit may only touch its held-out `acceptance/` probe; a `code` unit can
+                  // never touch `acceptance/` — so the two hands can't reach into each other's work.
+                  const d = footprintGuard(
+                    inp.tool_name ?? "",
+                    inp.tool_input,
+                    resolveRoleFootprint(unit.role, unit.footprint),
+                    cwd,
+                  );
+                  // SP-6/7 reverse-leak closure: a `role: code` worker must not read the grading
+                  // probes once they've been copied into the code worktree (rework rounds) — deny
+                  // a Read of an acceptance-evidence path, tersely. A test unit needs no read
+                  // fence at all: its cwd is the tester snapshot (nothing to hide in its tree).
+                  const r = !isTest
+                    ? codeReadFence(inp.tool_name ?? "", inp.tool_input, cwd)
+                    : ({ allow: true } as const);
+                  // SP-16: `Grep` is no longer denied to a `role: test` worker (dropped from
+                  // `disallowedToolsForRole`) — instead it is scoped to the worker's own cwd
+                  // snapshot. Purely lexically deny a Grep whose `path` is absolute or `..`-escapes
+                  // cwd (an omitted/in-tree path is fair use); confines search to the tester
+                  // snapshot so it cannot reach the sibling code worktree. Code units are unaffected.
+                  const g = isTest
+                    ? grepWithinCwd(inp.tool_name ?? "", inp.tool_input, cwd)
+                    : ({ allow: true } as const);
+                  // Tests-first belt (2026-07-08): a CODE worker never touches tests — any
+                  // write to a `*.test.*` / `acceptance/` path is denied regardless of
+                  // footprint, and (when the oracle is armed) so is any Bash command that
+                  // reaches for test files, the tester snapshot, or the build/test toolchain.
+                  const t = !isTest
+                    ? codeTestFence(
+                        inp.tool_name ?? "",
+                        inp.tool_input,
+                        !!oracle,
+                      )
+                    : ({ allow: true } as const);
+                  if (d.allow && r.allow && g.allow && t.allow) return {};
+                  const deny = !d.allow ? d : !r.allow ? r : !g.allow ? g : t;
+                  if (deny.allow) return {};
+                  this.deps.output.appendLine(
+                    `  ⛔ [${unit.id}] denied: ${deny.reason.split("\n")[0]}`,
+                  );
+                  return {
+                    hookSpecificOutput: {
+                      hookEventName: "PreToolUse" as const,
+                      permissionDecision: "deny" as const,
+                      permissionDecisionReason: deny.reason,
+                    },
+                  };
+                },
+              ],
+            },
+          ],
+          // The authority (AC3): after EVERY tool call — Bash included — diff the worktree vs the
+          // footprint and hard-stop on any out-of-footprint change. This is terminal (abort +
+          // revert-only-the-offending-path → requires-attention), NOT a recoverable deny: a Bash
+          // `rm`/`mv`/`sed -i`/redirect carries no `file_path` for the PreToolUse guard to screen,
+          // so the post-tool diff is what closes the stub-and-`rm` hole.
+          PostToolUse: [
+            {
+              hooks: [
+                async () => {
+                  // Already tripped (a prior tool in the same batch) — don't re-diff/re-revert.
+                  if (containmentReason) return {};
+                  // AC4: diff the whole tree against the run-level UNION of every dispatched unit's
+                  // footprint (NOT this unit's alone). The backstop cannot attribute a shared-tree
+                  // change to a unit, so a change is a violation only when it falls outside ALL
+                  // declared territory. A sibling's in-footprint change — running OR finished — is in
+                  // the union and exempt; `baseline` additionally exempts pre-existing dirt.
+                  // SP-6/7: pass THIS unit's own role-effective footprint as its territory, and the
+                  // run-level union as `running`. A non-acceptance sibling change stays exempt (union);
+                  // a held-out acceptance probe is exempt ONLY for the unit that owns it — so a
+                  // code-author can't slip its own grader in through the shared-tree union.
+                  const verdict = await this.containmentCheck(
+                    cwd,
+                    resolveRoleFootprint(unit.role, unit.footprint),
+                    {
+                      running: unionFootprint ?? unit.footprint,
+                      baseline: baseline ?? [],
+                    },
+                  );
+                  if (verdict.ok) return {};
+                  containmentReason = verdict.reason;
+                  this.deps.output.appendLine(
+                    `  ⛔ [${unit.id}] footprint breach — aborting + reverting ${verdict.violations
+                      .map((v) => `${v.change} ${v.file}`)
+                      .join(", ")}.`,
+                  );
+                  // Settle the streaming-input generator and tear down the live query.
+                  resolveNext(null);
+                  abort.abort();
+                  return {};
+                },
+              ],
+            },
+          ],
         },
-      })) {
+      });
+      for await (const msg of runWorker(input)) {
         const rec = msg as unknown as Record<string, unknown>;
         appendSession(unit.id, JSON.stringify(rec) + "\n");
         sessionId = sessionId ?? sessionIdOf(rec);

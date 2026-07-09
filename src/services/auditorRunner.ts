@@ -327,14 +327,19 @@ function extractJsonArray(text: string): unknown {
 // ── the real (headless-Claude) runner ────────────────────────────────────────
 
 /** Minimal structural type of the Agent SDK `query()` we depend on — kept loose so the lazy import
- *  doesn't pull SDK types into the module graph. */
-type SdkQuery = (args: {
-  prompt: string;
-  options: { cwd: string; permissionMode: "bypassPermissions" };
+ *  doesn't pull SDK types into the module graph. `options` is a `Record` so a caller may spread extra
+ *  fields (SP-17/1: `options.model`) without re-typing the seam. */
+export type SdkQuery = (args: {
+  prompt: string | AsyncIterable<unknown>;
+  options: Record<string, unknown>;
 }) => AsyncIterable<unknown>;
 
 /** Deps for the real runner — all injectable so the spawn path is testable without a live model. */
 export interface SdkAuditDeps {
+  /** SP-17/1 — the pinned worker model spread into `options.model` at the audit `query()` call so the
+   *  auditor never inherits the session/environment model (`ANTHROPIC_MODEL`). REQUIRED: every caller
+   *  passes it explicitly (omission is a compile error — the loud guarantee), so there is no default. */
+  model: string;
   /** Progress sink (mirrors the orchestrator's `output.appendLine`). Defaults to a no-op. */
   log?: (line: string) => void;
   /** Loads the SDK `query`. Defaults to a lazy `import("@anthropic-ai/claude-agent-sdk")` — the
@@ -535,7 +540,7 @@ export async function deriveVerificationCommands(
  * a non-success result, or an unparseable reply all degrade to an `error` result (never a thrown
  * crash, never a spurious pass).
  */
-export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
+export function createSdkAuditRunner(deps: SdkAuditDeps): AuditRunner {
   const log = deps.log ?? (() => {});
   const loadQuery =
     deps.loadQuery ??
@@ -573,7 +578,12 @@ export function createSdkAuditRunner(deps: SdkAuditDeps = {}): AuditRunner {
       const query = await loadQuery();
       for await (const msg of query({
         prompt,
-        options: { cwd: req.cwd, permissionMode: "bypassPermissions" },
+        // SP-17/1: pin the auditor's model explicitly so it never inherits the session/env model.
+        options: {
+          cwd: req.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
       })) {
         const rec = msg as Record<string, unknown>;
         sessionId = sessionId ?? sessionIdOf(rec);

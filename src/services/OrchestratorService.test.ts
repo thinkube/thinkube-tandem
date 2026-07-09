@@ -278,6 +278,10 @@ function makeDeps(
       appendLine: (l: string) => calls.log.push(l),
     } as unknown as OrchestratorDeps["output"],
     canonicalRepo: "/repo",
+    // SP-17/1: OrchestratorDeps now REQUIRES a worker-model config (the source the orchestrator
+    // resolves each worker's pinned model from, decoupled from the session model). Supply the
+    // default so this construction compiles — omitting it is the intended loud compile error.
+    workerModel: { workerModel: "sonnet" },
     runUnit: opts.run ?? runOutcome("success"),
     // The closing gate's injectable seam: map each declared verification to a pass/fail outcome
     // (default all-pass), so the gate is exercised end-to-end without a live cluster.
@@ -2383,6 +2387,8 @@ test("SP-6/7 AC3: createSdkAssessor dispatches a fresh session and returns its p
   };
   const assessAc = createSdkAssessor({
     cwd: "/worktree",
+    // SP-17/1: SdkAssessorDeps now REQUIRES `model` (spread into options.model at the query call).
+    model: "sonnet",
     loadQuery: async () => fakeQuery as never,
   });
   const verdict = await assessAc(
@@ -2411,6 +2417,8 @@ test("SP-6/7 AC3: createSdkAssessor fails safe when the session does not complet
     })();
   const assessAc = createSdkAssessor({
     cwd: "/worktree",
+    // SP-17/1: SdkAssessorDeps now REQUIRES `model` (spread into options.model at the query call).
+    model: "sonnet",
     loadQuery: async () => fakeQuery as never,
   });
   const verdict = await assessAc(
@@ -2608,6 +2616,8 @@ test("SP-6/7 AC4: createSdkJudge dispatches a fresh session and returns its pars
   };
   const judge = createSdkJudge({
     cwd: "/worktree",
+    // SP-17/1: SdkAssessorDeps now REQUIRES `model` (spread into options.model at the query call).
+    model: "sonnet",
     loadQuery: async () => fakeQuery as never,
   });
   const verdict = await judge(
@@ -2633,6 +2643,8 @@ test("SP-6/7 AC4: createSdkJudge fails safe to `both` when the session does not 
     })();
   const judge = createSdkJudge({
     cwd: "/worktree",
+    // SP-17/1: SdkAssessorDeps now REQUIRES `model` (spread into options.model at the query call).
+    model: "sonnet",
     loadQuery: async () => fakeQuery as never,
   });
   const verdict = await judge(
@@ -2716,6 +2728,8 @@ test("SP-6/9: createSdkJudge forwards its contract argument to buildJudgePrompt"
   };
   const judge = createSdkJudge({
     cwd: "/worktree",
+    // SP-17/1: SdkAssessorDeps now REQUIRES `model` (spread into options.model at the query call).
+    model: "sonnet",
     loadQuery: async () => fakeQuery as never,
   });
   const verdict = await judge(

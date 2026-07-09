@@ -287,8 +287,15 @@ async function main(): Promise<void> {
     );
   }
   const signingSecret: Buffer = loadOrCreateSecret(signingKeyDir);
-  const auditRunner: AuditRunner = createSdkAuditRunner({ log });
-  log("ac_verifications signing: on (mandatory; secret loaded from globalStorage)");
+  // SP-17/1: the auditor runs on a pinned worker model, never the session/env model. The MCP server
+  // process has no vscode config to read, so it passes the explicit "sonnet" default constant.
+  const auditRunner: AuditRunner = createSdkAuditRunner({
+    model: "sonnet",
+    log,
+  });
+  log(
+    "ac_verifications signing: on (mandatory; secret loaded from globalStorage)",
+  );
 
   const ctx: HandlerContext = {
     env,

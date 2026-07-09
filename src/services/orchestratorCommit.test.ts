@@ -131,6 +131,9 @@ function makeDeps(
       appendLine: (l: string) => calls.log.push(l),
     } as unknown as OrchestratorDeps["output"],
     canonicalRepo: "/repo",
+    // SP-17/1: OrchestratorDeps now REQUIRES a worker-model config (the decoupled worker model
+    // source). Supply the default so this construction compiles.
+    workerModel: { workerModel: "sonnet" },
     runUnit: spyRun,
     runAcVerifications: async (verifs) =>
       verifs.map((v) => ({

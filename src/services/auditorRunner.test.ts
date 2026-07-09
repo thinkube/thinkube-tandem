@@ -47,7 +47,12 @@ const ACS = [
 
 test("buildAuditPrompt asks all four questions — human actor, deploy-circular, controllability, assessment-vs-verifiable", () => {
   const prompt = buildAuditPrompt(
-    [{ ordinal: 1, text: "The gate refuses without a valid approval (with a secret configured)." }],
+    [
+      {
+        ordinal: 1,
+        text: "The gate refuses without a valid approval (with a secret configured).",
+      },
+    ],
     "## Design\n\nSome design.",
   );
   // Q1 — human-executed actor.
@@ -106,7 +111,8 @@ test("REGRESSION: verdicts whose run commands contain [0] / [\"key\"] / packages
 });
 
 test("parse: a fenced reply and a prose-wrapped reply still extract (tolerance preserved)", () => {
-  const arr = '[{"ordinal":1,"verdict":"verifiable","run":"npm test","env":"local"}]';
+  const arr =
+    '[{"ordinal":1,"verdict":"verifiable","run":"npm test","env":"local"}]';
   // fenced
   const fenced = "Here are my verdicts:\n```json\n" + arr + "\n```\nDone.";
   assert.equal(parseAuditVerdicts(fenced).length, 1);
@@ -120,6 +126,8 @@ test("parse: a fenced reply and a prose-wrapped reply still extract (tolerance p
 
 test("parse failure now carries evidence: session id + a reply snippet (no more transcript archaeology)", async () => {
   const runner = createSdkAuditRunner({
+    // SP-17/1: SdkAuditDeps now REQUIRES `model` (spread into options.model at the auditor query).
+    model: "sonnet",
     loadQuery: async () => fakeQuery("I could not decide on verdicts, sorry."),
   });
   const res = await runner({ acs: ACS, cwd: "/repo" });
@@ -132,10 +140,23 @@ test("parse failure now carries evidence: session id + a reply snippet (no more 
 
 test("createSdkAuditRunner returns the model's verdicts verbatim — it does not author commands", async () => {
   const modelVerdicts = JSON.stringify([
-    { ordinal: 1, verdict: "verifiable", run: "whatever the model said", env: "local" },
-    { ordinal: 2, verdict: "verifiable", run: "kubectl apply -f x", env: "cluster" },
+    {
+      ordinal: 1,
+      verdict: "verifiable",
+      run: "whatever the model said",
+      env: "local",
+    },
+    {
+      ordinal: 2,
+      verdict: "verifiable",
+      run: "kubectl apply -f x",
+      env: "cluster",
+    },
   ]);
-  const runner = createSdkAuditRunner({ loadQuery: async () => fakeQuery(modelVerdicts) });
+  const runner = createSdkAuditRunner({
+    model: "sonnet", // SP-17/1: model now required on SdkAuditDeps
+    loadQuery: async () => fakeQuery(modelVerdicts),
+  });
   const res = await runner({ acs: ACS, cwd: "/repo" });
 
   assert.equal(res.error, undefined);
@@ -149,9 +170,16 @@ test("createSdkAuditRunner returns the model's verdicts verbatim — it does not
 test("SP-6/7: an assessment verdict passes the audit and carries no run", async () => {
   const modelVerdicts = JSON.stringify([
     { ordinal: 1, verdict: "verifiable", run: "x", env: "local" },
-    { ordinal: 2, verdict: "assessment", rationale: "a prose/UX quality an assessor judges" },
+    {
+      ordinal: 2,
+      verdict: "assessment",
+      rationale: "a prose/UX quality an assessor judges",
+    },
   ]);
-  const runner = createSdkAuditRunner({ loadQuery: async () => fakeQuery(modelVerdicts) });
+  const runner = createSdkAuditRunner({
+    model: "sonnet", // SP-17/1: model now required on SdkAuditDeps
+    loadQuery: async () => fakeQuery(modelVerdicts),
+  });
   const res = await runner({ acs: ACS, cwd: "/repo" });
   const byOrd = new Map(res.verdicts.map((v) => [v.ordinal, v]));
   assert.equal(byOrd.get(2)?.verdict, "assessment");
@@ -165,7 +193,10 @@ test("SP-6/7: a needs-reframe verdict fails the audit (assessment did not weaken
     { ordinal: 1, verdict: "verifiable", run: "x", env: "local" },
     { ordinal: 2, verdict: "needs-reframe", why: "a human confirms by eye" },
   ]);
-  const runner = createSdkAuditRunner({ loadQuery: async () => fakeQuery(modelVerdicts) });
+  const runner = createSdkAuditRunner({
+    model: "sonnet", // SP-17/1: model now required on SdkAuditDeps
+    loadQuery: async () => fakeQuery(modelVerdicts),
+  });
   const res = await runner({ acs: ACS, cwd: "/repo" });
   assert.equal(res.passed, false);
 });
@@ -180,7 +211,10 @@ const V = (
 ): AuditVerdict => ({ ordinal, verdict, run, env });
 
 test("held-out recipe: a local verifiable AC's run is the repo's probe template filled with (spec, ordinal)", async () => {
-  const verdicts = [V(1, "npx vitest run src/a.test.ts", "local"), V(2, undefined, "local")];
+  const verdicts = [
+    V(1, "npx vitest run src/a.test.ts", "local"),
+    V(2, undefined, "local"),
+  ];
   await deriveVerificationCommands(verdicts, {
     cwd: "/repo",
     specId: "6/3",
@@ -190,9 +224,15 @@ test("held-out recipe: a local verifiable AC's run is the repo's probe template 
     }),
   });
   // Composite spec id 6/3 sanitized to 6_3; per-AC probe path; env normalized to local.
-  assert.equal(verdicts[0].run, "node --test out-test/acceptance/SP-6_3_AC-1.test.js");
+  assert.equal(
+    verdicts[0].run,
+    "node --test out-test/acceptance/SP-6_3_AC-1.test.js",
+  );
   assert.equal(verdicts[0].env, "local");
-  assert.equal(verdicts[1].run, "node --test out-test/acceptance/SP-6_3_AC-2.test.js");
+  assert.equal(
+    verdicts[1].run,
+    "node --test out-test/acceptance/SP-6_3_AC-2.test.js",
+  );
 });
 
 test("fallback: no recipe → the repo's whole-suite command (self-graded, unchanged behavior)", async () => {
@@ -226,7 +266,10 @@ test("cluster / assessment / needs-reframe verdicts are left untouched by comman
   await deriveVerificationCommands(verdicts, {
     cwd: "/repo",
     specId: "3",
-    resolveAcceptanceRecipe: async () => ({ sourcePath: "a/{spec}_{ac}", run: "run {spec} {ac}" }),
+    resolveAcceptanceRecipe: async () => ({
+      sourcePath: "a/{spec}_{ac}",
+      run: "run {spec} {ac}",
+    }),
     resolveLocalRun: async () => "npm test",
   });
   assert.equal(verdicts[0].run, "kubectl apply -f x && check");
@@ -240,7 +283,11 @@ test("a declared recipe overrides even an acceptance-pointing auditor command (f
   // repo). Because ACCEPTANCE_EVIDENCE_RE matched that string, the old ordering kept it and skipped
   // the recipe — silently defeating the per-AC independence the recipe turns on. The recipe must win.
   const verdicts = [
-    V(1, "npm run compile && npx mocha dist/acceptance/SP-6_15_AC-1.test.js", "local"),
+    V(
+      1,
+      "npm run compile && npx mocha dist/acceptance/SP-6_15_AC-1.test.js",
+      "local",
+    ),
   ];
   await deriveVerificationCommands(verdicts, {
     cwd: "/repo",
@@ -251,12 +298,17 @@ test("a declared recipe overrides even an acceptance-pointing auditor command (f
     }),
     resolveLocalRun: async () => "npm test",
   });
-  assert.equal(verdicts[0].run, "node --test out-test/acceptance/SP-6_15_AC-1.test.js");
+  assert.equal(
+    verdicts[0].run,
+    "node --test out-test/acceptance/SP-6_15_AC-1.test.js",
+  );
   assert.equal(verdicts[0].env, "local");
 });
 
 test("SP-6/7 AC6: with NO recipe, an acceptance-pointing command is kept (not clobbered by the whole-suite fallback)", async () => {
-  const verdicts = [V(1, "node --test out-test/acceptance/SP-6.test.js", "local")];
+  const verdicts = [
+    V(1, "node --test out-test/acceptance/SP-6.test.js", "local"),
+  ];
   await deriveVerificationCommands(verdicts, {
     cwd: "/repo",
     specId: "9",
@@ -268,7 +320,11 @@ test("SP-6/7 AC6: with NO recipe, an acceptance-pointing command is kept (not cl
 
 test("fillProbeTemplate sanitizes a composite spec id and substitutes both slots", () => {
   assert.equal(
-    fillProbeTemplate("node --test out-test/acceptance/SP-{spec}_AC-{ac}.test.js", "6/3", 2),
+    fillProbeTemplate(
+      "node --test out-test/acceptance/SP-{spec}_AC-{ac}.test.js",
+      "6/3",
+      2,
+    ),
     "node --test out-test/acceptance/SP-6_3_AC-2.test.js",
   );
 });

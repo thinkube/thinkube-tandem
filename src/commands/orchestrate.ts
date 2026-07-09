@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { WorktreeService } from "../services/WorktreeService";
 import { OrchestratorService } from "../services/OrchestratorService";
+import type { WorkerModelConfig } from "../services/workerModel";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -174,6 +175,22 @@ export function registerOrchestrateCommands(
                   .get<string>("root")
                   ?.trim() || undefined;
 
+              // SP-17/1: read the pinned, decoupled worker-model config once at the extension-host
+              // boundary and thread it into the orchestrator's deps, so every worker (code/test-author,
+              // assessor, judge, auditor) runs on this model rather than inheriting the session/env model.
+              const orchestratorCfg = vscode.workspace.getConfiguration(
+                "thinkube.orchestrator",
+              );
+              const workerModel: WorkerModelConfig = {
+                workerModel:
+                  orchestratorCfg.get<string>("workerModel")?.trim() ||
+                  undefined,
+                workerModelByRole:
+                  orchestratorCfg.get<Record<string, string>>(
+                    "workerModelByRole",
+                  ) || undefined,
+              };
+
               const orchestrator = new OrchestratorService({
                 worktrees,
                 arbiter,
@@ -182,8 +199,8 @@ export function registerOrchestrateCommands(
                 canonicalRepo: canonical,
                 thinkingSpaceRoot,
                 baseDir,
-                verifyCommand: vscode.workspace
-                  .getConfiguration("thinkube.orchestrator")
+                workerModel,
+                verifyCommand: orchestratorCfg
                   .get<string>("verifyCommand")
                   ?.trim(),
               });

@@ -685,6 +685,19 @@
           "default": "",
           "description": "Shell command run in a slice's worktree to verify it before the orchestrator advances it to Done (green = exit 0), e.g. `ansible-lint` or `npm test`. When empty, the orchestrator runs `npm run compile` if the repo has a package.json, otherwise skips the verify (logged) so a non-JS repo isn't falsely failed by a JS-only gate."
         },
+        "thinkube.orchestrator.workerModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "The pinned model every orchestrated Agent SDK worker (code/test-author, assessor, judge, acceptance-auditor) runs on (SP-17/1). Passed explicitly as `options.model` on each worker `query()`, so no worker inherits the session/environment model (`ANTHROPIC_MODEL`) — the strong model stays reserved for the pairing session while workers implement on Sonnet. A visible drop in premium-model spend."
+        },
+        "thinkube.orchestrator.workerModelByRole": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional per-role override map that RAISES an individual worker role (e.g. `judge`, `assessor`) to a stronger model than `thinkube.orchestrator.workerModel` (SP-17/1). A refinement, not a requirement: every role always resolves to the base worker model unless it is listed here."
+        },
         "thinkube.orchestrator.floatLogsToNewWindow": {
           "type": "boolean",
           "default": true,

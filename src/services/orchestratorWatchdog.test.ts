@@ -95,6 +95,9 @@ function makeWedgeDeps(): { deps: OrchestratorDeps; calls: CapturedCalls } {
       appendLine: () => {},
     } as unknown as OrchestratorDeps["output"],
     canonicalRepo: "/repo",
+    // SP-17/1: OrchestratorDeps now REQUIRES a worker-model config (the decoupled worker model
+    // source). Supply the default so this construction compiles.
+    workerModel: { workerModel: "sonnet" },
     // Every unit lands: the worker seam resolves success.
     runUnit: async () => ({ outcome: "success" as const }),
     // The closing gate runs green for the declared AC, so the slice advances and the run BELIEVES
