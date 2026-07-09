@@ -113,11 +113,11 @@ It is deliberately low-ceremony: one note per call, the human's words kept rathe
 
 == Orchestrator settings
 
-Two operator-facing settings tune how the orchestrated Agent SDK workers run. Both live under `thinkube.orchestrator.*` in VS Code settings.
+One operator-facing setting and one provisioning precondition govern how the orchestrated Agent SDK workers run.
 
 `thinkube.orchestrator.workerModel`:: The pinned model every orchestrated worker (code author, test author, assessor, judge) runs on. Defaults to `sonnet`. Workers never inherit the session or environment model — the resolved model is passed explicitly at each worker spawn, so the strong session model stays reserved for pairing while workers implement on Sonnet. A per-role override map (`thinkube.orchestrator.workerModelByRole`) can raise individual roles (e.g. `judge`) to a stronger model.
 
-`thinkube.orchestrator.rtk`:: Opt-in command-output compression via https://www.rtk-ai.app[RTK (Rust Token Killer)]. When `true`, supported Bash commands (`git status`, `git diff`, `git log`, `grep`, `rg`, `find`, `ls`, `cat`, `wc`, `du`) are wrapped as `rtk <command>` in every worker's PreToolUse hook, compressing command output before it enters the model's context. Defaults to `false`. This setting is explicit and loud: if it is `true` but the `rtk` binary is absent from PATH, the orchestrator refuses to dispatch any worker immediately — it never silently degrades or skips rewriting. Install the `rtk` binary first, then enable the setting.
+RTK command-output compression (https://www.rtk-ai.app[RTK — Rust Token Killer]) is always on — there is no setting to toggle it. Supported Bash commands (`git status`, `git diff`, `git log`, `grep`, `rg`, `find`, `ls`, `cat`, `wc`, `du`) are wrapped as `rtk <command>` in every worker's PreToolUse hook, compressing command output before it enters the model's context. The `rtk` binary is a provisioning precondition (installed by SP-3): if it is absent from PATH, the orchestrator refuses to dispatch any worker immediately — it never silently degrades or skips rewriting.
 
 == Where to go next
 

@@ -1,17 +1,23 @@
-// SP-17/2 AC2 — the worker PreToolUse hook rewrites allowed Bash calls when rtkEnabled:true.
+// SP-17/2 AC2 — the worker PreToolUse hook rewrites EVERY fence-allowed Bash call whose
+// command rtkRewrite supports — unconditionally, with no enable gate.
 //
-// WHY (INVARIANT — must always hold, lives forever): when rtkEnabled is true the
-// hook must wrap allowed Bash commands on RTK_SUPPORTED with `rtk`; when rtkEnabled
-// is false or absent the same command must pass through unchanged; and a call the
-// fences deny must be returned UNCHANGED — the deny stands with no updatedInput and
-// the rewrite only ever runs on the allow path. This precedence (fences first, rewrite
-// only on allow) is a standing contract that must survive any future refactor of the
-// hook chain.
+// WHY (TRANSITION — proves the enable gate was removed): in SP-17/1 the rewrite was gated on
+// `rtkEnabled === true`. SP-17/2 removes that gate: every fence-allowed Bash call on
+// RTK_SUPPORTED is now rewritten unconditionally. Proved here by showing the rewrite fires
+// with NO rtkEnabled in the deps — the field no longer exists in OrchestratorDeps.
+// The old tests asserting "rtkEnabled:false → no rewrite" and "rtkEnabled:absent → no
+// rewrite" are gone because the concept they tested is gone. Once this change ships and the
+// suite is green, that TRANSITION is complete.
 //
-// Testability seam (contract): inject OrchestratorDeps.sdkQuery with a fake that
-// captures options.hooks.PreToolUse, drive the private runViaSdk via TypeScript cast
-// (svc as any).runViaSdk(...) with rtkEnabled:true on the deps, then invoke the
-// captured hook directly with { tool_name, tool_input:{command} }.
+// WHY (INVARIANT — must always hold, lives forever): fences decide first; the rewrite runs
+// ONLY on the allow path. A fence-denied command is returned unchanged with no updatedInput.
+// An unsupported/compound command or non-Bash allowed call passes through unchanged. These
+// precedences must survive any future refactor of the hook chain.
+//
+// Testability seam (contract): inject OrchestratorDeps.sdkQuery with a fake that captures
+// options.hooks.PreToolUse; drive the private runViaSdk via TypeScript cast
+// (svc as any).runViaSdk(unit, spec, cwd, onPark, unionFootprint, baseline); then invoke
+// the captured PreToolUse hook directly with { tool_name, tool_input }.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,25 +31,27 @@ import type { SchedUnit } from "../services/orchestratorCore";
 // ── Minimal test unit (code role, footprint = one file) ──────────────────────
 
 const TEST_UNIT: SchedUnit = {
-  id: "TEP-17_SP-2_SL-1#eu-1",
-  slice: "TEP-17_SP-2_SL-1",
+  id: "TEP-17_SP-2_SL-2#eu-1",
+  slice: "TEP-17_SP-2_SL-2",
   footprint: ["src/services/rtkRewrite.ts"],
   requires: [],
   shape: "serial",
   role: "code",
-  note: "implement rtkRewrite",
+  note: "implement always-on rtk wiring",
 };
 
 const SPEC_NUMBER = "17/2";
 const CWD = "/nonexistent-cwd-ac2";
 const noop = () => {};
 
-// ── Factory: minimal deps with a capturing sdkQuery ──────────────────────────
+// ── Factory: minimal deps with a capturing sdkQuery — NO rtkEnabled anywhere ─
+// The absence of rtkEnabled in the deps object is the TRANSITION proof:
+// in the old opt-in wiring the hook checked `this.deps.rtkEnabled === true`;
+// this factory proves the unconditional hook fires without it.
 
-function makeCapturingDeps(
-  rtkEnabled: boolean | undefined,
-  capturedHooks: { current: unknown },
-): OrchestratorDeps {
+function makeCapturingDeps(capturedHooks: {
+  current: unknown;
+}): OrchestratorDeps {
   return {
     worktrees: {} as never,
     arbiter: {} as never,
@@ -51,8 +59,9 @@ function makeCapturingDeps(
     output: { appendLine: () => {} } as never,
     canonicalRepo: "/nonexistent-canonical",
     workerModel: {},
-    rtkEnabled,
-    // Capture the hooks from options and yield one success result so runViaSdk completes.
+    // NOTE: rtkEnabled is intentionally ABSENT — removed in SP-17/2.
+    // NOTE: rtkBinaryPresent is absent — runViaSdk does not call the binary guard;
+    //   that guard lives in dispatchSpec. Not setting it here keeps the deps minimal.
     sdkQuery: ((args: {
       prompt: unknown;
       options: Record<string, unknown>;
@@ -68,60 +77,63 @@ function makeCapturingDeps(
         };
       })();
     }) as never,
-    // Containment check: always ok so PostToolUse never aborts the run.
     containmentCheck: async () => ({ ok: true as const, violations: [] }),
   } as unknown as OrchestratorDeps;
 }
 
-/** Drive the private runViaSdk via TypeScript cast and return when it resolves. */
+/** Drive the private runViaSdk via TypeScript cast — the "focused-cast test helper". */
 async function driveRunViaSdk(
   svc: OrchestratorService,
   unit: SchedUnit = TEST_UNIT,
+  unionFootprint: string[] = [],
 ): Promise<void> {
-  // Access the private method via cast — the "focused-cast test helper" the contract names.
   await (svc as unknown as Record<string, Function>).runViaSdk(
     unit,
     SPEC_NUMBER,
     CWD,
     noop, // onPark
-    [], // unionFootprint
+    unionFootprint,
     [], // baseline
-    // oracleFor omitted — fail-soft, worker runs without verify tool (oracle stays undefined)
   );
 }
 
-// ── AC-2 tests ────────────────────────────────────────────────────────────────
-
-test("PreToolUse hook — allowed Bash call with rtkEnabled:true returns hookSpecificOutput with rtk-wrapped updatedInput", async () => {
-  // INVARIANT: when rtkEnabled is true and a Bash command is on RTK_SUPPORTED and the
-  // fences all allow, the hook must inject updatedInput with the rtk-wrapped command.
-  const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(makeCapturingDeps(true, capturedHooks));
-
-  await driveRunViaSdk(svc);
-
-  assert.ok(
-    capturedHooks.current,
-    "hooks object was passed to the worker query options",
-  );
-
+/** Extract the first PreToolUse hook from the captured hooks structure. */
+function extractHook(capturedHooks: {
+  current: unknown;
+}): (input: unknown) => Promise<Record<string, unknown>> {
   const hooks = capturedHooks.current as Record<
     string,
     Array<{ hooks: Array<(input: unknown) => unknown> }>
   >;
-  const preToolUseChain = hooks?.PreToolUse?.[0]?.hooks;
   assert.ok(
-    Array.isArray(preToolUseChain),
+    capturedHooks.current,
+    "hooks object was passed to the worker query options",
+  );
+  const chain = hooks?.PreToolUse?.[0]?.hooks;
+  assert.ok(
+    Array.isArray(chain),
     "options.hooks.PreToolUse[0].hooks is an array",
   );
-  const hook = preToolUseChain[0];
-  assert.equal(typeof hook, "function", "the hook is a function");
+  const hook = chain[0];
+  assert.equal(typeof hook, "function", "the PreToolUse hook is a function");
+  return hook as (input: unknown) => Promise<Record<string, unknown>>;
+}
 
-  // An allowed Bash call for a command on RTK_SUPPORTED → updatedInput with rtk-wrapped form.
-  const result = (await hook({
+// ── AC-2 tests ────────────────────────────────────────────────────────────────
+
+test("PreToolUse hook — REWRITE: allowed Bash call with supported command returns updatedInput with rtk-wrapped command (no rtkEnabled in deps)", async () => {
+  // WHY (TRANSITION): proves the enable gate was removed — the rewrite fires unconditionally,
+  // without rtkEnabled set anywhere in deps. With the old opt-in, this same dep object (no
+  // rtkEnabled) would have produced no rewrite; with SP-17/2 it MUST rewrite.
+  const capturedHooks: { current: unknown } = { current: undefined };
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
+  await driveRunViaSdk(svc);
+  const hook = extractHook(capturedHooks);
+
+  const result = await hook({
     tool_name: "Bash",
     tool_input: { command: "git status" },
-  })) as Record<string, unknown>;
+  });
 
   const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
   assert.ok(out, "hookSpecificOutput is present");
@@ -131,113 +143,99 @@ test("PreToolUse hook — allowed Bash call with rtkEnabled:true returns hookSpe
   assert.equal(updated.command, "rtk git status", "command is rtk-wrapped");
 });
 
-test("PreToolUse hook — rtkEnabled:true but command not on RTK_SUPPORTED passes through with no updatedInput", async () => {
-  // INVARIANT: only commands on RTK_SUPPORTED are rewritten; others pass through unchanged.
+test("PreToolUse hook — REWRITE: wraps a variety of supported commands unconditionally", async () => {
+  // WHY (INVARIANT): the unconditional rewrite applies to every command on RTK_SUPPORTED;
+  // checking multiple entries guards against a partial list or a match-by-prefix mistake.
   const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(makeCapturingDeps(true, capturedHooks));
-
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
   await driveRunViaSdk(svc);
+  const hook = extractHook(capturedHooks);
 
-  const hooks = capturedHooks.current as Record<
-    string,
-    Array<{ hooks: Array<(input: unknown) => unknown> }>
-  >;
-  const hook = hooks?.PreToolUse?.[0]?.hooks?.[0];
-  assert.ok(hook, "hook exists");
+  for (const [cmd, expected] of [
+    ["grep -r TODO src/", "rtk grep -r TODO src/"],
+    ["find . -name '*.ts'", "rtk find . -name '*.ts'"],
+    ["ls -la", "rtk ls -la"],
+    ["git diff HEAD", "rtk git diff HEAD"],
+  ] as const) {
+    const result = await hook({
+      tool_name: "Bash",
+      tool_input: { command: cmd },
+    });
+    const updated = (result?.hookSpecificOutput as Record<string, unknown>)
+      ?.updatedInput as Record<string, unknown> | undefined;
+    assert.ok(updated, `updatedInput present for "${cmd}"`);
+    assert.equal(updated.command, expected, `"${cmd}" is rtk-wrapped`);
+  }
+});
 
-  // A command NOT on RTK_SUPPORTED → allow but no rewrite.
-  const result = (await hook({
+test("PreToolUse hook — PASSTHROUGH: allowed Bash call with unsupported command passes through with no updatedInput", async () => {
+  // WHY (INVARIANT): only commands on RTK_SUPPORTED are rewritten; unsupported commands
+  // must pass through unchanged — a mangled or uncompressed command is always better than
+  // a silently-wrong rewrite.
+  const capturedHooks: { current: unknown } = { current: undefined };
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
+  await driveRunViaSdk(svc);
+  const hook = extractHook(capturedHooks);
+
+  const result = await hook({
     tool_name: "Bash",
     tool_input: { command: "npm install" },
-  })) as Record<string, unknown>;
+  });
 
   const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
   assert.ok(
     !out?.updatedInput,
-    "no updatedInput for a command not on RTK_SUPPORTED",
+    "no updatedInput for a command not on RTK_SUPPORTED — passthrough",
   );
   assert.ok(!out?.permissionDecision, "no deny — the command is allowed");
 });
 
-test("PreToolUse hook — rtkEnabled:false passes through allowed Bash call with no updatedInput", async () => {
-  // INVARIANT: when rtkEnabled is false the hook must not rewrite any command.
+test("PreToolUse hook — PASSTHROUGH: allowed Bash compound/pipeline command passes through with no updatedInput", async () => {
+  // WHY (INVARIANT): compound or pipeline commands are never rewritten, even when the leading
+  // word is on RTK_SUPPORTED. A mangled compound command is worse than an uncompressed one;
+  // conservative rewriting is the permanent contract.
   const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(makeCapturingDeps(false, capturedHooks));
-
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
   await driveRunViaSdk(svc);
+  const hook = extractHook(capturedHooks);
 
-  const hooks = capturedHooks.current as Record<
-    string,
-    Array<{ hooks: Array<(input: unknown) => unknown> }>
-  >;
-  const hook = hooks?.PreToolUse?.[0]?.hooks?.[0];
-  assert.ok(hook, "hook exists");
-
-  const result = (await hook({
+  // Pipe — leading word "git status" is supported but the line is compound.
+  const pipeResult = await hook({
     tool_name: "Bash",
-    tool_input: { command: "git status" },
-  })) as Record<string, unknown>;
+    tool_input: { command: "git status | grep modified" },
+  });
+  const pipeOut = pipeResult?.hookSpecificOutput as
+    Record<string, unknown> | undefined;
+  assert.ok(!pipeOut?.updatedInput, "no updatedInput for a pipe (|) command");
 
-  const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
-  assert.ok(
-    !out?.updatedInput,
-    "no updatedInput when rtkEnabled is false — command passes through",
-  );
-  assert.ok(!out?.permissionDecision, "no deny either");
+  // Logical AND.
+  const andResult = await hook({
+    tool_name: "Bash",
+    tool_input: { command: "grep foo src/ && echo done" },
+  });
+  const andOut = andResult?.hookSpecificOutput as
+    Record<string, unknown> | undefined;
+  assert.ok(!andOut?.updatedInput, "no updatedInput for a && command");
 });
 
-test("PreToolUse hook — rtkEnabled absent (undefined) passes through allowed Bash call with no updatedInput", async () => {
-  // INVARIANT: omitting rtkEnabled from deps must be equivalent to false — no rewrite.
+test("PreToolUse hook — DENY: a Write to a path outside the footprint is denied unchanged — no updatedInput (fences decide first)", async () => {
+  // WHY (INVARIANT): fences screen the ORIGINAL command and their deny is returned UNCHANGED.
+  // The RTK rewrite runs ONLY on the allow path — a denied call is never rewritten. This
+  // precedence (fences first, rewrite only on allow) must survive any future refactor.
   const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(
-    makeCapturingDeps(undefined, capturedHooks),
-  );
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
+  // Pass an empty unionFootprint so the footprintGuard denies any write (no allowed paths).
+  await driveRunViaSdk(svc, TEST_UNIT, []);
+  const hook = extractHook(capturedHooks);
 
-  await driveRunViaSdk(svc);
-
-  const hooks = capturedHooks.current as Record<
-    string,
-    Array<{ hooks: Array<(input: unknown) => unknown> }>
-  >;
-  const hook = hooks?.PreToolUse?.[0]?.hooks?.[0];
-  assert.ok(hook, "hook exists");
-
-  const result = (await hook({
-    tool_name: "Bash",
-    tool_input: { command: "git status" },
-  })) as Record<string, unknown>;
-
-  const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
-  assert.ok(
-    !out?.updatedInput,
-    "no updatedInput when rtkEnabled is absent — command passes through",
-  );
-});
-
-test("PreToolUse hook — a fence-denied Write outside footprint is returned unchanged with no updatedInput (rtkEnabled:true)", async () => {
-  // INVARIANT: the deny must stand unchanged — the rewrite never runs on the deny path.
-  // Fences screen the ORIGINAL command; rtk runs ONLY on the allow path, so a denied call
-  // is never rewritten.
-  const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(makeCapturingDeps(true, capturedHooks));
-
-  await driveRunViaSdk(svc);
-
-  const hooks = capturedHooks.current as Record<
-    string,
-    Array<{ hooks: Array<(input: unknown) => unknown> }>
-  >;
-  const hook = hooks?.PreToolUse?.[0]?.hooks?.[0];
-  assert.ok(hook, "hook exists");
-
-  // Write to a path outside the unit's footprint (footprint = ["src/services/rtkRewrite.ts"]).
-  const result = (await hook({
+  // Write to a path not in the footprint → footprintGuard denies it.
+  const result = await hook({
     tool_name: "Write",
     tool_input: {
       file_path: "src/views/sidebar/ChatPanel.ts",
       content: "outside footprint",
     },
-  })) as Record<string, unknown>;
+  });
 
   const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
   assert.ok(out, "hookSpecificOutput is present (it is a deny)");
@@ -248,29 +246,26 @@ test("PreToolUse hook — a fence-denied Write outside footprint is returned unc
   );
 });
 
-test("PreToolUse hook — rtkEnabled:true but tool is not Bash passes through with no updatedInput", async () => {
-  // INVARIANT: the rewrite only applies to Bash tool calls; other allowed calls (Read, etc.)
-  // pass through without updatedInput.
+test("PreToolUse hook — PASSTHROUGH: allowed non-Bash tool call passes through with no updatedInput", async () => {
+  // WHY (INVARIANT): the rewrite only applies to Bash tool calls; other allowed calls (Read,
+  // etc.) pass through without updatedInput, unconditionally. The scope of the rewrite is
+  // Bash only — that must hold forever.
   const capturedHooks: { current: unknown } = { current: undefined };
-  const svc = new OrchestratorService(makeCapturingDeps(true, capturedHooks));
+  const svc = new OrchestratorService(makeCapturingDeps(capturedHooks));
+  // Use the unit's footprint as the unionFootprint so a Read of an in-footprint path is allowed.
+  await driveRunViaSdk(svc, TEST_UNIT, TEST_UNIT.footprint);
+  const hook = extractHook(capturedHooks);
 
-  await driveRunViaSdk(svc);
-
-  const hooks = capturedHooks.current as Record<
-    string,
-    Array<{ hooks: Array<(input: unknown) => unknown> }>
-  >;
-  const hook = hooks?.PreToolUse?.[0]?.hooks?.[0];
-  assert.ok(hook, "hook exists");
-
-  // A Read tool call (allowed, but not Bash) → no rewrite.
-  const result = (await hook({
+  // A Read of an in-footprint path — allowed, but not Bash → no rewrite.
+  const result = await hook({
     tool_name: "Read",
     tool_input: { file_path: "src/services/rtkRewrite.ts" },
-  })) as Record<string, unknown>;
+  });
 
   const out = result?.hookSpecificOutput as Record<string, unknown> | undefined;
-  assert.ok(!out?.updatedInput, "no updatedInput for a non-Bash allowed call");
-  // Also no deny — the Read of an in-footprint path is allowed.
-  assert.ok(!out?.permissionDecision, "no deny for an allowed Read");
+  assert.ok(!out?.updatedInput, "no updatedInput for an allowed non-Bash call");
+  assert.ok(
+    !out?.permissionDecision,
+    "no deny for an allowed Read inside footprint",
+  );
 });

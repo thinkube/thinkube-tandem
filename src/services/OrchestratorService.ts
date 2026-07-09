@@ -233,12 +233,9 @@ export interface OrchestratorDeps {
    *  onto `SchedulerState.attemptBound`; defaults to the core's `MAX_REWORK_ATTEMPTS` when omitted.
    *  Overridable so a test can set a smaller bound (e.g. 2). The bound is control-plane — no model. */
   attemptBound?: number;
-  /** SP-17/2 — enable RTK (Rust Token Killer) command-output compression in every worker's
-   *  PreToolUse hook. Read from `thinkube.orchestrator.rtk` at the extension boundary; threaded
-   *  here so tests can drive the hook with no live VS Code configuration. */
-  rtkEnabled?: boolean;
-  /** SP-17/2 — probe whether the `rtk` binary is present on PATH. Defaults to a `which rtk`
-   *  PATH lookup; tests inject a fake so the loud guard is exercisable with no live binary. */
+  /** SP-17/2 — probe whether the `rtk` binary is present on PATH. Always called at the top of
+   *  dispatchSpec (guard is unconditional). Defaults to a `which rtk` PATH lookup; tests inject
+   *  a fake so the loud guard is exercisable with no live binary. */
   rtkBinaryPresent?: () => boolean | Promise<boolean>;
 }
 
@@ -1098,16 +1095,17 @@ export class OrchestratorService {
       discoveries: [],
     };
 
-    // RTK loud guard (SP-17/2): when RTK is enabled but the binary is absent, refuse UP FRONT
-    // before any store slice listing or buildSlices. Explicit and loud — no silent degradation.
-    if (this.deps.rtkEnabled === true) {
+    // RTK loud guard (SP-17/2): ALWAYS check the binary before any store slice listing or
+    // buildSlices. RTK compression is mandatory — no setting gates it. Explicit and loud:
+    // an absent binary refuses up front, never silently degrading to uncompressed output.
+    {
       const binaryPresent =
         this.deps.rtkBinaryPresent ?? defaultRtkBinaryPresent;
       if (!(await binaryPresent())) {
         const reason =
-          `rtk binary not found on PATH. The thinkube.orchestrator.rtk setting is enabled ` +
-          `but the rtk binary must be installed before orchestrating. ` +
-          `Disable thinkube.orchestrator.rtk or install the rtk binary, then re-run.`;
+          `rtk binary not found on PATH. RTK command-output compression is mandatory ` +
+          `and the rtk binary must be installed as a provisioning precondition before ` +
+          `orchestrating (see SP-3). Install the rtk binary, then re-run.`;
         output.appendLine(`✗ ${reason}`);
         return { ...result, ok: false, reason };
       }
@@ -2520,12 +2518,10 @@ export class OrchestratorService {
                       )
                     : ({ allow: true } as const);
                   if (d.allow && r.allow && g.allow && t.allow) {
-                    // SP-17/2: RTK rewrite on fence-ALLOWED Bash calls. The fences always
-                    // screen the ORIGINAL command; a denied call never reaches this branch.
-                    if (
-                      this.deps.rtkEnabled === true &&
-                      inp.tool_name === "Bash"
-                    ) {
+                    // SP-17/2: RTK rewrite on fence-ALLOWED Bash calls — UNCONDITIONAL.
+                    // The fences always screen the ORIGINAL command; a denied call never
+                    // reaches this branch. No rtkEnabled check — the rewrite is mandatory.
+                    if (inp.tool_name === "Bash") {
                       const ti = inp.tool_input as
                         Record<string, unknown> | undefined;
                       const cmd =
