@@ -1070,7 +1070,7 @@ export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
  * AC4). Matches the delivery report's plain-language `## What happened` prose FIRST; if that heading
  * is absent (or empty), falls back to the slice body's `## ⚑ Requires attention` heading — so the
  * existing `/attend` slice-diagnosis caller keeps working unchanged. Returns undefined when neither is
- * present. The attended-session divergence is `stripFailingCheck(extractDiagnosis(report))`.
+ * present. The attended-session divergence is `extractDiagnosis(report)`, passed verbatim.
  */
 export function extractDiagnosis(body: string): string | undefined {
   const text = body ?? "";
@@ -1127,59 +1127,26 @@ export function buildTestReworkContext(
 }
 
 /**
- * Strip the **failing-check specifics** from a rework-feedback string (SP-6 AC3) so the fixer is
- * steered by *what behaviour diverged from the intent*, never by "make assertion X pass." It
- * defensively removes the three channels the closing gate's evidence leaks through:
- *
- *   • the failing **AC ordinal** — `AC #3`, `AC 3`, a bare `#4`;
- *   • the failing **run command** — a `$ <cmd> → exit N` / `$ …` shell line (the `acEvidence` shape);
- *   • **its output** — fenced ``` /``~~~`` evidence blocks and `| … |` per-AC table rows (the
- *     `DELIVERY.md` per-AC table), plus leftover `→ exit N` / `→ could not run …` result fragments.
- *
- * A clean, prose intent-divergence description (no `$`/fence/table/ordinal tokens) passes through
- * essentially unchanged. Pure + idempotent. The rework-prompt builders route their feedback through
- * this as belt-and-braces — on top of only ever being *handed* a divergence description rather than
- * the AC results or the delivery report — so the omission holds even if a caller passes raw evidence.
+ * The chat prefill priming an `/attend` session: the `/attend` skill invocation
+ * for the requires-attention slice, the worktree the fix lands in, and the
+ * failure VERBATIM (2026-07-11: the old anti-gaming scrubber blinded the fixer
+ * to exactly the fault classes — broken probe, phantom footprint — it most
+ * needed to see; grading independence lives in the assessor/judge, never in
+ * hiding the failure from the fixer). The session itself opens in the CANONICAL
+ * repo, which survives worktree retirement — hence the explicit worktree note.
+ * A no-`divergence` call is just the bare `/attend <handle>` invocation. Pure.
  */
-export function stripFailingCheck(text: string): string {
-  const lines = (text ?? "").split(/\r?\n/);
-  const kept: string[] = [];
-  let inFence = false;
-  for (const line of lines) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence; // drop the fence delimiters AND the command output they wrap
-      continue;
-    }
-    if (inFence) continue;
-    if (/^\s*\$\s/.test(line)) continue; // a `$ <cmd> → exit N` shell command line
-    if (/^\s*\|/.test(line)) continue; // a `| AC | Verified by | … |` per-AC evidence table row
-    kept.push(line);
-  }
-  return kept
-    .join("\n")
-    .replace(/\bAC[\s_]*#?\s*\d+/gi, "") // "AC #3" / "AC 3" → drop the ordinal
-    .replace(/#\d+\b/g, "") // a bare `#4` ordinal
-    .replace(/→\s*(?:exit\s+-?\d+|could not run[^\n]*)/gi, "") // leftover run-result fragments
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/**
- * The chat prefill priming an `/attend` session (SP-11/2 + SP-6 AC3): the `/attend` skill invocation
- * for the requires-attention slice, followed — when a divergence is supplied — by an
- * **intent-divergence** description of how the behaviour diverged from what was intended. The
- * divergence is routed through {@link stripFailingCheck}, so the fixer never sees the failing AC
- * ordinal, the failing `run` command, or its output and so cannot optimise "make assertion X pass."
- * A no-`divergence` call is just the bare `/attend <handle>` invocation, with no dangling label. The
- * `/attend` skill (TEP-11/SP-1) supplies the "re-read the intent, bring the behaviour back, return to
- * Ready" workflow — this prefill no longer duplicates that prose. Pure.
- */
-export function buildAttendPrompt(handle: string, divergence?: string): string {
+export function buildAttendPrompt(
+  handle: string,
+  divergence?: string,
+  worktreePath?: string,
+): string {
   return (
     `/attend ${handle}` +
-    (divergence ? `\n\n${stripFailingCheck(divergence)}` : "")
+    (worktreePath
+      ? `\n\nThe Spec's worktree — apply the fix THERE and commit it to the spec branch before handing back: ${worktreePath}`
+      : "") +
+    (divergence ? `\n\n${divergence}` : "")
   );
 }
 
@@ -1188,26 +1155,28 @@ export function buildAttendPrompt(handle: string, divergence?: string): string {
  * analog of {@link buildAttendPrompt}, hosted here so the rework/divergence builders live in one
  * pure place (reuse, don't fork). It is the `/attend SP-<specId>` skill invocation, followed —
  * when the Spec lives on a cross-repo project thinking space — by the thinking-space note so every
- * kanban call addresses it explicitly, then — when a divergence is supplied — by an
- * **intent-divergence** description routed through {@link stripFailingCheck} (NOT the `DELIVERY.md`
- * per-AC table, its `run` commands, or their output), so the reworking worker is steered by the
- * intent and never by the failing AC ordinal, the failing command, or its output. No divergence ⇒
- * no trailing paragraph. The `/attend` skill (TEP-11/SP-1) supplies the rework workflow. Pure.
+ * kanban call addresses it explicitly, then the worktree the rework lands in,
+ * then the divergence VERBATIM (2026-07-11 — see {@link buildAttendPrompt}).
+ * No divergence ⇒ no trailing paragraph. Pure.
  */
 export function buildRejectPrompt(
   specId: string,
   divergence?: string,
   projectThinkingSpaceId?: string,
+  worktreePath?: string,
 ): string {
   // For a cross-repo project member the Spec lives on the project thinking space, NOT on this
   // worktree's repo thinking space — so every kanban call must address it explicitly.
   const thinkingSpaceNote = projectThinkingSpaceId
     ? `\n\nIMPORTANT — this Spec lives on the project thinking space \`${projectThinkingSpaceId}\`, not on this worktree's repo. Pass \`thinking_space=${projectThinkingSpaceId}\` to EVERY kanban tool (get_thinkube_file / get_slice / list_thinking_space / move_slice / patch_spec_section / write_spec / create_slice). Your cwd's thinking space is the working repo where the code lives, which is NOT this Spec's thinking space.`
     : "";
-  const divergenceNote = divergence
-    ? `\n\n${stripFailingCheck(divergence)}`
+  const worktreeNote = worktreePath
+    ? `\n\nThe Spec's worktree — apply the rework THERE and commit it to the spec branch: ${worktreePath}`
     : "";
-  return `/attend SP-${specId}` + thinkingSpaceNote + divergenceNote;
+  const divergenceNote = divergence ? `\n\n${divergence}` : "";
+  return (
+    `/attend SP-${specId}` + thinkingSpaceNote + worktreeNote + divergenceNote
+  );
 }
 
 /**

@@ -17,7 +17,6 @@ import {
   buildTestReworkContext,
   buildAttendPrompt,
   buildRejectPrompt,
-  stripFailingCheck,
   StreamJsonBuffer,
   summarizeEvent,
   isResultSuccess,
@@ -245,16 +244,16 @@ test("SP-11/3: extractDiagnosis matches `## What happened` FIRST (delivery repor
   );
 });
 
-test("SP-11/3: divergence for an attended session = stripFailingCheck(extractDiagnosis(report))", () => {
-  // The report's What-happened prose may carry a failing AC ordinal; the divergence handed to the
-  // attend/reject prompt must be scrubbed of it (stripFailingCheck), never fed raw.
+test("SP-11/3: divergence for an attended session = extractDiagnosis(report), VERBATIM", () => {
+  // 2026-07-11: no scrubbing — the fixer sees the failure as it is (the old
+  // anti-gaming boundary blinded it to gate/footprint defects); independence
+  // lives in the assessor/judge, never in hiding evidence from the fixer.
   const report =
     "# Delivery — TEP-11_SP-3\n\nintro\n\n## What happened\n\nAC #3 diverged: the token is dropped on reload.\n\n## Files\n\n- `a.ts`\n";
   const diagnosis = extractDiagnosis(report);
   assert.ok(diagnosis);
-  const divergence = stripFailingCheck(diagnosis!);
-  assert.doesNotMatch(divergence, /#?3\b/); // the ordinal is scrubbed
-  assert.match(divergence, /token is dropped on reload/); // the intent-divergence survives
+  assert.match(diagnosis!, /AC #3 diverged/); // the ordinal survives — verbatim
+  assert.match(diagnosis!, /token is dropped on reload/);
 });
 
 test("SP-11/3: extractDiscoveries pulls items under a trailing `## Discoveries` heading, strips markers; [] when absent", () => {
@@ -288,150 +287,47 @@ test("SP-11/3: buildTestReworkContext returns the diagnosis VERBATIM only for ro
   assert.equal(buildTestReworkContext(diag, undefined), undefined);
 });
 
-test("buildAttendPrompt: is the /attend invocation for the slice + the divergence", () => {
-  const p = buildAttendPrompt("SP-1_SL-2", "verifier red");
-  // SP-11/2: the prefill invokes the `/attend` skill for the slice, then the divergence.
+test("buildAttendPrompt: /attend invocation + worktree note + VERBATIM divergence", () => {
+  const p = buildAttendPrompt("SP-1_SL-2", "AC #5: $ tsc → exit 127", "/wt/TEP-1_SP-4");
   assert.match(p, /^\/attend SP-1_SL-2/);
-  assert.match(p, /verifier red/);
-  // No divergence → the bare `/attend <handle>` invocation, no dangling "diagnosis:" label.
+  // The worktree the fix lands in — the session itself opens in the canonical repo.
+  assert.match(p, /worktree.*\/wt\/TEP-1_SP-4/);
+  assert.match(p, /commit it to the spec branch/);
+  // Evidence passes VERBATIM (2026-07-11): ordinal, command, exit code all visible.
+  assert.match(p, /AC #5: \$ tsc → exit 127/);
+  // No divergence → bare invocation (+ optional worktree note only).
   assert.equal(buildAttendPrompt("SP-1_SL-2"), "/attend SP-1_SL-2");
-  assert.doesNotMatch(buildAttendPrompt("SP-1_SL-2"), /diagnosis/i);
 });
 
-// ── SP-6 AC3: fix-loop feedback is intent-divergence, not the failing check ──
+// ── 2026-07-11: rework feedback is VERBATIM ────────────────────────────────
 //
-// The rework prompt must STATE which behaviour diverged from the intent and EXCLUDE the
-// three channels the closing gate's evidence leaks through — the failing AC ordinal, the
-// failing `run` command, and its output — so the fixer cannot optimise "make assertion X
-// pass." `stripFailingCheck` is the pure belt-and-braces scrubber; the two rework-prompt
-// builders (`buildAttendPrompt` at slice grain, `buildRejectPrompt` at Spec grain) route
-// their feedback through it. These tests pin all three exclusions + the divergence framing.
+// The SP-6 AC3 anti-gaming scrubber (stripFailingCheck) was REMOVED: it blinded
+// the fixer to exactly the fault classes it most needed to see (an unrunnable
+// probe, a phantom footprint path), while grading independence was already
+// enforced where it belongs — the assessor/judge are never the fixer. These
+// tests pin the new contract: the prompts carry the evidence as-is.
 
-// A single raw blob carrying ALL THREE leak channels at once — the shape the closing gate
-// would produce if a caller wired raw `acEvidence` / `DELIVERY.md` into the rework prompt
-// instead of an intent-divergence summary. The scrubber must survive even that worst case.
-const RAW_EVIDENCE_WITH_INTENT =
-  "The exporter emits ISO-8601 timestamps, but the intent is Unix epoch seconds.\n" +
-  "\n" +
-  "AC #3 failed.\n" +
-  "$ npm test -- export.spec.ts → exit 1\n" +
-  "```\n" +
-  "AssertionError: expected '2026-06-30T00:00:00Z' to equal 1782777600\n" +
-  "  at Object.<anonymous> (export.spec.ts:42:18)\n" +
-  "```\n" +
-  "| AC | Verified by | Result |\n" +
-  "| #3 | npm test -- export.spec.ts | could not run |\n";
-
-// The intent prose that MUST survive scrubbing — the actionable "what diverged" signal.
-const SURVIVING_INTENT =
-  "The exporter emits ISO-8601 timestamps, but the intent is Unix epoch seconds.";
-
-// Helper: assert a rework prompt leaks NONE of the three forbidden channels.
-function assertNoLeak(prompt: string): void {
-  // (a) the failing AC ordinal — neither "AC #3"/"AC 3" nor a bare "#3".
-  assert.doesNotMatch(
-    prompt,
-    /AC[\s_]*#?\s*\d/i,
-    "leaked the failing AC ordinal",
-  );
-  assert.doesNotMatch(prompt, /#\d/, "leaked a bare ordinal token");
-  // (b) the failing `run` command.
-  assert.doesNotMatch(prompt, /npm test/, "leaked the failing run command");
-  assert.doesNotMatch(
-    prompt,
-    /export\.spec\.ts/,
-    "leaked the failing run command target",
-  );
-  // (c) its output — the exit code, the assertion text, the per-AC evidence table.
-  assert.doesNotMatch(prompt, /exit\s+1/i, "leaked the failing exit code");
-  assert.doesNotMatch(
-    prompt,
-    /AssertionError/,
-    "leaked the failing command output",
-  );
-  assert.doesNotMatch(prompt, /could not run/i, "leaked a run-result fragment");
-  assert.doesNotMatch(prompt, /\|/, "leaked a per-AC evidence table row");
-}
-
-test("AC3: stripFailingCheck drops the AC ordinal, the failing `$` command, fenced output, table rows + leftover run fragments", () => {
-  const out = stripFailingCheck(RAW_EVIDENCE_WITH_INTENT);
-  // The intent-divergence prose survives — the fixer is still told WHAT diverged.
-  assert.match(out, /Unix epoch seconds/);
-  assert.match(out, /ISO-8601 timestamps/);
-  assertNoLeak(out);
-});
-
-test("AC3: stripFailingCheck passes clean intent prose through unchanged and is idempotent", () => {
-  const clean =
-    "The retry path gives up after one attempt; the intent is to retry until the bound is reached.";
-  assert.equal(stripFailingCheck(clean), clean);
-  // Idempotent — scrubbing an already-scrubbed blob is a fixed point (AC3 belt-and-braces).
-  const once = stripFailingCheck(RAW_EVIDENCE_WITH_INTENT);
-  assert.equal(stripFailingCheck(once), once);
-});
-
-test("AC3: stripFailingCheck scrubs each leak channel in isolation", () => {
-  // Bare ordinal forms.
-  assert.doesNotMatch(stripFailingCheck("re-run AC 4 then AC_5 and #6"), /\d/);
-  // A `$ cmd → exit N` line is removed whole.
-  assert.equal(stripFailingCheck("$ pytest -k thing → exit 2"), "");
-  // A fenced output block is removed including its contents.
-  assert.equal(
-    stripFailingCheck("```\nTraceback (most recent call last)\n```"),
-    "",
-  );
-  // A leftover inline run-result fragment is removed but its lead-in prose stays.
-  assert.match(
-    stripFailingCheck("the gate stayed red → could not run the harness"),
-    /the gate stayed red/,
-  );
-  assert.doesNotMatch(
-    stripFailingCheck("the gate stayed red → could not run the harness"),
-    /could not run/,
-  );
-});
-
-test("AC3: buildAttendPrompt states the divergence and excludes the failing AC ordinal / command / output", () => {
-  const p = buildAttendPrompt("SP-6_SL-3", RAW_EVIDENCE_WITH_INTENT);
-  // SP-11/2: the `/attend` invocation for the slice, then the intent-divergence prose.
-  assert.match(p, /^\/attend SP-6_SL-3/);
-  assert.match(p, /Unix epoch seconds/);
-  // Excludes all three leak channels even when handed raw evidence.
-  assertNoLeak(p);
-});
-
-test("AC3: buildRejectPrompt states the Spec-grain divergence and excludes the failing AC ordinal / command / output", () => {
-  const p = buildRejectPrompt("6", RAW_EVIDENCE_WITH_INTENT);
-  // SP-11/2: the `/attend SP-<specId>` invocation, then the intent-divergence prose.
-  assert.match(p, /^\/attend SP-6/);
-  assert.match(p, /Unix epoch seconds/);
-  assertNoLeak(p);
-});
-
-test("AC3: a no-divergence rework prompt is the bare /attend invocation — never a failing check", () => {
-  // SP-11/2: a no-divergence prefill is just the `/attend` skill invocation; the skill supplies
-  // the "re-read the intent, bring it back in line" workflow. No leaked channel, no dangling label.
-  const attend = buildAttendPrompt("SP-6_SL-3");
-  assert.equal(attend, "/attend SP-6_SL-3");
-  assertNoLeak(attend);
-  // Spec grain: the bare `/attend SP-<specId>` invocation, no trailing paragraph.
-  const reject = buildRejectPrompt("6");
-  assert.equal(reject, "/attend SP-6");
-  assert.doesNotMatch(reject, /failing (?:check|run|command)/i);
-  assertNoLeak(reject);
-});
-
-test("AC3: the rework prompt never frames feedback as 'the failing check'", () => {
-  for (const p of [
-    buildAttendPrompt("SP-6_SL-3", RAW_EVIDENCE_WITH_INTENT),
-    buildRejectPrompt("6", RAW_EVIDENCE_WITH_INTENT),
-  ]) {
-    // The feedback is framed as a divergence, never as "make the failing assertion pass."
-    assert.doesNotMatch(p, /failing (?:check|assertion|test|command)/i);
-    assert.doesNotMatch(p, /make .* pass/i);
-    // The actionable intent signal is present in both.
-    assert.match(p, new RegExp(SURVIVING_INTENT.split(",")[0]));
+test("attend/reject prompts carry failing evidence VERBATIM (no scrubbing)", () => {
+  const raw =
+    "The exporter emits ISO-8601 timestamps, but the intent is Unix epoch seconds.\n" +
+    "AC #3 failed.\n$ npm test -- export.spec.ts → exit 1";
+  const attend = buildAttendPrompt("SP-6_SL-3", raw, "/wt/x");
+  const reject = buildRejectPrompt("6", raw, undefined, "/wt/x");
+  for (const p of [attend, reject]) {
+    assert.match(p, /Unix epoch seconds/);
+    assert.match(p, /AC #3 failed/);
+    assert.match(p, /npm test -- export\.spec\.ts/);
+    assert.match(p, /exit 1/);
+    assert.match(p, /\/wt\/x/);
   }
+});
+
+test("buildRejectPrompt: bare invocation without divergence; worktree note when supplied", () => {
+  assert.equal(buildRejectPrompt("6"), "/attend SP-6");
+  assert.match(
+    buildRejectPrompt("6", undefined, undefined, "/wt/y"),
+    /worktree.*\/wt\/y/,
+  );
 });
 
 test("batchExecutionUnits: ALL code units collapse to ONE coder; test units keep per-AC fan-out", () => {

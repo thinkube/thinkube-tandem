@@ -428,10 +428,15 @@ export function registerOrchestrateCommands(
             return;
           }
 
-          // failed (requires-attention) → open a primed session in the worktree.
+          // failed (requires-attention) → open a primed session in the
+          // CANONICAL repo (2026-07-11), not the disposable worktree: the
+          // worktree dies at Accept and used to take the session's cwd with
+          // it (the whole "close this session before orchestrating" ritual).
+          // The prompt carries the worktree path — the fix is applied there
+          // and committed to the spec branch; the session outlives it.
           await deps.launcher.openHere(
-            vscode.Uri.file(worktreePath),
-            buildAttendPrompt(h, extractDiagnosis(body)),
+            vscode.Uri.file(canonical),
+            buildAttendPrompt(h, extractDiagnosis(body), worktreePath),
           );
         } catch (err) {
           vscode.window.showErrorMessage(
@@ -639,9 +644,11 @@ export function registerOrchestrateCommands(
                   .split(path.sep)
                   .join("/")
               : undefined;
+          // Session in the CANONICAL repo (2026-07-11) — survives worktree
+          // retirement; the prompt names the worktree the rework lands in.
           await deps.launcher.openHere(
-            vscode.Uri.file(worktreePath),
-            buildRejectPrompt(specId, report, projectThinkingSpaceId),
+            vscode.Uri.file(canonical),
+            buildRejectPrompt(specId, report, projectThinkingSpaceId, worktreePath),
           );
         } catch (err) {
           vscode.window.showErrorMessage(
