@@ -188,6 +188,12 @@ export interface OrchestratorDeps {
    *  the gate then retries once. Absent ⇒ no self-heal, the gate escalates with
    *  fault `gate` directly. */
   reauthorGate?: (specNumber: string, worktreeCwd: string) => Promise<boolean>;
+  /** Auto-attend (2026-07-11): the one-shot fixer dispatched for an ESCALATED
+   *  slice before a human is asked — full evidence, edits + commits in the
+   *  worktree, then the closing gate re-runs (checkpoint seeding makes the
+   *  commit count). Defaults to {@link createSdkAutoAttend}; tests inject a
+   *  fake. Cap: one attempt per slice per orchestration run. */
+  autoAttend?: AutoAttend;
   /** Park a slice needs-input with its question + the worker's session id + unit id (tests): defaults to a frontmatter+body write. */
   flagNeedsInput?: (
     handle: string,
@@ -842,6 +848,76 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
   };
 }
 
+/** The auto-attend fixer seam (2026-07-11): given an escalated slice's intent
+ *  + the judged fault/evidence, attempt ONE automated fix in the worktree and
+ *  commit it to the spec branch. Returns whether the session completed (the
+ *  closing gate re-run is the real verdict, not this boolean). */
+export type AutoAttend = (
+  slice: string,
+  sliceIntent: string,
+  diagnosis: string,
+) => Promise<boolean>;
+
+/** Build the auto-attend fixer prompt: full evidence, no blindfolds —
+ *  grading independence lives in the assessor/judge, never in hiding the
+ *  failure from the fixer. */
+export function buildAutoAttendPrompt(
+  slice: string,
+  sliceIntent: string,
+  diagnosis: string,
+): string {
+  return [
+    `You are the AUTO-ATTEND fix agent for slice ${slice}. The orchestrator escalated it: bounded rework did not converge. You get ONE attempt before a human is asked.`,
+    ``,
+    `## The slice's intent`,
+    sliceIntent || "(no slice body available — infer intent from the diagnosis and the code)",
+    ``,
+    `## What failed (judged fault + verbatim evidence)`,
+    diagnosis,
+    ``,
+    `## Your job, in this worktree (your cwd)`,
+    `1. Fix the divergence — smallest correct change; follow the evidence, not guesses.`,
+    `2. Verify locally (compile/typecheck/tests relevant to the change).`,
+    `3. Commit to the current branch: git add -A && git commit -m "fix(auto-attend): ${slice} <one-line summary>".`,
+    `Rules: never push; never edit board/thinking-space files; if the failure is genuinely unfixable from this worktree (needs credentials, cluster state, a human decision), commit nothing and say so plainly.`,
+  ].join("\n");
+}
+
+/** Default auto-attend fixer: a headless SDK session IN the worktree with edit
+ *  capability (same bypassPermissions channel as workers). */
+export function createSdkAutoAttend(deps: SdkAssessorDeps): AutoAttend {
+  const log = deps.log ?? (() => {});
+  const loadQuery =
+    deps.loadQuery ??
+    (async () =>
+      (await import("@anthropic-ai/claude-agent-sdk"))
+        .query as unknown as AssessorSdkQuery);
+  return async (slice, sliceIntent, diagnosis): Promise<boolean> => {
+    const prompt = buildAutoAttendPrompt(slice, sliceIntent, diagnosis);
+    let sawSuccess = false;
+    try {
+      const query = await loadQuery();
+      for await (const msg of query({
+        prompt,
+        options: {
+          cwd: deps.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
+      })) {
+        const rec = msg as Record<string, unknown>;
+        const line = summarizeEvent(rec);
+        if (line) log(`  [auto-attend ${slice}] ${line}`);
+        if (isResultSuccess(rec)) sawSuccess = true;
+      }
+    } catch (err) {
+      log(`  [auto-attend ${slice}] session failed: ${(err as Error).message}`);
+      return false;
+    }
+    return sawSuccess;
+  };
+}
+
 // ── The code/test-author worker query seam (SP-17/1) ───────────────────────
 //
 // Extracted out of the private {@link OrchestratorService.runViaSdk} into an exported, vscode-free
@@ -1490,6 +1566,9 @@ export class OrchestratorService {
     // requires-attention path on the same slice (e.g. closing gate then finalization wedge) never
     // double-bumps the bounded counter.
     const countedThisRun = new Set<string>();
+    // Auto-attend inputs (2026-07-11): each blocked slice's full diagnosis, so
+    // the one-shot fixer gets the judged fault + evidence verbatim.
+    const sliceDiagnoses = new Map<string, string>();
     const blockSlice = async (
       slice: string,
       diagnosis: string,
@@ -1504,6 +1583,7 @@ export class OrchestratorService {
     ) => {
       if (countedThisRun.has(slice)) return;
       countedThisRun.add(slice);
+      sliceDiagnoses.set(slice, diagnosis);
       // Bounded re-dispatch (SP-6/6 AC5) + code-vs-test routing (SP-6/7 AC4): this requires-attention is
       // one failed acceptance/rework attempt. The PURE, no-LLM decision increments the per-slice counter
       // and, given the judged `fault` (from the injectable `judgeFailure`, when the caller supplied one),
@@ -1718,6 +1798,78 @@ export class OrchestratorService {
         testerPath,
       );
       for (const [h, ords] of green) greenByGate.set(h, ords);
+
+      // ── Auto-attend (2026-07-11): fix first, ask a human second ──────────
+      // A slice the gate just ESCALATED gets ONE automated fix attempt before
+      // any human sees requires-attention: a headless fixer session in the
+      // worktree, primed with the slice's intent + the judged fault and
+      // verbatim evidence (no blindfolds — grading independence lives in the
+      // assessor/judge, never in hiding the failure from the fixer). It
+      // commits `fix(auto-attend): …` to the spec branch; the gate then
+      // re-runs ONCE to grade the fix (countedThisRun prevents any double
+      // attempt-burn on a still-red slice). Only a still-red slice stays
+      // escalated for the human. Gate defects that self-healing couldn't fix
+      // are exempt — a probe/environment defect is not fixable from the code
+      // worktree, so the fixer isn't burned on it.
+      const toAutoAttend = result.escalated.filter(
+        (h) => !sliceDiagnoses.get(h)?.startsWith(GATE_DEFECT_MARKER),
+      );
+      if (toAutoAttend.length > 0) {
+        const fixer =
+          this.deps.autoAttend ??
+          createSdkAutoAttend({
+            cwd: worktreePath,
+            model: resolveWorkerModel(this.deps.workerModel, "attend"),
+            log: (l) => output.appendLine(l),
+          });
+        let fixedAny = false;
+        for (const h of toAutoAttend) {
+          output.appendLine(
+            `▸ ${h}: auto-attend — one automated fix attempt before asking a human.`,
+          );
+          try {
+            const ok = await fixer(
+              h,
+              this.promptCtx.sliceBodies.get(h) ?? "",
+              sliceDiagnoses.get(h) ?? "(no diagnosis recorded)",
+            );
+            if (ok) fixedAny = true;
+            else
+              output.appendLine(
+                `⚑ ${h}: auto-attend session did not complete — left for a human.`,
+              );
+          } catch (err) {
+            output.appendLine(
+              `⚑ ${h}: auto-attend failed (${(err as Error).message}) — left for a human.`,
+            );
+          }
+        }
+        if (fixedAny) {
+          output.appendLine(
+            `▸ SP-${specNumber}: re-running the closing gate to grade the auto-attend fix(es).`,
+          );
+          const regraded = await this.runClosingGate(
+            specNumber,
+            worktreePath,
+            slices,
+            landed,
+            unitsBySlice,
+            state,
+            blockSlice,
+            result,
+            testerPath,
+          );
+          for (const [h, ords] of regraded) {
+            greenByGate.set(h, ords);
+            // The fix landed green: the slice leaves the escalated state it
+            // entered minutes ago — no human attention needed after all.
+            this.escalatedSlices.delete(h);
+            result.escalated = result.escalated.filter((x) => x !== h);
+            result.attention = result.attention.filter((x) => x !== h);
+            output.appendLine(`✓ ${h}: auto-attend fix graded green.`);
+          }
+        }
+      }
     } else if (landed.size > 0) {
       output.appendLine(
         `▸ SP-${specNumber}: paused — ${result.attention.length} need attention / ${result.needsInput.length} need input; closing gate not run, nothing committed.`,
