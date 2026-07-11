@@ -1,5 +1,5 @@
 /**
- * Thinking Space orchestrator (SP-tgs8nz) — the integration shell around `orchestratorCore`'s pure
+ * Thinking Space orchestrator — the integration shell around `orchestratorCore`'s pure
  * scheduler. `dispatchSpec` runs a **makespan scheduler over the Spec's work-unit DAG**: it
  * pools every slice's execution units into one graph (units span slices, never Specs), keeps
  * a per-Spec pool of N workers saturated (ready frontier ∧ footprint-disjoint, critical-path
@@ -11,7 +11,7 @@
  *
  * The pure DAG/frontier/prompt logic lives in `orchestratorCore` + `parallelSlices`
  * (unit-tested). This shell is the low-AI-testability part (live SDK worker + worktree +
- * commit): its end-to-end behaviour is a human verdict (SP-tgsdvw lever), exercised with fakes.
+ * commit): its end-to-end behaviour is a human verdict ( lever), exercised with fakes.
  */
 import { spawn } from "child_process";
 import * as fs from "fs";
@@ -84,6 +84,10 @@ import {
   normalizeFilePath,
   type ContainmentResult,
 } from "../methodology/parallelSlices";
+import {
+  splitAttentionArtifacts,
+  attentionHistoryEntry,
+} from "../methodology/sliceLifecycle";
 import { defaultAcceptanceRecipeResolver } from "./auditorRunner";
 import { resolveWorkerModel, type WorkerModelConfig } from "./workerModel";
 import { rtkRewrite } from "./rtkRewrite";
@@ -105,7 +109,7 @@ import {
 } from "./orchestratorSessions";
 
 /**
- * Called when a worker escalates a question and **parks resident** (SP-tgs8nz_SL-3): the scheduler
+ * Called when a worker escalates a question and **parks resident**: the scheduler
  * frees its active slot but the worker stays alive, suspended. `answer` pushes the human's reply
  * into the live session (via `/attend`), continuing it in place.
  */
@@ -157,7 +161,7 @@ export interface OrchestratorDeps {
    *  under the Spec body's `## Acceptance Criteria`, so the accept gate (every AC checked) passes. */
   checkAcs?: (specNumber: string, ordinals: number[]) => Promise<void>;
   /** @deprecated Legacy per-slice verify recipe (`thinkube.orchestrator.verifyCommand`); the
-   *  closing gate (SP-tgzyfy) is now per-AC, so this is no longer consulted. Kept so the command
+   *  closing gate is now per-AC, so this is no longer consulted. Kept so the command
    *  layer that still passes it compiles. */
   verifyCommand?: string;
   /** Advance a slice to Done (tests): defaults to stamping `status: done`. */
@@ -201,12 +205,12 @@ export interface OrchestratorDeps {
     sessionId?: string,
     unitId?: string,
   ) => Promise<void>;
-  /** Commit ONE slice's work before it is marked Done (SP-th4wqc_SL-3 / #9): per-slice
+  /** Commit ONE slice's work before it is marked Done: per-slice
    *  commit-before-Done. Rejecting signals a git failure → the orchestrator rolls that slice back to
    *  `ready` (NOT Done) per `commitPlan`'s commit-failure protocol. Defaults to `git add -A && git
    *  commit` of the slice's footprint in the worktree (tests inject a fake git that fails one slice). */
   commit?: (handle: string, specNumber: string, cwd: string) => Promise<void>;
-  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails — no slice ever ends
+  /** Roll a slice back to `ready`: used when its commit fails — no slice ever ends
    *  Done with uncommitted work, so a later run re-attempts it. Defaults to stamping `status: ready`. */
   rollbackToReady?: (handle: string) => Promise<void>;
   /** Tear down a finished Spec — close its worktree (tests): defaults to `WorktreeService.remove`. */
@@ -219,7 +223,7 @@ export interface OrchestratorDeps {
     onPark: OnPark,
   ) => Promise<WorkerResult>;
   /** Resolve the worktree HEAD's short SHA — the finalization watchdog's commit marker and the
-   *  delivery report's stamp (SP-th4wqc_SL-2). Defaults to `git rev-parse --short HEAD` in the
+   *  delivery report's stamp. Defaults to `git rev-parse --short HEAD` in the
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
   /** Post-tool footprint containment (SP-6/2 AC3 + SP-2/TEP-6 AC4): diff the worktree against the
@@ -327,7 +331,7 @@ export interface SpecRunResult {
   escalated: string[];
   /** Slices parked needs-input (a worker asked a question) this run. */
   needsInput: string[];
-  /** Slices rolled back to `ready` this run because their commit failed (SP-th4wqc_SL-3) — a slice
+  /** Slices rolled back to `ready` this run because their commit failed — a slice
    *  is never left Done with uncommitted work; a later run re-attempts (or resumes) it. */
   rolledBack: string[];
   /** The whole Spec landed and was committed. */
@@ -1024,7 +1028,7 @@ export class OrchestratorService {
     sliceBodies: new Map(),
   };
 
-  /** Per-slice resume state read from frontmatter (SP-th4wqc_SL-3): whether a slice's units already
+  /** Per-slice resume state read from frontmatter: whether a slice's units already
    *  landed (`units_landed`) and whether its work was already committed (`committed` / `commit_sha`).
    *  `resumeDecision` consults this so a re-run COMMITS a complete-but-uncommitted slice rather than
    *  re-authoring it (the frontier never re-dispatches a worker for it). Loaded once per dispatchSpec. */
@@ -1132,7 +1136,7 @@ export class OrchestratorService {
         this.priorEvidenceHash.set(handle, fm.last_evidence_hash);
       if (fm?.escalated === true || hasEscalationMarker(parsed?.body ?? ""))
         this.escalatedSlices.add(handle);
-      // Resume markers (SP-th4wqc_SL-3): a prior run that landed the units but couldn't commit
+      // Resume markers: a prior run that landed the units but couldn't commit
       // stamps `units_landed: true` without a `commit_sha`; `resumeDecision` then COMMITS rather
       // than re-authoring it on the next run. `committed`/`commit_sha` mark an already-landed slice.
       this.sliceResumeState.set(handle, {
@@ -1176,7 +1180,7 @@ export class OrchestratorService {
    * to `cap` workers saturated dispatching the ready, footprint-disjoint, critical-path frontier
    * (units pooled across slices). A failed unit or a needs-input worker flags its slice
    * `requires-attention`/`needs-input` during the run. When every slice's units have **landed**
-   * (Spec quiescence) the **closing AI-verification gate** runs (SP-tgzyfy): the Spec's declared
+   * (Spec quiescence) the **closing AI-verification gate** runs: the Spec's declared
    * per-AC verifications run as a full plan; a slice reaches Done only when the ACs it `satisfies`
    * all ran green (then those AC ordinals are ticked on the Spec); any red / un-runnable check
    * leaves its slice `requires-attention` (no skip). When the whole Spec is green it commits
@@ -1289,7 +1293,7 @@ export class OrchestratorService {
     const doneSlices = new Set<string>();
     // Slices whose every unit landed this run — the candidates the closing gate verifies.
     const landed = new Set<string>();
-    // Slices RESUMED this run (SP-th4wqc_SL-3): their units already landed in a prior run but were
+    // Slices RESUMED this run: their units already landed in a prior run but were
     // never committed, so `resumeDecision` says COMMIT (not author). Their units are seeded done so
     // the frontier never re-dispatches a worker for them — the resume commits the present work.
     const resumeCommit = new Set<string>();
@@ -1776,7 +1780,7 @@ export class OrchestratorService {
       fill();
     }
 
-    // ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────
+    // ── Closing AI-verification gate ──────────────
     // At Spec quiescence — every slice's units landed (none failed / parked / blocked) — run the
     // Spec's DECLARED per-AC verifications as one full plan. The gate returns the landed slices that
     // are AC-green (→ their satisfied ordinals); a red / un-runnable slice is flagged
@@ -1876,7 +1880,7 @@ export class OrchestratorService {
       );
     }
 
-    // ── Per-slice commit-before-Done (SP-th4wqc_SL-3 / TEP-th3i18 #9) ──────
+    // ── Per-slice commit-before-Done ──────
     // No more all-or-nothing commit. `commitPlan` is the per-slice decision: only landed ∧ gate-green
     // slices are eligible to commit-then-Done. We commit each slice BEFORE marking it Done; a slice
     // whose git commit FAILS rolls back to `ready` (the commit-failure protocol) and is NOT advanced —
@@ -1944,14 +1948,14 @@ export class OrchestratorService {
       );
     }
 
-    // ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────
+    // ── Finalization watchdog ────────────
     // A run can land every unit and then silently wedge: the finalize tail above (commit, write
     // DELIVERY.md, advance the slice off `ready`) believed it ran, but a marker is actually absent
     // — no real commit SHA, no report on disk — so the work sits done-but-uncommitted and the loop
     // would otherwise stall without surfacing anything. We consult the pure `finalizationVerdict`
     // ONLY at a clean quiescence (no slice flagged attention / needs-input / rolled back this run):
     // there the run BELIEVED it finalized, so any missing marker is a genuine wedge — not a normal
-    // pause at the closing gate, and not an EXPLICIT per-slice commit rollback (SP-th4wqc_SL-3),
+    // pause at the closing gate, and not an EXPLICIT per-slice commit rollback,
     // which is a handled outcome the slice already moved back to `ready` for, not a silent wedge.
     // A `{ wedged }` verdict surfaces the affected slices Requires-attention with the exported
     // diagnosis so a human (or a re-run) picks it up instead of a silent loop.
@@ -2009,11 +2013,11 @@ export class OrchestratorService {
   }
 
   /**
-   * The closing AI-verification gate (SP-tgzyfy): run the Spec's declared `ac_verifications` as a
+   * The closing AI-verification gate: run the Spec's declared `ac_verifications` as a
    * full plan against the worktree, then classify each landed slice as **AC-green** iff the ACs it
    * `satisfies` all ran green. Returns a map of the green slices → the AC ordinals they satisfy (the
    * input to the per-slice commit-before-Done step, which commits then advances + ticks those
-   * ordinals — SP-th4wqc_SL-3). No skip: a Spec with no declaration (or a red / un-runnable check)
+ * ordinals ). No skip: a Spec with no declaration (or a red / un-runnable check)
    * leaves the affected slices `requires-attention` in place (not green, never returned). The per-AC
    * results land on `result.acResults` (and the auditable report). Mutates `state` / `result`; does
    * NOT advance / commit / check ordinals — that is the caller's per-slice commit responsibility.
@@ -2141,7 +2145,7 @@ export class OrchestratorService {
 
     if (verifs.length === 0) {
       // No declaration ⇒ the closing gate cannot run. NO SKIP: every landed slice →
-      // requires-attention; nothing advances, nothing commits (TEP-tgzx3p reverses the old pass).
+      // requires-attention; nothing advances, nothing commits ( reverses the old pass).
       const diagnosis =
         "Closing AI-verification gate could not run: the Spec declares no `ac_verifications`. " +
         "Declare a per-AC verification map on the Spec (AC ordinal → { run, env }), then re-run.";
@@ -2612,7 +2616,7 @@ export class OrchestratorService {
   }
 
   /**
-   * The Agent SDK worker (SP-tgs8nz_SL-2): `query()` runs a headless `claude` subprocess in the
+   * The Agent SDK worker: `query()` runs a headless `claude` subprocess in the
    * worktree under `bypassPermissions` (no prompts — the PreToolUse footprint hook from SL-6 is the
    * cheap early guardrail). Typed messages are persisted to the unit's `.jsonl` (for the graph
    * float-out) and summarized to the channel. The SDK is **lazy-imported** so it never loads at
@@ -3216,7 +3220,7 @@ export class OrchestratorService {
     });
   }
 
-  /** Build the auditable delivery report (SP-tgzyfy): the per-AC pass/fail table + evidence, the
+  /** Build the auditable delivery report: the per-AC pass/fail table + evidence, the
    *  per-unit outcomes, caught problems, and the commit. Delegates to the pure `buildDeliveryReport`. */
   private deliveryMarkdown(
     specNumber: string,
@@ -3402,13 +3406,26 @@ export class OrchestratorService {
     const rel = this.deps.store.pathForSlice(`${m[1]}/${m[2]}`, Number(m[3]));
     const parsed = await this.deps.store.getFile(rel);
     if (!parsed?.frontmatter) return;
+    // Replace, don't append (2026-07-11): the card states its CURRENT state.
+    // Any previous ⚑ block collapses to a one-line `attention_history` entry;
+    // exactly ONE live diagnosis remains on the body.
+    const { base, blocks } = splitAttentionArtifacts(parsed.body ?? "");
+    const priorHistory = Array.isArray(parsed.frontmatter.attention_history)
+      ? (parsed.frontmatter.attention_history as string[])
+      : [];
+    const date = new Date().toISOString().slice(0, 10);
+    const history = [
+      ...priorHistory,
+      ...blocks.map((b) => attentionHistoryEntry(b, date)),
+    ];
     const note = `\n\n## ⚑ Requires attention\n\n${diagnosis}\n`;
-    const bodyWithNote = (parsed.body ?? "") + note;
+    const bodyWithNote = base + note;
     await this.deps.store.writeFile(
       rel,
       {
         ...parsed.frontmatter,
         status: "requires-attention",
+        ...(history.length ? { attention_history: history } : {}),
         ...(escalation ? { rework_attempts: escalation.attempts } : {}),
         ...(escalation?.escalated ? { escalated: true } : {}),
         // Circuit-breaker memory (2026-07-11): the normalized failing-evidence
@@ -3545,7 +3562,7 @@ export class OrchestratorService {
     }
   }
 
-  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails so it is never left
+  /** Roll a slice back to `ready`: used when its commit fails so it is never left
    *  Done with uncommitted work. Defaults to stamping `status: ready`. */
   private rollbackToReady(handle: string): Promise<void> {
     return (
@@ -3579,13 +3596,13 @@ export class OrchestratorService {
   }
 
   /**
-   * Default per-slice commit (SP-th4wqc_SL-3): stage everything present and commit it as ONE slice's
+   * Default per-slice commit: stage everything present and commit it as ONE slice's
    * landing, then **publish the branch** (workers never commit). Commit-before-Done — the caller only
    * marks the slice Done after this resolves; a rejection would roll it back to `ready`. Best-effort
    * at the git layer — a "nothing to commit" exit (e.g. a sibling slice already swept the worktree in
    * the same run) is NOT a failure, so we resolve rather than reject and the slice still advances. A
    * genuine rollback is driven by an injected git that rejects (tests). The branch MUST be pushed so
-   * the commit isn't local-only (TEP-th3i18 #29); push is non-interactive and best-effort.
+   * the commit isn't local-only; push is non-interactive and best-effort.
    */
   private defaultCommit(
     handle: string,

@@ -70,6 +70,8 @@ import {
   isRetiredStatus,
   validateRetireReason,
   recutSliceFrontmatter,
+  splitAttentionArtifacts,
+  attentionHistoryEntry,
   hasRecutFields,
   type SliceRecut,
 } from "../methodology/sliceLifecycle";
@@ -741,7 +743,7 @@ const THINKING_SPACE_PARAM = {
   },
 } as const;
 
-const TOOL_DEFS = [
+export const TOOL_DEFS = [
   {
     name: "list_thinking_spaces",
     description:
@@ -2754,7 +2756,7 @@ async function moveSlice(
 
     // → Done docs gate: a `docs: required` slice must have its docs
     // done. Blocking mode refuses (throws before any write); advisory mode lets
-    // the move through but returns a warning to surface in /pair-next.
+    // the move through but returns a warning to surface to the caller.
     const docsGate = gateSliceDocsToDone({
       docs: typeof fm.docs === "string" ? fm.docs : undefined,
       docsDone: fm.docs_done === true,
@@ -2788,7 +2790,34 @@ async function moveSlice(
     }
   }
 
-  await store.writeFile(rel, fm, parsed.body);
+  // Board-artifact hygiene (2026-07-11): a card states its CURRENT state.
+  // Returning to Ready auto-prunes the resolved `## ⚑ Requires attention`
+  // block(s) + any ⛔ markers (collapsed to one-line `attention_history`
+  // entries), clears the `escalated` hold and `last_fault` route, and resets
+  // `rework_attempts` — a human/auto hand-back restarts the bounded loop
+  // (leaving the old count would re-escalate the slice before it ever ran).
+  // `last_evidence_hash` survives deliberately: if the very same failure
+  // reappears after a "fix", the circuit breaker should trip immediately.
+  let bodyOut = parsed.body;
+  if (target === "ready") {
+    const { base, blocks } = splitAttentionArtifacts(parsed.body ?? "");
+    if (blocks.length > 0 || fm.escalated || fm.rework_attempts) {
+      const date = new Date().toISOString().slice(0, 10);
+      const prior = Array.isArray(fm.attention_history)
+        ? (fm.attention_history as string[])
+        : [];
+      if (blocks.length)
+        fm.attention_history = [
+          ...prior,
+          ...blocks.map((b) => attentionHistoryEntry(b, date)),
+        ];
+      delete fm.escalated;
+      delete fm.rework_attempts;
+      delete fm.last_fault;
+      bodyOut = `${base}\n`;
+    }
+  }
+  await store.writeFile(rel, fm, bodyOut);
 
   // SP-6/7 AC7: clear the parent Spec's `accepted:` stamp when this slice moved OFF Done. An accepted
   // Spec whose slice is being reworked/reopened is no longer accepted — leaving the stamp would let the
