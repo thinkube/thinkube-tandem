@@ -3,23 +3,23 @@
  *
  * The card is CONFIGURATION, never a name. A space's name is written exactly
  * one way everywhere — the workspace spelling (`Platform/core/thinkube-control`)
- * — and the card, sitting inside the space directory, declares two facts:
+ * — and the card, sitting inside the space directory, declares the
+ * maintainers and marks the directory as a thinking space:
  *
- *   repo:
- *     remote: github.com/thinkube/thinkube-control   # the code repository
- *   orgs: [cmxela]                                    # the maintainers
+ *   orgs: [cmxela]
  *
- * `repo.remote` lets every tool VERIFY that the directory it resolved really
- * is that repository before running anything against it (wrong clone / moved
- * directory / renamed repo → an error stating expected vs found). Project
- * spaces omit `repo:` entirely. `orgs` is the declared maintainer list —
- * TEP/SP numbering is scoped per (space, org); admitting a maintainer is one
- * reviewable line here, and a maintainer subtree on disk that is not declared
- * refuses loudly. The cross-maintainer reference grammar is deliberately a
- * future TEP.
+ * `orgs` is the declared maintainer list — TEP/SP numbering is scoped per
+ * (space, org); admitting a maintainer is one reviewable line here, and a
+ * maintainer subtree on disk that is not declared refuses loudly. The
+ * cross-maintainer reference grammar is deliberately a future TEP.
  *
- * The card's presence is also the marker that a directory IS a thinking
- * space. Pure (string level); reading/walking lives in `spaceRegistry.ts`.
+ * The working REPOSITORY needs no declaration: the filesystem copy at the
+ * space's workspace path IS the repository — tools verify the resolved
+ * directory exists and is a git repository, nothing more. (A git-remote
+ * field was considered and rejected: it gates nothing the copy doesn't
+ * already prove, and it would false-alarm on every repository rename.)
+ *
+ * Pure (string level); reading/walking lives in `spaceRegistry.ts`.
  */
 import { parse as yamlParse } from "yaml";
 
@@ -29,33 +29,15 @@ export const SPACE_CARD_FILENAME = "space.yaml";
 export interface SpaceCard {
   /** Declared maintainer segments (numbering scope per org). May be empty. */
   orgs: string[];
-  /** Present iff the space is backed by a code repository. */
-  repo?: { remote: string };
 }
 
 /** One path segment: letters, digits, dot, dash, underscore. */
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 /**
- * Normalize a git remote to the comparable `host/path` form:
- * `https://github.com/thinkube/x.git`, `ssh://git@github.com/thinkube/x` and
- * `git@github.com:thinkube/x.git` all become `github.com/thinkube/x`.
- * The host is lowercased (DNS is case-insensitive); the path keeps its case.
- */
-export function normalizeRemote(remote: string): string {
-  let r = remote.trim();
-  r = r.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, ""); // scheme://
-  r = r.replace(/^([^@/]+)@([^:/]+):/, "$2/"); // git@host:path → host/path
-  r = r.replace(/^([^@/]+)@/, ""); // user@ left over from scheme form
-  r = r.replace(/\.git$/, "").replace(/\/+$/, "");
-  const slash = r.indexOf("/");
-  if (slash === -1) return r.toLowerCase();
-  return r.slice(0, slash).toLowerCase() + r.slice(slash);
-}
-
-/**
  * Parse + validate one card. `source` names the file in every error so a
- * refusal points at the offending card, never at a stack trace.
+ * refusal points at the offending card, never at a stack trace. Unknown keys
+ * refuse — a card carries exactly what the schema declares.
  */
 export function parseSpaceCard(yamlText: string, source: string): SpaceCard {
   const fail = (msg: string): never => {
@@ -71,6 +53,10 @@ export function parseSpaceCard(yamlText: string, source: string): SpaceCard {
     return fail("the card must be a YAML mapping");
   const m = raw as Record<string, unknown>;
 
+  const unknown = Object.keys(m).filter((k) => k !== "orgs");
+  if (unknown.length)
+    return fail(`unknown key(s): ${unknown.join(", ")} — a card declares only \`orgs\``);
+
   const orgsRaw = m.orgs;
   if (!Array.isArray(orgsRaw) || orgsRaw.some((o) => typeof o !== "string"))
     return fail("`orgs` must be a list of maintainer segments (may be empty)");
@@ -80,13 +66,5 @@ export function parseSpaceCard(yamlText: string, source: string): SpaceCard {
   if (new Set(orgs).size !== orgs.length)
     return fail("`orgs` entries must be unique");
 
-  const repoRaw = m.repo as Record<string, unknown> | undefined;
-  if (repoRaw === undefined) return { orgs };
-  if (!repoRaw || typeof repoRaw !== "object" || Array.isArray(repoRaw))
-    return fail("`repo` must be a mapping with a `remote`");
-  const remote =
-    typeof repoRaw.remote === "string" ? normalizeRemote(repoRaw.remote) : "";
-  if (!remote)
-    return fail("`repo.remote` is required when `repo` is present");
-  return { orgs, repo: { remote } };
+  return { orgs };
 }

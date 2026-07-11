@@ -1,54 +1,25 @@
 /**
- * space.yaml — the space card (TEP-14): configuration, never a name.
- * Parsing + validation refuse loudly with the card named.
+ * space.yaml — the space card (TEP-14): the declared maintainer list and
+ * the space marker. Parsing refuses loudly with the card named.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeRemote, parseSpaceCard } from "./spaceManifest";
+import { parseSpaceCard } from "./spaceManifest";
 
-test("a repo card parses with a normalized remote", () => {
-  const c = parseSpaceCard(
-    `repo:\n  remote: https://github.com/thinkube/thinkube-control.git\norgs: [cmxela]\n`,
-    "x/space.yaml",
-  );
-  assert.deepEqual(c, {
-    orgs: ["cmxela"],
-    repo: { remote: "github.com/thinkube/thinkube-control" },
-  });
-});
-
-test("a project card has no repo section", () => {
-  assert.deepEqual(parseSpaceCard(`orgs: [cmxela]\n`, "p/space.yaml"), {
+test("a card parses to its orgs list", () => {
+  assert.deepEqual(parseSpaceCard(`orgs: [cmxela]\n`, "x/space.yaml"), {
     orgs: ["cmxela"],
   });
+  assert.deepEqual(parseSpaceCard(`orgs: []\n`, "x/space.yaml"), { orgs: [] });
 });
 
-test("normalizeRemote: https / ssh / scp-style / .git / host case all converge", () => {
-  const want = "github.com/thinkube/thinkube-control";
-  for (const raw of [
-    "https://github.com/thinkube/thinkube-control.git",
-    "https://GitHub.com/thinkube/thinkube-control",
-    "ssh://git@github.com/thinkube/thinkube-control.git",
-    "git@github.com:thinkube/thinkube-control.git",
-    "git@GITHUB.COM:thinkube/thinkube-control",
-    "github.com/thinkube/thinkube-control/",
-  ]) {
-    assert.equal(normalizeRemote(raw), want, raw);
-  }
-  // Path case is PRESERVED — a real mismatch must surface, not be papered over.
-  assert.equal(
-    normalizeRemote("git@github.com:Thinkube/X.git"),
-    "github.com/Thinkube/X",
-  );
-});
-
-test("refusals name the card: bad orgs, empty remote, non-mapping", () => {
+test("refusals name the card: bad orgs, unknown keys, non-mapping", () => {
   const cases: Array<[string, RegExp]> = [
     [`orgs: "cmxela"\n`, /`orgs` must be a list/],
     [`orgs: [a b]\n`, /single path segments/],
     [`orgs: [x, x]\n`, /unique/],
-    [`orgs: []\nrepo: {}\n`, /`repo.remote` is required/],
+    [`orgs: []\nrepo:\n  remote: g.com/a/b\n`, /unknown key\(s\): repo/],
     [`- just\n- a list\n`, /must be a YAML mapping/],
   ];
   for (const [card, re] of cases) {

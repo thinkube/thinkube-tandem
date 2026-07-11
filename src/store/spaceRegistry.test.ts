@@ -1,6 +1,7 @@
 /**
  * spaceRegistry — cards on disk: discovery listing, declared-orgs
- * enforcement, and the expected-vs-found repository verification.
+ * enforcement, and verified working-repo resolution (the filesystem copy is
+ * the authority: exists + is a git repository).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,10 +13,11 @@ import {
   readSpaceCard,
   listDeclaredSpaces,
   assertDeclaredOrgs,
-  verifyRepoRemote,
+  assertDeclaredSpace,
+  resolveVerifiedRepo,
 } from "./spaceRegistry";
 
-function tmpRoot(files: Record<string, string>): string {
+function tmpTree(files: Record<string, string>): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-space-reg-"));
   for (const [rel, content] of Object.entries(files)) {
     const p = path.join(root, rel);
@@ -25,13 +27,10 @@ function tmpRoot(files: Record<string, string>): string {
   return root;
 }
 
-const CARD = `repo:\n  remote: github.com/thinkube/thinkube-control\norgs: [cmxela]\n`;
-
 test("listDeclaredSpaces returns root-relative names of card-bearing dirs, sorted", () => {
-  const root = tmpRoot({
-    "Platform/core/thinkube-control/space.yaml": CARD,
+  const root = tmpTree({
+    "Platform/core/thinkube-control/space.yaml": "orgs: [cmxela]\n",
     "Platform/projects/rebrand/space.yaml": "orgs: [cmxela]\n",
-    "Platform/projects/rebrand/cmxela/teps/.gitkeep": "",
     "Platform/stray-dir/README.md": "not a space",
   });
   assert.deepEqual(listDeclaredSpaces(root), [
@@ -41,13 +40,13 @@ test("listDeclaredSpaces returns root-relative names of card-bearing dirs, sorte
 });
 
 test("readSpaceCard: present parses; absent is undefined", () => {
-  const root = tmpRoot({ "s/space.yaml": CARD });
-  assert.ok(readSpaceCard(path.join(root, "s"))!.repo);
+  const root = tmpTree({ "s/space.yaml": "orgs: [cmxela]\n" });
+  assert.deepEqual(readSpaceCard(path.join(root, "s")), { orgs: ["cmxela"] });
   assert.equal(readSpaceCard(path.join(root, "nope")), undefined);
 });
 
 test("an undeclared maintainer subtree refuses loudly", () => {
-  const root = tmpRoot({
+  const root = tmpTree({
     "s/space.yaml": "orgs: [cmxela]\n",
     "s/cmxela/teps/.gitkeep": "",
     "s/intruder/teps/.gitkeep": "",
@@ -59,27 +58,46 @@ test("an undeclared maintainer subtree refuses loudly", () => {
   );
 });
 
-test("verifyRepoRemote: match passes; mismatch states expected vs found", async () => {
-  const card = readSpaceCard(
-    path.join(tmpRoot({ "s/space.yaml": CARD }), "s"),
-  )!;
-  await verifyRepoRemote("/repo", card, "Platform/core/thinkube-control", async () => "github.com/thinkube/thinkube-control");
-  await assert.rejects(
-    verifyRepoRemote("/repo", card, "Platform/core/thinkube-control", async () => "github.com/other/fork"),
-    (e: Error) =>
-      /expected remote: github\.com\/thinkube\/thinkube-control/.test(e.message) &&
-      /found:\s+github\.com\/other\/fork/.test(e.message),
+test("assertDeclaredSpace: undeclared name refuses listing declared spaces", () => {
+  const root = tmpTree({
+    "Platform/core/thinkube-control/space.yaml": "orgs: []\n",
+  });
+  assert.deepEqual(
+    assertDeclaredSpace("Platform/core/thinkube-control", root, "test"),
+    { orgs: [] },
   );
-  await assert.rejects(
-    verifyRepoRemote("/repo", card, "x", async () => undefined),
-    /no origin remote/,
+  assert.throws(
+    () => assertDeclaredSpace("Platform/core/nope", root, "test"),
+    /not a declared thinking space.*Declared spaces: Platform\/core\/thinkube-control/s,
   );
 });
 
-test("a project card (no repo:) refuses to act as a working repo", async () => {
-  const root = tmpRoot({ "p/space.yaml": "orgs: []\n" });
-  await assert.rejects(
-    verifyRepoRemote("/repo", readSpaceCard(path.join(root, "p"))!, "Platform/projects/rebrand", async () => "x/y/z"),
-    /declares no repository/,
+test("resolveVerifiedRepo: declared + resolvable + a real git repo → path; each miss refuses with its reason", () => {
+  const home = tmpTree({
+    "platform-dir/core/thing/.git/HEAD": "ref: refs/heads/main\n",
+    "platform-dir/core/no-git/README.md": "",
+  });
+  const root = tmpTree({
+    "Platform/core/thing/space.yaml": "orgs: []\n",
+    "Platform/core/no-git/space.yaml": "orgs: []\n",
+    "Platform/core/gone/space.yaml": "orgs: []\n",
+  });
+  const folders = [{ name: "Platform", path: path.join(home, "platform-dir") }];
+
+  assert.equal(
+    resolveVerifiedRepo("Platform/core/thing", folders, root, "t"),
+    path.join(home, "platform-dir", "core", "thing"),
+  );
+  assert.throws(
+    () => resolveVerifiedRepo("Platform/core/no-git", folders, root, "t"),
+    /not a git repository/,
+  );
+  assert.throws(
+    () => resolveVerifiedRepo("Platform/core/gone", folders, root, "t"),
+    /does not exist/,
+  );
+  assert.throws(
+    () => resolveVerifiedRepo("Platform/core/undeclared", folders, root, "t"),
+    /not a declared thinking space/,
   );
 });

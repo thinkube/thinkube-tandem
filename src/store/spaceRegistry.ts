@@ -1,7 +1,6 @@
 /**
  * spaceRegistry — read space cards (`space.yaml`), list the declared spaces,
- * and VERIFY that a resolved repository directory really is the repository a
- * card declares (TEP-14).
+ * and verify a resolved working-repository directory (TEP-14).
  *
  * A space's NAME is not here — names are the workspace spelling, resolved by
  * the existing machinery (`repoPathForNamespace` etc.). This module owns:
@@ -10,21 +9,18 @@
  *     (the list every refusal shows), as root-relative names;
  *   - `assertDeclaredOrgs(card, dir)` — a maintainer subtree on disk that is
  *     not declared refuses loudly;
- *   - `verifyRepoRemote(repoPath, card)` — expected-vs-found remote check
- *     before any tool runs against the repository.
+ *   - `verifyRepoDir(repoPath)` — the resolved directory must exist and be
+ *     a git repository (the filesystem copy is the authority).
  *
  * No translation, no fallbacks: a directory without a card is not a space.
- * vscode-free (fs + child_process) — shared by the extension and the MCP
- * subprocess.
+ * vscode-free (fs only) — shared by the extension and the MCP subprocess.
  */
-import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {
   SPACE_CARD_FILENAME,
   SpaceCard,
-  normalizeRemote,
   parseSpaceCard,
 } from "./spaceManifest";
 import {
@@ -121,18 +117,17 @@ export function assertDeclaredSpace(
 
 /**
  * Resolve a space name to its VERIFIED working repository: the name must be
- * declared, its card must declare a repository, the workspace must resolve
- * the name to a directory, and that directory's git remote must match the
- * card. Any miss refuses with the exact reason — never a guess.
+ * a declared space, resolve under a workspace folder, and the directory
+ * there must exist and be a git repository (the filesystem copy is the
+ * authority). Any miss refuses with the exact reason — never a guess.
  */
-export async function resolveVerifiedRepo(
+export function resolveVerifiedRepo(
   name: string,
   folders: WorkspaceFolderRef[],
   thinkingSpaceRoot: string,
   context: string,
-  readRemote?: RemoteReader,
-): Promise<string> {
-  const card = assertDeclaredSpace(name, thinkingSpaceRoot, context);
+): string {
+  assertDeclaredSpace(name, thinkingSpaceRoot, context);
   const repoPath = repoPathForNamespace(name, folders);
   if (!repoPath) {
     throw new Error(
@@ -140,49 +135,24 @@ export async function resolveVerifiedRepo(
         `(${folders.map((f) => f.name).join(", ") || "no folders configured"}).`,
     );
   }
-  await verifyRepoRemote(repoPath, card, name, readRemote);
+  verifyRepoDir(repoPath, name);
   return repoPath;
 }
 
-/** Injectable remote reader (tests); default shells `git remote get-url origin`. */
-export type RemoteReader = (repoPath: string) => Promise<string | undefined>;
-
-const defaultRemoteReader: RemoteReader = (repoPath) =>
-  new Promise((resolve) => {
-    execFile(
-      "git",
-      ["-C", repoPath, "remote", "get-url", "origin"],
-      { timeout: 5000 },
-      (err, stdout) => {
-        const out = stdout?.trim();
-        resolve(err || !out ? undefined : normalizeRemote(out));
-      },
-    );
-  });
-
 /**
- * Verify the resolved repository directory really is the repository the card
- * declares. Cards without `repo:` (project spaces) refuse — there is nothing
- * to run code against. Mismatch/missing remote → error stating expected vs
- * found.
+ * Verify a resolved working-repository directory: it must exist and be a git
+ * repository. The filesystem copy IS the authority — there is nothing else
+ * to check it against.
  */
-export async function verifyRepoRemote(
-  repoPath: string,
-  card: SpaceCard,
-  spaceName: string,
-  readRemote: RemoteReader = defaultRemoteReader,
-): Promise<void> {
-  if (!card.repo) {
+export function verifyRepoDir(repoPath: string, spaceName: string): void {
+  if (!fs.existsSync(repoPath)) {
     throw new Error(
-      `"${spaceName}" declares no repository (a project space) — it cannot be used as a working repo.`,
+      `"${spaceName}" resolves to ${repoPath}, but that directory does not exist.`,
     );
   }
-  const found = await readRemote(repoPath);
-  if (found === card.repo.remote) return;
-  throw new Error(
-    `"${spaceName}" resolved to ${repoPath}, but that directory is not the declared repository.\n` +
-      `  expected remote: ${card.repo.remote}\n` +
-      `  found:           ${found ?? "(no origin remote / not a git repository)"}\n` +
-      `Fix the checkout or the card's repo.remote.`,
-  );
+  if (!fs.existsSync(path.join(repoPath, ".git"))) {
+    throw new Error(
+      `"${spaceName}" resolves to ${repoPath}, but that directory is not a git repository.`,
+    );
+  }
 }
