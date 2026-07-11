@@ -1,6 +1,6 @@
 {
-  "name": "thinkube-ai-integration",
-  "displayName": "Thinkube AI Integration",
+  "name": "thinkube-tandem",
+  "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
   "version": "0.1.170",
   "publisher": "thinkube",
@@ -20,7 +20,7 @@
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cmxela/thinkube-ai-integration"
+    "url": "https://github.com/thinkube/thinkube-tandem"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -31,7 +31,7 @@
       "activitybar": [
         {
           "id": "thinkube",
-          "title": "Thinkube",
+          "title": "Thinkube Tandem",
           "icon": "resources/tk_ai.svg"
         }
       ]
@@ -74,94 +74,94 @@
       {
         "command": "thinkube.orchestrate",
         "title": "Orchestrate Spec",
-        "category": "Thinkube"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.floatOutSession",
         "title": "Float Out Session",
-        "category": "Thinkube"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.attend",
         "title": "Attend Requires-Attention Slice",
-        "category": "Thinkube"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.thinkingSpace.refresh",
         "title": "Refresh ThinkingSpaces",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(refresh)"
       },
       {
         "command": "thinkube.thinkingSpace.open",
         "title": "Open Thinking Space",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(open-preview)"
       },
       {
         "command": "thinkube.products.new",
         "title": "New Product",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(package)"
       },
       {
         "command": "thinkube.projects.new",
         "title": "New Project",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.tep.promote",
         "title": "Promote to Project…",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(arrow-up)"
       },
       {
         "command": "thinkube.teps.openRendered",
         "title": "Preview TEP (rendered)",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(open-preview)"
       },
       {
         "command": "thinkube.specs.openRendered",
         "title": "Preview Spec (rendered)",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(open-preview)"
       },
       {
         "command": "thinkube.thinkingSpace.enable",
         "title": "Enable Methodology Here",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.thinkingSpace.showConfiguredOnly",
         "title": "Show Configured Thinking Spaces Only",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(filter)"
       },
       {
         "command": "thinkube.thinkingSpace.showAll",
         "title": "Show All Repositories",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(filter-filled)"
       },
       {
         "command": "thinkube.thinkingSpace.newClaudeSession",
         "title": "New Claude Session Here",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "thinkube.projects.newClaudeSession",
         "title": "New Claude Session in Project",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "thinkube.thinkingSpace.resumeClaudeSession",
         "title": "Resume Claude Session…",
-        "category": "Thinkube ThinkingSpaces",
+        "category": "Tandem ThinkingSpaces",
         "icon": "$(history)"
       },
       {
@@ -172,210 +172,210 @@
       {
         "command": "thinkube.refreshConfig",
         "title": "Refresh Configuration",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(refresh)"
       },
       {
         "command": "thinkube.addHook",
         "title": "Add Hook",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.deleteHook",
         "title": "Delete Hook",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.addCommand",
         "title": "Add Command",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.openCommand",
         "title": "Open Command",
-        "category": "Thinkube AI"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.deleteCommand",
         "title": "Delete Command",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.addSkill",
         "title": "Add Skill",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.openSkill",
         "title": "Open Skill",
-        "category": "Thinkube AI"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.deleteSkill",
         "title": "Delete Skill",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.addAgent",
         "title": "Add Agent",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.openAgent",
         "title": "Open Agent",
-        "category": "Thinkube AI"
+        "category": "Thinkube Tandem"
       },
       {
         "command": "thinkube.deleteAgent",
         "title": "Delete Agent",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.addMcpServer",
         "title": "Add MCP Server",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.deleteMcpServer",
         "title": "Remove MCP Server",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.editPermissions",
         "title": "Edit Permissions",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(edit)"
       },
       {
         "command": "thinkube.initializeConfig",
         "title": "Initialize Claude Config",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(new-folder)"
       },
       {
         "command": "thinkube.switchProject",
         "title": "Set Active Project",
-        "category": "Thinkube AI",
+        "category": "Thinkube Tandem",
         "icon": "$(folder)"
       },
       {
         "command": "thinkube.kanban.openKanban",
         "title": "Open Kanban",
-        "category": "Thinkube Kanban",
+        "category": "Tandem Kanban",
         "icon": "$(layout-panel)"
       },
       {
         "command": "thinkube.kanban.refreshFromGitHub",
         "title": "Refresh from GitHub",
-        "category": "Thinkube Kanban",
+        "category": "Tandem Kanban",
         "icon": "$(sync)"
       },
       {
         "command": "thinkube.specs.new",
         "title": "New Spec",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.specs.refresh",
         "title": "Refresh Specs",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(refresh)"
       },
       {
         "command": "thinkube.teps.refresh",
         "title": "Refresh TEPs",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(refresh)"
       },
       {
         "command": "thinkube.teps.new",
         "title": "New TEP",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(add)"
       },
       {
         "command": "thinkube.specs.startWorktree",
         "title": "Start Spec in Worktree — create an isolated git worktree + branch and open a Claude session there",
         "shortTitle": "Start Spec in Worktree",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(repo-clone)"
       },
       {
         "command": "thinkube.specs.retireWorktree",
         "title": "Retire Spec Worktree — remove the spec's worktree after delivery (refuses if dirty/unmerged); does NOT delete the spec",
         "shortTitle": "Retire Spec Worktree",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(trash)"
       },
       {
         "command": "thinkube.specs.archive",
         "title": "Archive Spec",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(archive)"
       },
       {
         "command": "thinkube.specs.unarchive",
         "title": "Unarchive Spec",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(history)"
       },
       {
         "command": "thinkube.specs.showArchived",
         "title": "Show Archived Specs",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(eye-closed)"
       },
       {
         "command": "thinkube.specs.hideArchived",
         "title": "Hide Archived Specs",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(eye)"
       },
       {
         "command": "thinkube.teps.archive",
         "title": "Archive TEP",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(archive)"
       },
       {
         "command": "thinkube.teps.unarchive",
         "title": "Unarchive TEP",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(history)"
       },
       {
         "command": "thinkube.teps.showArchived",
         "title": "Show Archived TEPs",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(eye-closed)"
       },
       {
         "command": "thinkube.teps.hideArchived",
         "title": "Hide Archived TEPs",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(eye)"
       },
       {
         "command": "thinkube.specs.archiveAllCompleted",
         "title": "Archive All Completed Specs",
-        "category": "Thinkube Specs",
+        "category": "Tandem Specs",
         "icon": "$(archive)"
       },
       {
         "command": "thinkube.teps.archiveAllCompleted",
         "title": "Archive All Completed TEPs",
-        "category": "Thinkube TEPs",
+        "category": "Tandem TEPs",
         "icon": "$(archive)"
       }
     ],

@@ -80,7 +80,10 @@ export class LauncherService implements vscode.Disposable {
     // presence turns on write_spec's verifiability audit + signing and readyGate's
     // signature check. One stable globalStorage dir means all servers share one key;
     // `??=` lets an explicit override (e.g. tests) win.
-    process.env.THINKUBE_SIGNING_KEY_DIR ??= path.join(this.stateDir, "signing");
+    process.env.THINKUBE_SIGNING_KEY_DIR ??= path.join(
+      this.stateDir,
+      "signing",
+    );
 
     await this.ensureWrapperRegistered();
   }
@@ -95,7 +98,7 @@ export class LauncherService implements vscode.Disposable {
     // path under the extension's own directory).
     const isOurs = current === this.wrapperPath;
     const isInheritable =
-      !current || (current && current.includes("thinkube-ai-integration"));
+      !current || (current && current.includes("thinkube-tandem"));
 
     if (isOurs) return;
 
@@ -119,11 +122,11 @@ export class LauncherService implements vscode.Disposable {
     if (seen) return;
     await this.context.globalState.update(COMPETING_WRAPPER_TOAST_KEY, true);
     const choice = await vscode.window.showWarningMessage(
-      `Thinkube AI launcher disabled: claudeCode.claudeProcessWrapper is already set to "${competing}". Override with Thinkube's wrapper?`,
-      "Use Thinkube wrapper",
+      `Thinkube Tandem launcher disabled: claudeCode.claudeProcessWrapper is already set to "${competing}". Override with Thinkube Tandem's wrapper?`,
+      "Use Thinkube Tandem wrapper",
       "Keep existing",
     );
-    if (choice === "Use Thinkube wrapper" && this.wrapperPath) {
+    if (choice === "Use Thinkube Tandem wrapper" && this.wrapperPath) {
       await vscode.workspace
         .getConfiguration(CFG_SECTION)
         .update(CFG_KEY, this.wrapperPath, vscode.ConfigurationTarget.Global);

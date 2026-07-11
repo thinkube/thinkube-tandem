@@ -1,11 +1,11 @@
 ---
-description: Project-specific conventions for thinkube-ai-integration — branch naming, PR template, commit format, the verification recipe, and the worktree provisioning command. Hand-edit per project.
+description: Project-specific conventions for thinkube-tandem — branch naming, PR template, commit format, the verification recipe, and the worktree provisioning command. Hand-edit per project.
 disable-model-invocation: true
 allowed-tools: []
 thinkube-bundle: 0.0.1
 ---
 
-# Repository conventions — thinkube-ai-integration
+# Repository conventions — thinkube-tandem
 
 The Tandem bundle skills (`/pair-next`, `/slice`, `/spec-prepare`) and the orchestrator load this file on demand. The `verifier` subagent reads the **verification recipe**; the orchestrator's worktree runner reads the **worktree setup** command.
 

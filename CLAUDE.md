@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A VS Code extension (`thinkube-ai-integration`) that wraps the Claude Code CLI and surfaces Claude Code configuration management inside the editor. It's a TypeScript extension targeting VS Code ≥ 1.100, packaged as a `.vsix` via `vsce` and also publishable to Open VSX. Status: under development — README warns "Not Ready for Use."
+A VS Code extension (`thinkube-tandem`) that wraps the Claude Code CLI and surfaces Claude Code configuration management inside the editor. It's a TypeScript extension targeting VS Code ≥ 1.100, packaged as a `.vsix` via `vsce` and also publishable to Open VSX. Status: under development — README warns "Not Ready for Use."
 
 ## Commands
 
@@ -36,7 +36,7 @@ Because the hack roots sessions outside `workspaceFolders[0]`, claude-vscode's S
 
 ### 2. Claude Code configuration manager (the larger feature)
 
-A sidebar ("Thinkube AI" activity-bar view) with two panels:
+A sidebar ("Thinkube Tandem" activity-bar view) with two panels:
 
 - **`thinkube.chatPanel`** — `ChatPanel` webview (`src/views/sidebar/ChatPanel.ts`) for conversing with Claude about configuration.
 - **`claudeConfigTree`** — `ConfigTreeProvider` (`src/views/sidebar/ConfigTreeProvider.ts`) that renders a tree of `.claude/` contents across multiple projects and supports add/delete/generate actions on every node type.

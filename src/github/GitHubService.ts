@@ -266,7 +266,7 @@ export class GitHubService {
       this.currentToken = token;
       this.restClient = new Octokit({
         auth: token,
-        userAgent: "thinkube-ai-integration",
+        userAgent: "thinkube-tandem",
       });
     }
   }

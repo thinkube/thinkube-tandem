@@ -1,8 +1,8 @@
-# Thinkube AI Integration — Mission & Vision
+# Thinkube Tandem — Mission & Vision
 
 > The durable "why and where." For **how the methodology works**, see the
-> Tandem docs component under `docs/modules/ROOT/` (published as *Tandem
-> Methodology*; `npm run docs:build` renders it locally). This file is the
+> Tandem docs component under `docs/modules/ROOT/` (published as _Tandem
+> Methodology_; `npm run docs:build` renders it locally). This file is the
 > product's mission and principles; if it ever conflicts with an older doc,
 > this wins.
 

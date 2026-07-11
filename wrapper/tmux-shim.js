@@ -19,7 +19,7 @@ const sock = process.env.THINKUBE_TMUX_SHIM_SOCK;
 if (!sock) {
   process.stderr.write(
     "thinkube tmux-shim: THINKUBE_TMUX_SHIM_SOCK not set " +
-      "(is the Thinkube AI extension active?)\n",
+      "(is the Thinkube Tandem extension active?)\n",
   );
   process.exit(1);
 }

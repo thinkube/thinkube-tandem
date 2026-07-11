@@ -579,7 +579,13 @@ function walkForThinkingSpaces(
       const name = wt
         ? `${path.basename(wt.canonicalRepo)} · ${wt.name} worktree`
         : path.basename(abs);
-      out.set(abs, { id: ns, name, path: abs, thinkingSpaceDir, worktree: !!wt });
+      out.set(abs, {
+        id: ns,
+        name,
+        path: abs,
+        thinkingSpaceDir,
+        worktree: !!wt,
+      });
       return;
     }
     if (isThinkingSpaceDir(thinkingSpaceDir)) {
@@ -1660,7 +1666,9 @@ export async function dispatchTool(
         );
       }
       if (implementsRaw?.includes(":") && ctx.env.thinkingSpaceRoot) {
-        const qualifierNs = implementsRaw.slice(0, implementsRaw.lastIndexOf(":")).trim();
+        const qualifierNs = implementsRaw
+          .slice(0, implementsRaw.lastIndexOf(":"))
+          .trim();
         if (qualifierNs)
           assertDeclaredSpace(
             qualifierNs,
@@ -3038,9 +3046,9 @@ export async function resolveCompositeSpecId(
 /**
  * Self-locate the approval store dir (SP-6/17) from the server's own invocation path — purely
  * LEXICAL, no `realpath` and no filesystem access. The server binary runs from
- * `…/thinkube.thinkube-ai-integration/extension-current/dist/mcp/kanbanMcpServer.js`, so walking
+ * `…/thinkube.thinkube-tandem/extension-current/dist/mcp/kanbanMcpServer.js`, so walking
  * three segments up (mcp → dist → extension-current) lands at the globalStorage extension dir
- * `…/thinkube.thinkube-ai-integration` — exactly where the host's Approve button writes tokens.
+ * `…/thinkube.thinkube-tandem` — exactly where the host's Approve button writes tokens.
  * Keeping it lexical preserves the `extension-current` symlink segment (a `realpath` would resolve
  * it into the versioned install and walk out of globalStorage). Invariant to env; unit-testable
  * with a constructed path. Production caller: `createSlice` passes `resolveApprovalDir(process.argv[1])`.
@@ -3062,7 +3070,9 @@ async function resolveSpecWorkingRepo(
   store: ThinkubeStore,
   specId: string,
 ): Promise<string | undefined> {
-  const doc = await store.getFile(store.pathForSpecDoc(specId)).catch(() => undefined);
+  const doc = await store
+    .getFile(store.pathForSpecDoc(specId))
+    .catch(() => undefined);
   const repoNs =
     typeof doc?.frontmatter?.repo === "string"
       ? doc.frontmatter.repo.trim()
@@ -3120,7 +3130,11 @@ export function unresolvableProbeCommands(
     const run = decl?.run?.trim();
     if (!run || decl.env === "assessment" || decl.env === "cluster") continue;
     for (const seg of run.split(/&&|\|\||;/)) {
-      let token = seg.trim().replace(/^[($\s]+/, "").split(/\s+/)[0] ?? "";
+      let token =
+        seg
+          .trim()
+          .replace(/^[($\s]+/, "")
+          .split(/\s+/)[0] ?? "";
       token = token.replace(/[)]+$/, "");
       if (
         !token ||

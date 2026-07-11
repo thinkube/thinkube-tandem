@@ -1,5 +1,5 @@
 /**
- * Thinkube AI Integration - Data Models
+ * Thinkube Tandem - Data Models
  *
  * Core data structures for Claude Code configuration management.
  */

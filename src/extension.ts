@@ -53,7 +53,7 @@ import { registerOrchestrateCommands } from "./commands/orchestrate";
 import { showFreshMarkdownPreview } from "./commands/freshPreview";
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log("Thinkube AI Integration is now active!");
+  console.log("Thinkube Tandem is now active!");
 
   // Create status bar item to show active project
   const statusBarItem = vscode.window.createStatusBarItem(
@@ -184,7 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
- // User-scope kanban server registration ( follow-up): the plugin no
+  // User-scope kanban server registration ( follow-up): the plugin no
   // longer vendors the server and per-repo `.mcp.json` only reaches code repos, so a
   // session rooted in a board thinking-space sidecar (no `.mcp.json`) lost
   // `write_spec`. Register the server in Claude's user-scope `mcpServers` so EVERY

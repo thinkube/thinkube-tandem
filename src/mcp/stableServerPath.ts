@@ -3,7 +3,7 @@
  *
  * `.mcp.json` files bake an absolute path to the server script. Pointing them
  * at the extension's install dir is a trap: the dir name carries the version
- * (`…/thinkube.thinkube-ai-integration-0.1.0/…`), so every extension update
+ * (`…/thinkube.thinkube-tandem-0.1.0/…`), so every extension update
  * silently orphans every repo's `.mcp.json`.
  *
  * Fix: a symlink in globalStorage — a deterministic, version-free location —

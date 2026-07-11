@@ -10,7 +10,7 @@ vsc-extension-quickstart.md
 **/*.ts
 *.vsix
 .github/**
-thinkube-ai-integration
+thinkube-tandem
 docs/**
 wrapper/**
 scripts/**

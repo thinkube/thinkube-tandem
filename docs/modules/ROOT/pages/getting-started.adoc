@@ -2,7 +2,7 @@
 :page-type: tutorial
 :page-docref: gs7m
 
-This walkthrough takes you from a project that has the Thinkube AI extension installed to your first accepted Spec, merged to `main`. You author the reason for the work, turn it into a verifiable Spec, approve it, cut it into slices, let the orchestrator build and verify it, and accept the result. Follow the steps in order; each one hands off to the next.
+This walkthrough takes you from a project that has the Thinkube Tandem extension installed to your first accepted Spec, merged to `main`. You author the reason for the work, turn it into a verifiable Spec, approve it, cut it into slices, let the orchestrator build and verify it, and accept the result. Follow the steps in order; each one hands off to the next.
 
 The whole journey looks like this:
 
@@ -23,7 +23,7 @@ The pair (you and Claude) authors the TEP, the Spec, and the slices together. Yo
 
 == What you need
 
-* Your project open in code-server, with the Thinkube AI extension installed.
+* Your project open in code-server, with the Thinkube Tandem extension installed.
 * A Claude session rooted in the project folder, so the Tandem skills and the thinking-space board are reachable from the session.
 
 == 1. Open your project session

@@ -250,7 +250,7 @@ Live behaviour can be audited any time with the wrapper's built-in logging:
 set `CLAUDE_CWD_PROXY_LOG=1` in the extension-host environment (or
 temporarily flip the `:-0` default to `:-1` in the _installed_ wrapper —
 it's re-exec'd on every spawn, no reload needed) and read
-`<globalStorage>/thinkube.thinkube-ai-integration/logs/wrapper-*.log`: every
+`<globalStorage>/thinkube.thinkube-tandem/logs/wrapper-*.log`: every
 spawn's tag (fresh / RESUME / probe), argv, initial cwd, and the cwd
 decision are recorded.
 
