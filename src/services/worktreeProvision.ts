@@ -26,6 +26,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { runBounded, DEFAULT_AC_TIMEOUT_MS } from "./orchestratorCore";
+import { detectProvisionSteps } from "./provisionDetect";
 
 /**
  * Path (relative to a repo root) of the `repo-conventions` skill that declares
@@ -65,15 +66,17 @@ export interface ProvisionOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Outcome of a provisioning attempt. `ran: false` ⇒ no recipe was declared (a no-op). */
+/** Outcome of a provisioning attempt. `ran: false` ⇒ nothing declared AND
+ *  nothing detected (a genuine no-op — e.g. a pure-docs repo). */
 export interface ProvisionResult {
-  /** Whether a declared recipe was found and executed. */
+  /** Whether any setup (declared or detected) was executed. */
   ran: boolean;
-  /** The command that was run (present iff `ran`). */
+  /** The command that was run — the FIRST FAILING one when several detected
+   *  steps ran, else a summary of what ran. */
   command?: string;
-  /** The command's exit code (present iff `ran`); 0 = success. */
+  /** Exit code (0 = every step succeeded; first failing step's code otherwise). */
   code?: number | null;
-  /** The command's combined stdout/stderr (present iff `ran`). */
+  /** Combined stdout/stderr (the failing step's on failure). */
   output?: string;
 }
 
@@ -147,9 +150,6 @@ export async function provisionWorktree(
   worktreePath: string,
   opts: ProvisionOptions = {},
 ): Promise<ProvisionResult> {
-  const command = await readProvisionRecipe(canonicalRepo);
-  if (!command) return { ran: false };
-
   const exec: ProvisionExec =
     opts.exec ??
     ((run, cwd) =>
@@ -158,6 +158,31 @@ export async function provisionWorktree(
         env: opts.env ?? process.env,
       }));
 
-  const { code, output } = await exec(command, worktreePath);
-  return { ran: true, command, code, output };
+  const command = await readProvisionRecipe(canonicalRepo);
+  if (command) {
+    const { code, output } = await exec(command, worktreePath);
+    return { ran: true, command, code, output };
+  }
+
+  // No declared recipe → manifest AUTO-DETECTION (2026-07-11). The old
+  // behavior — silently provisioning nothing — is how a fresh worktree ran
+  // its whole gate with no node_modules and a signed probe exited 127 as a
+  // phantom code failure. Detection is lockfile-pinned and idempotent; a
+  // declared recipe always overrides it (the branch above).
+  const steps = await detectProvisionSteps(canonicalRepo);
+  if (steps.length === 0) return { ran: false };
+  for (const step of steps) {
+    const cwd = step.dir ? path.join(worktreePath, step.dir) : worktreePath;
+    const label = `${step.command}${step.dir ? ` (in ${step.dir}/)` : ""}`;
+    const { code, output } = await exec(step.command, cwd);
+    if (code !== 0) return { ran: true, command: label, code, output };
+  }
+  return {
+    ran: true,
+    command: `auto-detected setup: ${steps
+      .map((s) => `${s.command}${s.dir ? ` (${s.dir}/)` : ""}`)
+      .join(" ; ")}`,
+    code: 0,
+    output: "",
+  };
 }
