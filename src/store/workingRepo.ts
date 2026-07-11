@@ -6,8 +6,7 @@
 import * as vscode from "vscode";
 
 import { ThinkubeStore } from "./ThinkubeStore";
-import { namespaceForRepo } from "./thinkingSpaceNamespace";
-import { discoverRepos } from "../views/thinkingSpaces/ThinkingSpaceNavigatorProvider";
+import { resolveVerifiedRepo } from "./spaceRegistry";
 
 /**
  * The WORKING repository for a Spec — the repo the orchestrator branches a
@@ -30,14 +29,20 @@ export async function workingRepoPath(
     name: f.name,
     path: f.uri.fsPath,
   }));
-  for (const r of discoverRepos())
-    if (namespaceForRepo(r.path, folders) === repoNs) return r.path;
-  // `repo:` is SET but resolves to no enabled repo — fail loud, never silently
-  // run git in the thinking space dir / the wrong repo.
-  throw new Error(
-    `Spec ${spec} names repo: "${repoNs}" but no enabled repo resolves to it — ` +
-      `fix the spec's repo: or open that repo in the workspace.`,
-  );
+  const root = vscode.workspace
+    .getConfiguration("thinkube.thinkingSpace")
+    .get<string>("root")
+    ?.trim();
+  if (!root) {
+    throw new Error(
+      `Spec ${spec} names repo: "${repoNs}" but no thinking-space root is configured ` +
+        `(set \`thinkube.thinkingSpace.root\`).`,
+    );
+  }
+  // ENFORCEMENT (TEP-14): the name must be a declared space, resolve under a
+  // workspace folder, and the directory's git remote must match the card —
+  // verified before ANY git operation runs there. Refusals state the reason.
+  return resolveVerifiedRepo(repoNs, folders, root, `Spec ${spec} \`repo:\``);
 }
 
 /** The thinking space-namespace a Spec names as its working repo via `repo:`, or

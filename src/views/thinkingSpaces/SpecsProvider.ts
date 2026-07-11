@@ -260,7 +260,10 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       if (n.split("/")[0] !== tepId) continue;
       const fm = (await store.getFile(store.pathForSpecDoc(n)))?.frontmatter;
       const homeNs = typeof fm?.repo === "string" ? fm.repo : undefined;
-      const workingRepo = (homeNs && repoByNs.get(homeNs)) ?? repos[0];
+      // No guessing (TEP-14): an unresolvable `repo:` yields NO working repo —
+      // the node renders without commit coords instead of silently binding to
+      // the alphabetically-first repository.
+      const workingRepo = homeNs ? repoByNs.get(homeNs) : undefined;
       // Commit-URL coords come from the WORKING repo (where commits land), even
       // though the node's thinking space is the project.
       const coords = workingRepo

@@ -62,6 +62,10 @@ import {
   type RepoFileOracle,
 } from "../methodology/sliceRepoGuard";
 import {
+  assertDeclaredSpace,
+  resolveVerifiedRepo,
+} from "../store/spaceRegistry";
+import {
   // Slice lifecycle contract: the single source the `move_slice`
   // / `update_slice` handlers and their dispatch test agree on for retire + re-cut.
   // The status literal, the "reason required" rule, and the re-cut footprint check
@@ -1619,6 +1623,31 @@ export async function dispatchTool(
           );
         }
       }
+      // ENFORCEMENT (TEP-14): one naming convention. A `repo:` must be a
+      // DECLARED space (its dir under the thinking-space root holds
+      // space.yaml), resolve under a workspace folder, and its directory's
+      // git remote must match the card — verified NOW, at write time, so a
+      // bad card can never be stored. A qualified `implements:` namespace
+      // must be a declared space. (Skipped only when no thinking-space root
+      // is configured — bare unit-test fixtures.)
+      const repoRefArg = optString(args, "repo");
+      if (repoRefArg?.trim() && ctx.env.thinkingSpaceRoot) {
+        await resolveVerifiedRepo(
+          repoRefArg.trim(),
+          ctx.env.folders,
+          ctx.env.thinkingSpaceRoot,
+          "write_spec `repo:`",
+        );
+      }
+      if (implementsRaw?.includes(":") && ctx.env.thinkingSpaceRoot) {
+        const qualifierNs = implementsRaw.slice(0, implementsRaw.lastIndexOf(":")).trim();
+        if (qualifierNs)
+          assertDeclaredSpace(
+            qualifierNs,
+            ctx.env.thinkingSpaceRoot,
+            "write_spec `implements:` qualifier",
+          );
+      }
       // SP-6/1 provenance: when the server holds a signing secret AND an audit runner, the audit
       // runs server-side. It must run where the CODE lives — the spec's WORKING repo (`repo:`),
       // NOT store.workspaceRoot (the project-umbrella root has no package.json / repo-conventions,
@@ -1637,10 +1666,21 @@ export async function dispatchTool(
           (typeof existingForRepo?.frontmatter?.repo === "string"
             ? existingForRepo.frontmatter.repo.trim()
             : undefined);
-        const resolved = repoNs
-          ? repoPathForNamespace(repoNs, ctx.env.folders)
-          : undefined;
-        if (resolved && fsSync.existsSync(resolved)) auditCwd = resolved;
+        if (repoNs && ctx.env.thinkingSpaceRoot) {
+          // Strict: the audit must run in the VERIFIED working repo — a card
+          // that no longer verifies fails the write loudly (correct the card).
+          auditCwd = await resolveVerifiedRepo(
+            repoNs,
+            ctx.env.folders,
+            ctx.env.thinkingSpaceRoot,
+            "write_spec audit",
+          );
+        } else if (repoNs) {
+          // No thinking-space root configured — a bare test harness, never a
+          // real deployment (production always sets THINKUBE_THINKING_SPACE_ROOT).
+          const resolved = repoPathForNamespace(repoNs, ctx.env.folders);
+          if (resolved && fsSync.existsSync(resolved)) auditCwd = resolved;
+        }
       }
       return writeSpec(
         store,
@@ -3002,21 +3042,27 @@ async function resolveSpecWorkingRepo(
   store: ThinkubeStore,
   specId: string,
 ): Promise<string | undefined> {
-  try {
-    const doc = await store.getFile(store.pathForSpecDoc(specId));
-    const repoNs =
-      typeof doc?.frontmatter?.repo === "string"
-        ? doc.frontmatter.repo.trim()
-        : undefined;
-    const resolved = repoNs
-      ? repoPathForNamespace(repoNs, ctx.env.folders)
-      : store.workspaceRoot;
-    return resolved && fsSync.existsSync(path.join(resolved, ".git"))
-      ? resolved
+  const doc = await store.getFile(store.pathForSpecDoc(specId)).catch(() => undefined);
+  const repoNs =
+    typeof doc?.frontmatter?.repo === "string"
+      ? doc.frontmatter.repo.trim()
       : undefined;
-  } catch {
-    return undefined;
+  if (repoNs && ctx.env.thinkingSpaceRoot) {
+    // ENFORCEMENT (TEP-14): a declared `repo:` resolves verified or refuses —
+    // an unresolvable card no longer silently skips the footprint gate.
+    return resolveVerifiedRepo(
+      repoNs,
+      ctx.env.folders,
+      ctx.env.thinkingSpaceRoot,
+      `spec ${specId} \`repo:\``,
+    );
   }
+  // No `repo:` (same-repo spec / bare test store): the thinking-space repo
+  // itself, when it is a git repo; else no gate target.
+  const resolved = store.workspaceRoot;
+  return resolved && fsSync.existsSync(path.join(resolved, ".git"))
+    ? resolved
+    : undefined;
 }
 
 /** Shell builtins/keywords the probe dry-run never tries to resolve. */

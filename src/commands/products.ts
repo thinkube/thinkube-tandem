@@ -13,13 +13,9 @@ import {
   discoverRepos,
   type ProductNode,
 } from "../views/thinkingSpaces/ThinkingSpaceNavigatorProvider";
-import { ThinkubeStore } from "../store/ThinkubeStore";
-import { namespaceForRepo } from "../store/thinkingSpaceNamespace";
 import { discoverProjects } from "../store/projects";
-import {
-  normalizeTepId,
-  rewriteImplementsForPromote,
-} from "../store/implementsRef";
+import { normalizeTepId } from "../store/implementsRef";
+import { promoteTep, ThinkingSpaceRegistry } from "../mcp/kanbanMcpServer";
 import {
   slugifyId,
   writeProductManifest,
@@ -126,65 +122,37 @@ export function registerProductCommands(
         );
         if (!pick) return;
         const { product, id: projectId } = pick.project;
-        const projectNamespace = `${product}/projects/${projectId}`;
 
+        // Delegate to the server's promoteTep — ONE implementation of the
+        // move + implements-rewrite. (The old command-side copy joined a bare
+        // `teps/` path, ignoring the maintainer org tree: a wrong-path bug.)
         const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
           name: f.name,
           path: f.uri.fsPath,
         }));
-        const repos = discoverRepos()
-          .filter((r) => r.enabled && !r.worktreeOf)
-          .map((r) => ({
-            ns: namespaceForRepo(r.path, folders),
-            store: new ThinkubeStore(r.path, r.thinkingSpaceDir),
-          }))
-          .filter((r): r is { ns: string; store: ThinkubeStore } => !!r.ns);
-
-        let originNs: string | undefined;
-        let originDir: string | undefined;
-        for (const r of repos) {
-          if ((await r.store.listTeps()).some((t) => normalizeTepId(t.id) === tepId)) {
-            originNs = r.ns;
-            originDir = r.store.thinkubeDir;
-            break;
-          }
+        const env = {
+          roots: folders.map((f) => f.path),
+          folders,
+          thinkingSpaceRoot: root,
+          allowAIWrites: true,
+          docsGateMode: "advisory" as const,
+        };
+        try {
+          const res = (await promoteTep(
+            { env, thinkingSpaces: new ThinkingSpaceRegistry(env) },
+            tepId,
+            product,
+            projectId,
+          )) as { tep: string; movedTo: string; rewritten: string[] };
+          provider.refresh();
+          vscode.window.showInformationMessage(
+            `Promoted ${res.tep} into ${res.movedTo}; rewrote ${res.rewritten.length} spec(s).`,
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Promote failed: ${(err as Error).message}`,
+          );
         }
-        if (!originNs || !originDir) {
-          vscode.window.showErrorMessage(`TEP-${tepId} not found in any repo.`);
-          return;
-        }
-
-        const fileName = `TEP-${tepId}.md`;
-        const projTepsDir = path.join(root, product, "projects", projectId, "teps");
-        fs.mkdirSync(projTepsDir, { recursive: true });
-        fs.renameSync(
-          path.join(originDir, "teps", fileName),
-          path.join(projTepsDir, fileName),
-        );
-
-        const rewritten: string[] = [];
-        for (const r of repos) {
-          for (const spec of await r.store.listSpecDirs()) {
-            const rel = r.store.pathForSpecDoc(spec);
-            const parsed = await r.store.getFile(rel);
-            const fm = parsed?.frontmatter;
-            const next = rewriteImplementsForPromote(
-              r.ns,
-              typeof fm?.implements === "string" ? fm.implements : undefined,
-              originNs,
-              tepId,
-              projectNamespace,
-            );
-            if (next && parsed) {
-              await r.store.writeFile(rel, { ...(fm ?? {}), implements: next }, parsed.body);
-              rewritten.push(`SP-${spec}`);
-            }
-          }
-        }
-        provider.refresh();
-        vscode.window.showInformationMessage(
-          `Promoted TEP-${tepId} into ${projectNamespace}; rewrote ${rewritten.length} spec(s).`,
-        );
       },
     ),
   );

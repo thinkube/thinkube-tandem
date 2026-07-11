@@ -27,6 +27,10 @@ import {
   normalizeRemote,
   parseSpaceCard,
 } from "./spaceManifest";
+import {
+  repoPathForNamespace,
+  type WorkspaceFolderRef,
+} from "./thinkingSpaceNamespace";
 
 /** Dirs never descended into during walks. */
 const SKIP_DIRS = new Set(["node_modules", ".git"]);
@@ -93,6 +97,51 @@ export function assertDeclaredOrgs(card: SpaceCard, dir: string): void {
       );
     }
   }
+}
+
+/**
+ * ENFORCEMENT: a space name is valid iff the directory `<root>/<name>` holds
+ * a card. One convention, no translation — an invalid name refuses listing
+ * the names that exist.
+ */
+export function assertDeclaredSpace(
+  name: string,
+  thinkingSpaceRoot: string,
+  context: string,
+): SpaceCard {
+  const dir = path.join(thinkingSpaceRoot, ...name.trim().split("/"));
+  const card = readSpaceCard(dir);
+  if (card) return card;
+  const declared = listDeclaredSpaces(thinkingSpaceRoot);
+  throw new Error(
+    `${context}: "${name}" is not a declared thinking space (no ${SPACE_CARD_FILENAME} at ${dir}). ` +
+      `Declared spaces: ${declared.join(", ") || "(none)"}.`,
+  );
+}
+
+/**
+ * Resolve a space name to its VERIFIED working repository: the name must be
+ * declared, its card must declare a repository, the workspace must resolve
+ * the name to a directory, and that directory's git remote must match the
+ * card. Any miss refuses with the exact reason — never a guess.
+ */
+export async function resolveVerifiedRepo(
+  name: string,
+  folders: WorkspaceFolderRef[],
+  thinkingSpaceRoot: string,
+  context: string,
+  readRemote?: RemoteReader,
+): Promise<string> {
+  const card = assertDeclaredSpace(name, thinkingSpaceRoot, context);
+  const repoPath = repoPathForNamespace(name, folders);
+  if (!repoPath) {
+    throw new Error(
+      `${context}: "${name}" does not resolve under any workspace folder ` +
+        `(${folders.map((f) => f.name).join(", ") || "no folders configured"}).`,
+    );
+  }
+  await verifyRepoRemote(repoPath, card, name, readRemote);
+  return repoPath;
 }
 
 /** Injectable remote reader (tests); default shells `git remote get-url origin`. */

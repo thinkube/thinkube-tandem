@@ -43,7 +43,7 @@ test("workingRepoPath: no repo: → the fallback (the thinking space's own repo)
   );
 });
 
-test("workingRepoPath: repo: SET but unresolvable → THROWS (no silent fallback)", async () => {
+test("workingRepoPath: repo: SET but no thinking-space root configured → THROWS (no silent fallback)", async () => {
   const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-wrepo3-"));
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
@@ -51,10 +51,11 @@ test("workingRepoPath: repo: SET but unresolvable → THROWS (no silent fallback
     { repo: "Platform/core/does-not-exist" },
     `# a${AC}`,
   );
-  // No workspace repo resolves to the named namespace → fail loud, never run git
-  // in the fallback/thinking space dir.
+  // ENFORCEMENT (TEP-14): with a `repo:` present, resolution is verified
+  // against the declared space card — without a configured root there is no
+  // card to verify against, so it refuses. Never a guess, never the fallback.
   await assert.rejects(
     () => workingRepoPath(store, "1/1", "/fallback/repo"),
-    /no enabled repo resolves to it/,
+    /no thinking-space root is configured/,
   );
 });
