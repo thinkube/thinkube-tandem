@@ -1,5 +1,5 @@
 /**
- * AC#1 — language-agnostic worktree provisioning (SP-th4wqh).
+ * AC#1 — language-agnostic worktree provisioning.
  *
  * Drives the real `WorktreeService` over a **hermetic tmp git repo** (`git init`
  * + `git worktree add`, offline — the `ownershipGuard.test.ts` `mkdtempSync` +

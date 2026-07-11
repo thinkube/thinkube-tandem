@@ -1,5 +1,5 @@
 /**
- * Live orchestrator-session registry (SP-tgs8nz SL-4). Tracks which slices have a live
+ * Live orchestrator-session registry. Tracks which slices have a live
  * Agent SDK worker and where each worker's stream is persisted as a `.jsonl`, and emits a
  * `change` event so the kanban panel can flag running nodes on the graph and float a session
  * out. In-process singleton — the `OrchestratorService` writes it; the panel reads + subscribes.

@@ -1,6 +1,6 @@
 /**
  * Control requests: the filesystem hand-off from the standalone (Claude-Code-
- * spawned) Kanban MCP server to the Extension Host (SP-tgpwbm AC8).
+ * spawned) Kanban MCP server to the Extension Host.
  *
  * The MCP server runs in its own process with no `vscode` API, so an action
  * that only the host can do — opening a Claude session in a Spec's worktree —

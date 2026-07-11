@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the user-scope kanban MCP-server registration (TEP-th3i18
+ * Pure helpers for the user-scope kanban MCP-server registration (
  * follow-up). No fs/vscode — so the merge logic is unit-tested. The vscode/fs glue
  * (building the entry from workspace config, reading/writing `settings.json`) lives
  * in `machineConfig.ts`.

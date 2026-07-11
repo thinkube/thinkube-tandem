@@ -1,6 +1,6 @@
 /**
  * The IPC framing between the on-PATH `tmux` shim CLI and the Extension Host
- * (SP-tgnb5o). Factored out of AgentTeamsShimServer so the wire protocol is
+ *. Factored out of AgentTeamsShimServer so the wire protocol is
  * directly testable (SL-3's IPC-roundtrip test, SL-4's conformance harness)
  * without standing up VS Code.
  *

@@ -1,4 +1,4 @@
-// Per-handle concurrency lock for thinking space writes (TEP-th3i18 / SP-th4wqe, #20).
+// Per-handle concurrency lock for thinking space writes.
 //
 // The kanban MCP server's mutating tools (`move_slice`, `accept_spec`) read a thinking space's JSON,
 // mutate it, and write it back. Two such operations interleaving on the SAME thinking space (handle)

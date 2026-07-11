@@ -1,5 +1,5 @@
 /**
- * Unit tests for applyPluginEnablement (SP-tgw1gz_SL-3). Pure — no vscode/fs.
+ * Unit tests for applyPluginEnablement. Pure — no vscode/fs.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import {
   discoverMetadataMarketplaces,
 } from "./pluginEnablement";
 
-test("discoverMetadataMarketplaces: *-metadata repos with a manifest (official + user); others excluded (SP-tgwdn7)", () => {
+test("discoverMetadataMarketplaces: *-metadata repos with a manifest (official + user); others excluded", () => {
   const repos = [
     { name: "thinkube-metadata", path: "/r/thinkube-metadata" }, // official, has manifest
     { name: "acme-metadata", path: "/r/acme-metadata" }, // user tier, has manifest

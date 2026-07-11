@@ -1,5 +1,5 @@
 /**
- * Spec-id resolution for `write_spec` (SP-th4wqd_SL-2, TEP-th3i18 #6).
+ * Spec-id resolution for `write_spec`.
  *
  * `write_spec` historically *required* the caller to hand a Spec id, which
  * forced manual thinking space surgery (hand-minting an `SP-{id}` before every spec).

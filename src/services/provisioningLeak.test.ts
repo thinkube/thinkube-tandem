@@ -1,5 +1,5 @@
 /**
- * AC#3 — no-leak audit via `git check-ignore` (SP-th4wqh).
+ * AC#3 — no-leak audit via `git check-ignore`.
  *
  * `provisioningArtifactsIgnored(repoRoot, outputs)` decides "ignored" by shelling
  * **`git check-ignore`** inside a hermetic tmp git repo, so its verdict matches

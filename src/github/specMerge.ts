@@ -1,6 +1,6 @@
 /**
  * Merge a Spec's PR at acceptance (TEP-0010), tolerant of straight-to-main Specs
- * (TEP-tg8dsa).
+ *.
  *
  * A Spec normally runs on one branch `spec/SP-<id>` and produces exactly one PR;
  * when the human accepts the Spec (gate green + `accept_spec` stamp), that one PR
@@ -12,9 +12,9 @@
  *
  * But the PR-ceremony rule lets docs / TEPs / thinking space moves / trivial fixes go
  * straight to `main`. Those Specs have no branch (or one with nothing ahead of
- * `main`), so acceptance must NOT depend on a PR existing (TEP-tg8dsa).
+ * `main`), so acceptance must NOT depend on a PR existing.
  *
- * The trap this guards against (SP-th1jtj): a branch-ahead Spec whose PR was never
+ * The trap this guards against: a branch-ahead Spec whose PR was never
  * opened. "No open PR" alone does NOT mean "nothing to land" — a Spec can have a
  * branch with real commits ahead of `main` and simply never had its PR created.
  * Treating that as a benign no-op silently strands the work on the branch (stamps
@@ -73,7 +73,7 @@ export type SpecMergeResult =
        * merge raced and `gh` reported it already merged. Still `merged: true` so the
        * accept dispatch (`acceptOrder`) retires the worktree on an idempotent
        * re-accept instead of throwing on a missing branch and stranding a zombie
-       * worktree (SP-th4wqe, #10-residual: already-merged / branch-gone ⇒ success).
+       * worktree (#10-residual: already-merged / branch-gone ⇒ success).
        */
       alreadyMerged?: boolean;
     }
@@ -178,7 +178,7 @@ const ghOps: PrOps = {
     // Merge ONLY — never `--delete-branch`. That deletes the local branch as part of
     // the merge, which FAILS when the Spec's worktree still holds it ("cannot delete
     // branch … used by worktree") and aborts the whole accept even though the PR
-    // merged (TEP-th3i18 #10). Branch cleanup is the retire step's job, run AFTER the
+    // merged. Branch cleanup is the retire step's job, run AFTER the
     // worktree is removed — see `WorktreeService.remove` (merge → retire worktree →
     // delete branch, the transaction #10 always described).
     const { stdout } = await execFileAsync(
@@ -229,7 +229,7 @@ const ghOps: PrOps = {
  *   - no open PR and the branch is **gone** (a prior accept already merged + deleted
  *     it) → `{ merged: true, alreadyMerged: true }` — an idempotent re-accept, so the
  *     dispatch still retires any leftover worktree instead of throwing on the missing
- *     branch (SP-th4wqe, #10-residual).
+ * branch (#10-residual).
  *   - no open PR and nothing ahead of `main` → `{ merged: false, reason: "no-pr" }`
  *     (a genuine straight-to-main Spec; caller stamps anyway).
  * Throws (with the underlying detail) on a real failure: `gh`/`git` missing or
@@ -263,7 +263,7 @@ export async function mergeSpecPr(
     // commits the Spec branch **locally and does not push**, so on the first accept the
     // remote branch is legitimately absent. Treating "no remote branch" as "already
     // merged" here would retire + delete the branch, stranding the only copy of the
-    // commit (TEP-th3i18 #29). So the ahead-count gates everything.
+    // commit. So the ahead-count gates everything.
     let ahead: number;
     try {
       ahead = await ops.unmergedCommits(branch, cwd);
@@ -275,14 +275,14 @@ export async function mergeSpecPr(
     if (ahead > 0) {
       // Unmerged work: push + open the PR + merge it (the "push, open PR, merge" the
       // accept land always promised). `openPr` pushes first, so this lands even a
-      // local-only branch — the #29 fix (and the SP-th1jtj "never opened" fix).
+      // local-only branch — the #29 fix (and the  "never opened" fix).
       await ops.openPr(branch, cwd);
       opened = true;
     } else {
       // Nothing ahead of `main` — the work is provably already in main. Now (and only
       // now) the remote-branch probe is meaningful: a *gone* branch is a prior accept
       // that already merged + deleted it (idempotent re-accept — report already-merged
-      // so the dispatch retires the possibly-zombie worktree, SP-th4wqe #10-residual);
+      // so the dispatch retires the possibly-zombie worktree,  #10-residual);
       // a *present* branch with nothing ahead is a genuine straight-to-main Spec (no-pr).
       if (ops.branchExists) {
         const exists = await ops.branchExists(branch, cwd);

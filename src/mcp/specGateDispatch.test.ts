@@ -242,7 +242,7 @@ test("create_slice accepts a slice whose AC verification target IS registered in
 // has cleared the → Ready gate, **editing the AC block** (via `write_spec`, or
 // `patch_spec_section`) WITHOUT re-certifying voids that certification — the
 // stamped hash now keys an outdated AC block — so the next `create_slice` is
-// **blocked** as stale until the ACs are re-audited (TEP-th3i18 #2). The
+// **blocked** as stale until the ACs are re-audited. The
 // converse must also hold: editing a *non-AC* section leaves the certification
 // intact, proving the hash is narrowed to the AC block (not the whole body).
 //

@@ -54,7 +54,7 @@ test("an AWS access key id is still flagged by its own rule", () => {
   assert.ok(hits.some((h) => h.pattern === "aws-access-key"));
 });
 
-// ── archive flag (TEP-tg86v7) ──
+// ── archive flag ──
 
 test("the archived flag round-trips through serialize → parse", () => {
   const text = serializeFrontmatter({
@@ -71,7 +71,7 @@ test("a file with no archived key parses as not-archived (back-compat)", () => {
   assert.equal(parseFrontmatter(text).frontmatter?.archived, undefined);
 });
 
-// ── tags mesh (SP-tgvil2 / TEP-tgvh8p) ──
+// ── tags mesh ──
 
 test("a tags array round-trips through serialize → parse (order preserved)", () => {
   const text = serializeFrontmatter({

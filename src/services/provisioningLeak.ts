@@ -1,6 +1,6 @@
 /**
  * No-leak check — provisioning artifacts must stay out of git
- * (SP-th4wqh / TEP-th3i18, #24, slice SL-3).
+ * (, #24, slice SL-3).
  *
  * A fresh worktree provisions its (gitignored) deps by running the repo's
  * declared provisioning recipe. The cautionary case is #16: a hardcoded Node

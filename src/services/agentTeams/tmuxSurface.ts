@@ -1,5 +1,5 @@
 /**
- * The agent-teams `tmux` command surface (SP-tgnb5o, AC#6/AC#7).
+ * The agent-teams `tmux` command surface.
  *
  * CAPTURED from a real tmux session driving Claude Code 2.1.177 agent teams
  * (logging-wrapper capture, 2026-06-15) — this is the actual choreography, not

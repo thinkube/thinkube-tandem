@@ -134,7 +134,7 @@ export class ThinkubeStore implements vscode.Disposable {
     return this.thinkingSpaceDir;
   }
 
-  // ─── Org-scoped tree layout (TEP-th8lzj) ────────────────────────────────
+  // ─── Org-scoped tree layout ────────────────────────────────
   // The thinking space stores artifacts as a tree under a per-maintainer org segment:
   //   <org>/teps/TEP-n/tep.md · <org>/teps/TEP-n/SP-m/spec.md · …/SL-k.md
   // The org is discovered (a child dir of the thinking space holding a `teps/`). Cached

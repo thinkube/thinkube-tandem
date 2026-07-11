@@ -1,6 +1,6 @@
 /**
  * treePaths — pure, vscode-free builders for the nested thinking space tree
- * (SP-th8m5b / TEP-th8lzj).
+ *.
  *
  * The org-scoped sequential-id layout stores every artifact as a tree rooted at
  * a thinking space, namespaced by a per-maintainer organization segment:

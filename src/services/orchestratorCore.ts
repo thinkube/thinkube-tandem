@@ -1,11 +1,11 @@
 /**
- * Pure, vscode-free core of the thinking space orchestrator (SP-tgs8nz_SL-1): the work-unit DAG +
+ * Pure, vscode-free core of the thinking space orchestrator: the work-unit DAG +
  * scheduler, plus session-log helpers that parse a worker's persisted `.jsonl` events.
  * Mostly I/O-free — the `OrchestratorService` shell supplies thinking space rows + the event stream
- * and acts on the results. Unit-tested directly (high AI-testability per the lever, SP-tgsdvw);
+ * and acts on the results. Unit-tested directly (high AI-testability per the lever);
  * the live SDK worker / advance is the shell's job — a human verdict (low AI-testability).
  *
- * The one I/O seam here is `runAcVerifications` (SP-tgzyfy / TEP-tgzx3p, the closing gate): it
+ * The one I/O seam here is `runAcVerifications` (, the closing gate): it
  * spawns the Spec's declared per-AC checks. The actual spawn is behind an injectable `AcExec`
  * defaulting to `child_process` so the runner + the report builder stay unit-testable with fakes.
  */
@@ -155,7 +155,7 @@ export function batchExecutionUnits(units: WorkUnit[]): ExecutionUnit[] {
   return out;
 }
 
-// ── Work-unit DAG scheduler (SP-tgs8nz: makespan over the Spec's units) ──────
+// ── Work-unit DAG scheduler (makespan over the Spec's units) ─────────────
 //
 // The schedulable atom is an **execution unit** (a worker's assignment): a slice's
 // work units batched by shape (serial → one ordered session; mechanize/fan-out →
@@ -180,7 +180,7 @@ export interface SliceForDag {
   files: string[];
   /** `work_units` (may be empty → the whole slice is one serial unit). */
   workUnits: (WorkUnit & { note?: string })[];
-  /** 1-based AC ordinals the slice `satisfies` — the closing gate (SP-tgzyfy) advances the slice
+  /** 1-based AC ordinals the slice `satisfies` — the closing gate advances the slice
    *  to Done only when these ACs' verifications all ran green, then ticks exactly these on the Spec. */
   satisfies?: number[];
   /** The slice's design-time CONTRACT (SP-6/3): the shared interface — the exact exports, types
@@ -788,7 +788,7 @@ export function stripSatisfies(body: string): string {
 
 /**
  * Build the **autonomy-first prompt** for a worker dispatched on one execution unit
- * (SP-tgs8nz). Scoped to the unit's footprint + shape, it tells the worker to decide
+ *. Scoped to the unit's footprint + shape, it tells the worker to decide
  * autonomously (never seek confirmation), never touch git or the thinking space, and escalate
  * with a question ONLY when genuinely blocked — the posture that keeps headless
  * execution from stopping on routine approvals.
@@ -1066,7 +1066,7 @@ export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending SP-tgs8nz
+ * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending
  * AC4). Matches the delivery report's plain-language `## What happened` prose FIRST; if that heading
  * is absent (or empty), falls back to the slice body's `## ⚑ Requires attention` heading — so the
  * existing `/attend` slice-diagnosis caller keeps working unchanged. Returns undefined when neither is
@@ -1314,7 +1314,7 @@ export function isResultSuccess(evt: Record<string, unknown>): boolean {
   );
 }
 
-// ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────────
+// ── Closing AI-verification gate ──────────────────
 //
 // At Spec quiescence the orchestrator runs the Spec's DECLARED per-AC verifications as a
 // complete plan against the worktree (the live cluster for infra) and gates Done/commit on
@@ -1619,7 +1619,7 @@ function acEvidence(run: string, code: number | null, output: string): string {
 }
 
 /**
- * Run the Spec's declared per-AC verifications as a complete plan (SP-tgzyfy): each check runs
+ * Run the Spec's declared per-AC verifications as a complete plan: each check runs
  * in `cwd` (the worktree / live cluster), in declared order, and its pass/fail is attributed
  * back to the AC it proves. A command that exits 0 → pass; non-zero → fail; one that can't run
  * at all (spawn error) → fail with an "could not run" evidence (the no-skip: un-runnable ⇒ red,
@@ -1741,7 +1741,7 @@ export function checkAcOrdinals(body: string, ordinals: number[]): string {
   return lines.join("\n");
 }
 
-// ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────────
+// ── Finalization watchdog ────────────────
 //
 // A run can land every execution unit and then silently wedge — the finalize tail
 // (commit the Spec, write DELIVERY.md, advance the slice off `ready`) never fires, so
@@ -1777,7 +1777,7 @@ export interface FinalizationState {
 }
 
 /**
- * Pure finalization watchdog (SP-th4wqc_SL-2): given the run's quiescence + finalize-marker
+ * Pure finalization watchdog: given the run's quiescence + finalize-marker
  * state, return `'finalized'` when the run is healthy (or not yet at the finalize check), or
  * `{ wedged }` when the units are **done** but one or more finalize markers — commit SHA,
  * DELIVERY.md, slice moved off `ready` — are **absent**. The `wedged` string always contains
@@ -1800,7 +1800,7 @@ export function finalizationVerdict(
   };
 }
 
-// ── Atomic, resumable per-slice commit (SP-th4wqc_SL-3 / TEP-th3i18 #9) ────
+// ── Atomic, resumable per-slice commit ────
 //
 // Today commit is all-or-nothing at run quiescence, so a partial gate or a git
 // failure can leave a slice on `Done` with uncommitted work — a sticky-Done lie. SL-3
@@ -1819,7 +1819,7 @@ export function finalizationVerdict(
 // documented on `commitPlan`: attempt each `commit` handle's git commit; a handle whose commit
 // fails is treated as a rollback (→ `ready`, NOT Done), so only commit-succeeded slices end Done.
 
-/** One slice's outcome feeding the per-slice commit decision (SP-th4wqc_SL-3 / #9). */
+/** One slice's outcome feeding the per-slice commit decision. */
 export interface SliceOutcome {
   /** Slice handle, e.g. "SP-3_SL-2". */
   handle: string;
@@ -1831,7 +1831,7 @@ export interface SliceOutcome {
 }
 
 /**
- * The per-slice commit decision (SP-th4wqc_SL-3). `commit` lists the handles whose work is complete
+ * The per-slice commit decision. `commit` lists the handles whose work is complete
  * AND gate-green — the shell commits each (commit-before-Done) then marks it Done. `rollback` lists
  * the handles that must NOT end Done — moved back to `ready` so a later run re-attempts them.
  */
@@ -1843,7 +1843,7 @@ export interface CommitPlan {
 }
 
 /**
- * Pure per-slice commit planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): partition the run's slice
+ * Pure per-slice commit planner: partition the run's slice
  * outcomes into the slices to **commit** (every unit landed ∧ the slice's gate passed) and the
  * slices to **roll back** to `ready` (anything else — partial landing or a failed gate). This is
  * the no-sticky-Done invariant: a slice is only ever committed-then-Done when its work is complete
@@ -1864,7 +1864,7 @@ export function commitPlan(sliceOutcomes: SliceOutcome[]): CommitPlan {
   return { commit, rollback };
 }
 
-/** What a slice looks like at the start of a (re-)run, for the resume decision (SP-th4wqc_SL-3 / #9). */
+/** What a slice looks like at the start of a (re-)run, for the resume decision. */
 export interface SliceState {
   /** Frontmatter status: ready | doing | done | requires-attention | archived. */
   status: string;
@@ -1875,7 +1875,7 @@ export interface SliceState {
 }
 
 /**
- * Pure resume planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): decide what a (re-)run does with a slice it
+ * Pure resume planner: decide what a (re-)run does with a slice it
  * encounters, so a resume **commits** rather than **re-authors** already-present work — the AC4
  * invariant the spy `runUnit` asserts (not called for a complete-but-uncommitted slice on re-run).
  *
@@ -2052,7 +2052,7 @@ const NEXT_HINTS: Record<ExitActionId, string> = {
     "resolve the requires-attention slice(s), then re-run Orchestrate on the Spec.",
 };
 
-/** Everything the auditable delivery report (DELIVERY.md) records (SP-tgzyfy). */
+/** Everything the auditable delivery report (DELIVERY.md) records. */
 export interface DeliveryReportInput {
   specNumber: string;
   /** Short HEAD sha the Spec was committed at (or "" when nothing committed). */
@@ -2165,7 +2165,7 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
       "",
       "**No `ac_verifications` declared on the Spec — the closing gate could not run.** " +
         "The acceptance criteria were NOT verified; the Spec is left `requires-attention` " +
-        "(no skip, TEP-tgzx3p). Declare a per-AC verification map on the Spec, then re-run.",
+        "(no skip). Declare a per-AC verification map on the Spec, then re-run.",
     ];
   } else if (hasAcTexts) {
     // Criterion-text rows: keep today's `#k` ordinal token, carry the Spec's criterion line.

@@ -1,5 +1,5 @@
 /**
- * Product/Project manifest writers (SP-tgvl81_SL-3). Pure `fs` + `yaml` (no
+ * Product/Project manifest writers. Pure `fs` + `yaml` (no
  * vscode) so the path + content are unit-testable vscode-free; the command
  * wrappers (input prompts + refresh) live in `products.ts`.
  */
@@ -32,7 +32,7 @@ export async function writeProductManifest(
 /**
  * Write `<thinkingSpaceRoot>/<product>/projects/<id>/project.yaml`; returns the file
  * path. A Project is a code-less umbrella — its manifest is just `name`/`state`
- * (membership is by `implements:`, not a tag — SP-tgvpbm).
+ * (membership is by `implements:`, not a tag ).
  */
 export async function writeProjectManifest(
   thinkingSpaceRoot: string,

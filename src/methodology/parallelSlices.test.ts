@@ -70,7 +70,7 @@ test("overlapping members of a parallel_group are refused, naming the file and s
   assert.match(r.reason, /core/);
 });
 
-test("overlapping work-unit footprints in a parallel_group are refused (SP-tgs8gb)", () => {
+test("overlapping work-unit footprints in a parallel_group are refused", () => {
   const slices: ParallelSliceInput[] = [
     {
       handle: "SP-9_SL-1",
@@ -159,7 +159,7 @@ test("normalizeFilePath trims and strips a single leading ./", () => {
   assert.equal(normalizeFilePath("././src/a.ts"), "./src/a.ts");
 });
 
-// ── Ownership arbiter core (SP-tgpwbm AC3) ─────────────────────────────────
+// ── Ownership arbiter core ─────────────────────────────────
 
 test("acquire then a CONFLICTING acquire is denied, naming the file and holder", () => {
   const empty: OwnershipState = {};
@@ -253,7 +253,7 @@ test("reconcile with all owners live drops nothing", () => {
   assert.equal(r.dropped.length, 0);
 });
 
-// ── Worktree-Spec recovery (SP-tgpwbm AC5) ─────────────────────────────────
+// ── Worktree-Spec recovery ─────────────────────────────────
 
 test("detectRecoverable: assignee-stamped open slice with no live holder is recoverable", () => {
   const slices: SliceRecoveryInfo[] = [
@@ -301,7 +301,7 @@ test("detectRecoverable: returns only the orphaned handles among a mix", () => {
   assert.deepEqual(r.orphaned, ["SP-9_SL-2"]);
 });
 
-// ── Require a worktree before working a Spec (SP-tgpwbm AC2) ────────────────
+// ── Require a worktree before working a Spec ────────────────
 
 test("requiresWorktree: the canonical checkout must open the worktree", () => {
   assert.equal(

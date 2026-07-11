@@ -23,7 +23,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
 import type { AcVerdict, AcVerdictKind } from "./openingGate";
-// Reuse, don't fork (SP-th1ddy): the same stream-json message-shape readers the orchestrator's
+// Reuse, don't fork: the same stream-json message-shape readers the orchestrator's
 // spawn path uses, so the audit session is summarized and its session id / success read identically.
 import {
   isResultSuccess,

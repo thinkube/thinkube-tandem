@@ -1,6 +1,6 @@
 /**
  * worktreeProvision — run a repo's **declared** provisioning recipe inside a
- * freshly-added git worktree (SP-th4wqh).
+ * freshly-added git worktree.
  *
  * A fresh worktree is a clean checkout: it has the committed source but **none**
  * of the gitignored, locally-built dependencies a verify needs (`node_modules/`,

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the orchestrator's pure core (SP-tgs8nz_SL-1) — the slice picker and the
+ * Unit tests for the orchestrator's pure core — the slice picker and the
  * stream-json parser. node:test + node:assert; run via `npm test`. The live spawn / verify
  * / advance is a human verdict (low AI-testability), not covered here.
  */
@@ -685,7 +685,7 @@ test("readyFrontier: blocked units (requires-attention slice) are not dispatched
   assert.equal(f.length, 0);
 });
 
-// ── needs-input + worker prompt (SP-tgs8nz_SL-3) ───────────────────────────
+// ── needs-input + worker prompt ───────────────────────────
 
 test("extractNeedsInput: pulls the question after the sentinel; null when absent", () => {
   assert.equal(
@@ -981,7 +981,7 @@ test("stripSatisfies: drops the structured `satisfies:` key (inline + block-list
   );
 });
 
-// ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ───────────────────
+// ── Closing AI-verification gate ───────────────────
 
 test("parseAcVerifications: normalizes the frontmatter map → ordered AcVerification[]", () => {
   const v = parseAcVerifications({

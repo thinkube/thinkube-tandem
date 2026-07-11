@@ -1,6 +1,6 @@
 /**
  * The merge → stamp → retire ordering of an accept-land, extracted into one pure,
- * injectable place (SP-th4wqe / TEP-th3i18, #10-residual).
+ * injectable place (, #10-residual).
  *
  * Before this, `thinkingSpaces.ts` (`onAcceptSpec`) and `orchestrate.ts` (`thinkube.accept`)
  * each inlined the same three-step dance — merge the Spec's PR, stamp `accepted:`

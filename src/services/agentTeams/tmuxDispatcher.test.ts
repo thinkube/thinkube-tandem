@@ -1,5 +1,5 @@
 /**
- * Unit tests for the pure agent-teams `tmux` dispatcher (SP-tgnb5o).
+ * Unit tests for the pure agent-teams `tmux` dispatcher.
  * Run via `npm test`. A fake PaneFactory records spawns + writes, so the
  * CAPTURED command surface (global `-S`, leader/window model, shell panes, the
  * split → send-keys teammate-launch flow) is verifiable headlessly.

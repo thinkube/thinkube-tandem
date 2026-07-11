@@ -1,6 +1,6 @@
 /**
- * Parallel-slice declarations and the file-disjointness check (SP-tgpwbm /
- * TEP-tgpupa). For sibling slices to run **concurrently** in isolated
+ * Parallel-slice declarations and the file-disjointness check (
+ * ). For sibling slices to run **concurrently** in isolated
  * worktrees without merge conflicts, every member of a `parallel_group` must
  * own a **disjoint** file set. This module is the pure validator: callers
  * (`/slice`, `create_slice`, later the ownership arbiter) supply the declared
@@ -19,7 +19,7 @@ export interface ParallelSliceInput {
   parallelGroup?: string;
   /** Repo-relative paths the slice declares it will edit (its `files:` set). */
   files?: string[];
-  /** Execution-aware work units (SP-tgs8gb); each footprint folds into the
+  /** Execution-aware work units; each footprint folds into the
    *  slice's claimed set, so footprint disjointness is enforced alongside `files`. */
   workUnits?: { footprint: string[] }[];
 }
@@ -107,11 +107,11 @@ export function validateParallelGroup(
   return { ok: false, reason, conflicts };
 }
 
-// ── Work-unit / slice DAG validation (SP-tgs8nz: deterministic control plane) ──
+// ── Work-unit / slice DAG validation (: deterministic control plane) ──
 //
 // Before any worker runs, the scheduler's DAG must be well-formed: every
 // dependency resolves to a known node, and the graph is acyclic. This is pure
-// graph code — no LLM in the control plane (SP-tgs8nz). `create_slice` and the
+// graph code — no LLM in the control plane. `create_slice` and the
 // scheduler call it to reject a malformed DAG deterministically.
 
 export interface DagNode {
@@ -131,7 +131,7 @@ export type ValidateDagResult =
     };
 
 /**
- * Validate a work-unit / slice DAG is well-formed (SP-tgs8nz). Two checks, both
+ * Validate a work-unit / slice DAG is well-formed. Two checks, both
  * pure and deterministic: **dep-resolution** (every `requires` id is a node in
  * the DAG — no dangling reference) and **acyclicity** (no dependency cycle; the
  * returned `cycle` names the loop). Dangling deps are reported first (a cycle
@@ -200,14 +200,14 @@ export function validateDag(nodes: DagNode[]): ValidateDagResult {
   return { ok: true };
 }
 
-// ── Contract-first slicing (SP-th4wqi: the contract node) ──────────────────
+// ── Contract-first slicing (: the contract node) ──────────────────
 //
 // `buildUnitDag`/`readyFrontier` sequence only on shared *footprint*; work units
 // with **disjoint** footprints are treated as independent and fan out fully
 // parallel. But disjoint files can still share a **contract** — an interface,
 // name, schema, key, message or registration — and when a producer/consumer/test
 // cluster fans out with no coordination, each worker invents that contract and
-// they diverge (the SP-D / SP-th4wqe AC#3 double-red: the `ctx.promoteLocator`
+// they diverge (the SP-D / AC#3 double-red: the `ctx.promoteLocator`
 // seam and the `/promote_tep/` message at once).
 //
 // The remedy is **contract-first**: author the shared contract as one unit, and
@@ -331,7 +331,7 @@ export function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
 }
 
 /**
- * The contract-first gate (SP-th4wqi, AC#1–3). Pure check over a slice's
+ * The contract-first gate (AC#1–3). Pure check over a slice's
  * declared `work_units`: refuse the **unsequenced-integration** structure — a
  * `*.test.*`/integration unit running `fan-out`, with **no `consumes`**, beside
  * **≥2** sibling implementation (producer) units — naming the rule ({@link CONTRACT_FIRST_RULE_MSG})
@@ -610,7 +610,7 @@ export function resolveRoleFootprint(
   return resolveFootprint(footprint, opts);
 }
 
-// ── Footprint enforcement (SP-tgs8nz_SL-6: the PreToolUse guard) ────────────
+// ── Footprint enforcement (: the PreToolUse guard) ────────────
 //
 // An orchestrated worker runs under `bypassPermissions` (no prompts), so a
 // PreToolUse hook is the guardrail: it **denies** an Edit/Write/MultiEdit to a
@@ -633,7 +633,7 @@ export type FootprintDecision =
 
 /**
  * Decide whether a worker scoped to `footprint` may run `toolName` on `toolInput`
- * (SP-tgs8nz_SL-6). Only the write tools — `Edit`/`Write`/`MultiEdit`/`NotebookEdit` — are
+ *. Only the write tools — `Edit`/`Write`/`MultiEdit`/`NotebookEdit` — are
  * guarded; anything else, and a call with no target path, is allowed (the hook fences
  * *writes*, not reads/Bash). A write to a file **outside** the declared footprint is
  * **denied**, naming it — so a stray write surfaces immediately instead of corrupting
@@ -960,7 +960,7 @@ export function footprintContainment(
   return { ok: false, reason, violations };
 }
 
-// ── Ownership claims (SP-tgpwbm AC3 / AC5) ─────────────────────────────────
+// ── Ownership claims ─────────────────────────────────
 //
 // The durable ownership map: each repo-relative file is owned by at most one
 // slice. The ownership arbiter (src/services/OwnershipArbiter.ts) wraps this
@@ -1076,7 +1076,7 @@ export function parseOwnership(text: string): OwnershipState {
   return {};
 }
 
-// ── Worktree-Spec recovery (SP-tgpwbm AC5) ─────────────────────────────────
+// ── Worktree-Spec recovery ─────────────────────────────────
 
 /** The recovery-relevant frontmatter of one slice. */
 export interface SliceRecoveryInfo {
@@ -1098,7 +1098,7 @@ export interface RecoverableResult {
  * Detect an **orphaned worktree-shaped Spec** (AC5): one whose slices carry an
  * `assignee:` stamp (a worktree/teammate claimed them) and are still open, yet
  * have **no live arbiter holder** — the signature of a Spec whose worktree
- * session died (a crash / window reload) before finishing. `/pair-start` uses
+ * session died (a crash / window reload) before finishing. the session-open path uses
  * this to offer to resume rather than starting fresh. Done and archived slices
  * never count — their work is finished, not orphaned.
  */
@@ -1121,12 +1121,12 @@ export function detectRecoverable(
   return { recoverable: orphaned.length > 0, orphaned };
 }
 
-// ── Require a worktree before working a Spec (SP-tgpwbm AC2) ────────────────
+// ── Require a worktree before working a Spec ────────────────
 
 /**
- * Decide whether `/pair-start` must **open the Spec's worktree** before working,
+ * Decide whether a session must **open the Spec's worktree** before working,
  * or can **proceed** because it's already inside one (AC2). A Spec runs in its
- * own `spec/SP-{n}` worktree (TEP-0008); if `/pair-start` was invoked from the
+ * own `spec/SP-{n}` worktree (TEP-0008); if the session was opened from the
  * canonical/main checkout it must redirect into the worktree session rather than
  * editing the main tree. `cwd` inside the canonical repo tree → `"open-worktree"`;
  * a linked worktree (a different path, e.g. a sibling `<repo>-worktrees/SP-{n}`)

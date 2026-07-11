@@ -4,7 +4,7 @@
  * The thinking space's "New Spec" action (commands/thinkingSpaces.ts) opens a session rooted in
  * the repo with `/spec-prepare N` prefilled. This is its sibling for *working*
  * an already-numbered Spec: create the Spec's git worktree and open a session
- * rooted there with `/pair-start N`, so parallel Specs never share a tree.
+ * rooted there from the board, so parallel Specs never share a tree.
  */
 import * as vscode from "vscode";
 
@@ -47,7 +47,7 @@ export function registerWorktreeCommands(
               .getConfiguration("thinkube")
               .get<string>("worktree.baseDir")
               ?.trim() || undefined;
-          // Thinking Space-connect the new worktree (SP-tgpwbm): pass the configured thinking space
+          // Thinking Space-connect the new worktree: pass the configured thinking space
           // root so its .mcp.json kanban server points at the central sidecar.
           const thinkingSpaceRoot =
             vscode.workspace

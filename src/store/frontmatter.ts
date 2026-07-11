@@ -36,16 +36,16 @@ export interface Frontmatter {
   uid?: string;
   /** Parent Spec handle for a slice, e.g. "SP-3". Supersedes `parent_issue`. */
   parent?: string;
-  /** Free-form clustering tags — the #hashtag mesh (SP-tgvil2 / TEP-tgvh8p):
+  /** Free-form clustering tags — the #hashtag mesh:
    *  component (`keycloak`), concern (`security`), project (`rebrand`). Many-to-many
    *  and cross-thinking space. Read via `effectiveTags` (which also folds the legacy `theme`). */
   tags?: string[];
-  /** @deprecated Superseded by `tags` (SP-tgvil2); still read via `effectiveTags`.
+  /** @deprecated Superseded by `tags`; still read via `effectiveTags`.
    *  Legacy single grouping tag (sat above the Spec; not a tier). */
   theme?: string;
   /** Thinking Space column / lifecycle status. Slices use ready|doing|done|archived;
    *  TEPs use proposed|accepted|superseded|implemented (TEP-0009; `implemented`
-   *  is the terminal "delivered" status per SP-th4wqg, distinct from `accepted`
+ * is the terminal "delivered" status per , distinct from `accepted`
    *  = approved-to-build); draft|active are legacy. */
   status?:
     | "ready"
@@ -63,7 +63,7 @@ export interface Frontmatter {
   due?: string;
   /** Optional slice priority. */
   priority?: "P0" | "P1" | "P2" | "P3";
-  /** Spec requirement-hash a slice was last verified against (set by /pair-next). */
+  /** Spec requirement-hash a slice was last verified against (set at the → Done gate). */
   verified_req_hash?: string;
   /** Full commit SHA the slice was built on, captured when it enters Done. */
   commit?: string;
@@ -73,10 +73,10 @@ export interface Frontmatter {
   depends_on?: string[];
   /** Named concurrency group: sibling slices sharing this value may run in
    *  parallel worktrees, so their `files` sets MUST be disjoint
-   *  (`validateParallelGroup`, SP-tgpwbm). Absent → the slice runs sequentially. */
+ * (`validateParallelGroup`). Absent → the slice runs sequentially. */
   parallel_group?: string;
   /** The teammate / worktree currently owning this slice; empty until claimed
-   *  by the ownership arbiter (SP-tgpwbm). */
+   *  by the ownership arbiter. */
   assignee?: string;
   /** Machine-readable file set the slice declares it will edit — the unit of
    *  disjointness for a `parallel_group` and the ownership arbiter's claim.
@@ -95,7 +95,7 @@ export interface Frontmatter {
    *  from the contract-first gate (the contract IS the shared seam), and needs `consumes` only for
    *  a genuine produced-artifact dependency. */
   contract?: string;
-  /** Spec-level (SP-tgzyfy / TEP-tgzx3p): the closing gate's per-AC verification declaration —
+  /** Spec-level: the closing gate's per-AC verification declaration —
    *  a map AC-ordinal → how that AC is verified. The orchestrator runs the union as a full plan
    *  at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable →
    *  requires-attention). `run` is a shell/playbook command (exit 0 = the AC's verification
@@ -109,7 +109,7 @@ export interface Frontmatter {
     string,
     { run?: string; env?: "cluster" | "local" | "assessment" }
   >;
-  /** Execution-aware work units under this slice (SP-tgs8gb): each an atom with a
+  /** Execution-aware work units under this slice: each an atom with a
    *  file/object footprint + an execution shape. The slice stays the validation
    *  envelope — work units are never independently gated. */
   work_units?: {
@@ -117,7 +117,7 @@ export interface Frontmatter {
     footprint: string[];
     /** Work-unit/slice handles this unit depends on (ordering). */
     depends_on?: string[];
-    /** Contract-first reference (SP-th4wqk): repo-relative files a *sibling* unit
+    /** Contract-first reference: repo-relative files a *sibling* unit
      *  produces that this unit reads. `buildUnitDag` resolves each entry to a
      *  dependency edge on the sibling whose footprint produces it — the typed,
      *  validated alternative to pinning the contract in `note`. */
@@ -142,14 +142,14 @@ export interface Frontmatter {
      *  act on it without re-reading siblings; required in practice for `fan-out`. */
     note?: string;
   }[];
-  /** Documentation obligation (TEP-tgh6iy). `required` (default for user-facing
+  /** Documentation obligation. `required` (default for user-facing
    *  work) arms the → Done docs gate; `n/a` skips it but must carry `docs_reason`. */
   docs?: "required" | "n/a";
   /** One-line justification, required when `docs: n/a` — so skipping docs is a
-   *  visible, deliberate choice, never silent (TEP-tgh6iy). */
+   *  visible, deliberate choice, never silent. */
   docs_reason?: string;
   /** Set true when a `docs: required` slice's documentation has been updated;
-   *  the → Done docs gate (TEP-tgh6iy) checks this — like a verifier-green stamp. */
+   *  the → Done docs gate checks this — like a verifier-green stamp. */
   docs_done?: boolean;
   /** ISO date the file was created. */
   created?: string;
@@ -167,11 +167,11 @@ export interface Frontmatter {
    *  `unsupersede_spec`. */
   superseded_reason?: string;
   /** Spec/TEP-level: hidden from the nav by default when true; a manual, reversible
-   *  flag (TEP-tg86v7). Distinct from a slice's `status: archived` thinking space column. */
+   *  flag. Distinct from a slice's `status: archived` thinking space column. */
   archived?: boolean;
   /** Spec-level: the TEP this Spec implements, e.g. `TEP-0009` (TEP-0009 link). */
   implements?: string;
-  /** TEP-level: the Specs that deliver this TEP, e.g. `["SP-tg7y99"]` (TEP-0009 link). */
+ /** TEP-level: the Specs that deliver this TEP, e.g. `["SP-4"]`. */
   implemented_by?: string[];
   /** `owner/name`; the repo this thinking space belongs to. */
   repo?: string;
@@ -185,7 +185,7 @@ export interface Frontmatter {
 }
 
 /**
- * The effective tag set for an item (SP-tgvil2 / TEP-tgvh8p): `tags` unioned
+ * The effective tag set for an item: `tags` unioned
  * with a legacy single `theme` (superseded but never dropped). Explicit `tags`
  * come first, then `theme` if not already present; blanks trimmed, deduped.
  */

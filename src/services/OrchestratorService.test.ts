@@ -1,6 +1,6 @@
 /**
  * Unit tests for the orchestrator shell's makespan scheduler + the closing AI-verification gate
- * (SP-tgs8nz / SP-tgzyfy), exercised with fakes (store / arbiter / worktrees / runUnit /
+ *, exercised with fakes (store / arbiter / worktrees / runUnit /
  * runAcVerifications / checkAcs / commit) — no live Agent SDK, no live cluster, no vscode.
  * Verifies the scheduler logic (validate DAG → saturate the frontier → land units) AND the
  * closing gate (run the declared per-AC verifications → gate Done/commit on all-green → check
@@ -220,7 +220,7 @@ function makeDeps(
   const specVerifs = opts.verifs === undefined ? defaultVerifs : opts.verifs;
 
   // A real (throwaway) thinking space dir so the closing run's `writeDeliverySummary` can land
-  // `teps/TEP-1/SP-1/DELIVERY.md` — the finalization watchdog (SP-th4wqc_SL-2) treats a missing
+  // `teps/TEP-1/SP-1/DELIVERY.md` — the finalization watchdog treats a missing
   // report as a wedge, so the integration fake must let the report write.
   const thinkingSpaceDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "tk-orch-test-"),
@@ -323,7 +323,7 @@ function makeDeps(
       calls.torndown.push(n);
     },
     // The worktree HEAD's short SHA — injected so the finalization watchdog sees a real commit
-    // marker without a live git repo (SP-th4wqc_SL-2). A non-empty SHA + the written DELIVERY.md
+    // marker without a live git repo. A non-empty SHA + the written DELIVERY.md
     // make `finalizationVerdict` return "finalized", so a clean run isn't flagged a false wedge.
     gitShortSha: async () => "deadbee",
   };
@@ -480,7 +480,7 @@ test("dispatchSpec: a worker failure flags its slice requires-attention; the gat
   assert.deepEqual(r.acResults, [], "the gate did not run — no units landed");
 });
 
-// ── The closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────
+// ── The closing AI-verification gate ──────────────
 
 test("dispatchSpec: NO SKIP — units land but no ac_verifications declared → requires-attention, nothing committed", async () => {
   const { deps, calls } = makeDeps(

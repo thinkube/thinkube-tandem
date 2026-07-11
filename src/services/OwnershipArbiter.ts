@@ -1,7 +1,7 @@
 /**
  * OwnershipArbiter — the single Extension-Host authority over which slice owns
- * which files while parallel Specs run in separate worktrees (SP-tgpwbm /
- * TEP-tgpupa).
+ * which files while parallel Specs run in separate worktrees (
+ * ).
  *
  * Why a runtime arbiter and not committed markdown: markdown commits aren't
  * atomic and there is exactly one of these per Extension Host, so it can
@@ -18,7 +18,7 @@
  * git repo). The claim algebra and journal codec are pure (`parallelSlices.ts`)
  * and unit-tested; the I/O here mirrors `WorktreeService`'s untested git/fs
  * shell — its live behaviour rides existing machinery and is smoke-checked, not
- * gate-blocking (TEP-tgnvkw).
+ * gate-blocking.
  */
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";

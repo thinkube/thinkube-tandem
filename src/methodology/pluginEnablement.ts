@@ -1,8 +1,8 @@
 /**
- * Plugin enablement (TEP-tgvwct, Phase 2) — how a repo opts IN to the Tandem
+ * Plugin enablement — how a repo opts IN to the Tandem
  * methodology plugin, PER-REPO and never global.
  *
- * Proven shape (verified via the spike + SP-tgw1gz liveness runs):
+ * Proven shape (verified via the spike + liveness runs):
  *   1. the marketplace is registered ONCE per machine (`claude plugin
  *      marketplace add <local clone>`) — a one-shot command; the machine-specific
  *      path lives in `~/.claude`, never in a repo;
@@ -74,7 +74,7 @@ export interface MetadataMarketplace {
 }
 
 /**
- * The metadata-repo marketplaces among `repos` (TEP-tgvwct, Phase 4): every repo
+ * The metadata-repo marketplaces among `repos`: every repo
  * named `*-metadata` that carries a `.claude-plugin/marketplace.json`, paired with
  * that manifest's `name`. Covers the official `thinkube-metadata` AND each user's
  * own `{org}-metadata` — org-agnostic, discovered structurally. Pure: the manifest

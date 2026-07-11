@@ -1,5 +1,5 @@
 /**
- * Product discovery (SP-tgvjug / TEP-tgvh8p) — the code-less top node of the
+ * Product discovery — the code-less top node of the
  * hierarchy. A **Product** is a top-level directory in the sidecar thinking space root
  * whose member Thinking Spaces are the thinking space namespaces nested under it,
  * optionally described by a `<product>/product.yaml` (display name + metadata).
@@ -37,7 +37,7 @@ function hasSubdir(dir: string, child: string): boolean {
 
 /**
  * A thinking space-shaped dir holds either a legacy flat `specs/` directory OR — under
- * the org-scoped layout (SP-th8m5b / TEP-th8lzj) — an `<org>/teps/` subtree (a
+ * the org-scoped layout — an `<org>/teps/` subtree (a
  * thinking space namespaces its sequential ids one level deeper, under a per-maintainer
  * org dir). Accepting both keeps discovery working before and after the
  * one-shot migration moves data into the nested tree.

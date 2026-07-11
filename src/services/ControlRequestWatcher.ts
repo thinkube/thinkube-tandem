@@ -1,6 +1,6 @@
 /**
  * ControlRequestWatcher — the Extension-Host end of the MCP→host control
- * channel (SP-tgpwbm AC8).
+ * channel.
  *
  * The standalone (Claude-Code-spawned) Kanban MCP server can't open a VS Code
  * session itself, so `start_spec_worktree` writes a one-shot JSON request into

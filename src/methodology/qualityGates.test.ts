@@ -156,7 +156,7 @@ test("satisfies gate: an out-of-range ordinal is refused, not silently passed", 
   assert.match((r as { reason: string }).reason, /#9/);
 });
 
-// ── docs obligation (TEP-tgh6iy) ───────────────────────────────────────────
+// ── docs obligation ───────────────────────────────────────────
 
 test("docs obligation: defaults to required when omitted (fail closed)", () => {
   const r = resolveDocsObligation({});
@@ -202,7 +202,7 @@ test("docs obligation: an invalid value is refused", () => {
   );
 });
 
-// ── → Done docs gate (TEP-tgh6iy) ──────────────────────────────────────────
+// ── → Done docs gate ──────────────────────────────────────────
 
 test("docs gate: n/a slice is ungated in both modes", () => {
   assert.equal(gateSliceDocsToDone({ docs: "n/a", mode: "blocking" }).ok, true);
@@ -239,7 +239,7 @@ test("docs gate: required + unsatisfied PASSES with a warning in advisory mode",
   assert.match((r as { warning?: string }).warning ?? "", /advisory/);
 });
 
-// ── Done gate is UNCHANGED under worktree parallelism (SP-tgpwbm AC6) ───────
+// ── Done gate is UNCHANGED under worktree parallelism ───────
 // Parallel slices run in isolated worktrees and verify there, but the → Done
 // gate's contract must not change: it still refuses Done while a satisfied AC is
 // unchecked and allows it once checked. This pins that contract so a regression

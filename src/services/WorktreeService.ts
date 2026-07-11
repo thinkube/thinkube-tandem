@@ -147,7 +147,7 @@ export function findSpecWorktree(
 
 /**
  * Decide where a Spec's worktree lives, **reusing** an existing one rather than
- * trying to re-add it (SP-tgpwbm AC7). If a worktree is already checked out on
+ * trying to re-add it. If a worktree is already checked out on
  * `spec/SP-{n}`, return its path with `reuse: true`; otherwise compute the path
  * under `baseDir` (default: a sibling `<repo>-worktrees/`) with `reuse: false`.
  * Pure — the I/O (`git worktree add`) is the caller's job, and only when not
@@ -174,7 +174,7 @@ export function planWorktree(
 const KANBAN_SERVER = "thinkube-kanban";
 
 /**
- * Inject the machine-local kanban env into a parsed `.mcp.json` (SP-tgpwbm AC7):
+ * Inject the machine-local kanban env into a parsed `.mcp.json`:
  * sets `THINKUBE_THINKING_SPACE_ROOT` on the kanban server's env so a
  * Claude-Code-spawned kanban MCP finds the central sidecar thinking space. Pure:
  * takes the parsed config, returns a new config with the value set (all other env
@@ -222,7 +222,7 @@ export function mcpWithThinkingSpaceRoot(
 
 /**
  * Retire-safe iff the worktree is clean except for its machine-local `.mcp.json`
- * (the per-worktree thinking space-env injection, SP-tgpwbm SL-7) — never committed, so it
+ * (the per-worktree thinking space-env injection, SL-7) — never committed, so it
  * must not block retirement. Any other porcelain entry → not retirable. Pure.
  * Input is `git status --porcelain` text (`XY <path>` per line).
  */
@@ -376,7 +376,7 @@ export class WorktreeService {
   ): Promise<string> {
     const branch = specBranchName(specNumber);
     // Reuse an existing worktree for this Spec rather than failing on "already
-    // exists" — re-starting a Spec must be idempotent (SP-tgpwbm AC7).
+    // exists" — re-starting a Spec must be idempotent.
     const plan = planWorktree(
       await this.list(canonicalRepo),
       canonicalRepo,
@@ -431,7 +431,7 @@ export class WorktreeService {
     // recipe (repo-conventions) via runBounded, so a fresh checkout — which has no
     // gitignored deps — can run its tooling. Language-agnostic: this replaces the old
     // hardcoded Node-only node_modules symlink, which didn't generalize and leaked
-    // into git (SP-th4wqh, #16/#24). No recipe declared → provisions nothing.
+    // into git. No recipe declared → provisions nothing.
     //
     // LOUD, never silent (repair window, 2026-07-08): a failed provisioning used to be
     // discarded here, so the first visible symptom was a worker breaching the footprint
@@ -648,7 +648,7 @@ export class WorktreeService {
   }
 
   /**
-   * Retire the Spec's worktree as the cleanup half of accept-land (TEP-tgqa78),
+   * Retire the Spec's worktree as the cleanup half of accept-land,
    * after a confirmed merge. Defers when the accept fires from inside the worktree
    * being retired (`retirePlan`) so it never deletes the active session's own cwd.
    * Returns what happened so the caller can message it.

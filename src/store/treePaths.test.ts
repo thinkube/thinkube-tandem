@@ -1,5 +1,5 @@
 /**
- * Unit tests for the nested tree-path builders (SP-th8m5b / TEP-th8lzj, AC 3).
+ * Unit tests for the nested tree-path builders.
  * Pure strings — no vscode, no fs. Asserts the thinking space-RELATIVE shape the store
  * joins onto a thinking space root to get `<thinking space>/<org>/teps/TEP-n/SP-m/SL-k.md`.
  */

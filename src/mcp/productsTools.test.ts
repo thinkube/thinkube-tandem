@@ -1,5 +1,5 @@
 /**
- * Handler test for `list_products` (SP-tgvjug_SL-2). Uses the installVscodeStub
+ * Handler test for `list_products`. Uses the installVscodeStub
  * pattern (import the stub FIRST) so importing the server module loads outside
  * the extension host; `main()` is guarded by `require.main === module`, so this
  * import does not boot the stdio server. `listProducts` only reads
@@ -18,7 +18,7 @@ import { listProducts } from "./kanbanMcpServer";
 function thinkingSpaceRootFixture(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-prodtool-"));
   // Org-scoped tree: the thinking space dir holds its methodology under an `<org>/`
-  // segment, so the `teps` marker sits one level below the thinking space (TEP-th8lzj).
+  // segment, so the `teps` marker sits one level below the thinking space.
   fs.mkdirSync(
     path.join(root, "Platform", "core", "thinkube", "cmxela", "teps"),
     {

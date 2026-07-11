@@ -113,7 +113,7 @@ test("parseGitdir returns undefined for non-worktree .git pointers", () => {
   assert.equal(parseGitdir(""), undefined);
 });
 
-// ── Start Spec in Worktree: create-or-reuse + thinking space-root inject (SP-tgpwbm AC7) ──
+// ── Start Spec in Worktree: create-or-reuse + thinking space-root inject ──
 
 test("planWorktree REUSES an existing worktree for the Spec (no re-add → no throw)", () => {
   const existing = parseWorktreeList(

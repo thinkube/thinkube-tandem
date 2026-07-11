@@ -1,5 +1,5 @@
 /**
- * `/orchestrate` command (SP-tgs8nz_SL-1): dispatch the next Ready slice of a chosen Spec
+ * `/orchestrate` command: dispatch the next Ready slice of a chosen Spec
  * via `OrchestratorService`. Thin vscode glue — resolves the active thinking space repo, the spec,
  * and the worktree/thinking space config, then calls `dispatchNext` and streams the worker's
  * JSON-log to an output channel. The dispatch logic + parsing are the unit-tested core;
@@ -445,7 +445,7 @@ export function registerOrchestrateCommands(
         }
       },
     ),
-    // Accept (SP-tgzyfy_SL-2): the human's "land it" on the closing delivery report. The
+    // Accept: the human's "land it" on the closing delivery report. The
     // gated merge — refuse unless every AC is checked + every slice Done (gateSpecAcceptance),
     // then merge spec/SP-{n} → main and stamp `accepted:`. Mirrors thinkingSpaces.ts onAcceptSpec, but
     // wired through a command so the report surface can post `accept` like orchestrate/attend.
@@ -560,7 +560,7 @@ export function registerOrchestrateCommands(
         }
       },
     ),
-    // Reject (SP-tgzyfy_SL-2): the spec-level analog of `/attend`. Open a Claude session in the
+    // Reject: the spec-level analog of `/attend`. Open a Claude session in the
     // Spec's worktree primed with the delivery report (DELIVERY.md) so the rework starts from the
     // per-AC verdicts + caught problems the orchestrator recorded.
     vscode.commands.registerCommand(
@@ -687,7 +687,7 @@ async function pickAttentionSlice(
 }
 
 /**
- * Float a running (or finished) session into a webview panel beside the editor (SP-tgs8nz
+ * Float a running (or finished) session into a webview panel beside the editor (
  * AC7) — the user can "Move into New Window" onto a second monitor; on code-server, where the
  * aux-window route is unreliable, this beside-panel IS the dedicated-window fallback. It
  * renders the session's persisted `.jsonl` and live-tails it while the worker streams.

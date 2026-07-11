@@ -1,9 +1,9 @@
 /**
  * Exit-code tests for the PreToolUse(Edit|Write) ownership guard hook
- * (SP-tgpwbm AC4). The shipped hook is a standalone Node script in the
+ *. The shipped hook is a standalone Node script in the
  * methodology bundle; here we run it as a subprocess against owned / unowned
  * fixtures and assert exit 0 (allow) / exit 2 (block) — a hook exit-code AC
- * (TEP-tgnvkw). Run via `npm test`.
+ *. Run via `npm test`.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

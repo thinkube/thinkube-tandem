@@ -10,7 +10,7 @@
 import type { ExitAction } from "../../../services/orchestratorCore";
 
 /**
- * An execution-unit node (SP-tgs8nz_SL-4): a slice's work units expanded to the
+ * An execution-unit node: a slice's work units expanded to the
  * scheduler's execution units, so the control-center graph shows a node per worker
  * even before dispatch. `id` matches the live `runningWorkers`/`parkedWorkers` keys
  * (the Agent SDK worker/session key the scheduler dispatches and `float-out` opens).
@@ -63,7 +63,7 @@ export interface TaskCard {
   /** Close card only: slices Done / total, for the progress line. */
   slicesDone?: number;
   slicesTotal?: number;
-  /** Dependency handles (slice-DAG edges) for the control-center graph (SP-tgs8nz). */
+  /** Dependency handles (slice-DAG edges) for the control-center graph. */
   dependsOn?: string[];
   /** A live worker is running on this slice (control-center graph tag). */
   running?: boolean;
@@ -73,10 +73,10 @@ export interface TaskCard {
   parkedWorkers?: string[];
   /** Execution-unit ids that completed successfully — the graph colours their node done (lime). */
   doneWorkers?: string[];
-  /** The slice's execution-unit nodes (SP-tgs8nz_SL-4) — a node per worker, shown idle before
+  /** The slice's execution-unit nodes — a node per worker, shown idle before
    *  dispatch and coloured live via `runningWorkers`/`parkedWorkers` (ids align). */
   workUnits?: WorkUnitNode[];
-  /** Clustering tags — the #hashtag mesh (SP-tgvil2). Effective set (folds legacy `theme`). */
+  /** Clustering tags — the #hashtag mesh. Effective set (folds legacy `theme`). */
   tags?: string[];
 }
 
@@ -92,7 +92,7 @@ export interface ThinkingSpace {
   tasks: Record<string, TaskCard>;
   /** Panel key + fallback label. */
   scope: string;
-  /** Display title — the thinking space name (SP-tgs8nz). */
+  /** Display title — the thinking space name. */
   title?: string;
   /** Display subtitle — the Spec's description (spec-scoped thinking space). */
   subtitle?: string;
@@ -114,7 +114,7 @@ export type WebviewMessage =
   | { kind: "attend"; handle: string }
   /** Start the makespan scheduler on a Spec (the ▶ button on the control-center graph). */
   | { kind: "orchestrate"; spec: string }
-  /** Accept the delivered Spec (SP-tgzyfy): host runs the gated merge spec/SP-{n} → main. */
+  /** Accept the delivered Spec: host runs the gated merge spec/SP-{n} → main. */
   | { kind: "accept"; spec: string }
   /** Reject the delivered Spec: open a Claude session primed with the delivery report. */
   | { kind: "reject"; spec: string }

@@ -1,5 +1,5 @@
 /**
- * Lifecycle & minting — handler-driven dispatch tests (SP-th4wqd).
+ * Lifecycle & minting — handler-driven dispatch tests.
  *
  * These exercise the REAL exported handlers through `dispatchTool` — the layer
  * the live MCP server runs — over a tmp `ThinkubeStore`, asserting the resulting
@@ -8,7 +8,7 @@
  *
  * It holds two groups of tests:
  *
- *  - `retired` / `re-cut` (SP-th4wqd_SL-1): driving `move_slice(handle,
+ *  - `retired` / `re-cut`: driving `move_slice(handle,
  *    "Retired", reason)` retires the slice (a terminal status DISTINCT from
  *    `Done` that records the reason), drops it off the active thinking space/frontier
  *    (`list_thinking_space`), yet keeps its `SL-{m}` claimed so the next `create_slice`
@@ -19,13 +19,13 @@
  *    SAME `sliceFilesResolveInRepo` rejection `create_slice` gives — proving the
  *    re-cut routes through the shared guard, not a copy.
  *
- *  - `mint` (SP-th4wqd_SL-2): `write_spec` with `spec` OMITTED but
+ *  - `mint`: `write_spec` with `spec` OMITTED but
  *    `implements: TEP-<n>` supplied allocates the NEXT sequential `SP-m` UNDER
  *    that TEP and returns the composite id `<tep>/<m>`; two omitted mints under
  *    the same TEP allocate SP-1 then SP-2 (sequential, monotonic — a constant
  *    stub fails), and the document lands at `teps/TEP-<n>/SP-<m>/spec.md`.
  *
- *  - `promotion` (SP-th4wqd_SL-3 / TEP-th3i18 #14): driving `write_tep` over a
+ *  - `promotion`: driving `write_tep` over a
  *    `{env:{thinkingSpaceRoot}, thinkingSpaces}` fixture whose thinking space root holds a PROMOTED TEP
  *    (seeded at `<product>/projects/<id>/teps/TEP-<id>.md`) updates that PROJECT
  *    COPY in place and creates NO `teps/TEP-{id}.md` duplicate on the session
@@ -235,7 +235,7 @@ test("write_spec refuses a bare provided spec id with no implements: TEP (its TE
   );
 });
 
-// ─── retire + re-cut (SP-th4wqd_SL-1) ────────────────────────────────────────
+// ─── retire + re-cut ────────────────────────────────────────
 
 // The spec id is the composite `<tep>/<spec>` in the org-scoped tree layout.
 const SPEC = "1/1";
@@ -494,7 +494,7 @@ test("update_slice re-cut whose files escape the repo is refused with the SAME g
   );
 });
 
-// ─── promotion (SP-th4wqd_SL-3 / TEP-th3i18 #14) ─────────────────────────────
+// ─── promotion ─────────────────────────────
 
 /**
  * A `{env:{thinkingSpaceRoot}, thinkingSpaces}` fixture for the promotion-aware `write_tep`.

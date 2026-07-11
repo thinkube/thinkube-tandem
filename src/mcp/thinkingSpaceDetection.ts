@@ -1,5 +1,5 @@
 /**
- * thinkingSpaceDetection — what counts as a Tandem thinking space on disk (TEP-tghb9t / TEP-0008).
+ * thinkingSpaceDetection — what counts as a Tandem thinking space on disk (TEP-0008).
  *
  * A directory is a thinking space iff it is **thinking space-shaped**: its thinking space dir contains a
  * `specs/` subdir. Enabling a thinking space always scaffolds `specs/`, `decisions/`,
@@ -23,7 +23,7 @@ import * as path from "node:path";
 const THINKING_SPACE_MARKERS = ["teps", "specs", "decisions", "retros"];
 
 /** True iff `thinkingSpaceDir` is thinking space-shaped: a legacy flat methodology dir at its
- *  root, OR — under the org-scoped tree (TEP-th8lzj) — an immediate `<org>/`
+ *  root, OR — under the org-scoped tree — an immediate `<org>/`
  *  child that holds one (so an enabled-but-empty thinking space still counts). */
 export function isThinkingSpaceDir(thinkingSpaceDir: string): boolean {
   const hasSubdir = (dir: string, name: string): boolean => {
