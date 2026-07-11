@@ -1,5 +1,5 @@
 /**
- * AC#2 — the self-link guard (SP-th4wqh).
+ * AC#2 — the self-link guard.
  *
  * `nodeModulesLinkSafe(target, repoRoot)` operates on **`fs.realpath`-resolved**
  * paths: it refuses a link that resolves to point a repo's deps dir at itself —

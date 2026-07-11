@@ -60,15 +60,15 @@ export type SpecNode =
       implementsTep?: ImplementsLink;
       /** The Thinking Space's code repo path — worktrees are cut from here (SP-9). */
       repoPath: string;
-      /** The owning repo entry — the kanban/worktree target (SP-tgvud7: a
+      /** The owning repo entry — the kanban/worktree target (a
        *  cross-thinking space umbrella member lives in a different repo than the selection). */
       repo: RepoEntry;
       /** Any ready/doing slice — gates the Start-in-Worktree action (SP-9). */
       hasOpenWork: boolean;
       /** The Spec carries the `accepted:` stamp (completed; TEP-0010) — drives
-       *  the green status icon (SP-tgn2pd). */
+       *  the green status icon. */
       accepted: boolean;
-      /** Hidden from the default nav; revealed (marked) under "Show archived" (TEP-tg86v7). */
+      /** Hidden from the default nav; revealed (marked) under "Show archived". */
       archived: boolean;
       /** The Spec carries a non-empty `superseded:` stamp (SP-6/14) — a deliberate
        *  "not building this" state, distinct from done and from archived. Drives the
@@ -90,13 +90,13 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
 
   private repo: RepoEntry | undefined;
 
-  /** Whether archived specs are shown (TEP-tg86v7); default hides them. */
+  /** Whether archived specs are shown; default hides them. */
   private showArchived = false;
 
-  /** Drill-down: when set, list only Specs implementing this TEP id (SP-tgs8nz). */
+  /** Drill-down: when set, list only Specs implementing this TEP id. */
   private tepFilter: string | undefined;
 
-  /** The namespace owning the drilled-into TEP (SP-tgvud7). When it's a project
+  /** The namespace owning the drilled-into TEP. When it's a project
    *  namespace (an umbrella TEP), implementers are resolved CROSS-THINKING-SPACE; absent
    *  (or a repo namespace) ⇒ the single-repo path. */
   private tepOwnerNamespace: string | undefined;
@@ -122,7 +122,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     this.refresh();
   }
 
-  /** Toggle whether archived specs appear in the list (TEP-tg86v7). */
+  /** Toggle whether archived specs appear in the list. */
   setShowArchived(value: boolean): void {
     if (this.showArchived === value) return;
     this.showArchived = value;
@@ -132,7 +132,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
   /**
    * Drill into a single TEP's implementing Specs (undefined = none). When
    * `ownerNamespace` is a project namespace (an umbrella TEP), implementers are
-   * resolved cross-thinking space; otherwise the single-repo path is used (SP-tgvud7).
+   * resolved cross-thinking space; otherwise the single-repo path is used.
    */
   setTepFilter(tepId: string | undefined, ownerNamespace?: string): void {
     const next = tepId || undefined;
@@ -161,7 +161,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       }
       return [];
     }
-    // Cross-thinking space drill-down (SP-tgvud7): an umbrella TEP's implementers span
+    // Cross-thinking space drill-down: an umbrella TEP's implementers span
     // repos, so resolve them across all thinkingSpaces rather than a single repo.
     if (this.tepFilter && this.tepOwnerNamespace) {
       return this.crossThinkingSpaceSpecs(
@@ -181,7 +181,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
       ];
     }
 
-    // Specs are TEP-driven (SP-tgs8nz): nothing until a TEP is selected above.
+    // Specs are TEP-driven: nothing until a TEP is selected above.
     if (!this.tepFilter) return [];
 
     const store = new ThinkubeStore(this.repo.path, this.repo.thinkingSpaceDir);
@@ -218,7 +218,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
   }
 
   /** Specs implementing an umbrella TEP, resolved across every enabled thinking space
-   *  (SP-tgvud7) — each result carries its own repo. */
+   * — each result carries its own repo. */
   private async crossThinkingSpaceSpecs(
     ownerNamespace: string,
     tepId: string,
@@ -278,7 +278,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     return nodes;
   }
 
-  /** Build a Spec tree node for one spec in a given repo's store (SP-tgvud7). */
+  /** Build a Spec tree node for one spec in a given repo's store. */
   private async buildSpecNode(
     repo: RepoEntry,
     store: ThinkubeStore,
@@ -415,7 +415,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
     item.iconPath = specStatusIcon(node);
     // Superseded / archived specs get a distinct contextValue so the right
     // reversal action (Unsupersede / Unarchive), not the worktree actions, shows
-    // (SP-6/14, TEP-tg86v7).
+    // (SP-6/14).
     item.contextValue =
       state === "superseded"
         ? "spec-superseded"
@@ -424,7 +424,7 @@ export class SpecsProvider implements vscode.TreeDataProvider<SpecNode> {
           : node.hasOpenWork
             ? "spec-open"
             : "spec-done";
-    // Click a Spec → open its scoped kanban + DAG graph (SP-tgs8nz).
+    // Click a Spec → open its scoped kanban + DAG graph.
     item.command = {
       command: "thinkube.specs.openKanban",
       title: "Open Spec kanban",
@@ -452,7 +452,7 @@ export function specDisplayState(node: {
   return "open";
 }
 
-/** Status-at-a-glance icon for a Spec (SP-tgn2pd / SP-6/14), derived from
+/** Status-at-a-glance icon for a Spec (SP-6/14), derived from
  *  {@link specDisplayState}: superseded = a muted `circle-slash` (mirroring the
  *  TEP provider); archived keeps the archive affordance; accepted = green check;
  *  open work = blue; a Spec with neither (not started / no open work) = a neutral

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the navigator Product-tree view-model (SP-tgvl81_SL-1).
+ * Unit tests for the navigator Product-tree view-model.
  * Pure — literals only, no vscode/fs.
  */
 import { test } from "node:test";
@@ -67,7 +67,7 @@ test("no products → every repo is ungrouped", () => {
   assert.equal(tree.ungroupedRepoPaths.length, repos.length);
 });
 
-test("specsImplementing: umbrella TEP → cross-repo set; repo TEP → same-repo; excludes others (SP-tgvud7)", () => {
+test("specsImplementing: umbrella TEP → cross-repo set; repo TEP → same-repo; excludes others", () => {
   const PROJ = "Platform/projects/rebrand";
   const REPO = "Platform/core/thinkube";
   const specs = [
@@ -88,7 +88,7 @@ test("specsImplementing: umbrella TEP → cross-repo set; repo TEP → same-repo
   );
 });
 
-test("projectTepGroups groups implementing specs under each umbrella TEP (SP-tgvpbm)", () => {
+test("projectTepGroups groups implementing specs under each umbrella TEP", () => {
   const PROJ = "Platform/projects/rebrand";
   const specs = [
     { thinkingSpace: "thinkube", namespace: "Platform/core/thinkube", handle: "SP-a", implements: `${PROJ}:TEP-reb` },

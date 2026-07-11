@@ -39,7 +39,7 @@ export function containerSegment(folderName: string): string {
 }
 
 /**
- * The per-maintainer **organization segment** (SP-th8m5b / TEP-th8lzj) — the
+ * The per-maintainer **organization segment** — the
  * directory that namespaces the sequential ids (`<thinking space>/<org>/teps/TEP-n/…`) so
  * concurrent maintainers on one thinking space never collide. It is DERIVED from git
  * `user.name`, sanitized into a filesystem-safe segment with the same
@@ -60,7 +60,7 @@ export function resolveOrg(userName: string | undefined): string {
       "Cannot resolve the organization segment: git `user.name` is unset or " +
         'empty. Set it with `git config user.name "Your Name"` — there is no ' +
         "default organization (org-scoped sequential ids are namespaced per " +
-        "maintainer, TEP-th8lzj).",
+        "maintainer).",
     );
   }
   return containerSegment(trimmed);

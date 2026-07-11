@@ -57,7 +57,7 @@ test("buildSliceThinkingSpace lays out three columns and places slices by status
   assert.equal(card.description, "a");
 });
 
-// ── org-scoped nested tree projection (SP-th8m5b / TEP-th8lzj, AC 5) ──
+// ── org-scoped nested tree projection ──
 // Slices discovered at `<org>/teps/TEP-n/SP-m/SL-k.md` carry their parent TEP
 // number. The projection flattens each handle to the tep-qualified
 // `TEP-n_SP-m_SL-k` form and groups under the tep-qualified spec key, so bare
@@ -397,7 +397,7 @@ test("deriveSpecMeta reads accepted, all-ACs-checked, and the criteria checklist
   assert.deepEqual(deriveSpecMeta(undefined, "no criteria here").criteria, []);
 });
 
-// ── archived Specs leave the thinking space (TEP-tg86v7 / SP-tg8f9b) ──
+// ── archived Specs leave the thinking space ──
 
 test("an archived Spec drops its slices AND acceptance card off the thinking space", () => {
   const meta = (archived: boolean) => ({

@@ -1,5 +1,5 @@
 /**
- * `/orchestrate` command (SP-tgs8nz_SL-1): dispatch the next Ready slice of a chosen Spec
+ * `/orchestrate` command: dispatch the next Ready slice of a chosen Spec
  * via `OrchestratorService`. Thin vscode glue — resolves the active thinking space repo, the spec,
  * and the worktree/thinking space config, then calls `dispatchNext` and streams the worker's
  * JSON-log to an output channel. The dispatch logic + parsing are the unit-tested core;
@@ -35,6 +35,9 @@ import {
   sessionLogPathFor,
   answerParkedWorker,
 } from "../services/orchestratorSessions";
+import { createSdkAuditRunner } from "../services/auditorRunner";
+import { loadOrCreateSecret } from "../services/acSignature";
+import { writeSpec } from "../mcp/kanbanMcpServer";
 import { showFreshMarkdownPreview } from "./freshPreview";
 import { gateSpecAcceptance } from "../methodology/qualityGates";
 import { mergeSpecPr, specBranch } from "../github/specMerge";
@@ -204,6 +207,44 @@ export function registerOrchestrateCommands(
                 verifyCommand: orchestratorCfg
                   .get<string>("verifyCommand")
                   ?.trim(),
+                // Gate self-heal (2026-07-11): when the closing gate hits an
+                // UNRUNNABLE probe (exit 126/127), re-author + re-sign the
+                // Spec's ac_verifications via the same certify-only audit path
+                // write_spec uses, then the gate retries once — a gate defect
+                // never burns a rework attempt or blames a slice.
+                reauthorGate: async (specNumber, worktreeCwd) => {
+                  const keyDir = process.env.THINKUBE_SIGNING_KEY_DIR?.trim();
+                  if (!keyDir) {
+                    output.appendLine(
+                      "⚠ gate re-author unavailable: THINKUBE_SIGNING_KEY_DIR is not set on the host.",
+                    );
+                    return false;
+                  }
+                  const runner = createSdkAuditRunner({
+                    model:
+                      workerModel.workerModelByRole?.auditor ??
+                      workerModel.workerModel ??
+                      "sonnet",
+                    log: (l) => output.appendLine(l),
+                  });
+                  await writeSpec(
+                    store,
+                    specNumber,
+                    undefined, // certify-only: audit + sign the on-disk body
+                    undefined,
+                    // The PRESENCE of ac_verifications is the "please certify
+                    // now" signal; with signing on its VALUE is ignored (the
+                    // server signs only what its own audit produced).
+                    {},
+                    undefined,
+                    {
+                      runner,
+                      secret: loadOrCreateSecret(keyDir),
+                      cwd: worktreeCwd,
+                    },
+                  );
+                  return true;
+                },
               });
               output.show(true);
               const cap =
@@ -387,10 +428,15 @@ export function registerOrchestrateCommands(
             return;
           }
 
-          // failed (requires-attention) → open a primed session in the worktree.
+          // failed (requires-attention) → open a primed session in the
+          // CANONICAL repo (2026-07-11), not the disposable worktree: the
+          // worktree dies at Accept and used to take the session's cwd with
+          // it (the whole "close this session before orchestrating" ritual).
+          // The prompt carries the worktree path — the fix is applied there
+          // and committed to the spec branch; the session outlives it.
           await deps.launcher.openHere(
-            vscode.Uri.file(worktreePath),
-            buildAttendPrompt(h, extractDiagnosis(body)),
+            vscode.Uri.file(canonical),
+            buildAttendPrompt(h, extractDiagnosis(body), worktreePath),
           );
         } catch (err) {
           vscode.window.showErrorMessage(
@@ -399,7 +445,7 @@ export function registerOrchestrateCommands(
         }
       },
     ),
-    // Accept (SP-tgzyfy_SL-2): the human's "land it" on the closing delivery report. The
+    // Accept: the human's "land it" on the closing delivery report. The
     // gated merge — refuse unless every AC is checked + every slice Done (gateSpecAcceptance),
     // then merge spec/SP-{n} → main and stamp `accepted:`. Mirrors thinkingSpaces.ts onAcceptSpec, but
     // wired through a command so the report surface can post `accept` like orchestrate/attend.
@@ -514,7 +560,7 @@ export function registerOrchestrateCommands(
         }
       },
     ),
-    // Reject (SP-tgzyfy_SL-2): the spec-level analog of `/attend`. Open a Claude session in the
+    // Reject: the spec-level analog of `/attend`. Open a Claude session in the
     // Spec's worktree primed with the delivery report (DELIVERY.md) so the rework starts from the
     // per-AC verdicts + caught problems the orchestrator recorded.
     vscode.commands.registerCommand(
@@ -598,9 +644,11 @@ export function registerOrchestrateCommands(
                   .split(path.sep)
                   .join("/")
               : undefined;
+          // Session in the CANONICAL repo (2026-07-11) — survives worktree
+          // retirement; the prompt names the worktree the rework lands in.
           await deps.launcher.openHere(
-            vscode.Uri.file(worktreePath),
-            buildRejectPrompt(specId, report, projectThinkingSpaceId),
+            vscode.Uri.file(canonical),
+            buildRejectPrompt(specId, report, projectThinkingSpaceId, worktreePath),
           );
         } catch (err) {
           vscode.window.showErrorMessage(
@@ -639,7 +687,7 @@ async function pickAttentionSlice(
 }
 
 /**
- * Float a running (or finished) session into a webview panel beside the editor (SP-tgs8nz
+ * Float a running (or finished) session into a webview panel beside the editor (
  * AC7) — the user can "Move into New Window" onto a second monitor; on code-server, where the
  * aux-window route is unreliable, this beside-panel IS the dedicated-window fallback. It
  * renders the session's persisted `.jsonl` and live-tails it while the worker streams.

@@ -37,7 +37,7 @@ xref:artifacts.adoc[Artifact shapes].
 | Closing gate
 | Every declared verification runs green at Spec quiescence.
 | Orchestrator (automatic)
-| Spec left `requires-attention`; nothing committed.
+| Works its automated remedies first — gate self-heal, circuit breaker, judge-routed rework, one auto-attend fix; only a still-red slice is left `requires-attention`. Landed units stay checkpointed on the branch; nothing merges.
 
 | Acceptance
 | Every criterion is checked and the closing gate passed.
@@ -111,21 +111,52 @@ A `required` slice satisfies the obligation by updating its documentation module
 
 At **Spec quiescence** — every work unit landed in the worktree — the orchestrator
 does not silently mark the Spec Done. It runs the **union** of the Spec's declared
-verifications as one plan, in dependency order, and gates Done and the commit on the
-result:
+verifications as one plan, in dependency order, and gates Done and the slice
+commits on the result:
 
 [cols="1,3",options="header"]
 |===
 | Result | What the gate does
 
 | All green
-| Checks exactly the satisfied criterion ordinals on the Spec, advances the slices to Done, commits the worktree to `spec/SP-\{n}` **once**, and writes the delivery report.
+| Checks exactly the satisfied criterion ordinals on the Spec, advances the slices to Done, lands the verified slice commits on `spec/SP-\{n}` on top of the per-unit `wip(…)` checkpoints, and writes the delivery report.
 | Any red or un-runnable
-| Leaves the Spec `requires-attention`, commits **nothing**, and still writes the report (the failure is auditable).
+| Works the failure ladder below. Landed units stay checkpointed on the branch; nothing merges; the report is written either way (the failure is auditable).
 |===
 
 There is **no skip**. A Spec whose criteria cannot all be verified is never advanced
 to Done on an un-run verification.
+
+=== The failure ladder
+
+A red or un-runnable verification does not go straight to a human. The gate works
+through its automated remedies in order, and a human sees `requires-attention`
+only after all of them have run:
+
+[cols="1,3",options="header"]
+|===
+| Remedy | When and what
+
+| Gate self-heal
+| A probe that cannot execute (shell exit 126/127 or a spawn error) is a **gate defect**, not a code failure — no rework attempt is burned and no role is blamed. The gate re-authors and re-signs the `ac_verifications` entries via the auditor and retries once. Relatedly, `write_spec` refuses to **sign** a probe command whose leading token cannot resolve in the working repo — repo-local tools are invoked through `npx`, `uv run`, or `poetry run`.
+
+| Judge-routed rework
+| A genuinely red criterion goes to an independent judge, which attributes the fault — code author, test author, contract, or gate — and the faulted role reworks **from its checkpoint**, bounded by the attempt limit. Re-dispatch schedules only un-checkpointed units plus the judged-fault role's units.
+
+| Identical-failure circuit breaker
+| The same criterion failing with the same normalized evidence as the prior attempt escalates immediately — "deterministic failure — inputs unchanged" — instead of burning the remaining attempts.
+
+| Auto-attend
+| On escalation the orchestrator dispatches **one** automated fixer session with the full failure evidence; it edits and commits in the worktree, and the gate re-runs. Only a still-red slice reaches a human.
+|===
+
+=== Unit checkpoints and verify-before-rework
+
+Each landed work unit is committed to the spec branch as a `wip(<unit>)`
+checkpoint, so completed work survives resets — a reset returns the worktree
+**to** the checkpoints, never to zero. A slice that returns with every unit
+checkpointed (for example after an attend fix commit) is **graded as-is, with
+zero workers dispatched** — no worker re-authors what is already committed.
 
 == Acceptance
 
@@ -141,23 +172,23 @@ The change committed and the closing gate passed. In order:
 | Action | Effect
 
 | **Accept & merge**
-| Performs the gated merge of `spec/SP-\{n}` into `main`. **Refused unless every criterion is checked** — there is no accepting an unverified Spec.
+| Performs the gated **squash-merge** of `spec/SP-\{n}` into `main` — `main` gets one verified commit per Spec, and the working trail (unit checkpoints, fix commits) stays on the PR. **Refused unless every criterion is checked** — there is no accepting an unverified Spec.
 | **Request changes**
 | Opens a session primed with the report's context to steer the delivered change back to the intent.
 |===
 
 === Stalled
 
-Anything short of delivered — not committed, or the gate did not pass. In order:
+Anything short of delivered — the gate did not pass. Landed units stay checkpointed on the branch; nothing merges. In order:
 
 [cols="1,3",options="header"]
 |===
 | Action | Effect
 
 | **Attend**
-| Opens a primed fix session on the `requires-attention` slice(s) to bring the behaviour back to the intent.
+| Opens a primed fix session in the **canonical repo** on the `requires-attention` slice(s); the fix is applied in the Spec's worktree (named in the prompt) and **committed to the spec branch** (`fix(attend): …`). Because the session does not live inside the worktree, it survives the worktree's retirement at Accept.
 | **Re-run**
-| Re-runs the orchestrator once the `requires-attention` slice(s) are resolved.
+| Re-runs the orchestrator once the `requires-attention` slice(s) are resolved. A returning slice with every unit checkpointed — an attend fix commit, for example — is graded as-is with no workers dispatched; re-dispatch schedules only un-checkpointed units.
 |===
 
 Every action gives instant pending feedback and is idempotent: a double-click is

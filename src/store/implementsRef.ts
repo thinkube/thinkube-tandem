@@ -1,5 +1,5 @@
 /**
- * Qualified `implements:` references (SP-tgvpbm / TEP-tgvh8p) — the membership
+ * Qualified `implements:` references — the membership
  * engine for the structural Project model.
  *
  * A Spec's `implements:` is either:
@@ -74,7 +74,7 @@ export function resolvesTo(
 }
 
 /**
- * The decision for `promote_tep` (SP-tgvpbm_SL-3): given a spec (in
+ * The decision for `promote_tep`: given a spec (in
  * `specNamespace`) whose `implements:` is `implementsRaw`, and a TEP `tepId`
  * being moved out of `originNamespace` into `projectNamespace`, return the
  * spec's NEW `implements:` value if it depended on that TEP, else `null`.

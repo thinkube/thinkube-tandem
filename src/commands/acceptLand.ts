@@ -1,11 +1,11 @@
 /**
- * The cleanup half of accept-land (TEP-tgqa78), shared by both accept entry
+ * The cleanup half of accept-land, shared by both accept entry
  * points — `thinkube.accept` (the delivery-report surface, `orchestrate.ts`) and
  * `onAcceptSpec` (the kanban panel button, `thinkingSpaces.ts`). The merge half lives in
  * `github/specMerge.ts`; this retires the Spec's worktree afterwards.
  *
  * The `acceptLandSpec` dispatcher below ties the two halves together through the
- * pure `acceptOrder` driver (SP-th4wqe, #10-residual), so both call sites get one
+ * pure `acceptOrder` driver (#10-residual), so both call sites get one
  * audited merge → stamp → retire ordering with idempotent, best-effort retire
  * instead of each re-deriving it inline.
  */

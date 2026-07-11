@@ -128,7 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
     console.error("LauncherService activation failed:", err);
   });
 
-  // Agent-teams fake-tmux display backend (SP-tgnb5o): run the IPC server the
+  // Agent-teams fake-tmux display backend: run the IPC server the
   // on-PATH `tmux` shim forwards to, so Claude Code agent teams render as VS
   // Code terminal panes where tmux/iTerm2 are unavailable. Activates async;
   // it only spawns panes on demand when a team forms.
@@ -142,7 +142,7 @@ export function activate(context: vscode.ExtensionContext) {
     console.error("AgentTeamsShimServer activation failed:", err);
   });
 
-  // Ownership arbiter (SP-tgpwbm): the single Extension-Host authority over which
+  // Ownership arbiter: the single Extension-Host authority over which
   // slice owns which files while parallel Specs run in separate worktrees. Backed
   // by git refs (refs/locks/*) in the code repo's shared .git when available, else
   // a globalStorage JSON journal — and it RE-HYDRATES from that durable store on
@@ -175,7 +175,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
-  // Machine-level MCP config (TEP-tgvwct, Phase 3): write thinking space root / folders
+  // Machine-level MCP config: write thinking space root / folders
   // so the plugin-shipped kanban server self-configures without per-repo
   // `.mcp.json` env injection. Best-effort; refreshed when the thinkingSpaces root changes.
   writeMachineMcpConfig().catch((err) => {
@@ -184,7 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
-  // User-scope kanban server registration (TEP-th3i18 follow-up): the plugin no
+ // User-scope kanban server registration ( follow-up): the plugin no
   // longer vendors the server and per-repo `.mcp.json` only reaches code repos, so a
   // session rooted in a board thinking-space sidecar (no `.mcp.json`) lost
   // `write_spec`. Register the server in Claude's user-scope `mcpServers` so EVERY
@@ -252,7 +252,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
   // Restore the configured-only filter (icon + list) from the last session.
   seedThinkingSpacesFilter(context, thinkingSpaceNavigator);
-  // New Product / New Project commands (SP-tgvl81_SL-3).
+  // New Product / New Project commands.
   registerProductCommands(context, thinkingSpaceNavigator);
 
   // Specs section (master-detail): lists the selected thinking space's
@@ -281,12 +281,12 @@ export function activate(context: vscode.ExtensionContext) {
         specsView.description = repo.name;
         tepsProvider.setRepo(repo);
         tepsView.description = repo.name;
-        // The Configuration view follows the same selection (SP-tgvhfk_SL-1):
+        // The Configuration view follows the same selection:
         // scope it to the selected Thinking Space's .claude/.
         treeProvider.setSelectedRepo({ path: repo.path, name: repo.name });
         treeView.description = repo.name;
       } else if (node?.kind === "project") {
-        // A Project navigates exactly like a Thinking Space (SP-tgvud7): scope
+        // A Project navigates exactly like a Thinking Space: scope
         // the TEPs view to its umbrella TEPs; the Specs/Config views clear until
         // a TEP is picked (a project has no specs of its own — they're cross-repo).
         const thinkingSpaceRoot =
@@ -310,7 +310,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     // Drill-down: selecting a TEP fills the Specs view with its implementing
-    // specs — resolved CROSS-THINKING-SPACE via the TEP's owner namespace (SP-tgvud7), so
+    // specs — resolved CROSS-THINKING-SPACE via the TEP's owner namespace, so
     // an umbrella TEP shows its specs across repos and a repo TEP shows its own.
     tepsView.onDidChangeSelection((e) => {
       const node = e.selection[0];
@@ -407,7 +407,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // Archive / unarchive Specs + TEPs and the per-view "Show archived" toggle
-  // (TEP-tg86v7); seed both toggles from persisted state, like the thinkingSpaces filter.
+  //; seed both toggles from persisted state, like the thinkingSpaces filter.
   registerArchiveCommands(context, { specsProvider, tepsProvider });
   seedArchivedFilters(context, { specsProvider, tepsProvider });
 
@@ -418,7 +418,7 @@ export function activate(context: vscode.ExtensionContext) {
   const worktreeDeps = { launcher, approvalDir };
   registerWorktreeCommands(context, worktreeDeps);
 
-  // Thinking Space orchestrator (SP-tgs8nz_SL-1): dispatch a Spec's next Ready slice to an
+  // Thinking Space orchestrator: dispatch a Spec's next Ready slice to an
   // Agent SDK worker in its worktree. Consumes the (async-built) ownership arbiter
   // via a getter so it's read at invoke time.
   // Persist orchestrator session logs (the .jsonl the control-center float-out renders).
@@ -436,7 +436,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
   registerOrchestrateCommands(context, orchestrateDeps);
 
-  // Control-request watcher (SP-tgpwbm): the standalone Kanban MCP server can't
+  // Control-request watcher: the standalone Kanban MCP server can't
   // open a VS Code session itself, so its `start_spec_worktree` tool drops a
   // one-shot request file into the shared control dir; this watcher runs the
   // matching command (`thinkube.specs.startWorktree`) — the same filesystem
@@ -460,7 +460,7 @@ export function activate(context: vscode.ExtensionContext) {
  * git refs in the seed path's canonical repo (shared across that repo's
  * worktrees, durable in .git); falls back to a globalStorage JSON journal when
  * the seed isn't a git repo. Rehydrating here is what makes ownership survive a
- * window reload (SP-tgpwbm AC3).
+ * window reload.
  */
 async function activateOwnershipArbiter(
   context: vscode.ExtensionContext,

@@ -35,7 +35,17 @@ test("an already-composite id passes through untouched (no lookup)", async () =>
   assert.equal(await resolveCompositeSpecId(boom, "6/3"), "6/3");
 });
 
-test("an unknown bare id is returned verbatim (caller reports the real not-found path)", async () => {
-  // No throw here — createSlice's getFile miss reports `pathForSpecDoc` truthfully.
-  assert.equal(await resolveCompositeSpecId(list, "99"), "99");
+test("an unknown bare id REFUSES loudly (2026-07-11: verbatim passthrough built SP-undefined paths)", async () => {
+  // The old contract returned "99" verbatim "so the caller reports the real
+  // not-found path" — but pathForSpecDoc("99") actually built the phantom
+  // `teps/TEP-99/SP-undefined/spec.md`, which is not a truthful report. The
+  // resolver now refuses up front, naming what it searched.
+  await assert.rejects(
+    () => resolveCompositeSpecId(list, "99"),
+    /No spec SP-99 found/,
+  );
+});
+
+test("the flat spec handle TEP-n_SP-m resolves to its composite (the board prints this form)", async () => {
+  assert.equal(await resolveCompositeSpecId(list, "TEP-6_SP-8"), "6/8");
 });

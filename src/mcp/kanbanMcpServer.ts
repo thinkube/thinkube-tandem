@@ -20,7 +20,7 @@ import "./installVscodeStub";
  * with candidate suggestions, and `list_thinking_spaces` supplies the vocabulary.
  * Absolute paths are also accepted.
  *
- * Source of truth: the committed `specs/SP-{n}/SL-{m}.md` slice files in the
+ * Source of truth: the committed `teps/TEP-{t}/SP-{n}/SL-{m}.md` slice files in the
  * thinking space's sidecar namespace (`<thinking space-root>/<container>/<rel>`, ADR-0008), plus
  * the parent `SP-{n}/spec.md` documents. There is NO GitHub here —
  * this server reads and writes only through `ThinkubeStore` and projects the
@@ -48,6 +48,7 @@ import "./installVscodeStub";
  * Logging: stderr only. VS Code captures it under the MCP server's output
  * channel; never print to stdout — that channel is the protocol stream.
  */
+import { execFileSync } from "node:child_process";
 import * as fsSync from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -55,9 +56,13 @@ import * as path from "node:path";
 import { requirementHash } from "../methodology/specChange";
 import { sectionPatch } from "../methodology/sectionPatch";
 import { specSectionsPresent } from "../methodology/specStructure";
-import { sliceFilesResolveInRepo } from "../methodology/sliceRepoGuard";
 import {
-  // Slice lifecycle contract (SP-th4wqd_SL-1): the single source the `move_slice`
+  sliceFilesExistInRepo,
+  sliceFilesResolveInRepo,
+  type RepoFileOracle,
+} from "../methodology/sliceRepoGuard";
+import {
+  // Slice lifecycle contract: the single source the `move_slice`
   // / `update_slice` handlers and their dispatch test agree on for retire + re-cut.
   // The status literal, the "reason required" rule, and the re-cut footprint check
   // are NEVER re-spelled here — they are consumed so the wiring and test can't drift.
@@ -65,17 +70,25 @@ import {
   isRetiredStatus,
   validateRetireReason,
   recutSliceFrontmatter,
+  splitAttentionArtifacts,
+  attentionHistoryEntry,
   hasRecutFields,
   type SliceRecut,
 } from "../methodology/sliceLifecycle";
 import { resolveSpecId } from "../methodology/idMinting";
 import {
+  normalizeSpecRef,
+  resolveSpecRef,
+  resolveSliceRef,
+  SPEC_REF_GRAMMAR,
+} from "./refResolver";
+import {
   validateParallelGroup,
   validateDag,
-  // Contract-first gate (SP-th4wqi): consumed from parallelSlices.ts — the pure
+  // Contract-first gate: consumed from parallelSlices.ts — the pure
   // check, its teaching message, and the shared opt-out field name. NEVER
   // redefined here; a second definition is exactly the contract divergence this
-  // gate exists to prevent (the SP-th4wqe AC#3 failure).
+  // gate exists to prevent.
   contractFirstCheck,
   CONTRACT_FIRST_RULE_MSG,
   CONTRACT_FIRST_OPTOUT_FIELD,
@@ -219,12 +232,12 @@ interface ServerEnv {
   /** Central thinking space root; when set, thinkingSpaces live at <root>/<container>/<rel>. */
   thinkingSpaceRoot?: string;
   allowAIWrites: boolean;
-  /** → Done docs gate mode (TEP-tgh6iy): advisory warns, blocking refuses. */
+  /** → Done docs gate mode: advisory warns, blocking refuses. */
   docsGateMode: DocsGateMode;
   legacyWorkspace?: string;
 }
 
-/** The machine-level config file the extension writes (TEP-tgvwct Phase 3) so
+/** The machine-level config file the extension writes so
  *  the plugin-shipped server self-configures without per-repo `.mcp.json` env
  *  injection. Missing / unparseable → null (env + cwd discovery still apply). */
 function readConfigFile(): ServerConfigFile | null {
@@ -453,7 +466,7 @@ export class ThinkingSpaceRegistry {
    * Hint appended to "not a thinking space" errors when no thinking space root is configured —
    * the common cause is a missing `thinkube.thinkingSpace.root` / `THINKUBE_THINKING_SPACE_ROOT`
    * for a thinking space that lives in a central sidecar. Without it we'd resolve to a
-   * fabricated co-located `.thinkube/` (TEP-tghb9t). Empty when one IS set.
+   * fabricated co-located `.thinkube/`. Empty when one IS set.
    */
   private missingThinkingSpaceRootHint(): string {
     return this.env.thinkingSpaceRoot
@@ -474,7 +487,7 @@ export class ThinkingSpaceRegistry {
 function isThinkingSpace(dir: string): boolean {
   // Legacy co-located thinking space: a `<dir>/.thinkube/` that is thinking space-shaped (has
   // `specs/`). A bare `.thinkube/` holding something else (e.g. an api-token
-  // store) is NOT a thinking space — see thinkingSpaceDetection.ts (TEP-tghb9t).
+  // store) is NOT a thinking space — see thinkingSpaceDetection.ts.
   return isThinkingSpaceDir(path.join(dir, ".thinkube"));
 }
 
@@ -730,7 +743,7 @@ const THINKING_SPACE_PARAM = {
   },
 } as const;
 
-const TOOL_DEFS = [
+export const TOOL_DEFS = [
   {
     name: "list_thinking_spaces",
     description:
@@ -744,7 +757,7 @@ const TOOL_DEFS = [
   {
     name: "list_tags",
     description:
-      "Aggregate the #hashtag mesh (SP-tgvil2) across every thinking space in the workspace. Returns each tag with its `count` and the `items` carrying it ({ thinking space: the thinking space id, handle: SP-{n} | SP-{n}_SL-{m} | TEP-{id}, kind }), sorted by tag. An item with N tags appears under all N; a tag clusters items from multiple thinkingSpaces (the cross-thinking space clustering layer — a project is a promoted tag). Folds a legacy `theme:` in as a tag.",
+      "Aggregate the #hashtag mesh across every thinking space in the workspace. Returns each tag with its `count` and the `items` carrying it ({ thinking space: the thinking space id, handle: SP-{n} | SP-{n}_SL-{m} | TEP-{id}, kind }), sorted by tag. An item with N tags appears under all N; a tag clusters items from multiple thinkingSpaces (the cross-thinking space clustering layer — a project is a promoted tag). Folds a legacy `theme:` in as a tag.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -754,7 +767,7 @@ const TOOL_DEFS = [
   {
     name: "list_products",
     description:
-      "List Products — the code-less top nodes of the hierarchy (SP-tgvjug / TEP-tgvh8p). A Product is a top-level directory in the sidecar thinking space root whose member Thinking Spaces are the thinking space namespaces nested under it. Returns each Product `{ id, name (from <product>/product.yaml, else the id), members: namespaces }`, sorted by id. Empty when no thinking space root is configured. Products generalize the old fixed Platform/Apps/Templates containers into arbitrary user-defined groupings; a Project (later) is a tag promoted under a Product.",
+      "List Products — the code-less top nodes of the hierarchy. A Product is a top-level directory in the sidecar thinking space root whose member Thinking Spaces are the thinking space namespaces nested under it. Returns each Product `{ id, name (from <product>/product.yaml, else the id), members: namespaces }`, sorted by id. Empty when no thinking space root is configured. Products generalize the old fixed Platform/Apps/Templates containers into arbitrary user-defined groupings; a Project (later) is a tag promoted under a Product.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -764,7 +777,7 @@ const TOOL_DEFS = [
   {
     name: "list_projects",
     description:
-      "List Projects across all Products (SP-tgvkmt / TEP-tgvh8p). A Project is a bounded multi-repo effort = a promoted tag with a version-controlled home (`<product>/projects/<name>/project.yaml`). Returns each Project `{ product, id, name, state (open|done), tag, tep? }`, sorted. Empty when no thinking space root is configured. Use `get_project` to resolve a project's members (the items carrying its tag).",
+      "List Projects across all Products. A Project is a bounded multi-repo effort = a promoted tag with a version-controlled home (`<product>/projects/<name>/project.yaml`). Returns each Project `{ product, id, name, state (open|done), tag, tep? }`, sorted. Empty when no thinking space root is configured. Use `get_project` to resolve a project's members (the items carrying its tag).",
     inputSchema: {
       type: "object",
       properties: {},
@@ -791,7 +804,7 @@ const TOOL_DEFS = [
   {
     name: "get_project",
     description:
-      "Get one Project's umbrella TEPs + its members (SP-tgvpbm). A Project is a code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose `implements:` resolves to one of those TEPs, plus their slices (inherited) — structural, not tags. Returns `{ project, teps: [TEP-id], members: [{ thinking_space, repo, handle, kind }] }` where `thinking_space` is WHERE THE FILE LIVES (the namespace to pass to get_thinkube_file/write_spec/create_slice — the project umbrella for a nested member) and `repo` is the WORKING repository the orchestrator branches a worktree in. For a legacy flat-model member the two coincide.",
+      "Get one Project's umbrella TEPs + its members. A Project is a code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose `implements:` resolves to one of those TEPs, plus their slices (inherited) — structural, not tags. Returns `{ project, teps: [TEP-id], members: [{ thinking_space, repo, handle, kind }] }` where `thinking_space` is WHERE THE FILE LIVES (the namespace to pass to get_thinkube_file/write_spec/create_slice — the project umbrella for a nested member) and `repo` is the WORKING repository the orchestrator branches a worktree in. For a legacy flat-model member the two coincide.",
     inputSchema: {
       type: "object",
       properties: {
@@ -813,7 +826,7 @@ const TOOL_DEFS = [
   {
     name: "promote_tep",
     description:
-      "Promote a repo TEP into an existing Project's umbrella (SP-tgvpbm). Moves `TEP-<tep>` out of its repo's `teps/` into `<product>/projects/<id>/teps/`, then rewrites EVERY spec that implemented it (across thinkingSpaces) to the qualified umbrella ref — so all former implementers stay members and no dangling/bare ref remains. Returns `{ tep, movedTo, rewritten: [SP-handles] }`. The Project must already exist (create it with New Project first).",
+      "Promote a repo TEP into an existing Project's umbrella. Moves `TEP-<tep>` out of its repo's `teps/` into `<product>/projects/<id>/teps/`, then rewrites EVERY spec that implemented it (across thinkingSpaces) to the qualified umbrella ref — so all former implementers stay members and no dangling/bare ref remains. Returns `{ tep, movedTo, rewritten: [SP-handles] }`. The Project must already exist (create it with New Project first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -839,7 +852,7 @@ const TOOL_DEFS = [
   {
     name: "list_thinking_space",
     description:
-      "Current Tandem thinking space, projected from the committed `specs/SP-{n}/SL-{m}.md` slice files (in the thinking space's sidecar namespace). Returns the Ready / Doing / Done columns; each card carries its slice handle (`id`, e.g. `SP-3_SL-42`), title (`description`), and `specStale` / `specChange` (whether the parent Spec's requirements changed since the slice was last verified).",
+      "Current Tandem thinking space, projected from the committed `teps/TEP-{t}/SP-{n}/SL-{m}.md` slice files (in the thinking space's sidecar namespace). Returns the Ready / Doing / Done columns; each card carries its slice handle (`id`, e.g. `TEP-1_SP-4_SL-1`), title (`description`), and `specStale` / `specChange` (whether the parent Spec's requirements changed since the slice was last verified).",
     inputSchema: {
       type: "object",
       properties: { ...THINKING_SPACE_PARAM },
@@ -855,7 +868,8 @@ const TOOL_DEFS = [
       properties: {
         slice: {
           type: "string",
-          description: "Slice handle, e.g. `SP-3_SL-42`.",
+          description:
+            "Slice ref: `TEP-1_SP-4_SL-1` (full handle), `SP-4_SL-1` (TEP resolved by lookup), or `1/4/1`.",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -870,7 +884,10 @@ const TOOL_DEFS = [
     inputSchema: {
       type: "object",
       properties: {
-        relative_path: { type: "string", description: "e.g. specs/SP-50.md" },
+        relative_path: {
+          type: "string",
+          description: "e.g. teps/TEP-1/SP-4/spec.md",
+        },
         ...THINKING_SPACE_PARAM,
       },
       required: ["relative_path"],
@@ -880,13 +897,14 @@ const TOOL_DEFS = [
   {
     name: "move_slice",
     description:
-      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done, Requires-attention (a needs-human state the orchestrator sets when a worker can't resolve a problem — SP-tgs8nz; /attend returns it to the loop), or Retired. **Retired** (SP-th4wqd) is a TERMINAL state DISTINCT from Done — it records a required `reason` (a retire with no `reason` is refused), drops the slice off the active thinking space/frontier, and the → Done gate never runs for it; the slice file stays on disk so its `SL-{m}` stays reserved (the next slice is still `max+1`). Moving to Done is REFUSED unless every acceptance criterion the slice lists in `satisfies` is checked on the parent Spec (the error names the offending criterion); slices with no `satisfies` are not gated. The → Done **docs gate** (TEP-tgh6iy) also applies: a `docs: required` slice must have its documentation done — pass `docs_done: true` once you've updated the doc module. In blocking mode an unsatisfied obligation is refused; in advisory mode (default) the move returns a `docsWarning`. On a successful Done it stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
+      "Move a slice to a different column by setting its `status:` frontmatter. Status must be one of: Ready, Doing, Done, Requires-attention (a needs-human state the orchestrator sets when a worker can't resolve a problem — /attend returns it to the loop), or Retired. **Retired** is a TERMINAL state DISTINCT from Done — it records a required `reason` (a retire with no `reason` is refused), drops the slice off the active thinking space/frontier, and the → Done gate never runs for it; the slice file stays on disk so its `SL-{m}` stays reserved (the next slice is still `max+1`). Moving to Done is REFUSED unless every acceptance criterion the slice lists in `satisfies` is checked on the parent Spec (the error names the offending criterion); slices with no `satisfies` are not gated. The → Done **docs gate** also applies: a `docs: required` slice must have its documentation done — pass `docs_done: true` once you've updated the doc module. In blocking mode an unsatisfied obligation is refused; in advisory mode (default) the move returns a `docsWarning`. On a successful Done it stamps the slice's `verified_req_hash` from the parent Spec so a later requirement edit re-flags it stale.",
     inputSchema: {
       type: "object",
       properties: {
         slice: {
           type: "string",
-          description: "Slice handle, e.g. `SP-3_SL-42`.",
+          description:
+            "Slice ref: `TEP-1_SP-4_SL-1` (full handle), `SP-4_SL-1` (TEP resolved by lookup), or `1/4/1`.",
         },
         status: {
           type: "string",
@@ -900,7 +918,7 @@ const TOOL_DEFS = [
         docs_done: {
           type: "boolean",
           description:
-            "Attest that a `docs: required` slice's documentation was updated in this slice (TEP-tgh6iy). Satisfies the → Done docs gate; persisted as `docs_done` on the slice. Only meaningful when moving to Done.",
+            "Attest that a `docs: required` slice's documentation was updated in this slice. Satisfies the → Done docs gate; persisted as `docs_done` on the slice. Only meaningful when moving to Done.",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -917,7 +935,8 @@ const TOOL_DEFS = [
       properties: {
         spec: {
           type: "string",
-          description: "The Spec id (SP-{id}) to accept.",
+          description:
+            "The Spec to accept — any spec ref: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or bare `SP-4`/`4` (resolved by lookup).",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -934,7 +953,8 @@ const TOOL_DEFS = [
       properties: {
         spec: {
           type: "string",
-          description: "The Spec id (SP-{id}) to supersede.",
+          description:
+            "The Spec to supersede — any spec ref: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or bare `SP-4`/`4` (resolved by lookup).",
         },
         reason: {
           type: "string",
@@ -974,7 +994,7 @@ const TOOL_DEFS = [
         spec: {
           type: "string",
           description:
-            "Parent Spec id (the SP-{id} this slice belongs to) — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).",
+            "Parent Spec ref — any of: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or a bare `SP-4`/`4` (resolved against the thinking space's TEPs; refused if ambiguous or unknown).",
         },
         title: {
           type: "string",
@@ -994,7 +1014,7 @@ const TOOL_DEFS = [
         parallel_group: {
           type: "string",
           description:
-            "Named concurrency group (SP-tgpwbm). Slices sharing a parallel_group may run in parallel worktrees, so their `files` sets must be disjoint — the server refuses a group whose members overlap, naming the conflicting files.",
+            "Named concurrency group. Slices sharing a parallel_group may run in parallel worktrees, so their `files` sets must be disjoint — the server refuses a group whose members overlap, naming the conflicting files.",
         },
         files: {
           type: "array",
@@ -1042,7 +1062,7 @@ const TOOL_DEFS = [
                   "Independent-verification role (SP-6/7). `code` (default) implements to the Spec's INTENT — the `## Acceptance Criteria` are stripped from its prompt. `test` is the held-out verifier: it KEEPS the ACs in its prompt and its footprint is the reserved `acceptance/` probe path, so the grade it authors is independent of the code-author. A code-author's own co-located test can never tick an AC green; only a held-out `acceptance/` probe (or an `env: assessment` AC) counts.",
               },
               note: { type: "string" },
-              // Contract-first opt-out (SP-th4wqi). The property KEY is the shared
+              // Contract-first opt-out. The property KEY is the shared
               // CONTRACT_FIRST_OPTOUT_FIELD constant so the schema's field name
               // can never drift from the name `contractFirstCheck` reads.
               [CONTRACT_FIRST_OPTOUT_FIELD]: {
@@ -1056,7 +1076,7 @@ const TOOL_DEFS = [
             additionalProperties: false,
           },
           description:
-            "Execution-aware work units (SP-tgs8gb): each { footprint (files/objects it touches), consumes? (files a sibling unit produces that this unit reads — the only dependency language), execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers is refused by the contract-first gate (route it through a shared contract file via `consumes`, or set the opt-out flag for a genuinely-independent test). Express every dependency as `consumes`.",
+            "Execution-aware work units: each { footprint (files/objects it touches), consumes? (files a sibling unit produces that this unit reads — the only dependency language), execution: serial|mechanize|fan-out, note? (the unit's task text — self-describing, required in practice for fan-out) }. Uniform data-parallel work collapses to one `mechanize` unit; heterogeneous → `fan-out` (one per object, each with its `note`); coupled → `serial`. The slice stays the validation envelope; work units are never independently gated. A `*.test.*`/integration `fan-out` unit with no `consumes` beside sibling implementers is refused by the contract-first gate (route it through a shared contract file via `consumes`, or set the opt-out flag for a genuinely-independent test). Express every dependency as `consumes`.",
         },
         retires: {
           type: "array",
@@ -1064,11 +1084,17 @@ const TOOL_DEFS = [
           description:
             'Exported symbol names this slice REMOVES or NARROWS (SP-6/15) — the machine-readable successor to the prose `// Retired: …` contract line (e.g. ["APPROVAL_TTL_MS", "verifyApproval.now"], plain tokens). Serialized to slice frontmatter `retires:` and surfaced by `get_slice`. Arms an author-time reverse-dependency gate: after the footprint/contract gates the server reads the working repo\'s source and REFUSES the slice unless EVERY existing importer of a retired symbol is already inside the slice\'s footprint (`files` + a work_unit `footprint`), naming each retired symbol and the uncovered importer path — so the removal\'s blast radius is footprinted before orchestration, not discovered when the whole-project compile breaks. Omit/empty for a slice that retires nothing (the default, unchanged path).',
         },
+        creates: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Footprint paths this slice CREATES (new files), e.g. ["src/new-module.ts"]. Every other footprint path (in `files` and non-test work_unit footprints) must already EXIST in the working repo — the slice is refused otherwise, naming each missing path with a did-you-mean, so workers are never fenced onto a phantom path. Held-out test-unit footprints are exempt automatically. Serialized to frontmatter `creates:`.',
+        },
         docs: {
           type: "string",
           enum: ["required", "n/a"],
           description:
-            "Documentation obligation (TEP-tgh6iy). `required` (default) arms the → Done docs gate for user-facing work; `n/a` skips it but requires `docs_reason`. Internal refactors / test-only / infra are `n/a`.",
+            "Documentation obligation. `required` (default) arms the → Done docs gate for user-facing work; `n/a` skips it but requires `docs_reason`. Internal refactors / test-only / infra are `n/a`.",
         },
         docs_reason: {
           type: "string",
@@ -1083,7 +1109,7 @@ const TOOL_DEFS = [
           type: "array",
           items: { type: "string" },
           description:
-            "Free-form clustering tags — the #hashtag mesh (SP-tgvil2): component (`keycloak`), concern (`security`), project (`rebrand`). Many-to-many, cross-thinking space (surfaced by `list_tags`).",
+            "Free-form clustering tags — the #hashtag mesh: component (`keycloak`), concern (`security`), project (`rebrand`). Many-to-many, cross-thinking space (surfaced by `list_tags`).",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -1094,14 +1120,14 @@ const TOOL_DEFS = [
   {
     name: "write_spec",
     description:
-      "Write a Spec's document at `specs/SP-{id}/spec.md` in the thinking space (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `accepted:`) is preserved, and `implements:` can be set via its parameter. Omit `spec` to mint a conflict-free base36-epoch id (parity with `write_tep`); pass it to update an existing Spec. The minted/given id is returned as `spec`. This is the thinking space-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the thinking space.",
+      "Write a Spec's document at `teps/TEP-{t}/SP-{n}/spec.md` in the thinking space (the sidecar namespace), creating it if absent. Replaces the markdown body; existing frontmatter (e.g. `accepted:`) is preserved, and `implements:` can be set via its parameter. Omit `spec` to mint the next sequential SP number under the `implements:` TEP; pass it to update an existing Spec. The minted/given id is returned as `spec`. This is the thinking space-aware write path for `/spec-prepare` — use it instead of a raw file write, which would land outside the thinking space.",
     inputSchema: {
       type: "object",
       properties: {
         spec: {
           type: "string",
           description:
-            "Spec id (the SP-{id}) — an opaque string (base36-epoch for new Specs, a legacy integer for old ones). Omit to mint a new base36-epoch id.",
+            "Spec ref — any of: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or a bare `SP-4`/`4` (composed with the `implements:` TEP). Omit to mint the next sequential SP number under that TEP.",
         },
         body: {
           type: "string",
@@ -1121,7 +1147,7 @@ const TOOL_DEFS = [
         ac_verifications: {
           type: "object",
           description:
-            "The closing AI-verification gate's per-AC declaration (SP-tgzyfy / TEP-tgzx3p): a map keyed by 1-based AC ordinal → `{ run, env? }`, where `run` is the shell/playbook command that verifies that AC (exit 0 = pass) and `env` is `cluster` (an infra lifecycle) or `local`. The orchestrator runs the union as a full plan at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable → requires-attention). Sets the `ac_verifications:` frontmatter; omit to leave unchanged, pass `{}` to clear.",
+            "The closing AI-verification gate's per-AC declaration: a map keyed by 1-based AC ordinal → `{ run, env? }`, where `run` is the shell/playbook command that verifies that AC (exit 0 = pass) and `env` is `cluster` (an infra lifecycle) or `local`. The orchestrator runs the union as a full plan at Spec quiescence and gates Done/commit on all-green (no skip; red or un-runnable → requires-attention). Sets the `ac_verifications:` frontmatter; omit to leave unchanged, pass `{}` to clear.",
           additionalProperties: {
             type: "object",
             properties: {
@@ -1157,7 +1183,7 @@ const TOOL_DEFS = [
         spec: {
           type: "string",
           description:
-            "Spec id (the SP-{id}) whose section to patch — an opaque string (base36-epoch for new Specs, a legacy integer for old ones).",
+            "Spec ref whose section to patch — any of: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or bare `SP-4`/`4` (resolved by lookup).",
         },
         section: {
           type: "string",
@@ -1178,13 +1204,14 @@ const TOOL_DEFS = [
   {
     name: "update_slice",
     description:
-      "Update a slice in place, keeping its `SL-{m}` number. Pass `body` to replace the markdown body (frontmatter is preserved; the body's first line must be the `# title` heading — if the new body lacks one, the existing title is re-attached and the input is treated as detail, so a card can never become heading-less). **Re-cut (SP-th4wqd):** pass `files` / `satisfies` / `work_units` to REPLACE the slice's footprint fields without re-creating it — a re-scope. A provided field replaces wholesale (an empty array clears it); an omitted field is left untouched. A re-cut whose declared footprint (any `files` path or `work_units[].footprint` path) escapes the thinking space repo is REFUSED with the same rejection `create_slice` gives — the check routes through the shared repo guard, not a copy. Pass `retires` to (re)declare the exported symbols the re-cut removes/narrows — refused unless every existing importer of a retired symbol is inside the (post-re-cut) footprint (SP-6/15). `body` is optional: omit it for a pure re-cut and the body is left unchanged.",
+      "Update a slice in place, keeping its `SL-{m}` number. Pass `body` to replace the markdown body (frontmatter is preserved; the body's first line must be the `# title` heading — if the new body lacks one, the existing title is re-attached and the input is treated as detail, so a card can never become heading-less). **Re-cut:** pass `files` / `satisfies` / `work_units` to REPLACE the slice's footprint fields without re-creating it — a re-scope. A provided field replaces wholesale (an empty array clears it); an omitted field is left untouched. A re-cut whose declared footprint (any `files` path or `work_units[].footprint` path) escapes the thinking space repo is REFUSED with the same rejection `create_slice` gives — the check routes through the shared repo guard, not a copy. Pass `retires` to (re)declare the exported symbols the re-cut removes/narrows — refused unless every existing importer of a retired symbol is inside the (post-re-cut) footprint (SP-6/15). `body` is optional: omit it for a pure re-cut and the body is left unchanged.",
     inputSchema: {
       type: "object",
       properties: {
         slice: {
           type: "string",
-          description: "Slice handle, e.g. `SP-3_SL-42`.",
+          description:
+            "Slice ref: `TEP-1_SP-4_SL-1` (full handle), `SP-4_SL-1` (TEP resolved by lookup), or `1/4/1`.",
         },
         body: {
           type: "string",
@@ -1195,19 +1222,19 @@ const TOOL_DEFS = [
           type: "array",
           items: { type: "string" },
           description:
-            "Replace the slice's clustering tags (SP-tgvil2). Omit to leave tags unchanged; pass `[]` to clear.",
+            "Replace the slice's clustering tags. Omit to leave tags unchanged; pass `[]` to clear.",
         },
         files: {
           type: "array",
           items: { type: "string" },
           description:
-            "Re-cut (SP-th4wqd): REPLACE the slice's machine-readable file set (repo-relative paths). Omit to leave unchanged; pass `[]` to clear. Validated against the thinking space repo with the same guard `create_slice` uses — a path that escapes the repo is refused.",
+            "Re-cut: REPLACE the slice's machine-readable file set (repo-relative paths). Omit to leave unchanged; pass `[]` to clear. Validated against the thinking space repo with the same guard `create_slice` uses — a path that escapes the repo is refused.",
         },
         satisfies: {
           type: "array",
           items: { type: "integer", minimum: 1 },
           description:
-            "Re-cut (SP-th4wqd): REPLACE the 1-based AC ordinals this slice delivers. Omit to leave unchanged; pass `[]` to clear.",
+            "Re-cut: REPLACE the 1-based AC ordinals this slice delivers. Omit to leave unchanged; pass `[]` to clear.",
         },
         contract: {
           type: "string",
@@ -1219,6 +1246,12 @@ const TOOL_DEFS = [
           items: { type: "string" },
           description:
             "Re-cut (SP-6/15): REPLACE the slice's retired-symbol declaration — the exported symbol names the re-cut removes or narrows (plain tokens, e.g. [\"APPROVAL_TTL_MS\"]). Omit to leave `retires:` unchanged; pass `[]` to clear. When provided, arms the same author-time reverse-dependency gate `create_slice` runs: the re-cut is REFUSED unless every existing importer of a retired symbol is inside the slice's (post-re-cut) footprint, naming each retired symbol and the uncovered importer path — so widen `files`/`work_units` to cover them, or drop the symbol. Surfaced by `get_slice`.",
+        },
+        creates: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Re-cut: REPLACE the slice's declared-new-file set (the footprint existence-gate exemption). Omit to leave `creates:` unchanged; pass `[]` to clear. The re-cut's resulting footprint must exist in the working repo except `creates:` entries and held-out test-unit footprints — refused otherwise with a did-you-mean, same as create_slice.",
         },
         work_units: {
           type: "array",
@@ -1254,7 +1287,7 @@ const TOOL_DEFS = [
             additionalProperties: false,
           },
           description:
-            "Re-cut (SP-th4wqd): REPLACE the slice's execution-aware work units. Omit to leave unchanged; pass `[]` to clear. Each unit's `footprint` is checked against the thinking space repo with the same guard `create_slice` uses. Express dependencies as `consumes` (a sibling unit's produced file).",
+            "Re-cut: REPLACE the slice's execution-aware work units. Omit to leave unchanged; pass `[]` to clear. Each unit's `footprint` is checked against the thinking space repo with the same guard `create_slice` uses. Express dependencies as `consumes` (a sibling unit's produced file).",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -1265,14 +1298,14 @@ const TOOL_DEFS = [
   {
     name: "write_tep",
     description:
-      "Write a Tandem Enhancement Proposal at `teps/TEP-<id>.md` in the thinking space (the sidecar namespace), creating it if absent (TEP-0009). The thinking space-aware write path for `/tep` — use it instead of a raw file write. Omit `tep` to mint a conflict-free base36-epoch id; pass it to update an existing TEP. On create, the body defaults to the `TEP-TEMPLATE.md` scaffold and canonical frontmatter (kind/id/status/created/implemented_by) is filled; on update, existing frontmatter is preserved. `title`/`status` set those fields. Promotion-aware (TEP-th3i18 #14): if the TEP has been promoted into a Project (its canonical home moved to `<product>/projects/<id>/teps/`), the update lands on that **project copy** — no stale duplicate is left on the session thinking space; if more than one project claims it the write is refused, pointing you at `promote_tep` to reconcile the single home.",
+      "Write a Tandem Enhancement Proposal at `teps/TEP-<id>/tep.md` in the thinking space (the sidecar namespace), creating it if absent (TEP-0009). The thinking space-aware write path for `/tep` — use it instead of a raw file write. Omit `tep` to mint the thinking space's next sequential id; pass it to update an existing TEP. On create, the body defaults to the `TEP-TEMPLATE.md` scaffold and canonical frontmatter (kind/id/status/created/implemented_by) is filled; on update, existing frontmatter is preserved. `title`/`status` set those fields. Promotion-aware: if the TEP has been promoted into a Project (its canonical home moved to `<product>/projects/<id>/teps/`), the update lands on that **project copy** — no stale duplicate is left on the session thinking space; if more than one project claims it the write is refused, pointing you at `promote_tep` to reconcile the single home.",
     inputSchema: {
       type: "object",
       properties: {
         tep: {
           type: "string",
           description:
-            "TEP id (with or without the `TEP-` prefix). Omit to mint a new base36-epoch id.",
+            "TEP id (with or without the `TEP-` prefix). Omit to mint the thinking space's next sequential id.",
         },
         title: { type: "string", description: "TEP title (frontmatter)." },
         status: {
@@ -1289,7 +1322,7 @@ const TOOL_DEFS = [
           type: "array",
           items: { type: "string" },
           description:
-            "Clustering tags for the TEP — the #hashtag mesh (SP-tgvil2), surfaced cross-thinking space by `list_tags`.",
+            "Clustering tags for the TEP — the #hashtag mesh, surfaced cross-thinking space by `list_tags`.",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -1318,7 +1351,7 @@ const TOOL_DEFS = [
         spec: {
           type: "string",
           description:
-            "The Spec id (the SP-{id}) whose worktree session to open — an opaque string (base36-epoch or a legacy integer).",
+            "The Spec whose worktree session to open — any spec ref: `<tep>/<sp>` (e.g. `1/4`), `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`, or bare `SP-4`/`4` (resolved by lookup).",
         },
         ...THINKING_SPACE_PARAM,
       },
@@ -1426,33 +1459,42 @@ export async function dispatchTool(
       );
     case "accept_spec":
       writeGate(name);
-      return writeLock.runExclusive(thinkingSpaceHandle, () =>
+      return writeLock.runExclusive(thinkingSpaceHandle, async () =>
         acceptSpec(
           store,
-          typeof args.spec === "number"
-            ? String(args.spec)
-            : asString(args, "spec"),
+          await resolveSpecRef(
+            () => store.listSpecDirs(),
+            typeof args.spec === "number"
+              ? String(args.spec)
+              : asString(args, "spec"),
+          ),
         ),
       );
     case "supersede_spec":
       writeGate(name);
-      return writeLock.runExclusive(thinkingSpaceHandle, () =>
+      return writeLock.runExclusive(thinkingSpaceHandle, async () =>
         supersedeSpec(
           store,
-          typeof args.spec === "number"
-            ? String(args.spec)
-            : asString(args, "spec"),
+          await resolveSpecRef(
+            () => store.listSpecDirs(),
+            typeof args.spec === "number"
+              ? String(args.spec)
+              : asString(args, "spec"),
+          ),
           asString(args, "reason"),
         ),
       );
     case "unsupersede_spec":
       writeGate(name);
-      return writeLock.runExclusive(thinkingSpaceHandle, () =>
+      return writeLock.runExclusive(thinkingSpaceHandle, async () =>
         unsupersedeSpec(
           store,
-          typeof args.spec === "number"
-            ? String(args.spec)
-            : asString(args, "spec"),
+          await resolveSpecRef(
+            () => store.listSpecDirs(),
+            typeof args.spec === "number"
+              ? String(args.spec)
+              : asString(args, "spec"),
+          ),
         ),
       );
     case "create_slice": {
@@ -1466,7 +1508,7 @@ export async function dispatchTool(
           ? String(args.spec)
           : asString(args, "spec"),
       );
-      // Approval gate (SP-th4wqg_SL-1, TEP-th3i18 #25): a slice may not reach
+      // Approval gate: a slice may not reach
       // Ready while the parent Spec's `implements:` TEP is not yet `accepted`
       // (approved-to-build). Resolve the TEP's status via thinking space context and run
       // the pure `tepApprovalGate` before `createSlice` does any work, so the
@@ -1475,8 +1517,8 @@ export async function dispatchTool(
       return createSlice(
         store,
         {
-          // Spec id is a string (base36-epoch); tolerate a numeric integer id
-          // from callers that still pass a number (legacy specs).
+          // Spec id is a string; tolerate a numeric integer id from callers
+          // that still pass a number (legacy specs).
           spec: createSpecId,
           title: asString(args, "title"),
           body: asString(args, "body"),
@@ -1486,7 +1528,7 @@ export async function dispatchTool(
           files: optStringArray(args, "files"),
           satisfies: optNumberArray(args, "satisfies"),
           contract: optString(args, "contract"),
-          // The execution-aware work units (SP-tgs8gb). Forwarded verbatim — createSlice
+          // The execution-aware work units. Forwarded verbatim — createSlice
           // validates each unit's footprint and serializes the array to frontmatter. Without
           // this line the schema accepts work_units but the handler silently drops it (the
           // bug that left every created slice with no work_units).
@@ -1509,12 +1551,17 @@ export async function dispatchTool(
           // gates it against the working-repo's importers and serializes it to
           // frontmatter `retires:`.
           retires: optStringArray(args, "retires"),
+          // Declared-new files: exempt from the footprint existence gate.
+          creates: optStringArray(args, "creates"),
         },
         // SP-6/1 provenance: hand `createSlice` the server signing secret so its
         // → Ready gate verifies the `ac_verifications` signature (not the
         // reproducible hash) and refuses a Spec whose auditor was skipped. Absent
         // ⇒ legacy hash-only gate.
         ctx.signingSecret,
+        // The spec's WORKING repo (its `repo:` resolved) — what the footprint
+        // existence gate checks against; undefined skips that gate.
+        await resolveSpecWorkingRepo(ctx, store, createSpecId),
       );
     }
     case "write_spec": {
@@ -1529,8 +1576,8 @@ export async function dispatchTool(
         ctx.promoteLocator ?? makeThinkingSpacePromoteLocator(ctx),
       );
       if (!promoteCheck.ok) throw new Error(promoteCheck.message);
-      // #6 minting: `spec` is optional — when omitted, mint a fresh base36-epoch
-      // id via the store allocator (parity with `write_tep`). The pure
+      // #6 minting: `spec` is optional — when omitted, mint the next sequential
+      // SP number under the `implements:` TEP (parity with `write_tep`). The pure
       // `resolveSpecId` helper owns the decision; we inject the allocator.
       // Parent TEP (from `implements:` — bare `TEP-n` or qualified `<ns>:TEP-n`)
       // scopes a NEW spec's `SP-m` allocation; its id is the composite `${tep}/${m}`.
@@ -1550,21 +1597,27 @@ export async function dispatchTool(
         },
       );
       // A Spec doc lives at the composite `<tep>/<spec>` location (pathForSpecDoc).
-      // The mint path already returns that composite; a caller-PROVIDED id may be the
-      // bare SP NUMBER (`2`) — the shape `/spec-prepare` passes (`spec: {n}`) — which
-      // must be composed with its parent TEP (from `implements:`) to resolve
-      // `teps/TEP-<tep>/SP-<m>/spec.md`. Without this a bare numeric fell through to
-      // `pathForSpecDoc("2")` → `TEP-2/SP-undefined`, silently creating a stray,
-      // wrong-placed doc instead of updating the intended spec. A bare numeric with no
-      // `implements:` can't be located, so refuse rather than write a stray. Opaque
-      // ids and already-composite (`<tep>/<spec>`) ids are used verbatim.
+      // The mint path already returns that composite; a caller-PROVIDED id is put
+      // through the ONE ref grammar (refResolver): any two-part form (`1/4`,
+      // `TEP-1_SP-4`, `TEP-1/SP-4`, `SP-1/4`) normalizes to the composite, and a
+      // bare SP id (`2`, `SP-2` — the shape `/spec-prepare` passes) is composed
+      // with its parent TEP from `implements:`. write_spec may CREATE a spec, so
+      // a bare id is composed (never looked up); with no `implements:` it cannot
+      // be located, so refuse rather than write a stray. A ref that fits no form
+      // is refused with the grammar (previously it fell through verbatim and
+      // `pathForSpecDoc` built a `TEP-<garbage>/SP-undefined` path).
       let composedSpecId = specId;
-      if (!specId.includes("/") && /^\d+$/.test(specId)) {
-        if (!parentTep)
+      if (!specId.includes("/")) {
+        const ref = normalizeSpecRef(specId);
+        if (ref.kind === "composite") {
+          composedSpecId = ref.id;
+        } else if (parentTep) {
+          composedSpecId = `${parentTep}/${ref.id}`;
+        } else {
           throw new Error(
-            `write_spec needs \`implements: TEP-<n>\` to resolve the bare spec id \`${specId}\` to its \`TEP-<n>/SP-${specId}\` location.`,
+            `write_spec needs \`implements: TEP-<n>\` to resolve the bare spec id \`${ref.id}\` to its \`TEP-<n>/SP-${ref.id}\` location, or pass ${SPEC_REF_GRAMMAR}.`,
           );
-        composedSpecId = `${parentTep}/${specId}`;
+        }
       }
       // SP-6/1 provenance: when the server holds a signing secret AND an audit runner, the audit
       // runs server-side. It must run where the CODE lives — the spec's WORKING repo (`repo:`),
@@ -1595,7 +1648,7 @@ export async function dispatchTool(
         // Optional: absent = certify-only against the existing on-disk body (step-7 shape).
         optString(args, "body"),
         implementsRaw,
-        // The closing gate's per-AC declaration (SP-tgzyfy). Forwarded verbatim — writeSpec
+        // The closing gate's per-AC declaration. Forwarded verbatim — writeSpec
         // normalizes + serializes it to the `ac_verifications:` frontmatter; undefined leaves
         // any existing map intact, `{}` clears it. NOTE (SP-6/1): when signing is on (the audit
         // context below is supplied), this agent-supplied map is *ignored* — `write_spec` runs the
@@ -1619,21 +1672,35 @@ export async function dispatchTool(
       writeGate(name);
       return patchSpecSection(
         store,
-        typeof args.spec === "number"
-          ? String(args.spec)
-          : asString(args, "spec"),
+        // Same ref grammar as every other spec tool (previously a raw
+        // passthrough that only understood the composite `1/4`).
+        await resolveSpecRef(
+          () => store.listSpecDirs(),
+          typeof args.spec === "number"
+            ? String(args.spec)
+            : asString(args, "spec"),
+        ),
         asString(args, "section"),
         asString(args, "content"),
       );
-    case "update_slice":
+    case "update_slice": {
       writeGate(name);
+      // Resolve the slice's parent spec up front so the footprint existence
+      // gate can check against the spec's WORKING repo (`repo:`), not the
+      // possibly code-less umbrella the store is rooted in.
+      const recutSliceSpec = (
+        await resolveSliceRef(
+          () => store.listSpecDirs(),
+          asString(args, "slice"),
+        )
+      ).specNumber;
       return updateSlice(
         store,
         asString(args, "slice"),
         // Body is optional (a pure re-cut needn't restate it).
         optString(args, "body"),
         optStringArray(args, "tags"),
-        // Re-cut footprint fields (SP-th4wqd): a provided field replaces, omitted
+        // Re-cut footprint fields: a provided field replaces, omitted
         // is left untouched. Forwarded verbatim; updateSlice routes them through
         // the shared repo guard before writing.
         {
@@ -1643,16 +1710,19 @@ export async function dispatchTool(
             ? (args.work_units as Frontmatter["work_units"])
             : undefined,
           contract: optString(args, "contract"),
+          creates: optStringArray(args, "creates"),
         },
         // Retired-symbol declaration (SP-6/15): forwarded verbatim; updateSlice gates
         // the re-cut against the working-repo's importers and (re)serializes `retires:`.
         optStringArray(args, "retires"),
+        await resolveSpecWorkingRepo(ctx, store, recutSliceSpec),
       );
+    }
     case "write_tep": {
       writeGate(name);
       const tepStatus = optString(args, "status");
       const tepArg = optString(args, "tep");
-      // Completeness gate (SP-th4wqg_SL-3, TEP-th3i18 #26): `implemented` is the
+      // Completeness gate: `implemented` is the
       // terminal "delivered" status — refuse it while any implementing Spec is
       // still unaccepted (the TEP hasn't actually been delivered). Resolve the
       // TEP's implementing Specs via thinking space context and run the pure `tepComplete`.
@@ -1681,9 +1751,12 @@ export async function dispatchTool(
     case "start_spec_worktree":
       writeGate(name);
       return startSpecWorktree(
-        typeof args.spec === "number"
-          ? String(args.spec)
-          : asString(args, "spec"),
+        await resolveSpecRef(
+          () => store.listSpecDirs(),
+          typeof args.spec === "number"
+            ? String(args.spec)
+            : asString(args, "spec"),
+        ),
         store.workspaceRoot,
       );
     case "open_review":
@@ -1829,18 +1902,20 @@ async function openReview(
   return { ok: true, subjectKey, docPath, request: file };
 }
 
-// Org-scoped tree (TEP-th8lzj): a slice file is `<org>/teps/TEP-n/SP-m/SL-k.md`;
+// Org-scoped tree: a slice file is `<org>/teps/TEP-n/SP-m/SL-k.md`;
 // the spec id is the composite `${tep}/${spec}` and its handle is the
 // tep-qualified `TEP-n_SP-m`, the slice handle `TEP-n_SP-m_SL-k`.
+// All segments are strictly numeric — ids are minted sequentially, and the
+// per-maintainer org segment keeps numbers collision-free. Any other id
+// shape fails loudly; nothing is quietly tolerated.
 const SLICE_PATH_RE = /teps\/TEP-(\d+)\/SP-(\d+)\/SL-(\d+)\.md$/;
-const SLICE_HANDLE_RE = /^TEP-(\d+)_SP-(\d+)_SL-(\d+)$/;
 
 /** The tep-qualified handle for a composite spec id (`${tep}/${spec}`). */
 function specHandle(specId: string): string {
   const [tep, sp] = specId.split("/");
   return `TEP-${tep}_SP-${sp}`;
 }
-/** The slice handle from a SLICE_PATH_RE / SLICE_HANDLE_RE match `[_, tep, spec, slice]`. */
+/** The slice handle from a SLICE_PATH_RE match `[_, tep, spec, slice]`. */
 function sliceHandleFromMatch(m: RegExpExecArray): string {
   return `TEP-${m[1]}_SP-${m[2]}_SL-${m[3]}`;
 }
@@ -1853,7 +1928,7 @@ const VALID_STATUSES = [
   "doing",
   "done",
   "requires-attention",
-  // Terminal, distinct from `done` (SP-th4wqd_SL-1) — read from the shared
+  // Terminal, distinct from `done` — read from the shared
   // contract so the wiring never re-spells the literal. A retired slice drops off
   // the active frontier but its file (and so its SL-{m}) stays on disk.
   RETIRED_STATUS,
@@ -2024,7 +2099,7 @@ export function resolveProjectSpace(ctx: HandlerContext, cwd: string): unknown {
 }
 
 /**
- * `get_project` — a Project's manifest + its members (SP-tgvpbm). A Project is a
+ * `get_project` — a Project's manifest + its members. A Project is a
  * code-less umbrella owning TEPs; its members are the specs (across thinkingSpaces) whose
  * `implements:` resolves to one of the project's umbrella TEPs, PLUS each such
  * spec's slices (inherited). Membership is structural (`implements:`), not tags.
@@ -2149,7 +2224,7 @@ export async function getProject(
     }
   }
 
-  // Completeness (SP-th4wqg_SL-2): a TEP is complete only when every implementing
+  // Completeness: a TEP is complete only when every implementing
   // Spec is `accepted`; otherwise `openSpecs` names the unaccepted ones. Surfaced
   // per-umbrella-TEP plus an aggregate (the project is complete iff all its TEPs
   // are). The pure derivation is `tepComplete`.
@@ -2178,7 +2253,7 @@ function namespaceOfThinkingSpaceDir(
     .join("/");
 }
 
-// ─── TEP-lifecycle gate wiring (SP-th4wqg) ──────────────────────────────────
+// ─── TEP-lifecycle gate wiring ──────────────────────────────────
 // The pure decisions live in `methodology/tepLifecycle`; these functions only do
 // the thinking space-backed RESOLUTION (a TEP's status, a TEP's implementing Specs) and
 // hand the result to the pure gate — the cross-thinking space side `promoteTep` models.
@@ -2312,7 +2387,7 @@ async function assertTepComplete(
 }
 
 /**
- * `promote_tep` (SP-tgvpbm) — move a repo TEP into an existing project's `teps/`
+ * `promote_tep` — move a repo TEP into an existing project's `teps/`
  * (making it an umbrella TEP) and rewrite **every** dependent spec's
  * `implements:` to the qualified umbrella ref, so all former implementers stay
  * members and no bare/dangling ref to the moved TEP remains. Targets an existing
@@ -2353,7 +2428,7 @@ export async function promoteTep(
           thinkingSpaceRoot,
           store.thinkubeDir,
         ),
-        // Org-scoped tree (TEP-th8lzj): a TEP is the dir `<org>/teps/TEP-n/`
+        // Org-scoped tree: a TEP is the dir `<org>/teps/TEP-n/`
         // (its `SP-m` specs nested inside), not a flat `teps/TEP-n.md`.
         tepDirRel: path.dirname(store.pathForTep(tepId)),
       };
@@ -2446,19 +2521,8 @@ export async function promoteTep(
   };
 }
 
-/** Parse a slice handle (`SP-3_SL-42`) → its (spec, slice) numbers. */
-function parseSliceHandle(handle: string): {
-  specNumber: string;
-  sliceNumber: number;
-} {
-  const m = SLICE_HANDLE_RE.exec(handle.trim());
-  if (!m) {
-    throw new Error(
-      `Invalid slice handle "${handle}" — expected the form TEP-{n}_SP-{m}_SL-{k}.`,
-    );
-  }
-  return { specNumber: specIdFromMatch(m), sliceNumber: Number(m[3]) };
-}
+// (Slice-handle parsing lives in refResolver.resolveSliceRef — one grammar for
+// every tool: `TEP-1_SP-4_SL-1`, `SP-4_SL-1`, `1/4/1`.)
 
 /**
  * Card title = the slice body's first non-empty line (heading marker
@@ -2567,7 +2631,10 @@ async function getSlice(
   store: ThinkubeStore,
   handle: string,
 ): Promise<unknown> {
-  const { specNumber, sliceNumber } = parseSliceHandle(handle);
+  const { specNumber, sliceNumber } = await resolveSliceRef(
+    () => store.listSpecDirs(),
+    handle,
+  );
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
@@ -2613,12 +2680,15 @@ async function moveSlice(
       `Invalid status "${status}" — expected one of Ready, Doing, Done, Requires-attention, Retired.`,
     );
   }
-  const { specNumber, sliceNumber } = parseSliceHandle(handle);
+  const { specNumber, sliceNumber } = await resolveSliceRef(
+    () => store.listSpecDirs(),
+    handle,
+  );
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
 
-  // Retire (SP-th4wqd #5): `move_slice(…, "Retired", reason)` is a TERMINAL state
+  // Retire: `move_slice(…, "Retired", reason)` is a TERMINAL state
   // distinct from Done — it records a REQUIRED reason and then short-circuits, so
   // none of the → Done gates (satisfies / docs / baseline stamp) run for it. The
   // "reason required" rule lives in the shared `validateRetireReason`; a missing
@@ -2651,7 +2721,7 @@ async function moveSlice(
   const movingOffDone = wasDone && target !== "done";
 
   const fm: Frontmatter = { ...(parsed.frontmatter ?? {}), status: target };
-  // Attest the documentation obligation (TEP-tgh6iy): a caller updating the doc
+  // Attest the documentation obligation: a caller updating the doc
   // module in this slice passes docs_done so the gate below is satisfied.
   if (opts.docsDone === true) fm.docs_done = true;
 
@@ -2684,9 +2754,9 @@ async function moveSlice(
     if (!gate.ok) throw new Error(gate.reason);
     gateSkipped = gate.gateSkipped;
 
-    // → Done docs gate (TEP-tgh6iy): a `docs: required` slice must have its docs
+    // → Done docs gate: a `docs: required` slice must have its docs
     // done. Blocking mode refuses (throws before any write); advisory mode lets
-    // the move through but returns a warning to surface in /pair-next.
+    // the move through but returns a warning to surface to the caller.
     const docsGate = gateSliceDocsToDone({
       docs: typeof fm.docs === "string" ? fm.docs : undefined,
       docsDone: fm.docs_done === true,
@@ -2720,7 +2790,34 @@ async function moveSlice(
     }
   }
 
-  await store.writeFile(rel, fm, parsed.body);
+  // Board-artifact hygiene (2026-07-11): a card states its CURRENT state.
+  // Returning to Ready auto-prunes the resolved `## ⚑ Requires attention`
+  // block(s) + any ⛔ markers (collapsed to one-line `attention_history`
+  // entries), clears the `escalated` hold and `last_fault` route, and resets
+  // `rework_attempts` — a human/auto hand-back restarts the bounded loop
+  // (leaving the old count would re-escalate the slice before it ever ran).
+  // `last_evidence_hash` survives deliberately: if the very same failure
+  // reappears after a "fix", the circuit breaker should trip immediately.
+  let bodyOut = parsed.body;
+  if (target === "ready") {
+    const { base, blocks } = splitAttentionArtifacts(parsed.body ?? "");
+    if (blocks.length > 0 || fm.escalated || fm.rework_attempts) {
+      const date = new Date().toISOString().slice(0, 10);
+      const prior = Array.isArray(fm.attention_history)
+        ? (fm.attention_history as string[])
+        : [];
+      if (blocks.length)
+        fm.attention_history = [
+          ...prior,
+          ...blocks.map((b) => attentionHistoryEntry(b, date)),
+        ];
+      delete fm.escalated;
+      delete fm.rework_attempts;
+      delete fm.last_fault;
+      bodyOut = `${base}\n`;
+    }
+  }
+  await store.writeFile(rel, fm, bodyOut);
 
   // SP-6/7 AC7: clear the parent Spec's `accepted:` stamp when this slice moved OFF Done. An accepted
   // Spec whose slice is being reworked/reopened is no longer accepted — leaving the stamp would let the
@@ -2869,19 +2966,13 @@ export async function resolveCompositeSpecId(
   listSpecDirs: () => Promise<string[]>,
   id: string,
 ): Promise<string> {
-  if (id.includes("/")) return id;
-  const matches = (await listSpecDirs()).filter((s) => s.split("/")[1] === id);
-  if (matches.length === 1) return matches[0];
-  if (matches.length > 1) {
-    throw new Error(
-      `Ambiguous spec id "${id}" — SP-${id} exists under ${matches
-        .map((m) => "TEP-" + m.split("/")[0])
-        .join(
-          ", ",
-        )}. Pass the composite \`<tep>/${id}\` (e.g. \`${matches[0]}\`).`,
-    );
-  }
-  return id;
+  // Delegates to the ONE ref grammar (refResolver). Notable deliberate changes
+  // from the pre-2026-07-11 behavior: the flat handle `TEP-1_SP-4` (which every
+  // board surface prints) now resolves instead of building a
+  // `TEP-TEP-1_SP-4/SP-undefined` path, and an UNKNOWN bare id now refuses
+  // loudly instead of passing through verbatim into a phantom
+  // `TEP-<id>/SP-undefined` path.
+  return resolveSpecRef(listSpecDirs, id);
 }
 
 /**
@@ -2896,6 +2987,123 @@ export async function resolveCompositeSpecId(
  */
 export function resolveApprovalDir(invocationPath: string): string {
   return path.resolve(path.dirname(invocationPath), "../../..");
+}
+
+/**
+ * Resolve a spec's WORKING repo root for the footprint existence gate: the
+ * spec's `repo:` frontmatter resolved via the machine folders (the same
+ * resolution `write_spec`'s audit uses), else the thinking-space repo itself.
+ * Returns undefined when the resolved path is not a git repo — a bare-tmpdir
+ * unit-test store or an unresolvable namespace has no repo reality to check,
+ * so the existence gate is skipped rather than refusing valid work.
+ */
+async function resolveSpecWorkingRepo(
+  ctx: HandlerContext,
+  store: ThinkubeStore,
+  specId: string,
+): Promise<string | undefined> {
+  try {
+    const doc = await store.getFile(store.pathForSpecDoc(specId));
+    const repoNs =
+      typeof doc?.frontmatter?.repo === "string"
+        ? doc.frontmatter.repo.trim()
+        : undefined;
+    const resolved = repoNs
+      ? repoPathForNamespace(repoNs, ctx.env.folders)
+      : store.workspaceRoot;
+    return resolved && fsSync.existsSync(path.join(resolved, ".git"))
+      ? resolved
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Shell builtins/keywords the probe dry-run never tries to resolve. */
+const SHELL_BUILTINS = new Set([
+  "cd",
+  "echo",
+  "true",
+  "false",
+  "test",
+  "[",
+  "exit",
+  "export",
+  "set",
+  "wait",
+  "sleep",
+  "read",
+]);
+
+/**
+ * Probe dry-run (2026-07-11): find env-local verification commands whose
+ * leading token(s) do NOT resolve to an executable in the working repo. Pure
+ * resolution (`command -v`), never execution — safe at spec time. Each
+ * `&&`/`||`/`;`-separated segment's first word is checked with the repo's
+ * `node_modules/.bin` prepended to PATH (so `npx`-less local binaries still
+ * resolve at the root); shell builtins, env-var assignments, subshell noise
+ * and anything unparseable are skipped (the check errs open — its job is to
+ * catch the plain `tsc`-style miss, not to be a shell parser).
+ */
+export function unresolvableProbeCommands(
+  map: Record<string, { run?: string; env?: string }>,
+  cwd: string,
+): { ac: string; cmd: string; token: string }[] {
+  const out: { ac: string; cmd: string; token: string }[] = [];
+  for (const [ac, decl] of Object.entries(map ?? {})) {
+    const run = decl?.run?.trim();
+    if (!run || decl.env === "assessment" || decl.env === "cluster") continue;
+    for (const seg of run.split(/&&|\|\||;/)) {
+      let token = seg.trim().replace(/^[($\s]+/, "").split(/\s+/)[0] ?? "";
+      token = token.replace(/[)]+$/, "");
+      if (
+        !token ||
+        SHELL_BUILTINS.has(token) ||
+        token.includes("=") ||
+        token.includes("$") ||
+        token.startsWith("{") ||
+        token.startsWith("#")
+      )
+        continue;
+      try {
+        execFileSync("sh", ["-c", 'command -v -- "$1"', "sh", token], {
+          cwd,
+          stdio: "ignore",
+          env: {
+            ...process.env,
+            PATH: `${path.join(cwd, "node_modules", ".bin")}:${process.env.PATH ?? ""}`,
+          },
+        });
+      } catch {
+        out.push({ ac, cmd: run, token });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Real filesystem oracle for the footprint existence gate: existence via
+ * `fs.existsSync` against the working repo; did-you-mean candidates from
+ * `git ls-files` (tracked files only — fast, ignores node_modules by
+ * construction). A git failure degrades to "no suggestions", never to a pass.
+ */
+function repoFileOracle(repoRoot: string): RepoFileOracle {
+  return {
+    exists: (rel) => fsSync.existsSync(path.join(repoRoot, rel)),
+    listFiles: () => {
+      try {
+        return execFileSync("git", ["-C", repoRoot, "ls-files"], {
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+        })
+          .split("\n")
+          .filter(Boolean);
+      } catch {
+        return [];
+      }
+    },
+  };
 }
 
 /**
@@ -2993,7 +3201,7 @@ export async function createSlice(
       // Independent-verification role (SP-6/7): `code` (default) or `test` (the held-out verifier).
       role?: string;
       note?: string;
-      // Contract-first opt-out (SP-th4wqi). The authoritative field name is the
+      // Contract-first opt-out. The authoritative field name is the
       // shared `CONTRACT_FIRST_OPTOUT_FIELD` constant (the schema key + what
       // `contractFirstCheck` reads); this literal is the local TS view of it.
       contract_first_optout?: boolean;
@@ -3007,6 +3215,10 @@ export async function createSlice(
     // refused unless every existing importer of a retired symbol is inside its
     // footprint. Optional/absent on every existing slice (backward-compatible).
     retires?: string[];
+    // Declared-new files (2026-07-11): footprint paths this slice CREATES.
+    // Exempt from the existence gate (everything else in the footprint must
+    // exist in the working repo); serialized to frontmatter `creates:`.
+    creates?: string[];
   },
   /**
    * SP-6/1 (TEP-6) provenance: the server signing secret (loaded from globalStorage by `main`,
@@ -3017,6 +3229,15 @@ export async function createSlice(
    * signature) is refused, naming the missing/invalid provenance. Absent ⇒ legacy hash-only path.
    */
   signingSecret?: Buffer,
+  /**
+   * The spec's WORKING repo root (its `repo:` frontmatter resolved to a path;
+   * the thinking-space repo for a same-repo spec) — what the footprint
+   * EXISTENCE gate checks against. `undefined` when no working repo could be
+   * resolved (e.g. a unit-test store rooted in a bare tmpdir): the existence
+   * gate is then skipped — there is no repo whose reality could be checked —
+   * while the lexical containment gate still runs.
+   */
+  workingRepoRoot?: string,
 ): Promise<unknown> {
   const title = args.title.trim();
   if (!title) throw new Error("title must not be empty.");
@@ -3076,7 +3297,7 @@ export async function createSlice(
     }
   }
 
-  // Preliminary-control gate (SP-th1ddy_SL-2): a slice's declared footprint must
+  // Preliminary-control gate: a slice's declared footprint must
   // resolve **repo-relative inside the thinking space's own repo**. An absolute path, a
   // `..`-escaping path, or a different-repo path is structurally invalid — the
   // orchestrated worker runs from the thinking space repo's worktree root and could never
@@ -3086,6 +3307,7 @@ export async function createSlice(
   const declaredFiles = [
     ...(args.files ?? []),
     ...(args.work_units ?? []).flatMap((wu) => wu.footprint ?? []),
+    ...(args.creates ?? []),
   ];
   if (declaredFiles.length) {
     const repoCheck = sliceFilesResolveInRepo(
@@ -3095,7 +3317,32 @@ export async function createSlice(
     if (!repoCheck.ok) throw new Error(repoCheck.reason);
   }
 
-  // Documentation obligation (TEP-tgh6iy). Default `required` (fail closed);
+  // Existence gate (2026-07-11): a contained-but-nonexistent footprint path
+  // fences workers onto a phantom file and every orchestration burns on it.
+  // Every footprint path must exist in the WORKING repo (the spec's `repo:`,
+  // resolved by the dispatch — NOT store.workspaceRoot, which for a
+  // project-member spec is the code-less umbrella) unless declared in
+  // `creates:`. Held-out test-unit footprints are exempt — the reserved
+  // acceptance-probe files are new by design.
+  if (workingRepoRoot) {
+    const mustExist = [
+      ...(args.files ?? []),
+      ...(args.work_units ?? [])
+        .filter((wu) => wu.role !== "test")
+        .flatMap((wu) => wu.footprint ?? []),
+    ];
+    if (mustExist.length) {
+      const existCheck = sliceFilesExistInRepo(
+        workingRepoRoot,
+        mustExist,
+        args.creates ?? [],
+        repoFileOracle(workingRepoRoot),
+      );
+      if (!existCheck.ok) throw new Error(existCheck.reason);
+    }
+  }
+
+  // Documentation obligation. Default `required` (fail closed);
   // `n/a` must justify. The rule lives in the methodology gates module.
   const docsResult = resolveDocsObligation({
     docs: args.docs,
@@ -3103,7 +3350,7 @@ export async function createSlice(
   });
   if (!docsResult.ok) throw new Error(docsResult.reason);
 
-  // Creation-time → Ready gate (TEP-tgzx3p, opening half): the parent Spec must
+  // Creation-time → Ready gate (opening half): the parent Spec must
   // be present, carry acceptance criteria, and certify EVERY AC with a runnable
   // `ac_verifications` entry. The structural check lives in the pure `readyGate`;
   // the LLM auditor's verifiable | needs-reframe judgment runs in /spec-prepare,
@@ -3159,14 +3406,14 @@ export async function createSlice(
   }
   // Reuse the closing gate's serialization (`normalizeAcVerifications`) so the
   // map the gate reads is exactly the one the closing gate's `parseAcVerifications`
-  // consumes — one serialization, both ends (TEP-tgzx3p).
+  // consumes — one serialization, both ends.
   const rawVerifs = specDoc.frontmatter?.ac_verifications;
   const verifications = normalizeAcVerifications(
     rawVerifs && typeof rawVerifs === "object"
       ? (rawVerifs as Record<string, unknown>)
       : {},
   );
-  // Re-audit baseline (SP-th4wqf_SL-3 / TEP-th3i18 #2): the `ac_verifications`
+  // Re-audit baseline: the `ac_verifications`
   // certification is keyed to a hash of the Spec's *Acceptance Criteria block*,
   // stamped under `AC_CERT_HASH_KEY` when /spec-prepare certifies (write_spec with
   // `ac_verifications`). Feed `readyGate` the Spec's CURRENT AC-block hash and the
@@ -3229,7 +3476,7 @@ export async function createSlice(
     }
   }
 
-  // Runnable-verification precheck (SP-th4wqf_SL-1 / TEP-th3i18 #8). A *declared*
+  // Runnable-verification precheck. A *declared*
   // ac_verifications command is not yet a *runnable* one: a check like
   // `node --test out-test/mcp/foo.test.js` only runs if its source
   // (`src/mcp/foo.test.ts`) is registered in `tsconfig.test.json`'s `include`. An
@@ -3240,7 +3487,7 @@ export async function createSlice(
   //
   // The shared predicate (`verificationRunnable`) is single-sourced; THIS handler
   // owns computing `repoState` from the repo's real `tsconfig.test.json` (the same
-  // `include` the `npm test` toolchain compiles — SP-th1ddy reuse rule). That
+  // `include` the `npm test` toolchain compiles — reuse rule). That
   // wiring, not the predicate, is the load-bearing part (AC1).
   const repoState = repoStateForRunnableCheck(store.workspaceRoot);
   if (repoState) {
@@ -3254,7 +3501,7 @@ export async function createSlice(
     }
   }
 
-  // Parallel-group disjointness (SP-tgpwbm AC1): a slice joining a
+  // Parallel-group disjointness: a slice joining a
   // `parallel_group` must not claim a file already owned by a sibling in that
   // group. Validate the would-be set against existing siblings before writing.
   const group = args.parallel_group?.trim();
@@ -3305,7 +3552,7 @@ export async function createSlice(
     }
   }
 
-  // Authoring-time DAG gate (TEP-th3i18 #17): build the Spec's work-unit DAG —
+  // Authoring-time DAG gate: build the Spec's work-unit DAG —
   // this new slice plus its siblings — and reject a malformed graph (a dangling
   // dependency or a cycle) **at creation**, not when a run is dispatched and
   // burned. `buildUnitDag` sources every edge from `consumes`+footprint over the
@@ -3368,7 +3615,7 @@ export async function createSlice(
     );
   }
 
-  // Consumes-resolvability gate (SP-th4wqk AC#2), resolved GLOBALLY over the Spec's
+  // Consumes-resolvability gate, resolved GLOBALLY over the Spec's
   // units — every slice's work_units, not just this slice's — exactly like the
   // `buildUnitDag` gate above it (SP-5/1). The work-unit DAG is the Spec-wide
   // scheduling graph and the slice is only a validation envelope, NEVER a
@@ -3473,7 +3720,7 @@ export async function createSlice(
   if (group) fm.parallel_group = group;
   if (args.files?.length) fm.files = args.files;
   if (args.tags?.length) fm.tags = args.tags;
-  // Stamp an empty `assignee` slot the ownership arbiter later claims (SP-tgpwbm).
+  // Stamp an empty `assignee` slot the ownership arbiter later claims.
   fm.assignee = "";
   if (args.satisfies?.length)
     fm.satisfies = [...new Set(args.satisfies)].sort((a, b) => a - b);
@@ -3484,6 +3731,9 @@ export async function createSlice(
   // `// Retired: …` contract line. Serialized only when non-empty (absent on every
   // slice that retires nothing); `get_slice` surfaces it verbatim from frontmatter.
   if (args.retires?.length) fm.retires = args.retires;
+  // Declared-new files: serialized so a later re-cut / re-run keeps the
+  // existence-gate exemption for exactly the files this slice creates.
+  if (args.creates?.length) fm.creates = args.creates;
   fm.docs = docsResult.value.docs;
   if (docsResult.value.docs_reason)
     fm.docs_reason = docsResult.value.docs_reason;
@@ -3588,13 +3838,12 @@ async function uniqueSlug(
 }
 
 /**
- * Write a Spec's `specs/SP-{id}/spec.md` into the thinking space (the sidecar namespace),
- * creating it if absent. The thinking space-aware write path for `/spec-prepare` (SP-tg7jnf
- * SL-4): a raw file write resolves against the session cwd (the code repo), not
+ * Write a Spec's `teps/TEP-{t}/SP-{n}/spec.md` into the thinking space (the sidecar namespace),
+ * creating it if absent. The thinking space-aware write path for `/spec-prepare`: a raw file write resolves against the session cwd (the code repo), not
  * the thinking space, so spec authoring must go through the store like slice creation does.
  * Existing frontmatter is preserved — only the markdown body is replaced.
  */
-async function writeSpec(
+export async function writeSpec(
   store: ThinkubeStore,
   spec: string,
   /** The full replacement body — or `undefined` for a CERTIFY-ONLY call (`/spec-prepare` step 7's
@@ -3622,7 +3871,7 @@ async function writeSpec(
   }
   const trimmed = (body ?? existing!.body).trim();
   if (!trimmed) throw new Error("Spec body must not be empty.");
-  // Structural gate (SP-th4wqf AC2): a newly-authored Spec body must carry all
+  // Structural gate: a newly-authored Spec body must carry all
   // four canonical sections (Acceptance Criteria / Constraints / Design / File
   // Structure Plan). Refuse a create whose body is missing any of them, naming
   // the missing one so the author can fix it. Scoped to creation (no existing
@@ -3638,7 +3887,7 @@ async function writeSpec(
     }
   }
   const fm: Frontmatter = { ...(existing?.frontmatter ?? {}) };
-  // `implements:` is settable (TEP-tgvwct follow-up): a bare `TEP-<id>` or a
+  // `implements:` is settable: a bare `TEP-<id>` or a
   // qualified `<namespace>:TEP-<id>` (umbrella). Omitted → preserved; empty → cleared.
   if (implementsRef !== undefined) {
     const v = implementsRef.trim();
@@ -3654,7 +3903,7 @@ async function writeSpec(
     if (v) fm.repo = v;
     else delete fm.repo;
   }
-  // `ac_verifications:` — the closing gate's per-AC declaration (SP-tgzyfy).
+  // `ac_verifications:` — the closing gate's per-AC declaration.
   //
   // Gated on CALLER INTENT (`acVerifications !== undefined`), not on body content: a plain
   // `write_spec({ spec, body })` — the shape `/spec-prepare` step 4 uses to iteratively land a
@@ -3716,6 +3965,22 @@ async function writeSpec(
         specId: spec,
       });
       const map = emitAcVerifications(verdicts);
+      // Probe dry-run (2026-07-11): never SIGN a command that cannot execute.
+      // A bare devDependency binary (`tsc`) exits 127 in every fresh worktree,
+      // and a signed-unrunnable probe reads downstream as a phantom code
+      // failure. Each env-local command's leading tokens must resolve in the
+      // working repo (with node_modules/.bin on PATH); refuse otherwise,
+      // naming the token and the repo-local-runner fix.
+      const unresolvable = unresolvableProbeCommands(map, audit.cwd);
+      if (unresolvable.length) {
+        throw new Error(
+          `write_spec refused SP-${spec}: derived verification command(s) cannot execute in the working repo — ` +
+            unresolvable
+              .map((u) => `AC ${u.ac}: \`${u.cmd}\` (\`${u.token}\` not found)`)
+              .join("; ") +
+            `. Invoke repo-local tools via their runner (npx / uv run / poetry run) or declare them in the repo's worktree setup, then re-certify.`,
+        );
+      }
       const acHash = acRequirementHash(trimmed);
       fm.ac_verifications = map;
       fm[AC_CERT_HASH_KEY] = acHash;
@@ -3729,7 +3994,7 @@ async function writeSpec(
     const normalized = normalizeAcVerifications(acVerifications);
     if (Object.keys(normalized).length) {
       fm.ac_verifications = normalized;
-      // Re-audit stamp (SP-th4wqf_SL-3): writing `ac_verifications` IS the
+      // Re-audit stamp: writing `ac_verifications` IS the
       // certification act, so key it to THIS body's Acceptance-Criteria block by
       // stamping its hash under `AC_CERT_HASH_KEY`. A later edit to the ACs — a
       // body-only `write_spec` (no `ac_verifications`) or a `patch_spec_section` of
@@ -3762,7 +4027,7 @@ async function writeSpec(
 }
 
 /**
- * `patch_spec_section` (SP-th1ddy) — replace exactly one named section of an
+ * `patch_spec_section` — replace exactly one named section of an
  * existing Spec's body via the pure `sectionPatch` helper, leaving every other
  * section byte-identical, and write the whole body back through
  * `ThinkubeStore.writeFile` so the secret scan applies (the only thinking space-write
@@ -3787,7 +4052,7 @@ export async function patchSpecSection(
   // Route through the store's safe-write path so the secret scan refuses a
   // planted secret — never a raw fs write (Constraint: one write boundary).
   //
-  // Re-audit (SP-th4wqf_SL-3): frontmatter is preserved verbatim, so the
+  // Re-audit: frontmatter is preserved verbatim, so the
   // `AC_CERT_HASH_KEY` stamp is NOT refreshed here. Patching the
   // `## Acceptance Criteria` section therefore changes the AC block while the
   // certification baseline stays put — the two diverge and `create_slice`'s
@@ -3806,9 +4071,9 @@ export async function patchSpecSection(
 
 /**
  * Read the repo's `tsconfig.test.json` `include` into a {@link RepoState} for the
- * runnable-verification precheck (SP-th4wqf_SL-1). The HANDLER owns this parse — not
+ * runnable-verification precheck. The HANDLER owns this parse — not
  * the predicate — so "registered" is single-sourced to the real on-disk test-compile
- * set the toolchain actually uses (SP-th1ddy reuse rule).
+ * set the toolchain actually uses.
  *
  * Returns `undefined` when no `tsconfig.test.json` exists at the repo root, or it is
  * unparseable: the precheck only applies to repos that use the `tsconfig.test.json`
@@ -4037,20 +4302,26 @@ export async function updateSlice(
   // re-cut footprint fields follow. Gated against the working-repo's importers before
   // the write, identically to `create_slice`.
   retires?: string[],
+  // The spec's WORKING repo root for the footprint existence gate (see
+  // createSlice) — undefined skips that gate.
+  workingRepoRoot?: string,
 ): Promise<unknown> {
-  const { specNumber, sliceNumber } = parseSliceHandle(handle);
+  const { specNumber, sliceNumber } = await resolveSliceRef(
+    () => store.listSpecDirs(),
+    handle,
+  );
   const rel = store.pathForSlice(specNumber, sliceNumber);
   const parsed = await store.getFile(rel);
   if (!parsed) throw new Error(`No slice file at ${store.thinkubeDir}/${rel}`);
 
-  // Tags are settable/replaceable via update (SP-tgvil2): when provided, set the
+  // Tags are settable/replaceable via update: when provided, set the
   // `tags` frontmatter (an empty array clears them); omitted → frontmatter as-is.
   let nextFm: Frontmatter | undefined =
     tags === undefined
       ? parsed.frontmatter
       : { ...(parsed.frontmatter ?? {}), tags };
 
-  // Re-cut (SP-th4wqd #5): REPLACE the slice's footprint fields (files / satisfies
+  // Re-cut: REPLACE the slice's footprint fields (files / satisfies
   // / work_units) in place, keeping the same `SL-{m}` (its identity lives in the
   // path, not these fields). The decision — including refusing a footprint that
   // escapes the thinking space repo with the SAME `sliceFilesResolveInRepo` rejection
@@ -4065,6 +4336,32 @@ export async function updateSlice(
     );
     if (!result.ok) throw new Error(result.error);
     nextFm = result.frontmatter;
+
+    // Existence gate (2026-07-11), identical to create_slice: the re-cut's
+    // resulting footprint must exist in the WORKING repo except declared-new
+    // (`creates:`) files and held-out test-unit footprints. Checked over the
+    // RESULTING frontmatter so an unchanged field keeps its prior validation.
+    if (workingRepoRoot) {
+      const wus = (nextFm.work_units ?? []) as {
+        footprint?: string[];
+        role?: string;
+      }[];
+      const mustExist = [
+        ...(Array.isArray(nextFm.files) ? (nextFm.files as string[]) : []),
+        ...wus
+          .filter((wu) => wu?.role !== "test")
+          .flatMap((wu) => wu?.footprint ?? []),
+      ];
+      if (mustExist.length) {
+        const existCheck = sliceFilesExistInRepo(
+          workingRepoRoot,
+          mustExist,
+          (nextFm.creates as string[] | undefined) ?? [],
+          repoFileOracle(workingRepoRoot),
+        );
+        if (!existCheck.ok) throw new Error(existCheck.reason);
+      }
+    }
   }
 
   // Retired-symbol footprint gate (SP-6/15). After the re-cut repo guard — resolve
@@ -4138,7 +4435,7 @@ export async function updateSlice(
 
 /**
  * Write a TEP into the thinking space (TEP-0009) — the thinking space-aware path for `/tep`.
- * Omit `tep` to mint a conflict-free base36-epoch id; pass it to update an
+ * Omit `tep` to mint the thinking space's next sequential id; pass it to update an
  * existing one. On create the body defaults to the `TEP-TEMPLATE.md` scaffold
  * and canonical frontmatter is filled; on update existing frontmatter is
  * preserved (only `title`/`status` are overlaid).
@@ -4158,7 +4455,7 @@ export async function writeTep(
   const tepId =
     provided && provided.length ? provided : await store.nextTepId();
 
-  // #14 — promotion-aware target (TEP-th3i18). Once a TEP is promoted into a
+  // #14 — promotion-aware target. Once a TEP is promoted into a
   // Project, its canonical home moves out of the session thinking space's `teps/` and
   // into `<product>/projects/<id>/teps/TEP-<id>.md`. A naive write keeps
   // clobbering the stale session-thinking space copy while the promoted one drifts. So

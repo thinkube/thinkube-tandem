@@ -1,5 +1,5 @@
 /**
- * Finalization-watchdog integration test (SP-th4wqc_SL-2 / TEP-th3i18 #11).
+ * Finalization-watchdog integration test.
  *
  * AC#3: a run where **every execution unit lands** but the **finalize step is suppressed** (no real
  * commit SHA, no DELIVERY.md on disk) must surface `Requires-attention` carrying a diagnosis that

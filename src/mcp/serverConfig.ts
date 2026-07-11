@@ -1,5 +1,5 @@
 /**
- * Runtime config resolution for the kanban MCP server (TEP-tgvwct, Phase 3).
+ * Runtime config resolution for the kanban MCP server.
  *
  * The server historically got its config from `THINKUBE_*` env injected into
  * each repo's `.mcp.json` by the extension. When the server ships *inside the

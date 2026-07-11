@@ -1,5 +1,5 @@
-// Opening AC-verifiability gate (SP-th1jtj / TEP-tgzx3p, the opening half — the closing half
-// shipped in SP-tgzyfy). Pure, model-free core: the structural → Ready gate plus the helper
+// Opening AC-verifiability gate (, the opening half — the closing half
+// shipped in ). Pure, model-free core: the structural → Ready gate plus the helper
 // that emits the per-AC `ac_verifications` map the closing gate consumes.
 //
 // Split of responsibility (see the Spec's constraints):
@@ -13,7 +13,7 @@
 // map round-trips through the shipped closing gate's `parseAcVerifications`
 // (`orchestratorCore.ts`) by construction — every AC present, no orphans.
 //
-// Re-audit on AC change (SP-th4wqf_SL-3 / TEP-th3i18 #2): the `ac_verifications` certification is
+// Re-audit on AC change: the `ac_verifications` certification is
 // keyed to a hash of the *Acceptance Criteria block* (`acRequirementHash`, a narrowing of the
 // staleness `requirementHash` to that one section). When `/spec-prepare` certifies the ACs the
 // handler stamps that hash under {@link AC_CERT_HASH_KEY}; a later edit to the AC block changes the
@@ -23,7 +23,7 @@
 
 // Import-only reuse of the closing gate's declaration shape — one serialization, both ends.
 import type { AcVerification } from "./orchestratorCore";
-// Re-audit reuses the staleness hash (SP-th1ddy rule: reuse, don't fork). `requirementHash`
+// Re-audit reuses the staleness hash ( rule: reuse, don't fork). `requirementHash`
 // already normalizes checkbox state + whitespace; we feed it *only* the AC block to narrow it.
 import { requirementHash } from "../methodology/specChange";
 // Provenance verification (SP-6/1 / TEP-6). The certified `ac_verifications` map carries a

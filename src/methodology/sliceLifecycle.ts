@@ -15,7 +15,7 @@
  *     (`files` / `satisfies` / `work_units`) in place, keeping the same `SL-{m}`.
  *     A re-cut whose declared footprint escapes the thinking space repo is refused with
  *     the **same** rejection `create_slice` gives, because this helper routes
- *     through the shared `sliceFilesResolveInRepo` guard (SP-th1ddy) rather than
+ *     through the shared `sliceFilesResolveInRepo` guard rather than
  *     duplicating the check.
  *
  * Pure + dependency-light (only `path`, via the reused guard, and the
@@ -90,6 +90,8 @@ export function validateRetireReason(
 export interface SliceRecut {
   /** New machine-readable footprint — repo-relative paths. Replaces `files`. */
   files?: string[];
+  /** New declared-new-file set (existence-gate exemption). Replaces `creates`. */
+  creates?: string[];
   /** New 1-based AC ordinals the slice delivers. Replaces `satisfies`. */
   satisfies?: number[];
   /** New execution-aware work units. Replaces `work_units`. */
@@ -104,6 +106,7 @@ export function hasRecutFields(recut: SliceRecut | undefined): boolean {
   if (!recut) return false;
   return (
     recut.files !== undefined ||
+    recut.creates !== undefined ||
     recut.satisfies !== undefined ||
     recut.work_units !== undefined ||
     recut.contract !== undefined
@@ -127,7 +130,7 @@ export type RecutResult =
 
 /**
  * Apply a re-cut to a slice's existing frontmatter, routing the declared
- * footprint through the **shared** `sliceFilesResolveInRepo` guard (SP-th1ddy) —
+ * footprint through the **shared** `sliceFilesResolveInRepo` guard —
  * not a copy — so a re-scope is refused on exactly the same repo-escape grounds
  * `create_slice` refuses a fresh slice. Like create, **both** `files:` and every
  * `work_units[].footprint` are footprints and so are checked together.
@@ -152,6 +155,7 @@ export function recutSliceFrontmatter(
   // already validated when it was last written.
   const declaredFiles: string[] = [
     ...(recut.files ?? []),
+    ...(recut.creates ?? []),
     ...(recut.work_units ?? []).flatMap((wu) => wu?.footprint ?? []),
   ];
   if (declaredFiles.length) {
@@ -165,9 +169,76 @@ export function recutSliceFrontmatter(
   // parent, tags, …) so the slice keeps its identity and `SL-{m}`.
   const next: Frontmatter = { ...(existing ?? {}) };
   if (recut.files !== undefined) next.files = recut.files;
+  if (recut.creates !== undefined) next.creates = recut.creates;
   if (recut.satisfies !== undefined) next.satisfies = recut.satisfies;
   if (recut.work_units !== undefined) next.work_units = recut.work_units;
   if (recut.contract !== undefined) next.contract = recut.contract;
 
   return { ok: true, frontmatter: next };
+}
+
+// ── Board-artifact hygiene (2026-07-11): replace, don't append ──────────────
+//
+// A slice card states its CURRENT state. Requires-attention diagnoses used to
+// accumulate forever — one live card carried three stacked `## ⚑ Requires
+// attention` blocks plus an escalation marker, and no human was supposed to be
+// the garbage collector. These pure helpers split a body into its base prose
+// and its attention artifacts, so:
+//   • flagging attention REPLACES the previous block (prior ones collapse to a
+//     one-line `attention_history` frontmatter entry), and
+//   • returning to Ready prunes the resolved block + markers automatically.
+
+/** Heading that opens an attention block; the block runs to the next `## ` or EOF. */
+const ATTENTION_HEADING = /^##\s+⚑\s+Requires attention\s*$/;
+/** Standalone escalation/defect marker lines (⛔ …) outside any block. */
+const MARKER_LINE = /^⛔ /;
+
+/**
+ * Split a slice body into `base` (the card's own prose, attention artifacts
+ * removed) and the extracted attention `blocks` (each block's inner text,
+ * heading excluded). Pure + idempotent: a clean body returns itself with no
+ * blocks.
+ */
+export function splitAttentionArtifacts(body: string): {
+  base: string;
+  blocks: string[];
+} {
+  const lines = (body ?? "").split(/\r?\n/);
+  const baseLines: string[] = [];
+  const blocks: string[] = [];
+  let current: string[] | undefined;
+  for (const line of lines) {
+    if (ATTENTION_HEADING.test(line)) {
+      if (current) blocks.push(current.join("\n").trim());
+      current = [];
+      continue;
+    }
+    if (current !== undefined) {
+      // A block ends at the next section heading; marker lines stay inside it.
+      if (/^##\s+/.test(line)) {
+        blocks.push(current.join("\n").trim());
+        current = undefined;
+        baseLines.push(line);
+      } else {
+        current.push(line);
+      }
+      continue;
+    }
+    if (MARKER_LINE.test(line)) continue; // stray marker outside a block
+    baseLines.push(line);
+  }
+  if (current) blocks.push(current.join("\n").trim());
+  const base = baseLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+  return { base, blocks };
+}
+
+/** One-line archive entry for a resolved/superseded attention block. */
+export function attentionHistoryEntry(block: string, date: string): string {
+  const first =
+    block
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? "(no diagnosis text)";
+  const clipped = first.length > 140 ? `${first.slice(0, 140)}…` : first;
+  return `${date}: ${clipped}`;
 }

@@ -174,7 +174,8 @@ work_units:
 * `parent` — the parent Spec, `SP-m`.
 * `status` — the board column, read as data: `ready` | `doing` | `done` | `archived`. A finished or abandoned slice is archived, never deleted, so numbers are never reused.
 * `satisfies` — the 1-based AC ordinals this slice delivers, for example `[1, 2]`. This arms the Done gate: the slice cannot reach Done until those boxes are checked on the Spec.
-* `files` — the repo-relative files the slice will edit, drawn from the Spec's File Structure Plan.
+* `files` — the repo-relative files the slice will edit, drawn from the Spec's File Structure Plan. Every declared path must exist in the Spec's working repo — a phantom path is refused at create/re-cut with a did-you-mean. Held-out test-unit footprints are exempt.
+* `creates` — the repo-relative files the slice will *newly create*. The one sanctioned way to claim a path that does not exist yet; existing files stay in `files` / the footprints.
 * `parallel` — `true` marks the slice as parallel-eligible (it shares no files or state with its siblings). Optional.
 * `parallel_group` — a name shared by slices meant to run concurrently. Their `files` sets must be disjoint; an overlapping group is refused, naming the conflict.
 * `docs` — the documentation obligation: `required` (the default for user-facing work) or `n/a`. An `n/a` requires a one-line `docs_reason`.

@@ -75,8 +75,8 @@ Orchestrate schedules the slices' work units over their dependency graph and run
 
 When every work unit has landed, the orchestrator runs the *closing gate*. It runs each acceptance criterion's declared verification and attributes each result back to the criterion it proves. Either way, it writes a delivery report to `DELIVERY.md` and opens it in the Markdown preview.
 
-* *All green* — the gate checks the satisfied criteria on the Spec, advances the slices to Done, and commits the change once to the Spec branch (`spec/SP-1`). The Spec is *delivered*.
-* *Any red or un-runnable* — the Spec is left *requiring attention* and nothing is committed. The report records what stalled and why, so you can *Attend* the failing slice and then *Re-run*.
+* *All green* — the gate checks the satisfied criteria on the Spec, advances the slices to Done, and lands the verified commits on the Spec branch (`spec/SP-1`). The Spec is *delivered*.
+* *Any red or un-runnable* — the orchestrator first tries to recover on its own: it self-heals a probe that cannot run, routes bounded rework, stops a repeat of the identical failure early, and dispatches one automated fix attempt. Only a still-red Spec is left *requiring attention*; completed work units stay checkpointed on the branch, and nothing merges. The report records what stalled and why, so you can *Attend* the failing slice and then *Re-run*.
 
 On the happy path, every criterion is green and the Spec is delivered.
 
@@ -84,7 +84,7 @@ On the happy path, every criterion is green and the Spec is delivered.
 
 A delivered Spec — committed, gate green — offers two exits:
 
-* *Accept & merge* performs the gated merge of `spec/SP-1` into `main`. It is refused unless every criterion is checked, so there is no accepting an unverified Spec.
+* *Accept & merge* performs the gated squash-merge of `spec/SP-1` into `main` — `main` gets one verified commit for the Spec, and the working trail stays on the PR. It is refused unless every criterion is checked, so there is no accepting an unverified Spec.
 * *Request changes* opens a primed session to steer the delivered change back toward the intent.
 
 Choose *Accept & merge*. Your first Spec lands on `main` — a verified change, built and checked end to end.

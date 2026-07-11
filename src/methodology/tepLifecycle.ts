@@ -1,14 +1,14 @@
 /**
- * TEP-lifecycle gate (SP-th4wqg / SP-G of TEP-th3i18) — the pure decision layer
+ * TEP-lifecycle gate (SP-G of ) — the pure decision layer
  * that closes the ungated TEP→Spec boundary:
  *
- *   - `tepApprovalGate` (SP-th4wqg_SL-1, issue #25) — **approval before build**:
+ *   - `tepApprovalGate` — **approval before build**:
  *     a Spec may be *drafted* while its `implements:` TEP is still `proposed`,
  *     but it can't reach **Ready** until that TEP is `accepted` (=
  *     approved-to-build). The refusal names the TEP and its current status so
  *     the author knows exactly what to accept.
  *
- *   - `tepComplete` (this slice, SP-th4wqg_SL-2, issue #26) — **completeness
+ * - `tepComplete` (this slice, issue #26) — **completeness
  *     from specs**: a TEP is *complete* (delivered) only when **every**
  *     implementing Spec is `accepted`. The result names the still-open Specs so
  *     `get_project` can show what's left, and `writeTep` can refuse a premature
@@ -116,7 +116,7 @@ export function tepApprovalGate(
  * each resolved Spec down to this shape before calling {@link tepComplete}.
  */
 export interface ImplementingSpec {
-  /** Stable Spec handle, e.g. `SP-tg7y99` — what `openSpecs` lists when a Spec
+ /** Stable Spec handle, e.g. `SP-4` — what `openSpecs` lists when a Spec
    *  is still unaccepted. The caller may qualify it (`<namespace>:SP-…`) for a
    *  cross-thinking space Spec; `tepComplete` treats it as an opaque label. */
   id: string;

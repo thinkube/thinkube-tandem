@@ -1,5 +1,5 @@
 /**
- * Thinking Space orchestrator (SP-tgs8nz) — the integration shell around `orchestratorCore`'s pure
+ * Thinking Space orchestrator — the integration shell around `orchestratorCore`'s pure
  * scheduler. `dispatchSpec` runs a **makespan scheduler over the Spec's work-unit DAG**: it
  * pools every slice's execution units into one graph (units span slices, never Specs), keeps
  * a per-Spec pool of N workers saturated (ready frontier ∧ footprint-disjoint, critical-path
@@ -11,7 +11,7 @@
  *
  * The pure DAG/frontier/prompt logic lives in `orchestratorCore` + `parallelSlices`
  * (unit-tested). This shell is the low-AI-testability part (live SDK worker + worktree +
- * commit): its end-to-end behaviour is a human verdict (SP-tgsdvw lever), exercised with fakes.
+ * commit): its end-to-end behaviour is a human verdict ( lever), exercised with fakes.
  */
 import { spawn } from "child_process";
 import * as fs from "fs";
@@ -51,8 +51,11 @@ import {
   reDispatchDecision,
   markEscalated,
   hasEscalationMarker,
+  normalizeEvidenceHash,
   ESCALATION_MARKER,
   CONTRACT_DEFECT_MARKER,
+  GATE_DEFECT_MARKER,
+  DETERMINISTIC_FAILURE_MARKER,
   type SliceForDag,
   type SchedUnit,
   type SchedulerState,
@@ -81,6 +84,10 @@ import {
   normalizeFilePath,
   type ContainmentResult,
 } from "../methodology/parallelSlices";
+import {
+  splitAttentionArtifacts,
+  attentionHistoryEntry,
+} from "../methodology/sliceLifecycle";
 import { defaultAcceptanceRecipeResolver } from "./auditorRunner";
 import { resolveWorkerModel, type WorkerModelConfig } from "./workerModel";
 import { rtkRewrite } from "./rtkRewrite";
@@ -102,7 +109,7 @@ import {
 } from "./orchestratorSessions";
 
 /**
- * Called when a worker escalates a question and **parks resident** (SP-tgs8nz_SL-3): the scheduler
+ * Called when a worker escalates a question and **parks resident**: the scheduler
  * frees its active slot but the worker stays alive, suspended. `answer` pushes the human's reply
  * into the live session (via `/attend`), continuing it in place.
  */
@@ -154,7 +161,7 @@ export interface OrchestratorDeps {
    *  under the Spec body's `## Acceptance Criteria`, so the accept gate (every AC checked) passes. */
   checkAcs?: (specNumber: string, ordinals: number[]) => Promise<void>;
   /** @deprecated Legacy per-slice verify recipe (`thinkube.orchestrator.verifyCommand`); the
-   *  closing gate (SP-tgzyfy) is now per-AC, so this is no longer consulted. Kept so the command
+   *  closing gate is now per-AC, so this is no longer consulted. Kept so the command
    *  layer that still passes it compiles. */
   verifyCommand?: string;
   /** Advance a slice to Done (tests): defaults to stamping `status: done`. */
@@ -168,8 +175,29 @@ export interface OrchestratorDeps {
   flagAttention?: (
     handle: string,
     diagnosis: string,
-    escalation?: { attempts: number; escalated: boolean },
+    escalation?: {
+      attempts: number;
+      escalated: boolean;
+      /** Normalized hash of this failure's evidence, persisted as
+       *  `last_evidence_hash` — the identical-failure circuit breaker's memory. */
+      evidenceHash?: string;
+      /** The judged fault, persisted as `last_fault` — checkpoint seeding
+       *  re-runs exactly the implicated role's units on the next dispatch. */
+      fault?: Fault;
+    },
   ) => Promise<void>;
+  /** Re-author + re-sign the Spec's `ac_verifications` (the write_spec certify-only
+   *  audit path) when the closing gate finds an UNRUNNABLE probe (exit 126/127) —
+   *  the gate self-heal (2026-07-11). Returns true when the map was re-authored;
+   *  the gate then retries once. Absent ⇒ no self-heal, the gate escalates with
+   *  fault `gate` directly. */
+  reauthorGate?: (specNumber: string, worktreeCwd: string) => Promise<boolean>;
+  /** Auto-attend (2026-07-11): the one-shot fixer dispatched for an ESCALATED
+   *  slice before a human is asked — full evidence, edits + commits in the
+   *  worktree, then the closing gate re-runs (checkpoint seeding makes the
+   *  commit count). Defaults to {@link createSdkAutoAttend}; tests inject a
+   *  fake. Cap: one attempt per slice per orchestration run. */
+  autoAttend?: AutoAttend;
   /** Park a slice needs-input with its question + the worker's session id + unit id (tests): defaults to a frontmatter+body write. */
   flagNeedsInput?: (
     handle: string,
@@ -177,12 +205,12 @@ export interface OrchestratorDeps {
     sessionId?: string,
     unitId?: string,
   ) => Promise<void>;
-  /** Commit ONE slice's work before it is marked Done (SP-th4wqc_SL-3 / #9): per-slice
+  /** Commit ONE slice's work before it is marked Done: per-slice
    *  commit-before-Done. Rejecting signals a git failure → the orchestrator rolls that slice back to
    *  `ready` (NOT Done) per `commitPlan`'s commit-failure protocol. Defaults to `git add -A && git
    *  commit` of the slice's footprint in the worktree (tests inject a fake git that fails one slice). */
   commit?: (handle: string, specNumber: string, cwd: string) => Promise<void>;
-  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails — no slice ever ends
+  /** Roll a slice back to `ready`: used when its commit fails — no slice ever ends
    *  Done with uncommitted work, so a later run re-attempts it. Defaults to stamping `status: ready`. */
   rollbackToReady?: (handle: string) => Promise<void>;
   /** Tear down a finished Spec — close its worktree (tests): defaults to `WorktreeService.remove`. */
@@ -195,7 +223,7 @@ export interface OrchestratorDeps {
     onPark: OnPark,
   ) => Promise<WorkerResult>;
   /** Resolve the worktree HEAD's short SHA — the finalization watchdog's commit marker and the
-   *  delivery report's stamp (SP-th4wqc_SL-2). Defaults to `git rev-parse --short HEAD` in the
+   *  delivery report's stamp. Defaults to `git rev-parse --short HEAD` in the
    *  worktree; tests inject it so the watchdog sees a real commit without a live git repo. */
   gitShortSha?: (cwd: string) => Promise<string>;
   /** Post-tool footprint containment (SP-6/2 AC3 + SP-2/TEP-6 AC4): diff the worktree against the
@@ -303,7 +331,7 @@ export interface SpecRunResult {
   escalated: string[];
   /** Slices parked needs-input (a worker asked a question) this run. */
   needsInput: string[];
-  /** Slices rolled back to `ready` this run because their commit failed (SP-th4wqc_SL-3) — a slice
+  /** Slices rolled back to `ready` this run because their commit failed — a slice
    *  is never left Done with uncommitted work; a later run re-attempts (or resumes) it. */
   rolledBack: string[];
   /** The whole Spec landed and was committed. */
@@ -824,6 +852,76 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
   };
 }
 
+/** The auto-attend fixer seam (2026-07-11): given an escalated slice's intent
+ *  + the judged fault/evidence, attempt ONE automated fix in the worktree and
+ *  commit it to the spec branch. Returns whether the session completed (the
+ *  closing gate re-run is the real verdict, not this boolean). */
+export type AutoAttend = (
+  slice: string,
+  sliceIntent: string,
+  diagnosis: string,
+) => Promise<boolean>;
+
+/** Build the auto-attend fixer prompt: full evidence, no blindfolds —
+ *  grading independence lives in the assessor/judge, never in hiding the
+ *  failure from the fixer. */
+export function buildAutoAttendPrompt(
+  slice: string,
+  sliceIntent: string,
+  diagnosis: string,
+): string {
+  return [
+    `You are the AUTO-ATTEND fix agent for slice ${slice}. The orchestrator escalated it: bounded rework did not converge. You get ONE attempt before a human is asked.`,
+    ``,
+    `## The slice's intent`,
+    sliceIntent || "(no slice body available — infer intent from the diagnosis and the code)",
+    ``,
+    `## What failed (judged fault + verbatim evidence)`,
+    diagnosis,
+    ``,
+    `## Your job, in this worktree (your cwd)`,
+    `1. Fix the divergence — smallest correct change; follow the evidence, not guesses.`,
+    `2. Verify locally (compile/typecheck/tests relevant to the change).`,
+    `3. Commit to the current branch: git add -A && git commit -m "fix(auto-attend): ${slice} <one-line summary>".`,
+    `Rules: never push; never edit board/thinking-space files; if the failure is genuinely unfixable from this worktree (needs credentials, cluster state, a human decision), commit nothing and say so plainly.`,
+  ].join("\n");
+}
+
+/** Default auto-attend fixer: a headless SDK session IN the worktree with edit
+ *  capability (same bypassPermissions channel as workers). */
+export function createSdkAutoAttend(deps: SdkAssessorDeps): AutoAttend {
+  const log = deps.log ?? (() => {});
+  const loadQuery =
+    deps.loadQuery ??
+    (async () =>
+      (await import("@anthropic-ai/claude-agent-sdk"))
+        .query as unknown as AssessorSdkQuery);
+  return async (slice, sliceIntent, diagnosis): Promise<boolean> => {
+    const prompt = buildAutoAttendPrompt(slice, sliceIntent, diagnosis);
+    let sawSuccess = false;
+    try {
+      const query = await loadQuery();
+      for await (const msg of query({
+        prompt,
+        options: {
+          cwd: deps.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
+      })) {
+        const rec = msg as Record<string, unknown>;
+        const line = summarizeEvent(rec);
+        if (line) log(`  [auto-attend ${slice}] ${line}`);
+        if (isResultSuccess(rec)) sawSuccess = true;
+      }
+    } catch (err) {
+      log(`  [auto-attend ${slice}] session failed: ${(err as Error).message}`);
+      return false;
+    }
+    return sawSuccess;
+  };
+}
+
 // ── The code/test-author worker query seam (SP-17/1) ───────────────────────
 //
 // Extracted out of the private {@link OrchestratorService.runViaSdk} into an exported, vscode-free
@@ -930,13 +1028,23 @@ export class OrchestratorService {
     sliceBodies: new Map(),
   };
 
-  /** Per-slice resume state read from frontmatter (SP-th4wqc_SL-3): whether a slice's units already
+  /** Per-slice resume state read from frontmatter: whether a slice's units already
    *  landed (`units_landed`) and whether its work was already committed (`committed` / `commit_sha`).
    *  `resumeDecision` consults this so a re-run COMMITS a complete-but-uncommitted slice rather than
    *  re-authoring it (the frontier never re-dispatches a worker for it). Loaded once per dispatchSpec. */
   private sliceResumeState: Map<
     string,
-    { unitsLanded: boolean; committed: boolean }
+    {
+      unitsLanded: boolean;
+      committed: boolean;
+      /** Unit ids already checkpoint-committed (`units_done` frontmatter,
+       *  2026-07-11) — re-dispatch schedules only units NOT in here, plus
+       *  units implicated by `lastFault`. */
+      unitsDone: string[];
+      /** The judged fault persisted with the last requires-attention flag
+       *  (`last_fault`) — the role whose checkpointed units must re-run. */
+      lastFault?: string;
+    }
   > = new Map();
 
   /** Per-slice failed-rework-attempt counter, read from the slice frontmatter (`rework_attempts`)
@@ -944,6 +1052,9 @@ export class OrchestratorService {
    *  survives a reload: a slice's count carries ACROSS runs, each requires-attention run adding one.
    *  Loaded once per dispatchSpec. */
   private reworkAttempts: Map<string, number> = new Map();
+  /** Per-slice normalized hash of the LAST failing evidence (frontmatter
+   *  `last_evidence_hash`) — the identical-failure circuit breaker's memory. */
+  private priorEvidenceHash: Map<string, string> = new Map();
 
   /** Slices the bounded loop already ESCALATED on a prior run (SP-6/6 AC5) — detected from the durable
    *  `escalated` frontmatter flag or the {@link ESCALATION_MARKER} on the body. Their units are blocked
@@ -999,6 +1110,7 @@ export class OrchestratorService {
     const slices: SliceForDag[] = [];
     this.sliceResumeState = new Map();
     this.reworkAttempts = new Map();
+    this.priorEvidenceHash = new Map();
     this.escalatedSlices = new Set();
     for (const rel of await store.listSlices(specNumber)) {
       const m = SLICE_REL_RE.exec(rel);
@@ -1017,9 +1129,14 @@ export class OrchestratorService {
           ? Math.floor(priorAttempts)
           : 0,
       );
+      // Identical-failure circuit breaker (2026-07-11): re-seed the prior
+      // failing-evidence hash so a re-run can detect "same failure, unchanged
+      // inputs" and stop instead of burning the remaining attempts.
+      if (typeof fm?.last_evidence_hash === "string" && fm.last_evidence_hash)
+        this.priorEvidenceHash.set(handle, fm.last_evidence_hash);
       if (fm?.escalated === true || hasEscalationMarker(parsed?.body ?? ""))
         this.escalatedSlices.add(handle);
-      // Resume markers (SP-th4wqc_SL-3): a prior run that landed the units but couldn't commit
+      // Resume markers: a prior run that landed the units but couldn't commit
       // stamps `units_landed: true` without a `commit_sha`; `resumeDecision` then COMMITS rather
       // than re-authoring it on the next run. `committed`/`commit_sha` mark an already-landed slice.
       this.sliceResumeState.set(handle, {
@@ -1027,6 +1144,13 @@ export class OrchestratorService {
         committed:
           fm?.committed === true ||
           (typeof fm?.commit_sha === "string" && !!fm.commit_sha),
+        unitsDone: Array.isArray(fm?.units_done)
+          ? (fm.units_done as unknown[]).filter(
+              (u): u is string => typeof u === "string",
+            )
+          : [],
+        lastFault:
+          typeof fm?.last_fault === "string" ? fm.last_fault : undefined,
       });
       slices.push({
         handle,
@@ -1056,7 +1180,7 @@ export class OrchestratorService {
    * to `cap` workers saturated dispatching the ready, footprint-disjoint, critical-path frontier
    * (units pooled across slices). A failed unit or a needs-input worker flags its slice
    * `requires-attention`/`needs-input` during the run. When every slice's units have **landed**
-   * (Spec quiescence) the **closing AI-verification gate** runs (SP-tgzyfy): the Spec's declared
+   * (Spec quiescence) the **closing AI-verification gate** runs: the Spec's declared
    * per-AC verifications run as a full plan; a slice reaches Done only when the ACs it `satisfies`
    * all ran green (then those AC ordinals are ticked on the Spec); any red / un-runnable check
    * leaves its slice `requires-attention` (no skip). When the whole Spec is green it commits
@@ -1169,7 +1293,7 @@ export class OrchestratorService {
     const doneSlices = new Set<string>();
     // Slices whose every unit landed this run — the candidates the closing gate verifies.
     const landed = new Set<string>();
-    // Slices RESUMED this run (SP-th4wqc_SL-3): their units already landed in a prior run but were
+    // Slices RESUMED this run: their units already landed in a prior run but were
     // never committed, so `resumeDecision` says COMMIT (not author). Their units are seeded done so
     // the frontier never re-dispatches a worker for them — the resume commits the present work.
     const resumeCommit = new Set<string>();
@@ -1188,6 +1312,7 @@ export class OrchestratorService {
       const rs = this.sliceResumeState.get(s.handle) ?? {
         unitsLanded: false,
         committed: false,
+        unitsDone: [] as string[],
       };
       const decision = resumeDecision({
         status: s.status,
@@ -1212,6 +1337,35 @@ export class OrchestratorService {
         // `requires-attention` slice IS re-dispatchable: clicking ▶ again retries it (the
         // human's re-run after looking), so it falls through into the ready frontier.
         ids.forEach((id) => state.blocked.add(id));
+      } else if (rs.unitsDone.length) {
+        // Checkpoint seeding (2026-07-11): units already checkpoint-committed
+        // to the branch are DONE — the reset returns to their work, so a
+        // re-dispatch never re-authors them from zero. Exception: units whose
+        // role matches the judged `last_fault` of a requires-attention slice
+        // re-run (FROM their checkpoint — the worktree keeps their files).
+        const checkpointed = new Set(rs.unitsDone);
+        const us = unitsBySlice.get(s.handle) ?? [];
+        let allDone = us.length > 0;
+        for (const u of us) {
+          const implicated =
+            st === "requires-attention" &&
+            !!rs.lastFault &&
+            (rs.lastFault === "code" || rs.lastFault === "test") &&
+            (u.role ?? "code") === rs.lastFault;
+          if (checkpointed.has(u.id) && !implicated) state.done.add(u.id);
+          else allDone = false;
+        }
+        if (allDone) {
+          // Verify-before-rework: every unit's work is already on the branch
+          // (an attend/auto-attend fix, or a fault the judge didn't attribute
+          // to any unit's role). Grade the CURRENT state with ZERO workers —
+          // the closing gate decides; only a red re-enters rework.
+          state.done.add(s.handle);
+          landed.add(s.handle);
+          output.appendLine(
+            `▸ ${s.handle}: all units checkpointed → verify-before-rework (graded as-is, no workers spawned).`,
+          );
+        }
       }
     }
     const remaining = new Map<string, number>();
@@ -1416,13 +1570,24 @@ export class OrchestratorService {
     // requires-attention path on the same slice (e.g. closing gate then finalization wedge) never
     // double-bumps the bounded counter.
     const countedThisRun = new Set<string>();
+    // Auto-attend inputs (2026-07-11): each blocked slice's full diagnosis, so
+    // the one-shot fixer gets the judged fault + evidence verbatim.
+    const sliceDiagnoses = new Map<string, string>();
     const blockSlice = async (
       slice: string,
       diagnosis: string,
       fault?: Fault,
+      // Raw failing evidence for the identical-failure circuit breaker
+      // (2026-07-11). Hashed NORMALIZED (volatile fragments stripped) and
+      // compared against the prior attempt's persisted hash: identical ⇒ a
+      // re-dispatch would re-run unchanged inputs, so escalate immediately.
+      // Deliberately the raw evidence, not the diagnosis — the judge's
+      // rationale varies between runs and would defeat the comparison.
+      evidenceForHash?: string,
     ) => {
       if (countedThisRun.has(slice)) return;
       countedThisRun.add(slice);
+      sliceDiagnoses.set(slice, diagnosis);
       // Bounded re-dispatch (SP-6/6 AC5) + code-vs-test routing (SP-6/7 AC4): this requires-attention is
       // one failed acceptance/rework attempt. The PURE, no-LLM decision increments the per-slice counter
       // and, given the judged `fault` (from the injectable `judgeFailure`, when the caller supplied one),
@@ -1431,17 +1596,33 @@ export class OrchestratorService {
       // the slice stays requires-attention with the durable ESCALATION_MARKER and `readyFrontier` (now
       // reading the bumped `attemptsMap`) stops auto-re-dispatching it — a human must decide. The counter
       // is persisted to frontmatter so the loop carries across runs.
+      const evidenceHash = evidenceForHash?.trim()
+        ? normalizeEvidenceHash(evidenceForHash)
+        : undefined;
       const verdict = reDispatchDecision(
         attemptsMap.get(slice) ?? 0,
         state.attemptBound,
         fault,
+        {
+          hash: evidenceHash,
+          priorHash: this.priorEvidenceHash.get(slice),
+        },
       );
       attemptsMap.set(slice, verdict.attempts);
+      if (evidenceHash) this.priorEvidenceHash.set(slice, evidenceHash);
       const escalate = verdict.action === "escalate";
-      await this.flagAttention(slice, diagnosis, {
-        attempts: verdict.attempts,
-        escalated: escalate,
-      });
+      await this.flagAttention(
+        slice,
+        verdict.deterministic
+          ? `${DETERMINISTIC_FAILURE_MARKER}\n${diagnosis}`
+          : diagnosis,
+        {
+          attempts: verdict.attempts,
+          escalated: escalate,
+          evidenceHash,
+          fault,
+        },
+      );
       // Route the re-dispatch (AC4): on escalate or an unrouted failure, block EVERY unit of the slice.
       // On a routed re-dispatch, block only the SIBLING role's units so the frontier re-authors just the
       // faulting role — the code-author for a `code` route, the test-author for a `test` route.
@@ -1468,7 +1649,11 @@ export class OrchestratorService {
         output.appendLine(
           fault === "contract"
             ? `⛔ ${slice}: contract defect — both hands conform yet disagree on an undefined seam → held for a contract re-cut (no rework attempt burned), awaiting the slicer.`
-            : `⛔ ${slice}: bounded rework attempts exhausted (${verdict.attempts})${fault === "both" ? " / fault ambiguous (both code and test)" : ""} → escalated, awaiting a human decision.`,
+            : fault === "gate"
+              ? `⛔ ${slice}: gate defect — the verification probe cannot run and re-authoring did not heal it → escalated (no rework attempt burned); fix the probe/environment, not the slice.`
+              : verdict.deterministic
+                ? `⛔ ${slice}: deterministic failure — identical evidence to the prior attempt (inputs unchanged) → escalated at attempt ${verdict.attempts} without burning the rest of the bound.`
+                : `⛔ ${slice}: bounded rework attempts exhausted (${verdict.attempts})${fault === "both" ? " / fault ambiguous (both code and test)" : ""} → escalated, awaiting a human decision.`,
         );
       }
     };
@@ -1566,6 +1751,17 @@ export class OrchestratorService {
       } else {
         state.done.add(d.id);
         markUnitDone(d.id); // graph: show this worker's node done (lime) until re-dispatch
+        // Checkpoint (2026-07-11): commit the landed unit's footprint NOW so a
+        // later reset returns TO this work instead of deleting it — completed
+        // units survive every re-dispatch; only unfinished/implicated units
+        // re-run (and rework starts from the checkpoint, not from zero).
+        await this.checkpointUnit(
+          worktreePath,
+          d.slice,
+          d.id,
+          (unitsBySlice.get(d.slice) ?? []).find((u) => u.id === d.id)
+            ?.footprint ?? [],
+        );
         const rem = (remaining.get(d.slice) ?? 1) - 1;
         remaining.set(d.slice, rem);
         if (rem <= 0) {
@@ -1584,7 +1780,7 @@ export class OrchestratorService {
       fill();
     }
 
-    // ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────
+    // ── Closing AI-verification gate ──────────────
     // At Spec quiescence — every slice's units landed (none failed / parked / blocked) — run the
     // Spec's DECLARED per-AC verifications as one full plan. The gate returns the landed slices that
     // are AC-green (→ their satisfied ordinals); a red / un-runnable slice is flagged
@@ -1606,13 +1802,85 @@ export class OrchestratorService {
         testerPath,
       );
       for (const [h, ords] of green) greenByGate.set(h, ords);
+
+      // ── Auto-attend (2026-07-11): fix first, ask a human second ──────────
+      // A slice the gate just ESCALATED gets ONE automated fix attempt before
+      // any human sees requires-attention: a headless fixer session in the
+      // worktree, primed with the slice's intent + the judged fault and
+      // verbatim evidence (no blindfolds — grading independence lives in the
+      // assessor/judge, never in hiding the failure from the fixer). It
+      // commits `fix(auto-attend): …` to the spec branch; the gate then
+      // re-runs ONCE to grade the fix (countedThisRun prevents any double
+      // attempt-burn on a still-red slice). Only a still-red slice stays
+      // escalated for the human. Gate defects that self-healing couldn't fix
+      // are exempt — a probe/environment defect is not fixable from the code
+      // worktree, so the fixer isn't burned on it.
+      const toAutoAttend = result.escalated.filter(
+        (h) => !sliceDiagnoses.get(h)?.startsWith(GATE_DEFECT_MARKER),
+      );
+      if (toAutoAttend.length > 0) {
+        const fixer =
+          this.deps.autoAttend ??
+          createSdkAutoAttend({
+            cwd: worktreePath,
+            model: resolveWorkerModel(this.deps.workerModel, "attend"),
+            log: (l) => output.appendLine(l),
+          });
+        let fixedAny = false;
+        for (const h of toAutoAttend) {
+          output.appendLine(
+            `▸ ${h}: auto-attend — one automated fix attempt before asking a human.`,
+          );
+          try {
+            const ok = await fixer(
+              h,
+              this.promptCtx.sliceBodies.get(h) ?? "",
+              sliceDiagnoses.get(h) ?? "(no diagnosis recorded)",
+            );
+            if (ok) fixedAny = true;
+            else
+              output.appendLine(
+                `⚑ ${h}: auto-attend session did not complete — left for a human.`,
+              );
+          } catch (err) {
+            output.appendLine(
+              `⚑ ${h}: auto-attend failed (${(err as Error).message}) — left for a human.`,
+            );
+          }
+        }
+        if (fixedAny) {
+          output.appendLine(
+            `▸ SP-${specNumber}: re-running the closing gate to grade the auto-attend fix(es).`,
+          );
+          const regraded = await this.runClosingGate(
+            specNumber,
+            worktreePath,
+            slices,
+            landed,
+            unitsBySlice,
+            state,
+            blockSlice,
+            result,
+            testerPath,
+          );
+          for (const [h, ords] of regraded) {
+            greenByGate.set(h, ords);
+            // The fix landed green: the slice leaves the escalated state it
+            // entered minutes ago — no human attention needed after all.
+            this.escalatedSlices.delete(h);
+            result.escalated = result.escalated.filter((x) => x !== h);
+            result.attention = result.attention.filter((x) => x !== h);
+            output.appendLine(`✓ ${h}: auto-attend fix graded green.`);
+          }
+        }
+      }
     } else if (landed.size > 0) {
       output.appendLine(
         `▸ SP-${specNumber}: paused — ${result.attention.length} need attention / ${result.needsInput.length} need input; closing gate not run, nothing committed.`,
       );
     }
 
-    // ── Per-slice commit-before-Done (SP-th4wqc_SL-3 / TEP-th3i18 #9) ──────
+    // ── Per-slice commit-before-Done ──────
     // No more all-or-nothing commit. `commitPlan` is the per-slice decision: only landed ∧ gate-green
     // slices are eligible to commit-then-Done. We commit each slice BEFORE marking it Done; a slice
     // whose git commit FAILS rolls back to `ready` (the commit-failure protocol) and is NOT advanced —
@@ -1680,14 +1948,14 @@ export class OrchestratorService {
       );
     }
 
-    // ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────
+    // ── Finalization watchdog ────────────
     // A run can land every unit and then silently wedge: the finalize tail above (commit, write
     // DELIVERY.md, advance the slice off `ready`) believed it ran, but a marker is actually absent
     // — no real commit SHA, no report on disk — so the work sits done-but-uncommitted and the loop
     // would otherwise stall without surfacing anything. We consult the pure `finalizationVerdict`
     // ONLY at a clean quiescence (no slice flagged attention / needs-input / rolled back this run):
     // there the run BELIEVED it finalized, so any missing marker is a genuine wedge — not a normal
-    // pause at the closing gate, and not an EXPLICIT per-slice commit rollback (SP-th4wqc_SL-3),
+    // pause at the closing gate, and not an EXPLICIT per-slice commit rollback,
     // which is a handled outcome the slice already moved back to `ready` for, not a silent wedge.
     // A `{ wedged }` verdict surfaces the affected slices Requires-attention with the exported
     // diagnosis so a human (or a re-run) picks it up instead of a silent loop.
@@ -1745,11 +2013,11 @@ export class OrchestratorService {
   }
 
   /**
-   * The closing AI-verification gate (SP-tgzyfy): run the Spec's declared `ac_verifications` as a
+   * The closing AI-verification gate: run the Spec's declared `ac_verifications` as a
    * full plan against the worktree, then classify each landed slice as **AC-green** iff the ACs it
    * `satisfies` all ran green. Returns a map of the green slices → the AC ordinals they satisfy (the
    * input to the per-slice commit-before-Done step, which commits then advances + ticks those
-   * ordinals — SP-th4wqc_SL-3). No skip: a Spec with no declaration (or a red / un-runnable check)
+ * ordinals ). No skip: a Spec with no declaration (or a red / un-runnable check)
    * leaves the affected slices `requires-attention` in place (not green, never returned). The per-AC
    * results land on `result.acResults` (and the auditable report). Mutates `state` / `result`; does
    * NOT advance / commit / check ordinals — that is the caller's per-slice commit responsibility.
@@ -1765,6 +2033,7 @@ export class OrchestratorService {
       slice: string,
       diagnosis: string,
       fault?: Fault,
+      evidenceForHash?: string,
     ) => Promise<void>,
     result: SpecRunResult,
     testerPath?: string,
@@ -1772,7 +2041,8 @@ export class OrchestratorService {
     const { output, store } = this.deps;
     const green = new Map<string, number[]>();
     const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
-    const verifs = parseAcVerifications(specDoc?.frontmatter?.ac_verifications);
+    // `let`: the gate self-heal below may replace the plan with re-authored probes.
+    let verifs = parseAcVerifications(specDoc?.frontmatter?.ac_verifications);
 
     // SP-6/7 structural independence: the held-out probes were authored in the TESTER snapshot —
     // merge them into the code worktree so the gate grades the real implementation with them.
@@ -1864,7 +2134,7 @@ export class OrchestratorService {
               /* judge unavailable → unrouted block, as before */
             }
           }
-          await blockSlice(s.handle, diagnosis, fault);
+          await blockSlice(s.handle, diagnosis, fault, prep.output.slice(-4000));
         }
         output.appendLine(
           `⚑ SP-${specNumber}: build gate FAILED → landed slices require attention (per-AC runs skipped).`,
@@ -1875,7 +2145,7 @@ export class OrchestratorService {
 
     if (verifs.length === 0) {
       // No declaration ⇒ the closing gate cannot run. NO SKIP: every landed slice →
-      // requires-attention; nothing advances, nothing commits (TEP-tgzx3p reverses the old pass).
+      // requires-attention; nothing advances, nothing commits ( reverses the old pass).
       const diagnosis =
         "Closing AI-verification gate could not run: the Spec declares no `ac_verifications`. " +
         "Declare a per-AC verification map on the Spec (AC ordinal → { run, env }), then re-run.";
@@ -1912,11 +2182,47 @@ export class OrchestratorService {
         artifactFiles.length ? artifactFiles.join(", ") : "(none)"
       }`,
     };
-    const acResults = await (
-      this.deps.runAcVerifications ??
-      ((vs: AcVerification[], cwd: string) =>
-        runAcVerifications(vs, cwd, undefined, assess))
-    )(verifs, worktreePath);
+    const runPlan = (vs: AcVerification[]) =>
+      (
+        this.deps.runAcVerifications ??
+        ((v: AcVerification[], cwd: string) =>
+          runAcVerifications(v, cwd, undefined, assess))
+      )(vs, worktreePath);
+    let acResults = await runPlan(verifs);
+    // Gate self-heal (2026-07-11): an UNRUNNABLE probe (shell exit 126/127 or
+    // spawn error) is a defect in the gate's own machinery — the probe command
+    // or its environment — never in the slice (a signed bare `tsc` burned 3
+    // rework attempts as a phantom "code failure"). When available, re-author
+    // + re-sign `ac_verifications` via the auditor (the write_spec certify-only
+    // path) and retry the whole plan ONCE. No rework attempt is burned by any
+    // of this.
+    if (acResults.some((r) => r.unrunnable) && this.deps.reauthorGate) {
+      output.appendLine(
+        `⚑ SP-${specNumber}: unrunnable verification probe — a GATE defect, not a code failure. ` +
+          `Re-authoring ac_verifications via the auditor and retrying the gate once (no rework attempt burned).`,
+      );
+      let reauthored = false;
+      try {
+        reauthored = await this.deps.reauthorGate(specNumber, worktreePath);
+      } catch (err) {
+        output.appendLine(
+          `⚠ SP-${specNumber}: gate re-author failed: ${(err as Error).message}`,
+        );
+      }
+      if (reauthored) {
+        const freshDoc = await store.getFile(store.pathForSpecDoc(specNumber));
+        const fresh = parseAcVerifications(
+          freshDoc?.frontmatter?.ac_verifications,
+        );
+        if (fresh.length) {
+          verifs = fresh;
+          acResults = await runPlan(fresh);
+          output.appendLine(
+            `▸ SP-${specNumber}: closing gate retried with re-authored probes.`,
+          );
+        }
+      }
+    }
     // The full per-AC run lands on the auditable report regardless of who could
     // have authored it — but the GRADE is derived only from the independently-authored
     // subset below (so a self-tick still leaves an audit trail of why it didn't count).
@@ -2019,30 +2325,52 @@ export class OrchestratorService {
           .filter((r) => !r.pass)
           .map((r) => `AC #${r.ac}: ${r.evidence}`)
           .join("\n\n");
+        // Gate-defect short-circuit (2026-07-11): when EVERY failing result for
+        // this slice is an unrunnable probe (exit 126/127 / spawn error), the
+        // verdict is control-plane — the gate's machinery is broken, no model
+        // judgment needed, no role to blame, no attempt to burn. (The self-heal
+        // retry above already ran and did not produce a runnable probe.)
+        const redResults = acResults.filter(
+          (r) => !r.pass && (failedAcs.length ? failedAcs.includes(r.ac) : true),
+        );
+        const gateDefect =
+          redResults.length > 0 &&
+          redResults.every((r) => r.unrunnable) &&
+          missing.length === 0;
         let fault: Fault = "both";
         let rationale = "";
-        try {
-          const judgment = await judge(
-            {
-              id: units[0]?.id ?? s.handle,
-              slice: s.handle,
-              role: units[0]?.role,
-            },
-            `${why}\n\n${failEvidence}`,
-            // SP-6/9: thread the slice's CONTRACT so the judge triangulates the red against it (the
-            // neutral arbiter) rather than comparing the two hands — the only way to reach `contract`.
-            s.contract,
-          );
-          fault = judgment.fault;
-          rationale = (judgment.rationale ?? "").trim();
+        if (gateDefect) {
+          fault = "gate";
+          rationale =
+            "the verification probe(s) cannot execute in the worktree (command not found / not executable) — " +
+            "a defect in the gate's own machinery; no slice role can fix it";
           output.appendLine(
-            `⚖ ${s.handle}: judged fault = ${judgment.fault} — ${judgment.rationale}`,
+            `⚖ ${s.handle}: gate defect (probe unrunnable) — control-plane verdict, judge skipped; no rework attempt burned.`,
           );
-        } catch (err) {
-          // Fail-safe: a judge error escalates (fault `both`) rather than mis-routing.
-          output.appendLine(
-            `⚖ ${s.handle}: judge failed (${(err as Error).message}) → fault ambiguous (both).`,
-          );
+        } else {
+          try {
+            const judgment = await judge(
+              {
+                id: units[0]?.id ?? s.handle,
+                slice: s.handle,
+                role: units[0]?.role,
+              },
+              `${why}\n\n${failEvidence}`,
+              // SP-6/9: thread the slice's CONTRACT so the judge triangulates the red against it (the
+              // neutral arbiter) rather than comparing the two hands — the only way to reach `contract`.
+              s.contract,
+            );
+            fault = judgment.fault;
+            rationale = (judgment.rationale ?? "").trim();
+            output.appendLine(
+              `⚖ ${s.handle}: judged fault = ${judgment.fault} — ${judgment.rationale}`,
+            );
+          } catch (err) {
+            // Fail-safe: a judge error escalates (fault `both`) rather than mis-routing.
+            output.appendLine(
+              `⚖ ${s.handle}: judge failed (${(err as Error).message}) → fault ambiguous (both).`,
+            );
+          }
         }
         for (const n of failedAcs) routes.set(n, fault);
         // SP-11/3: keep the judge's UNCLIPPED per-AC rationale on the run result so the delivery
@@ -2072,8 +2400,14 @@ export class OrchestratorService {
               `Re-cut the contract via /slice (update_slice contract) to define this seam, then re-orchestrate — ` +
               `do NOT re-author the code or the test (both conform to the contract as written), do NOT auto-rewrite ` +
               `the contract here, and no rework attempt was burned.\n\n${baseDiagnosis}`
-            : baseDiagnosis;
-        await blockSlice(s.handle, diagnosis, fault);
+            : fault === "gate"
+              ? `${GATE_DEFECT_MARKER}\n` +
+                `The verification probe(s) for this slice cannot execute (command not found / not executable). ` +
+                `${this.deps.reauthorGate ? "The auditor already re-authored the probes once this run and they still cannot execute" : "No auditor was available to re-author them this run"}. ` +
+                `Fix the probe command or its environment (invoke repo-local tools via their runner — npx / uv run / poetry run — and declare worktree setup), ` +
+                `then re-orchestrate. The slice's code was never judged and no rework attempt was burned.\n\n${baseDiagnosis}`
+              : baseDiagnosis;
+        await blockSlice(s.handle, diagnosis, fault, failEvidence);
         output.appendLine(
           `⚑ ${s.handle}: closing gate red → requires-attention.`,
         );
@@ -2282,7 +2616,7 @@ export class OrchestratorService {
   }
 
   /**
-   * The Agent SDK worker (SP-tgs8nz_SL-2): `query()` runs a headless `claude` subprocess in the
+   * The Agent SDK worker: `query()` runs a headless `claude` subprocess in the
    * worktree under `bypassPermissions` (no prompts — the PreToolUse footprint hook from SL-6 is the
    * cheap early guardrail). Typed messages are persisted to the unit's `.jsonl` (for the graph
    * float-out) and summarized to the channel. The SDK is **lazy-imported** so it never loads at
@@ -2886,7 +3220,7 @@ export class OrchestratorService {
     });
   }
 
-  /** Build the auditable delivery report (SP-tgzyfy): the per-AC pass/fail table + evidence, the
+  /** Build the auditable delivery report: the per-AC pass/fail table + evidence, the
    *  per-unit outcomes, caught problems, and the commit. Delegates to the pure `buildDeliveryReport`. */
   private deliveryMarkdown(
     specNumber: string,
@@ -3033,7 +3367,12 @@ export class OrchestratorService {
   private flagAttention(
     handle: string,
     diagnosis: string,
-    escalation?: { attempts: number; escalated: boolean },
+    escalation?: {
+      attempts: number;
+      escalated: boolean;
+      evidenceHash?: string;
+      fault?: Fault;
+    },
   ): Promise<void> {
     return (
       this.deps.flagAttention ??
@@ -3055,22 +3394,47 @@ export class OrchestratorService {
   private async defaultFlagAttention(
     handle: string,
     diagnosis: string,
-    escalation?: { attempts: number; escalated: boolean },
+    escalation?: {
+      attempts: number;
+      escalated: boolean;
+      evidenceHash?: string;
+      fault?: Fault;
+    },
   ): Promise<void> {
     const m = /^TEP-(\d+)_SP-(\d+)_SL-(\d+)$/.exec(handle);
     if (!m) return;
     const rel = this.deps.store.pathForSlice(`${m[1]}/${m[2]}`, Number(m[3]));
     const parsed = await this.deps.store.getFile(rel);
     if (!parsed?.frontmatter) return;
+    // Replace, don't append (2026-07-11): the card states its CURRENT state.
+    // Any previous ⚑ block collapses to a one-line `attention_history` entry;
+    // exactly ONE live diagnosis remains on the body.
+    const { base, blocks } = splitAttentionArtifacts(parsed.body ?? "");
+    const priorHistory = Array.isArray(parsed.frontmatter.attention_history)
+      ? (parsed.frontmatter.attention_history as string[])
+      : [];
+    const date = new Date().toISOString().slice(0, 10);
+    const history = [
+      ...priorHistory,
+      ...blocks.map((b) => attentionHistoryEntry(b, date)),
+    ];
     const note = `\n\n## ⚑ Requires attention\n\n${diagnosis}\n`;
-    const bodyWithNote = (parsed.body ?? "") + note;
+    const bodyWithNote = base + note;
     await this.deps.store.writeFile(
       rel,
       {
         ...parsed.frontmatter,
         status: "requires-attention",
+        ...(history.length ? { attention_history: history } : {}),
         ...(escalation ? { rework_attempts: escalation.attempts } : {}),
         ...(escalation?.escalated ? { escalated: true } : {}),
+        // Circuit-breaker memory (2026-07-11): the normalized failing-evidence
+        // hash, read back by buildSlices on the next run.
+        ...(escalation?.evidenceHash
+          ? { last_evidence_hash: escalation.evidenceHash }
+          : {}),
+        // Checkpoint-seeding route memory: which role's units must re-run.
+        ...(escalation?.fault ? { last_fault: escalation.fault } : {}),
       },
       escalation?.escalated ? markEscalated(bodyWithNote) : bodyWithNote,
     );
@@ -3131,7 +3495,74 @@ export class OrchestratorService {
     );
   }
 
-  /** Roll a slice back to `ready` (SP-th4wqc_SL-3): used when its commit fails so it is never left
+  /** Run one git command in `cwd`, resolving its exit code (never rejects). */
+  private git(cwd: string, args: string[]): Promise<number> {
+    return new Promise((resolve) => {
+      const p = spawn("git", args, { cwd, stdio: "ignore" });
+      p.on("error", () => resolve(-1));
+      p.on("close", (code) => resolve(code ?? -1));
+    });
+  }
+
+  /**
+   * Unit checkpoint commit (2026-07-11): the moment a work unit lands, commit
+   * its footprint to the spec branch as `wip(<unit>)`. Completion is thereafter
+   * DERIVED from git + the durable `units_done` frontmatter — a reset returns
+   * to the checkpoint instead of deleting the work, so a re-dispatch schedules
+   * only units with no checkpoint (plus units implicated by the judged fault,
+   * which rework FROM their checkpoint instead of from zero). The gate-green
+   * slice commit still lands whatever remains; PR-level squash keeps main's
+   * history one verified commit per slice. Best-effort: a checkpoint failure
+   * never fails the unit (the gate-green commit is the backstop), and a
+   * non-git `worktreePath` (unit-test fixtures) is a no-op.
+   */
+  private async checkpointUnit(
+    worktreePath: string,
+    slice: string,
+    unitId: string,
+    footprint: string[],
+  ): Promise<void> {
+    try {
+      if ((await this.git(worktreePath, ["rev-parse", "--git-dir"])) !== 0)
+        return; // not a git repo (test fixture) — nothing to checkpoint
+      const paths = (footprint ?? []).filter(
+        (p) => typeof p === "string" && p.trim(),
+      );
+      if (paths.length) {
+        for (const p of paths)
+          await this.git(worktreePath, ["add", "-A", "--", p]);
+      } else {
+        await this.git(worktreePath, ["add", "-A"]);
+      }
+      const committed = await this.git(worktreePath, [
+        "commit",
+        "-m",
+        `wip(${unitId}): unit checkpoint (pre-gate; superseded by the slice's verified commit / PR squash)`,
+      ]);
+      if (committed === 0)
+        this.deps.output.appendLine(`▸ ${unitId}: checkpoint committed.`);
+      // Durable unit-done record, read back by buildSlices on the next run.
+      const m = /^TEP-(\d+)_SP-(\d+)_SL-(\d+)$/.exec(slice);
+      if (!m) return;
+      const rel = this.deps.store.pathForSlice(`${m[1]}/${m[2]}`, Number(m[3]));
+      const parsed = await this.deps.store.getFile(rel);
+      if (!parsed?.frontmatter) return;
+      const prev = Array.isArray(parsed.frontmatter.units_done)
+        ? (parsed.frontmatter.units_done as string[])
+        : [];
+      if (!prev.includes(unitId)) {
+        await this.deps.store.writeFile(
+          rel,
+          { ...parsed.frontmatter, units_done: [...prev, unitId] },
+          parsed.body,
+        );
+      }
+    } catch {
+      /* best-effort — the gate-green slice commit is the backstop */
+    }
+  }
+
+  /** Roll a slice back to `ready`: used when its commit fails so it is never left
    *  Done with uncommitted work. Defaults to stamping `status: ready`. */
   private rollbackToReady(handle: string): Promise<void> {
     return (
@@ -3165,13 +3596,13 @@ export class OrchestratorService {
   }
 
   /**
-   * Default per-slice commit (SP-th4wqc_SL-3): stage everything present and commit it as ONE slice's
+   * Default per-slice commit: stage everything present and commit it as ONE slice's
    * landing, then **publish the branch** (workers never commit). Commit-before-Done — the caller only
    * marks the slice Done after this resolves; a rejection would roll it back to `ready`. Best-effort
    * at the git layer — a "nothing to commit" exit (e.g. a sibling slice already swept the worktree in
    * the same run) is NOT a failure, so we resolve rather than reject and the slice still advances. A
    * genuine rollback is driven by an injected git that rejects (tests). The branch MUST be pushed so
-   * the commit isn't local-only (TEP-th3i18 #29); push is non-interactive and best-effort.
+   * the commit isn't local-only; push is non-interactive and best-effort.
    */
   private defaultCommit(
     handle: string,

@@ -20,10 +20,10 @@ flowchart TD
     E --> F["Orchestrator runs each slice's work units on branch spec/SP-n, in its own worktree"]
     F --> G["Closing gate at quiescence: run every declared AC verification"]
     G --> H{"All green?"}
-    H -->|"yes — ACs checked, slices Done, one commit"| I{"Human accepts"}
-    H -->|"any red — requires-attention, nothing committed"| J["Attend, then re-run"]
+    H -->|"yes — ACs checked, slices Done, verified commits"| I{"Human accepts"}
+    H -->|"still red after self-heal and auto-attend — requires-attention"| J["Attend, then re-run"]
     J --> E
-    I -->|"Accept & merge"| K["One PR: spec/SP-n merges to main"]
+    I -->|"Accept & merge"| K["One PR: spec/SP-n squash-merges to main"]
     I -->|"Request changes"| J
 ----
 
@@ -45,7 +45,9 @@ With the approval in place, the pair cuts the Spec into slices — each a cohere
 
 == Orchestrated execution
 
-The whole Spec runs on one branch, `spec/SP-n`, in its own worktree so parallel Specs never collide. Every slice lands as commits on that branch — no per-slice branch, no per-slice PR.
+The whole Spec runs on one branch, `spec/SP-n`, in its own worktree so parallel Specs never collide. Every slice lands as commits on that branch — no per-slice branch, no per-slice PR. Provisioning the worktree is automatic: with no declared "Worktree setup" recipe, the runner detects the repo's tracked manifests per directory (`package-lock.json` → `npm ci`, `uv.lock` → `uv sync`, and so on, always lockfile-pinned); a declared recipe overrides the detection.
+
+Within a run, completed work survives setbacks: each landed work unit is committed to the spec branch as a `wip(<unit>)` checkpoint. A reset returns the worktree to those checkpoints, never to zero, and a re-dispatch schedules only the un-checkpointed units plus the units of the role the judge found at fault — which rework from their checkpoint, not from scratch. A slice that returns with every unit checkpointed is graded as-is, with no workers dispatched.
 
 Once you run Orchestrate, the slices execute consecutively and autonomously. You defined the goal up front; the orchestrator now runs the Ready slices through to completion without pausing between them and without asking you to sign off on each one. There is no mid-run bless point — the per-slice verification stays automated, and the single human gate waits at the end.
 
@@ -53,8 +55,8 @@ Once you run Orchestrate, the slices execute consecutively and autonomously. You
 
 When every work unit has landed — Spec quiescence — the orchestrator does not silently mark the Spec Done. It runs the acceptance criteria's declared verifications as one complete plan, in dependency order, and attributes each result back to the criterion it proves. The outcome gates both Done and the commit:
 
-* *All green* — it checks exactly the satisfied criteria on the Spec, advances the slices to Done, and commits the worktree to `spec/SP-n` once.
-* *Any red or un-runnable* — it leaves the Spec _requires-attention_ and commits nothing; the failure stays auditable.
+* *All green* — it checks exactly the satisfied criteria on the Spec, advances the slices to Done, and lands the verified slice commits on `spec/SP-n` on top of the per-unit checkpoints.
+* *Any red or un-runnable* — it works its automated remedies first. A probe that cannot execute is a gate defect, self-healed by re-authoring and re-signing the verification via the auditor (retried once, no rework attempt burned, no role blamed). A failure identical to the prior attempt trips the circuit breaker and escalates immediately. A genuine red goes through bounded judge-routed rework, and an escalated slice gets one automated auto-attend fix. Only a still-red slice leaves the Spec _requires-attention_ for a human. Landed units stay checkpointed on the branch; nothing merges, and the failure stays auditable.
 
 There is no skip. A Spec whose criteria cannot all be verified is never advanced to Done on an un-run verification.
 
@@ -68,13 +70,13 @@ Acceptance is the single point where you sign off on the assembled result — th
 
 A *delivered* Spec — committed, gate green — offers two:
 
-* *Accept & merge* performs the gated merge of `spec/SP-n` into `main`. It is refused unless every criterion is checked; there is no accepting an unverified Spec.
+* *Accept & merge* performs the gated squash-merge of `spec/SP-n` into `main` — `main` gets one verified commit per Spec, and the working trail stays on the PR. It is refused unless every criterion is checked; there is no accepting an unverified Spec.
 * *Request changes* opens a primed session to steer the delivered change back toward the intent.
 
-A *stalled* run — nothing committed, or the gate did not pass — offers the actions that apply to a run that did not deliver:
+A *stalled* run — the gate did not pass; landed units stay checkpointed on the branch, and nothing merges — offers the actions that apply to a run that did not deliver:
 
-* *Attend* opens a primed session on the requires-attention slice to bring the behaviour back in line with the intent.
-* *Re-run* re-runs the orchestrator once the requires-attention slice is resolved.
+* *Attend* opens a primed fix session in the canonical repo on the requires-attention slice; the fix is applied in the Spec's worktree (named in the prompt) and committed to the spec branch. By the time it is offered, the loop has already run judge-routed rework, the gate self-heal, the circuit breaker, and one automated auto-attend fix — what remains is usually a call only a human can make.
+* *Re-run* re-runs the orchestrator once the requires-attention slice is resolved. An attend-fixed slice, fully checkpointed, is graded as-is with no workers dispatched.
 
 The exit states and their actions map out like this:
 
@@ -82,8 +84,8 @@ The exit states and their actions map out like this:
 ----
 stateDiagram-v2
     [*] --> Quiescence: all work units landed
-    Quiescence --> Delivered: all green — ACs checked, slices Done, one commit
-    Quiescence --> Stalled: any red or uncommitted — nothing committed
+    Quiescence --> Delivered: all green — ACs checked, slices Done, verified commits
+    Quiescence --> Stalled: still red after self-heal and auto-attend — nothing merges
     Delivered --> Merged: Accept & merge (refused unless every AC checked)
     Delivered --> Quiescence: Request changes — primed rework session, then re-run
     Stalled --> Quiescence: Attend, then Re-run
@@ -92,7 +94,7 @@ stateDiagram-v2
 
 == One PR per Spec
 
-A Spec produces exactly one PR. Every slice's commits sit on the one `spec/SP-n` branch, and acceptance merges that branch to `main` as a single reviewed change — a verified Spec, built and checked end to end.
+A Spec produces exactly one PR. Every slice's commits — unit checkpoints, verified slice commits, and any attend fixes — sit on the one `spec/SP-n` branch, and acceptance *squash-merges* that branch to `main`: one verified commit per Spec on `main`, with the full working trail preserved on the PR.
 
 == When a Spec goes stale
 

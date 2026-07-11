@@ -36,7 +36,7 @@ import type { PromoteLocator } from "../methodology/implementsPromoteCheck";
 
 /** A thinking space with one existing spec doc (so `write_spec` is an update, and we can
  *  read back the persisted — or refused — frontmatter). */
-async function seededStore(spec = "demo"): Promise<ThinkubeStore> {
+async function seededStore(spec: string): Promise<ThinkubeStore> {
   const thinkingSpace = fs.mkdtempSync(path.join(os.tmpdir(), "tk-promote-dispatch-"));
   const store = new ThinkubeStore(thinkingSpace, thinkingSpace);
   await store.writeFile(
@@ -60,8 +60,14 @@ function ctxWith(store: ThinkubeStore, promoteLocator: PromoteLocator) {
 
 const ALLOW = () => {}; // writeGate: AI writes permitted.
 
+// NOTE (2026-07-11 ref grammar): `spec: "7"` is a BARE id — write_spec now
+// composes it with the parent TEP from `implements:` (`abc/7`, `local1/7`)
+// instead of letting a raw pass-through build a phantom
+// `SP-undefined` path (which these fixtures previously round-tripped
+// through). Seeds and read-backs therefore use the composed composite id.
+
 test("write_spec refuses an unpromoted cross-thinking space implements, naming promote_tep", async () => {
-  const store = await seededStore();
+  const store = await seededStore("abc/7");
   const calls: { namespace?: string; id: string }[] = [];
   const locator: PromoteLocator = (ref) => {
     calls.push({ namespace: ref.namespace, id: ref.id });
@@ -73,7 +79,7 @@ test("write_spec refuses an unpromoted cross-thinking space implements, naming p
       dispatchTool(
         "write_spec",
         {
-          spec: "demo",
+          spec: "7",
           body: "# Demo Spec\n\nupdated body\n",
           implements: "acme/widgets:TEP-abc",
         },
@@ -90,7 +96,7 @@ test("write_spec refuses an unpromoted cross-thinking space implements, naming p
   assert.equal(calls[0].id, "abc");
 
   // A refusal must not persist the dangling cross-thinking space link.
-  const parsed = await store.getFile(store.pathForSpecDoc("demo"));
+  const parsed = await store.getFile(store.pathForSpecDoc("abc/7"));
   assert.notEqual(
     parsed?.frontmatter?.implements,
     "acme/widgets:TEP-abc",
@@ -99,13 +105,13 @@ test("write_spec refuses an unpromoted cross-thinking space implements, naming p
 });
 
 test("write_spec accepts a promoted cross-thinking space implements", async () => {
-  const store = await seededStore();
+  const store = await seededStore("abc/7");
   const locator: PromoteLocator = () => true; // promoted / reachable
 
   await dispatchTool(
     "write_spec",
     {
-      spec: "demo",
+      spec: "7",
       body: "# Demo Spec\n\nupdated body\n",
       implements: "acme/widgets:TEP-abc",
     },
@@ -113,7 +119,7 @@ test("write_spec accepts a promoted cross-thinking space implements", async () =
     ALLOW,
   );
 
-  const parsed = await store.getFile(store.pathForSpecDoc("demo"));
+  const parsed = await store.getFile(store.pathForSpecDoc("abc/7"));
   assert.equal(
     parsed?.frontmatter?.implements,
     "acme/widgets:TEP-abc",
@@ -122,7 +128,7 @@ test("write_spec accepts a promoted cross-thinking space implements", async () =
 });
 
 test("write_spec accepts a bare repo-local implements without consulting the locator", async () => {
-  const store = await seededStore();
+  const store = await seededStore("local1/7");
   let consulted = false;
   const locator: PromoteLocator = () => {
     consulted = true;
@@ -132,7 +138,7 @@ test("write_spec accepts a bare repo-local implements without consulting the loc
   await dispatchTool(
     "write_spec",
     {
-      spec: "demo",
+      spec: "7",
       body: "# Demo Spec\n\nupdated body\n",
       implements: "TEP-local1",
     },
@@ -145,7 +151,7 @@ test("write_spec accepts a bare repo-local implements without consulting the loc
     false,
     "a bare ref is repo-local — the cross-thinking space locator must not be consulted",
   );
-  const parsed = await store.getFile(store.pathForSpecDoc("demo"));
+  const parsed = await store.getFile(store.pathForSpecDoc("local1/7"));
   assert.equal(
     parsed?.frontmatter?.implements,
     "TEP-local1",

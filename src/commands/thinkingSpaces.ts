@@ -101,7 +101,7 @@ export function registerThinkingSpaceCommands(
       "thinkube.thinkingSpace.open",
       (r: RepoEntry) => openThinkingSpaceFor(context, deps, r),
     ),
-    // Spec-scoped thinking space: a single Spec's slices + DAG graph (SP-tgs8nz). Invoked
+    // Spec-scoped thinking space: a single Spec's slices + DAG graph. Invoked
     // by clicking a Spec in the Specs view.
     vscode.commands.registerCommand(
       "thinkube.specs.openKanban",
@@ -134,7 +134,7 @@ export function registerThinkingSpaceCommands(
   );
 }
 
-/** The sidecar dir of a Project (TEP-tgvwct Phase 6): `<thinkingSpaceRoot>/<product>/projects/<id>`. */
+/** The sidecar dir of a Project: `<thinkingSpaceRoot>/<product>/projects/<id>`. */
 export function projectDirPath(
   thinkingSpaceRoot: string,
   product: string,
@@ -288,7 +288,7 @@ async function openThinkingSpaceFor(
       if (!gate.ok) throw new Error(gate.reason);
 
       // Resolve the Spec's PR first (TEP-0010), tolerant of straight-to-main
-      // Specs with no PR (TEP-tg8dsa). A real merge failure throws, and we must
+      // Specs with no PR. A real merge failure throws, and we must
       // NOT leave the Spec stamped accepted while its PR is still open — so stamp
       // only after the merge call returns (it returns without merging when there
       // is simply no PR).
@@ -333,7 +333,7 @@ async function enableHere(
   }
   // Scaffold the thinking space at its resolved thinking space dir — central
   // `<thinking space-root>/<namespace>` when configured, else co-located. The org-scoped
-  // tree (TEP-th8lzj) namespaces everything one level deeper under a per-
+  // tree namespaces everything one level deeper under a per-
   // maintainer `<org>/`; specs nest under teps, so the scaffold is
   // `<org>/{teps,decisions,retros}` (no top-level `specs/`).
   const base = r.thinkingSpaceDir;
@@ -350,14 +350,14 @@ async function enableHere(
     await fs.writeFile(path.join(base, org, sub, ".gitkeep"), "");
   }
 
-  // Per-repo opt-in plugin delivery (TEP-tgvwct, Phase 2): make THIS repo's
+  // Per-repo opt-in plugin delivery: make THIS repo's
   // methodology come from the tandem-methodology plugin. Register the
   // marketplace once per machine from the local thinkube-metadata clone (a
   // directory source — offline; the machine path stays in ~/.claude), then write
   // the portable `enabledPlugins` entry into this repo's committed
   // .claude/settings.json. On a trusted session here the plugin auto-installs;
   // repos that weren't opted in get nothing. Best-effort.
-  // Register every locally-cloned `*-metadata` marketplace (TEP-tgvwct Phase 4):
+  // Register every locally-cloned `*-metadata` marketplace:
   // the official `thinkube-metadata` AND any user `{org}-metadata`, so a user can
   // publish/enable their own plugins beside the official ones. Org-agnostic.
   const marketplaces = discoverMetadataMarketplaces(

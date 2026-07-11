@@ -1,5 +1,5 @@
 /**
- * Unit tests for the qualified `implements:` ref engine (SP-tgvpbm_SL-1).
+ * Unit tests for the qualified `implements:` ref engine.
  * Pure — no vscode/fs.
  */
 import { test } from "node:test";
@@ -30,7 +30,7 @@ test("parseImplements: empty/undefined → undefined", () => {
   assert.equal(parseImplements(undefined), undefined);
 });
 
-// ── org-deepened namespaces (SP-th8m5b / TEP-th8lzj, AC 4) ──
+// ── org-deepened namespaces ──
 // The org-scoped layout adds one more namespace segment (`…/<org>`). The
 // last-colon parser contract is preserved verbatim — the org is just another
 // path segment, never special-cased — so a qualified `…/<org>:TEP-1` parses for

@@ -1,6 +1,6 @@
 /**
  * AgentTeamsShimServer — the Extension-Host half of the fake-`tmux` backend
- * for Claude Code agent teams (SP-tgnb5o_SL-1, spike).
+ * for Claude Code agent teams (spike).
  *
  * Each `tmux …` invocation Claude Code makes is a short-lived process, but the
  * pane/PTY state must outlive it and live where the VS Code terminals are — in
@@ -17,7 +17,7 @@
  * no-op pane rather than breaking activation.
  *
  * Interactive behaviour (a real team forming, both teammates reaching idle —
- * AC#1) is verified at the acceptance gate per the Spec's recorded TEP-tgnvkw
+ * AC#1) is verified at the acceptance gate per the Spec's recorded
  * exception; what's gated headlessly is the dispatcher + this wiring compiling.
  */
 import * as vscode from "vscode";
@@ -163,7 +163,7 @@ export class AgentTeamsShimServer implements vscode.Disposable {
 
   /**
    * Put our `tmux` shim dir on PATH ahead of any system tmux so the `claude`
-   * child (spawned by claude-vscode) resolves `tmux` to us (SP-tgnb5o_SL-2,
+ * child (spawned by claude-vscode) resolves `tmux` to us (
    * AC#5). Takeover policy mirrors LauncherService: free/ours → install; an
    * unknown third-party tmux → one-time confirmation, never silent clobber.
    */

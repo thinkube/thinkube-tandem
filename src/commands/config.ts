@@ -46,7 +46,7 @@ export function registerConfigCommands(
     updateConfigContext,
   } = deps;
   const currentActiveContext = () => deps.getCurrentActiveContext();
-  // The Configuration view follows the navigator selection (SP-tgvhfk), so a
+  // The Configuration view follows the navigator selection, so a
   // config CRUD action with no explicit tree-item targets the selected Thinking
   // Space first, then the chat-panel active context.
   const scopeFor = (explicitPath?: string) =>

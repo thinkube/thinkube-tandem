@@ -13,7 +13,7 @@
  * Spec's requirement-bearing sections (Acceptance Criteria / Design /
  * Constraints), normalized so that checkbox state doesn't count, and compares
  * the Spec's current hash to the hash the task was last verified against (the
- * "stamp", recorded by `/pair-next`). A task with no stamp is never flagged.
+ * "stamp", recorded at the → Done gate). A task with no stamp is never flagged.
  *
  * Pure + dependency-light (only Node's `crypto`) so it is trivially testable.
  */
@@ -81,7 +81,7 @@ export interface SpecChangeInput {
   taskUpdatedAt?: string;
   /** Current requirement-hash of the parent Spec (see {@link requirementHash}). */
   currentReqHash?: string;
-  /** Requirement-hash the task was last verified against (the `/pair-next` stamp). */
+  /** Requirement-hash the task was last verified against (the → Done gate stamp). */
   stampedReqHash?: string;
 }
 

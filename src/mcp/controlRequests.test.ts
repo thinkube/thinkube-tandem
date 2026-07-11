@@ -1,5 +1,5 @@
 /**
- * Unit tests for the MCP→host control-request hand-off (SP-tgpwbm AC8). Pure:
+ * Unit tests for the MCP→host control-request hand-off. Pure:
  * the request round-trips (serialize → parse) and routes to the startWorktree
  * handler, distinct from other kinds. Run via `npm test`.
  */

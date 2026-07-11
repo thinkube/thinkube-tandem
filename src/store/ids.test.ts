@@ -10,23 +10,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
-  parseTepId,
   nextNumberFromNames,
   nextTepNumber,
   nextSpecNumber,
   nextSliceNumber,
 } from "./ids";
-
-test("parseTepId stays permissive across id forms", () => {
-  assert.equal(parseTepId("TEP-1"), "1"); // sequential
-  assert.equal(parseTepId("TEP-0009"), "0009"); // legacy zero-padded
-  assert.equal(parseTepId("TEP-tg7y99"), "tg7y99"); // legacy base36-epoch
-  assert.equal(parseTepId("  TEP-2  "), "2"); // trimmed
-  // Not a TEP handle → undefined (no false positives).
-  assert.equal(parseTepId("SP-3"), undefined);
-  assert.equal(parseTepId("TEP-"), undefined);
-  assert.equal(parseTepId("tep-1"), undefined); // case-sensitive prefix
-});
 
 test("nextNumberFromNames returns scan-max+1, archive-aware, prefix-scoped", () => {
   // Empty scope → the first number is 1.

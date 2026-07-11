@@ -3,7 +3,7 @@
  * (ThinkubeStore itself imports vscode and can't run under node:test).
  *
  * Ids are bare sequential integers (`TEP-n`, `SP-m`, `SL-k`) namespaced by the
- * directory they live in (SP-th8m5b / TEP-th8lzj). Each scope owns its own
+ * directory they live in . Each scope owns its own
  * counter, allocated **scan-max+1** over the existing children: the next number
  * is one past the highest `PREFIX-<int>` already on disk. Archive-don't-delete
  * keeps every number claimed by a file/dir, so a retired entry's number stays
@@ -16,32 +16,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-/** `TEP-<id>` handle → its bare id, or undefined. With sequential ids the id is
- *  an integer (`TEP-1`), but the parser stays permissive so legacy handles
- *  (`TEP-0009`, `TEP-tg7y99`) still resolve. Case-sensitive prefix, trimmed. */
-export function parseTepId(handle: string): string | undefined {
-  const m = /^TEP-([A-Za-z0-9]+)$/.exec(handle.trim());
-  return m ? m[1] : undefined;
-}
-
-/**
- * Legacy base36-epoch minting (SP-7 / ADR-0008). **Superseded** by the
- * scope-sequential allocator below — retained only so the not-yet-migrated
- * `ThinkubeStore` callers (`nextSpecNumber` / `nextTepId`, a sibling slice's
- * footprint) keep compiling. Deleted once that delegation lands. New code must
- * not call this; use `nextTepNumber` / `nextSpecNumber` / `nextSliceNumber`.
- *
- * Mints the next base36-epoch id, monotonic against `lastEpoch`: returns the id
- * plus the new epoch the caller stores back as its guard.
- */
-export function mintEpochId(
-  nowMs: number,
-  lastEpoch: number,
-): { id: string; epoch: number } {
-  let epoch = Math.floor(nowMs / 1000);
-  if (epoch <= lastEpoch) epoch = lastEpoch + 1;
-  return { id: epoch.toString(36).padStart(6, "0"), epoch };
-}
 
 /**
  * Scan-max+1 core. Given a list of directory entry names and a prefix, return

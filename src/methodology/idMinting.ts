@@ -1,10 +1,10 @@
 /**
- * Spec-id resolution for `write_spec` (SP-th4wqd_SL-2, TEP-th3i18 #6).
+ * Spec-id resolution for `write_spec`.
  *
  * `write_spec` historically *required* the caller to hand a Spec id, which
  * forced manual thinking space surgery (hand-minting an `SP-{id}` before every spec).
- * This brings it to parity with `write_tep`, where omitting the id mints a
- * conflict-free base36-epoch id via the store's allocator.
+ * This brings it to parity with `write_tep`, where omitting the id mints the
+ * next sequential number via the store allocator.
  *
  * The decision is a one-liner, but it's the **contract** the dispatch handler
  * and its test both depend on, so it lives in a pure, dependency-free helper:
@@ -15,8 +15,8 @@
  */
 
 /**
- * An injected Spec-id allocator: mints a fresh base36-epoch id (no `SP-`
- * prefix), monotonic across calls. In production this is
+ * An injected Spec-id allocator: mints the next sequential id (no `SP-`
+ * prefix). In production this is
  * `() => store.nextSpecNumber()`.
  */
 export type SpecIdAllocator = () => Promise<string>;

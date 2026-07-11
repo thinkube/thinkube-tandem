@@ -1,6 +1,6 @@
 /**
  * Ship-freshness check — catch a deploy that didn't reach the server
- * (SP-th4wqe / TEP-th3i18, #21).
+ *.
  *
  * The kanban MCP server ships as a single bundled artifact: `npm run compile`
  * (via `esbuild.mcp.mjs`) writes `dist/mcp/kanban.js` in this repo, and `deploy`

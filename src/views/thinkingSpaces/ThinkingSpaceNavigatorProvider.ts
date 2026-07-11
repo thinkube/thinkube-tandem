@@ -59,7 +59,7 @@ export interface ThinkingSpaceMessageNode {
   icon: string;
 }
 
-/** A Product — the code-less top node (SP-tgvl81): groups member Spaces + Projects. */
+/** A Product — the code-less top node: groups member Spaces + Projects. */
 export interface ProductNode {
   kind: "product";
   id: string;
@@ -68,7 +68,7 @@ export interface ProductNode {
   projects: ProjectNode[];
 }
 
-/** A Project under a Product (SP-tgvl81) — a promoted tag; leaf in the tree (its
+/** A Project under a Product — a promoted tag; leaf in the tree (its
  *  members surface in the dedicated member view on selection). */
 export interface ProjectNode {
   kind: "project";
@@ -280,7 +280,7 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
       if (this._configuredOnly) repos = repos.filter((r) => r.enabled);
 
       // Group the visible repos under their Product when the thinking space root has any
-      // (SP-tgvl81). With no thinking space root / no products, fall back to the flat
+      //. With no thinking space root / no products, fall back to the flat
       // repo list — Products are an additive layer, nothing disappears.
       const thinkingSpaceRoot =
         vscode.workspace
@@ -324,7 +324,7 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
     if (element.kind === "product") {
       return [...element.repos, ...element.projects];
     }
-    // A Project is a leaf in the navigator (SP-tgvud7): selecting it drives the
+    // A Project is a leaf in the navigator: selecting it drives the
     // TEPs → Specs side-views, exactly like a Thinking Space — no in-tree drill-down.
     if (element.kind === "project") return [];
     // A Thinking Space is a leaf — the methodology is delivered as a versioned
@@ -347,7 +347,7 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
       return item;
     }
     if (node.kind === "project") {
-      // A leaf that drives the TEPs → Specs side-views (SP-tgvud7); selecting it
+      // A leaf that drives the TEPs → Specs side-views; selecting it
       // scopes the TEPs view to the project's umbrella TEPs.
       const item = new vscode.TreeItem(
         node.name,
@@ -400,7 +400,7 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
           : "circle-outline",
     );
     // Clicking a Thinking Space only *selects* it (driving the TEPs → Specs
-    // drill-down); the kanban opens per-Spec, not for the whole space (SP-tgs8nz).
+    // drill-down); the kanban opens per-Spec, not for the whole space.
     // The whole-space thinking space stays available via the palette / context menu.
     return item;
   }

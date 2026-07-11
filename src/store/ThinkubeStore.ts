@@ -44,7 +44,6 @@ import {
   scanForSecrets,
   serializeFrontmatter,
 } from "./frontmatter";
-import { mintEpochId } from "./ids";
 import { isRetiredStatus } from "../methodology/sliceLifecycle";
 
 export type ListableKind =
@@ -94,10 +93,6 @@ export interface FileChange {
   type: "created" | "changed" | "deleted";
 }
 
-/** Process-wide monotonic guard for base36-epoch Spec-id minting (SP-7): a
- *  single writer never reuses its own last second. */
-let lastMintedEpoch = 0;
-
 export class ThinkubeStore implements vscode.Disposable {
   private readonly _onChanged = new vscode.EventEmitter<FileChange>();
   readonly onChanged = this._onChanged.event;
@@ -139,7 +134,7 @@ export class ThinkubeStore implements vscode.Disposable {
     return this.thinkingSpaceDir;
   }
 
-  // ─── Org-scoped tree layout (TEP-th8lzj) ────────────────────────────────
+  // ─── Org-scoped tree layout ────────────────────────────────
   // The thinking space stores artifacts as a tree under a per-maintainer org segment:
   //   <org>/teps/TEP-n/tep.md · <org>/teps/TEP-n/SP-m/spec.md · …/SL-k.md
   // The org is discovered (a child dir of the thinking space holding a `teps/`). Cached
@@ -307,23 +302,38 @@ export class ThinkubeStore implements vscode.Disposable {
   //   .thinkube/specs/SP-{n}/spec.md      the Spec document
   //   .thinkube/specs/SP-{n}/SL-{m}.md    its Slices (numbered per-Spec)
 
+  /** Split a composite spec id, REFUSING any shape that would build a phantom
+   *  path. Before this guard, an unresolved ref (e.g. the flat handle
+   *  `TEP-1_SP-4` passed through verbatim) silently produced
+   *  `teps/TEP-TEP-1_SP-4/SP-undefined/…` — callers must resolve refs through
+   *  `refResolver` first; this is the last line of defense, not a parser. */
+  private static compositeParts(specNumber: string): [string, string] {
+    const [tep, sp, ...rest] = specNumber.split("/");
+    if (!tep || !sp || rest.length > 0) {
+      throw new Error(
+        `Internal: spec id "${specNumber}" is not a composite \`<tep>/<sp>\` — refusing to build a phantom path (resolve refs via refResolver first).`,
+      );
+    }
+    return [tep, sp];
+  }
+
   /** Path to a Spec's document. The spec id is the composite `${tep}/${spec}`
    *  (e.g. `1/2`) → `<org>/teps/TEP-1/SP-2/spec.md`. */
   pathForSpecDoc(specNumber: string): string {
-    const [tep, sp] = specNumber.split("/");
+    const [tep, sp] = ThinkubeStore.compositeParts(specNumber);
     return `${this.tepsRoot()}/TEP-${tep}/SP-${sp}/spec.md`;
   }
 
   /** Path to a Slice file under its parent Spec in the tree. */
   pathForSlice(specNumber: string, sliceNumber: number): string {
-    const [tep, sp] = specNumber.split("/");
+    const [tep, sp] = ThinkubeStore.compositeParts(specNumber);
     return `${this.tepsRoot()}/TEP-${tep}/SP-${sp}/SL-${sliceNumber}.md`;
   }
 
   /** The canonical human handle for a slice — the tep-qualified
    *  `TEP-n_SP-m_SL-k` flattening (the spec id is the composite `${tep}/${spec}`). */
   sliceHandle(specNumber: string, sliceNumber: number): string {
-    const [tep, sp] = specNumber.split("/");
+    const [tep, sp] = ThinkubeStore.compositeParts(specNumber);
     return `TEP-${tep}_SP-${sp}_SL-${sliceNumber}`;
   }
 
@@ -377,7 +387,7 @@ export class ThinkubeStore implements vscode.Disposable {
   }
 
   /** Spec ids (the `SP-{id}` folders) under `specs/`, sorted. Ids are opaque
-   *  strings — base36-epoch for new Specs, legacy integers for old ones. */
+   *  strings (sequential numbers). */
   async listSpecDirs(): Promise<string[]> {
     const root = this.tepsRoot();
     const tepsDir = path.join(this.thinkubeDir, ...root.split("/"));
@@ -467,10 +477,8 @@ export class ThinkubeStore implements vscode.Disposable {
   // Archive-don't-delete keeps every number claimed by a file, so `max + 1`
   // can never reuse a freed number (ADR-0007).
 
-  /** Next repo-wide Spec id: a zero-padded base36 encoding of the current
-   *  epoch-seconds (SP-7 / ADR-0008). No allocator, no `listSpecDirs` read, so
-   *  independent writers never collide; the in-process monotonic guard keeps a
-   *  single writer from reusing its own last second. */
+  /** Next SP number under a TEP: highest existing `SP-<n>` + 1 (scan-max+1).
+   *  The org segment namespaces per-maintainer, so numbers never collide. */
   async nextSpecNumber(tepNumber: string): Promise<string> {
     const root = this.tepsRoot();
     const dir = path.join(
@@ -490,12 +498,9 @@ export class ThinkubeStore implements vscode.Disposable {
     return String(max + 1);
   }
 
-  /** Next TEP id: a zero-padded base36 epoch (TEP-0009), minted exactly like a
-   *  Spec id and sharing the same process-wide monotonic guard — so a shared
-   *  sidecar never collides across collaborators, and a single writer never
-   *  reuses a second across spec/TEP mints. The id parser (`listTeps`, and the
-   *  `TEP-<id>` regex) already accepts both this epoch form and the legacy
-   *  sequential `TEP-0009` form, as it does for specs. */
+  /** Next TEP id: highest existing numeric `TEP-<n>` + 1 (scan-max+1). The org
+   *  segment namespaces per-maintainer, so sequential numbers never collide
+   *  across collaborators. */
   async nextTepId(): Promise<string> {
     let max = 0;
     for (const t of await this.listTeps()) {

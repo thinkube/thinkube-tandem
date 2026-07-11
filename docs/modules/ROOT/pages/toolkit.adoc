@@ -41,7 +41,7 @@ Each skill routes writes through a board-aware MCP tool so files land in the cen
 | A dated entry in today's retros file (via `write_retro_note`).
 |===
 
-`/attend` is also a skill, but you reach it through the *Attend* or *Request changes* board actions (see below) rather than invoking it cold; it opens a primed fix session on a requires-attention slice or a rejected-Spec rework.
+`/attend` is also a skill, but you reach it through the *Attend* or *Request changes* board actions (see below) rather than invoking it cold; it opens a primed fix session on a requires-attention slice or a rejected-Spec rework. The session opens in the *canonical repo*, so it survives the worktree's retirement at Accept; the prompt names the Spec's worktree, where the fix is applied and committed to the spec branch (`fix(attend): …`). The failure evidence — the judged fault and the failing output — arrives in the prompt verbatim; grading independence lives in the closing gate's assessor and judge, which re-grade the committed state on the next run.
 
 == Reference skills
 
@@ -100,16 +100,16 @@ These are the human-only buttons in the thinking-space panel. The AI can open th
 | Opens the Spec's dedicated git worktree pair session.
 
 | *Accept & merge*
-| The delivered-state exit: accept the Spec and merge its one PR to `main`, gated on every acceptance criterion being checked.
+| The delivered-state exit: accept the Spec and squash-merge its one PR to `main` — one verified commit per Spec, the working trail kept on the PR — gated on every acceptance criterion being checked.
 
 | *Request changes*
-| The delivered-state exit's counterpart: open a primed `/attend` session to steer the delivered change back to the intent.
+| The delivered-state exit's counterpart: open a primed `/attend` session (in the canonical repo) to steer the delivered change back to the intent.
 
 | *Attend*
-| The stalled-state exit: open a primed `/attend` session on the requires-attention slice(s) to bring the behaviour back in line.
+| The stalled-state exit: open a primed `/attend` session on the requires-attention slice(s). The session opens in the canonical repo; the fix is applied in the Spec's worktree and committed to the spec branch. You only reach it after the loop's automated remedies — judge-routed rework, gate self-heal, the circuit breaker, and the auto-attend fixer — have all run.
 
 | *Re-run*
-| The stalled-state exit: after resolving the requires-attention slice(s), re-run the orchestrator.
+| The stalled-state exit: after resolving the requires-attention slice(s), re-run the orchestrator. A returning slice with every unit checkpointed is graded as-is; re-dispatch schedules only un-checkpointed units.
 
 | *Reload Window*
 | VS Code's window reload. Recovers orphaned session tabs after the worktree layout changes (for example a worktree removed at acceptance).
@@ -121,6 +121,8 @@ The exit states behind these buttons are described in xref:lifecycle.adoc[The Sp
 
 The AI's surface onto the board and thinking space, grouped by purpose. Every tool named here is registered by the kanban MCP server.
 
+Every tool that names a Spec or a slice accepts *one shared ref grammar*. Spec refs: `1/4`, `TEP-1/SP-4`, `SP-1/4`, `TEP-1_SP-4`, or a bare `SP-4` / `4` — the bare forms are looked up against the thinking space's TEPs and refused when ambiguous or unknown. Slice refs: `TEP-1_SP-4_SL-1`, `SP-4_SL-1`, or `1/4/1`. An unrecognized ref fails loudly, stating the grammar; ids are strictly numeric and sequential, minted per thinking space and org (the per-maintainer org segment is what keeps numbers collision-free).
+
 === Authoring
 
 [cols="1,3",options="header"]
@@ -128,9 +130,9 @@ The AI's surface onto the board and thinking space, grouped by purpose. Every to
 | Tool | Purpose
 
 | `write_tep` | Create or update a TEP file in the thinking space.
-| `write_spec` | Create or update a Spec document, preserving existing frontmatter such as `accepted:`.
-| `create_slice` | Create a slice under a Spec in canonical shape; the server allocates the slice number and enforces the → Ready gate.
-| `update_slice` | Update a slice in place — replace its body, or re-cut its footprint, `satisfies`, or work units — keeping its number.
+| `write_spec` | Create or update a Spec document, preserving existing frontmatter such as `accepted:`. Refuses to sign an `ac_verifications` command whose leading token cannot resolve in the working repo — repo-local tools go through `npx`, `uv run`, or `poetry run`.
+| `create_slice` | Create a slice under a Spec in canonical shape; the server allocates the slice number and enforces the → Ready gate. Refuses a footprint path that does not exist in the Spec's working repo, with a did-you-mean; genuinely-new files are declared in `creates:` (held-out test-unit footprints are exempt).
+| `update_slice` | Update a slice in place — replace its body, or re-cut its footprint, `satisfies`, or work units — keeping its number. Enforces the same footprint existence gate as `create_slice`.
 | `patch_spec_section` | Replace exactly one named section of a Spec's body, leaving every other section byte-identical.
 |===
 
@@ -199,7 +201,7 @@ Hooks run automatically on their trigger. Two are armed in the bundle; the third
 | stale-cwd warning
 | SessionStart (resume)
 | Yes
-| Warns when the session's original working directory is gone (for example a worktree removed at acceptance) and recommends reopening a fresh session from the board. Warn-only.
+| Warns when a *resumed* session's original working directory is gone (for example a worktree removed at acceptance) and recommends reopening a fresh session from the board. Warn-only. A legacy safety net for sessions opened before attend sessions moved to the canonical repo — new attend sessions do not strand.
 
 | ownership edit guard
 | PreToolUse (Edit / Write)
@@ -228,5 +230,4 @@ The slice and Spec artifacts these tools and gates operate on are described in x
 == Discoveries
 
 * *The ownership edit guard is shipped but not enforcing.* `ownership-guard.mjs` exists in the bundle, but the hook manifest deliberately does not arm it: it still performs a blocking stdin read of the kind that has hung sessions, and it is a no-op until the orchestrator sets an active-slice signal. Both must be resolved before it can protect parallel-slice footprints. Until then the guard is documented but does not run.
-* *The canonical methodology names a `/board` skill and retired `/pair-start` / `/pair-next`, but no `/board` skill ships in the current bundle.* Board snapshotting is served instead by `/thinking-space` and the interactive panel; the replacement for the retired pairing skills is board-driven (the *Orchestrate* action).
 * *The MCP tool descriptions and the skills disagree on the Spec path shape.* Several tool descriptions pin `specs/SP-\{n}/spec.md`, while the skills and methodology use the nested `teps/TEP-\{t}/SP-\{n}/spec.md` tree. The surface documents two path shapes for the same file.

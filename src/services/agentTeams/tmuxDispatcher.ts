@@ -1,5 +1,5 @@
 /**
- * Pure dispatcher for the agent-teams `tmux` shim (SP-tgnb5o).
+ * Pure dispatcher for the agent-teams `tmux` shim.
  *
  * Claude Code's experimental agent-teams feature (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
  * drives a display backend by shelling out to `tmux`. Where neither tmux nor
@@ -10,7 +10,7 @@
  *
  * The command surface and choreography here were CAPTURED from a real tmux
  * session driving Claude Code 2.1.177 agent teams (logging-wrapper capture,
- * SP-tgnb5o). The real flow, per teammate:
+ * ). The real flow, per teammate:
  *
  *   tmux -S <sock> display-message -t %0 -p '#{window_id}'      → leader window
  *   tmux -S <sock> list-panes -t @0 -F '#{pane_id}'             → pane count

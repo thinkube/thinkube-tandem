@@ -1,5 +1,5 @@
 /**
- * `resolveTepWritePath` (SP-th4wqd_SL-3 / TEP-th3i18 #14) — the promotion-aware
+ * `resolveTepWritePath` — the promotion-aware
  * write-target decision for `write_tep`.
  *
  * Split-brain gap: once a TEP is **promoted** into a Project, its canonical home

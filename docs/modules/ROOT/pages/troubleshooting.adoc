@@ -38,13 +38,29 @@ The recipes assume the arc in xref:lifecycle.adoc[The Spec lifecycle] and the ga
 
 *What you do.* If the change is user-facing, update its documentation module in the same commit as the code — docs live with the code and aggregate into the site — then attest the docs are done as you move the slice. If the change is genuinely internal (a refactor, test-only, or infrastructure), mark it `docs: n/a` with a one-line reason. How hard the gate pushes depends on its mode: *advisory* (the default) lets the move through with a warning; *blocking* refuses an unsatisfied obligation until you resolve it. If unsure whether a change is observable, treat it as `required`.
 
-== An orchestration stalls with nothing committed
+== An orchestration stalls requiring attention
 
-*Symptom.* A run ends with the Spec left _requires-attention_ and no commit on `spec/SP-n`.
+*Symptom.* A run ends with the Spec left _requires-attention_.
 
-*Cause.* At the closing gate an acceptance criterion came back red or could not be run. The gate does not commit a Spec it cannot fully verify, so it leaves the Spec _requires-attention_, commits nothing, and writes the delivery report anyway — the failure stays auditable. There is no skip.
+*Cause.* At the closing gate an acceptance criterion came back red, and the loop's automated remedies did not resolve it. By the time you see _requires-attention_ the orchestrator has already: routed bounded rework via an independent judge, self-healed any probe that could not execute (a gate defect, re-authored via the auditor), stopped a failure identical to the prior attempt early (the deterministic-failure circuit breaker), and burned its one automated auto-attend fix. The gate never advances a Spec it cannot fully verify; landed work units stay checkpointed as `wip(…)` commits on `spec/SP-n`, nothing merges, and the delivery report is written anyway — the failure stays auditable. There is no skip.
 
-*What you do.* Open the Spec's `DELIVERY.md` and read *What happened* first — on a failure it holds the closing gate's diagnosis in full, in plain language, the operator's account of why the run stalled. Then take one of the two exits a stalled run offers. *Attend* opens a primed session on the requires-attention slice to bring its behaviour back in line with the intent. *Re-run* re-runs the orchestrator — but only once the slice is actually resolved; re-running before you have fixed the cause reproduces the same red. The evidence appendix in the report holds the raw per-criterion output if you need to see exactly which check failed.
+*What you do.* Open the Spec's `DELIVERY.md` and read *What happened* first — on a failure it holds the closing gate's diagnosis in full, in plain language, the operator's account of why the run stalled. Because the machines have already tried, the remaining fault is usually one a machine could not decide: a design question, missing credentials or cluster state, or an intent ambiguity. Then take one of the two exits a stalled run offers. *Attend* opens a primed session in the canonical repo; you apply the fix in the Spec's worktree (named in the prompt) and commit it to the spec branch (`fix(attend): …`) — an uncommitted fix is invisible to the loop. *Re-run* re-runs the orchestrator — a slice returning with every unit checkpointed, such as after your attend commit, is graded as-is with no workers dispatched, so your fix is never re-authored. The evidence appendix in the report holds the raw per-criterion output if you need to see exactly which check failed.
+
+== A verification probe cannot run
+
+*Symptom.* The report shows a criterion whose probe never executed — shell exit 126 or 127, `command not found`, or a spawn error.
+
+*Cause.* This is a *gate defect*, not a code failure: the probe command or its environment is broken, not the slice. The gate treats it that way — no rework attempt is burned and no role is blamed. It re-authors and re-signs the criterion's verification entry via the auditor and retries once; only if the re-authored probe still cannot run does the Spec escalate.
+
+*What you do.* Usually nothing — the self-heal handles it. If it still escalates, the probe likely depends on something the working repo cannot resolve. Re-certify the verification through `write_spec` (which refuses to sign a command whose leading token cannot resolve in the working repo) and make repo-local tools explicit: invoke them through `npx`, `uv run`, or `poetry run` rather than assuming a global install.
+
+== A slice's footprint path is refused
+
+*Symptom.* `create_slice` or `update_slice` refuses a slice, naming a footprint path that does not exist in the Spec's working repo, usually with a did-you-mean.
+
+*Cause.* Every declared footprint path must exist in the working repo — a phantom path (a typo, a moved file, a path imagined from memory) would send a worker to edit a file that is not there. Held-out test-unit footprints are exempt, because the probe file is authored by the run itself.
+
+*What you do.* Take the did-you-mean if it names the file you meant, and re-cut the footprint. If the file is genuinely new — the slice is supposed to create it — declare it in the slice's `creates:` field instead of the footprint; that is the sanctioned way to claim a not-yet-existing path.
 
 == Done slices are flagged stale after a Spec edit
 

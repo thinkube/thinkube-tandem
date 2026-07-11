@@ -1,5 +1,5 @@
 /**
- * Unit tests for the org segment resolver (SP-th8m5b / TEP-th8lzj, AC 7). Pure —
+ * Unit tests for the org segment resolver. Pure —
  * `resolveOrg` takes the name string directly, so no git is spawned and the test
  * is independent of ambient git state.
  */

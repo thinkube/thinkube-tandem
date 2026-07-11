@@ -4,8 +4,7 @@
  *
  * Each slice file (`.thinkube/specs/SP-{id}/SL-{m}.md`) becomes one card whose
  * string `id` IS the human handle `SP-{id}_SL-{m}` — that handle is the card's
- * identity across the host↔webview boundary (SP-7). Spec ids are opaque strings
- * (base36-epoch for new Specs, legacy integers for old ones), so there is no
+ * identity across the host↔webview boundary. Spec ids are strings, so there is no
  * numeric card encoding; colour and the parent chip group by the parent Spec id.
  */
 import { ThinkingSpace, ThinkingSpaceColumn, TaskCard } from "../types";
@@ -114,11 +113,11 @@ function acceptIdForKey(specKey: string, nested: boolean): string {
 }
 
 export interface SliceInput {
-  /** Parent Spec id — an opaque string (base36-epoch, or a legacy integer). */
+  /** Parent Spec id (string). */
   specNumber: string;
   /**
    * Parent TEP number when the slice was discovered in the org-scoped nested
-   * tree (`<org>/teps/TEP-n/SP-m/SL-k.md`, SP-th8m5b / TEP-th8lzj). Present ⇒ the
+ * tree (`<org>/teps/TEP-n/SP-m/SL-k.md`,). Present ⇒ the
    * card handle flattens to the tep-qualified `TEP-n_SP-m_SL-k` form and the
    * slice groups under the tep-qualified spec key `TEP-n_SP-m`, so bare SP/SL
    * numbers that repeat across TEPs never collide. Omitted ⇒ the legacy flat
@@ -132,7 +131,7 @@ export interface SliceInput {
   status?: string;
   due?: string;
   priority?: string;
-  /** Slice frontmatter `verified_req_hash` (the /pair-next stamp). */
+  /** Slice frontmatter `verified_req_hash` (the Done-gate stamp). */
   stampedReqHash?: string;
   /** Parent Spec's current requirement-hash (computed by the adapter). */
   currentReqHash?: string;
@@ -144,7 +143,7 @@ export interface SliceInput {
   commitUrl?: string;
   /** Pull-request URL carrying the slice. */
   pr?: string;
-  /** Slice frontmatter `parallel_group` — the named concurrency group (SP-tgpwbm). */
+  /** Slice frontmatter `parallel_group` — the named concurrency group. */
   parallelGroup?: string;
   /** Slice frontmatter `assignee` — current owner; empty until the arbiter claims it. */
   assignee?: string;
@@ -152,14 +151,14 @@ export interface SliceInput {
   files?: string[];
   /** Slice frontmatter `depends_on` — dependency handles (slice-DAG edges). */
   dependsOn?: string[];
-  /** Slice frontmatter `work_units` — the execution-aware units (SP-tgs8gb). */
+  /** Slice frontmatter `work_units` — the execution-aware units. */
   workUnits?: {
     footprint: string[];
     depends_on?: string[];
     execution: "serial" | "mechanize" | "fan-out";
     note?: string;
   }[];
-  /** Effective clustering tags (SP-tgvil2) — `tags` folded with legacy `theme`. */
+  /** Effective clustering tags — `tags` folded with legacy `theme`. */
   tags?: string[];
 }
 
@@ -175,7 +174,7 @@ export interface SpecMeta {
   allAcsChecked: boolean;
   /** The Spec's `## Acceptance Criteria` as a checklist — shown on the card. */
   criteria: AcceptanceItem[];
-  /** Spec frontmatter `archived: true` — its cards drop off the thinking space (TEP-tg86v7). */
+  /** Spec frontmatter `archived: true` — its cards drop off the thinking space. */
   archived: boolean;
   /** Spec frontmatter `superseded:` present (SP-6/14) — deliberately not building it; the
    *  acceptance card's Orchestrate action is disabled (a superseded Spec is not advanceable). */
@@ -268,13 +267,13 @@ export function buildSliceThinkingSpace(
 
   for (const s of ordered) {
     if ((s.status ?? "").toLowerCase() === "archived") continue;
-    // A retired slice (SP-th4wqd) is terminal-and-DISTINCT-from-Done: it drops off the
+    // A retired slice is terminal-and-DISTINCT-from-Done: it drops off the
     // active thinking space and (via the skipped tally below) out of its Spec's slice count, so a
     // re-cut Spec can still close. Its SL-{m} stays reserved on disk (numbering reads files,
     // not the thinking space projection), so a retired number is never reused.
     if (isRetiredStatus(s.status ?? "")) continue;
     const specKey = specKeyOf(s);
-    // An archived parent Spec drops off the thinking space entirely (TEP-tg86v7): skip its
+    // An archived parent Spec drops off the thinking space entirely: skip its
     // slices, which (via the tally below) also suppresses its acceptance card.
     if (specMeta?.get(specKey)?.archived) continue;
     const id = handleOf(s);

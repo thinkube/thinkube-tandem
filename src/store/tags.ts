@@ -1,5 +1,5 @@
 /**
- * Cross-thinking space tag clustering (SP-tgvil2_SL-3 / TEP-tgvh8p). Pure + vscode-free
+ * Cross-thinking space tag clustering. Pure + vscode-free
  * so it's unit-testable; the thinking space-walk that produces the `TaggedItem`s lives
  * in the (vscode-stubbed) MCP server (`aggregateTagsAcrossThinkingSpaces`).
  */

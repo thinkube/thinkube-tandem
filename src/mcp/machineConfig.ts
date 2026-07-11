@@ -1,5 +1,5 @@
 /**
- * Writes the machine-level kanban-MCP config file (TEP-tgvwct, Phase 3).
+ * Writes the machine-level kanban-MCP config file.
  *
  * The plugin-shipped server (`node ${CLAUDE_PLUGIN_ROOT}/mcp/kanban.js`) gets no
  * per-repo `.mcp.json` env injection, so the extension writes the same thinking space
@@ -66,7 +66,7 @@ export async function writeMachineMcpConfig(): Promise<void> {
 
 /**
  * The kanban MCP server registration Claude Code reads from user-scope
- * `mcpServers` (TEP-th3i18 follow-up). cwd-INDEPENDENT: one entry serves EVERY
+ * `mcpServers` ( follow-up). cwd-INDEPENDENT: one entry serves EVERY
  * session — a code repo, a worktree, and a board thinking-space sidecar that has
  * no per-repo `.mcp.json`. The sidecar is exactly the case that regressed when the
  * plugin stopped vendoring the server (375f1d3) and per-repo `.mcp.json` became the

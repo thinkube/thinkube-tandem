@@ -356,7 +356,7 @@ export class KanbanPanel implements vscode.Disposable {
         }
         break;
       case "accept":
-        // The delivery report's Accept exit (SP-tgzyfy_SL-2): forward to the gated-merge
+        // The delivery report's Accept exit: forward to the gated-merge
         // command, carrying THIS panel's thinking space (same shape as orchestrate/attend).
         try {
           await vscode.commands.executeCommand(
@@ -374,7 +374,7 @@ export class KanbanPanel implements vscode.Disposable {
         }
         break;
       case "reject":
-        // The delivery report's Reject exit (SP-tgzyfy_SL-2): forward to the primed-session
+        // The delivery report's Reject exit: forward to the primed-session
         // command (the spec-level analog of /attend).
         try {
           await vscode.commands.executeCommand(
@@ -452,7 +452,7 @@ export class KanbanPanel implements vscode.Disposable {
     }
   }
 
-  /** Flag tasks whose slice has a live Agent SDK worker (SP-tgs8nz SL-4). */
+  /** Flag tasks whose slice has a live Agent SDK worker. */
   private withRunning(thinkingSpace: ThinkingSpace): ThinkingSpace {
     const live = runningSessions();
     const park = parkedWorkers();
@@ -460,7 +460,7 @@ export class KanbanPanel implements vscode.Disposable {
     if (live.length === 0 && park.length === 0 && done.length === 0)
       return thinkingSpace;
     // Sessions are keyed per WORKER (execution unit, e.g. `SP-3_SL-2#eu-0`); group them under
-    // their slice so the control-center graph shows a node per worker (SP-tgs8nz_SL-4): green
+    // their slice so the control-center graph shows a node per worker: green
     // while running, amber while parked (needs-input), lime once it has completed.
     const bySlice = (ids: string[]): Map<string, string[]> => {
       const m = new Map<string, string[]>();

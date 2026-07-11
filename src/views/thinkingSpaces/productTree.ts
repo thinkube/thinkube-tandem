@@ -1,5 +1,5 @@
 /**
- * Pure view-model for the navigator Product tree (SP-tgvl81_SL-1 / TEP-tgvh8p).
+ * Pure view-model for the navigator Product tree.
  *
  * Groups the discovered repos under their Product and attaches each Product's
  * Projects. Pure (no vscode) so it's unit-testable; the navigator maps the
@@ -53,7 +53,7 @@ export interface MemberDesc {
 }
 
 /**
- * A Project's members (SP-tgvl81_SL-2): the items carrying the project's `tag`.
+ * A Project's members: the items carrying the project's `tag`.
  * Pure — the navigator's member view collects the tagged items host-side, then
  * filters them through here. Non-matching items are excluded.
  */
@@ -68,7 +68,7 @@ export interface SpecImpl {
   thinkingSpace: string;
   /** The spec's sidecar namespace (for resolving bare refs). */
   namespace: string;
-  /** Spec handle, e.g. `SP-tgvc8v`. */
+ /** Spec handle, e.g. `SP-4`. */
   handle: string;
   /** Raw `implements:` frontmatter value. */
   implements?: string;
@@ -80,7 +80,7 @@ export interface TepGroup {
 
 /**
  * Group the implementing specs under each umbrella TEP of a Project
- * (SP-tgvpbm_SL-4): a spec is under TEP `t` iff its `implements:` resolves to
+ *: a spec is under TEP `t` iff its `implements:` resolves to
  * `projectNamespace:t`. Pure — the navigator collects the specs host-side and
  * filters them through here for the Project ▸ TEP ▸ specs drill-down.
  */
@@ -101,7 +101,7 @@ export function projectTepGroups(
 }
 
 /**
- * The specs implementing a single TEP (SP-tgvud7_SL-1) — every spec whose
+ * The specs implementing a single TEP — every spec whose
  * `implements:` resolves to `(ownerNamespace, tepId)`, across thinkingSpaces. A repo
  * TEP (owner = a repo namespace) yields its same-repo implementer(s); an
  * umbrella TEP (owner = a project namespace) yields the cross-repo set. Pure;

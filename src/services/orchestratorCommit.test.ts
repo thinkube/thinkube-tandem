@@ -1,5 +1,5 @@
 /**
- * Atomic, resumable per-slice commit integration test (SP-th4wqc_SL-3 / TEP-th3i18 #9).
+ * Atomic, resumable per-slice commit integration test.
  *
  * AC#4 drives the **real** `OrchestratorService.dispatchSpec` through injected `OrchestratorDeps`
  * fakes (store / arbiter / worktrees / runUnit / runAcVerifications / advance / commit /

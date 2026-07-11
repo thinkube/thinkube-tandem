@@ -1,5 +1,5 @@
 /**
- * Unit tests for the per-handle thinking space-write lock (SP-th4wqe_SL-2 / TEP-th3i18, #20).
+ * Unit tests for the per-handle thinking space-write lock.
  * node:test + node:assert; run via `npm test`.
  *
  * Background. The kanban MCP server's mutating tools (`move_slice`, `accept_spec`) each do a

@@ -1,5 +1,5 @@
 /**
- * Archive / unarchive commands for Specs and TEPs (TEP-tg86v7).
+ * Archive / unarchive commands for Specs and TEPs.
  *
  * Archiving is a manual, reversible frontmatter flag (`archived: true`) — the
  * file never moves or is deleted. The Specs/TEPs nav providers hide archived
@@ -65,7 +65,7 @@ export function seedArchivedFilters(
   );
 }
 
-/** Flip a thinking space file's `archived` frontmatter flag in place (TEP-tg86v7). The
+/** Flip a thinking space file's `archived` frontmatter flag in place. The
  *  file never moves; absence of the flag means not-archived, so unarchive drops
  *  the key entirely rather than writing `archived: false`. */
 async function setArchived(
@@ -81,7 +81,7 @@ async function setArchived(
   await store.writeFile(rel, fm, doc.body);
 }
 
-/** Thinking Space-relative paths of completed-but-unarchived specs (SP-tgn2pd). A spec
+/** Thinking Space-relative paths of completed-but-unarchived specs. A spec
  *  is "completed" when it carries the `accepted:` stamp (the human acceptance
  *  gate, TEP-0010) — not merely "all slices done". */
 async function completedSpecPaths(store: ThinkubeStore): Promise<string[]> {
@@ -95,7 +95,7 @@ async function completedSpecPaths(store: ThinkubeStore): Promise<string[]> {
   return out;
 }
 
-/** Completed-but-unarchived TEPs (SP-tgn2pd): `status:` of `accepted` or
+/** Completed-but-unarchived TEPs: `status:` of `accepted` or
  *  `superseded` (proposed → accepted → superseded). */
 async function completedTepPaths(store: ThinkubeStore): Promise<string[]> {
   const out: string[] = [];
@@ -109,7 +109,7 @@ async function completedTepPaths(store: ThinkubeStore): Promise<string[]> {
 }
 
 /** Confirm-then-archive a whole set of completed thinking space items at once
- *  (SP-tgn2pd). Reuses the per-item reversible `archived: true` flag; reports a
+ *. Reuses the per-item reversible `archived: true` flag; reports a
  *  count, or a no-op note when nothing qualifies. */
 async function bulkArchive(
   store: ThinkubeStore,
@@ -223,7 +223,7 @@ export function registerArchiveCommands(
         false,
       ),
     ),
-    // Bulk archive (SP-tgn2pd): archive every completed-but-unarchived item in
+    // Bulk archive: archive every completed-but-unarchived item in
     // one confirmed action, from the view title bar.
     vscode.commands.registerCommand(
       "thinkube.specs.archiveAllCompleted",

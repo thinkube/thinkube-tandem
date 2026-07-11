@@ -1,5 +1,5 @@
 /**
- * Unit tests for Product discovery from the sidecar tree (SP-tgvjug_SL-1).
+ * Unit tests for Product discovery from the sidecar tree.
  * fs via a tmp thinking space root; no vscode.
  */
 import { test } from "node:test";

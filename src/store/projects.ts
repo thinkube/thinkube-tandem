@@ -1,5 +1,5 @@
 /**
- * Project discovery (SP-tgvkmt / TEP-tgvh8p). A **Project** is a bounded
+ * Project discovery. A **Project** is a bounded
  * multi-repo effort = a *promoted tag with a version-controlled home*:
  * `<product>/projects/<name>/project.yaml` holds its identity/lifecycle/why
  * (`name`, `state`, `tag`, `tep`) — never its membership. Membership is derived
@@ -23,7 +23,7 @@ export interface Project {
   state: "open" | "done";
   /** The project-tag: items carrying it are the project's members. Defaults to the id. */
   tag: string;
-  /** Optional "why"-TEP reference (e.g. `TEP-tgkx1k`). */
+ /** Optional "why"-TEP reference (e.g. `TEP-3`). */
   tep?: string;
   /** Manifest path relative to the thinking space root. */
   manifestPath: string;
@@ -36,7 +36,7 @@ function str(v: unknown, fallback: string): string {
 }
 
 /** The thinking space-relative `teps` dir of a thinking space namespace, org-scoped-tree-aware
- *  (TEP-th8lzj): `<org>/teps` when an `<org>/` child holds a `teps/`, else the
+ *: `<org>/teps` when an `<org>/` child holds a `teps/`, else the
  *  bare `teps`. Mirrors `ThinkubeStore.orgSeg`/`tepsRoot` for the pure (no-store)
  *  Project readers. */
 function tepsRootDir(thinkingSpaceDir: string): string {
@@ -53,7 +53,7 @@ function tepsRootDir(thinkingSpaceDir: string): string {
   return path.join(thinkingSpaceDir, "teps");
 }
 
-/** The umbrella TEP ids under a project's teps tree (SP-tgvpbm) — the TEPs a
+/** The umbrella TEP ids under a project's teps tree — the TEPs a
  *  project owns. A project is code-less, so this (plus `project.yaml`) is its
  *  only content. In the org-scoped tree a TEP is the directory `TEP-{id}/`
  *  (holding `tep.md` + its `SP-m` specs), under `<org>/teps` or bare `teps`.

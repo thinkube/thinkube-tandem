@@ -18,7 +18,7 @@ import { ThinkubeStore } from "../../store/ThinkubeStore";
 import { RepoEntry } from "./ThinkingSpaceNavigatorProvider";
 import { namespaceForRepo } from "../../store/thinkingSpaceNamespace";
 
-/** A Project source the TEPs view can scope to (SP-tgvud7) — lists its umbrella TEPs. */
+/** A Project source the TEPs view can scope to — lists its umbrella TEPs. */
 export interface ProjectSource {
   product: string;
   id: string;
@@ -41,7 +41,7 @@ export type TepNode =
       status: string;
       file: string;
       /** The namespace owning this TEP — repo namespace or project namespace
-       *  (SP-tgvud7). Drives the cross-thinking space Specs resolver on selection. */
+       *. Drives the cross-thinking space Specs resolver on selection. */
       ownerNamespace: string;
       /** Specs delivering this TEP (its `SP-m` subdirs in the tree). */
       implementedBy: ImplementingSpec[];
@@ -49,7 +49,7 @@ export type TepNode =
        *  the at-a-glance progress roll-up. */
       specTotal: number;
       specDelivered: number;
-      /** Hidden from the default nav; revealed (marked) under "Show archived" (TEP-tg86v7). */
+      /** Hidden from the default nav; revealed (marked) under "Show archived". */
       archived: boolean;
     }
   | { kind: "implementing-spec"; spec: ImplementingSpec }
@@ -63,11 +63,11 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
 
   private repo: RepoEntry | undefined;
 
-  /** A Project source (SP-tgvud7) — when set, the view lists its umbrella TEPs
+  /** A Project source — when set, the view lists its umbrella TEPs
    *  instead of a repo's. Mutually exclusive with `repo`. */
   private project: ProjectSource | undefined;
 
-  /** Whether archived TEPs are shown (TEP-tg86v7); default hides them. */
+  /** Whether archived TEPs are shown; default hides them. */
   private showArchived = false;
 
   /** The currently-scoped thinking space — the "+ New TEP" command roots its
@@ -89,14 +89,14 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
     this.refresh();
   }
 
-  /** Scope the view to a Project — lists its umbrella TEPs (SP-tgvud7). */
+  /** Scope the view to a Project — lists its umbrella TEPs. */
   setProject(project: ProjectSource | undefined): void {
     this.project = project;
     this.repo = undefined;
     this.refresh();
   }
 
-  /** Toggle whether archived TEPs appear in the list (TEP-tg86v7). */
+  /** Toggle whether archived TEPs appear in the list. */
   setShowArchived(value: boolean): void {
     if (this.showArchived === value) return;
     this.showArchived = value;
@@ -117,7 +117,7 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
         }));
       return [];
     }
-    // Resolve the source — a repo Thinking Space or a Project umbrella (SP-tgvud7).
+    // Resolve the source — a repo Thinking Space or a Project umbrella.
     let store: ThinkubeStore;
     let ownerNamespace: string;
     if (this.project) {
@@ -164,7 +164,7 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
     for (const { id, relativePath: rel } of teps) {
       const doc = await store.getFile(rel);
       const fm = doc?.frontmatter;
-      // Manual archive flag (TEP-tg86v7): hidden unless "Show archived" is on.
+      // Manual archive flag: hidden unless "Show archived" is on.
       const archived = fm?.archived === true;
       if (archived && !this.showArchived) continue;
       const title =
@@ -250,7 +250,7 @@ export class TepsProvider implements vscode.TreeDataProvider<TepNode> {
   }
 }
 
-/** Status-at-a-glance icon for a TEP (SP-tgn2pd): archived keeps the archive
+/** Status-at-a-glance icon for a TEP: archived keeps the archive
  *  affordance; otherwise accepted = green check, superseded = muted, and
  *  proposed (or any other in-flight status) = blue. */
 function tepStatusIcon(node: {

@@ -1,15 +1,16 @@
 /**
- * Pure, vscode-free core of the thinking space orchestrator (SP-tgs8nz_SL-1): the work-unit DAG +
+ * Pure, vscode-free core of the thinking space orchestrator: the work-unit DAG +
  * scheduler, plus session-log helpers that parse a worker's persisted `.jsonl` events.
  * Mostly I/O-free — the `OrchestratorService` shell supplies thinking space rows + the event stream
- * and acts on the results. Unit-tested directly (high AI-testability per the lever, SP-tgsdvw);
+ * and acts on the results. Unit-tested directly (high AI-testability per the lever);
  * the live SDK worker / advance is the shell's job — a human verdict (low AI-testability).
  *
- * The one I/O seam here is `runAcVerifications` (SP-tgzyfy / TEP-tgzx3p, the closing gate): it
+ * The one I/O seam here is `runAcVerifications` (, the closing gate): it
  * spawns the Spec's declared per-AC checks. The actual spawn is behind an injectable `AcExec`
  * defaulting to `child_process` so the runner + the report builder stay unit-testable with fakes.
  */
 import { spawn } from "child_process";
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -154,7 +155,7 @@ export function batchExecutionUnits(units: WorkUnit[]): ExecutionUnit[] {
   return out;
 }
 
-// ── Work-unit DAG scheduler (SP-tgs8nz: makespan over the Spec's units) ──────
+// ── Work-unit DAG scheduler (makespan over the Spec's units) ─────────────
 //
 // The schedulable atom is an **execution unit** (a worker's assignment): a slice's
 // work units batched by shape (serial → one ordered session; mechanize/fan-out →
@@ -179,7 +180,7 @@ export interface SliceForDag {
   files: string[];
   /** `work_units` (may be empty → the whole slice is one serial unit). */
   workUnits: (WorkUnit & { note?: string })[];
-  /** 1-based AC ordinals the slice `satisfies` — the closing gate (SP-tgzyfy) advances the slice
+  /** 1-based AC ordinals the slice `satisfies` — the closing gate advances the slice
    *  to Done only when these ACs' verifications all ran green, then ticks exactly these on the Spec. */
   satisfies?: number[];
   /** The slice's design-time CONTRACT (SP-6/3): the shared interface — the exact exports, types
@@ -503,6 +504,26 @@ export const CONTRACT_DEFECT_MARKER =
   "⛔ CONTRACT-DEFECT — the contract is incomplete";
 
 /**
+ * Marker for a **gate-attributed** escalation (2026-07-11): the verification
+ * PROBE itself cannot run (shell exit 126/127 or spawn error). The defect is
+ * the gate's own machinery — the probe command, its environment — never the
+ * slice, so no rework attempt is burned and no role is re-dispatched; the
+ * remedy is re-authoring `ac_verifications` (auditor re-run), and only if that
+ * still cannot produce a runnable probe does a human see this marker.
+ */
+export const GATE_DEFECT_MARKER =
+  "⛔ GATE-DEFECT — the verification probe cannot run";
+
+/**
+ * Marker for a **deterministic-failure** escalation (2026-07-11): the same AC
+ * failed with (normalized-)identical evidence to the prior attempt. Re-running
+ * unchanged inputs cannot converge, so remaining rework attempts are not
+ * burned — the loop stops immediately and a human (or auto-attend) decides.
+ */
+export const DETERMINISTIC_FAILURE_MARKER =
+  "⛔ DETERMINISTIC FAILURE — identical evidence to the prior attempt; retrying unchanged inputs cannot converge";
+
+/**
  * Has a slice **crossed its rework bound** (SP-6/6 AC5)? True once the recorded failed-attempt count
  * reaches the bound (default {@link MAX_REWORK_ATTEMPTS}) — at which point {@link readyFrontier} drops
  * every unit the slice owns, so it is no longer auto-re-dispatchable. Fail-safe on junk input: a
@@ -529,7 +550,7 @@ export function isEscalated(
  * defect is the CONTRACT itself and the slice routes to a contract re-cut (not another role guess). The
  * verdict of {@link JudgeFailure}; routes {@link reDispatchDecision}.
  */
-export type Fault = "code" | "test" | "both" | "contract";
+export type Fault = "code" | "test" | "both" | "contract" | "gate";
 
 /**
  * An independent judge's verdict on a red acceptance run (SP-6/7 AC4): which role is at fault plus the
@@ -568,9 +589,34 @@ export interface ReDispatchVerdict {
   attempts: number;
   /** SP-6/7 AC4: which role the re-dispatch targets — set ONLY when a judged `fault` was supplied.
    *  `code`/`test` route the re-author to that role; `both` forces escalation (ambiguous); SP-6/9
-   *  `contract` forces escalation to a contract re-cut (attempts NOT burned). Absent when no fault is
-   *  given (the pure attempt-bound decision), so the AC5 behaviour is unchanged. */
+   *  `contract` forces escalation to a contract re-cut (attempts NOT burned); `gate` forces
+   *  escalation to gate re-authoring (attempts NOT burned — the probe, not the slice, is broken).
+   *  Absent when no fault is given (the pure attempt-bound decision), so the AC5 behaviour is
+   *  unchanged. */
   route?: Fault;
+  /** Set when the escalation was forced by the identical-evidence circuit breaker: the same AC
+   *  failed with the same normalized evidence as the prior attempt, so re-dispatch was refused
+   *  ("deterministic failure — inputs unchanged") without burning the remaining attempts. */
+  deterministic?: boolean;
+}
+
+/**
+ * Normalize failing-run evidence into a stable hash for the identical-failure
+ * circuit breaker: volatile fragments (durations, timestamps, tmp paths, hex
+ * addresses, pids) are stripped so two runs of the same deterministic failure
+ * hash identically while any real change in the failure hashes differently.
+ */
+export function normalizeEvidenceHash(evidence: string): string {
+  const normalized = (evidence ?? "")
+    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, "<ts>")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds?|m|min|minutes?)\b/gi, "<dur>")
+    .replace(/duration_ms:\s*[\d.]+/g, "duration_ms: <dur>")
+    .replace(/\/tmp\/[^\s'"]+/g, "<tmp>")
+    .replace(/0x[0-9a-fA-F]+/g, "<addr>")
+    .replace(/\bpid[= ]\d+/gi, "pid=<pid>")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+  return createHash("sha256").update(normalized).digest("hex");
 }
 
 /**
@@ -598,6 +644,12 @@ export function reDispatchDecision(
   priorAttempts: number,
   bound: number = MAX_REWORK_ATTEMPTS,
   fault?: Fault,
+  /** Identical-failure circuit breaker (2026-07-11): the current red's
+   *  normalized evidence hash and the prior attempt's persisted one. When both
+   *  are present and equal, a would-be re-dispatch becomes an immediate
+   *  escalation (`deterministic: true`) WITHOUT burning the remaining
+   *  attempts — re-running unchanged inputs cannot converge. */
+  evidence?: { hash?: string; priorHash?: string },
 ): ReDispatchVerdict {
   const prior = Number.isFinite(priorAttempts)
     ? Math.max(0, Math.floor(priorAttempts))
@@ -609,7 +661,30 @@ export function reDispatchDecision(
   if (fault === "contract") {
     return { action: "escalate", attempts: prior, route: "contract" };
   }
+  // Gate arm (2026-07-11): the verification PROBE cannot run — the defect is the
+  // gate's own machinery, never the slice. Escalate to gate re-authoring (the
+  // shell first retries via the auditor) without burning an attempt.
+  if (fault === "gate") {
+    return { action: "escalate", attempts: prior, route: "gate" };
+  }
   const attempts = prior + 1;
+  // Circuit breaker: the same failure, byte-for-normalized-byte, as last time.
+  // The judge may have blamed code or test, but with unchanged inputs another
+  // worker roll is a coin with no new sides — stop at THIS attempt count
+  // instead of burning the rest of the bound on the identical experiment.
+  if (
+    evidence?.hash !== undefined &&
+    evidence.priorHash !== undefined &&
+    evidence.hash === evidence.priorHash
+  ) {
+    const verdict: ReDispatchVerdict = {
+      action: "escalate",
+      attempts,
+      deterministic: true,
+    };
+    if (fault) verdict.route = fault;
+    return verdict;
+  }
   // Escalate at the bound OR when the fault is ambiguous (both code and test suspect) — AC4.
   const escalate = isEscalated(attempts, bound) || fault === "both";
   const verdict: ReDispatchVerdict = {
@@ -713,7 +788,7 @@ export function stripSatisfies(body: string): string {
 
 /**
  * Build the **autonomy-first prompt** for a worker dispatched on one execution unit
- * (SP-tgs8nz). Scoped to the unit's footprint + shape, it tells the worker to decide
+ *. Scoped to the unit's footprint + shape, it tells the worker to decide
  * autonomously (never seek confirmation), never touch git or the thinking space, and escalate
  * with a question ONLY when genuinely blocked — the posture that keeps headless
  * execution from stopping on routine approvals.
@@ -991,11 +1066,11 @@ export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending SP-tgs8nz
+ * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending
  * AC4). Matches the delivery report's plain-language `## What happened` prose FIRST; if that heading
  * is absent (or empty), falls back to the slice body's `## ⚑ Requires attention` heading — so the
  * existing `/attend` slice-diagnosis caller keeps working unchanged. Returns undefined when neither is
- * present. The attended-session divergence is `stripFailingCheck(extractDiagnosis(report))`.
+ * present. The attended-session divergence is `extractDiagnosis(report)`, passed verbatim.
  */
 export function extractDiagnosis(body: string): string | undefined {
   const text = body ?? "";
@@ -1052,59 +1127,26 @@ export function buildTestReworkContext(
 }
 
 /**
- * Strip the **failing-check specifics** from a rework-feedback string (SP-6 AC3) so the fixer is
- * steered by *what behaviour diverged from the intent*, never by "make assertion X pass." It
- * defensively removes the three channels the closing gate's evidence leaks through:
- *
- *   • the failing **AC ordinal** — `AC #3`, `AC 3`, a bare `#4`;
- *   • the failing **run command** — a `$ <cmd> → exit N` / `$ …` shell line (the `acEvidence` shape);
- *   • **its output** — fenced ``` /``~~~`` evidence blocks and `| … |` per-AC table rows (the
- *     `DELIVERY.md` per-AC table), plus leftover `→ exit N` / `→ could not run …` result fragments.
- *
- * A clean, prose intent-divergence description (no `$`/fence/table/ordinal tokens) passes through
- * essentially unchanged. Pure + idempotent. The rework-prompt builders route their feedback through
- * this as belt-and-braces — on top of only ever being *handed* a divergence description rather than
- * the AC results or the delivery report — so the omission holds even if a caller passes raw evidence.
+ * The chat prefill priming an `/attend` session: the `/attend` skill invocation
+ * for the requires-attention slice, the worktree the fix lands in, and the
+ * failure VERBATIM (2026-07-11: the old anti-gaming scrubber blinded the fixer
+ * to exactly the fault classes — broken probe, phantom footprint — it most
+ * needed to see; grading independence lives in the assessor/judge, never in
+ * hiding the failure from the fixer). The session itself opens in the CANONICAL
+ * repo, which survives worktree retirement — hence the explicit worktree note.
+ * A no-`divergence` call is just the bare `/attend <handle>` invocation. Pure.
  */
-export function stripFailingCheck(text: string): string {
-  const lines = (text ?? "").split(/\r?\n/);
-  const kept: string[] = [];
-  let inFence = false;
-  for (const line of lines) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence; // drop the fence delimiters AND the command output they wrap
-      continue;
-    }
-    if (inFence) continue;
-    if (/^\s*\$\s/.test(line)) continue; // a `$ <cmd> → exit N` shell command line
-    if (/^\s*\|/.test(line)) continue; // a `| AC | Verified by | … |` per-AC evidence table row
-    kept.push(line);
-  }
-  return kept
-    .join("\n")
-    .replace(/\bAC[\s_]*#?\s*\d+/gi, "") // "AC #3" / "AC 3" → drop the ordinal
-    .replace(/#\d+\b/g, "") // a bare `#4` ordinal
-    .replace(/→\s*(?:exit\s+-?\d+|could not run[^\n]*)/gi, "") // leftover run-result fragments
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/**
- * The chat prefill priming an `/attend` session (SP-11/2 + SP-6 AC3): the `/attend` skill invocation
- * for the requires-attention slice, followed — when a divergence is supplied — by an
- * **intent-divergence** description of how the behaviour diverged from what was intended. The
- * divergence is routed through {@link stripFailingCheck}, so the fixer never sees the failing AC
- * ordinal, the failing `run` command, or its output and so cannot optimise "make assertion X pass."
- * A no-`divergence` call is just the bare `/attend <handle>` invocation, with no dangling label. The
- * `/attend` skill (TEP-11/SP-1) supplies the "re-read the intent, bring the behaviour back, return to
- * Ready" workflow — this prefill no longer duplicates that prose. Pure.
- */
-export function buildAttendPrompt(handle: string, divergence?: string): string {
+export function buildAttendPrompt(
+  handle: string,
+  divergence?: string,
+  worktreePath?: string,
+): string {
   return (
     `/attend ${handle}` +
-    (divergence ? `\n\n${stripFailingCheck(divergence)}` : "")
+    (worktreePath
+      ? `\n\nThe Spec's worktree — apply the fix THERE and commit it to the spec branch before handing back: ${worktreePath}`
+      : "") +
+    (divergence ? `\n\n${divergence}` : "")
   );
 }
 
@@ -1113,26 +1155,28 @@ export function buildAttendPrompt(handle: string, divergence?: string): string {
  * analog of {@link buildAttendPrompt}, hosted here so the rework/divergence builders live in one
  * pure place (reuse, don't fork). It is the `/attend SP-<specId>` skill invocation, followed —
  * when the Spec lives on a cross-repo project thinking space — by the thinking-space note so every
- * kanban call addresses it explicitly, then — when a divergence is supplied — by an
- * **intent-divergence** description routed through {@link stripFailingCheck} (NOT the `DELIVERY.md`
- * per-AC table, its `run` commands, or their output), so the reworking worker is steered by the
- * intent and never by the failing AC ordinal, the failing command, or its output. No divergence ⇒
- * no trailing paragraph. The `/attend` skill (TEP-11/SP-1) supplies the rework workflow. Pure.
+ * kanban call addresses it explicitly, then the worktree the rework lands in,
+ * then the divergence VERBATIM (2026-07-11 — see {@link buildAttendPrompt}).
+ * No divergence ⇒ no trailing paragraph. Pure.
  */
 export function buildRejectPrompt(
   specId: string,
   divergence?: string,
   projectThinkingSpaceId?: string,
+  worktreePath?: string,
 ): string {
   // For a cross-repo project member the Spec lives on the project thinking space, NOT on this
   // worktree's repo thinking space — so every kanban call must address it explicitly.
   const thinkingSpaceNote = projectThinkingSpaceId
     ? `\n\nIMPORTANT — this Spec lives on the project thinking space \`${projectThinkingSpaceId}\`, not on this worktree's repo. Pass \`thinking_space=${projectThinkingSpaceId}\` to EVERY kanban tool (get_thinkube_file / get_slice / list_thinking_space / move_slice / patch_spec_section / write_spec / create_slice). Your cwd's thinking space is the working repo where the code lives, which is NOT this Spec's thinking space.`
     : "";
-  const divergenceNote = divergence
-    ? `\n\n${stripFailingCheck(divergence)}`
+  const worktreeNote = worktreePath
+    ? `\n\nThe Spec's worktree — apply the rework THERE and commit it to the spec branch: ${worktreePath}`
     : "";
-  return `/attend SP-${specId}` + thinkingSpaceNote + divergenceNote;
+  const divergenceNote = divergence ? `\n\n${divergence}` : "";
+  return (
+    `/attend SP-${specId}` + thinkingSpaceNote + worktreeNote + divergenceNote
+  );
 }
 
 /**
@@ -1270,7 +1314,7 @@ export function isResultSuccess(evt: Record<string, unknown>): boolean {
   );
 }
 
-// ── Closing AI-verification gate (SP-tgzyfy / TEP-tgzx3p) ──────────────────
+// ── Closing AI-verification gate ──────────────────
 //
 // At Spec quiescence the orchestrator runs the Spec's DECLARED per-AC verifications as a
 // complete plan against the worktree (the live cluster for infra) and gates Done/commit on
@@ -1299,7 +1343,19 @@ export interface AcResult {
   pass: boolean;
   /** The command + exit code + a tail of its output (or the un-runnable reason). Auditable. */
   evidence: string;
+  /**
+   * The probe itself could not execute (shell exit 126/127 — command not
+   * found / not executable — or a spawn error). This is a GATE defect, not a
+   * code failure: the shell routes it to auditor re-authoring instead of
+   * blaming a slice or burning a rework attempt (2026-07-11: a signed bare
+   * `tsc` probe exited 127 in every fresh worktree and burned 3 attempts).
+   */
+  unrunnable?: boolean;
 }
+
+/** Shell exit codes that mean the PROBE cannot run at all (126 = found but not
+ *  executable, 127 = command not found) — a gate defect, never a code red. */
+export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([126, 127]);
 
 /**
  * Normalize the Spec frontmatter `ac_verifications` map (AC ordinal → { run, env }) into the
@@ -1563,7 +1619,7 @@ function acEvidence(run: string, code: number | null, output: string): string {
 }
 
 /**
- * Run the Spec's declared per-AC verifications as a complete plan (SP-tgzyfy): each check runs
+ * Run the Spec's declared per-AC verifications as a complete plan: each check runs
  * in `cwd` (the worktree / live cluster), in declared order, and its pass/fail is attributed
  * back to the AC it proves. A command that exits 0 → pass; non-zero → fail; one that can't run
  * at all (spawn error) → fail with an "could not run" evidence (the no-skip: un-runnable ⇒ red,
@@ -1634,12 +1690,20 @@ export async function runAcVerifications(
         ac: v.ac,
         pass: false,
         evidence: `$ ${v.run} → could not run: ${cached.error}`,
+        unrunnable: true,
       });
     } else {
+      const unrunnable =
+        cached.code !== null && PROBE_UNRUNNABLE_CODES.has(cached.code);
       out.push({
         ac: v.ac,
         pass: cached.code === 0,
-        evidence: acEvidence(v.run, cached.code, cached.output),
+        evidence:
+          acEvidence(v.run, cached.code, cached.output) +
+          (unrunnable
+            ? "\n(probe unrunnable — command not found / not executable: a GATE defect, not a code failure)"
+            : ""),
+        ...(unrunnable ? { unrunnable: true } : {}),
       });
     }
   }
@@ -1677,7 +1741,7 @@ export function checkAcOrdinals(body: string, ordinals: number[]): string {
   return lines.join("\n");
 }
 
-// ── Finalization watchdog (SP-th4wqc_SL-2 / TEP-th3i18 #11) ────────────────
+// ── Finalization watchdog ────────────────
 //
 // A run can land every execution unit and then silently wedge — the finalize tail
 // (commit the Spec, write DELIVERY.md, advance the slice off `ready`) never fires, so
@@ -1713,7 +1777,7 @@ export interface FinalizationState {
 }
 
 /**
- * Pure finalization watchdog (SP-th4wqc_SL-2): given the run's quiescence + finalize-marker
+ * Pure finalization watchdog: given the run's quiescence + finalize-marker
  * state, return `'finalized'` when the run is healthy (or not yet at the finalize check), or
  * `{ wedged }` when the units are **done** but one or more finalize markers — commit SHA,
  * DELIVERY.md, slice moved off `ready` — are **absent**. The `wedged` string always contains
@@ -1736,7 +1800,7 @@ export function finalizationVerdict(
   };
 }
 
-// ── Atomic, resumable per-slice commit (SP-th4wqc_SL-3 / TEP-th3i18 #9) ────
+// ── Atomic, resumable per-slice commit ────
 //
 // Today commit is all-or-nothing at run quiescence, so a partial gate or a git
 // failure can leave a slice on `Done` with uncommitted work — a sticky-Done lie. SL-3
@@ -1755,7 +1819,7 @@ export function finalizationVerdict(
 // documented on `commitPlan`: attempt each `commit` handle's git commit; a handle whose commit
 // fails is treated as a rollback (→ `ready`, NOT Done), so only commit-succeeded slices end Done.
 
-/** One slice's outcome feeding the per-slice commit decision (SP-th4wqc_SL-3 / #9). */
+/** One slice's outcome feeding the per-slice commit decision. */
 export interface SliceOutcome {
   /** Slice handle, e.g. "SP-3_SL-2". */
   handle: string;
@@ -1767,7 +1831,7 @@ export interface SliceOutcome {
 }
 
 /**
- * The per-slice commit decision (SP-th4wqc_SL-3). `commit` lists the handles whose work is complete
+ * The per-slice commit decision. `commit` lists the handles whose work is complete
  * AND gate-green — the shell commits each (commit-before-Done) then marks it Done. `rollback` lists
  * the handles that must NOT end Done — moved back to `ready` so a later run re-attempts them.
  */
@@ -1779,7 +1843,7 @@ export interface CommitPlan {
 }
 
 /**
- * Pure per-slice commit planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): partition the run's slice
+ * Pure per-slice commit planner: partition the run's slice
  * outcomes into the slices to **commit** (every unit landed ∧ the slice's gate passed) and the
  * slices to **roll back** to `ready` (anything else — partial landing or a failed gate). This is
  * the no-sticky-Done invariant: a slice is only ever committed-then-Done when its work is complete
@@ -1800,7 +1864,7 @@ export function commitPlan(sliceOutcomes: SliceOutcome[]): CommitPlan {
   return { commit, rollback };
 }
 
-/** What a slice looks like at the start of a (re-)run, for the resume decision (SP-th4wqc_SL-3 / #9). */
+/** What a slice looks like at the start of a (re-)run, for the resume decision. */
 export interface SliceState {
   /** Frontmatter status: ready | doing | done | requires-attention | archived. */
   status: string;
@@ -1811,7 +1875,7 @@ export interface SliceState {
 }
 
 /**
- * Pure resume planner (SP-th4wqc_SL-3 / TEP-th3i18 #9): decide what a (re-)run does with a slice it
+ * Pure resume planner: decide what a (re-)run does with a slice it
  * encounters, so a resume **commits** rather than **re-authors** already-present work — the AC4
  * invariant the spy `runUnit` asserts (not called for a complete-but-uncommitted slice on re-run).
  *
@@ -1988,7 +2052,7 @@ const NEXT_HINTS: Record<ExitActionId, string> = {
     "resolve the requires-attention slice(s), then re-run Orchestrate on the Spec.",
 };
 
-/** Everything the auditable delivery report (DELIVERY.md) records (SP-tgzyfy). */
+/** Everything the auditable delivery report (DELIVERY.md) records. */
 export interface DeliveryReportInput {
   specNumber: string;
   /** Short HEAD sha the Spec was committed at (or "" when nothing committed). */
@@ -2101,7 +2165,7 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
       "",
       "**No `ac_verifications` declared on the Spec — the closing gate could not run.** " +
         "The acceptance criteria were NOT verified; the Spec is left `requires-attention` " +
-        "(no skip, TEP-tgzx3p). Declare a per-AC verification map on the Spec, then re-run.",
+        "(no skip). Declare a per-AC verification map on the Spec, then re-run.",
     ];
   } else if (hasAcTexts) {
     // Criterion-text rows: keep today's `#k` ordinal token, carry the Spec's criterion line.

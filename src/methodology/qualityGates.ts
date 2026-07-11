@@ -3,7 +3,7 @@
  *
  * Pure functions: take an input shape, return `{ ok: true } | { ok: false,
  * reason: string }`. No I/O — the caller (kanban adapter, MCP server,
- * `/pair-next` skill) is responsible for fetching what the gate needs.
+ * Done gate) is responsible for fetching what the gate needs.
  *
  * Three gates ship in v0.1.0, one per workflow boundary:
  *
@@ -85,7 +85,7 @@ export interface AcceptanceItem {
 /**
  * Extract checkbox items under the `## Acceptance Criteria` heading. Returns
  * `[]` when the section is missing or empty. Exported for direct use by the
- * `/pair-next` skill and MCP tools that want to inspect criteria.
+ * Done gate and MCP tools that want to inspect criteria.
  */
 export function extractAcceptanceCriteria(body: string): AcceptanceItem[] {
   const lines = body.split(/\r?\n/);
@@ -146,7 +146,7 @@ export function gateForTransition(
 //   → Done  : every acceptance criterion on the parent Spec is checked.
 //
 // The "→ Done" gate's other half — verifier green for the slice — is a runtime
-// check enforced by `/pair-next`, not a file check. Ready→Doing and any other
+// check enforced at the Done gate, not a file check. Ready→Doing and any other
 // move is ungated. These reuse the same body-reading checks as the 6-column
 // gates above; the legacy `gateForTransition` / `GateName` stay until their
 // consumers are removed (migration phases 5–7).
@@ -301,12 +301,12 @@ export class GateFailedError extends Error {
   }
 }
 
-// ── Documentation obligation (TEP-tgh6iy) ──────────────────────────────────
+// ── Documentation obligation ──────────────────────────────────
 
 export type DocsObligation = { docs: "required" | "n/a"; docs_reason?: string };
 
 /**
- * Normalize + validate a slice's documentation obligation (TEP-tgh6iy).
+ * Normalize + validate a slice's documentation obligation.
  * Default is `required` — fail closed: user-facing work is assumed unless the
  * slicer declares `n/a`, which must carry a one-line reason so skipping docs is
  * a visible, deliberate choice, never silent. Pure: returns a result, never
@@ -328,7 +328,7 @@ export function resolveDocsObligation(input: {
     return {
       ok: false,
       reason:
-        "docs: n/a requires a one-line docs_reason justifying why this slice needs no documentation (TEP-tgh6iy) — skipping docs must be a visible, deliberate choice.",
+        "docs: n/a requires a one-line docs_reason justifying why this slice needs no documentation — skipping docs must be a visible, deliberate choice.",
     };
   }
   return {
@@ -340,7 +340,7 @@ export function resolveDocsObligation(input: {
 export type DocsGateMode = "advisory" | "blocking";
 
 /**
- * → Done docs gate (TEP-tgh6iy). A slice declaring `docs: required` must have
+ * → Done docs gate. A slice declaring `docs: required` must have
  * its documentation done before it reaches Done. In `blocking` mode an
  * unsatisfied obligation **refuses** the move; in `advisory` mode it **passes
  * with a warning** so the gate can roll out before it bites. A slice that is
@@ -358,7 +358,7 @@ export function gateSliceDocsToDone(input: {
   if (input.docs !== "required") return { ok: true };
   if (input.docsDone === true) return { ok: true };
   const msg =
-    "docs: required — update this slice's documentation (docs-with-code) and pass docs_done before → Done (TEP-tgh6iy).";
+    "docs: required — update this slice's documentation (docs-with-code) and pass docs_done before → Done.";
   return input.mode === "blocking"
     ? { ok: false, reason: msg }
     : { ok: true, warning: `${msg} [advisory — allowed, but please confirm]` };

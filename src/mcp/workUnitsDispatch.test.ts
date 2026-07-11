@@ -1,5 +1,5 @@
 /**
- * Regression test (SP-tgs8gb): a `create_slice` TOOL CALL — i.e. through `dispatchTool`,
+ * Regression test: a `create_slice` TOOL CALL — i.e. through `dispatchTool`,
  * the layer the live MCP server actually runs — must persist `work_units`.
  *
  * The bug this guards: the dispatcher built the `createSlice` args object and forwarded

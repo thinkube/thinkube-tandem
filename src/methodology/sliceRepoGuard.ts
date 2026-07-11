@@ -51,6 +51,76 @@ export type SliceRepoCheck =
  * lexical (no `fs`): paths are resolved against `thinkingSpaceRepoRoot` and required to
  * stay under it.
  */
+/**
+ * Filesystem oracle injected into {@link sliceFilesExistInRepo} so the
+ * existence gate stays unit-testable (fixtures in, ok/offending out). The
+ * server wires a real one (fs.existsSync + `git ls-files`).
+ */
+export interface RepoFileOracle {
+  /** Does this repo-relative path exist in the working tree? */
+  exists(repoRelPath: string): boolean;
+  /** Every repo-relative tracked file (for did-you-mean); called lazily, once. */
+  listFiles(): string[];
+}
+
+/**
+ * Existence gate (2026-07-11, TEP-1_SP-4 post-mortem): every declared
+ * footprint path must EXIST in the working repo unless the slice declares it
+ * in `creates:`. The containment guard above is purely lexical, so a slice
+ * could footprint a path that exists nowhere — workers then "complete" without
+ * ever being able to touch the real file, and every orchestration burns on the
+ * same phantom path (`backend/app/services/templates/service-configmap.yaml.j2`
+ * vs the real repo-root `templates/service-configmap.yaml.j2`). Refusal names
+ * each missing path with a did-you-mean basename match from the repo's tracked
+ * files.
+ *
+ * `creates` entries are exempt (they are the slice's declared-new files);
+ * held-out test-unit footprints are exempted by the CALLER (they are new by
+ * design and role-tagged there).
+ */
+export function sliceFilesExistInRepo(
+  thinkingSpaceRepoRoot: string,
+  files: ReadonlyArray<string>,
+  creates: ReadonlyArray<string>,
+  oracle: RepoFileOracle,
+): SliceRepoCheck {
+  const root = path.resolve(thinkingSpaceRepoRoot);
+  const declaredNew = new Set(
+    (creates ?? [])
+      .filter((c): c is string => typeof c === "string" && !!c.trim())
+      .map((c) => path.normalize(c.trim())),
+  );
+
+  const missing: string[] = [];
+  for (const raw of files ?? []) {
+    if (typeof raw !== "string" || !raw.trim()) continue; // containment guard owns these
+    const rel = path.normalize(raw.trim());
+    if (declaredNew.has(rel)) continue;
+    if (!oracle.exists(rel)) missing.push(raw);
+  }
+  if (missing.length === 0) return { ok: true };
+
+  // Did-you-mean: same basename among the repo's tracked files.
+  let tracked: string[] | undefined;
+  const suggest = (rel: string): string => {
+    tracked ??= oracle.listFiles();
+    const base = path.basename(path.normalize(rel.trim()));
+    const hits = tracked.filter((t) => path.basename(t) === base).slice(0, 3);
+    return hits.length ? ` — did you mean ${hits.map((h) => `"${h}"`).join(" or ")}?` : "";
+  };
+
+  return {
+    ok: false,
+    offending: missing,
+    reason:
+      `Slice footprint file(s) do not exist in the thinking space repo (${root}):\n` +
+      missing.map((m) => `  - "${m}"${suggest(m)}`).join("\n") +
+      `\nA file this slice CREATES must be declared in \`creates:\` ` +
+      `(e.g. creates: ["src/new.ts"]); every other footprint path must already ` +
+      `exist, or workers are fenced onto a phantom path and every orchestration fails.`,
+  };
+}
+
 export function sliceFilesResolveInRepo(
   thinkingSpaceRepoRoot: string,
   files: ReadonlyArray<string>,
