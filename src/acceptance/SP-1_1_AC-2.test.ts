@@ -4,7 +4,7 @@
 // green permanently and its work is done):
 // Before TEP-1/SP-1 the extension was published under the old package name and old
 // command-palette category label. After the rebrand every git-tracked file must use the
-// new identity instead. Two substrings are deliberately exempted:
+// new identity instead. Four substrings/file-sets are deliberately exempted:
 //   (a) "github.com/cmxela/<old-name>" — historical fixture URLs in sliceThinkingSpace.test.ts
 //       pointing at real GitHub commits/PRs; they stay valid after a GitHub repo rename via
 //       redirect, so renaming them would break the fixture intent.
@@ -13,13 +13,20 @@
 //   (c) scripts/deploy.sh's one-time migration/uninstall step — the old EXTENSION ID
 //       ("thinkube.<old-name>", the --uninstall-extension target and the old globalStorage
 //       path being copied FROM) and the ".migrated-from-<old-name>" sentinel: removing the
-//       old install requires naming it.
+//       old install requires naming it. Exemption is NARROW: only lines in scripts/deploy.sh
+//       that contain the old extension id or migration sentinel; a missed rename elsewhere
+//       in that file still fails.
+//   (d) src/acceptance/SP-1_1_AC-*.test.ts — these probes must name the old identity to
+//       prove its absence (e.g. building the grep pattern, naming carve-outs). They are
+//       git-tracked once the slice lands. Only these specific acceptance probe files are
+//       exempt; no other test file is.
 //
 // NOTE ON SELF-CONSISTENCY: the grep pattern and the literal old strings that appear
 // elsewhere in this file are built via join() so the COMBINED literals never appear as
 // raw substrings in the source — if they did, git grep would match THIS file and the test
-// would flag itself as a violation. The carve-out constants are exempt because they
-// contain the carve-out substrings (so git grep hits on those lines are filtered out).
+// would flag itself as a violation. The carve-out constants for (a)/(b)/(c) are exempt
+// because they contain the carve-out substrings (so git grep hits on those lines are
+// filtered out). Carve-out (d) exempts the entire file by its path pattern.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -47,8 +54,22 @@ const CARVEOUT_DISK_PATH = "Platform/extensions/thinkube-ai-integration";
 // the old install to remove it. Deliberately NARROW — only the old extension id and the
 // migration sentinel are exempt, so a missed rename elsewhere in deploy.sh (e.g. the
 // VSIX filename variable) is still flagged. Built via join() for self-consistency.
-const CARVEOUT_OLD_EXTENSION_ID = ["thinkube.thinkube", "ai", "integration"].join("-");
-const CARVEOUT_MIGRATION_SENTINEL = [".migrated-from-thinkube", "ai", "integration"].join("-");
+const CARVEOUT_OLD_EXTENSION_ID = [
+  "thinkube.thinkube",
+  "ai",
+  "integration",
+].join("-");
+const CARVEOUT_MIGRATION_SENTINEL = [
+  ".migrated-from-thinkube",
+  "ai",
+  "integration",
+].join("-");
+
+// Carve-out (d): this spec's own acceptance probes must name the old identity to prove
+// its absence (e.g. building the grep pattern, naming carve-out substrings). They become
+// git-tracked once the slice lands. Exempt only these files — no other test file is exempt.
+// Git grep output format is "<path>:<line>", so matching the file path prefix is exact.
+const CARVEOUT_ACCEPTANCE_PROBE_PREFIX = "src/acceptance/SP-1_1_AC-";
 
 // Resolve the repo root from this compiled file's location.
 // The test compiles to out-test/acceptance/SP-1_1_AC-2.test.js, so __dirname is
@@ -56,7 +77,7 @@ const CARVEOUT_MIGRATION_SENTINEL = [".migrated-from-thinkube", "ai", "integrati
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
 test(
-  "git grep finds no old-identity strings outside the two spec-defined carve-outs" +
+  "git grep finds no old-identity strings outside the four spec-defined carve-outs" +
     " (TRANSITION: done once rebrand ships)",
   () => {
     // git grep exit codes:
@@ -86,28 +107,33 @@ test(
     // Status 1 = zero matches anywhere — no old-identity strings exist at all.
     if (result.status === 1) return;
 
-    // Status 0 = matches found. Apply the two spec-defined carve-outs: any line that
-    // contains either carve-out substring is intentionally retained and not a violation.
+    // Status 0 = matches found. Apply the four spec-defined carve-outs: any line that
+    // falls under a carve-out is intentionally retained and not a violation.
     const hits = result.stdout
       .split("\n")
       .filter((line) => line.trim().length > 0);
 
     const violations = hits.filter(
       (line) =>
+        // (a) historical fixture URLs in sliceThinkingSpace.test.ts
         !line.includes(CARVEOUT_HISTORICAL_URL) &&
+        // (b) on-disk container-directory path (separate ops rename)
         !line.includes(CARVEOUT_DISK_PATH) &&
+        // (c) scripts/deploy.sh one-time migration/uninstall step (narrow: only that file)
         !(
           line.startsWith("scripts/deploy.sh:") &&
           (line.includes(CARVEOUT_OLD_EXTENSION_ID) ||
             line.includes(CARVEOUT_MIGRATION_SENTINEL))
-        ),
+        ) &&
+        // (d) this spec's own acceptance probes (must name old identity to prove its absence)
+        !line.startsWith(CARVEOUT_ACCEPTANCE_PROBE_PREFIX),
     );
 
     assert.deepEqual(
       violations,
       [],
       `${violations.length} old-identity reference(s) remain in git-tracked files ` +
-        `(expected 0 outside the three carve-outs):\n` +
+        `(expected 0 outside the four carve-outs):\n` +
         violations.map((v) => `  ${v}`).join("\n"),
     );
   },

@@ -1,21 +1,16 @@
-// SP-1/1 AC1 — package.json and package-lock.json carry the thinkube-tandem identity.
+// SP-1/1 AC-1 — package.json and package-lock.json carry the thinkube-tandem identity.
 //
-// This file probes the five identity fields that prove the TEP-1 rebrand landed in the
-// manifest layer: `name`, `displayName`, `repository.url` in package.json (three fields
-// changed), `publisher` in package.json (one field that must NOT change), and the two
-// lockfile name fields that must stay in sync with the package rename.
-//
-// All reads are synchronous filesystem operations against the project root — there is no
-// module to import, no build step to exercise. The tests compile and run before any other
-// implementation work lands; they describe WHAT must be true, not HOW it is achieved.
+// Reads the two manifest files synchronously from the project root (two levels up from the
+// compiled output at out-test/acceptance/) and asserts the six identity fields specified by
+// AC-1. No module imports, no build artefact, no Extension-Host: runs before any
+// implementation work exists and describes WHAT must be true, not HOW it is achieved.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-// The compiled test lives at out-test/acceptance/SP-1_1_AC-1.test.js.
-// Two levels up from that directory is the project root.
+// Compiled output: out-test/acceptance/SP-1_1_AC-1.test.js → project root is two levels up.
 const ROOT = path.resolve(__dirname, "../..");
 
 function readJson(relPath: string): Record<string, unknown> {
@@ -24,38 +19,34 @@ function readJson(relPath: string): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
-// ── package.json: name and displayName adopt the Tandem brand ─────────────────
-// WHY (one-time TRANSITION — its job is done once the rename ships): proves that
-// `name` changed from "thinkube-ai-integration" to "thinkube-tandem" and
-// `displayName` from the old label to "Thinkube Tandem".  These are the root
-// identity fields; every other rebrand assertion flows from them.  Once the
-// rename is live this probe's change-proof role is complete.
-
-test("package.json name is 'thinkube-tandem' (TRANSITION: renamed from thinkube-ai-integration)", () => {
+// WHY TRANSITION: the extension package name is the seed for the extension id
+// (thinkube.thinkube-tandem), the vsix filename, and globalStorage paths — all downstream
+// from this field. Proves it was set to the new Tandem identity. Done once the rename ships.
+test("package.json name is 'thinkube-tandem'", () => {
   const pkg = readJson("package.json");
   assert.equal(
     pkg.name,
     "thinkube-tandem",
-    "package.json name must be thinkube-tandem after the TEP-1 rebrand",
+    "package.json name must be 'thinkube-tandem'",
   );
 });
 
-test("package.json displayName is 'Thinkube Tandem' (TRANSITION: display label updated with the brand)", () => {
+// WHY TRANSITION: displayName is the user-facing label in the Extensions panel and the
+// activity-bar tooltip. Proves the UI label was updated to the Thinkube Tandem brand.
+// Done once the rename ships.
+test("package.json displayName is 'Thinkube Tandem'", () => {
   const pkg = readJson("package.json");
   assert.equal(
     pkg.displayName,
     "Thinkube Tandem",
-    "package.json displayName must be 'Thinkube Tandem' after the TEP-1 rebrand",
+    "package.json displayName must be 'Thinkube Tandem'",
   );
 });
 
-// ── package.json: publisher must not change ────────────────────────────────────
-// WHY (standing INVARIANT — lives forever): the extension id is `<publisher>.<name>`.
-// A publisher change silently mints a new extension id and orphans every installed-
-// base globalStorage entry (signing keys, approval tokens).  This guard fires if the
-// publisher field is ever accidentally altered during a future rename.
-
-test("package.json publisher is 'thinkube' (INVARIANT: must not change — drives the extension id)", () => {
+// WHY INVARIANT: the extension id is '<publisher>.<name>'. Changing publisher silently mints
+// a new id and orphans every installed globalStorage entry (signing keys, approval tokens).
+// This guard must live forever to catch accidental future alterations.
+test("package.json publisher is 'thinkube' (unchanged — anchors the extension id)", () => {
   const pkg = readJson("package.json");
   assert.equal(
     pkg.publisher,
@@ -64,51 +55,49 @@ test("package.json publisher is 'thinkube' (INVARIANT: must not change — drive
   );
 });
 
-// ── package.json: repository.url points at the renamed GitHub location ─────────
-// WHY (one-time TRANSITION — its job is done once the GitHub repo is renamed):
-// proves `repository.url` was updated to reflect the thinkube-ai-integration →
-// thinkube-tandem rename in the thinkube org.  The probe checks the field as a
-// plain string value (per the AC's explicit note): whether the remote URL actually
-// resolves is an out-of-band ops concern, not this probe's responsibility.
-
-test("package.json repository.url is set to the renamed GitHub repo (TRANSITION)", () => {
+// WHY TRANSITION: repository.url records the canonical GitHub home for the renamed repo.
+// The AC specifies this as a string field check only — URL resolution is an out-of-band ops
+// concern. Proves the field was updated as part of the rename. Done once the rename ships.
+test("package.json repository.url is 'https://github.com/thinkube/thinkube-tandem'", () => {
   const pkg = readJson("package.json");
   const repo = pkg.repository as { url?: string } | undefined;
-  assert.ok(repo, "package.json must have a 'repository' field");
+  assert.ok(
+    repo != null && typeof repo === "object",
+    "package.json must have a 'repository' object field",
+  );
   assert.equal(
     repo!.url,
     "https://github.com/thinkube/thinkube-tandem",
-    "repository.url must point at the renamed GitHub repo after the TEP-1 rebrand",
+    "repository.url must be 'https://github.com/thinkube/thinkube-tandem'",
   );
 });
 
-// ── package-lock.json: both name fields reflect the rename ────────────────────
-// WHY (one-time TRANSITION — its job is done once the lockfile is regenerated):
-// npm writes `name` at the lockfile top level AND inside `packages[""]`.  Both
-// must agree with the new package name or tooling can misidentify the package.
-// These two assertions prove the lockfile was regenerated (not just the package
-// manifest edited) so the rename is fully coherent across the npm artefacts.
-
-test("package-lock.json top-level name is 'thinkube-tandem' (TRANSITION: lockfile regenerated after rename)", () => {
+// WHY TRANSITION: npm writes 'name' at the lockfile top level independently of the manifest.
+// Proves the lockfile was regenerated (not just the manifest hand-edited) so the rename is
+// coherent across all npm artefacts. Done once the lockfile is regenerated after the rename.
+test("package-lock.json top-level name is 'thinkube-tandem'", () => {
   const lock = readJson("package-lock.json");
   assert.equal(
     lock.name,
     "thinkube-tandem",
-    "package-lock.json top-level name must be thinkube-tandem — regenerate the lockfile if not",
+    "package-lock.json top-level name must be 'thinkube-tandem' — regenerate the lockfile after renaming package.json",
   );
 });
 
-test("package-lock.json packages[''].name is 'thinkube-tandem' (TRANSITION: lockfile packages entry updated)", () => {
+// WHY TRANSITION: npm also writes 'name' inside the packages[""] root-package record.
+// Both lockfile name fields must agree with package.json or tooling can misidentify the
+// package. Done once the lockfile is regenerated and both entries agree.
+test("package-lock.json packages[''].name is 'thinkube-tandem'", () => {
   const lock = readJson("package-lock.json");
   const packages = lock.packages as
     Record<string, Record<string, unknown>> | undefined;
   assert.ok(
-    packages && packages[""],
+    packages != null && packages[""] != null,
     "package-lock.json must have a packages[''] entry (the root package record)",
   );
   assert.equal(
     packages![""].name,
     "thinkube-tandem",
-    "packages[''].name must be thinkube-tandem — both lockfile name fields must agree",
+    "packages[''].name must be 'thinkube-tandem' — both lockfile name fields must agree",
   );
 });
