@@ -42,6 +42,8 @@ import {
   extractDiscoveries,
   appendJudgeGuidance,
   extractJudgeGuidance,
+  appendPlanRepair,
+  sectionText,
   buildVerificationTrace,
   mergeVerificationTrace,
   finalizationVerdict,
@@ -185,6 +187,22 @@ export interface OrchestratorDeps {
        *  re-runs exactly the implicated role's units on the next dispatch. */
       fault?: Fault;
     },
+  ) => Promise<void>;
+  /** Plan-repair lane (2026-07-12): PROPOSES an instrument amendment (AC / contract / unit notes)
+   *  anchored to the immutable intent when the judge attributes a red to the PLAN. The orchestrator
+   *  applies it deterministically, re-certifies, records it on the card and in the delivery report,
+   *  and re-grades — same run. Absent ⇒ a plan fault escalates for a human re-cut (the pre-lane
+   *  behaviour). Production wires {@link createSdkPlanRepair} at the command layer. */
+  repairPlan?: PlanRepair;
+  /** Apply one plan-repair proposal to the board (tests): defaults to patching the Spec's
+   *  `## Acceptance Criteria` section, updating the slice's `contract`/work-unit notes, re-certifying
+   *  via {@link OrchestratorDeps.reauthorGate}, and appending the `## 🛠 Plan repair` record. */
+  applyPlanRepair?: (
+    specNumber: string,
+    slice: string,
+    proposal: PlanRepairProposal,
+    round: number,
+    worktreeCwd: string,
   ) => Promise<void>;
   /** Pre-flight contract-consistency check (2026-07-12): asked once per FRESH slice (no
    *  prior attempts, no checkpointed units) before any worker dispatches — can every
@@ -373,6 +391,16 @@ export interface SpecRunResult {
    *  final output, each paired with the reporting unit id (collected verbatim via `extractDiscoveries`,
    *  no model-side summarizing). Rendered in the report's "Discoveries & recommendations" section. */
   discoveries: { unit: string; text: string }[];
+  /** 2026-07-12: every plan-repair amendment made this run (AC carve-outs, contract seams, unit-note
+   *  fixes), each with the intent-based justification. Rendered as the delivery report's
+   *  "Changes to the approved plan" section — the human Accept decision must see the delta between
+   *  the approved plan and the delivered one. Empty when the plan was delivered as approved. */
+  planChanges: {
+    slice: string;
+    round: number;
+    summary: string;
+    justification: string;
+  }[];
 }
 
 // Leading/trailing shell punctuation to peel off a `run`-command token (quotes,
@@ -721,8 +749,22 @@ export function buildJudgePrompt(
   unit: Pick<SchedUnit, "id" | "slice" | "role">,
   failure: string,
   contract?: string,
+  intent?: string,
 ): string {
   const hasContract = !!(contract && contract.trim());
+  // 2026-07-12 — the INTENT is the north star: the ACs/contract/notes are instruments that
+  // approximate it. The judge triangulates failure ↔ instrument ↔ intent, which is what lets it
+  // say "the instrument is wrong" (plan repair) instead of blaming a hand that faithfully
+  // followed a bad instrument.
+  const intentBlock = intent?.trim()
+    ? [
+        "",
+        "──── SPEC INTENT (the NORTH STAR — the outcome this Spec exists to achieve; every other",
+        "artifact, acceptance criteria included, is only an instrument approximating it) ────",
+        intent.trim(),
+        "──── end intent ────",
+      ].join("\n")
+    : "";
   // The contract goes in VERBATIM (SP-6/9) — it is the arbiter, so the judge must see the exact seam,
   // not a paraphrase. Absent ⇒ say so and omit the verbatim block (there is nothing to triangulate on).
   const contractBlock = hasContract
@@ -739,17 +781,29 @@ export function buildJudgePrompt(
     "(the TEST, authored black-box by a test-author) graded the implementation (the CODE, authored by a",
     "code-author) and it went RED.",
     "",
-    "TRIANGULATE against the CONTRACT below — the one artifact BOTH hands built against, and therefore",
-    "the neutral arbiter. Judge EACH hand's conformance against the CONTRACT ITSELF; do NOT decide by",
-    "comparing the two hands to each other. Then attribute the fault:",
+    "TRIANGULATE with the INTENT as the north star: the contract, the acceptance criteria, and the",
+    "unit instructions are only INSTRUMENTS approximating the intent. Judge EACH hand's conformance",
+    "against the CONTRACT ITSELF (never by comparing the two hands to each other), and judge the",
+    "instruments themselves against the INTENT. Then attribute the fault:",
     "  - `code`     — the implementation diverges from the contract; the probe is correct. Re-author the CODE.",
     "  - `test`     — the probe asserts something the contract does NOT define, or contradicts it; the",
     "                 code conforms to the contract. Re-author the TEST.",
-    "  - `contract` — BOTH hands conform to the contract, yet the red pivots on a seam the contract never",
-    "                 defined (an arming mechanism, a constant, a state location, an observable effect the",
-    "                 contract never named). The CONTRACT itself is incomplete — name the undefined seam",
-    "                 in the rationale. (This routes the slice to a contract re-cut, not another guess.)",
-    "  - `both`     — both are suspect, or you cannot single one out. (This escalates to a human.)",
+    "  - `contract` — the PLAN is the defect: an instrument (the contract, an acceptance criterion, or a",
+    "                 unit instruction) misserves the INTENT as written — a seam it never defined, a",
+    "                 prohibition the intent never implies, an instruction an AC forbids. The hands may",
+    "                 each conform to their instrument and the red still stands. Name in the rationale",
+    "                 EXACTLY which instrument is wrong and what amendment the intent justifies. (This",
+    "                 routes to the plan-repair lane: the instrument is amended against the intent and",
+    "                 the run continues — so precision here is what gets repaired.)",
+    "  - `intent`   — the INTENT itself is ambiguous or self-contradictory: no instrument amendment can",
+    "                 be justified because the north star does not decide it. (This is the ONE verdict a",
+    "                 machine may not resolve — it always stops for a human.)",
+    "  - `both`     — both hands are suspect, or you cannot single one out. (This escalates to a human.)",
+    "",
+    "GUARD: `contract` is NOT a way to weaken checks until they pass. It applies ONLY when the intent,",
+    "read honestly, is already served by the delivered work and the instrument mis-measures that — never",
+    "when the intent is genuinely unmet.",
+    intentBlock,
     contractBlock,
     "",
     `Failing unit: ${unit.id} (slice ${unit.slice}${unit.role ? `, role ${unit.role}` : ""}).`,
@@ -784,7 +838,11 @@ export function parseJudgment(text: string): FailureJudgment {
           ? rec.verdict.trim().toLowerCase()
           : "";
     const fault: Fault =
-      raw === "code" || raw === "test" || raw === "both" || raw === "contract"
+      raw === "code" ||
+      raw === "test" ||
+      raw === "both" ||
+      raw === "contract" ||
+      raw === "intent"
         ? raw
         : "both";
     const rationale =
@@ -822,8 +880,8 @@ export function createSdkJudge(deps: SdkAssessorDeps): JudgeFailure {
     (async () =>
       (await import("@anthropic-ai/claude-agent-sdk"))
         .query as unknown as AssessorSdkQuery);
-  return async (unit, failure, contract): Promise<FailureJudgment> => {
-    const prompt = buildJudgePrompt(unit, failure, contract);
+  return async (unit, failure, contract, intent): Promise<FailureJudgment> => {
+    const prompt = buildJudgePrompt(unit, failure, contract, intent);
     let resultText = "";
     let assistantText = "";
     let sawSuccess = false;
@@ -994,6 +1052,198 @@ export function createSdkContractCheck(deps: SdkAssessorDeps): ContractCheck {
     }
     if (!sawSuccess) return { consistent: true };
     return parseContractCheck(resultText || assistantText);
+  };
+}
+
+// ── Plan-repair lane (2026-07-12): amend the instruments, anchored to the intent ────
+//
+// When the judge concludes the PLAN is the defect (`fault: "contract"` — an AC, the contract, or a
+// unit note misserves the intent as written), the run no longer parks for a human to hand-edit the
+// board. A repair session PROPOSES the amendment (structured output, never direct writes); the
+// orchestrator APPLIES it deterministically through the board write path, re-certifies the probes,
+// records a round-stamped `## 🛠 Plan repair` section on the card, optionally reopens the role whose
+// artifact must be re-authored under the amended plan, and re-grades — same run. Hard rules: the
+// INTENT is never machine-amended (an `intent` fault always escalates), and every amendment lands in
+// the delivery report's "Changes to the approved plan" so the human Accept decision is informed.
+
+/** A repair session's structured proposal. `amend: false` = it could not justify an amendment
+ *  against the intent (the slice then escalates to a human, exactly as before this lane). */
+export interface PlanRepairProposal {
+  amend: boolean;
+  /** One or two sentences: WHY the intent justifies this amendment. */
+  justification: string;
+  /** Plain-language summary of WHAT changed (before → after) — rendered on the card and report. */
+  summary: string;
+  /** Replacement content for the Spec's `## Acceptance Criteria` section (omit = unchanged). */
+  acSection?: string;
+  /** Replacement slice contract (omit = unchanged). */
+  contract?: string;
+  /** Replacement notes for specific work units, by 0-based index (omit = unchanged). */
+  unitNotes?: { unit: number; note: string }[];
+  /** Which role's artifact must be re-authored under the amended plan ("none" = just re-grade). */
+  reopen?: "code" | "test" | "none";
+}
+
+/** The plan-repair seam. Injectable end-to-end; production wires {@link createSdkPlanRepair}. */
+export type PlanRepair = (input: {
+  slice: string;
+  intent: string;
+  acSection: string;
+  contract?: string;
+  unitNotes: string[];
+  diagnosis: string;
+}) => Promise<PlanRepairProposal>;
+
+/** Build the plan-repair prompt: intent (immutable), current instruments, the judge's diagnosis,
+ *  and the amendment rules. Pure. */
+export function buildPlanRepairPrompt(input: {
+  slice: string;
+  intent: string;
+  acSection: string;
+  contract?: string;
+  unitNotes: string[];
+  diagnosis: string;
+}): string {
+  return [
+    `You are the PLAN-REPAIR session for slice ${input.slice}. An independent judge concluded the`,
+    "PLAN — not the delivered work — is defective: an instrument below (an acceptance criterion, the",
+    "contract, or a unit instruction) misserves the Spec's INTENT as written.",
+    "",
+    "RULES:",
+    "  1. The INTENT is the north star and is IMMUTABLE — you may amend only the instruments.",
+    "  2. Amend ONLY what the intent justifies: clarify a seam, add a carve-out the intent implies,",
+    "     fix an instruction/criterion contradiction. NEVER weaken a check to force green when the",
+    "     intent is genuinely unmet — if you cannot justify an amendment from the intent, return",
+    '     {"amend": false} and say why; a human will decide.',
+    "  3. Keep every amendment minimal: reproduce the current text with the smallest change.",
+    "",
+    "──── SPEC INTENT (immutable) ────",
+    input.intent.trim() || "(no intent text available)",
+    "",
+    "──── CURRENT `## Acceptance Criteria` SECTION ────",
+    input.acSection.trim() || "(empty)",
+    "",
+    "──── CURRENT SLICE CONTRACT ────",
+    input.contract?.trim() || "(none)",
+    "",
+    "──── CURRENT WORK-UNIT INSTRUCTIONS (0-based) ────",
+    input.unitNotes.length
+      ? input.unitNotes.map((n, i) => `[${i}] ${n}`).join("\n")
+      : "(none)",
+    "",
+    "──── THE JUDGE'S DIAGNOSIS ────",
+    input.diagnosis.trim(),
+    "",
+    "Respond with ONLY a JSON object:",
+    '  {"amend": true, "summary": "<what changed, before → after>", "justification": "<why the intent justifies it>",',
+    '   "acSection": "<full replacement AC section, only if it changed>", "contract": "<full replacement contract, only if it changed>",',
+    '   "unitNotes": [{"unit": 0, "note": "<full replacement note>"}], "reopen": "code" | "test" | "none"}',
+    "Omit acSection/contract/unitNotes fields you are NOT changing. Set reopen to the role whose",
+    "artifact must be re-authored under the amended plan (e.g. \"test\" when the probe must learn a",
+    'new carve-out), or "none" when a pure re-grade suffices.',
+    'Or: {"amend": false, "justification": "<why no amendment is justifiable from the intent>", "summary": ""}',
+  ].join("\n");
+}
+
+/** Parse the repair session's reply. Fail-SAFE toward the human: unparseable → amend:false. Pure. */
+export function parsePlanRepair(text: string): PlanRepairProposal {
+  const obj = extractJsonObject(text) as Record<string, unknown> | undefined;
+  if (obj && typeof obj.amend === "boolean") {
+    const notes = Array.isArray(obj.unitNotes)
+      ? (obj.unitNotes as Array<Record<string, unknown>>)
+          .filter(
+            (n) =>
+              n &&
+              Number.isInteger(n.unit) &&
+              (n.unit as number) >= 0 &&
+              typeof n.note === "string" &&
+              !!(n.note as string).trim(),
+          )
+          .map((n) => ({ unit: n.unit as number, note: n.note as string }))
+      : undefined;
+    const reopen =
+      obj.reopen === "code" || obj.reopen === "test" || obj.reopen === "none"
+        ? obj.reopen
+        : undefined;
+    return {
+      amend: obj.amend,
+      justification:
+        (typeof obj.justification === "string" && obj.justification.trim()) ||
+        "(no justification)",
+      summary: (typeof obj.summary === "string" && obj.summary.trim()) || "",
+      acSection:
+        typeof obj.acSection === "string" && obj.acSection.trim()
+          ? obj.acSection
+          : undefined,
+      contract:
+        typeof obj.contract === "string" && obj.contract.trim()
+          ? obj.contract
+          : undefined,
+      unitNotes: notes?.length ? notes : undefined,
+      reopen,
+    };
+  }
+  return {
+    amend: false,
+    justification: `repair session produced no parseable proposal: ${clipText((text ?? "").trim(), 200)}`,
+    summary: "",
+  };
+}
+
+/** Production {@link PlanRepair}: a headless session (same primitive as the judge), failure-tolerant —
+ *  any session error degrades to `amend: false` (→ the slice escalates to a human, never a silent
+ *  mis-repair). */
+export function createSdkPlanRepair(deps: SdkAssessorDeps): PlanRepair {
+  const log = deps.log ?? (() => {});
+  const loadQuery =
+    deps.loadQuery ??
+    (async () =>
+      (await import("@anthropic-ai/claude-agent-sdk"))
+        .query as unknown as AssessorSdkQuery);
+  return async (input): Promise<PlanRepairProposal> => {
+    const prompt = buildPlanRepairPrompt(input);
+    let resultText = "";
+    let assistantText = "";
+    let sawSuccess = false;
+    try {
+      const query = await loadQuery();
+      for await (const msg of query({
+        prompt,
+        options: {
+          cwd: deps.cwd,
+          model: deps.model,
+          permissionMode: "bypassPermissions",
+        },
+      })) {
+        const rec = msg as Record<string, unknown>;
+        const line = summarizeEvent(rec);
+        if (line) log(`  [plan-repair ${input.slice}] ${line}`);
+        if (rec.type === "assistant") {
+          const m = rec.message as { content?: unknown } | undefined;
+          const content = Array.isArray(m?.content) ? m!.content : [];
+          for (const b of content as Array<Record<string, unknown>>)
+            if (b.type === "text" && typeof b.text === "string")
+              assistantText += b.text;
+        }
+        if (rec.type === "result") {
+          if (typeof rec.result === "string") resultText = rec.result;
+          sawSuccess = isResultSuccess(rec);
+        }
+      }
+    } catch (err) {
+      return {
+        amend: false,
+        justification: `repair session failed: ${(err as Error).message}`,
+        summary: "",
+      };
+    }
+    if (!sawSuccess)
+      return {
+        amend: false,
+        justification: "repair session did not complete successfully",
+        summary: "",
+      };
+    return parsePlanRepair(resultText || assistantText);
   };
 }
 
@@ -1362,6 +1612,7 @@ export class OrchestratorService {
       verificationTrace: [],
       diagnosis: [],
       discoveries: [],
+      planChanges: [],
     };
 
     // RTK loud guard (SP-17/2): ALWAYS check the binary before any store slice listing or
@@ -1731,6 +1982,12 @@ export class OrchestratorService {
     // re-dispatches them IN THIS RUN — "fault routed → re-dispatching" is an
     // action, not a promise about the next button press.
     const pendingRework = new Map<string, "code" | "test">();
+    // Plan-repair lane (2026-07-12): slices whose red the judge attributed to the PLAN
+    // (an instrument misserving the intent), with the diagnosis to repair against.
+    // Bounded per slice per run so a mis-repairing loop cannot spin.
+    const pendingPlanRepair = new Map<string, string>();
+    const planRepairRounds = new Map<string, number>();
+    const MAX_PLAN_REPAIRS_PER_RUN = 2;
     const blockSlice = async (
       slice: string,
       diagnosis: string,
@@ -1768,7 +2025,20 @@ export class OrchestratorService {
       );
       attemptsMap.set(slice, verdict.attempts);
       if (evidenceHash) this.priorEvidenceHash.set(slice, evidenceHash);
-      const escalate = verdict.action === "escalate";
+      // Plan-repair lane (2026-07-12): the PLAN is the defect (an instrument — AC / contract /
+      // unit note — misserves the intent). With a repair lane wired, the slice routes there
+      // instead of parking: no attention flag yet, no attempt burned; the repair either amends
+      // + re-grades or escalates with its reason. Without the lane, fall through — `repair`
+      // then behaves exactly like the old contract escalation (a human re-cut).
+      if (verdict.action === "repair" && this.deps.repairPlan) {
+        pendingPlanRepair.set(slice, diagnosis);
+        remaining.delete(slice);
+        output.appendLine(
+          `🛠 ${slice}: plan defect — an instrument misserves the intent → plan-repair lane (no rework attempt burned).`,
+        );
+        return;
+      }
+      const escalate = verdict.action !== "re-dispatch";
       await this.flagAttention(
         slice,
         verdict.deterministic
@@ -1826,8 +2096,10 @@ export class OrchestratorService {
         // attempts — its own human-facing line so the operator routes it to a contract re-cut, not a
         // re-run. No attempt was burned (verdict.attempts is unchanged), so it names the seam instead.
         output.appendLine(
-          fault === "contract"
-            ? `⛔ ${slice}: contract defect — both hands conform yet disagree on an undefined seam → held for a contract re-cut (no rework attempt burned), awaiting the slicer.`
+          fault === "intent"
+            ? `⛔ ${slice}: INTENT defect — the Spec's intent is ambiguous or self-contradictory; no instrument amendment can be machine-justified → awaiting a human decision (no rework attempt burned).`
+            : fault === "contract"
+            ? `⛔ ${slice}: plan defect — an instrument misserves the intent and no repair lane is wired → held for a plan re-cut (no rework attempt burned), awaiting the slicer.`
             : fault === "gate"
               ? `⛔ ${slice}: gate defect — the verification probe cannot run and re-authoring did not heal it → escalated (no rework attempt burned); fix the probe/environment, not the slice.`
               : verdict.deterministic
@@ -1864,19 +2136,138 @@ export class OrchestratorService {
               .filter(Boolean),
           });
           if (!v.consistent) {
-            await blockSlice(
-              s.handle,
-              `${CONTRACT_DEFECT_MARKER}\n` +
+            const contradiction = v.contradiction ?? "(no detail returned)";
+            // With the repair lane wired (2026-07-12), an authored contradiction is repaired
+            // against the intent BEFORE dispatch instead of parking the slice: the amendment
+            // lands on the board + the delivery report, and the workers run under the
+            // amended plan. A decline/apply failure falls through to the block below.
+            let repaired = false;
+            if (this.deps.repairPlan) {
+              const round = (planRepairRounds.get(s.handle) ?? 0) + 1;
+              planRepairRounds.set(s.handle, round);
+              const freshSpec = await this.deps.store.getFile(
+                this.deps.store.pathForSpecDoc(specNumber),
+              );
+              let proposal: PlanRepairProposal;
+              try {
+                proposal = await this.deps.repairPlan({
+                  slice: s.handle,
+                  intent: stripAcceptanceCriteria(
+                    freshSpec?.body ?? this.promptCtx.specBody ?? "",
+                  ),
+                  acSection: sectionText(
+                    freshSpec?.body ?? "",
+                    "Acceptance Criteria",
+                  ),
+                  contract: s.contract,
+                  unitNotes: (s.workUnits ?? []).map(
+                    (u) => (u as WorkUnit & { note?: string }).note ?? "",
+                  ),
+                  diagnosis: `Pre-flight contract check found a contradiction between the slice's instructions and its acceptance criteria (no worker has run yet):\n\n${contradiction}`,
+                });
+              } catch (err) {
+                proposal = {
+                  amend: false,
+                  justification: `repair session failed: ${(err as Error).message}`,
+                  summary: "",
+                };
+              }
+              if (proposal.amend) {
+                try {
+                  await this.applyPlanRepair(
+                    specNumber,
+                    s.handle,
+                    proposal,
+                    round,
+                    worktreePath,
+                  );
+                  result.planChanges.push({
+                    slice: s.handle,
+                    round,
+                    summary: proposal.summary || "(no summary provided)",
+                    justification: proposal.justification,
+                  });
+                  // Keep the in-memory plan current so prompts and later repairs see it.
+                  if (proposal.contract) {
+                    s.contract = proposal.contract;
+                    const newUnion =
+                      slices
+                        .map((x) => x.contract?.trim())
+                        .filter((c): c is string => !!c)
+                        .join("\n\n") || undefined;
+                    dag.forEach((u) => (u.contract = newUnion));
+                  }
+                  if (proposal.unitNotes && s.workUnits) {
+                    const touchedRoles = new Set<"code" | "test">();
+                    for (const { unit, note } of proposal.unitNotes)
+                      if (s.workUnits[unit]) {
+                        (
+                          s.workUnits[unit] as WorkUnit & { note?: string }
+                        ).note = note;
+                        touchedRoles.add(
+                          (s.workUnits[unit].role ?? "code") as "code" | "test",
+                        );
+                      }
+                    // The DAG's batched notes are already built — carry the amendment to the
+                    // affected role(s) through the ⚖ guidance channel (PRIORITIZEd in prompts).
+                    for (const role of touchedRoles)
+                      await this.appendJudgeNote(
+                        s.handle,
+                        round,
+                        role,
+                        `THE PLAN WAS AMENDED before dispatch (pre-flight plan repair, round ${round}).\n\n` +
+                          `What changed: ${proposal.summary || "(no summary provided)"}\n\n` +
+                          `Why the intent justifies it: ${proposal.justification}\n\n` +
+                          `Build to the AMENDED plan — the slice card's current text is the authority.`,
+                      );
+                  }
+                  await this.loadPromptContext(specNumber);
+                  repaired = true;
+                  output.appendLine(
+                    `🛠 ${s.handle}: pre-flight contradiction repaired against the intent (round ${round}) — ${proposal.summary || "(no summary provided)"}; dispatching under the amended plan.`,
+                  );
+                } catch (err) {
+                  output.appendLine(
+                    `⚠ ${s.handle}: pre-flight plan-repair apply failed (${(err as Error).message}) — falling back to the block.`,
+                  );
+                }
+              } else {
+                output.appendLine(
+                  `⚠ ${s.handle}: pre-flight plan repair declined — ${proposal.justification}.`,
+                );
+              }
+            }
+            if (!repaired) {
+              // Flag DIRECTLY (not via blockSlice): with the repair lane wired, blockSlice
+              // would re-queue the slice for a gate-time repair that never runs — a blocked
+              // slice never lands, so the gate loop never processes it and the slice would
+              // end the run silently unflagged.
+              const text =
+                `${CONTRACT_DEFECT_MARKER}\n` +
                 `Pre-flight contract check: the slice's instructions contradict its acceptance criteria — ` +
                 `NO worker was dispatched and no rework attempt was burned.\n\n` +
-                `${v.contradiction ?? "(no detail returned)"}\n\n` +
+                `${contradiction}\n\n` +
                 `Fix the contradiction at its source — the unit note / contract (update_slice) or the AC ` +
-                `(patch_spec_section + re-certify) — then re-orchestrate.`,
-              "contract",
-            );
-            output.appendLine(
-              `⛔ ${s.handle}: pre-flight contract check found a contradiction → held for a re-cut (no workers dispatched).`,
-            );
+                `(patch_spec_section + re-certify) — then re-orchestrate.`;
+              await this.flagAttention(s.handle, text, {
+                attempts: attemptsMap.get(s.handle) ?? 0,
+                escalated: true,
+                fault: "contract",
+              });
+              this.escalatedSlices.add(s.handle);
+              (unitsBySlice.get(s.handle) ?? []).forEach((u) =>
+                state.blocked.add(u.id),
+              );
+              remaining.delete(s.handle);
+              if (!result.attention.includes(s.handle))
+                result.attention.push(s.handle);
+              if (!result.escalated.includes(s.handle))
+                result.escalated.push(s.handle);
+              sliceDiagnoses.set(s.handle, text);
+              output.appendLine(
+                `⛔ ${s.handle}: pre-flight contract check found a contradiction → held for a re-cut (no workers dispatched).`,
+              );
+            }
           }
         } catch (err) {
           output.appendLine(
@@ -2046,6 +2437,7 @@ export class OrchestratorService {
       // latest gate run over the current tree.
       for (const h of landed) greenByGate.delete(h);
       pendingRework.clear();
+      pendingPlanRepair.clear();
       const green = await this.runClosingGate(
         specNumber,
         worktreePath,
@@ -2074,7 +2466,10 @@ export class OrchestratorService {
       const toAutoAttend = result.escalated.filter(
         (h) =>
           !autoAttended.has(h) &&
-          !sliceDiagnoses.get(h)?.startsWith(GATE_DEFECT_MARKER),
+          !sliceDiagnoses.get(h)?.startsWith(GATE_DEFECT_MARKER) &&
+          // A plan defect is not fixable from the code worktree — the plan-repair lane
+          // (or a human) owns it; don't burn the fixer on it.
+          !sliceDiagnoses.get(h)?.startsWith(CONTRACT_DEFECT_MARKER),
       );
       toAutoAttend.forEach((h) => autoAttended.add(h));
       if (toAutoAttend.length > 0) {
@@ -2134,6 +2529,132 @@ export class OrchestratorService {
         }
       }
 
+      // ── Plan-repair lane (2026-07-12): amend the instruments against the intent ──
+      // The judge attributed the red to the PLAN. The repair session proposes; the
+      // orchestrator applies deterministically, re-certifies, records the 🛠 round on the
+      // card + result.planChanges (→ the delivery report's "Changes to the approved
+      // plan"), optionally reopens the role whose artifact must follow the amended plan,
+      // and the loop re-grades. Bounded; a decline / apply failure escalates for a human.
+      const repairs = [...pendingPlanRepair].filter(
+        ([h]) => !greenByGate.has(h),
+      );
+      let repairedAny = false;
+      for (const [h, diag] of repairs) {
+        const round = (planRepairRounds.get(h) ?? 0) + 1;
+        planRepairRounds.set(h, round);
+        const escalateRepair = async (why: string) => {
+          const text = `${CONTRACT_DEFECT_MARKER}\n${why}\n\n${diag}`;
+          await this.flagAttention(h, text, {
+            attempts: attemptsMap.get(h) ?? 0,
+            escalated: true,
+            fault: "contract",
+          });
+          this.escalatedSlices.add(h);
+          if (!result.escalated.includes(h)) result.escalated.push(h);
+          if (!result.attention.includes(h)) result.attention.push(h);
+          sliceDiagnoses.set(h, text);
+        };
+        if (round > MAX_PLAN_REPAIRS_PER_RUN) {
+          await escalateRepair(
+            `Plan-repair bound reached (${MAX_PLAN_REPAIRS_PER_RUN} amendment(s) this run) and the gate is still red — a human must look at the plan.`,
+          );
+          output.appendLine(`⛔ ${h}: plan-repair bound reached → escalated.`);
+          continue;
+        }
+        const s = slices.find((x) => x.handle === h);
+        const freshSpec = await this.deps.store.getFile(
+          this.deps.store.pathForSpecDoc(specNumber),
+        );
+        let proposal: PlanRepairProposal;
+        try {
+          proposal = await this.deps.repairPlan!({
+            slice: h,
+            intent: stripAcceptanceCriteria(
+              freshSpec?.body ?? this.promptCtx.specBody ?? "",
+            ),
+            acSection: sectionText(freshSpec?.body ?? "", "Acceptance Criteria"),
+            contract: s?.contract,
+            unitNotes: (s?.workUnits ?? []).map(
+              (u) => (u as WorkUnit & { note?: string }).note ?? "",
+            ),
+            diagnosis: diag,
+          });
+        } catch (err) {
+          proposal = {
+            amend: false,
+            justification: `repair session failed: ${(err as Error).message}`,
+            summary: "",
+          };
+        }
+        if (!proposal.amend) {
+          await escalateRepair(
+            `The plan-repair session declined to amend: ${proposal.justification}`,
+          );
+          output.appendLine(
+            `⛔ ${h}: plan repair declined — ${proposal.justification} → escalated for a human.`,
+          );
+          continue;
+        }
+        try {
+          await this.applyPlanRepair(specNumber, h, proposal, round, worktreePath);
+        } catch (err) {
+          await escalateRepair(
+            `Applying the plan repair failed: ${(err as Error).message}`,
+          );
+          output.appendLine(`⛔ ${h}: plan-repair apply failed → escalated.`);
+          continue;
+        }
+        result.planChanges.push({
+          slice: h,
+          round,
+          summary: proposal.summary || "(no summary provided)",
+          justification: proposal.justification,
+        });
+        countedThisRun.delete(h);
+        result.attention = result.attention.filter((x) => x !== h);
+        repairedAny = true;
+        output.appendLine(
+          `🛠 ${h}: plan amended (round ${round}) — ${proposal.summary || "(no summary provided)"}`,
+        );
+        // Keep the in-memory plan view current for a possible second repair round.
+        if (s) {
+          if (proposal.contract) s.contract = proposal.contract;
+          if (proposal.unitNotes && s.workUnits)
+            for (const { unit, note } of proposal.unitNotes)
+              if (s.workUnits[unit])
+                (s.workUnits[unit] as WorkUnit & { note?: string }).note = note;
+        }
+        // Reopen the role whose artifact must be re-authored under the amended plan.
+        // The amendment itself travels as ⚖ guidance (PRIORITIZEd in the worker prompt).
+        const role =
+          proposal.reopen === "code" || proposal.reopen === "test"
+            ? proposal.reopen
+            : undefined;
+        if (role) {
+          await this.appendJudgeNote(
+            h,
+            round,
+            role,
+            `THE PLAN WAS AMENDED (plan repair, round ${round}).\n\n` +
+              `What changed: ${proposal.summary || "(no summary provided)"}\n\n` +
+              `Why the intent justifies it: ${proposal.justification}\n\n` +
+              `Re-author your artifact to the AMENDED plan — the slice card's current contract and the Spec's current acceptance criteria are the authority.`,
+          );
+          const units = unitsBySlice.get(h) ?? [];
+          const implicated = units.filter((u) => (u.role ?? "code") === role);
+          implicated.forEach((u) => {
+            state.done.delete(u.id);
+            state.blocked.delete(u.id);
+          });
+          state.done.delete(h);
+          landed.delete(h);
+          remaining.set(h, implicated.length);
+          output.appendLine(
+            `↻ ${h}: re-dispatching ${implicated.length} ${role}-author unit(s) under the amended plan.`,
+          );
+        }
+      }
+
       // ── Same-run rework: reopen the routed role's units and go again ──────
       // Only slices the gate routed this round, still red, not escalated. Reopening
       // clears the unit from `done` so the frontier re-offers it; the checkpointed
@@ -2141,7 +2662,7 @@ export class OrchestratorService {
       const rework = [...pendingRework].filter(
         ([h]) => !greenByGate.has(h) && !this.escalatedSlices.has(h),
       );
-      if (rework.length === 0) break;
+      if (rework.length === 0 && !repairedAny) break;
       let reopened = 0;
       for (const [h, route] of rework) {
         const units = unitsBySlice.get(h) ?? [];
@@ -2163,9 +2684,9 @@ export class OrchestratorService {
           `↻ ${h}: same-run rework — re-dispatching ${implicated.length} ${route}-author unit(s) with the judge's guidance.`,
         );
       }
-      if (reopened === 0) break;
-      // Refresh the embedded slice bodies so the re-dispatched worker's prompt carries
-      // the ⚖ guidance blockSlice just appended to the card.
+      if (reopened === 0 && !repairedAny) break;
+      // Refresh the embedded spec/slice bodies so a re-dispatched worker's prompt carries
+      // the ⚖ guidance and any 🛠 plan amendment just written to the board.
       await this.loadPromptContext(specNumber);
       fill();
       await drain();
@@ -2339,6 +2860,9 @@ export class OrchestratorService {
     const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
     // `let`: the gate self-heal below may replace the plan with re-authored probes.
     let verifs = parseAcVerifications(specDoc?.frontmatter?.ac_verifications);
+    // 2026-07-12 — the INTENT (the Spec body with the AC block stripped): the north star the
+    // judge triangulates every red against. ACs/contract/notes are instruments approximating it.
+    const intentText = stripAcceptanceCriteria(specDoc?.body ?? "");
 
     // SP-6/7 structural independence: the held-out probes were authored in the TESTER snapshot —
     // merge them into the code worktree so the gate grades the real implementation with them.
@@ -2421,6 +2945,7 @@ export class OrchestratorService {
                 { id: `${s.handle}#build`, slice: s.handle, role: undefined },
                 diagnosis,
                 contract,
+                intentText,
               );
               fault = j.fault;
               output.appendLine(
@@ -2655,6 +3180,9 @@ export class OrchestratorService {
               // SP-6/9: thread the slice's CONTRACT so the judge triangulates the red against it (the
               // neutral arbiter) rather than comparing the two hands — the only way to reach `contract`.
               s.contract,
+              // 2026-07-12: and the INTENT — the north star that decides whether an instrument
+              // (AC/contract/note) is itself the defect (→ plan repair) or the work is.
+              intentText,
             );
             fault = judgment.fault;
             rationale = (judgment.rationale ?? "").trim();
@@ -3553,6 +4081,9 @@ export class OrchestratorService {
       discoveries: result.discoveries,
       // Repair window (2026-07-08): the prepare failure that blocked every AC, first-class.
       buildFailure: result.buildFailure,
+      // 2026-07-12: every plan-repair amendment this run — the "Changes to the approved plan"
+      // section the human Accept decision reads.
+      planChanges: result.planChanges,
       // SP-6/7 AC5: the durable, accumulated verification trace — surfaced in the delivery report
       // (which the panel renders) so a completed / stalled Spec carries the per-AC, per-round record.
       trace,
@@ -3675,6 +4206,80 @@ export class OrchestratorService {
       this.deps.flagAttention ??
       ((h, d, e) => this.defaultFlagAttention(h, d, e))
     )(handle, diagnosis, escalation);
+  }
+
+  /** Apply one plan-repair proposal to the board (2026-07-12): the deterministic write side of the
+   *  repair lane — the session only PROPOSES, this applies. AC section through the same safe-write
+   *  patch path `patch_spec_section` uses; contract/notes straight onto the slice frontmatter;
+   *  re-certification via the auditor (`reauthorGate`) whenever the AC block changed; and the
+   *  round-stamped `## 🛠 Plan repair` record appended to the card (append-only — the audit trail
+   *  the delivery report mirrors). Failures here THROW: a half-applied amendment must surface, not
+   *  silently re-grade against a plan that isn't what the card says. */
+  private async applyPlanRepair(
+    specNumber: string,
+    slice: string,
+    proposal: PlanRepairProposal,
+    round: number,
+    worktreeCwd: string,
+  ): Promise<void> {
+    if (this.deps.applyPlanRepair)
+      return this.deps.applyPlanRepair(
+        specNumber,
+        slice,
+        proposal,
+        round,
+        worktreeCwd,
+      );
+    const { store, output } = this.deps;
+    if (proposal.acSection) {
+      // The same store-routed section patch the board tool uses (safe-write, secret scan).
+      const { patchSpecSection } = await import("../mcp/kanbanMcpServer");
+      await patchSpecSection(
+        store,
+        specNumber,
+        "Acceptance Criteria",
+        proposal.acSection,
+      );
+      // The AC block changed → the signed certification baseline is stale. Re-certify through
+      // the auditor now; without it the readyGate would (correctly) refuse later.
+      if (this.deps.reauthorGate) {
+        const ok = await this.deps.reauthorGate(specNumber, worktreeCwd);
+        output.appendLine(
+          ok
+            ? `🛠 ${slice}: amended Acceptance Criteria re-certified (auditor re-signed the probes).`
+            : `⚠ ${slice}: Acceptance Criteria amended but re-certification did not complete — re-certify before → Ready.`,
+        );
+      } else {
+        output.appendLine(
+          `⚠ ${slice}: Acceptance Criteria amended with no auditor wired — re-certify manually before → Ready.`,
+        );
+      }
+    }
+    const m = /^TEP-(\d+)_SP-(\d+)_SL-(\d+)$/.exec(slice);
+    if (!m) return;
+    const rel = this.deps.store.pathForSlice(`${m[1]}/${m[2]}`, Number(m[3]));
+    const parsed = await store.getFile(rel);
+    if (!parsed?.frontmatter) return;
+    const fm = { ...parsed.frontmatter } as Record<string, unknown>;
+    if (proposal.contract) fm.contract = proposal.contract;
+    if (proposal.unitNotes && Array.isArray(fm.work_units)) {
+      const units = (fm.work_units as Array<Record<string, unknown>>).map(
+        (u) => ({ ...u }),
+      );
+      for (const { unit, note } of proposal.unitNotes)
+        if (units[unit]) units[unit].note = note;
+      fm.work_units = units;
+    }
+    await store.writeFile(
+      rel,
+      fm,
+      appendPlanRepair(
+        parsed.body ?? "",
+        round,
+        proposal.summary || "(no summary provided)",
+        proposal.justification,
+      ),
+    );
   }
 
   /** Append one round's judge guidance to the slice card (the auditable rework channel,

@@ -3178,3 +3178,191 @@ test("pre-flight contract check: SKIPPED for a slice with prior attempts or chec
   assert.deepEqual(calls.advanced, ["TEP-1_SP-1_SL-1"], "the run proceeds normally");
   assert.equal(r.ok, true);
 });
+
+// ── Plan-repair lane (2026-07-12): intent is the north star ─────────────────
+//
+// When the judge attributes a red to the PLAN (`fault: "contract"` — an instrument misserves
+// the intent), the run no longer parks for a human: a repair session proposes the amendment,
+// the orchestrator applies it, the affected role re-authors under the amended plan, the gate
+// re-grades — same run — and the delivery report carries "Changes to the approved plan".
+test("plan-repair lane: a plan-attributed red is amended against the intent, the routed role re-authors, and the delivery report records the change", async () => {
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        satisfies: [1],
+        contract: "old contract missing the carve-out",
+        work_units: [
+          { footprint: ["src/a.ts"], execution: "fan-out", note: "implement a" },
+          {
+            footprint: ["src/acceptance/a.test.ts"],
+            execution: "fan-out",
+            note: "probe a",
+            role: "test",
+          },
+        ],
+      },
+    },
+    { fault: "contract" },
+  );
+  const dispatched: string[] = [];
+  const base = runOutcome("success");
+  deps.runUnit = async (u, s, c, p) => {
+    dispatched.push(u.id);
+    return base(u, s, c, p);
+  };
+  // Red until the amendment is applied; green after (the amended instrument measures right).
+  const applies: Array<{ slice: string; round: number; cwd: string }> = [];
+  deps.applyPlanRepair = async (_spec, slice, _proposal, round, cwd) => {
+    applies.push({ slice, round, cwd });
+  };
+  deps.runAcVerifications = async (verifs) =>
+    verifs.map((v) => ({
+      ac: v.ac,
+      pass: applies.length > 0,
+      evidence:
+        applies.length > 0
+          ? `$ ${v.run} → exit 0 (amended plan)`
+          : `$ ${v.run} → exit 1 (instrument mis-measures the intent)`,
+    }));
+  const repairInputs: string[] = [];
+  deps.repairPlan = async (input) => {
+    repairInputs.push(input.slice);
+    assert.equal(input.contract, "old contract missing the carve-out");
+    return {
+      amend: true,
+      summary: "AC gains the carve-out the intent implies",
+      justification: "the intent is served; the instrument mis-measured it",
+      acSection: "- [ ] amended criterion",
+      reopen: "test",
+    };
+  };
+  const judgeNotes: Array<{ route: string; text: string }> = [];
+  deps.appendJudgeNote = async (_h, _round, route, text) => {
+    judgeNotes.push({ route, text });
+  };
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  // The repair ran once, applied once, and ONLY the test-author re-ran under the amended plan.
+  assert.deepEqual(repairInputs, ["TEP-1_SP-1_SL-1"]);
+  assert.deepEqual(applies, [
+    { slice: "TEP-1_SP-1_SL-1", round: 1, cwd: "/tmp/wt/SP-1" },
+  ]);
+  assert.equal(dispatched.length, 3, "test, code, then the test re-author only");
+  // The amendment travelled to the re-author as PRIORITIZEd guidance.
+  assert.ok(
+    judgeNotes.some(
+      (n) => n.route === "test" && /THE PLAN WAS AMENDED/.test(n.text),
+    ),
+  );
+  // No attempt burned, nothing left flagged; the slice advanced and committed.
+  assert.deepEqual(calls.advanced, ["TEP-1_SP-1_SL-1"]);
+  assert.deepEqual(r.attention, []);
+  assert.deepEqual(r.escalated, []);
+  // The informed-Accept record: result carries the plan change, and DELIVERY.md renders it.
+  assert.deepEqual(r.planChanges, [
+    {
+      slice: "TEP-1_SP-1_SL-1",
+      round: 1,
+      summary: "AC gains the carve-out the intent implies",
+      justification: "the intent is served; the instrument mis-measured it",
+    },
+  ]);
+  const delivery = fs.readFileSync(
+    path.join(calls.thinkubeDir, "teps/TEP-1/SP-1/DELIVERY.md"),
+    "utf8",
+  );
+  assert.match(delivery, /## Changes to the approved plan/);
+  assert.match(delivery, /AC gains the carve-out the intent implies/);
+});
+
+test("plan-repair lane: a DECLINED repair escalates for a human with the plan-defect marker (no silent mis-repair, no auto-attend burn)", async () => {
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        satisfies: [1],
+        work_units: [
+          { footprint: ["src/a.ts"], execution: "fan-out", note: "implement a" },
+        ],
+      },
+    },
+    { fault: "contract", acPass: { 1: false } },
+  );
+  deps.repairPlan = async () => ({
+    amend: false,
+    justification: "the intent is genuinely unmet — no amendment is justifiable",
+    summary: "",
+  });
+  let applied = 0;
+  deps.applyPlanRepair = async () => {
+    applied++;
+  };
+  let fixerCalls = 0;
+  deps.autoAttend = async () => {
+    fixerCalls++;
+    return false;
+  };
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  assert.equal(applied, 0, "nothing applied on a decline");
+  assert.ok(r.escalated.includes("TEP-1_SP-1_SL-1"));
+  assert.ok(
+    calls.attentionReasons.some(
+      (t) => /declined to amend/.test(t) && /genuinely unmet/.test(t),
+    ),
+    "the human sees WHY the machine refused to amend",
+  );
+  assert.equal(fixerCalls, 0, "a plan defect never burns the worktree fixer");
+});
+
+test("pre-flight plan repair: an authored contradiction is repaired against the intent BEFORE dispatch; workers run under the amended plan", async () => {
+  const { deps, calls } = makeDeps({
+    "teps/TEP-1/SP-1/SL-1.md": {
+      status: "ready",
+      satisfies: [1],
+      work_units: [
+        { footprint: ["src/a.ts"], execution: "fan-out", note: "name the old id" },
+      ],
+    },
+  });
+  deps.checkContract = async () => ({
+    consistent: false,
+    contradiction: "the note requires the old id; AC 1 forbids it",
+  });
+  deps.repairPlan = async (input) => {
+    assert.match(input.diagnosis, /Pre-flight contract check/);
+    return {
+      amend: true,
+      summary: "AC 1 gains the migration carve-out",
+      justification: "removing the old install requires naming it — the intent implies it",
+      acSection: "- [ ] amended criterion",
+      unitNotes: [{ unit: 0, note: "name the old id (sanctioned by the carve-out)" }],
+      reopen: "none",
+    };
+  };
+  const applies: number[] = [];
+  deps.applyPlanRepair = async (_s, _h, _p, round) => {
+    applies.push(round);
+  };
+  let ran = 0;
+  const base = runOutcome("success");
+  deps.runUnit = async (u, s, c, p) => {
+    ran++;
+    return base(u, s, c, p);
+  };
+
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+
+  assert.deepEqual(applies, [1], "the amendment applied before dispatch");
+  assert.equal(ran, 1, "the worker ran under the amended plan (no block)");
+  assert.deepEqual(calls.advanced, ["TEP-1_SP-1_SL-1"]);
+  assert.equal(r.planChanges.length, 1);
+  assert.match(r.planChanges[0].summary, /migration carve-out/);
+  assert.deepEqual(r.attention, []);
+  assert.ok(
+    calls.log.some((l) => /pre-flight contradiction repaired/.test(l)),
+  );
+});

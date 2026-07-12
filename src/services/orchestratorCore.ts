@@ -545,12 +545,15 @@ export function isEscalated(
 /**
  * The role a failed acceptance run is attributed to (SP-6/7 AC4): the **code**-author (the
  * implementation diverged from intent), the **test**-author (the held-out probe is itself wrong), or
- * `both` / ambiguous (neither can be singled out → escalate to a human), or — SP-6/9 — **`contract`**:
- * both hands conform to the contract yet the red pivots on a seam the contract never defined, so the
- * defect is the CONTRACT itself and the slice routes to a contract re-cut (not another role guess). The
- * verdict of {@link JudgeFailure}; routes {@link reDispatchDecision}.
+ * `both` / ambiguous (neither can be singled out → escalate to a human), or — SP-6/9, re-anchored
+ * 2026-07-12 — **`contract`**: an INSTRUMENT of the plan (the contract, an acceptance criterion, a
+ * unit instruction) misserves the Spec's INTENT as written, so the defect is the plan and the slice
+ * routes to the plan-repair lane (amend the instrument against the intent), not another role guess.
+ * **`intent`** (2026-07-12): the intent itself is ambiguous or contradictory — the one verdict no
+ * machine may resolve; it always escalates to a human. The verdict of {@link JudgeFailure}; routes
+ * {@link reDispatchDecision}.
  */
-export type Fault = "code" | "test" | "both" | "contract" | "gate";
+export type Fault = "code" | "test" | "both" | "contract" | "gate" | "intent";
 
 /**
  * An independent judge's verdict on a red acceptance run (SP-6/7 AC4): which role is at fault plus the
@@ -578,13 +581,21 @@ export type JudgeFailure = (
   unit: Pick<SchedUnit, "id" | "slice" | "role">,
   failure: string,
   contract?: string,
+  /** 2026-07-12 — the Spec's INTENT (the body with the AC block stripped): the north star every
+   *  artifact is judged against. The ACs/contract/notes are instruments approximating it; when an
+   *  instrument misserves the intent as written, the verdict is `contract` (plan repair), and when
+   *  the intent itself is ambiguous the verdict is `intent` (human). Optional for compatibility. */
+  intent?: string,
 ) => Promise<FailureJudgment>;
 
 /** One verdict from {@link reDispatchDecision}: whether to send a red slice back for rework or stop. */
 export interface ReDispatchVerdict {
   /** `re-dispatch` → bump the counter and return the slice to the ready frontier; `escalate` → leave
-   *  it `requires-attention` with the {@link ESCALATION_MARKER}, excluded from the frontier (AC5). */
-  action: "re-dispatch" | "escalate";
+   *  it `requires-attention` with the {@link ESCALATION_MARKER}, excluded from the frontier (AC5);
+   *  `repair` (2026-07-12) → the plan is the defect: route to the plan-repair lane (amend the
+   *  instrument against the intent, re-certify, re-grade) — no attempt burned. A shell with no
+   *  repair lane wired treats `repair` exactly as the old contract escalation. */
+  action: "re-dispatch" | "escalate" | "repair";
   /** The slice's new failed-attempt count (prior + 1), to persist on `state.attempts`. */
   attempts: number;
   /** SP-6/7 AC4: which role the re-dispatch targets — set ONLY when a judged `fault` was supplied.
@@ -654,12 +665,17 @@ export function reDispatchDecision(
   const prior = Number.isFinite(priorAttempts)
     ? Math.max(0, Math.floor(priorAttempts))
     : 0;
-  // SP-6/9 contract arm: a contract-attributed fault escalates to a contract re-cut REGARDLESS of the
-  // prior count / bound, and — unlike every other path — does NOT burn a rework attempt: the slice was
-  // never the problem, so `attempts` stays === the prior count (not prior + 1). `readyFrontier` holds
-  // the slice until the contract changes; the shell stamps the CONTRACT_DEFECT_MARKER, not ESCALATION.
+  // SP-6/9 contract arm, re-anchored 2026-07-12: a plan-attributed fault (an instrument — contract /
+  // AC / unit note — misserves the intent) routes to the PLAN-REPAIR lane REGARDLESS of the prior
+  // count / bound, and does NOT burn a rework attempt: the work was never the problem, the plan was.
+  // A shell with no repair lane wired falls back to the old escalate-for-a-human-re-cut behaviour.
   if (fault === "contract") {
-    return { action: "escalate", attempts: prior, route: "contract" };
+    return { action: "repair", attempts: prior, route: "contract" };
+  }
+  // Intent arm (2026-07-12): the intent itself is ambiguous/contradictory — the ONE verdict no
+  // machine may resolve (everything else is an instrument serving it). Always a human, no burn.
+  if (fault === "intent") {
+    return { action: "escalate", attempts: prior, route: "intent" };
   }
   // Gate arm (2026-07-11): the verification PROBE cannot run — the defect is the
   // gate's own machinery, never the slice. Escalate to gate re-authoring (the
@@ -1181,6 +1197,46 @@ export function extractJudgeGuidance(
   }
   flush();
   return sections.length ? sections.join("\n\n") : undefined;
+}
+
+/**
+ * Append one plan-repair record to a slice body (2026-07-12): a durable, round-stamped
+ * `## 🛠 Plan repair` section carrying WHAT the repair changed (summary) and WHY the intent
+ * justifies it. Append-only like the ⚖ sections — the card keeps the full amendment history,
+ * and the delivery report's "Changes to the approved plan" renders the same records so the
+ * human Accept decision sees every deviation from the initially approved plan. Pure.
+ */
+export function appendPlanRepair(
+  body: string,
+  round: number,
+  summary: string,
+  justification: string,
+): string {
+  return (
+    (body ?? "").trimEnd() +
+    `\n\n## 🛠 Plan repair — round ${round}\n\n` +
+    `**What changed:** ${summary.trim()}\n\n` +
+    `**Why the intent justifies it:** ${justification.trim()}\n`
+  );
+}
+
+/**
+ * The inner text of one `## <heading>` section of a markdown body (heading line excluded,
+ * runs to the next `## ` or EOF), or "" when absent. The plan-repair lane reads the current
+ * `## Acceptance Criteria` section with this before proposing an amendment. Pure.
+ */
+export function sectionText(body: string, heading: string): string {
+  const esc = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^##\\s+${esc}\\s*$`);
+  const lines = (body ?? "").split(/\r?\n/);
+  const start = lines.findIndex((l) => re.test(l));
+  if (start === -1) return "";
+  const out: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) break;
+    out.push(lines[i]);
+  }
+  return out.join("\n").trim();
 }
 
 /**
@@ -2156,6 +2212,18 @@ export interface DeliveryReportInput {
    *  (`N. **<label>** — <hint>`) from it; omitted ⇒ the hard-coded Next text remains
    *  (backward-compatible). */
   exits?: ExitAction[];
+  /** 2026-07-12 — every deviation from the initially approved plan made during this run (the
+   *  plan-repair lane's amendments: AC carve-outs, contract seams, unit-note fixes), each with the
+   *  intent-based justification. Rendered as a first-class `## Changes to the approved plan`
+   *  section right after `## What happened`, so the human Accept decision is informed: what was
+   *  approved is not necessarily what was delivered, and the difference must never be hunted for.
+   *  Empty/omitted on a committed run ⇒ the section states the plan was delivered as approved. */
+  planChanges?: {
+    slice: string;
+    round: number;
+    summary: string;
+    justification: string;
+  }[];
 }
 
 /**
@@ -2192,6 +2260,39 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
         ? diagTexts.join("\n\n")
         : "The closing gate did not pass. The acceptance criteria below record which criteria are red; the evidence appendix carries the raw runner output for why."
     : `Delivered ${i.advanced.length} slice(s) to Done across ${i.units.length} execution unit(s), committed to \`${branch}\`${i.sha ? ` at \`${i.sha}\`` : ""}.`;
+
+  // ── ## Changes to the approved plan (2026-07-12) ──────────────────────────────
+  // The plan-repair lane may amend instruments (AC carve-outs, contract seams, unit notes)
+  // mid-run, anchored to the intent. Every such deviation renders here, first-class — the
+  // Accept decision must see the delta between the approved plan and the delivered one
+  // without hunting through slice cards. On a clean committed run the section states,
+  // explicitly, that no deviation happened (silence would be ambiguous).
+  const planChanges = (i.planChanges ?? []).filter(
+    (c) => c && ((c.summary ?? "").trim() || (c.justification ?? "").trim()),
+  );
+  const planChangesSection = planChanges.length
+    ? [
+        "## Changes to the approved plan",
+        "",
+        "The run amended the plan below against the Spec's intent (the intent itself is never " +
+          "machine-amended). Review each before accepting — what was approved is not byte-for-byte " +
+          "what was delivered:",
+        "",
+        ...planChanges.flatMap((c, k) => [
+          `${k + 1}. **${c.slice} — plan repair (round ${c.round})**`,
+          `   - What changed: ${c.summary.trim()}`,
+          `   - Why the intent justifies it: ${c.justification.trim()}`,
+        ]),
+        "",
+      ]
+    : i.committed
+      ? [
+          "## Changes to the approved plan",
+          "",
+          "None — delivered exactly to the plan as approved.",
+          "",
+        ]
+      : [];
 
   // ── ## Build failed before verification (repair window, 2026-07-08) ───────────
   // The one failure that blocks EVERY criterion gets first-class, raw-output billing.
@@ -2353,6 +2454,7 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
     "",
     whatHappened,
     "",
+    ...planChangesSection,
     ...buildFailSection,
     ...acSection,
     "",
