@@ -1376,7 +1376,15 @@ export class OrchestratorService {
       ).length;
       if (rem > 0) remaining.set(slice, rem);
     }
-    if (readyFrontier(dag, state).length === 0 && resumeCommit.size === 0) {
+    // "Nothing to do" only when there is also nothing to GRADE: a slice whose
+    // units are all checkpointed (verify-before-rework) dispatches no workers
+    // but still needs the closing gate — returning here skipped the gate and
+    // stranded the slice (first live run of the checkpoint path, 2026-07-11).
+    if (
+      readyFrontier(dag, state).length === 0 &&
+      resumeCommit.size === 0 &&
+      landed.size === 0
+    ) {
       output.appendLine(`▸ SP-${specNumber}: nothing ready to dispatch.`);
       return result;
     }
