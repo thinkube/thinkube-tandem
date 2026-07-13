@@ -383,6 +383,12 @@
         "title": "Archive All Completed TEPs",
         "category": "Tandem TEPs",
         "icon": "$(archive)"
+      },
+      {
+        "command": "thinkube.scratchpad.open",
+        "title": "Open Scratchpad",
+        "category": "Thinkube Scratchpad",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -623,6 +629,9 @@
         },
         {
           "command": "thinkube.kanban.refreshFromGitHub"
+        },
+        {
+          "command": "thinkube.scratchpad.open"
         }
       ]
     },

@@ -51,6 +51,7 @@ import {
 import { registerWorktreeCommands } from "./commands/worktree";
 import { registerOrchestrateCommands } from "./commands/orchestrate";
 import { showFreshMarkdownPreview } from "./commands/freshPreview";
+import { registerScratchpadCommands } from "./scratchpad";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Thinkube Tandem is now active!");
@@ -435,6 +436,9 @@ export function activate(context: vscode.ExtensionContext) {
     approvalDir,
   };
   registerOrchestrateCommands(context, orchestrateDeps);
+
+  // Scratchpad: human-paced intent authoring surface (TEP-21).
+  registerScratchpadCommands(context);
 
   // Control-request watcher: the standalone Kanban MCP server can't
   // open a VS Code session itself, so its `start_spec_worktree` tool drops a
