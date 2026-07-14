@@ -33,6 +33,10 @@ import {
 // SP-6/7 AC6: an AC whose verification command points at a held-out `acceptance/` path is KEPT by the
 // auditor, not overridden to the repo's `npm test`. Reuse the single path-convention regex.
 import { ACCEPTANCE_EVIDENCE_RE } from "../methodology/parallelSlices";
+// Prompt externalization (context tranche, 2026-07-14): the audit's needs-reframe RULES are
+// editable doctrine (`templates/audit-rules.md` in the tandem-methodology plugin, overridable
+// per-repo at `.tandem/prompts/audit-rules.md`); the JSON reply contract below stays in code.
+import { applyConditionals, loadTemplate } from "./promptTemplates";
 
 /**
  * The auditor's verdict kinds, extended with `assessment` (SP-6/7): a prose/UX/skill AC that no
@@ -177,7 +181,42 @@ export function buildAuditPrompt(
   const tepContext = tepBody?.trim()
     ? `\n\nThe PARENT TEP this Spec implements — the INTENT, the north star every criterion must serve:\n\n<tep>\n${tepBody.trim()}\n</tep>`
     : "";
-  const intentRule = tepBody?.trim()
+  // Prompt externalization (context tranche): the RULES prose is doctrine, loaded from
+  // `audit-rules.md` (repo override → plugin templates) with the intent-fidelity block
+  // gated on a `<!-- if:tep -->` conditional. The bundled fallback below keeps a run
+  // working when no template resolves. The JSON reply contract at the end NEVER comes
+  // from a template — the parser depends on it.
+  const template = loadTemplate("audit-rules");
+  const rules = template
+    ? applyConditionals(template, { tep: !!tepBody?.trim() }).trimEnd()
+    : bundledAuditRules(!!tepBody?.trim());
+  return [
+    rules,
+    "",
+    "Acceptance Criteria:",
+    acBlock,
+    context,
+    tepContext,
+    "",
+    "Respond with ONLY a JSON array (no prose, no markdown fence needed) of one object per",
+    "criterion, in ordinal order:",
+    '  [{"ordinal":1,"verdict":"verifiable","run":"npm test","env":"local"},',
+    '   {"ordinal":2,"verdict":"assessment","rationale":"a UX quality an assessor judges"},',
+    '   {"ordinal":3,"verdict":"needs-reframe","why":"a human confirms by eye"}]',
+    "Include `run` (and optionally `env`) only for `verifiable`; `rationale` for `assessment`; `why`",
+    "for `needs-reframe`.",
+  ].join("\n");
+}
+
+/**
+ * The BUNDLED fallback for the audit's needs-reframe/assessment rules — used only when no
+ * `audit-rules.md` template resolves (see {@link buildAuditPrompt}), so a missing doctrine
+ * file never breaks a certification. Content-mirrors
+ * `plugins/tandem-methodology/templates/audit-rules.md`; when you change the questions in
+ * either place, change both (the same drift guard as the `/spec-prepare` skill copy).
+ */
+function bundledAuditRules(hasTep: boolean): string {
+  const intentRule = hasTep
     ? [
         "  - it fails INTENT FIDELITY: compare the criterion's ACTOR and SURFACE against the parent",
         "    TEP's Goal and User Expectation. A TEP that promises A PERSON acting at A SURFACE",
@@ -207,6 +246,17 @@ export function buildAuditPrompt(
     "    against a correct implementation. That is a Design defect: name the missing seam in `why`",
     "    (the fix is naming it in the Design — a config env var, an injectable parameter, a setup",
     "    call — then re-auditing).",
+    // CONTRACT CONTROLLABILITY (context tranche, 2026-07-14): the obligation-level twin of the
+    // precondition question above — an obligation buildable only by INVENTING a protocol the
+    // Design never defines is a Design defect, found live when a worker stubbed such an
+    // obligation and confessed only in a code comment.
+    "  - it fails CONTRACT CONTROLLABILITY: for each contract / Design obligation the criterion",
+    "    rests on, ask — could an implementer BUILD it from seams the Design names, or would they",
+    "    have to invent a protocol (a wire format, a handshake, a storage layout, an event name",
+    "    the Design never defines)? A test-author and a code-author who must each invent the same",
+    "    unnamed protocol will invent DIFFERENT ones — the delivered work is then judged against a",
+    "    seam nobody designed. An invented seam is a Design defect: flag `needs-reframe` naming",
+    "    the missing design (what the Design must define for the obligation to be buildable).",
     "  - it fails SUBJECT FIDELITY: identify the criterion's SUBJECT — the actor and surface it",
     "    names (a person typing into a view, a panel showing state, an app reopened after a",
     "    close). A command makes the criterion `verifiable` ONLY if it exercises THAT subject:",
@@ -237,19 +287,6 @@ export function buildAuditPrompt(
     "    the life of the code — earns a `verifiable` probe worth living in the suite.",
     "Otherwise call it `verifiable` and give the single command (`run`) that proves it, and where it",
     'runs (`env`: "local" or "cluster").',
-    "",
-    "Acceptance Criteria:",
-    acBlock,
-    context,
-    tepContext,
-    "",
-    "Respond with ONLY a JSON array (no prose, no markdown fence needed) of one object per",
-    "criterion, in ordinal order:",
-    '  [{"ordinal":1,"verdict":"verifiable","run":"npm test","env":"local"},',
-    '   {"ordinal":2,"verdict":"assessment","rationale":"a UX quality an assessor judges"},',
-    '   {"ordinal":3,"verdict":"needs-reframe","why":"a human confirms by eye"}]',
-    "Include `run` (and optionally `env`) only for `verifiable`; `rationale` for `assessment`; `why`",
-    "for `needs-reframe`.",
   ].join("\n");
 }
 

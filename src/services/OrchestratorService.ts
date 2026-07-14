@@ -47,6 +47,12 @@ import {
   checkAcOrdinals,
   buildDeliveryReport,
   extractDiscoveries,
+  extractUndelivered,
+  preflightProvisionFailures,
+  scanStubMarkers,
+  isStubScannableFile,
+  type StubScanHit,
+  type PreflightUnit,
   appendJudgeGuidance,
   extractJudgeGuidance,
   appendPlanRepair,
@@ -117,6 +123,12 @@ import {
   unparkWorker,
   runningSessions,
 } from "./orchestratorSessions";
+// Prompt externalization (context tranche, 2026-07-14): editable doctrine prose for the
+// worker preamble / audit rules / intent check, with bundled in-code fallbacks.
+import { configurePromptTemplates, loadTemplate } from "./promptTemplates";
+// ODC find-time defect capture (TEP-22 mechanical half): one JSONL line per caught
+// defect, fail-soft — a log-write error never affects the run.
+import { appendDefect, type DefectEntry } from "./defectLog";
 
 /**
  * Called when a worker escalates a question and **parks resident**: the scheduler
@@ -309,12 +321,40 @@ export interface OrchestratorDeps {
    *  dispatchSpec (guard is unconditional). Defaults to a `which rtk` PATH lookup; tests inject
    *  a fake so the loud guard is exercisable with no live binary. */
   rtkBinaryPresent?: () => boolean | Promise<boolean>;
+  /** Context tranche (2026-07-14) — the RUN PREFLIGHT seam: given the validated DAG + spec doc,
+   *  return the list of failures (empty = clear to dispatch). The default
+   *  ({@link OrchestratorService.defaultPreflight}) verifies PROVISIONS (TEP/spec/contract/note/
+   *  footprint all resolve non-empty for every about-to-dispatch unit) then INSTRUMENTS (the
+   *  acceptance-probe dispatcher's negative path, the extension-host harness smoke when host
+   *  probes are in play, oracle-store writability, sidecar-store reachability). Injected by
+   *  tests so scheduler tests need no provisioned thinking space. */
+  preflight?: (input: PreflightInput) => Promise<string[]>;
+  /** Context tranche — `thinkube.orchestrator.promptTemplateDir`: the doctrine dir prompt
+   *  templates resolve from (after the repo's own `.tandem/prompts/` override, before the
+   *  installed tandem-methodology plugin's `templates/`). Read at the command boundary. */
+  promptTemplateDir?: string;
+}
+
+/** What the RUN PREFLIGHT sees (context tranche): the already-loaded spec doc, the slices,
+ *  the validated DAG, and the parsed `ac_verifications` — everything it needs to decide
+ *  whether the run is provisioned + instrumented, without re-reading the store. */
+export interface PreflightInput {
+  specNumber: string;
+  specDoc: Awaited<ReturnType<ThinkubeStore["getFile"]>>;
+  slices: SliceForDag[];
+  dag: SchedUnit[];
+  verifs: AcVerification[];
 }
 
 /** The default run-halt failure threshold (SP-2/TEP-6 AC5): a small N of ordinary unit failures across
  *  a run after which no new units are dispatched. Kept low so a systemic failure can't burn a whole
  *  doomed run before the human can interrupt it; overridable via the dep / the `dispatchSpec` arg. */
 export const DEFAULT_FAIL_THRESHOLD = 3;
+
+/** Preflight harness-smoke session cache (context tranche): the extension-host smoke is the
+ *  slow instrument, so once it runs GREEN in this extension-host session it is skipped for
+ *  the rest of the session (a broken harness stays a fresh check every session). */
+let harnessSmokeGreenThisSession = false;
 
 /** Default PATH lookup for the `rtk` binary (SP-17/2): used when `OrchestratorDeps.rtkBinaryPresent`
  *  is not supplied. Runs `which rtk`; resolves `false` on any error (binary absent). */
@@ -397,6 +437,11 @@ export interface SpecRunResult {
    *  whole here rather than discarded after the trace-table clip, so `buildDeliveryReport`'s
    *  "What happened" renders each diagnosis VERBATIM. Empty until a red AC is judged. */
   diagnosis: { ac: number; text: string }[];
+  /** The go-set exit protocol (context tranche, 2026-07-14): every `UNDELIVERED:` line the
+   *  workers declared in their final summaries, verbatim with the declaring unit — rendered
+   *  prominently in DELIVERY.md ("none declared" when empty). A declared gap is routed; an
+   *  undeclared one is deception. */
+  undelivered: { unit: string; text: string }[];
   /** SP-11/3: out-of-scope findings workers reported under a trailing `## Discoveries` heading in their
    *  final output, each paired with the reporting unit id (collected verbatim via `extractDiscoveries`,
    *  no model-side summarizing). Rendered in the report's "Discoveries & recommendations" section. */
@@ -1094,18 +1139,29 @@ export interface IntentCheckVerdict {
 
 export type IntentCheck = (input: IntentCheckInput) => Promise<IntentCheckVerdict>;
 
+/** The BUNDLED fallback for the intent check's instruction prose — used only when no
+ *  `intent-check.md` template resolves (prompt externalization, context tranche): the
+ *  doctrine lives in `plugins/tandem-methodology/templates/intent-check.md`, overridable
+ *  per-repo at `.tandem/prompts/intent-check.md`. Keep the two in step. */
+const BUNDLED_INTENT_CHECK_PROSE = [
+  "You are the INTENT CHECK at the end of an orchestrated delivery — the north-star reading.",
+  "Every acceptance criterion below is GREEN; that is already established and not your question.",
+  "Your question: does the DELIVERED CHANGE fulfill the PARENT TEP's intent — the Goal and the",
+  "User Expectation as written — for the ACTOR the TEP names, at the SURFACE it names?",
+  "The classic failure you exist to catch: the spec's criteria quietly substituted a lower layer",
+  "for the TEP's actor (an API for a person, a component for a surface), every box is honestly",
+  "checked, and the person still cannot perform the promised act. Read the TEP's own verbs and",
+  "check each promise is OBSERVABLE in the delivery (the files below are in your cwd — read them).",
+  "Do NOT re-litigate the criteria, style, or scope the TEP itself defers; ONLY user-visible",
+  "promises of the TEP.",
+].join("\n");
+
 export function buildIntentCheckPrompt(input: IntentCheckInput): string {
+  // Prompt externalization (context tranche): the instruction PROSE is loaded doctrine;
+  // the JSON reply contract below stays in code (the parser depends on it).
+  const prose = loadTemplate("intent-check") ?? BUNDLED_INTENT_CHECK_PROSE;
   return [
-    "You are the INTENT CHECK at the end of an orchestrated delivery — the north-star reading.",
-    "Every acceptance criterion below is GREEN; that is already established and not your question.",
-    "Your question: does the DELIVERED CHANGE fulfill the PARENT TEP's intent — the Goal and the",
-    "User Expectation as written — for the ACTOR the TEP names, at the SURFACE it names?",
-    "The classic failure you exist to catch: the spec's criteria quietly substituted a lower layer",
-    "for the TEP's actor (an API for a person, a component for a surface), every box is honestly",
-    "checked, and the person still cannot perform the promised act. Read the TEP's own verbs and",
-    "check each promise is OBSERVABLE in the delivery (the files below are in your cwd — read them).",
-    "Do NOT re-litigate the criteria, style, or scope the TEP itself defers; ONLY user-visible",
-    "promises of the TEP.",
+    prose,
     "",
     "<tep>",
     input.tepBody.trim(),
@@ -1544,13 +1600,26 @@ export function acTextByOrdinal(body: string): Map<number, string> {
 export class OrchestratorService {
   constructor(private readonly deps: OrchestratorDeps) {}
 
-  /** Spec + slice **intent views** to embed in each worker's prompt — the worktree has no specs dir,
-   *  so the worker can't read them from disk. The `## Acceptance Criteria` block + `satisfies` ordinals
-   *  are stripped here in `loadPromptContext` (SP-6 AC1), so these strings are already exam-free. Loaded
-   *  once per dispatchSpec. */
-  private promptCtx: { specBody: string; sliceBodies: Map<string, string> } = {
+  /** Spec + slice bodies (RAW — `buildWorkerPrompt` applies the role-aware view) + the parent
+   *  TEP body (context tranche, 2026-07-14: the north star threaded into every worker prompt)
+   *  + every execution unit's note/role (sibling awareness), to embed in each worker's prompt —
+   *  the worktree has no specs dir, so the worker can't read them from disk. Loaded once per
+   *  dispatchSpec (`unitNotes` is filled after the DAG is built). */
+  private promptCtx: {
+    specBody: string;
+    tepBody: string;
+    sliceBodies: Map<string, string>;
+    unitNotes: {
+      unit: string;
+      slice: string;
+      role: "code" | "test";
+      note: string;
+    }[];
+  } = {
     specBody: "",
+    tepBody: "",
     sliceBodies: new Map(),
+    unitNotes: [],
   };
 
   /** Per-slice resume state read from frontmatter: whether a slice's units already
@@ -1637,11 +1706,30 @@ export class OrchestratorService {
     const { store } = this.deps;
     const sliceBodies = new Map<string, string>();
     let specBody = "";
+    let tepBody = "";
     try {
       const specDoc = await store.getFile(store.pathForSpecDoc(specNumber));
-      // Store the RAW body — `buildWorkerPrompt` applies the role-aware strip (code strips the ACs,
-      // test keeps them). Pre-stripping here would deny a test unit the criteria it must grade.
+      // Store the RAW body — `buildWorkerPrompt` applies the role-aware view (context tranche:
+      // both roles now read the full body; only `satisfies` is stripped for code units).
       specBody = specDoc?.body ?? "";
+      // Full-intention threading (context tranche, 2026-07-14): fetch the PARENT TEP body via
+      // the spec's `implements` frontmatter. pathForTep PREPENDS "TEP-", so strip a leading
+      // "TEP-" from the id first (the same live-bug fix the intent check carries). Best-effort:
+      // an unresolvable TEP leaves tepBody empty — the preflight (not this loader) is where a
+      // missing TEP refuses the run loudly.
+      try {
+        const impl = specDoc?.frontmatter?.implements;
+        const bare =
+          typeof impl === "string"
+            ? impl.replace(/^.*:/, "").trim().replace(/^TEP-/i, "")
+            : "";
+        if (bare) {
+          const tepDoc = await store.getFile(store.pathForTep(bare));
+          tepBody = tepDoc?.body ?? "";
+        }
+      } catch {
+        /* best-effort — preflight surfaces a genuinely missing TEP */
+      }
       for (const rel of await store.listSlices(specNumber)) {
         const m = SLICE_REL_RE.exec(rel);
         if (!m) continue;
@@ -1655,7 +1743,278 @@ export class OrchestratorService {
     } catch {
       /* best-effort — a worker just falls back to its unit note without the embedded context */
     }
-    this.promptCtx = { specBody, sliceBodies };
+    // Preserve unitNotes across the mid-run refreshes (the rework loop re-calls this after
+    // the DAG is built and the notes were derived from it).
+    this.promptCtx = {
+      specBody,
+      tepBody,
+      sliceBodies,
+      unitNotes: this.promptCtx.unitNotes,
+    };
+  }
+
+  /** ODC find-time capture (TEP-22 mechanical half): append one defect line to the thinking
+   *  space's `defects/{YYYY-MM}.jsonl`. FAIL-SOFT twice over — `appendDefect` never throws,
+   *  and this wrapper guards even the `store.thinkubeDir` read — a capture failure must
+   *  never affect the run that is doing the finding. */
+  private logDefect(entry: DefectEntry): void {
+    try {
+      appendDefect(this.deps.store.thinkubeDir, entry);
+    } catch {
+      /* fail-soft: defect capture never costs the run */
+    }
+  }
+
+  /** Spawn one command, capturing interleaved stdout+stderr and the exit code; never
+   *  throws (a spawn error reads as `code: null` with the error message as output).
+   *  The preflight's instrument probes run through this. */
+  private runCommandCapture(
+    cmd: string,
+    args: string[],
+    cwd: string,
+    timeoutMs: number,
+  ): Promise<{ code: number | null; output: string }> {
+    return new Promise((resolve) => {
+      let output = "";
+      let settled = false;
+      const done = (code: number | null) => {
+        if (!settled) {
+          settled = true;
+          resolve({ code, output });
+        }
+      };
+      try {
+        const proc = spawn(cmd, args, { cwd });
+        const timer = setTimeout(() => {
+          output += `\n(timed out after ${timeoutMs}ms — killed)`;
+          try {
+            proc.kill("SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }, timeoutMs);
+        proc.stdout?.on("data", (d: Buffer) => (output += d.toString()));
+        proc.stderr?.on("data", (d: Buffer) => (output += d.toString()));
+        proc.on("error", (err) => {
+          clearTimeout(timer);
+          output += `\nspawn error: ${err.message}`;
+          done(null);
+        });
+        proc.on("close", (code) => {
+          clearTimeout(timer);
+          done(code);
+        });
+      } catch (err) {
+        output += `\nspawn error: ${(err as Error).message}`;
+        done(null);
+      }
+    });
+  }
+
+  /**
+   * The default RUN PREFLIGHT (context tranche, 2026-07-14) — provisions first, then
+   * instruments, fail-first. Returns human-readable failure lines; empty = clear to dispatch.
+   *
+   * PROVISIONS (pure, {@link preflightProvisionFailures}): for every unit that would actually
+   * dispatch this run, the prompt inputs must resolve non-empty — the parent TEP body (spec
+   * `implements` → `store.pathForTep`, TEP- prefix stripped), the spec body, the slice
+   * contract for multi-unit slices, the unit note, a non-empty footprint. Any miss refuses
+   * the run naming each piece; instruments are then not probed (fail-first, fast).
+   *
+   * INSTRUMENTS (I/O): the acceptance-probe DISPATCHER's negative path (a missing probe must
+   * exit 127 WITH output — the `set -e`+grep silent-kill class of breakage), the extension-host
+   * HARNESS smoke when host probes are in play (skipped loudly when xvfb is absent; cached per
+   * extension-host session — it is the slow part), the ORACLE STORE dir's writability, and the
+   * SIDECAR (thinking space) store's reachability. Instruments broke mid-run at worker expense
+   * before this existed; now they break here, at zero worker cost.
+   */
+  private async defaultPreflight(input: PreflightInput): Promise<string[]> {
+    const { output } = this.deps;
+    const { specNumber, specDoc, slices, dag, verifs } = input;
+
+    // Which units would actually dispatch this run: skip done/archived/escalated slices,
+    // resume-commit slices (they commit, never author), and already-checkpointed units.
+    const sliceByHandle = new Map(slices.map((s) => [s.handle, s]));
+    const dispatchable = dag.filter((u) => {
+      const s = sliceByHandle.get(u.slice);
+      if (!s) return false;
+      const st = s.status.toLowerCase();
+      if (st === "done" || st === "archived") return false;
+      if (this.escalatedSlices.has(u.slice)) return false;
+      const rs = this.sliceResumeState.get(u.slice);
+      if (rs && rs.unitsLanded && !rs.committed) return false; // resume-commit
+      if (rs?.unitsDone.includes(u.id)) return false; // checkpointed
+      return true;
+    });
+    if (dispatchable.length === 0) return []; // nothing dispatches — nothing to starve
+
+    // ── PROVISIONS (fail-first: a starved prompt is refused before any instrument runs) ──
+    const units: PreflightUnit[] = dispatchable.map((u) => {
+      const s = sliceByHandle.get(u.slice);
+      return {
+        id: u.id,
+        slice: u.slice,
+        note: u.note,
+        footprint: u.footprint ?? [],
+        hasAuthoredUnits: (s?.workUnits?.length ?? 0) > 0,
+        multiUnitSlice: (s?.workUnits?.length ?? 0) > 1,
+        sliceContract: s?.contract,
+      };
+    });
+    const provisionFailures = preflightProvisionFailures({
+      specBody: this.promptCtx.specBody,
+      tepBody: this.promptCtx.tepBody,
+      implementsRef: specDoc?.frontmatter?.implements,
+      units,
+    });
+    if (provisionFailures.length > 0) return provisionFailures;
+
+    // ── INSTRUMENTS ──────────────────────────────────────────────────────────
+    const failures: string[] = [];
+    const usesDispatcher = (cmd?: string) =>
+      !!cmd && /acceptance-probe\.sh/.test(cmd);
+    const recipe = await defaultAcceptanceRecipeResolver(
+      this.deps.canonicalRepo,
+    );
+
+    // (a) The dispatcher's NEGATIVE path: asked for a probe that cannot exist, it must exit
+    // 127 WITH a naming message. A dispatcher that dies silently (exit ≠127 / no output)
+    // grades every AC "failed, no evidence" mid-run — seen live on SP-21/2.
+    if (recipe && usesDispatcher(recipe.run)) {
+      const script = path.join(
+        this.deps.canonicalRepo,
+        "scripts",
+        "acceptance-probe.sh",
+      );
+      if (!fs.existsSync(script)) {
+        failures.push(
+          `acceptance-probe dispatcher missing: the repo's conventions declare \`${recipe.run}\` but ${script} does not exist.`,
+        );
+      } else {
+        const res = await this.runCommandCapture(
+          "bash",
+          ["scripts/acceptance-probe.sh", "__preflight__", "0"],
+          this.deps.canonicalRepo,
+          30_000,
+        );
+        if (res.code !== 127 || !res.output.trim())
+          failures.push(
+            `acceptance-probe dispatcher smoke failed: the negative path (missing probe) must exit 127 with a naming message, got exit ${res.code}` +
+              (res.output.trim()
+                ? ` — output: ${res.output.trim().slice(0, 300)}`
+                : " with NO output (the silent-death failure mode)."),
+          );
+        else
+          output.appendLine(
+            `▸ SP-${specNumber}: preflight — dispatcher negative path ok (exit 127, named).`,
+          );
+      }
+    }
+
+    // (b) The extension-host HARNESS smoke — only when host probes are in play, cached per
+    // extension-host session (the slow instrument), skipped LOUDLY when xvfb is absent.
+    const needsHost =
+      dag.some(
+        (u) =>
+          (u.role ?? "code") === "test" &&
+          (u.footprint ?? []).some((f) => /\.host\.ts$/i.test(f)),
+      ) || verifs.some((v) => usesDispatcher(v.run));
+    if (needsHost) {
+      if (harnessSmokeGreenThisSession) {
+        output.appendLine(
+          `▸ SP-${specNumber}: preflight — harness smoke already green this session (cached, skipped).`,
+        );
+      } else {
+        const xvfb = await this.runCommandCapture(
+          "which",
+          ["xvfb-run"],
+          this.deps.canonicalRepo,
+          5_000,
+        );
+        if (xvfb.code !== 0) {
+          output.appendLine(
+            `⚠ SP-${specNumber}: preflight — xvfb-run NOT on PATH; the extension-host harness smoke was SKIPPED. ` +
+              `Host probes will fail at the gate if the harness is broken — install xvfb to arm this check.`,
+          );
+        } else {
+          const smokeRel = path.join(
+            "out-test",
+            "harness",
+            "harnessSmoke.host.js",
+          );
+          const smokeAbs = path.join(this.deps.canonicalRepo, smokeRel);
+          if (!fs.existsSync(smokeAbs) && recipe?.prepare) {
+            output.appendLine(
+              `▸ SP-${specNumber}: preflight — compiling the harness smoke (absent): $ ${recipe.prepare}`,
+            );
+            await this.runCommandCapture(
+              "bash",
+              ["-lc", recipe.prepare],
+              this.deps.canonicalRepo,
+              300_000,
+            );
+          }
+          if (!fs.existsSync(smokeAbs)) {
+            output.appendLine(
+              `⚠ SP-${specNumber}: preflight — no harness smoke probe at ${smokeRel} (and no prepare step produced one); harness check SKIPPED.`,
+            );
+          } else {
+            const res = await this.runCommandCapture(
+              "xvfb-run",
+              [
+                "-a",
+                "node",
+                path.join("out-test", "harness", "runAcceptanceHost.js"),
+                smokeRel,
+                "1",
+              ],
+              this.deps.canonicalRepo,
+              180_000,
+            );
+            if (res.code !== 0)
+              failures.push(
+                `extension-host harness smoke FAILED (exit ${res.code}) — host probes would break mid-run at worker expense. Tail: ${res.output.trim().slice(-500)}`,
+              );
+            else {
+              harnessSmokeGreenThisSession = true;
+              output.appendLine(
+                `▸ SP-${specNumber}: preflight — extension-host harness smoke green.`,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // (c) Oracle store dir writable — held-out probes persist here; an unwritable store
+    // silently un-checkpoints every test unit.
+    try {
+      const storeDir = oracleStoreDir(
+        this.deps.canonicalRepo,
+        specNumber,
+        this.deps.baseDir,
+      );
+      await fs.promises.mkdir(storeDir, { recursive: true });
+      const probeFile = path.join(storeDir, ".preflight-write-probe");
+      await fs.promises.writeFile(probeFile, "ok", "utf8");
+      await fs.promises.unlink(probeFile);
+    } catch (err) {
+      failures.push(
+        `oracle store dir not writable: ${(err as Error).message} — held-out probes could not persist.`,
+      );
+    }
+
+    // (d) Sidecar (thinking space) store reachable — every flag/report/checkpoint write
+    // lands there.
+    try {
+      await fs.promises.access(this.deps.store.thinkubeDir);
+    } catch (err) {
+      failures.push(
+        `thinking space (sidecar store) unreachable: ${(err as Error).message}`,
+      );
+    }
+
+    return failures;
   }
 
   /** Read the Spec's slices into the DAG-builder input (frontmatter → SliceForDag). */
@@ -1777,6 +2136,7 @@ export class OrchestratorService {
       verificationTrace: [],
       diagnosis: [],
       discoveries: [],
+      undelivered: [],
       planChanges: [],
     };
 
@@ -1816,9 +2176,28 @@ export class OrchestratorService {
       return { ...result, ok: false, reason };
     }
 
+    // Prompt externalization (context tranche): point template resolution at the
+    // orchestrated repo (its `.tandem/prompts/` override) + the configured doctrine dir
+    // for this run, so every builder (worker/audit/intent prompts) resolves consistently.
+    configurePromptTemplates({
+      repoDir: this.deps.canonicalRepo,
+      templateDir: this.deps.promptTemplateDir,
+    });
+
     const slices = await this.buildSlices(specNumber);
     await this.loadPromptContext(specNumber);
     const dag = buildUnitDag(slices);
+    // Sibling awareness (context tranche): every execution unit's note + role, threaded into
+    // each worker's prompt (minus its own) so code workers see what the test-authors will
+    // assert and vice versa. Derived from the DAG, so it exists before any dispatch.
+    this.promptCtx.unitNotes = dag
+      .filter((u) => (u.note ?? "").trim())
+      .map((u) => ({
+        unit: u.id,
+        slice: u.slice,
+        role: (u.role ?? "code") as "code" | "test",
+        note: (u.note ?? "").trim(),
+      }));
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
     const v = validateDag(dag.map((u) => ({ id: u.id, requires: u.requires })));
@@ -1827,6 +2206,43 @@ export class OrchestratorService {
         `✗ SP-${specNumber}: malformed DAG — not dispatched.\n${v.reason}`,
       );
       return { ...result, ok: false, reason: v.reason };
+    }
+
+    // ── RUN PREFLIGHT (context tranche, 2026-07-14): provisions + instruments, fail-first ──
+    // After the DAG is validated and before ANY worker dispatches: verify every about-to-
+    // dispatch unit's prompt inputs resolve non-empty (parent TEP, spec body, contract for
+    // multi-unit slices, unit note, footprint) and that the run's instruments work (the
+    // acceptance-probe dispatcher, the extension-host harness when host probes are in play,
+    // the oracle store, the sidecar store). A refusal is LOUD and returns without
+    // dispatching — a starved or broken run must cost zero worker tokens. Injectable
+    // (tests); the default is {@link defaultPreflight}. Modeled on the RTK loud guard above.
+    {
+      const specVerifsPre = parseAcVerifications(
+        specDoc?.frontmatter?.ac_verifications,
+      );
+      const preflightFailures = await (
+        this.deps.preflight ?? ((i: PreflightInput) => this.defaultPreflight(i))
+      )({
+        specNumber,
+        specDoc,
+        slices,
+        dag,
+        verifs: specVerifsPre,
+      });
+      if (preflightFailures.length > 0) {
+        const reason =
+          `RUN PREFLIGHT failed for SP-${specNumber} — refusing to dispatch any worker until every piece is present:\n` +
+          preflightFailures.map((f) => `  ✗ ${f}`).join("\n");
+        output.appendLine(`⛔ ${reason}`);
+        this.logDefect({
+          spec: specNumber,
+          activity: "dispatch",
+          trigger: "preflight",
+          impact: "prevented",
+          detail: preflightFailures.join("; "),
+        });
+        return { ...result, ok: false, reason };
+      }
     }
 
     // Seed scheduler state from thinking space statuses.
@@ -2636,6 +3052,27 @@ export class OrchestratorService {
           for (const text of extractDiscoveries(d.finalOutput))
             result.discoveries.push({ unit: d.id, text });
 
+        // The go-set exit protocol (context tranche): collect the worker's declared
+        // UNDELIVERED obligations — a simple line-prefix scan of its final result text,
+        // piped VERBATIM into the delivery report's "Undelivered — declared by the
+        // workers" section. Independent of outcome: a "successful" unit may still have
+        // declared a gap, and that declaration must never be lost. Each declaration is
+        // also a find-time defect (the worker caught it before the gate could).
+        if (d.finalOutput)
+          for (const text of extractUndelivered(d.finalOutput)) {
+            result.undelivered.push({ unit: d.id, text });
+            this.logDefect({
+              spec: specNumber,
+              slice: d.slice,
+              unit: d.id,
+              activity: "spec-authoring",
+              trigger: "worker flag",
+              impact: "prevented",
+              detail: text,
+            });
+            output.appendLine(`⚑ ${d.id}: UNDELIVERED — ${text}`);
+          }
+
         if (d.outcome === "needs-input") {
           // Non-resident needs-input: a worker that RETURNED a question instead of parking its live
           // session. runViaSdk parks resident via onPark and never returns this; this branch covers a
@@ -3203,6 +3640,15 @@ export class OrchestratorService {
         output.appendLine(
           `⚑ SP-${specNumber}: finalization watchdog — ${FINALIZATION_WEDGED_DIAGNOSIS}. ${verdict.wedged}`,
         );
+        // ODC: a stall/machinery verdict — the run's own finalization wedged, not the work.
+        this.logDefect({
+          spec: specNumber,
+          activity: "verification",
+          trigger: "gate-infra",
+          type: "machinery",
+          impact: "round lost",
+          detail: verdict.wedged,
+        });
         for (const s of slices) {
           if (!landed.has(s.handle)) continue;
           await blockSlice(s.handle, verdict.wedged);
@@ -3353,6 +3799,16 @@ export class OrchestratorService {
               output.appendLine(
                 `⚖ ${s.handle}: build-failure fault judged → ${j.fault} (${j.rationale.split("\n")[0]})`,
               );
+              // ODC: the build-failure judge's verdict — `type` carries the fault.
+              this.logDefect({
+                spec: specNumber,
+                slice: s.handle,
+                activity: "verification",
+                trigger: "gate-verifier",
+                type: j.fault,
+                impact: "round lost",
+                detail: j.rationale,
+              });
             } catch {
               /* judge unavailable → unrouted block, as before */
             }
@@ -3455,6 +3911,19 @@ export class OrchestratorService {
     // have authored it — but the GRADE is derived only from the independently-authored
     // subset below (so a self-tick still leaves an audit trail of why it didn't count).
     result.acResults = acResults;
+
+    // ODC find-time capture: one defect line per red AC this gate round. An unrunnable
+    // probe is the gate's own machinery failing (trigger gate-infra), not the work.
+    for (const r of acResults)
+      if (!r.pass)
+        this.logDefect({
+          spec: specNumber,
+          activity: "verification",
+          trigger: r.unrunnable ? "gate-infra" : "gate-verifier",
+          impact: "round lost",
+          detail: `AC #${r.ac} red: ${(r.evidence ?? "").slice(-400)}`,
+          refs: [`AC#${r.ac}`],
+        });
 
     // AC4 (SP-6/6): the grade derives ONLY from independently-authored evidence.
     // Build the run-level set of worker-owned paths — every dispatched unit's
@@ -3576,6 +4045,16 @@ export class OrchestratorService {
           output.appendLine(
             `⚖ ${s.handle}: gate defect (probe unrunnable) — control-plane verdict, judge skipped; no rework attempt burned.`,
           );
+          // ODC: gate machinery broke — never the slice's work (type carries the verdict).
+          this.logDefect({
+            spec: specNumber,
+            slice: s.handle,
+            activity: "verification",
+            trigger: "gate-infra",
+            type: "gate",
+            impact: "round lost",
+            detail: rationale,
+          });
         } else {
           try {
             const judgment = await judge(
@@ -3597,6 +4076,18 @@ export class OrchestratorService {
             output.appendLine(
               `⚖ ${s.handle}: judged fault = ${judgment.fault} — ${judgment.rationale}`,
             );
+            // ODC: the judge's routed verdict — `type` carries the attributed fault.
+            this.logDefect({
+              spec: specNumber,
+              slice: s.handle,
+              unit: units[0]?.id,
+              activity: "verification",
+              trigger: "gate-verifier",
+              type: judgment.fault,
+              impact: "round lost",
+              detail: rationale || why,
+              refs: failedAcs.map((n) => `AC#${n}`),
+            });
           } catch (err) {
             // Fail-safe: a judge error escalates (fault `both`) rather than mis-routing.
             output.appendLine(
@@ -3925,6 +4416,16 @@ export class OrchestratorService {
     const prompt = buildWorkerPrompt(unit, specNumber, {
       specBody: this.promptCtx.specBody,
       sliceBody: this.promptCtx.sliceBodies.get(unit.slice),
+      // Full-intention threading (context tranche): the parent TEP (the north star) and
+      // every SIBLING unit's note labeled by role — the code worker reads what the
+      // test-author will assert and vice versa. Only the ARTIFACTS stay withheld
+      // (probe source from coders, implementation source from testers).
+      tepBody: this.promptCtx.tepBody,
+      // `?? []`: a direct runViaSdk caller (tests, future embedders) may carry a promptCtx
+      // predating the unitNotes field — the sibling block then simply doesn't render.
+      siblingNotes: (this.promptCtx.unitNotes ?? []).filter(
+        (n) => n.unit !== unit.id,
+      ),
       testConvention,
       exampleTest,
       selfVerifyCommand,
@@ -4464,6 +4965,7 @@ export class OrchestratorService {
     trace: VerificationTraceEntry[],
     acTexts?: string[],
     intentCheck?: { fulfilled: boolean; gaps: string[]; unavailable?: string },
+    stubScan?: StubScanHit[],
   ): string {
     // Caught problems for the audit trail: each failed / parked unit, surfaced from the run.
     const problems = result.results
@@ -4489,6 +4991,10 @@ export class OrchestratorService {
       diagnosis: result.diagnosis,
       acTexts,
       discoveries: result.discoveries,
+      // The go-set (context tranche): the workers' declared UNDELIVERED obligations
+      // (verbatim) + the deterministic stub scan of the delivered files.
+      undelivered: result.undelivered,
+      stubScan,
       // Repair window (2026-07-08): the prepare failure that blocked every AC, first-class.
       buildFailure: result.buildFailure,
       // 2026-07-12: every plan-repair amendment this run — the "Changes to the approved plan"
@@ -4615,6 +5121,29 @@ export class OrchestratorService {
           `▸ SP-${specNumber}: verification trace skipped — ${(err as Error).message}`,
         );
       }
+      // STUB SCAN (the go-set, deterministic half): grep the delivered footprint files in
+      // the worktree for self-declared deferral markers (TODO/FIXME/stub/…, code files
+      // only). Fail-soft per file — an unreadable file (deleted, never authored) is skipped;
+      // the scan must never sink the report it feeds. Each hit is also a find-time defect.
+      const stubScan: StubScanHit[] = [];
+      for (const rel of files) {
+        if (!isStubScannableFile(rel)) continue;
+        try {
+          const content = fs.readFileSync(path.join(worktreePath, rel), "utf8");
+          stubScan.push(...scanStubMarkers(rel, content));
+        } catch {
+          /* absent/unreadable delivered file — nothing to scan */
+        }
+      }
+      for (const h of stubScan)
+        this.logDefect({
+          spec: specNumber,
+          activity: "delivery-review",
+          trigger: "post-hoc diagnosis",
+          impact: "prevented",
+          detail: `${h.file}:${h.line} — ${h.text}`,
+          refs: [`${h.file}:${h.line}`],
+        });
       const body = this.deliveryMarkdown(
         specNumber,
         sha,
@@ -4624,6 +5153,7 @@ export class OrchestratorService {
         trace,
         acTexts,
         intentCheck,
+        stubScan,
       );
       const rel = this.deps.store
         .pathForSpecDoc(specNumber)

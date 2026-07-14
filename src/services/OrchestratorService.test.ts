@@ -290,6 +290,12 @@ function makeDeps(
     // default so this construction compiles — omitting it is the intended loud compile error.
     workerModel: { workerModel: "sonnet" },
     runUnit: opts.run ?? runOutcome("success"),
+    // RUN PREFLIGHT seam (context tranche): the scheduler fixtures here are deliberately
+    // minimal (empty spec body, no TEP, no contracts), which the REAL preflight would refuse
+    // — inject a pass-through so these tests exercise the scheduler/gate, and the preflight
+    // path is tested on its own (see the "RUN PREFLIGHT" tests below + preflightProvisionFailures
+    // unit tests in orchestratorCore.test.ts).
+    preflight: async () => [],
     // The closing gate's injectable seam: map each declared verification to a pass/fail outcome
     // (default all-pass), so the gate is exercised end-to-end without a live cluster.
     runAcVerifications: async (verifs) =>
@@ -746,7 +752,7 @@ const AC1_SPEC_BODY = [
   "Stay deterministic — no clock, no randomness.",
 ].join("\n");
 
-test("loadPromptContext: stores the RAW spec body (ACs kept) so buildWorkerPrompt can hold the exam per role (SP-6/7)", async () => {
+test("loadPromptContext: stores the RAW spec body (ACs kept); buildWorkerPrompt applies the role view (context tranche: full spec, satisfies stripped for code)", async () => {
   const h = svcLoadPromptContext(makeBodyDeps(AC1_SPEC_BODY, []));
   await h.load("1/1");
   const { specBody } = h.ctx();
@@ -765,7 +771,9 @@ test("loadPromptContext: stores the RAW spec body (ACs kept) so buildWorkerPromp
   assert.match(specBody, /drops exact duplicates/i);
   assert.match(specBody, /^\s*satisfies\s*:/im);
 
-  // End-to-end: a CODE unit's prompt built from this raw body still holds out the exam.
+  // End-to-end (context tranche, 2026-07-14): a CODE unit's prompt built from this raw body
+  // now carries the FULL spec — ACs included ("exam held out" reversed: zero observed
+  // rubric-gaming vs repeated starvation) — with only the `satisfies:` key stripped.
   const codePrompt = buildWorkerPrompt(
     {
       id: "TEP-1_SP-1_SL-1#eu-0",
@@ -778,8 +786,9 @@ test("loadPromptContext: stores the RAW spec body (ACs kept) so buildWorkerPromp
     "1/1",
     { specBody },
   );
-  assert.doesNotMatch(codePrompt, /## Acceptance Criteria/);
-  assert.doesNotMatch(codePrompt, /drops exact duplicates/i);
+  assert.match(codePrompt, /## Acceptance Criteria/);
+  assert.match(codePrompt, /drops exact duplicates/i);
+  assert.doesNotMatch(codePrompt, /^\s*satisfies\s*:/im);
 });
 
 test("loadPromptContext: stores each slice's RAW body keyed by handle (buildWorkerPrompt applies the role strip)", async () => {
@@ -3365,4 +3374,196 @@ test("pre-flight plan repair: an authored contradiction is repaired against the 
   assert.ok(
     calls.log.some((l) => /pre-flight contradiction repaired/.test(l)),
   );
+});
+
+// ── Context tranche (2026-07-14): RUN PREFLIGHT, the go-set report channel, intent-check template ─
+
+import { buildIntentCheckPrompt } from "./OrchestratorService";
+import { configurePromptTemplates } from "./promptTemplates";
+
+/** Read every defect line written under a thinking space dir ([] when none). */
+function readDefects(thinkubeDir: string): Record<string, unknown>[] {
+  const dir = path.join(thinkubeDir, "defects");
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .flatMap((f) =>
+      fs
+        .readFileSync(path.join(dir, f), "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Record<string, unknown>),
+    );
+}
+
+test("RUN PREFLIGHT (default): a spec whose parent TEP does not resolve REFUSES the run — loud, named, zero workers, defect logged", async () => {
+  const { deps, calls } = makeDeps({
+    "teps/TEP-1/SP-1/SL-1.md": {
+      status: "ready",
+      contract: "export function a(): void",
+      work_units: [
+        { footprint: ["src/a.ts"], execution: "fan-out", note: "do a" },
+      ],
+    },
+  });
+  // Arm the REAL preflight (makeDeps injects a pass-through for the scheduler tests).
+  delete (deps as { preflight?: unknown }).preflight;
+  // A store with a real spec body + `implements`, but NO TEP file behind it.
+  const inner = deps.store;
+  deps.store = {
+    ...(inner as unknown as Record<string, unknown>),
+    getFile: async (rel: string) => {
+      const f = await (
+        inner as unknown as {
+          getFile: (r: string) => Promise<
+            { frontmatter: Record<string, unknown>; body: string } | undefined
+          >;
+        }
+      ).getFile(rel);
+      if (rel === SPEC_DOC && f)
+        return {
+          ...f,
+          frontmatter: { ...f.frontmatter, implements: "TEP-1" },
+          body: "## Design\n\nbuild a.",
+        };
+      if (/teps\/TEP-1\/tep\.md$/.test(rel)) return undefined; // the TEP is MISSING
+      return f;
+    },
+    pathForTep: (id: string) => `teps/TEP-${id}/tep.md`,
+  } as unknown as OrchestratorDeps["store"];
+
+  let dispatched = 0;
+  deps.runUnit = async () => {
+    dispatched++;
+    return { outcome: "success" as const };
+  };
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+  assert.equal(r.ok, false, "the preflight refuses the run");
+  assert.match(r.reason ?? "", /RUN PREFLIGHT failed/);
+  assert.match(r.reason ?? "", /parent TEP body unresolvable/);
+  assert.equal(r.dispatched, 0, "no unit dispatched");
+  assert.equal(dispatched, 0, "no worker ran");
+  assert.ok(
+    calls.log.some((l) => /⛔.*RUN PREFLIGHT failed/s.test(l)),
+    "the refusal is LOUD on the output channel",
+  );
+  // ODC find-time capture: the refusal is a `prevented` defect (trigger: preflight).
+  const defects = readDefects(calls.thinkubeDir);
+  assert.equal(defects.length, 1);
+  assert.equal(defects[0].trigger, "preflight");
+  assert.equal(defects[0].impact, "prevented");
+  assert.match(String(defects[0].detail), /parent TEP body unresolvable/);
+});
+
+test("go-set exit protocol: a worker's UNDELIVERED lines land verbatim in DELIVERY.md (+ defect log); clean runs say 'none declared' / 'none found'", async () => {
+  const { deps, calls } = makeDeps(
+    {
+      "teps/TEP-1/SP-1/SL-1.md": {
+        status: "ready",
+        satisfies: [1],
+        work_units: [
+          { footprint: ["src/a.ts"], execution: "fan-out", note: "do a" },
+        ],
+      },
+    },
+    {
+      run: async () => ({
+        outcome: "success",
+        finalOutput: [
+          "Done, with one gap.",
+          "UNDELIVERED: the retry loop — question: which backoff does the design want?",
+        ].join("\n"),
+      }),
+    },
+  );
+  const r = await new OrchestratorService(deps).dispatchSpec("1/1", 4);
+  assert.equal(r.committed, true);
+  assert.deepEqual(r.undelivered, [
+    {
+      unit: "TEP-1_SP-1_SL-1#eu-0",
+      text: "the retry loop — question: which backoff does the design want?",
+    },
+  ]);
+  const report = fs.readFileSync(
+    path.join(calls.thinkubeDir, "teps/TEP-1/SP-1/DELIVERY.md"),
+    "utf8",
+  );
+  assert.match(report, /## Undelivered — declared by the workers/);
+  assert.match(
+    report,
+    /`TEP-1_SP-1_SL-1#eu-0` — the retry loop — question: which backoff does the design want\?/,
+  );
+  // The stub scan ran too (no delivered files exist in the fake worktree → clean).
+  assert.match(
+    report,
+    /## Self-declared deferrals found in the delivered code\n\nnone found/,
+  );
+  // The declaration is also a find-time defect (trigger: worker flag, prevented).
+  const defects = readDefects(calls.thinkubeDir);
+  const flag = defects.find((d) => d.trigger === "worker flag");
+  assert.ok(flag, "an UNDELIVERED declaration is captured in the defect log");
+  assert.equal(flag?.impact, "prevented");
+  assert.equal(flag?.activity, "spec-authoring");
+  assert.match(String(flag?.detail), /the retry loop/);
+
+  // And a clean worker output renders the explicit empty state.
+  const clean = makeDeps({
+    "teps/TEP-1/SP-1/SL-1.md": {
+      status: "ready",
+      satisfies: [1],
+      work_units: [
+        { footprint: ["src/a.ts"], execution: "fan-out", note: "do a" },
+      ],
+    },
+  });
+  await new OrchestratorService(clean.deps).dispatchSpec("1/1", 4);
+  const cleanReport = fs.readFileSync(
+    path.join(clean.calls.thinkubeDir, "teps/TEP-1/SP-1/DELIVERY.md"),
+    "utf8",
+  );
+  assert.match(
+    cleanReport,
+    /## Undelivered — declared by the workers\n\nnone declared/,
+  );
+});
+
+test("intent-check prompt: template prose loads when present; bundled prose otherwise; the JSON contract survives both", (t) => {
+  t.after(() => configurePromptTemplates({}));
+  const input = {
+    spec: "1/1",
+    tepBody: "## Goal\n\nwhy",
+    specBody: "## Design\n\nwhat",
+    files: ["src/a.ts"],
+    acSummary: "AC#1:pass",
+  };
+  // Hermetic bundled path.
+  configurePromptTemplates({
+    repoDir: fs.mkdtempSync(path.join(os.tmpdir(), "tk-intent-")),
+    pluginDirs: [],
+  });
+  const bundled = buildIntentCheckPrompt(input);
+  assert.match(bundled, /You are the INTENT CHECK/);
+  assert.match(bundled, /Respond with ONLY JSON/);
+  assert.match(bundled, /"fulfilled": true/);
+  assert.match(bundled, /<tep>/);
+  // Template path: prose replaced, contract + placeholders intact.
+  const doctrine = fs.mkdtempSync(path.join(os.tmpdir(), "tk-intent-"));
+  fs.writeFileSync(
+    path.join(doctrine, "intent-check.md"),
+    "CUSTOM INTENT DOCTRINE — read the TEP's verbs.",
+    "utf8",
+  );
+  configurePromptTemplates({
+    repoDir: fs.mkdtempSync(path.join(os.tmpdir(), "tk-intent-")),
+    templateDir: doctrine,
+    pluginDirs: [],
+  });
+  const templated = buildIntentCheckPrompt(input);
+  assert.match(templated, /CUSTOM INTENT DOCTRINE/);
+  assert.doesNotMatch(templated, /You are the INTENT CHECK/);
+  assert.match(templated, /Respond with ONLY JSON/);
+  assert.match(templated, /## Goal/);
+  assert.match(templated, /src\/a\.ts/);
 });

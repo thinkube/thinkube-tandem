@@ -100,6 +100,9 @@ function makeWedgeDeps(): { deps: OrchestratorDeps; calls: CapturedCalls } {
     workerModel: { workerModel: "sonnet" },
     // Every unit lands: the worker seam resolves success.
     runUnit: async () => ({ outcome: "success" as const }),
+    // RUN PREFLIGHT seam (context tranche): pass-through — this fixture is minimal (no
+    // TEP/spec bodies) and exercises the finalization watchdog, not the preflight.
+    preflight: async () => [],
     // The closing gate runs green for the declared AC, so the slice advances and the run BELIEVES
     // it finalized — the precondition for the watchdog to treat a missing marker as a real wedge.
     runAcVerifications: async (verifs) =>

@@ -35,6 +35,11 @@ import {
   runAcVerifications,
   checkAcOrdinals,
   buildDeliveryReport,
+  extractUndelivered,
+  scanStubMarkers,
+  isStubScannableFile,
+  preflightProvisionFailures,
+  UNDELIVERED_PREFIX,
   appendPlanRepair,
   sectionText,
   deliveryExitState,
@@ -751,26 +756,29 @@ test("buildWorkerPrompt: scopes to the unit + footprint, forbids git, instructs 
   );
 
   // The worktree has no specs dir, so context is embedded in the prompt, not pointed to on disk.
-  // SP-6 AC1: the embedded context is the INTENT view — the `## Acceptance Criteria` block is
-  // held out, so the worker reads the Design/intent but never the rubric it is graded on.
+  // Context tranche (2026-07-14): the embedded spec is the FULL body — Acceptance Criteria
+  // INCLUDED for code workers too (the "exam held out" doctrine was deliberately reversed:
+  // zero observed rubric-gaming vs repeated context-starvation failures).
   const withCtx = buildWorkerPrompt(unit, "3", {
     specBody:
       "## Design\n\nDeploy headlamp into its namespace.\n\n## Acceptance Criteria\n\n- [ ] headlamp deploys",
     sliceBody: "Pinned: namespace headlamp",
   });
-  assert.doesNotMatch(withCtx, /Acceptance Criteria/);
+  assert.match(withCtx, /Acceptance Criteria/);
+  assert.match(withCtx, /headlamp deploys/);
   assert.match(withCtx, /Deploy headlamp into its namespace/);
   assert.match(withCtx, /Pinned: namespace headlamp/);
   assert.match(withCtx, /NOT in this worktree/);
 });
 
-// ── SP-6 AC1: hold out the exam — intent in, gradeable criteria withheld ────
-// The worker prompt must carry the INTENT (summary / Design / the unit's task + footprint)
-// but NEVER the Spec's `## Acceptance Criteria` block nor the slice's `satisfies` ordinals —
-// the implementer cannot read the rubric it is graded on, so a green proves intent, not
-// "I optimised to the assertions I was shown."
+// ── Context tranche (2026-07-14): FULL spec for both roles, satisfies still withheld ────
+// The SP-6 AC1 "hold out the exam" doctrine was deliberately REVERSED for code units: across
+// every observed run there was zero rubric-gaming while context starvation kept failing runs,
+// so the worker prompt now carries the FULL spec body (Acceptance Criteria included) for code
+// workers too. Blindness is exactly two artifacts (probe source ↔ implementation source).
+// The slice's `satisfies:` ordinals stay stripped for code units — grader bookkeeping, not intent.
 
-test("AC1: buildWorkerPrompt embeds the intent view but withholds the Acceptance Criteria block + satisfies", () => {
+test("context tranche: buildWorkerPrompt embeds the FULL spec (ACs included) for a code unit; satisfies stays withheld", () => {
   const unit: SchedUnit = {
     id: "SP-6_SL-1#eu-0",
     slice: "SP-6_SL-1",
@@ -820,17 +828,17 @@ test("AC1: buildWorkerPrompt embeds the intent view but withholds the Acceptance
   assert.match(p, /src\/foo\.ts/);
   assert.match(p, /implement foo end to end/);
 
-  // The gradeable criteria are HELD OUT — neither the heading nor any of its body lines leak.
-  assert.doesNotMatch(p, /Acceptance Criteria/);
-  assert.doesNotMatch(p, /a secret gradeable rubric/);
-  assert.doesNotMatch(p, /another hidden criterion/);
+  // Context tranche: the criteria are IN — the code worker builds with the full picture.
+  assert.match(p, /Acceptance Criteria/);
+  assert.match(p, /a secret gradeable rubric/);
+  assert.match(p, /another hidden criterion/);
 
-  // The `satisfies` ordinals are withheld — the worker can't learn which ACs it is graded against.
-  assert.doesNotMatch(p, /satisfies/i);
+  // The structured `satisfies:` key is still withheld — grader bookkeeping, not intent.
+  assert.doesNotMatch(p, /satisfies\s*:/i);
   assert.doesNotMatch(p, /\[2, 4\]/);
 });
 
-test("AC1: buildWorkerPrompt withholds the AC block even when it is the LAST section (no trailing heading)", () => {
+test("context tranche: buildWorkerPrompt keeps a trailing AC block too (full spec, both roles)", () => {
   const unit: SchedUnit = {
     id: "SP-6_SL-2#eu-0",
     slice: "SP-6_SL-2",
@@ -851,9 +859,9 @@ test("AC1: buildWorkerPrompt withholds the AC block even when it is the LAST sec
 
   const p = buildWorkerPrompt(unit, "6", { specBody });
   assert.match(p, /make bar idempotent/); // intent survives
-  assert.doesNotMatch(p, /Acceptance Criteria/); // trailing AC block fully removed
-  assert.doesNotMatch(p, /idempotent under retry/);
-  assert.doesNotMatch(p, /never double-writes/);
+  assert.match(p, /Acceptance Criteria/); // context tranche: the trailing AC block rides along
+  assert.match(p, /idempotent under retry/);
+  assert.match(p, /never double-writes/);
 });
 
 // ── SP-12: code-author self-verify command + standing prohibitions ─────────────
@@ -1691,7 +1699,7 @@ test("AC5: end-to-end — the loop re-dispatches up to the bound, then escalates
 // them. Role is carried onto the SchedUnit by buildUnitDag. An `env: "assessment"` AC is graded by
 // an injectable independent assessor, never a runnable command.
 
-test("SP-6/7 AC1: a test unit KEEPS the Acceptance Criteria + satisfies; a code unit strips them", () => {
+test("SP-6/7 AC1 (context tranche): BOTH roles read the Acceptance Criteria; only `satisfies:` is stripped for code", () => {
   const specBody = [
     "## Design",
     "",
@@ -1731,10 +1739,12 @@ test("SP-6/7 AC1: a test unit KEEPS the Acceptance Criteria + satisfies; a code 
     role: "code",
   };
   const cp = buildWorkerPrompt(codeUnit, "6", { specBody, sliceBody });
-  // The code-author never reads the rubric it is graded on.
-  assert.doesNotMatch(cp, /Acceptance Criteria/);
-  assert.doesNotMatch(cp, /foo must round-trip losslessly/);
-  assert.doesNotMatch(cp, /satisfies/i);
+  // Context tranche: the code-author now reads the criteria too (full intention; zero
+  // observed rubric-gaming vs repeated starvation). Only the structured `satisfies:`
+  // ordinals — grader bookkeeping — stay stripped.
+  assert.match(cp, /Acceptance Criteria/);
+  assert.match(cp, /foo must round-trip losslessly/);
+  assert.doesNotMatch(cp, /satisfies\s*:/i);
   assert.doesNotMatch(cp, /HELD-OUT TEST-AUTHOR/);
 });
 
@@ -1810,8 +1820,9 @@ test("SP-6/7: the test convention is injected for a test worker (it has no Bash 
   assert.doesNotMatch(cp, /Test convention:/);
 });
 
-test("SP-6/7 AC1: role defaults to code — an unset role withholds the ACs", () => {
+test("SP-6/7 AC1 (context tranche): an unset role defaults to code and — like code — reads the ACs, minus `satisfies:`", () => {
   const specBody = "## Acceptance Criteria\n\n- [ ] secret rubric";
+  const sliceBody = "satisfies: [3]\n\nWire x.";
   const unit: SchedUnit = {
     id: "SP-6_SL-9#eu-0",
     slice: "SP-6_SL-9",
@@ -1819,10 +1830,9 @@ test("SP-6/7 AC1: role defaults to code — an unset role withholds the ACs", ()
     requires: [],
     shape: "fan-out",
   };
-  assert.doesNotMatch(
-    buildWorkerPrompt(unit, "6", { specBody }),
-    /secret rubric/,
-  );
+  const p = buildWorkerPrompt(unit, "6", { specBody, sliceBody });
+  assert.match(p, /secret rubric/);
+  assert.doesNotMatch(p, /satisfies\s*:/i);
 });
 
 test("SP-6/7 AC1: buildUnitDag carries role onto the SchedUnit (test vs code)", () => {
@@ -2424,4 +2434,269 @@ test("delivery report: an intent gap renders first-class and forbids a quiet Acc
   assert.match(ok, /assessed to fulfill the parent TEP's intent/);
   const unavail = buildDeliveryReport({ ...base, intentCheck: { fulfilled: false, gaps: [], unavailable: "no session" } });
   assert.match(unavail, /NOT intent-checked/);
+});
+
+// ── Context tranche (2026-07-14): full-intention threading + the go-set ─────────
+
+import * as fsCtx from "node:fs";
+import * as osCtx from "node:os";
+import * as pathCtx from "node:path";
+import { configurePromptTemplates } from "./promptTemplates";
+
+const tranchUnit = (over: Partial<SchedUnit> = {}): SchedUnit => ({
+  id: "TEP-9_SP-1_SL-1#eu-0",
+  slice: "TEP-9_SP-1_SL-1",
+  footprint: ["src/a.ts"],
+  requires: [],
+  shape: "serial",
+  note: "wire a",
+  ...over,
+});
+
+test("context tranche: the parent TEP rides every worker prompt as THE INTENT — the north star (both roles)", () => {
+  const ctx = {
+    specBody: "## Design\n\nbuild a.",
+    tepBody: "## Goal\n\nA person can archive a card with one keystroke.",
+  };
+  for (const role of ["code", "test"] as const) {
+    const p = buildWorkerPrompt(tranchUnit({ role }), "9/1", ctx);
+    assert.match(p, /THE INTENT — the north star/);
+    assert.match(p, /archive a card with one keystroke/);
+  }
+  // No TEP resolved → no block (the preflight is where a missing TEP refuses the run).
+  const bare = buildWorkerPrompt(tranchUnit(), "9/1", { specBody: "x" });
+  assert.doesNotMatch(bare, /THE INTENT — the north star/);
+});
+
+test("context tranche: sibling unit notes are threaded, labeled by the NOTE AUTHOR's role, for both audiences", () => {
+  const siblingNotes = [
+    {
+      unit: "TEP-9_SP-1_SL-1#eu-1",
+      slice: "TEP-9_SP-1_SL-1",
+      role: "test" as const,
+      note: "assert archive survives reload",
+    },
+    {
+      unit: "TEP-9_SP-1_SL-2#eu-0",
+      slice: "TEP-9_SP-1_SL-2",
+      role: "code" as const,
+      note: "add the archive reducer",
+    },
+  ];
+  const cp = buildWorkerPrompt(tranchUnit({ role: "code" }), "9/1", {
+    siblingNotes,
+  });
+  assert.match(cp, /SIBLING UNITS' PLANS/);
+  assert.match(
+    cp,
+    /what the test-author will assert.*assert archive survives reload/,
+  );
+  assert.match(cp, /what the code-author plans.*add the archive reducer/);
+  const tp = buildWorkerPrompt(tranchUnit({ role: "test" }), "9/1", {
+    siblingNotes,
+  });
+  assert.match(tp, /what the code-author plans.*add the archive reducer/);
+  // No sibling notes → no block.
+  assert.doesNotMatch(
+    buildWorkerPrompt(tranchUnit(), "9/1", {}),
+    /SIBLING UNITS' PLANS/,
+  );
+});
+
+test("go-set: the worker preamble renders from the BUNDLED fallback (no template) WITH the in-code UNDELIVERED format stanza", (t) => {
+  t.after(() => configurePromptTemplates({}));
+  // Hermetic: no repo override, no doctrine dir, no plugin discovery → bundled fallback.
+  const emptyRepo = fsCtx.mkdtempSync(pathCtx.join(osCtx.tmpdir(), "tk-rep-"));
+  configurePromptTemplates({ repoDir: emptyRepo, pluginDirs: [] });
+  const p = buildWorkerPrompt(tranchUnit(), "9/1", {});
+  // Bundled behavioural principles…
+  assert.match(p, /THINK BEFORE CODING/);
+  assert.match(p, /SIMPLICITY FIRST/);
+  assert.match(p, /SURGICAL CHANGES/);
+  assert.match(p, /EXIT PROTOCOL/);
+  assert.match(p, /a declared gap is routed[\s\S]*an undeclared one is deception/i);
+  // …and the MACHINE-PARSED stanza, appended in code (never template-editable).
+  assert.match(p, /FINAL-SUMMARY FORMAT \(machine-parsed/);
+  assert.ok(p.includes(UNDELIVERED_PREFIX));
+});
+
+test("go-set: a worker-preamble TEMPLATE replaces the prose but the format stanza + placeholders survive in code", (t) => {
+  t.after(() => configurePromptTemplates({}));
+  const repo = fsCtx.mkdtempSync(pathCtx.join(osCtx.tmpdir(), "tk-rep-"));
+  const promptsDir = pathCtx.join(repo, ".tandem", "prompts");
+  fsCtx.mkdirSync(promptsDir, { recursive: true });
+  fsCtx.writeFileSync(
+    pathCtx.join(promptsDir, "worker-preamble.md"),
+    "CUSTOM DOCTRINE: measure twice, cut once.",
+    "utf8",
+  );
+  configurePromptTemplates({ repoDir: repo, pluginDirs: [] });
+  const p = buildWorkerPrompt(tranchUnit(), "9/1", {
+    specBody: "## Design\n\nbuild a.",
+  });
+  assert.match(p, /CUSTOM DOCTRINE: measure twice, cut once\./);
+  assert.doesNotMatch(p, /THINK BEFORE CODING/); // the bundled prose was replaced…
+  assert.match(p, /FINAL-SUMMARY FORMAT \(machine-parsed/); // …the reply contract was NOT
+  assert.ok(p.includes(UNDELIVERED_PREFIX));
+  // The interpolated placeholders (unit id / footprint / embedded spec) still render.
+  assert.match(p, /TEP-9_SP-1_SL-1#eu-0/);
+  assert.match(p, /src\/a\.ts/);
+  assert.match(p, /build a\./);
+});
+
+test("extractUndelivered: line-prefix scan — plain lines, list-marker lines, verbatim text; none ⇒ []", () => {
+  const out = [
+    "All done, mostly.",
+    "UNDELIVERED: the retry loop — question: which backoff does the design want?",
+    "- UNDELIVERED: telemetry wiring — question: is the sink the extension log?",
+    "  * UNDELIVERED: the migration — question: does old state need to survive?",
+    "UNDELIVERED:", // empty declaration is dropped
+    "Not an UNDELIVERED: line (prefix must start the line).",
+  ].join("\n");
+  assert.deepEqual(extractUndelivered(out), [
+    "the retry loop — question: which backoff does the design want?",
+    "telemetry wiring — question: is the sink the extension log?",
+    "the migration — question: does old state need to survive?",
+  ]);
+  assert.deepEqual(extractUndelivered("clean run, everything delivered"), []);
+  assert.deepEqual(extractUndelivered(""), []);
+});
+
+test("stub scan: scanStubMarkers finds the deferral markers case-insensitively with file:line; isStubScannableFile gates to code files", () => {
+  const hits = scanStubMarkers(
+    "src/x.ts",
+    [
+      "const a = 1;",
+      "// TODO: finish the retry loop",
+      "return; // stubbed as a NO-OP until the SDK ships",
+      "/* not implemented: pending SDK support */",
+      "const placeholder_free = 'clean line';", // `placeholder_free` — no \b match
+      "// Placeholder for the real impl",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    hits.map((h) => h.line),
+    [2, 3, 4, 6],
+  );
+  assert.equal(hits[0].file, "src/x.ts");
+  assert.match(hits[0].text, /TODO: finish the retry loop/);
+  // Code files only — prose/docs/json are not deferrals.
+  assert.ok(isStubScannableFile("src/a.ts"));
+  assert.ok(isStubScannableFile("scripts/run.sh"));
+  assert.ok(!isStubScannableFile("README.md"));
+  assert.ok(!isStubScannableFile("package.json"));
+});
+
+test("buildDeliveryReport: undelivered + stub-scan sections render after the intent check — verbatim, with the empty-state lines", () => {
+  const base = {
+    specNumber: "1/1",
+    sha: "abc1234",
+    files: ["src/a.ts"],
+    units: [{ id: "u1", outcome: "success" as const }],
+    declared: [{ ac: 1, run: "verify-1" }] as AcVerification[],
+    acResults: [{ ac: 1, pass: true, evidence: "ok" }] as AcResult[],
+    advanced: ["TEP-1_SP-1_SL-1"],
+    committed: true,
+    intentCheck: { fulfilled: true, gaps: [] as string[] },
+  };
+  const md = buildDeliveryReport({
+    ...base,
+    undelivered: [
+      { unit: "u1", text: "the retry loop — question: which backoff?" },
+    ],
+    stubScan: [
+      { file: "src/a.ts", line: 7, text: "// TODO: finish the retry loop" },
+    ],
+  });
+  assert.match(md, /## Undelivered — declared by the workers/);
+  assert.match(md, /`u1` — the retry loop — question: which backoff\?/);
+  assert.match(md, /## Self-declared deferrals found in the delivered code/);
+  assert.match(md, /`src\/a\.ts:7` — \/\/ TODO: finish the retry loop/);
+  // Prominence: both sections sit AFTER the intent check and BEFORE the AC table.
+  const intentAt = md.indexOf("## Intent check");
+  const undelAt = md.indexOf("## Undelivered — declared by the workers");
+  const stubAt = md.indexOf("## Self-declared deferrals");
+  const acAt = md.indexOf("## Acceptance criteria");
+  assert.ok(intentAt < undelAt && undelAt < stubAt && stubAt < acAt);
+
+  // Empty-state lines when the channels were open but stayed clean.
+  const clean = buildDeliveryReport({ ...base, undelivered: [], stubScan: [] });
+  assert.match(clean, /## Undelivered — declared by the workers\n\nnone declared/);
+  assert.match(
+    clean,
+    /## Self-declared deferrals found in the delivered code\n\nnone found/,
+  );
+
+  // Pre-tranche callers (fields omitted) render neither section.
+  const legacy = buildDeliveryReport(base);
+  assert.doesNotMatch(legacy, /## Undelivered — declared by the workers/);
+  assert.doesNotMatch(legacy, /## Self-declared deferrals/);
+});
+
+test("preflight provisions: every missing piece is NAMED — TEP, spec body, contract (multi-unit), note, footprint", () => {
+  const failures = preflightProvisionFailures({
+    specBody: "",
+    tepBody: "",
+    implementsRef: "TEP-9",
+    units: [
+      {
+        id: "TEP-9_SP-1_SL-1#eu-0",
+        slice: "TEP-9_SP-1_SL-1",
+        note: "",
+        footprint: [],
+        hasAuthoredUnits: true,
+        multiUnitSlice: true,
+        sliceContract: undefined,
+      },
+    ],
+  });
+  assert.equal(failures.length, 5);
+  assert.ok(failures.some((f) => /spec body is empty/.test(f)));
+  assert.ok(failures.some((f) => /parent TEP body unresolvable.*"TEP-9"/.test(f)));
+  assert.ok(failures.some((f) => /no declared footprint/.test(f)));
+  assert.ok(failures.some((f) => /unit note is empty/.test(f)));
+  assert.ok(failures.some((f) => /multi-unit slice has no `contract`/.test(f)));
+});
+
+test("preflight provisions: fully provisioned ⇒ no failures; legacy files-only slices are exempt from note/contract", () => {
+  assert.deepEqual(
+    preflightProvisionFailures({
+      specBody: "## Design\n\nbuild it",
+      tepBody: "## Goal\n\nwhy",
+      units: [
+        {
+          id: "TEP-9_SP-1_SL-1#eu-0",
+          slice: "TEP-9_SP-1_SL-1",
+          note: "wire a",
+          footprint: ["src/a.ts"],
+          hasAuthoredUnits: true,
+          multiUnitSlice: true,
+          sliceContract: "export function a(): void",
+        },
+        // Legacy unit-less slice: only the footprint must be present.
+        {
+          id: "TEP-9_SP-1_SL-2",
+          slice: "TEP-9_SP-1_SL-2",
+          footprint: ["src/b.ts"],
+          hasAuthoredUnits: false,
+          multiUnitSlice: false,
+        },
+      ],
+    }),
+    [],
+  );
+  // The contract failure names the slice ONCE even with several starving units.
+  const dup = preflightProvisionFailures({
+    specBody: "x",
+    tepBody: "y",
+    units: [1, 2].map((i) => ({
+      id: `TEP-9_SP-1_SL-3#eu-${i}`,
+      slice: "TEP-9_SP-1_SL-3",
+      note: "n",
+      footprint: ["src/c.ts"],
+      hasAuthoredUnits: true,
+      multiUnitSlice: true,
+    })),
+  });
+  assert.equal(dup.filter((f) => /SL-3.*contract/.test(f)).length, 1);
 });

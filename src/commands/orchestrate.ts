@@ -261,6 +261,14 @@ export function registerOrchestrateCommands(
                 thinkingSpaceRoot,
                 baseDir,
                 workerModel,
+                // Prompt externalization (context tranche): the doctrine dir prompt
+                // templates resolve from, after the repo's own `.tandem/prompts/`
+                // override. Empty/unset ⇒ the installed tandem-methodology plugin's
+                // templates/ dir (located via the marketplace registry), then the
+                // bundled in-code fallbacks.
+                promptTemplateDir:
+                  orchestratorCfg.get<string>("promptTemplateDir")?.trim() ||
+                  undefined,
                 // Pre-flight contract-consistency check (2026-07-12): one independent
                 // session per FRESH slice, before any worker dispatches — an authored
                 // contradiction (a unit note an AC forbids) is caught at the cheapest

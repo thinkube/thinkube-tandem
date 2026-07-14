@@ -13,6 +13,10 @@ import { spawn } from "child_process";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+// Prompt externalization (context tranche, 2026-07-14): the worker preamble's behavioural
+// prose is editable doctrine (worker-preamble.md); the bundled fallback + the machine-parsed
+// UNDELIVERED format stanza live here in code.
+import { loadTemplate } from "./promptTemplates";
 
 export interface SliceRow {
   /** Slice handle, e.g. "SP-3_SL-2". */
@@ -875,14 +879,15 @@ export function stripSatisfies(body: string): string {
  * with a question ONLY when genuinely blocked — the posture that keeps headless
  * execution from stopping on routine approvals.
  *
- * **Intent view, exam held out (SP-6 AC1) — and its inverse for a test unit (SP-6/7 AC1):** for a
- * `code` unit the embedded spec/slice is the *intent* (summary, Design, the unit's task + footprint)
- * with the `## Acceptance Criteria` block and any `satisfies` ordinals **stripped**
- * ({@link stripAcceptanceCriteria} / {@link stripSatisfies}) — the code-author builds to what
- * "correct" means, never to the rubric it is graded on. A `test` unit ({@link SchedUnit.role} ===
- * `"test"`) is the **held-out verifier**: the SAME strip is **inverted** — the ACs + `satisfies` are
- * KEPT so its probe (under the reserved `acceptance/` path) can grade the exact criteria, black-box.
- * Pure → unit-tested.
+ * **Full intention for BOTH roles (context tranche, 2026-07-14 — reversing SP-6 AC1's "exam held
+ * out" for code units):** every worker now receives the parent TEP (the north star), the FULL spec
+ * body INCLUDING the `## Acceptance Criteria` block, the Spec-wide contract, and every sibling
+ * unit's note labeled by role. Zero rubric-gaming was ever observed while context-starvation
+ * failures repeated, so blindness is now exactly TWO artifacts: the probe SOURCE is withheld from
+ * code workers and the implementation SOURCE from test workers (the structural tester-worktree
+ * isolation, unchanged). `satisfies` ordinals stay stripped for code units — grader bookkeeping,
+ * not intent ({@link stripSatisfies}). Mostly pure (the doctrine preamble is loaded from an
+ * editable template with a bundled fallback) → unit-tested.
  */
 /**
  * Tools DENIED to a worker by role (SP-6/7). Independence is STRUCTURAL — a `role: test` worker's
@@ -960,6 +965,173 @@ export function grepWithinCwd(
   return { allow: true };
 }
 
+/**
+ * The BUNDLED fallback for the worker preamble (the go-set, context tranche 2026-07-14) —
+ * used only when no `worker-preamble.md` template resolves, so a missing doctrine file never
+ * breaks a run. Content-mirrors `plugins/tandem-methodology/templates/worker-preamble.md`;
+ * change both together. The UNDELIVERED line FORMAT the orchestrator parses is NOT here —
+ * it is pinned in {@link UNDELIVERED_FORMAT_STANZA}, appended in code, never template-editable.
+ */
+export const BUNDLED_WORKER_PREAMBLE = [
+  "HOW TO WORK (the go-set — behavioural doctrine for every dispatched worker):",
+  "- THINK BEFORE CODING. Your FIRST output, before any code, states your assumptions and names anything in the contract / instructions that is unclear or unbuildable as specified. Surfacing a doubt up front is cheap; discovering it after the gate is a lost round.",
+  "- SIMPLICITY FIRST. Build the simplest thing that honestly satisfies the intent and the contract — no speculative abstraction, no scaffolding for futures nobody asked for.",
+  "- SURGICAL CHANGES. Touch only what the task requires; leave the surrounding code the way you found it. A small, legible diff is part of the deliverable.",
+  "- NEVER INVENT AN UNSPECIFIED PROTOCOL SILENTLY. If the contract or Design does not name a seam you need (a config key, an arming mechanism, a constant an assertion pivots on), do not quietly make one up — name the gap (see the exit protocol below) or escalate with a question.",
+  "- EXIT PROTOCOL — REPORT HONESTY. Anything not fully delivered MUST be listed in your final summary, one line per obligation, as:",
+  "  UNDELIVERED: <obligation> — question: <what you would have asked>",
+  "  A declared gap is routed and fixed; an undeclared one is deception. Never stub silently, never leave a confession buried in a code comment — the summary line is the artifact the orchestrator reads.",
+].join("\n");
+
+/** The line prefix the orchestrator PARSES a worker's undelivered declarations by
+ *  ({@link extractUndelivered}). A reply contract — in code, never template-editable. */
+export const UNDELIVERED_PREFIX = "UNDELIVERED:";
+
+/** The machine-parsed reply contract for undelivered obligations, appended to every worker
+ *  prompt IN CODE (after the template-loaded preamble) so an edited doctrine file can never
+ *  break the parser: the exact line shape `extractUndelivered` scans for. */
+export const UNDELIVERED_FORMAT_STANZA =
+  "FINAL-SUMMARY FORMAT (machine-parsed — do not vary it): every obligation you did not fully deliver goes in your final summary on its own line, starting exactly with " +
+  `\`${UNDELIVERED_PREFIX} \` followed by the obligation and — question: <what you would have asked>. No undelivered obligations ⇒ no such lines.`;
+
+/**
+ * Pull a worker's declared undelivered obligations out of its final output (the go-set exit
+ * protocol): every line whose text — after an optional list marker — starts with
+ * {@link UNDELIVERED_PREFIX}, returned verbatim (prefix stripped, trimmed). A simple
+ * line-prefix scan by design: the format stanza pins the shape, and a declared gap must
+ * survive any surrounding prose. No matching lines ⇒ `[]`. Pure.
+ */
+export function extractUndelivered(finalOutput: string): string[] {
+  const out: string[] = [];
+  for (const line of (finalOutput ?? "").split(/\r?\n/)) {
+    const stripped = line.replace(/^\s*(?:[-*+]|\d+[.)])?\s*/, "");
+    if (stripped.startsWith(UNDELIVERED_PREFIX)) {
+      const text = stripped.slice(UNDELIVERED_PREFIX.length).trim();
+      if (text) out.push(text);
+    }
+  }
+  return out;
+}
+
+// ── Stub scan (the go-set, deterministic half — context tranche 2026-07-14) ─────
+//
+// A worker that stubs an obligation and confesses only in a code comment leaves no
+// artifact the delivery report surfaces. This deterministic scan greps the delivered
+// files for self-declared deferral markers at delivery-report time; hits render as
+// "## Self-declared deferrals found in the delivered code". It complements (never
+// replaces) the declared UNDELIVERED channel: one is the worker's honesty, this is
+// the transcript-independent floor under it.
+
+/** The self-declared deferral markers, case-insensitive, whole-word. */
+export const STUB_MARKER_RE =
+  /\b(TODO|FIXME|stub|no-op|noop|not in scope|not implemented|pending SDK|placeholder)\b/i;
+
+/** Code-file extensions the stub scan reads — markers in prose/docs are not deferrals. */
+const CODE_FILE_RE =
+  /\.(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|sh|bash|zsh|ps1|sql|vue|svelte)$/i;
+
+/** True when `file` (a repo-relative path) is a code file the stub scan should read. */
+export function isStubScannableFile(file: string): boolean {
+  return CODE_FILE_RE.test(file);
+}
+
+export interface StubScanHit {
+  /** Repo-relative path of the delivered file. */
+  file: string;
+  /** 1-based line number of the hit. */
+  line: number;
+  /** The hit line's text, clipped. */
+  text: string;
+}
+
+/** Scan ONE delivered code file's content for self-declared deferral markers
+ *  ({@link STUB_MARKER_RE}); one hit per matching line, text clipped to 160 chars. Pure —
+ *  the caller reads the file (and filters via {@link isStubScannableFile}). */
+export function scanStubMarkers(file: string, content: string): StubScanHit[] {
+  const hits: StubScanHit[] = [];
+  const lines = (content ?? "").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (STUB_MARKER_RE.test(lines[i]))
+      hits.push({ file, line: i + 1, text: clip(lines[i].trim(), 160) });
+  }
+  return hits;
+}
+
+// ── RUN PREFLIGHT provisions (context tranche, 2026-07-14 — the pure half) ─────
+//
+// Workers were starved: prompts dispatched with an unresolvable TEP, an empty spec body,
+// a multi-unit slice with no contract, a unit with no note — and the starvation surfaced
+// only as a red gate rounds later, at full token cost. This pure check names every missing
+// provision BEFORE any worker dispatches; the shell's instruments half (dispatcher smoke,
+// harness smoke, store writability) is I/O and lives in `OrchestratorService.defaultPreflight`.
+
+/** One about-to-dispatch unit as the provisions check sees it. */
+export interface PreflightUnit {
+  id: string;
+  slice: string;
+  /** The unit's task note (concatenated from its work units). */
+  note?: string;
+  footprint: string[];
+  /** True when the slice authored `work_units` (a legacy files-only slice has no
+   *  authored note to starve, so the note check does not apply to it). */
+  hasAuthoredUnits: boolean;
+  /** True when the slice declares MORE THAN ONE work unit — those units coordinate
+   *  through the slice contract, so a missing contract starves them all. */
+  multiUnitSlice: boolean;
+  /** The slice's declared contract (NOT the spec-wide union — the check is per slice). */
+  sliceContract?: string;
+}
+
+/**
+ * The provisions half of the RUN PREFLIGHT: verify every about-to-dispatch unit's prompt
+ * inputs resolve NON-EMPTY — the parent TEP body (via the spec's `implements`), the spec
+ * body, the slice contract for multi-unit slices, the unit note, and a non-empty footprint.
+ * Returns one human-readable failure line per missing piece (empty = provisioned). Pure.
+ */
+export function preflightProvisionFailures(input: {
+  specBody: string;
+  tepBody: string;
+  /** The spec frontmatter's `implements` value, for the failure message. */
+  implementsRef?: unknown;
+  units: PreflightUnit[];
+}): string[] {
+  const failures: string[] = [];
+  if (!input.specBody.trim())
+    failures.push(
+      "spec body is empty — the spec doc could not be read (or has no content); every worker prompt embeds it.",
+    );
+  if (!input.tepBody.trim())
+    failures.push(
+      `parent TEP body unresolvable (spec frontmatter implements: ${
+        typeof input.implementsRef === "string" && input.implementsRef.trim()
+          ? JSON.stringify(input.implementsRef)
+          : "unset"
+      }) — worker prompts thread the TEP as the north star; fix the spec's \`implements\` or the TEP file.`,
+    );
+  const contractFlagged = new Set<string>();
+  for (const u of input.units) {
+    if (!(u.footprint ?? []).filter((f) => f.trim()).length)
+      failures.push(
+        `${u.id} (${u.slice}): no declared footprint — the unit has nowhere to write.`,
+      );
+    if (u.hasAuthoredUnits && !(u.note ?? "").trim())
+      failures.push(
+        `${u.id} (${u.slice}): unit note is empty — the worker would dispatch with no task text.`,
+      );
+    if (
+      u.multiUnitSlice &&
+      !(u.sliceContract ?? "").trim() &&
+      !contractFlagged.has(u.slice)
+    ) {
+      contractFlagged.add(u.slice);
+      failures.push(
+        `${u.slice}: multi-unit slice has no \`contract\` — its units would each invent the shared interface.`,
+      );
+    }
+  }
+  return failures;
+}
+
 export function buildWorkerPrompt(
   unit: SchedUnit,
   specNumber: string,
@@ -982,6 +1154,19 @@ export function buildWorkerPrompt(
      *  Rendered VERBATIM under the `EXAMPLE TEST` marker into a `role: "test"` prompt ONLY; omitted
      *  entirely (block + marker) when absent/blank, and NEVER rendered for a code unit. */
     exampleTest?: string;
+    /** Full-intention threading (context tranche, 2026-07-14): the parent TEP body, rendered
+     *  VERBATIM for BOTH roles as "THE INTENT — the north star". Workers were starved of the
+     *  why behind their slice; the TEP is the artifact that carries it. */
+    tepBody?: string;
+    /** Full-intention threading: every SIBLING execution unit's `note`, labeled by the note's
+     *  author role, so a code worker knows what the test-author will assert and a test worker
+     *  knows what the code-author plans. The orchestrator passes every OTHER unit of the run. */
+    siblingNotes?: {
+      unit: string;
+      slice: string;
+      role: "code" | "test";
+      note: string;
+    }[];
   },
 ): string {
   const fp = unit.footprint.join(", ") || "(no declared footprint)";
@@ -1082,23 +1267,59 @@ export function buildWorkerPrompt(
     : "";
   // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
   // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
-  // reach. SP-6 AC1 / SP-6/7 AC1: a `code` unit gets the INTENT VIEW only — the `## Acceptance Criteria`
-  // block and any `satisfies` ordinals are STRIPPED so it builds to intent, never to the rubric it is
-  // graded on; a `test` unit KEEPS them (the inverse) so its held-out probe can target the exact criteria.
+  // reach.
+  //
+  // FULL SPEC FOR BOTH ROLES (context tranche, 2026-07-14 — deliberately REVERSING the SP-6 AC1
+  // "exam held out" doctrine for code units): the `stripAcceptanceCriteria` call is REMOVED for
+  // code roles, so a code worker now reads the FULL spec body INCLUDING the acceptance criteria.
+  // WHY: across every observed run there were ZERO cases of rubric-gaming (a coder optimising to
+  // the checkbox text instead of the behaviour) — while context STARVATION failures repeated
+  // (workers building to a guessed intent and missing criteria they were never shown). The grade
+  // still cannot be gamed structurally: the held-out probe SOURCE remains invisible to code
+  // workers (the tester-worktree isolation is unchanged) and the closing gate derives the grade
+  // only from independently-authored evidence. `satisfies` ordinals stay stripped — they are
+  // grader bookkeeping, not intent. The two artifacts still withheld are exactly: probe source
+  // from code workers, implementation source from test workers.
   const viewOf = (body: string): string =>
-    (isTest
-      ? (body ?? "")
-      : stripSatisfies(stripAcceptanceCriteria(body ?? ""))
-    ).trim();
+    (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
   const intentSpec = viewOf(context?.specBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const viewLabel = isTest ? "" : " — INTENT";
   const specBlock = intentSpec
-    ? `\n──── PARENT SPEC (SP-${specNumber})${viewLabel} ────\n${intentSpec}\n`
+    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
     : "";
   const sliceBlock = intentSlice
-    ? `\n──── YOUR SLICE (${unit.slice})${viewLabel} ────\n${intentSlice}\n`
+    ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
     : "";
+  // Full-intention threading (context tranche): the parent TEP — the WHY behind the spec —
+  // rendered verbatim for BOTH roles. The spec approximates the TEP; when they diverge the
+  // TEP is the star the delivery is eventually judged against (the intent check).
+  const tepBlock = context?.tepBody?.trim()
+    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${context.tepBody.trim()}\n`
+    : "";
+  // Sibling awareness (context tranche): every sibling unit's task note, labeled by its
+  // author role — a code worker sees what the test-author will assert; a test worker sees
+  // what the code-author plans. Alignment without reading each other's artifacts (which
+  // remain withheld: probe source from coders, implementation source from testers).
+  const siblings = (context?.siblingNotes ?? []).filter((s) => s.note?.trim());
+  const siblingBlock = siblings.length
+    ? `\n──── SIBLING UNITS' PLANS (the run's other workers — align with them, do not duplicate or contradict them) ────\n` +
+      siblings
+        .map(
+          (s) =>
+            `- ${s.unit} [${s.slice}] (${
+              s.role === "test"
+                ? "what the test-author will assert"
+                : "what the code-author plans"
+            }): ${s.note.trim()}`,
+        )
+        .join("\n") +
+      "\n"
+    : "";
+  // The go-set (context tranche): behavioural doctrine loaded from the `worker-preamble.md`
+  // template (repo override → plugin dir), falling back to the bundled prose — a missing
+  // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
+  // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
+  const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
   const hasCtx = specBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
@@ -1106,6 +1327,7 @@ export function buildWorkerPrompt(
     (hasCtx
       ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
       : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+    `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +
     contractBlock +
     verifyBlock +
@@ -1114,8 +1336,10 @@ export function buildWorkerPrompt(
     exampleBlock +
     workspaceBlock +
     consumesBlock +
+    tepBlock +
     specBlock +
     sliceBlock +
+    siblingBlock +
     `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
     `Do NOT commit, run git, or move the thinking space card — the orchestrator owns git and the gate. ` +
     // Terminate-on-denial (SP-6/7), redirect-aware: never BRUTE-FORCE a boundary (the drive to finish
@@ -2270,6 +2494,15 @@ export interface DeliveryReportInput {
    *  paired with its unit id by the orchestrator. Rendered under `## Discoveries & recommendations`
    *  (both unit and text); empty/omitted ⇒ the literal "none reported". */
   discoveries?: { unit: string; text: string }[];
+  /** The go-set exit protocol (context tranche, 2026-07-14): every `UNDELIVERED:` line workers
+   *  declared in their final summaries, verbatim, paired with the declaring unit. Rendered
+   *  prominently as `## Undelivered — declared by the workers` right after the intent-check
+   *  section ("none declared" when empty). `undefined` omits the section (pre-tranche callers). */
+  undelivered?: { unit: string; text: string }[];
+  /** The deterministic stub scan (context tranche): self-declared deferral markers found in the
+   *  delivered code files at delivery-report time. Rendered as `## Self-declared deferrals found
+   *  in the delivered code` ("none found" when empty). `undefined` omits the section. */
+  stubScan?: StubScanHit[];
   /** Repair window (2026-07-08): the `prepare` build failure that stopped the closing gate before
    *  ANY AC could run — command + bounded raw output. Rendered as a first-class
    *  `## Build failed before verification` section right after `## What happened`, so the one
@@ -2406,6 +2639,41 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
             "Do not Accept until each gap is delivered or explicitly waived — green checkboxes do not overrule the north star.",
             "",
           ];
+
+  // ── ## Undelivered — declared by the workers (the go-set exit protocol) ───────
+  // A declared gap is ROUTED, not buried: every worker `UNDELIVERED:` line renders here
+  // verbatim, right after the intent check, so the Accept decision sees what the workers
+  // themselves say is missing. "none declared" when the channel was open and stayed empty;
+  // the section is omitted entirely only for pre-tranche callers that never collected it.
+  const undeliveredSection =
+    i.undelivered === undefined
+      ? []
+      : [
+          "## Undelivered — declared by the workers",
+          "",
+          ...(i.undelivered.length
+            ? i.undelivered.map((u) => `- \`${u.unit}\` — ${u.text}`)
+            : ["none declared"]),
+          "",
+        ];
+
+  // ── ## Self-declared deferrals found in the delivered code (stub scan) ────────
+  // The deterministic floor under the declared channel: markers greped out of the
+  // delivered files (TODO/FIXME/stub/…), file:line + the clipped line text.
+  const stubSection =
+    i.stubScan === undefined
+      ? []
+      : [
+          "## Self-declared deferrals found in the delivered code",
+          "",
+          ...(i.stubScan.length
+            ? i.stubScan.map(
+                (h) =>
+                  `- \`${h.file}:${h.line}\` — ${h.text.replace(/`/g, "'")}`,
+              )
+            : ["none found"]),
+          "",
+        ];
 
   // ── ## Acceptance criteria — criterion text + verdict, or the ordinal table ───
   const resultFor = new Map(i.acResults.map((r) => [r.ac, r]));
@@ -2561,6 +2829,8 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
     whatHappened,
     "",
     ...intentSection,
+    ...undeliveredSection,
+    ...stubSection,
     ...planChangesSection,
     ...buildFailSection,
     ...acSection,

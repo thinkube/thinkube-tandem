@@ -339,3 +339,60 @@ test("buildAuditPrompt: a supplied TEP body arms the INTENT FIDELITY rule and ri
   const without = buildAuditPrompt(acs, "spec body");
   assert.doesNotMatch(without, /INTENT FIDELITY/, "no TEP → the rule is not armed (fail-open, as documented)");
 });
+
+// ── Prompt externalization (context tranche, 2026-07-14): rules as doctrine, contract in code ─
+import * as fsTpl from "node:fs";
+import * as osTpl from "node:os";
+import * as pathTpl from "node:path";
+import { configurePromptTemplates } from "./promptTemplates";
+
+test("buildAuditPrompt (bundled fallback): carries the CONTRACT CONTROLLABILITY question + the JSON reply contract", (t) => {
+  t.after(() => configurePromptTemplates({}));
+  // Hermetic: no template anywhere → the bundled in-code rules serve the audit.
+  configurePromptTemplates({
+    repoDir: fsTpl.mkdtempSync(pathTpl.join(osTpl.tmpdir(), "tk-audit-")),
+    pluginDirs: [],
+  });
+  const prompt = buildAuditPrompt(ACS, "spec body", "## Goal\nwhy");
+  // The go-set's new design question (ITEM 4d): an obligation buildable only by INVENTING
+  // an unnamed protocol is a Design defect → needs-reframe naming the missing design.
+  assert.match(prompt, /CONTRACT CONTROLLABILITY/);
+  assert.match(prompt, /invent a protocol/i);
+  // The intent-fidelity rule still arms on a TEP, bundled path included.
+  assert.match(prompt, /INTENT FIDELITY/);
+  // The OUTPUT-FORMAT stanza — the parser's contract — is in code, template or not.
+  assert.match(prompt, /Respond with ONLY a JSON array/);
+  assert.match(prompt, /"verdict":"verifiable"/);
+  // The AC placeholders interpolate.
+  assert.match(prompt, /1\. AC one/);
+  assert.match(prompt, /2\. AC two/);
+});
+
+test("buildAuditPrompt (template present): the PROSE is replaced, the if:tep conditional gates INTENT FIDELITY, the JSON contract survives", (t) => {
+  t.after(() => configurePromptTemplates({}));
+  const doctrine = fsTpl.mkdtempSync(pathTpl.join(osTpl.tmpdir(), "tk-audit-"));
+  fsTpl.writeFileSync(
+    pathTpl.join(doctrine, "audit-rules.md"),
+    [
+      "CUSTOM AUDIT DOCTRINE — judge each criterion harshly.",
+      "<!-- if:tep -->",
+      "CUSTOM INTENT FIDELITY — compare against the TEP.",
+      "<!-- endif:tep -->",
+    ].join("\n"),
+    "utf8",
+  );
+  configurePromptTemplates({
+    repoDir: fsTpl.mkdtempSync(pathTpl.join(osTpl.tmpdir(), "tk-audit-")),
+    templateDir: doctrine,
+    pluginDirs: [],
+  });
+  const withTep = buildAuditPrompt(ACS, "spec body", "## Goal\nwhy");
+  assert.match(withTep, /CUSTOM AUDIT DOCTRINE/);
+  assert.match(withTep, /CUSTOM INTENT FIDELITY/);
+  assert.doesNotMatch(withTep, /adversarial verifiability auditor/); // bundled prose replaced
+  assert.match(withTep, /Respond with ONLY a JSON array/); // …the reply contract was NOT
+  assert.match(withTep, /1\. AC one/); // placeholders interpolate around the template
+  const withoutTep = buildAuditPrompt(ACS, "spec body");
+  assert.doesNotMatch(withoutTep, /CUSTOM INTENT FIDELITY/, "if:tep gates the block off");
+  assert.match(withoutTep, /CUSTOM AUDIT DOCTRINE/);
+});

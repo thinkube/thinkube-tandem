@@ -712,6 +712,11 @@
           },
           "description": "Optional per-role override map that RAISES an individual worker role (e.g. `judge`, `assessor`) to a stronger model than `thinkube.orchestrator.workerModel` (SP-17/1). A refinement, not a requirement: every role always resolves to the base worker model unless it is listed here."
         },
+        "thinkube.orchestrator.promptTemplateDir": {
+          "type": "string",
+          "default": "",
+          "description": "Directory the orchestrator loads its editable prompt-template PROSE from (worker-preamble.md, audit-rules.md, intent-check.md) — doctrine, tweakable without an extension release. Resolution order per template: (1) the orchestrated repo's own `.tandem/prompts/<name>.md` override, (2) this directory when set, (3) the installed tandem-methodology plugin's `templates/` dir (located via `~/.claude/plugins/known_marketplaces.json`), (4) the extension's bundled fallback — so a missing file never breaks a run. The machine-parsed OUTPUT-FORMAT stanzas (JSON reply contracts) are never loaded from templates. Leave empty to use the plugin's doctrine."
+        },
         "thinkube.orchestrator.floatLogsToNewWindow": {
           "type": "boolean",
           "default": true,

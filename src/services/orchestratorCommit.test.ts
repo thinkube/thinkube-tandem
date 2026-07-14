@@ -135,6 +135,9 @@ function makeDeps(
     // source). Supply the default so this construction compiles.
     workerModel: { workerModel: "sonnet" },
     runUnit: spyRun,
+    // RUN PREFLIGHT seam (context tranche): pass-through — this fixture is minimal (no
+    // TEP/spec bodies) and exercises the commit protocol, not the preflight.
+    preflight: async () => [],
     runAcVerifications: async (verifs) =>
       verifs.map((v) => ({
         ac: v.ac,
