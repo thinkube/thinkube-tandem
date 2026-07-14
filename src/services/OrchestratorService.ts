@@ -1447,6 +1447,10 @@ export class OrchestratorService {
       /** The judged fault persisted with the last requires-attention flag
        *  (`last_fault`) — the role whose checkpointed units must re-run. */
       lastFault?: string;
+      /** The slice carries an `attention_history` — a prior requires-attention was
+       *  handed back (e.g. an /attend fix committed straight to the branch, which
+       *  cannot update unit bookkeeping). The grade-first signal. */
+      hadAttention?: boolean;
     }
   > = new Map();
 
@@ -1467,6 +1471,26 @@ export class OrchestratorService {
   /** Live workers' abort controllers, keyed by unit id — a HALT aborts them all immediately
    *  (fast abort, 2026-07-08) instead of draining a doomed run at full token burn. */
   private liveAborts = new Map<string, AbortController>();
+
+  /** External STOP (2026-07-14): set by {@link requestHalt}; `fill()` promotes it to the
+   *  run-halt (same drain semantics as the failure-threshold halt) on its next call. */
+  private haltRequested = false;
+
+  /** The Stop command's entry point: abort every live worker NOW and flag the run to
+   *  halt — no new units dispatch, the pump drains the aborted ones, and bookkeeping +
+   *  finalization still run (the run ends recorded, not orphaned). Before this existed
+   *  the only way a human could stop a run was killing worker processes by hand.
+   *  Returns the number of in-flight workers aborted. */
+  requestHalt(): number {
+    this.haltRequested = true;
+    let aborted = 0;
+    for (const [id, ac] of this.liveAborts) {
+      ac.abort();
+      aborted++;
+      this.deps.output.appendLine(`■ STOP: aborting in-flight ${id}`);
+    }
+    return aborted;
+  }
 
   /**
    * Fetch the parent spec doc + each slice body from the thinking space, to embed in worker prompts.
@@ -1554,6 +1578,9 @@ export class OrchestratorService {
           : [],
         lastFault:
           typeof fm?.last_fault === "string" ? fm.last_fault : undefined,
+        hadAttention:
+          Array.isArray(fm?.attention_history) &&
+          (fm!.attention_history as unknown[]).length > 0,
       });
       slices.push({
         handle,
@@ -1714,6 +1741,10 @@ export class OrchestratorService {
       typeof specDoc?.frontmatter?.ac_verifications_hash === "string"
         ? specDoc.frontmatter.ac_verifications_hash
         : undefined;
+    // Grade-first candidates (2026-07-14): slices whose committed state should be
+    // MEASURED before any rework worker dispatches — collected at seed time, graded
+    // below once the tester + oracle exist. slice handle → its still-pending units.
+    const gradeFirst = new Map<string, SchedUnit[]>();
     for (const s of slices) {
       const st = s.status.toLowerCase();
       const ids = (unitsBySlice.get(s.handle) ?? []).map((u) => u.id);
@@ -1806,6 +1837,34 @@ export class OrchestratorService {
           );
         }
       }
+      // Grade-first rework (2026-07-14): a slice with PRIOR completed work on record —
+      // checkpointed units, or an attention history (an /attend fix commits to the
+      // branch but cannot update unit bookkeeping) — whose remaining units would
+      // otherwise re-dispatch is measured before any worker re-authors it. Candidates
+      // need every test unit's probes durable (else re-authoring is real work, not a
+      // stale record); the single oracle round runs below once the oracle exists.
+      // The measurement, not the recorded diagnosis, decides whether rework happens.
+      if (!state.done.has(s.handle) && !resumeCommit.has(s.handle)) {
+        const su = unitsBySlice.get(s.handle) ?? [];
+        const pending = su.filter(
+          (u) => !state.done.has(u.id) && !state.blocked.has(u.id),
+        );
+        const priorWork =
+          rs.unitsDone.length > 0 || rs.hadAttention === true;
+        if (su.length > 0 && pending.length > 0 && priorWork) {
+          let testsDurable = true;
+          for (const u of su)
+            if ((u.role ?? "code") === "test")
+              testsDurable =
+                testsDurable &&
+                (await probesPresent(
+                  probeStore,
+                  u.footprint ?? [],
+                  acContractHash,
+                ));
+          if (testsDurable) gradeFirst.set(s.handle, pending);
+        }
+      }
     }
     const remaining = new Map<string, number>();
     for (const [slice, us] of unitsBySlice) {
@@ -1849,12 +1908,17 @@ export class OrchestratorService {
     const specInFlight = runningSessions().some((id) =>
       id.startsWith(specUnitPrefix),
     );
+    // Grade-first precondition: only a freshly-reset tree is a faithful image of the
+    // branch's committed state — a skipped reset (live session / resume-commit) may
+    // carry uncommitted edits, and grading those would certify work that isn't landed.
+    let freshTree = false;
     if (!specInFlight && resumeCommit.size === 0) {
       try {
         await this.deps.worktrees.reset?.(
           worktreePath,
           this.deps.thinkingSpaceRoot,
         );
+        freshTree = true;
         output.appendLine(
           `▸ SP-${specNumber}: worktree reset to the branch's committed state (fresh run).`,
         );
@@ -1940,6 +2004,61 @@ export class OrchestratorService {
       return p;
     };
 
+    // Grade-first rework (2026-07-14): measure the committed state BEFORE dispatching
+    // rework workers. Each candidate (collected at seed time: prior work on record,
+    // probes durable) gets ONE oracle round over the freshly-reset tree. Green → its
+    // units are recorded done and no worker re-authors what already passes — the
+    // self-heal for a hand-back that couldn't update the bookkeeping, and the guard
+    // against a worker "fixing" healthy code off a stale diagnosis. Red / no runnable
+    // oracle → normal dispatch, now against a measured rather than recorded state.
+    if (freshTree && gradeFirst.size > 0) {
+      for (const [handle, pending] of gradeFirst) {
+        let green = false;
+        try {
+          const oracle = await oracleFor(handle);
+          if (!oracle) {
+            output.appendLine(
+              `▸ ${handle}: grade-first skipped (no runnable oracle) — normal dispatch.`,
+            );
+            continue;
+          }
+          const res = await oracle.verify();
+          green =
+            res.kind === "results" &&
+            res.results.length > 0 &&
+            res.results.every((r) => r.pass);
+          if (!green)
+            output.appendLine(
+              `▸ ${handle}: grade-first ${
+                res.kind === "results"
+                  ? `${res.results.filter((r) => r.pass).length}/${res.results.length} pass`
+                  : res.kind
+              } → workers dispatch.`,
+            );
+        } catch (err) {
+          output.appendLine(
+            `▸ ${handle}: grade-first errored (${(err as Error).message}) — normal dispatch.`,
+          );
+        }
+        if (!green) continue;
+        output.appendLine(
+          `✓ ${handle}: grade-first GREEN — the committed state already passes; no workers re-author it.`,
+        );
+        for (const u of pending) {
+          state.done.add(u.id);
+          await this.checkpointUnit(
+            worktreePath,
+            handle,
+            u.id,
+            u.footprint ?? [],
+          );
+        }
+        state.done.add(handle);
+        landed.add(handle);
+        remaining.delete(handle);
+      }
+    }
+
     const limit = Math.max(1, Math.floor(cap));
     output.appendLine(
       `▸ SP-${specNumber}: scheduling ${dag.length} unit(s) over cap ${limit} in ${worktreePath}`,
@@ -1997,6 +2116,15 @@ export class OrchestratorService {
     };
 
     const fill = () => {
+      // External STOP (2026-07-14): the Stop command already aborted the in-flight
+      // workers; promoting its flag here stops NEW dispatch with the same drain
+      // semantics as the failure-threshold halt below.
+      if (this.haltRequested && !halt) {
+        halt = true;
+        output.appendLine(
+          `■ SP-${specNumber}: STOP requested → run halted (no new units dispatched; draining in-flight).`,
+        );
+      }
       // Run halted (SP-2/TEP-6 AC5): stop pulling the ready frontier — dispatch NO new units. The
       // already-running units drain in the loop below; the not-yet-dispatched ones stay ready for a
       // later re-orchestrate. We never kill an in-flight unit.

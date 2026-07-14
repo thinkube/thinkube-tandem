@@ -61,6 +61,11 @@ import { withSpecLock } from "../services/dispatchGuard";
  */
 const dispatchLock = new ConcurrencyLock();
 
+/** Orchestrators with a run in flight — the Stop command reaches them here (the
+ *  service is constructed per invocation, so a module-scope registry is the only
+ *  shared handle a palette command can use). */
+const liveOrchestrators = new Set<OrchestratorService>();
+
 /** Normalize a spec arg from the ▶ button / a card — the tep-qualified handle
  *  `TEP-n_SP-m` — (or a bare / `SP-`-prefixed id) into the composite spec id
  *  `n/m` that `listSpecDirs` returns. The card carries the full handle, so the
@@ -91,6 +96,27 @@ export function registerOrchestrateCommands(
     deps.output ?? vscode.window.createOutputChannel("Thinkube Orchestrator");
   context.subscriptions.push(
     output,
+    // Human stop control (2026-07-14): before this, the only way to stop a run was
+    // killing worker processes by hand. Aborts every in-flight worker and flags the
+    // run to halt — it drains, finalizes, and records its bookkeeping (same semantics
+    // as the failure-threshold halt; nothing is orphaned).
+    vscode.commands.registerCommand("thinkube.orchestrate.stop", () => {
+      if (liveOrchestrators.size === 0) {
+        vscode.window.showInformationMessage(
+          "No orchestration run is in flight.",
+        );
+        return;
+      }
+      let aborted = 0;
+      for (const o of liveOrchestrators) aborted += o.requestHalt();
+      output.appendLine(
+        `■ STOP requested from the command palette — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
+      );
+      output.show(true);
+      vscode.window.showInformationMessage(
+        `Stop requested — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
+      );
+    }),
     vscode.commands.registerCommand(
       "thinkube.orchestrate",
       async (
@@ -275,7 +301,10 @@ export function registerOrchestrateCommands(
                 vscode.workspace
                   .getConfiguration("thinkube.orchestrator")
                   .get<number>("maxConcurrent") ?? 4;
-              const r = await orchestrator.dispatchSpec(spec, cap);
+              liveOrchestrators.add(orchestrator);
+              const r = await orchestrator
+                .dispatchSpec(spec, cap)
+                .finally(() => liveOrchestrators.delete(orchestrator));
               if (!r.ok) {
                 vscode.window.showErrorMessage(
                   `SP-${spec}: malformed DAG — ${r.reason?.split("\n")[0] ?? "rejected"}`,

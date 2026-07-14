@@ -77,6 +77,12 @@
         "category": "Thinkube Tandem"
       },
       {
+        "command": "thinkube.orchestrate.stop",
+        "title": "Stop Orchestration Run",
+        "category": "Thinkube Tandem",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "thinkube.floatOutSession",
         "title": "Float Out Session",
         "category": "Thinkube Tandem"
