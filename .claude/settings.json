@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "tandem-methodology@thinkube": true
+  },
   "hooks": {
     "PostToolUse": [
       {
