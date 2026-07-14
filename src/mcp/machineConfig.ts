@@ -106,12 +106,25 @@ export function kanbanServerEntry(
   // Done undocumented, with the warning lost in tool results nobody read.
   const docsGateMode =
     cfg.get<string>("docsGateMode") === "advisory" ? "advisory" : "blocking";
+  // Judgment gates on a judgment model (2026-07-14): the write_spec certification
+  // auditor was HARDCODED to sonnet — and the empirical three-way test (fable /
+  // opus / sonnet over the same intent-fidelity audit) showed sonnet re-certifies
+  // the exact person→API substitution that shipped the SP-21/2 tricycle, while
+  // opus catches both substitutions AND the unverified freeze act. The auditor's
+  // model now follows the operator's per-role config.
+  const orch = vscode.workspace.getConfiguration("thinkube.orchestrator");
+  const byRole = orch.get<Record<string, string>>("workerModelByRole") ?? {};
+  const auditorModel =
+    byRole["auditor"]?.trim() ||
+    orch.get<string>("workerModel")?.trim() ||
+    "sonnet";
   const gs = context.globalStorageUri.fsPath;
 
   const env: Record<string, string> = {
     THINKUBE_ALLOW_AI_WRITES: allowWrites ? "true" : "false",
     THINKUBE_MODE: mode,
     THINKUBE_DOCS_GATE_MODE: docsGateMode,
+    THINKUBE_AUDITOR_MODEL: auditorModel,
     // The launcher publishes THINKUBE_SIGNING_KEY_DIR=<globalStorage>/signing on the
     // host env; match it (NOT the deleted provider's bare globalStorage) so the audit
     // signs with — and readyGate verifies against — the one live key.

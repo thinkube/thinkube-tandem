@@ -305,10 +305,15 @@ async function main(): Promise<void> {
     );
   }
   const signingSecret: Buffer = loadOrCreateSecret(signingKeyDir);
-  // SP-17/1: the auditor runs on a pinned worker model, never the session/env model. The MCP server
-  // process has no vscode config to read, so it passes the explicit "sonnet" default constant.
+  // SP-17/1 + 2026-07-14: the auditor runs on a pinned worker model, never the
+  // session/env model — now the OPERATOR-CONFIGURED judgment model published by the
+  // extension host (workerModelByRole.auditor ?? workerModel ?? sonnet). Sonnet
+  // demonstrably rubber-stamps the person→API substitution the intent-fidelity
+  // rule exists to catch; a judgment gate needs a judgment model.
+  const auditorModel =
+    (process.env.THINKUBE_AUDITOR_MODEL ?? "").trim() || "sonnet";
   const auditRunner: AuditRunner = createSdkAuditRunner({
-    model: "sonnet",
+    model: auditorModel,
     log,
   });
   log(

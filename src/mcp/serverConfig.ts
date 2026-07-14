@@ -36,6 +36,8 @@ export interface ResolvedServerConfig {
   thinkingSpaceRoot?: string;
   allowAIWrites: boolean;
   docsGateMode: DocsGateMode;
+  /** Model for the write_spec certification auditor (judgment gate). */
+  auditorModel: string;
   legacyWorkspace?: string;
 }
 
@@ -108,5 +110,8 @@ export function resolveServerConfig(
 
   const legacyWorkspace = (env.THINKUBE_WORKSPACE ?? "").trim() || undefined;
 
-  return { roots, folders, thinkingSpaceRoot, allowAIWrites, docsGateMode, legacyWorkspace };
+  // The certification auditor's model (2026-07-14): configurable, sonnet fallback.
+  const auditorModel = (env.THINKUBE_AUDITOR_MODEL ?? "").trim() || "sonnet";
+
+  return { roots, folders, thinkingSpaceRoot, allowAIWrites, docsGateMode, legacyWorkspace, auditorModel };
 }
