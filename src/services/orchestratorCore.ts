@@ -2345,7 +2345,15 @@ export function buildDeliveryReport(i: DeliveryReportInput): string {
         const text =
           (i.acTexts?.[v.ac - 1] ?? "").trim() ||
           "(criterion text unavailable)";
-        return `- #${v.ac} — ${text} — ${verdictOf(v.ac)}`;
+        // Honest evidence labeling (2026-07-14): every ✓/✗ names WHAT was actually
+        // exercised — the run command, or "assessment" for a judged criterion — so a
+        // component-level probe can never masquerade as end-to-end proof at Accept.
+        // (Seen live on SP-21/1: surface-level AC prose ticked green on the strength
+        // of gate-map and serialize probes; the informed Accept wasn't informed.)
+        const how = v.run.trim()
+          ? `verified by \`${v.run.trim()}\``
+          : "graded by independent assessment (judged, not driven)";
+        return `- #${v.ac} — ${text} — ${verdictOf(v.ac)} · ${how}`;
       }),
     ];
   } else {

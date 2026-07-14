@@ -2318,3 +2318,43 @@ test("breaker never trips on differing evidence regardless of fault routing", ()
   });
   assert.equal(v.action, "re-dispatch", "new evidence → normal bounded rework");
 });
+
+// ── Honest evidence labeling on the criterion rows (2026-07-14) ───────────────
+//
+// WHY (INVARIANT): the Accept reads the criterion-text rows. Before this, an AC's prose
+// (car-level: "a person… the surface shows…") rendered with a bare ✓ while the evidence
+// behind it was a component probe — the informed Accept wasn't informed (seen live on
+// SP-21/1). Every verdict must name WHAT was exercised: the run command, or "assessment".
+
+test("criterion rows name what was exercised — run command for verifiable, assessment label for judged", () => {
+  const md = buildDeliveryReport({
+    specNumber: "1/1",
+    sha: "abc1234",
+    files: ["a.ts"],
+    units: [{ id: "u", outcome: "success" as const }],
+    declared: [
+      { ac: 1, run: "node --test out-test/acceptance/AC-1.test.js" },
+      { ac: 2, run: "" }, // assessment AC — no runnable command
+    ],
+    acResults: [
+      { ac: 1, pass: true, evidence: "ok" },
+      { ac: 2, pass: true, evidence: "assessed" },
+    ],
+    acTexts: [
+      "A person types into the surface and sees sections.",
+      "No local-inference path exists.",
+    ],
+    advanced: [],
+    committed: true,
+  });
+  assert.match(
+    md,
+    /#1 — A person types into the surface.*✓ pass · verified by `node --test out-test\/acceptance\/AC-1\.test\.js`/,
+    "a runnable probe's command is named on the criterion row",
+  );
+  assert.match(
+    md,
+    /#2 — No local-inference path exists.*✓ pass · graded by independent assessment \(judged, not driven\)/,
+    "an assessment criterion is labeled as judged, never masquerading as a driven probe",
+  );
+});
