@@ -2262,3 +2262,59 @@ test("delivery report: plan-repair amendments render as 'Changes to the approved
   assert.match(clean, /## Changes to the approved plan/);
   assert.match(clean, /None — delivered exactly to the plan as approved\./);
 });
+
+// ── Route-aware identical-failure circuit breaker (2026-07-14) ────────────────
+//
+// The breaker's premise — "identical evidence ⇒ a machine retry is pointless" — is only
+// true for a re-roll of the SAME role. Seen live on TEP-21_SP-1_SL-3: the code-author was
+// reworked against broken probes (evidence E, judged fault=code); the next run judged the
+// SAME evidence fault=test, but the hash-only breaker tripped and escalated — permanently
+// blocking the machine from applying its own known cure (re-author the probes). Identical
+// evidence + a DIFFERENT judged fault is a NEW experiment and must dispatch.
+
+test("breaker trips on identical evidence when the judged fault is UNCHANGED (same role re-roll)", () => {
+  const v = reDispatchDecision(0, 3, "code", {
+    hash: "abc",
+    priorHash: "abc",
+    priorFault: "code",
+  });
+  assert.equal(v.action, "escalate", "same evidence + same fault → escalate");
+  assert.equal(v.deterministic, true, "flagged as the deterministic breaker");
+});
+
+test("breaker does NOT trip when the fault is re-routed to a different role (code → test is a new experiment)", () => {
+  const v = reDispatchDecision(0, 3, "test", {
+    hash: "abc",
+    priorHash: "abc",
+    priorFault: "code",
+  });
+  assert.equal(
+    v.action,
+    "re-dispatch",
+    "identical evidence but the TEST artifact was never reworked — dispatch it",
+  );
+  assert.equal(v.route, "test", "routed to the test-author");
+  assert.equal(v.deterministic, undefined, "not a deterministic escalation");
+});
+
+test("breaker stays conservative when the prior fault is unknown (legacy stamp without a route)", () => {
+  const v = reDispatchDecision(0, 3, "test", {
+    hash: "abc",
+    priorHash: "abc",
+  });
+  assert.equal(
+    v.action,
+    "escalate",
+    "no recorded prior fault → keep the old trip rather than risk an endless loop",
+  );
+  assert.equal(v.deterministic, true);
+});
+
+test("breaker never trips on differing evidence regardless of fault routing", () => {
+  const v = reDispatchDecision(0, 3, "code", {
+    hash: "abc",
+    priorHash: "def",
+    priorFault: "code",
+  });
+  assert.equal(v.action, "re-dispatch", "new evidence → normal bounded rework");
+});

@@ -659,8 +659,16 @@ export function reDispatchDecision(
    *  normalized evidence hash and the prior attempt's persisted one. When both
    *  are present and equal, a would-be re-dispatch becomes an immediate
    *  escalation (`deterministic: true`) WITHOUT burning the remaining
-   *  attempts — re-running unchanged inputs cannot converge. */
-  evidence?: { hash?: string; priorHash?: string },
+   *  attempts — re-running unchanged inputs cannot converge.
+   *
+   *  Route-aware (2026-07-14): `priorFault` is the fault the SAME evidence was
+   *  judged as last time. Identical evidence only proves a re-roll of the SAME
+   *  role is pointless — when the judge now routes the fault to a DIFFERENT
+   *  role, that is a NEW experiment (e.g. code was reworked to no effect
+   *  because the probes themselves were broken; a `test` verdict must be
+   *  allowed to re-author them, or the known cure is blocked forever). An
+   *  unknown prior fault keeps the conservative trip. */
+  evidence?: { hash?: string; priorHash?: string; priorFault?: Fault },
 ): ReDispatchVerdict {
   const prior = Number.isFinite(priorAttempts)
     ? Math.max(0, Math.floor(priorAttempts))
@@ -685,13 +693,16 @@ export function reDispatchDecision(
   }
   const attempts = prior + 1;
   // Circuit breaker: the same failure, byte-for-normalized-byte, as last time.
-  // The judge may have blamed code or test, but with unchanged inputs another
-  // worker roll is a coin with no new sides — stop at THIS attempt count
-  // instead of burning the rest of the bound on the identical experiment.
+  // With unchanged inputs, re-rolling the SAME role is a coin with no new
+  // sides — stop at THIS attempt count instead of burning the rest of the
+  // bound on the identical experiment. But a fault RE-ROUTED to a different
+  // role than the prior attempt's is a new experiment against the same
+  // evidence (the other artifact never changed) — let it dispatch.
   if (
     evidence?.hash !== undefined &&
     evidence.priorHash !== undefined &&
-    evidence.hash === evidence.priorHash
+    evidence.hash === evidence.priorHash &&
+    (evidence.priorFault === undefined || evidence.priorFault === fault)
   ) {
     const verdict: ReDispatchVerdict = {
       action: "escalate",

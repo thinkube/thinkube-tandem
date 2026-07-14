@@ -1462,6 +1462,11 @@ export class OrchestratorService {
   /** Per-slice normalized hash of the LAST failing evidence (frontmatter
    *  `last_evidence_hash`) — the identical-failure circuit breaker's memory. */
   private priorEvidenceHash: Map<string, string> = new Map();
+  /** Per-slice fault the last failing evidence was judged as (frontmatter
+   *  `last_evidence_fault`) — makes the breaker route-aware: identical evidence
+   *  trips only against the SAME judged fault; a re-routed fault (code → test)
+   *  is a new experiment and must dispatch. Survives a hand-back like the hash. */
+  private priorEvidenceFault: Map<string, string> = new Map();
 
   /** Slices the bounded loop already ESCALATED on a prior run (SP-6/6 AC5) — detected from the durable
    *  `escalated` frontmatter flag or the {@link ESCALATION_MARKER} on the body. Their units are blocked
@@ -1538,6 +1543,7 @@ export class OrchestratorService {
     this.sliceResumeState = new Map();
     this.reworkAttempts = new Map();
     this.priorEvidenceHash = new Map();
+    this.priorEvidenceFault = new Map();
     this.escalatedSlices = new Set();
     for (const rel of await store.listSlices(specNumber)) {
       const m = SLICE_REL_RE.exec(rel);
@@ -1561,6 +1567,8 @@ export class OrchestratorService {
       // inputs" and stop instead of burning the remaining attempts.
       if (typeof fm?.last_evidence_hash === "string" && fm.last_evidence_hash)
         this.priorEvidenceHash.set(handle, fm.last_evidence_hash);
+      if (typeof fm?.last_evidence_fault === "string" && fm.last_evidence_fault)
+        this.priorEvidenceFault.set(handle, fm.last_evidence_fault);
       if (fm?.escalated === true || hasEscalationMarker(parsed?.body ?? ""))
         this.escalatedSlices.add(handle);
       // Resume markers: a prior run that landed the units but couldn't commit
@@ -2213,10 +2221,12 @@ export class OrchestratorService {
         {
           hash: evidenceHash,
           priorHash: this.priorEvidenceHash.get(slice),
+          priorFault: this.priorEvidenceFault.get(slice) as Fault | undefined,
         },
       );
       attemptsMap.set(slice, verdict.attempts);
       if (evidenceHash) this.priorEvidenceHash.set(slice, evidenceHash);
+      if (evidenceHash && fault) this.priorEvidenceFault.set(slice, fault);
       // Plan-repair lane (2026-07-12): the PLAN is the defect (an instrument — AC / contract /
       // unit note — misserves the intent). With a repair lane wired, the slice routes there
       // instead of parking: no attention flag yet, no attempt burned; the repair either amends
@@ -4595,9 +4605,14 @@ export class OrchestratorService {
         ...(escalation ? { rework_attempts: escalation.attempts } : {}),
         ...(escalation?.escalated ? { escalated: true } : {}),
         // Circuit-breaker memory (2026-07-11): the normalized failing-evidence
-        // hash, read back by buildSlices on the next run.
+        // hash, read back by buildSlices on the next run. Route-aware since
+        // 2026-07-14: the fault this evidence was judged as rides along, so an
+        // identical red trips the breaker only when routed at the SAME role.
         ...(escalation?.evidenceHash
           ? { last_evidence_hash: escalation.evidenceHash }
+          : {}),
+        ...(escalation?.evidenceHash && escalation?.fault
+          ? { last_evidence_fault: escalation.fault }
           : {}),
         // Checkpoint-seeding route memory: which role's units must re-run.
         ...(escalation?.fault ? { last_fault: escalation.fault } : {}),
