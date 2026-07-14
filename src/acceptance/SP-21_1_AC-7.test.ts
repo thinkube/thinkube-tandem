@@ -101,7 +101,7 @@ test("adversarial gate disallows editGoal — assertWithinGate throws", () => {
   const opts = worker.buildOptions();
   assert.throws(
     () => assertWithinGate(opts, "editGoal"),
-    {},
+    /disallowed|not in the allowed/i,
     "adversarial worker must be refused when it tries to editGoal",
   );
 });

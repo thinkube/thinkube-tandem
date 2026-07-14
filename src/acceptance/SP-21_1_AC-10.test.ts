@@ -195,12 +195,12 @@ test("reframe buildOptions matches GATES.reframe — editGoal allowed, freeze/wr
   );
   assert.throws(
     () => assertWithinGate(opts, "freeze"),
-    {},
+    /disallowed|not in the allowed/i,
     "reframe must not be able to call freeze",
   );
   assert.throws(
     () => assertWithinGate(opts, "writeArtifact"),
-    {},
+    /disallowed|not in the allowed/i,
     "reframe must not be able to call writeArtifact",
   );
 });

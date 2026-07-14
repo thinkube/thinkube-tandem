@@ -99,7 +99,7 @@ test("gap-filler gate disallows freeze — assertWithinGate throws when gap-fill
   const opts = worker.buildOptions();
   assert.throws(
     () => assertWithinGate(opts, "freeze"),
-    {},
+    /disallowed|not in the allowed/i,
     "gap-filler must not be able to call freeze",
   );
 });
@@ -111,7 +111,7 @@ test("gap-filler gate disallows editGoal — assertWithinGate throws when gap-fi
   const opts = worker.buildOptions();
   assert.throws(
     () => assertWithinGate(opts, "editGoal"),
-    {},
+    /disallowed|not in the allowed/i,
     "gap-filler must not be able to edit the Goal",
   );
 });
@@ -125,7 +125,7 @@ test("adversarial gate disallows editGoal — assertWithinGate throws when adver
   const opts = worker.buildOptions();
   assert.throws(
     () => assertWithinGate(opts, "editGoal"),
-    {},
+    /disallowed|not in the allowed/i,
     "adversarial worker must not be able to edit the Goal",
   );
 });
@@ -137,7 +137,7 @@ test("adversarial gate disallows freeze — assertWithinGate throws when adversa
   const opts = worker.buildOptions();
   assert.throws(
     () => assertWithinGate(opts, "freeze"),
-    {},
+    /disallowed|not in the allowed/i,
     "adversarial worker must not be able to call freeze",
   );
 });
