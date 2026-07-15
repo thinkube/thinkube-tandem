@@ -806,7 +806,10 @@ export function codeTestFence(
       !allTokensOwned &&
       (/(^|[\s/'"`(=])acceptance\//.test(cmd) ||
         /\.test\.[cm]?[jt]sx?\b/.test(cmd) ||
-        /-test\//.test(cmd));
+        /-test\//.test(cmd) ||
+        // The grading infrastructure itself (2026-07-15): a worker has no business
+        // even LISTING the probe store or the runner — a listing aims the reads.
+        /oracle-(store|runners)\//.test(cmd));
     const runsToolchain =
       /(^|[\s;&|(])(npm|npx|yarn|pnpm|tsc)(\s|$)/.test(cmd) ||
       /\bnode\s+--test\b/.test(cmd) ||
