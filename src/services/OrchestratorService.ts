@@ -1590,6 +1590,11 @@ export function createSdkWorker(deps: SdkWorkerDeps): RunWorker {
         cwd: deps.cwd,
         // SP-17/1: pin the worker's model explicitly so it never inherits the session/env model.
         model: deps.model,
+        // Thinking budget (2026-07-15): unbounded thinking over a 100KB brief produced a
+        // worker with 27.7k thinking tokens and ZERO tool calls in a whole session —
+        // rumination without action. Cap it hard; deep reasoning belongs in the artifacts
+        // (contract/spec), not in a worker's private monologue.
+        thinking: { type: "enabled", budgetTokens: 6000 },
         permissionMode: "bypassPermissions",
         disallowedTools: deps.disallowedTools,
         ...(deps.mcpServers ? { mcpServers: deps.mcpServers } : {}),

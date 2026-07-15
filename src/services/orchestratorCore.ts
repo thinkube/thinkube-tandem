@@ -975,7 +975,7 @@ export function grepWithinCwd(
  */
 export const BUNDLED_WORKER_PREAMBLE = [
   "HOW TO WORK (the go-set — behavioural doctrine for every dispatched worker):",
-  "- THINK BEFORE CODING. Your FIRST output, before any code, states your assumptions and names anything in the contract / instructions that is unclear or unbuildable as specified. Surfacing a doubt up front is cheap; discovering it after the gate is a lost round.",
+  "- THINK BEFORE CODING — BRIEFLY. Your FIRST output, before any code, is a SHORT statement (a dozen lines, no more) of your assumptions and anything unclear or unbuildable in the contract / instructions. Then ACT. Long deliberation is not the deliverable; surfacing a doubt is cheap, and the verify loop exists to correct course as you go.",
   "- SIMPLICITY FIRST. Build the simplest thing that honestly satisfies the intent and the contract — no speculative abstraction, no scaffolding for futures nobody asked for.",
   "- SURGICAL CHANGES. Touch only what the task requires; leave the surrounding code the way you found it. A small, legible diff is part of the deliverable.",
   "- NEVER INVENT AN UNSPECIFIED PROTOCOL SILENTLY. If the contract or Design does not name a seam you need (a config key, an arming mechanism, a constant an assertion pivots on), do not quietly make one up — name the gap (see the exit protocol below) or escalate with a question.",
