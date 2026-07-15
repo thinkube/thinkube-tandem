@@ -1649,6 +1649,11 @@ export class OrchestratorService {
     }[];
     /** Dependency edges for sibling scoping (2026-07-15). */
     unitRequires?: { unit: string; slice: string; requires: string[] }[];
+    /** Supervisor outputs this run (2026-07-15): DISCLOSE facts propagate to every
+     *  LATER dispatch (a gap is disclosed once, not per worker); TEST-FAULT flags
+     *  feed the gate judge as first-class evidence. */
+    supervisorDisclosures?: { slice: string; text: string }[];
+    supervisorTestFaults?: { slice: string; text: string }[];
   } = {
     specBody: "",
     tepBody: "",
@@ -4204,7 +4209,15 @@ export class OrchestratorService {
                 slice: s.handle,
                 role: units[0]?.role,
               },
-              `${why}\n\n${failEvidence}`,
+              `${why}\n\n${failEvidence}${
+                (this.promptCtx.supervisorTestFaults ?? [])
+                  .filter((f) => f.slice === s.handle)
+                  .map(
+                    (f) =>
+                      `\n\nSUPERVISOR TEST-FAULT FLAG (ruled during the run: this check deviates from the intent): ${f.text}`,
+                  )
+                  .join("") || ""
+              }`,
               // SP-6/9: thread the slice's CONTRACT so the judge triangulates the red against it (the
               // neutral arbiter) rather than comparing the two hands — the only way to reach `contract`.
               s.contract,
@@ -4477,10 +4490,15 @@ export class OrchestratorService {
           "balanced against. Checks serve the intent; they do not define it.",
           "Your FIRST line must be EXACTLY one verdict word with content after it:",
           '- "DISCLOSE: <EVERYTHING the failing checks require that the brief does not state',
-          '   explicitly AND that is CONSISTENT WITH THE INTENT: every exact expected',
-          '   literal, value, path, ordering, selector, semantic, precondition — complete',
-          '   and concrete, plain language. Do NOT minimize. Verbatim check source never',
-          "   crosses; everything it MEANS crosses in full.>",
+          '   explicitly — every exact literal, value, path, ordering, selector, semantic,',
+          '   precondition — complete and concrete, plain language; do NOT minimize.',
+          '   MANDATORY FORMAT — every fact carries its relation to the intent, one of:',
+          '     [intent-required: <the TEP/spec clause that demands it, quoted>] — the check',
+          '       concretizes a promise; the coder is receiving the intent, completed.',
+          '     [pin: intent leaves this free; the check pinned it — adopt this value] — an',
+          '       arbitrary-but-binding fixture choice, NAMED as such, never dressed as intent.',
+          '   A fact you cannot tag does not cross. Verbatim check source never crosses;',
+          "   everything it MEANS crosses in full.>",
           '- "TEST-FAULT: <a check expects something that CONTRADICTS or distorts the',
           '   intent — name the expectation and the intent it violates. It will be routed',
           '   for repair; the coder must NOT be told to conform to it.>',
@@ -4535,6 +4553,10 @@ export class OrchestratorService {
           } as unknown as Parameters<typeof this.logDefect>[0]);
           for (const ln of t.split("\n").slice(0, 14))
             args.log(`  [supervisor ${args.sliceHandle}] ${ln}`);
+          (this.promptCtx.supervisorTestFaults ??= []).push({
+            slice: args.sliceHandle,
+            text: t.slice(11).trim(),
+          });
           return (
             "SUPERVISOR: a failing check's expectation CONFLICTS WITH THE INTENT and has been " +
             "flagged for repair — do NOT chase it. Implement to the contract and the intent; " +
@@ -4562,6 +4584,10 @@ export class OrchestratorService {
             detail: `Supervisor disclosure (contract lacked a decidable fact): ${t.slice(9, 500)}`,
           } as unknown as Parameters<typeof this.logDefect>[0]);
           args.log(`  [supervisor ${args.sliceHandle}] DISCLOSED (ledgered as contract gap).`);
+          (this.promptCtx.supervisorDisclosures ??= []).push({
+            slice: args.sliceHandle,
+            text: t.slice(9).trim(),
+          });
           return t;
         }
         if (!t || /^ESCALATE\b/.test(t)) {
@@ -4830,7 +4856,14 @@ export class OrchestratorService {
     // audits brief-vs-probes BEFORE the coder spends anything. A DISCLOSE
     // verdict appends the (ledgered) facts to the brief; CAPABILITY/ESCALATE
     // dispatch unchanged.
-    let prompt2 = prompt + baselineStubNote;
+    const priorDisclosures = (this.promptCtx.supervisorDisclosures ?? [])
+      .map((d) => `- [from ${d.slice}] ${d.text}`)
+      .join("\n")
+      .slice(0, 6000);
+    const disclosureNote = priorDisclosures
+      ? `\n──── SUPERVISOR DISCLOSURES FROM THIS RUN (facts earlier workers lacked — ledgered; align with them) ────\n${priorDisclosures}\n`
+      : "";
+    let prompt2 = prompt + baselineStubNote + disclosureNote;
     if (!isTest && oracle?.preflight) {
       try {
         const pf = await oracle.preflight();
