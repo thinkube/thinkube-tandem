@@ -1,7 +1,7 @@
 /**
  * Integrator worker — pre-gated with GATES.integrator.
- * allowed: [editSection, setSectionState, addNote]
- * disallowed: [freeze, writeArtifact]
+ * allowed: [proposeItem, proposeEdit, addItemNote]
+ * disallowed: [checkItem, uncheckItem, addItem, freeze, editGoal, resolveEdit]
  *
  * Re-exported from workers/worker.ts; this file allows direct imports from
  * workers/integrator as well.

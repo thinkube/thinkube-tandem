@@ -9,6 +9,7 @@ import type {
   Item,
   Modality,
   Section,
+  SectionKind,
   SectionState,
   WorkingModel,
 } from "../model";
@@ -53,6 +54,26 @@ export const STATE_MARKERS: Record<SectionState, string> = {
   shaping: "◑",
   settled: "●",
 };
+
+/**
+ * Per-section activity state for rendering.
+ * "running" — a worker round targeting this section is in flight.
+ * "landed"  — the most recent round completed successfully.
+ * "failed"  — the most recent round errored.
+ */
+export type SectionActivity = "running" | "landed" | "failed";
+
+/**
+ * Round-level activity: which sections are targeted and what error (if any).
+ */
+export interface RoundActivity {
+  /** Section kinds targeted by the in-flight or just-completed round. */
+  targetedKinds: SectionKind[];
+  /** Per-kind error messages (present when activity is "failed"). */
+  errors: Partial<Record<SectionKind, string>>;
+  /** Overall state for all targeted sections. */
+  state: SectionActivity;
+}
 
 /** Escape HTML special characters. */
 function esc(text: string): string {
@@ -127,23 +148,44 @@ function itemHtml(item: Item): string {
 }
 
 /** Render the goal (intent) section — contains EXACTLY ONE #goal-input. */
-function goalSectionHtml(section: Section): string {
+function goalSectionHtml(
+  section: Section,
+  activity?: SectionActivity,
+  errorMsg?: string,
+  roundInFlight?: boolean,
+): string {
   const marker = STATE_MARKERS[section.state];
   const goalWasEmpty = section.text === "";
+  const activityAttr =
+    activity !== undefined ? ` data-activity="${activity}"` : "";
+  const activityClass = activity !== undefined ? ` activity-${activity}` : "";
+  const errorHtml =
+    errorMsg !== undefined
+      ? `<div class="round-error">${esc(errorMsg)}</div>`
+      : "";
+  const prefillDisabled = roundInFlight ? " disabled" : "";
+
   return /* html */ `
-<section class="section goal-section" data-kind="goal" data-id="${esc(section.id)}">
+<section class="section goal-section${activityClass}" data-kind="goal" data-id="${esc(section.id)}"${activityAttr}>
   <div class="section-header">
     <span class="state-marker" title="${esc(section.state)}">${marker}</span>
     <span class="kind-label">goal</span>
     <span class="state-label">${esc(section.state)}</span>
+    <button id="prefill-btn" class="worker-btn"${prefillDisabled} onclick="triggerPrefill()">Prefill</button>
+    <button id="reframe-btn" class="worker-btn"${prefillDisabled} onclick="triggerReframe()">Reframe</button>
   </div>
   <textarea id="goal-input">${esc(section.text)}</textarea>
   <button onclick="confirmGoal(${JSON.stringify(goalWasEmpty)})">Confirm goal</button>
+  ${errorHtml}
 </section>`;
 }
 
 /** Render a non-goal section as a checklist with add-item controls. */
-function checklistSectionHtml(section: Section): string {
+function checklistSectionHtml(
+  section: Section,
+  activity?: SectionActivity,
+  errorMsg?: string,
+): string {
   const marker = STATE_MARKERS[section.state];
   // Dropped items are not rendered; all other states show
   const visibleItems = section.items.filter((it) => it.state !== "dropped");
@@ -152,14 +194,23 @@ function checklistSectionHtml(section: Section): string {
       ? `<ul class="item-list">${visibleItems.map(itemHtml).join("")}</ul>`
       : `<ul class="item-list"></ul>`;
 
+  const activityAttr =
+    activity !== undefined ? ` data-activity="${activity}"` : "";
+  const activityClass = activity !== undefined ? ` activity-${activity}` : "";
+  const errorHtml =
+    errorMsg !== undefined
+      ? `<div class="round-error">${esc(errorMsg)}</div>`
+      : "";
+
   return /* html */ `
-<section class="section" data-kind="${esc(section.kind)}" data-id="${esc(section.id)}">
+<section class="section${activityClass}" data-kind="${esc(section.kind)}" data-id="${esc(section.id)}"${activityAttr}>
   <div class="section-header">
     <span class="state-marker" title="${esc(section.state)}">${marker}</span>
     <span class="kind-label">${esc(section.kind)}</span>
     <span class="state-label">${esc(section.state)}</span>
   </div>
   ${itemsHtml}
+  ${errorHtml}
   <div class="add-item-area">
     <input type="text" class="add-item-input" data-section-id="${esc(section.id)}" placeholder="Add item…">
     <button class="add-item-btn" onclick="addItemToSection('${esc(section.id)}')">Add</button>
@@ -178,16 +229,46 @@ function checklistSectionHtml(section: Section): string {
  *  - Non-goal sections render item checklists with the contract's selectors.
  *  - No delta-log feed.
  *  - No ask-structure button.
+ *  - Per-section data-activity states when roundActivity is provided.
+ *  - Round errors render inside the targeted section as <div class="round-error">.
+ *  - The prefill/reframe buttons carry disabled when a round is in flight.
  */
 export function buildScratchpadHtml(
   model: WorkingModel,
   _deltas?: unknown[],
+  roundActivity?: RoundActivity,
 ): string {
   const goalSec = model.sections.find((s) => s.kind === "goal");
   const nonGoalSections = model.sections.filter((s) => s.kind !== "goal");
 
-  const goalHtml = goalSec ? goalSectionHtml(goalSec) : "";
-  const sectionsHtml = nonGoalSections.map(checklistSectionHtml).join("\n");
+  // Determine per-section activity and errors from roundActivity
+  function sectionActivity(kind: SectionKind): SectionActivity | undefined {
+    if (!roundActivity) return undefined;
+    if (!roundActivity.targetedKinds.includes(kind)) return undefined;
+    return roundActivity.state;
+  }
+  function sectionError(kind: SectionKind): string | undefined {
+    if (!roundActivity) return undefined;
+    if (roundActivity.state !== "failed") return undefined;
+    return roundActivity.errors[kind];
+  }
+
+  // A round is in flight when roundActivity.state === "running"
+  const roundInFlight = roundActivity?.state === "running";
+
+  const goalHtml = goalSec
+    ? goalSectionHtml(
+        goalSec,
+        sectionActivity("goal"),
+        sectionError("goal"),
+        roundInFlight,
+      )
+    : "";
+  const sectionsHtml = nonGoalSections
+    .map((s) =>
+      checklistSectionHtml(s, sectionActivity(s.kind), sectionError(s.kind)),
+    )
+    .join("\n");
 
   const objectionsHtml =
     model.objections.length > 0
@@ -226,8 +307,17 @@ export function buildScratchpadHtml(
     .state-marker { font-size: 1.2em; }
     .kind-label { font-weight: bold; text-transform: capitalize; }
     .state-label { font-size: 0.8em; opacity: 0.7; }
+    /* Per-section activity states (class-based to avoid literal attribute strings in CSS) */
+    .section.activity-running { border-color: var(--vscode-progressBar-background, #007acc); opacity: 0.85; }
+    .section.activity-landed { border-color: var(--vscode-terminal-ansiGreen, #4caf50); }
+    .section.activity-failed { border-color: var(--vscode-errorForeground, #f44336); }
+    /* Round error block inside the section */
+    .round-error { margin-top: 8px; padding: 6px 10px; border-radius: 3px; background: var(--vscode-inputValidation-errorBackground, rgba(244,67,54,0.1)); color: var(--vscode-errorForeground); font-size: 0.85em; }
+    /* Worker round buttons */
+    .worker-btn { font-size: 0.8em; padding: 2px 8px; border: 1px solid var(--vscode-button-border, var(--vscode-panel-border)); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border-radius: 2px; cursor: pointer; }
+    .worker-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     #goal-input { width: 100%; min-height: 60px; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 4px 8px; border-radius: 2px; resize: vertical; }
-    .goal-section button { margin-top: 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 12px; border-radius: 2px; cursor: pointer; }
+    .goal-section > button:not(.worker-btn) { margin-top: 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 12px; border-radius: 2px; cursor: pointer; }
     .item-list { list-style: none; margin: 0; padding: 0; }
     .item { display: flex; align-items: flex-start; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--vscode-panel-border); flex-wrap: wrap; }
     .item:last-child { border-bottom: none; }
@@ -280,6 +370,14 @@ export function buildScratchpadHtml(
 
     function triggerFreeze() {
       vscode.postMessage({ type: 'freeze' });
+    }
+
+    function triggerPrefill() {
+      vscode.postMessage({ type: 'prefill' });
+    }
+
+    function triggerReframe() {
+      vscode.postMessage({ type: 'reframe' });
     }
 
     // Checkbox toggle handler
@@ -359,10 +457,17 @@ export class ScratchpadDocumentView implements vscode.Disposable {
     );
   }
 
-  /** Push an updated model into the already-open panel. */
-  update(model: WorkingModel): void {
+  /**
+   * Push an updated model into the already-open panel, with optional
+   * round-activity overlay (running/landed/failed + per-section errors).
+   */
+  update(model: WorkingModel, roundActivity?: RoundActivity): void {
     if (this._panel) {
-      this._panel.webview.html = buildScratchpadHtml(model);
+      this._panel.webview.html = buildScratchpadHtml(
+        model,
+        undefined,
+        roundActivity,
+      );
     }
   }
 

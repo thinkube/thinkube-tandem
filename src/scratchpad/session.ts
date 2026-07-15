@@ -6,11 +6,16 @@ import * as nodeFs from "node:fs/promises";
 import { emptyModel, reduce } from "./model";
 import type { Action, Delta, SectionKind, WorkingModel } from "./model";
 import { deserialize, serialize } from "./persistence";
-import { gapFiller } from "./workers/worker";
+import {
+  gapFiller,
+  integrator,
+  makeProductionQueryFnThunk,
+} from "./workers/worker";
+import { reframe } from "./workers/reframe";
 import type { QueryFn } from "./workers/worker";
 import { createLoop } from "./loop";
 import { buildScratchpadHtml, ScratchpadDocumentView } from "./views/document";
-import type { ScratchpadInboundMessage } from "./views/document";
+import type { RoundActivity, ScratchpadInboundMessage } from "./views/document";
 
 // Re-export so callers can import the message type from session / index.
 export type { ScratchpadInboundMessage } from "./views/document";
@@ -152,6 +157,16 @@ export function _bootstrapExtensionUri(uri: vscode.Uri): void {
 
 // ===== Session implementation =====
 
+/**
+ * Human-batch trigger types: actions that trigger an automatic integrator
+ * round after a debounce delay (SP-21/3 contract).
+ */
+const HUMAN_BATCH_TRIGGERS = new Set([
+  "resolveEdit",
+  "editItemText",
+  "addItem",
+]);
+
 class ScratchpadSessionImpl implements ScratchpadSession {
   private _model: WorkingModel;
   private _deltas: Delta[] = [];
@@ -163,6 +178,13 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   private readonly _loadQueryFn: () => QueryFn;
   private readonly _workerModelId: string;
   private _view: ScratchpadDocumentView | undefined;
+
+  /** Tracks whether any worker round is currently in flight. */
+  private _roundInFlight = false;
+  /** Debounce timer for the automatic integrator round. */
+  private _integratorDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Current round activity (for panel rendering). */
+  private _roundActivity: RoundActivity | undefined;
 
   constructor(
     model: WorkingModel,
@@ -196,12 +218,18 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     for (const listener of this._listeners) {
       listener(this._model);
     }
-    // Push updated model into the open panel
+    // Push updated model into the open panel (with current round activity)
     if (this._view) {
-      this._view.update(this._model);
+      this._view.update(this._model, this._roundActivity);
     }
     // Debounce-persist to disk
     this._scheduleFlush();
+
+    // Schedule automatic integrator round after human-batch actions
+    if (HUMAN_BATCH_TRIGGERS.has(action.type) && delta.kind === "applied") {
+      this._scheduleIntegratorRound();
+    }
+
     return delta;
   }
 
@@ -215,19 +243,68 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   }
 
   renderedHtml(): string {
-    return buildScratchpadHtml(this._model);
+    return buildScratchpadHtml(this._model, undefined, this._roundActivity);
   }
 
+  /**
+   * Run the GAP-FILLING worker (gapFiller) on the full model.
+   * Wired to the prefill{} message.
+   *
+   * Per-section activity: ALL non-goal sections + goal are targeted.
+   * The prefill button carries disabled while the round is in flight.
+   */
   async askForStructure(): Promise<void> {
-    const worker = gapFiller({
-      loadQuery: this._loadQueryFn,
-      model: this._workerModelId,
+    await this._runWorkerRound(
+      "prefill",
+      // Target all non-goal section kinds
+      this._model.sections.filter((s) => s.kind !== "goal").map((s) => s.kind),
+      async () => {
+        const worker = gapFiller({
+          loadQuery: this._loadQueryFn,
+          model: this._workerModelId,
+        });
+        const loop = createLoop({ workerFor: () => worker });
+        return loop.step(this._model, []);
+      },
+    );
+  }
+
+  /**
+   * Run the REFRAME worker.
+   * Wired to the reframe{} message.
+   *
+   * The reframe prompt contains checked items only (no unchecked text).
+   * Targets only the goal section (it may produce an editGoal action).
+   */
+  async runReframe(): Promise<void> {
+    await this._runWorkerRound("reframe", ["goal"], async () => {
+      const worker = reframe({
+        loadQuery: this._loadQueryFn,
+        model: this._workerModelId,
+      });
+      return worker.run(this._model, []);
     });
-    const loop = createLoop({ workerFor: () => worker });
-    const actions = await loop.step(this._model, []);
-    for (const action of actions) {
-      this.dispatch(action);
+  }
+
+  /**
+   * Run the INTEGRATOR worker automatically after a debounced human batch.
+   * Never runs concurrently with another round.
+   */
+  private async _runIntegratorRound(): Promise<void> {
+    if (this._roundInFlight) {
+      // Another round is in flight — skip this automatic trigger.
+      return;
     }
+    const targetKinds = this._model.sections
+      .filter((s) => s.kind !== "goal")
+      .map((s) => s.kind);
+    await this._runWorkerRound("integrator", targetKinds, async () => {
+      const worker = integrator({
+        loadQuery: this._loadQueryFn,
+        model: this._workerModelId,
+      });
+      return worker.run(this._model, []);
+    });
   }
 
   async flush(): Promise<void> {
@@ -259,10 +336,12 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           actor: "human",
           sectionId: message.sectionId,
           text: message.text,
-          // attend 2026-07-15 (AC-1): the message MAY carry a modality; dropping it
-          // silently stripped 'optional' items to the default.
+          // The message MAY carry a modality; preserve it when present.
           ...((message as { modality?: "mandatory" | "optional" }).modality
-            ? { modality: (message as { modality?: "mandatory" | "optional" }).modality }
+            ? {
+                modality: (message as { modality?: "mandatory" | "optional" })
+                  .modality,
+              }
             : {}),
         });
         break;
@@ -345,13 +424,14 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         });
         break;
 
-      // ── Worker round triggers (stubs — wired in SL-2/3/4/5) ─────────────
+      // ── Worker round triggers ─────────────────────────────────────────────
       case "prefill":
-        // SL-2 wires this to the real gapFiller worker with production query
+        // Runs gapFiller with the production query (or injected fake).
         await this.askForStructure();
         break;
       case "reframe":
-        // SL-2 wires this to the reframe worker
+        // Runs reframe worker; prompt carries checked items only.
+        await this.runReframe();
         break;
       case "research":
         // SL-3 wires this to the research worker
@@ -379,6 +459,94 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     this._view.show(_extensionUri, this._model, (msg) =>
       this.postFromWebview(msg),
     );
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Run a named worker round with full activity tracking:
+   *  1. Mark round as in-flight (sets data-activity="running" on targeted sections,
+   *     disables prefill/reframe buttons).
+   *  2. Await the worker; apply every returned action through dispatch.
+   *  3. On success: flip targeted sections to data-activity="landed".
+   *  4. On error: flip to data-activity="failed", render <div class="round-error">
+   *     inside each targeted section.
+   *  5. Clear in-flight flag.
+   *
+   * NEVER runs concurrently: if _roundInFlight is already true, resolves immediately
+   * (the automatic integrator path checks before calling; explicit triggers always run).
+   */
+  private async _runWorkerRound(
+    _roundName: string,
+    targetedKinds: SectionKind[],
+    work: () => Promise<Action[]>,
+  ): Promise<void> {
+    // Mark as running
+    this._roundInFlight = true;
+    this._roundActivity = {
+      targetedKinds,
+      errors: {},
+      state: "running",
+    };
+    this._updatePanel();
+
+    try {
+      const actions = await work();
+      // Clear activity BEFORE dispatching actions so that any view.update()
+      // triggered by dispatch() already shows the post-round state ("landed"
+      // with no running indicator — rendered as data-activity="landed").
+      this._roundActivity = {
+        targetedKinds,
+        errors: {},
+        state: "landed",
+      };
+      this._roundInFlight = false;
+      // Apply all returned actions (dispatch updates the panel with "landed")
+      for (const action of actions) {
+        this.dispatch(action);
+      }
+      // Final update to ensure the panel reflects the settled landed state
+      this._updatePanel();
+      return;
+    } catch (err) {
+      // Mark failed — render error inside each targeted section
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errors: Partial<Record<SectionKind, string>> = {};
+      for (const kind of targetedKinds) {
+        errors[kind] = errorMsg;
+      }
+      this._roundActivity = {
+        targetedKinds,
+        errors,
+        state: "failed",
+      };
+    } finally {
+      // Always clear the in-flight flag (may already be cleared in success path)
+      this._roundInFlight = false;
+      this._updatePanel();
+    }
+  }
+
+  /** Push the current model + round activity into the open panel. */
+  private _updatePanel(): void {
+    if (this._view) {
+      this._view.update(this._model, this._roundActivity);
+    }
+  }
+
+  /**
+   * Schedule an automatic integrator round after a debounce period.
+   * Each human-batch action resets the timer; the round only fires once the
+   * human stops making changes for 800ms.
+   */
+  private _scheduleIntegratorRound(): void {
+    if (this._integratorDebounceTimer !== undefined) {
+      clearTimeout(this._integratorDebounceTimer);
+    }
+    this._integratorDebounceTimer = setTimeout(() => {
+      this._integratorDebounceTimer = undefined;
+      void this._runIntegratorRound();
+    }, 800);
   }
 
   private _scheduleFlush(): void {
@@ -475,13 +643,9 @@ export async function openScratchpad(
       .get<string>("workerModel") ??
     "sonnet";
 
-  // Resolve loadQuery
+  // Resolve loadQuery: use injected fake or production SDK thunk
   const loadQueryFn: () => QueryFn =
-    deps?.loadQuery ??
-    ((): QueryFn => (_args) =>
-      (async function* () {
-        /* yields nothing — production wiring arrives in SL-2 */
-      })());
+    deps?.loadQuery ?? makeProductionQueryFnThunk(workerModel);
 
   const session = new ScratchpadSessionImpl(
     model,
