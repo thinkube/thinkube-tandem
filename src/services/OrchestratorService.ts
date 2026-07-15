@@ -123,6 +123,7 @@ import {
   parkWorker,
   unparkWorker,
   runningSessions,
+  sessionLogPath,
 } from "./orchestratorSessions";
 // Prompt externalization (context tranche, 2026-07-14): editable doctrine prose for the
 // worker preamble / audit rules / intent check, with bundled in-code fallbacks.
@@ -4472,6 +4473,18 @@ export class OrchestratorService {
       unit.id,
       JSON.stringify({ type: "prompt", unit: unit.id, text: prompt }) + "\n",
     );
+    // ...and as a HUMAN-READABLE sibling file, its path printed in the channel —
+    // an audit artifact nobody can open is worth nothing (2026-07-15).
+    try {
+      const jl = sessionLogPath(unit.id);
+      if (jl) {
+        const pm = jl.replace(/\.jsonl$/, ".prompt.md");
+        fs.writeFileSync(pm, prompt);
+        this.deps.output.appendLine(`  [${unit.id}] brief → ${pm}`);
+      }
+    } catch {
+      /* best-effort */
+    }
     // Rework routing (2026-07-12): on a rework round the slice card carries the judge's
     // round-stamped `## ⚖ Judge guidance` sections, addressed to the routed role (blockSlice
     // appended them — the durable, auditable channel). The re-dispatched worker of THAT role
