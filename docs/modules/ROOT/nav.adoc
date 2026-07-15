@@ -11,3 +11,4 @@
 * xref:toolkit.adoc[Skills, subagents, and tools]
 * xref:scratchpad.adoc[Scratchpad — Authoring TEPs]
 * xref:defects.adoc[Defect distributions]
+* xref:methodology-review.adoc[The methodology-review proposer]

@@ -1,0 +1,75 @@
+= The methodology-review proposer
+:page-type: reference
+:page-docref: tk23d
+
+`/methodology-review` closes the improvement loop that xref:defects.adoc[the defect distributions] open: it reads the accumulated *reflective corpus* — retro notes, the structured defect log, and auto-memory when present — and synthesizes it into a short, ranked set of *proposed* methodology improvements, each one a `proposed` TEP carrying the evidence that motivated it.
+The division of labor is the same one the delivery pipeline is built on: the machine prepares decidable proposals; you make the decisions.
+The skill never applies anything.
+
+It ships in the `tandem-methodology` plugin (0.1.10+), so it is available in any repo where the plugin is enabled.
+
+== What it reads
+
+Three channels, over a bounded recent window (90 days by default; pass `--since` or `--window` to change it):
+
+[cols="1,2,2",options="header"]
+|===
+| Channel | Contents | Weight
+
+| `defects/\{YYYY-MM}.jsonl`
+| The structured defect log (see xref:defects.adoc[Defect distributions]) — classified rows the observation points append automatically, plus manual entries.
+| The primary signal. Clusters form on recurring (activity, trigger, type) signatures; *impact class outranks recurrence* — one `integrity` entry (a false green) outweighs several hygiene recurrences.
+
+| `retros/\{YYYY-MM-DD}.md`
+| The narrative and judgment layer — kept / changed / learned / blocked notes.
+| Corroboration and context. A single defect entry backed by a matching retro observation clears the evidence bar.
+
+| Auto-memory (when present)
+| Session-crossing observations.
+| Supporting only; included if found, skipped silently if absent.
+|===
+
+The catch-point ranking matters: a defect class repeatedly caught *late* (judge contradiction, human challenge, post-hoc diagnosis) is the strongest candidate for an earlier, cheaper guard, and is weighted accordingly — the same canonical Trigger order the defects view renders.
+
+== What comes out
+
+At most five proposals per run (top-k, k ≤ 5), each landing as a **`proposed` TEP** via `write_tep` — the existing artifact, the existing review flow, no new proposal format.
+Every proposal follows the synthesis rubric:
+
+* *Locate the seam, not the symptom* — name the stage that should have caught the class, not the place it surfaced.
+* *Propose at the right altitude* — Design-level gaps → a spec-prepare change; contract-level → a slice change; machinery → a TEP for a spec; doc-level → a skill-diff *embedded in the TEP body*, never a reply-only diff.
+* *Prefer structure over judgment* — where the evidence shows a judgment layer erring, propose a structural guarantee over a prompt tweak.
+* *One proposal, one evidence trail* — every proposal cites its defect rows and retro excerpts (source file plus date or `ts`). A proposal without citations is discarded before surfacing.
+
+The run closes with a ranked *cover note* stating exactly what was consumed — which retro files, how many defect entries, whether memory was read — so a proposal's grounding is auditable, not vibes.
+
+*Silence is a first-class outcome.* When nothing clears the evidence bar (≥ 2 matching entries, or one `integrity` entry, or one entry corroborated by a retro), the run says so, names what it scanned, logs the outcome as a `blocked` retro note, and produces zero TEPs.
+
+== Propose-only, honestly enforced
+
+The skill can propose changes to the methodology; it cannot make them.
+That guarantee is layered where it actually holds:
+
+* Its `allowed-tools` list carries only read/query tools plus two write surfaces: `write_tep` (status `proposed`) and `write_retro_note` (the cover note). File-authoring tools are excluded at the *harness permission layer* — the skill's own text is advisory; the allowlist is not.
+* The board server offers *no skill-mutating operation at all*, so even a mis-permissioned session has no tool that could apply a change.
+* It runs only as a *maintainer-triggered interactive session* — never as a `bypassPermissions` worker, where an allowlist is void. You hold every trigger; the skill never auto-runs.
+
+A proposal that would change the proposer itself (its `SKILL.md`, its rubric, or the root methodology doctrine) is legal but stamped `⚑ SELF-REFERENTIAL` in the TEP's Goal, so you read it knowing the author is proposing changes to its own governing process — the self-grading failure mode Tandem exists to prevent, one level up.
+
+== Running it
+
+----
+/methodology-review                       <1>
+/methodology-review --since 2026-07-01    <2>
+----
+<1> Scan the default window (90 days) of the current thinking space's corpus.
+<2> Bound the window explicitly — useful for reviewing exactly one work cycle.
+
+Deciding what to do with a proposal goes through the normal lanes: accept the TEP and cut a spec (xref:hierarchy.adoc[TEPs, Specs, and Slices]) for machinery changes, or apply a reviewed skill-diff by hand for doc-level ones.
+Rejecting is as cheap as leaving the TEP `proposed`.
+
+== Relationship to the defect log
+
+The proposer consumes what the observation points and xref:defects.adoc[`thinkube.defects.add`] capture — it is the *active* half of the same feedback loop.
+The distributions answer "where are we weak?"; the proposer answers "here is a drafted, evidence-cited fix, at the right altitude, for the weakest seam."
+Both leave every decision with you.

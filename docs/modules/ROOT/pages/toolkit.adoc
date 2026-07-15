@@ -39,6 +39,10 @@ Each skill routes writes through a board-aware MCP tool so files land in the cen
 | `/retro`
 | Append a structured retro note under one lens — kept, changed, learned, or blocked.
 | A dated entry in today's retros file (via `write_retro_note`).
+
+| `/methodology-review`
+| Read the reflective corpus — retros, the defect log, auto-memory — and synthesize ranked, evidence-cited improvement proposals. Propose-only; silence is a valid outcome. See xref:methodology-review.adoc[The methodology-review proposer].
+| Up to five `proposed` TEPs (via `write_tep`) plus a cover note stating what was consumed.
 |===
 
 `/attend` is also a skill, but you reach it through the *Attend* or *Request changes* board actions (see below) rather than invoking it cold; it opens a primed fix session on a requires-attention slice or a rejected-Spec rework. The session opens in the *canonical repo*, so it survives the worktree's retirement at Accept; the prompt names the Spec's worktree, where the fix is applied and committed to the spec branch (`fix(attend): …`). The failure evidence — the judged fault and the failing output — arrives in the prompt verbatim; grading independence lives in the closing gate's assessor and judge, which re-grade the committed state on the next run.

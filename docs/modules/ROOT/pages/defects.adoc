@@ -11,7 +11,7 @@ Three tables answer the core questions: which defect *type* is most common, whet
 
 Also reachable via the graph icon ($(graph)) in the *Specs* view title bar.
 
-Opens (or reveals) a webview panel titled *Tandem Defects* that aggregates every `defects/{YYYY-MM}.jsonl` file under the active thinking space.
+Opens (or reveals) a webview panel titled *Tandem Defects* that aggregates every `defects/\{YYYY-MM}.jsonl` file under the active thinking space.
 The panel is a singleton: invoking the command again refreshes the existing panel rather than opening a duplicate.
 
 === Sections
@@ -89,7 +89,7 @@ await vscode.commands.executeCommand("thinkube.defects.add", {
 ----
 
 All six attributes are accepted; `type` and `qualifier` are optional.
-The row is appended to `defects/{YYYY-MM}.jsonl` in the active thinking space immediately, with `spec` set to `"manual"` and `ts` auto-stamped to the current ISO time.
+The row is appended to `defects/\{YYYY-MM}.jsonl` in the active thinking space immediately, with `spec` set to `"manual"` and `ts` auto-stamped to the current ISO time.
 The command resolves after the append and returns `true` on success.
 
 === Interactive path
@@ -130,3 +130,4 @@ Observation-point entries carry the actual spec id (e.g. `"22/1"`).
 
 * xref:lifecycle.adoc[The Spec lifecycle] — the stages where defects are observed
 * xref:gates.adoc[Gates and verification] — the gate machinery that emits most find-time entries
+* xref:methodology-review.adoc[The methodology-review proposer] — the active half of this feedback loop: it reads these distributions and drafts evidence-cited improvement proposals
