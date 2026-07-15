@@ -1169,6 +1169,10 @@ export function buildWorkerPrompt(
     /** Orientation (2026-07-15): the worker's absolute cwd — stated up front so no
      *  worker ever guesses its own checkout path or ls-walks the tree to orient. */
     cwd?: string;
+    /** Retirement carve-out (2026-07-15): test paths this unit's footprint owns for
+     *  DELETION (other specs' obsolete probes) — named in the lane text so the prose
+     *  never contradicts the fence that allows exactly these. */
+    retiredTestFiles?: string[];
     /** Provisioned footprint contents (2026-07-15, speed): the CURRENT content of the
      *  unit's existing footprint files at dispatch, so the coder starts with its files
      *  in context instead of a serial read phase. Characters are cheap; round trips
@@ -1209,7 +1213,7 @@ export function buildWorkerPrompt(
       ? `This is a MECHANIZE unit: author ONE transform and apply it across all of [${fp}] — do not hand-edit each object.`
       : unit.shape === "fan-out"
         ? `This is a FAN-OUT unit over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`
-        : `This is a SERIAL unit — do its steps in order over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`;
+        : `This is a SERIAL unit — one coherent pass over your footprint (listed above).${unit.note ? ` Task: ${unit.note}` : ""}`;
   // The test convention (framework + how the file is run), injected so a test unit — which has no
   // Bash to poke the toolchain — can author a runnable test straight from its prompt (SP-6/7).
   const conventionBlock =
@@ -1280,7 +1284,7 @@ export function buildWorkerPrompt(
   // The worker never builds or runs anything itself, so it needs no local toolchain and has no
   // reason to touch test files or shared build config.
   const verifyBlock = oracle
-    ? `\n──── HOW VERIFICATION WORKS HERE (read this) ────\nA separate test author has already written this slice's acceptance checks, up front, against the SPEC CONTRACT below. You cannot see those checks — that is deliberate, and you do not need to. To check your work, call the \`verify\` tool (mcp__oracle__verify): it runs those checks against your CURRENT code in an isolated runner and returns the results — compile errors, or per-check PASS/FAIL with the failing line. That is your ENTIRE feedback loop; iterate until everything passes. Because \`verify\` exists you never write tests, never run builds or test commands, and never look for the check files — there is nothing to gain and those tools are switched off for you. If \`verify\` reports a failure at the boundary between your code and the checks, the usual cause is your code drifting from the contract: compare your exports against the SPEC CONTRACT signature by signature and fix the drift.\n`
+    ? `\n──── HOW VERIFICATION WORKS HERE (read this) ────\nA separate test author has already written this slice's acceptance checks, up front, against the SPEC CONTRACT below. You cannot see those checks' SOURCE — that is deliberate, and you do not need to (the SIBLING UNITS' PLANS section below describes WHAT they assert, in behaviour terms; only the check files themselves stay withheld). To check your work, call the \`verify\` tool (mcp__oracle__verify): it runs those checks against your CURRENT code in an isolated runner and returns the results — compile errors, or per-check PASS/FAIL with the failing line. That is your ENTIRE feedback loop; iterate until everything passes. Because \`verify\` exists you never write tests, never run builds or test commands, and never look for the check files — there is nothing to gain and those tools are switched off for you. If \`verify\` reports a failure at the boundary between your code and the checks, the usual cause is your code drifting from the contract: compare your exports against the SPEC CONTRACT signature by signature and fix the drift.\n`
     : !isTest && selfVerify
       ? `\n──── SELF-VERIFY (after editing your files, run this non-mutating build-and-test command to check your work) ────\n${selfVerify}\n`
       : "";
@@ -1288,7 +1292,11 @@ export function buildWorkerPrompt(
     ? `\nYOUR LANE (these are the rules of the setup above, not obstacles to route around):\n` +
       `- Edit only within your declared footprint. Files outside it — shared build/config (\`tsconfig*.json\`, other tsconfig files) included — belong to others; the guard reverts an out-of-footprint write.\n` +
       (oracle
-        ? `- Writing tests is the test author's job, not yours: never create, edit, read or run ANY test file (\`*.test.*\`, anything under \`acceptance/\`). Your work is the implementation; verification is the \`verify\` tool.\n` +
+        ? `- Writing tests is the test author's job, not yours: never create, edit, read or run ANY test file (\`*.test.*\`, anything under \`acceptance/\`). Your work is the implementation; verification is the \`verify\` tool.${
+            (context?.retiredTestFiles ?? []).length
+              ? ` ONE EXCEPTION: the retired test files explicitly listed in your footprint (${context!.retiredTestFiles!.join(", ")}) are yours to DELETE — deletion only; never read, rewrite, or replace them.`
+              : ""
+          }\n` +
           `- Never run package managers or build/test commands (\`npm install\`, \`npm test\`, \`tsc\`, …). The worktree has no toolchain for you by design — \`verify\` is the whole feedback loop, and reaching for these is denied.\n`
         : `- The held-out \`acceptance/\` probes are graded by the closing gate, not by you: do not build or run them.\n`)
     : "";

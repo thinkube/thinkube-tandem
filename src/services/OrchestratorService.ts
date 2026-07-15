@@ -4464,6 +4464,16 @@ export class OrchestratorService {
       oracleAvailable: !!oracle,
       // Orientation (2026-07-15): the worker's cwd, stated instead of discovered.
       cwd,
+      // Retirement carve-out: name the blessed deletions in the lane prose so the
+      // instructions never contradict the fence that allows them.
+      retiredTestFiles: !isTest
+        ? ownedRetiredTestPaths(
+            unit.footprint,
+            (/TEP-([A-Za-z0-9]+)_SP-([A-Za-z0-9]+)_SL-/.exec(unit.id) || [])
+              .slice(1)
+              .join("_") || undefined,
+          )
+        : [],
       // Speed (2026-07-15): provision the coder's footprint files in the brief —
       // characters are cheap, serial read round-trips are the latency. Test-shaped
       // entries (retired probes) and missing/creates files are skipped; oversized
