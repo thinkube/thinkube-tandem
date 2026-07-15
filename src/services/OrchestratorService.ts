@@ -658,8 +658,17 @@ export function buildAssessPrompt(
  *  its subject is a config default of `{}`). We collect every BALANCED top-level object and return the
  *  LAST one that parses to a plain object — the verdict is emitted last, after any reasoning/quoted JSON. */
 function extractJsonObject(text: string): unknown {
-  if (!text) return null;
-  let last: unknown = null;
+  const all = extractJsonObjects(text);
+  return all.length ? all[all.length - 1] : null;
+}
+
+/** Every balanced top-level object in the reply that parses to a plain object,
+ *  in order of appearance (same string-aware scan as {@link extractJsonObject};
+ *  consumers pick by key — e.g. the intent check wants the last verdict that
+ *  actually carries `fulfilled`, skipping example objects quoted in prose). */
+function extractJsonObjects(text: string): unknown[] {
+  if (!text) return [];
+  const found: unknown[] = [];
   let depth = 0;
   let start = -1;
   let inStr = false;
@@ -684,7 +693,7 @@ function extractJsonObject(text: string): unknown {
       if (depth === 0 && start >= 0) {
         try {
           const v = JSON.parse(text.slice(start, i + 1));
-          if (v && typeof v === "object" && !Array.isArray(v)) last = v;
+          if (v && typeof v === "object" && !Array.isArray(v)) found.push(v);
         } catch {
           /* not valid JSON — keep scanning for a later top-level object */
         }
@@ -692,7 +701,7 @@ function extractJsonObject(text: string): unknown {
       }
     }
   }
-  return last;
+  return found;
 }
 
 /**
@@ -1181,17 +1190,30 @@ export function buildIntentCheckPrompt(input: IntentCheckInput): string {
 }
 
 export function parseIntentCheck(text: string): IntentCheckVerdict {
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return { fulfilled: false, gaps: [], unavailable: "unparseable intent-check reply" };
-  try {
-    const j = JSON.parse(m[0]) as { fulfilled?: unknown; gaps?: unknown };
+  // A model reply is rarely the bare object the prompt demands: a fence, prose
+  // around it, or a second brace pair all broke the old first-{-to-last-}
+  // greedy match (0-for-2 in the field). Reuse the assessments' string-aware
+  // extractor and take the LAST object that actually carries `fulfilled` —
+  // skipping example objects quoted in prose. Only a reply with NO verdict is
+  // unavailable, and then the raw text travels in the reason, so the report
+  // carries the evidence instead of a bare "unparseable".
+  const objects = extractJsonObjects(text) as Array<Record<string, unknown>>;
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const j = objects[i];
+    if (!("fulfilled" in j)) continue;
     const gaps = Array.isArray(j.gaps)
       ? j.gaps.filter((g): g is string => typeof g === "string")
       : [];
     return { fulfilled: j.fulfilled === true && gaps.length === 0, gaps };
-  } catch {
-    return { fulfilled: false, gaps: [], unavailable: "unparseable intent-check reply" };
   }
+  const raw = text.trim().replace(/\s+/g, " ").slice(0, 400);
+  return {
+    fulfilled: false,
+    gaps: [],
+    unavailable: raw
+      ? `unparseable intent-check reply — raw: ${raw}`
+      : "empty intent-check reply",
+  };
 }
 
 export function createSdkIntentCheck(deps: SdkAssessorDeps): IntentCheck {

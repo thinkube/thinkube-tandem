@@ -19,6 +19,7 @@ import {
   verificationExecutesWorkerAuthored,
   verificationIsWorkerAuthored,
   parseAssessment,
+  parseIntentCheck,
   buildAssessPrompt,
   createSdkAssessor,
   parseJudgment,
@@ -2328,6 +2329,60 @@ test("verificationIsWorkerAuthored: a run reaching worker-owned footprint is a s
 // The one independent-judgment primitive: a fresh SDK session, never the implementing worker, that
 // returns pass/fail WITH a rationale. Pure parse + prompt + the spawn path are unit-testable with a
 // faked query — no live model.
+
+// ── Intent check parse (2026-07-15): the delivery's north-star verdict ──────
+// 0-for-2 in the field with the old greedy first-{-to-last-} match: a fenced
+// reply plus prose, or any second brace pair, produced "unparseable" and the
+// report fell to Unavailable. Now shares the assessments' string-aware
+// extractor and picks the last object carrying `fulfilled`.
+
+test("intent check: parseIntentCheck reads the bare verdict object", () => {
+  assert.deepEqual(parseIntentCheck('{"fulfilled": true}'), {
+    fulfilled: true,
+    gaps: [],
+  });
+  assert.deepEqual(
+    parseIntentCheck('{"fulfilled": false, "gaps": ["promise A — missing"]}'),
+    { fulfilled: false, gaps: ["promise A — missing"] },
+  );
+});
+
+test("intent check: fences, surrounding prose, and extra brace pairs still parse", () => {
+  // The exact field failure: fenced JSON with prose (and braces) around it.
+  assert.deepEqual(
+    parseIntentCheck(
+      'Checked the delivery {see notes}.\n```json\n{"fulfilled": true}\n```\nDone.',
+    ),
+    { fulfilled: true, gaps: [] },
+  );
+  // A later verdict object supersedes an earlier example quoted in prose.
+  assert.deepEqual(
+    parseIntentCheck(
+      'The format is {"fulfilled": true} — but here: {"fulfilled": false, "gaps": ["G"]}',
+    ),
+    { fulfilled: false, gaps: ["G"] },
+  );
+  // Objects WITHOUT `fulfilled` (tool noise, examples) are skipped, not taken.
+  assert.deepEqual(
+    parseIntentCheck('{"note": "x"}\n{"fulfilled": true}\n{"other": 1}'),
+    { fulfilled: true, gaps: [] },
+  );
+});
+
+test("intent check: gaps force fulfilled=false; garbage carries the raw reply in the reason", () => {
+  // fulfilled:true with nonempty gaps is a contradiction — gaps win.
+  assert.deepEqual(
+    parseIntentCheck('{"fulfilled": true, "gaps": ["left over"]}'),
+    { fulfilled: false, gaps: ["left over"] },
+  );
+  const garbage = parseIntentCheck("I could not decide, sorry.");
+  assert.equal(garbage.fulfilled, false);
+  assert.ok(
+    garbage.unavailable?.includes("I could not decide"),
+    "the raw reply must travel in the unavailable reason",
+  );
+  assert.equal(parseIntentCheck("").unavailable, "empty intent-check reply");
+});
 
 test("SP-6/7 AC3: parseAssessment reads pass + rationale, tolerates a fence, fails safe on garbage", () => {
   assert.deepEqual(
