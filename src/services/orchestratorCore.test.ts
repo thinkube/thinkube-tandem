@@ -68,6 +68,7 @@ import {
   type Fault,
   type VerificationTraceEntry,
   type ExitAction,
+  grepWithinCwd,
 } from "./orchestratorCore";
 import { validateDag } from "../methodology/parallelSlices";
 
@@ -2725,4 +2726,46 @@ test("the UNDELIVERED line shape lives only in the code stanza — preamble pros
       /^\s*UNDELIVERED:/m,
       "doctrine template must not restate the parsed line shape",
     );
+});
+
+// ── grepWithinCwd (2026-07-15): one path rule, consistent with Read ─────────
+// The old blanket absolute-deny made every test worker burn calls rediscovering
+// that Grep disagreed with Read about in-tree absolute paths. Containment is the
+// resolve-and-relative check; declaration style is not a security boundary.
+
+test("grepWithinCwd: relative and absolute in-tree paths are both allowed", () => {
+  const cwd = "/tmp/wt";
+  assert.deepEqual(grepWithinCwd("Grep", { path: "src/acceptance" }, cwd), {
+    allow: true,
+  });
+  assert.deepEqual(
+    grepWithinCwd("Grep", { path: "/tmp/wt/src/acceptance" }, cwd),
+    { allow: true },
+  );
+  // cwd itself, declared absolutely, is a searchable directory.
+  assert.deepEqual(grepWithinCwd("Grep", { path: "/tmp/wt" }, cwd), {
+    allow: true,
+  });
+  // Omitted / blank path searches cwd — allowed.
+  assert.deepEqual(grepWithinCwd("Grep", {}, cwd), { allow: true });
+  assert.deepEqual(grepWithinCwd("Grep", { path: "  " }, cwd), { allow: true });
+});
+
+test("grepWithinCwd: escapes are denied however they are spelled", () => {
+  const cwd = "/tmp/wt";
+  assert.equal(grepWithinCwd("Grep", { path: "../sibling" }, cwd).allow, false);
+  assert.equal(
+    grepWithinCwd("Grep", { path: "/tmp/other-checkout/src" }, cwd).allow,
+    false,
+  );
+  assert.equal(
+    grepWithinCwd("Grep", { path: "src/../../wt-code" }, cwd).allow,
+    false,
+  );
+  // Non-string path: fail-safe deny.
+  assert.equal(grepWithinCwd("Grep", { path: 42 }, cwd).allow, false);
+  // Non-Grep tools are outside this guard's remit.
+  assert.deepEqual(grepWithinCwd("Read", { path: "/etc/passwd" }, cwd), {
+    allow: true,
+  });
 });

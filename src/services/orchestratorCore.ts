@@ -915,8 +915,9 @@ export function disallowedToolsForRole(role?: "code" | "test"): string[] {
  * tool un-denied above). A tester's `cwd` is its base-commit snapshot worktree, a sibling of the code
  * worktree where the graded implementation lives; the original blanket deny existed only to stop a
  * pathless / absolute-path search reaching that sibling. This restores in-tree search while closing
- * exactly that escape: a `Grep` whose `path` argument is absolute or `..`-escapes `cwd` is DENIED; an
- * omitted path (searches cwd) or a path that resolves within cwd is ALLOWED; a non-`Grep` tool is
+ * exactly that escape: a `Grep` whose `path` argument resolves OUTSIDE `cwd` is DENIED; an
+ * omitted path (searches cwd) or any path — relative or absolute — resolving within cwd is ALLOWED
+ * (consistent with `Read`, so workers learn ONE path rule); a non-`Grep` tool is
  * always allowed (this guard governs `Grep` only). Purely lexical — `path.resolve`/`path.relative`
  * against `cwd`, the SAME rule as {@link sliceFilesResolveInRepo}; no `realpath`/`fs` (the low-likelihood
  * symlink-escape gap is accepted, out of scope). The caller applies this in the PreToolUse hook only
@@ -943,17 +944,17 @@ export function grepWithinCwd(
   }
   const root = path.resolve(cwd);
   const target = rawPath.trim();
-  // Absolute paths are denied even if they happen to point inside — mirrors sliceFilesResolveInRepo:
-  // the search must be declared relative to the worker's snapshot, never as an absolute checkout path.
-  if (path.isAbsolute(target)) {
-    return {
-      allow: false,
-      reason: `Grep path must stay inside the working directory (${root}); absolute paths are denied: ${rawPath}`,
-    };
-  }
-  // Resolve against cwd and require it to stay under root. `path.relative` yields a leading `..` (or an
-  // absolute path on a drive change) when the target escapes; `""` means the path IS cwd — allowed for a
-  // search (unlike a slice footprint, cwd is a searchable directory).
+  // Absolute paths that resolve INSIDE cwd are allowed (2026-07-15). The old blanket
+  // absolute-deny taught workers the wrong rule: Read accepts an absolute in-tree path,
+  // so every worker learned "absolute is fine" and then burned calls rediscovering that
+  // Grep disagreed — the same denial, in every worker, in every run (a fence defect, not
+  // a worker defect). Containment is the resolve-and-relative check below, which is the
+  // real escape guard; where the path is DECLARED from adds nothing to it.
+  //
+  // Resolve against cwd and require it to stay under root (an absolute target resolves to
+  // itself). `path.relative` yields a leading `..` (or an absolute path on a drive change)
+  // when the target escapes; `""` means the path IS cwd — allowed for a search (unlike a
+  // slice footprint, cwd is a searchable directory).
   const resolved = path.resolve(root, target);
   const rel = path.relative(root, resolved);
   if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
