@@ -22,9 +22,9 @@ import type { RoundActivity, ScratchpadInboundMessage } from "./views/document";
 import { freeze as doFreeze } from "./freeze";
 import type { ApprovalToken, SigningTool } from "./freeze";
 export type { SigningTool } from "./freeze";
-import { dryRunSlice, toReadinessRecord } from "./dryRunSlice";
-import type { DryRunResult } from "./dryRunSlice";
-export type { DryRunResult } from "./dryRunSlice";
+import { toReadinessRecord } from "./dryRunSlice";
+import type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
+export type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
 
 // Re-export so callers can import the message type from session / index.
 export type { ScratchpadInboundMessage } from "./views/document";
@@ -53,8 +53,12 @@ export interface ScratchpadSessionDeps {
   loadQuery?: () => QueryFn;
   /**
    * Non-committing dry-run slicer (wired by SL-4).
+   * Returns at minimum { cleanCut, gapSection } — the session builds the
+   * ReadinessRecord from those two fields plus its own coverage check.
+   * Typed as SlicerVerdict (not the full DryRunResult) so injected fakes that
+   * omit the `decomposition` field are structurally assignable.
    */
-  runSlicer?: (intent: string) => Promise<DryRunResult>;
+  runSlicer?: (intent: string) => Promise<SlicerVerdict>;
   /**
    * Signing tool for freeze (wired by SL-4).
    */
@@ -153,7 +157,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   private readonly _dossier: DossierStore | undefined;
   private readonly _now: () => Date;
   private readonly _runSlicer:
-    ((intent: string) => Promise<DryRunResult>) | undefined;
+    ((intent: string) => Promise<SlicerVerdict>) | undefined;
   private readonly _signing: SigningTool | undefined;
   private _view: ScratchpadDocumentView | undefined;
 
@@ -173,7 +177,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     loadQueryFn: () => QueryFn,
     dossier?: DossierStore,
     now?: () => Date,
-    runSlicer?: (intent: string) => Promise<DryRunResult>,
+    runSlicer?: (intent: string) => Promise<SlicerVerdict>,
     signing?: SigningTool,
   ) {
     this._model = model;
@@ -501,10 +505,13 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         // writes a ReadinessRecord; freeze enablement reads the latest record.
         if (this._runSlicer) {
           try {
-            const dry = await dryRunSlice(this._model, {
-              runSlicer: this._runSlicer,
-            });
-            const record = toReadinessRecord(this._model, dry);
+            // Call the slicer directly (not via dryRunSlice) so that the
+            // SlicerVerdict type (a minimal subset of DryRunResult) works with
+            // injected fakes that omit `decomposition`.
+            const goalSec = this._model.sections.find((s) => s.kind === "goal");
+            const intentText = goalSec?.text ?? "";
+            const verdict = await this._runSlicer(intentText);
+            const record = toReadinessRecord(this._model, verdict);
             this.dispatch({ type: "recordReadiness", record });
           } catch {
             // Slicer failure: record as not-ready, clean-cut failed with no gap

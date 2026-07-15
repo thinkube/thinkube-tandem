@@ -6,12 +6,14 @@ import { uncoveredSections } from "./coverage";
  * The result of a non-committing slice dry run.
  *
  * cleanCut — true when the slicer found a clean decomposition with no gaps.
- * gapSection — the SectionKind that caused the gap, or null when cleanCut is true.
+ * gapSection — the SectionKind (or any string) that caused the gap, or null
+ *   when cleanCut is true. Typed as string|null so injected fakes whose return
+ *   type uses a separately-compiled SectionKind alias are still assignable.
  * decomposition — the proposed list of work-unit labels/titles.
  */
 export interface DryRunResult {
   cleanCut: boolean;
-  gapSection: SectionKind | null;
+  gapSection: string | null;
   decomposition: string[];
 }
 
@@ -40,20 +42,32 @@ export async function dryRunSlice(
 }
 
 /**
- * Map coverage state and a dry-run result into the ReadinessRecord that the
+ * Minimal verdict shape needed to build a ReadinessRecord.
+ * DryRunResult satisfies this; injected fakes that omit `decomposition` also
+ * satisfy it, so session.ts can call toReadinessRecord with a SlicerVerdict.
+ */
+export interface SlicerVerdict {
+  cleanCut: boolean;
+  gapSection: string | null;
+}
+
+/**
+ * Map coverage state and a slicer verdict into the ReadinessRecord that the
  * app stores via the 'recordReadiness' action.
  *
  *   covered    — true iff uncoveredSections(model) is empty
- *   cleanCut   — copied from the dry run
- *   gapSection — copied from the dry run
+ *   cleanCut   — copied from the verdict
+ *   gapSection — copied from the verdict
  */
 export function toReadinessRecord(
   model: WorkingModel,
-  dry: DryRunResult,
+  dry: SlicerVerdict,
 ): ReadinessRecord {
   return {
     covered: uncoveredSections(model).length === 0,
     cleanCut: dry.cleanCut,
-    gapSection: dry.gapSection,
+    // gapSection is string|null on SlicerVerdict/DryRunResult; the cast is safe
+    // because real slicers always return a valid SectionKind string.
+    gapSection: dry.gapSection as SectionKind | null,
   };
 }
