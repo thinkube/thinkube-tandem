@@ -4464,6 +4464,14 @@ export class OrchestratorService {
       // Orientation (2026-07-15): the worker's cwd, stated instead of discovered.
       cwd,
     });
+    // Prompt audit (2026-07-15): persist the EXACT brief this worker received as the
+    // session log's first record — the SDK stream carries everything after the start,
+    // but never echoes the prompt, so "what was this worker actually told" had no
+    // artifact until now. { type: "prompt" } line, greppable, shown by the float-out.
+    appendSession(
+      unit.id,
+      JSON.stringify({ type: "prompt", unit: unit.id, text: prompt }) + "\n",
+    );
     // Rework routing (2026-07-12): on a rework round the slice card carries the judge's
     // round-stamped `## ⚖ Judge guidance` sections, addressed to the routed role (blockSlice
     // appended them — the durable, auditable channel). The re-dispatched worker of THAT role
