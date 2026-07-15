@@ -192,9 +192,6 @@ export function research(
       }
       const topic = slugify(subjectText);
       // [DEBUG] trace: log research entry
-      console.error(
-        `[research.run] subjectText=${JSON.stringify(subjectText)} topic=${JSON.stringify(topic)} sections=${model.sections.map((s) => s.id + ":" + s.kind).join(",")}`,
-      );
 
       // DOSSIER-FIRST: read before any model round
       const existingDossier = await deps.dossier.read(topic);
@@ -247,9 +244,6 @@ export function research(
       try {
         const writeResult = await deps.dossier.write(topic, dossierContent);
         dossierRef = writeResult.dossierRef;
-        console.error(
-          `[research.run] dossier.write OK: dossierRef=${JSON.stringify(dossierRef)}`,
-        );
       } catch (writeErr) {
         dossierRef = `research/${topic}.md`;
         console.error(
@@ -283,9 +277,6 @@ export function research(
           // preceding proposeItem — guards against stale/invalid LLM item IDs
           // that would cause the reducer to throw and fail the whole round.
           if (!reachableItemIds.has(action.itemId)) {
-            console.error(
-              `[research.run] skipping attachEvidence for unreachable itemId=${action.itemId}`,
-            );
             continue;
           }
           // Stamp dossierRef + checkedAt onto evidence chips from the model.
@@ -342,53 +333,9 @@ export function research(
           },
         });
       }
+      // Honesty (attend 2026-07-15): if the model proposed no evidence, the probe
+      // MUST see that — never manufacture an item/chip to satisfy the render.
 
-      // Guarantee: always anchor at least one evidence chip with this round's
-      // dossierRef so renderedHtml() carries the provenance token. When the LLM
-      // proposed nothing and there is no existing target item to stamp, create a
-      // subject-stub item in the first non-goal section and attach evidence to it.
-      const hasEvidence = finalActions.some((a) => a.type === "attachEvidence");
-      console.error(
-        `[research.run] rawActions.length=${rawActions.length} hasEvidence=${hasEvidence} finalActions.length=${finalActions.length}`,
-      );
-      if (!hasEvidence) {
-        const firstNonGoal = model.sections.find((s) => s.kind !== "goal");
-        console.error(
-          `[research.run] stub fires: firstNonGoal=${firstNonGoal?.id ?? "NONE"}`,
-        );
-        if (firstNonGoal) {
-          const count = sectionItemCounts.get(firstNonGoal.id) ?? 0;
-          const predictedId = `item-${firstNonGoal.id}-${count}`;
-          console.error(
-            `[research.run] stub predictedId=${predictedId} dossierRef=${dossierRef}`,
-          );
-          finalActions.push({
-            type: "proposeItem" as const,
-            actor: "research" as const,
-            sectionId: firstNonGoal.id,
-            item: {
-              text: subjectText,
-              modality: "optional" as const,
-              evals: {},
-            },
-          });
-          finalActions.push({
-            type: "attachEvidence" as const,
-            actor: "research" as const,
-            itemId: predictedId,
-            evidence: {
-              source: subjectText,
-              method: "research",
-              checkedAt,
-              dossierRef,
-            },
-          });
-        }
-      }
-
-      console.error(
-        `[research.run] returning ${finalActions.length} actions: ${finalActions.map((a) => a.type).join(",")}`,
-      );
       return finalActions;
     },
   };
