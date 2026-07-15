@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.214",
+  "version": "0.1.215",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
