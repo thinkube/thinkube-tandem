@@ -4442,20 +4442,50 @@ export class OrchestratorService {
       // primed with the governing artifacts answers the wall BY CITATION — the
       // guidance rides the verify reply the worker already reads. Escalation
       // (no citable answer) falls through to the stalled park unchanged.
-      supervise: async (evidence: string) => {
+      supervise: async (evidence: string, failingAcs: number[]) => {
         const model = resolveWorkerModel(this.deps.workerModel, "judge");
+        // Information audit (2026-07-15): the supervisor sees BOTH sides of the
+        // wall — the coder's exact brief and the failing probes' SOURCE — and
+        // answers one question: does the worker possess the information its task
+        // requires? Verdicts: CAPABILITY (it has everything — a one-line cited
+        // nudge, no leak) · DISCLOSE (it lacks a decidable fact — emit the
+        // MINIMAL disclosure; every disclosure is by definition a contract gap
+        // and is ledgered as a defect row) · ESCALATE (intent-level — human).
+        const codeUnit = (args.unitsBySlice.get(args.sliceHandle) ?? []).find(
+          (u) => (u.role ?? "code") === "code",
+        );
+        let brief = "";
+        try {
+          const jl = codeUnit && sessionLogPath(codeUnit.id);
+          if (jl)
+            brief = fs.readFileSync(jl.replace(/\.jsonl$/, ".prompt.md"), "utf8");
+        } catch { /* brief unavailable — audit degrades to artifact-only */ }
+        let probeSrc = "";
+        for (const rel of probeFiles) {
+          if (!failingAcs.some((ac) => rel.includes(`_AC-${ac}.`))) continue;
+          try {
+            probeSrc += `\n── ${rel} ──\n` +
+              fs.readFileSync(path.join(args.testerPath!, rel), "utf8").slice(0, 8000);
+          } catch { /* absent probe — skip */ }
+        }
         const prompt = [
-          "You are the RUN SUPERVISOR for an autonomous delivery. A worker's verify rounds",
-          "are stalling on IDENTICAL evidence. Answer the wall — but ONLY by citation into",
-          "the governing artifacts below: quote the exact contract/spec lines that decide",
-          "the question, then state in 2-4 sentences what the worker should change. If the",
-          "artifacts do NOT decide it, reply with exactly: ESCALATE",
+          "You are the RUN SUPERVISOR — the disclosure authority of an autonomous delivery.",
+          "A coder has failed the SAME acceptance checks for several consecutive rounds.",
+          "You see BOTH sides of the blinding wall: the coder's exact brief, and the failing",
+          "checks' SOURCE. Audit ONE question: does the coder's brief contain the information",
+          "the failing checks require?",
+          "Reply with EXACTLY ONE verdict line, then its content:",
+          '- "CAPABILITY: <2-3 sentences citing where in its OWN brief the answer already is>"',
+          '  (the coder has everything — no new information may cross)',
+          '- "DISCLOSE: <the MINIMAL decidable fact(s) the brief lacks — exact literals,',
+          '   semantics — stated as facts, NEVER quoting check source or assertions>"',
+          '- "ESCALATE" (the gap is intent-level; a human must decide)',
           "",
-          "──── SPEC CONTRACT (union) ────",
-          (args.unitsBySlice.get(args.sliceHandle)?.[0]?.contract ?? "").slice(0, 8000),
+          "──── THE CODER'S BRIEF (what it was given) ────",
+          brief.slice(0, 60000),
           "",
-          "──── PARENT SPEC ────",
-          this.promptCtx.specBody.slice(0, 8000),
+          "──── FAILING CHECK SOURCE (the other side of the wall — never quote it) ────",
+          probeSrc.slice(0, 16000),
           "",
           "──── THE REPEATED FAILURE EVIDENCE ────",
           evidence.slice(0, 4000),
@@ -4485,6 +4515,22 @@ export class OrchestratorService {
           return undefined;
         }
         const t = text.trim();
+        if (/^DISCLOSE:/.test(t)) {
+          // The leak ledger: every authorized disclosure IS a contract gap, on
+          // the record verbatim — blinding erosion measured, never stolen.
+          this.logDefect({
+            spec: args.specNumber,
+            slice: args.sliceHandle,
+            activity: "verify: supervisor",
+            trigger: "worker flag",
+            type: "contract format/completeness",
+            qualifier: "missing",
+            impact: "contained",
+            detail: `Supervisor disclosure (contract lacked a decidable fact): ${t.slice(9, 500)}`,
+          } as unknown as Parameters<typeof this.logDefect>[0]);
+          args.log(`  [supervisor ${args.sliceHandle}] DISCLOSED (ledgered as contract gap).`);
+          return t;
+        }
         if (!t || /^ESCALATE\b/.test(t)) {
           args.log(
             `  [supervisor ${args.sliceHandle}] escalated — artifacts do not decide it.`,

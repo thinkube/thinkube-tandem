@@ -267,7 +267,10 @@ export interface VerifyOracleDeps {
    *  repeated evidence, answers by CITATION into the governing artifacts (or
    *  escalates). Returns guidance text to inject into the verify reply, or
    *  undefined to fall through to the stalled park. */
-  supervise?: (evidence: string) => Promise<string | undefined>;
+  supervise?: (
+    evidence: string,
+    failingAcs: number[],
+  ) => Promise<string | undefined>;
   /** The isolated runner directory (a detached worktree the caller prepared). */
   runnerDir: string;
   /** Repo-relative probe source paths (the slice's role:test footprints). */
@@ -362,6 +365,9 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
   let stallSig: string | undefined;
   let stallCount = 0;
   const STALL_AFTER = 3;
+  const acFailStreak = new Map<number, number>();
+  let lastFailingAcs: number[] = [];
+  const PERSIST_AFTER = 4;
 
   let supervised = false;
   const round = async (): Promise<VerifyResult> => {
@@ -370,7 +376,7 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
       // parking at it. The stall counter resets so the guidance gets real rounds.
       supervised = true;
       try {
-        const g = await deps.supervise(stallSig ?? "");
+        const g = await deps.supervise(stallSig ?? "", lastFailingAcs);
         if (g?.trim()) {
           stallCount = 0;
           stallSig = undefined;
@@ -429,6 +435,37 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
     log(
       `  [oracle] round ${used}/${max}: ${results.filter((r) => r.pass).length}/${results.length} pass`,
     );
+    // Per-AC persistence (2026-07-15): the painful case is the SAME AC red for
+    // rounds on end with EVOLVING evidence — the identical-outcome stall never
+    // fires. Track consecutive per-AC failure streaks; at the threshold, the
+    // supervisor audits information-completeness once per budget.
+    for (const r of results) {
+      if (r.pass) acFailStreak.delete(r.ac);
+      else acFailStreak.set(r.ac, (acFailStreak.get(r.ac) ?? 0) + 1);
+    }
+    lastFailingAcs = results.filter((r) => !r.pass).map((r) => r.ac);
+    const persistent = [...acFailStreak.entries()].filter(
+      ([, n]) => n >= PERSIST_AFTER,
+    );
+    if (persistent.length && deps.supervise && !supervised) {
+      supervised = true;
+      try {
+        const ev = results
+          .filter((r) => !r.pass)
+          .map((r) => r.evidence)
+          .join("\n\n");
+        const g = await deps.supervise(ev, persistent.map(([ac]) => ac));
+        if (g?.trim()) {
+          for (const [ac] of persistent) acFailStreak.set(ac, 0);
+          return {
+            kind: "supervised",
+            guidance: g.trim(),
+          } as unknown as VerifyResult;
+        }
+      } catch {
+        /* fall through to normal results */
+      }
+    }
     const out: VerifyResult = { kind: "results", results };
     const rootCause = sharedFailureSignature(results);
     if (rootCause) out.rootCause = rootCause;
