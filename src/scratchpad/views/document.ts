@@ -14,6 +14,7 @@ import type {
   WorkingModel,
 } from "../model";
 import { freezeEnabled } from "../model";
+import { uncoveredSections } from "../coverage";
 
 /**
  * The complete inbound message protocol (webview → extension).
@@ -285,11 +286,36 @@ export function buildScratchpadHtml(
         </section>`
       : "";
 
-  // Freeze control: disabled attribute PRESENT when freezeEnabled is false
+  // Freeze control: disabled attribute PRESENT when freezeEnabled is false.
+  // data-reason names the FIRST failing signal:
+  //   "coverage:<kind>" when a section is uncovered,
+  //   "dryrun:<kind>"   when coverage is green but the dry-run found a gap,
+  //   ""                when enabled (no failing signal).
   const canFreeze = freezeEnabled(model);
+  let freezeReason = "";
+  if (!canFreeze) {
+    const uncovered = uncoveredSections(model);
+    if (uncovered.length > 0) {
+      freezeReason = `coverage:${uncovered[0]}`;
+    } else {
+      // Coverage is green; check the latest readiness record for a dry-run gap.
+      const hist = model.readinessHistory;
+      if (hist.length > 0) {
+        const latest = hist[hist.length - 1];
+        if (!latest.cleanCut) {
+          freezeReason = latest.gapSection
+            ? `dryrun:${latest.gapSection}`
+            : "dryrun:unknown";
+        }
+      } else {
+        // No readiness record yet — treat as unchecked (no readiness run done)
+        freezeReason = "dryrun:unknown";
+      }
+    }
+  }
   const freezeBtn = canFreeze
-    ? `<button id="freeze" onclick="triggerFreeze()">Freeze</button>`
-    : `<button id="freeze" disabled onclick="triggerFreeze()">Freeze</button>`;
+    ? `<button id="freeze" data-reason="" onclick="triggerFreeze()">Freeze</button>`
+    : `<button id="freeze" disabled data-reason="${esc(freezeReason)}" onclick="triggerFreeze()">Freeze</button>`;
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { freezeEnabled } from "../model";
 import type { WorkingModel } from "../model";
+import { uncoveredSections } from "../coverage";
 import type { ApprovalToken } from "../freeze";
 
 /** Messages the FreezeControl webview sends back to the extension. */
@@ -9,13 +10,16 @@ type FreezeControlMessage = { type: "freeze" };
 /**
  * The Freeze control for the Scratchpad surface.
  *
- * Renders a Freeze button that is enabled only when `freezeEnabled(model)` is
- * true. On click, the webview posts a 'freeze' message; the control mints an
- * `ApprovalToken` (only the UI may do this — the assistant has no path to mint
- * one) and invokes the `onFreeze` callback so the app can call `freeze()`.
+ * Renders a Freeze button whose enablement is derived from the latest
+ * readiness record (freezeEnabled) and whose data-reason attribute names the
+ * FIRST failing signal:
+ *   "coverage:<kind>" — a section has no checked active item (or goal is empty)
+ *   "dryrun:<kind>"   — coverage is green but the dry-run found a gap
+ *   ""                — enabled (no failing signal)
  *
- * Any unresolved objections at freeze time are surfaced as a warning so the
- * author knows they will be retained in the artifact.
+ * On click, the webview posts a 'freeze' message; the control mints an
+ * ApprovalToken (only the UI may do this — the assistant has no path to mint
+ * one) and invokes the onFreeze callback so the app can call freeze().
  */
 export class FreezeControl implements vscode.Disposable {
   private _panel: vscode.WebviewPanel | undefined;
@@ -90,8 +94,36 @@ export class FreezeControl implements vscode.Disposable {
     this._disposables = [];
   }
 
+  /**
+   * Compute the data-reason string for the freeze button:
+   *   "coverage:<kind>" — first uncovered section kind
+   *   "dryrun:<kind>"   — coverage green but dry-run gap
+   *   ""                — enabled
+   */
+  private _freezeReason(model: WorkingModel): string {
+    if (freezeEnabled(model)) return "";
+    const uncovered = uncoveredSections(model);
+    if (uncovered.length > 0) {
+      return `coverage:${uncovered[0]}`;
+    }
+    // Coverage is green; check the latest readiness record for a dry-run gap.
+    const hist = model.readinessHistory;
+    if (hist.length > 0) {
+      const latest = hist[hist.length - 1];
+      if (!latest.cleanCut) {
+        return latest.gapSection
+          ? `dryrun:${latest.gapSection}`
+          : "dryrun:unknown";
+      }
+    } else {
+      return "dryrun:unknown";
+    }
+    return "";
+  }
+
   private _buildHtml(model: WorkingModel): string {
     const enabled = freezeEnabled(model);
+    const reason = this._freezeReason(model);
     const btnDisabled = enabled ? "" : "disabled";
     const statusText = enabled
       ? "Ready to freeze"
@@ -124,6 +156,7 @@ export class FreezeControl implements vscode.Disposable {
   <button
     class="freeze-btn"
     id="freeze-btn"
+    data-reason="${this._esc(reason)}"
     ${btnDisabled}
     onclick="doFreeze()"
   >Freeze</button>

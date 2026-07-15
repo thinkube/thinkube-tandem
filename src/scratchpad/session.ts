@@ -19,36 +19,15 @@ import type { QueryFn } from "./workers/worker";
 import { createLoop } from "./loop";
 import { buildScratchpadHtml, ScratchpadDocumentView } from "./views/document";
 import type { RoundActivity, ScratchpadInboundMessage } from "./views/document";
+import { freeze as doFreeze } from "./freeze";
+import type { ApprovalToken, SigningTool } from "./freeze";
+export type { SigningTool } from "./freeze";
+import { dryRunSlice, toReadinessRecord } from "./dryRunSlice";
+import type { DryRunResult } from "./dryRunSlice";
+export type { DryRunResult } from "./dryRunSlice";
 
 // Re-export so callers can import the message type from session / index.
 export type { ScratchpadInboundMessage } from "./views/document";
-
-// ===== Shared types (SP-21/3 contract) =====
-
-/**
- * Result of a non-committing dry-run slice — imported by consumers and
- * injected through ScratchpadSessionDeps.runSlicer.
- */
-export interface DryRunResult {
-  cleanCut: boolean;
-  gapSection: SectionKind | null;
-  decomposition?: string[];
-}
-
-/**
- * Signs the frozen body and writes the resulting TEP artifact.
- * (SP-21/3 contract — includes stamp() which freeze.ts will add in SL-4.)
- */
-export interface SigningTool {
-  /** Appends a provenance stamp line to body and returns the result. */
-  stamp(body: string): string;
-  writeTep(args: {
-    thinking_space: string;
-    title: string;
-    status: string;
-    body: string;
-  }): Promise<{ tep: string }>;
-}
 
 // ===== Public types =====
 
@@ -173,6 +152,9 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   private readonly _workerModelId: string;
   private readonly _dossier: DossierStore | undefined;
   private readonly _now: () => Date;
+  private readonly _runSlicer:
+    ((intent: string) => Promise<DryRunResult>) | undefined;
+  private readonly _signing: SigningTool | undefined;
   private _view: ScratchpadDocumentView | undefined;
 
   /** Tracks whether any worker round is currently in flight. */
@@ -191,6 +173,8 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     loadQueryFn: () => QueryFn,
     dossier?: DossierStore,
     now?: () => Date,
+    runSlicer?: (intent: string) => Promise<DryRunResult>,
+    signing?: SigningTool,
   ) {
     this._model = model;
     this._sidecarRoot = sidecarRoot;
@@ -200,6 +184,8 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     this._loadQueryFn = loadQueryFn;
     this._dossier = dossier;
     this._now = now ?? (() => new Date());
+    this._runSlicer = runSlicer;
+    this._signing = signing;
   }
 
   get model(): WorkingModel {
@@ -511,10 +497,45 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         });
         break;
       case "checkReadiness":
-        // SL-4 wires this to runSlicer → recordReadiness
+        // Run the dry-run slicer and record readiness — the ONLY path that
+        // writes a ReadinessRecord; freeze enablement reads the latest record.
+        if (this._runSlicer) {
+          try {
+            const dry = await dryRunSlice(this._model, {
+              runSlicer: this._runSlicer,
+            });
+            const record = toReadinessRecord(this._model, dry);
+            this.dispatch({ type: "recordReadiness", record });
+          } catch {
+            // Slicer failure: record as not-ready, clean-cut failed with no gap
+            this.dispatch({
+              type: "recordReadiness",
+              record: { covered: false, cleanCut: false, gapSection: null },
+            });
+          }
+        }
         break;
       case "freeze":
-        // SL-4 wires this to the signing pipeline
+        // The freeze{} message arrival MINTS the ApprovalToken (human-by-construction).
+        // Pipeline: assert freezeEnabled → projectDelta → stamp → writeTep(proposed)
+        //           → stampShipped → save
+        if (this._signing) {
+          const approval: ApprovalToken = {
+            value: `human-approval-${Date.now()}`,
+          };
+          try {
+            const { tep, itemIds } = await doFreeze(this._model, {
+              approval,
+              signing: this._signing,
+              thinkingSpace: this._space,
+            });
+            this.dispatch({ type: "stampShipped", itemIds, tepId: tep });
+            await this.flush();
+          } catch {
+            // Freeze failed (not enabled, signing error, etc.) — ignore silently
+            // so the panel can surface the reason via the freeze button state.
+          }
+        }
         break;
       case "command":
         // SL-5 wires this to the interpreter
@@ -743,6 +764,8 @@ export async function openScratchpad(
     loadQueryFn,
     dossierStore,
     nowFn,
+    deps?.runSlicer,
+    deps?.signing,
   );
   _session = session;
   session.revealPanel();
