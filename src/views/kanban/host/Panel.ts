@@ -45,6 +45,10 @@ import {
   doneWorkers,
   onSessionsChange,
 } from "../../../services/orchestratorSessions";
+import {
+  runningRunSpecs,
+  onRunsChange,
+} from "../../../services/orchestrationRegistry";
 import { deliveryExitState } from "../../../services/orchestratorCore";
 import { ReviewPanel } from "../../review/ReviewPanel";
 
@@ -152,6 +156,9 @@ export class KanbanPanel implements vscode.Disposable {
       this.panel.webview.onDidReceiveMessage((m) => this.handle(m)),
       // Re-post when a worker starts/stops so the graph's running tags update live.
       { dispose: onSessionsChange(() => void this.refreshRunning()) },
+      // Push the live run set when a run starts/ends so the ▶/■ toggle tracks it
+      // even between worker waves (grading, gates) when no session is alive.
+      { dispose: onRunsChange(() => this.postRunningOrchestrations()) },
     );
     if (this.adapter.onExternalChange) {
       this.disposables.push(
@@ -355,6 +362,20 @@ export class KanbanPanel implements vscode.Disposable {
           );
         }
         break;
+      case "stop-orchestration":
+        // The per-run ■ button: halt exactly THIS spec's run. No reload here —
+        // the run drains asynchronously; the registry change event updates the ▶/■.
+        try {
+          await vscode.commands.executeCommand(
+            "thinkube.orchestrate.stop",
+            message.spec,
+          );
+        } catch (err) {
+          this.log(
+            `stop-orchestration ${message.spec} failed: ${(err as Error).message}`,
+          );
+        }
+        break;
       case "accept":
         // The delivery report's Accept exit: forward to the gated-merge
         // command, carrying THIS panel's thinking space (same shape as orchestrate/attend).
@@ -421,7 +442,28 @@ export class KanbanPanel implements vscode.Disposable {
     // Every state push re-derives + re-forwards each Spec's delivery exit set (SP-11/2), which
     // doubles as the button model's reconcile status event. `delivery-exits` itself carries no
     // `thinkingSpace`, so this never recurses.
-    if ("thinkingSpace" in out) this.postDeliveryExits(out.thinkingSpace);
+    if ("thinkingSpace" in out) {
+      this.postDeliveryExits(out.thinkingSpace);
+      // Same rhythm for the live run set, so a panel opened mid-run shows ■ immediately.
+      this.postRunningOrchestrations();
+    }
+  }
+
+  /**
+   * Forward the specs with an orchestration run in flight, as the tep-qualified
+   * handles (`TEP-n_SP-m`) the webview keys its cards on — the registry keys on
+   * the composite `t/n`, so convert here. The graph swaps that spec's ▶ for a
+   * per-run ■ Stop (never a broadcast halt).
+   */
+  private postRunningOrchestrations(): void {
+    const toHandle = (id: string): string => {
+      const m = /^([A-Za-z0-9]+)\/([A-Za-z0-9]+)$/.exec(id);
+      return m ? `TEP-${m[1]}_SP-${m[2]}` : id;
+    };
+    this.panel.webview.postMessage({
+      kind: "running-orchestrations",
+      specs: runningRunSpecs().map(toHandle),
+    });
   }
 
   /**

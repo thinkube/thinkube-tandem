@@ -12,7 +12,7 @@ import { useContext, useMemo } from "react";
 import { useGlobalState } from "../utils/context";
 import { postToHost } from "../utils/vscode";
 import { lookupPalette } from "../utils/palette";
-import { DeliveryExitsContext } from "../App";
+import { DeliveryExitsContext, RunningOrchestrationsContext } from "../App";
 import { ExitActionId, TaskCard, WorkUnitNode } from "../types";
 
 /** Base node colour by the parent slice's column (status). */
@@ -87,6 +87,8 @@ export function GraphView(): JSX.Element {
   // shared button model. The graph renders + dispatches exit buttons SOLELY from these.
   const { models: exitModels, dispatch: dispatchExit } =
     useContext(DeliveryExitsContext);
+  // Specs with a run in flight (host-pushed): their ▶ becomes a per-run ■ Stop.
+  const runningSpecs = useContext(RunningOrchestrationsContext);
 
   const { nodes, edges, specs, width, height } = useMemo(() => {
     // Slice cards only — exclude the auto-derived acceptance close-cards.
@@ -257,29 +259,50 @@ export function GraphView(): JSX.Element {
           const model = exitModels[s.id];
           const exits = model?.exits ?? [];
           const pending = model?.pending ?? null;
+          // While THIS spec's run is in flight, its ▶ becomes a ■ Stop scoped to
+          // exactly this run — other specs' runs are untouched (per-run halt).
+          const isRunning = runningSpecs.includes(s.id);
           return (
             <span
               key={s.id}
               style={{ display: "inline-flex", gap: 4, alignItems: "center" }}
             >
-              <button
-                disabled={!s.canRun}
-                title={
-                  s.canRun
-                    ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
-                    : s.superseded
-                      ? `SP-${s.id} is superseded — unsupersede it first if you mean to build it`
-                      : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
-                }
-                onClick={
-                  s.canRun
-                    ? () => postToHost({ kind: "orchestrate", spec: s.id })
-                    : undefined
-                }
-                style={btn(s.canRun)}
-              >
-                ▶ SP-{s.id}
-              </button>
+              {isRunning ? (
+                <button
+                  title={`Stop the SP-${s.id} run — aborts its in-flight workers; the run drains and finalizes. Other runs keep going.`}
+                  onClick={() =>
+                    postToHost({ kind: "stop-orchestration", spec: s.id })
+                  }
+                  style={{
+                    ...btn(true),
+                    background:
+                      "var(--vscode-statusBarItem-errorBackground, #c72e2e)",
+                    color:
+                      "var(--vscode-statusBarItem-errorForeground, #ffffff)",
+                  }}
+                >
+                  ■ SP-{s.id}
+                </button>
+              ) : (
+                <button
+                  disabled={!s.canRun}
+                  title={
+                    s.canRun
+                      ? `Run the makespan scheduler on SP-${s.id} — dispatch its ready, footprint-disjoint units across N workers`
+                      : s.superseded
+                        ? `SP-${s.id} is superseded — unsupersede it first if you mean to build it`
+                        : `SP-${s.id}: nothing to orchestrate — all slices are Done (or in flight)`
+                  }
+                  onClick={
+                    s.canRun
+                      ? () => postToHost({ kind: "orchestrate", spec: s.id })
+                      : undefined
+                  }
+                  style={btn(s.canRun)}
+                >
+                  ▶ SP-{s.id}
+                </button>
+              )}
               {exits.map((exit) => {
                 // Idempotent: while ANY action is pending the whole set is disabled, so a
                 // double-click is refused (the reducer no-ops) rather than double-dispatched.

@@ -49,6 +49,13 @@ export const DeliveryExitsContext = createContext<DeliveryExits>({
   dispatch: () => {},
 });
 
+/**
+ * Specs (tep-qualified handles) with an orchestration run in flight, pushed by
+ * the host on every run start/end and state push. The graph swaps a running
+ * spec's ▶ for a per-run ■ Stop that halts exactly that run.
+ */
+export const RunningOrchestrationsContext = createContext<string[]>([]);
+
 /** Map a state-derived exit id to the host message that services it. */
 function exitMessage(spec: string, actionId: ExitActionId): WebviewMessage {
   switch (actionId) {
@@ -72,12 +79,15 @@ export function App(): JSX.Element {
     useState<ThinkingSpace>(EMPTY_THINKING_SPACE);
   const [mode, setMode] = useState<ModeFlag>("both");
   const [exitModels, setExitModels] = useState<Record<string, ButtonModel>>({});
+  const [runningSpecs, setRunningSpecs] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribe = onHostMessage((msg) => {
       if (msg.kind === "state" || msg.kind === "external-change") {
         setThinkingSpace(msg.thinkingSpace);
         setMode(msg.mode);
+      } else if (msg.kind === "running-orchestrations") {
+        setRunningSpecs(msg.specs);
       } else if (msg.kind === "delivery-exits") {
         // A fresh exit set is the reconcile status event: replace the model, clearing
         // any pending action and re-enabling every exit.
@@ -118,7 +128,9 @@ export function App(): JSX.Element {
       <DeliveryExitsContext.Provider
         value={{ models: exitModels, dispatch: dispatchExit }}
       >
-        <KanbanView mode={mode} />
+        <RunningOrchestrationsContext.Provider value={runningSpecs}>
+          <KanbanView mode={mode} />
+        </RunningOrchestrationsContext.Provider>
       </DeliveryExitsContext.Provider>
     </GlobalContext.Provider>
   );

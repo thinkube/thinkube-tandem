@@ -156,7 +156,9 @@ export type WebviewMessage =
   | { kind: "reject"; spec: string }
   /** Re-run a stalled delivery's exit set (SP-11/2, `rerun`): re-dispatch the makespan
    *  scheduler on the Spec — the same action as ▶ Orchestrate, surfaced as a state-derived exit. */
-  | { kind: "rerun"; spec: string };
+  | { kind: "rerun"; spec: string }
+  /** Stop ONE spec's in-flight run (the ■ button that replaces ▶ while running). */
+  | { kind: "stop-orchestration"; spec: string };
 
 export type ModeFlag = "navigator" | "driver" | "both";
 
@@ -170,4 +172,10 @@ export type HostMessage =
    * state push, so it doubles as the status event that reconciles the button
    * model — clearing any pending action and re-enabling the exits.
    */
-  | { kind: "delivery-exits"; spec: string; exits: ExitAction[] };
+  | { kind: "delivery-exits"; spec: string; exits: ExitAction[] }
+  /**
+   * The specs (tep-qualified handles, `TEP-n_SP-m`) with an orchestration run
+   * in flight — pushed on every run start/end and every state push. The graph
+   * swaps those specs' ▶ for a per-run ■ Stop.
+   */
+  | { kind: "running-orchestrations"; specs: string[] };

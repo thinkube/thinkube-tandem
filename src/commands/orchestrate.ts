@@ -52,6 +52,13 @@ import type { OwnershipArbiter } from "../services/OwnershipArbiter";
 import type { LauncherService } from "../services/LauncherService";
 import type { SpecsProvider } from "../views/thinkingSpaces/SpecsProvider";
 import { workingRepoPath, specRepoNamespace } from "../store/workingRepo";
+import {
+  startRun,
+  endRun,
+  getRun,
+  runningRunSpecs,
+  onRunsChange,
+} from "../services/orchestrationRegistry";
 import { ConcurrencyLock } from "../services/concurrencyLock";
 import { withSpecLock } from "../services/dispatchGuard";
 
@@ -62,34 +69,47 @@ import { withSpecLock } from "../services/dispatchGuard";
  */
 const dispatchLock = new ConcurrencyLock();
 
-/** Orchestrators with a run in flight — the Stop command reaches them here (the
- *  service is constructed per invocation, so a module-scope registry is the only
- *  shared handle a palette command can use). */
-const liveOrchestrators = new Set<OrchestratorService>();
-
-/** The always-visible abort control (2026-07-14): a red status-bar item shown
- *  while any run is in flight. The view-title icon only renders when its view
- *  is on screen — the human watching the Orchestrator output panel never saw
- *  it. The status bar is visible from anywhere. */
+/** The always-visible abort control (2026-07-14, per-run since 2026-07-15): a
+ *  red status-bar item shown while any run is in flight. With ONE run it stops
+ *  exactly that spec; with several it opens the pick-a-run flow — it never
+ *  broadcasts a halt. The per-run buttons live on the kanban webview; this is
+ *  the from-anywhere fallback (the view-title icon only renders when its view
+ *  is on screen). Driven off the run registry, not per-dispatch calls. */
 let stopStatusItem: vscode.StatusBarItem | undefined;
-function showStopControl(spec: string): void {
+function updateStopControl(): void {
+  const specs = runningRunSpecs();
+  if (specs.length === 0) {
+    stopStatusItem?.hide();
+    return;
+  }
   if (!stopStatusItem) {
     stopStatusItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
       10000,
     );
-    stopStatusItem.command = "thinkube.orchestrate.stop";
     stopStatusItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.errorBackground",
     );
   }
-  stopStatusItem.text = `$(debug-stop) Stop SP-${spec}`;
-  stopStatusItem.tooltip =
-    "Stop the orchestration run: aborts every in-flight worker; the run drains and finalizes.";
+  if (specs.length === 1) {
+    stopStatusItem.text = `$(debug-stop) Stop SP-${specs[0]}`;
+    stopStatusItem.tooltip = `Stop the SP-${specs[0]} run: aborts its in-flight workers; the run drains and finalizes.`;
+    stopStatusItem.command = {
+      command: "thinkube.orchestrate.stop",
+      arguments: [specs[0]],
+      title: "Stop",
+    };
+  } else {
+    stopStatusItem.text = `$(debug-stop) Stop… (${specs.length})`;
+    stopStatusItem.tooltip =
+      "Several orchestration runs are in flight — pick which to stop.";
+    stopStatusItem.command = {
+      command: "thinkube.orchestrate.stop",
+      arguments: [],
+      title: "Stop",
+    };
+  }
   stopStatusItem.show();
-}
-function hideStopControl(): void {
-  stopStatusItem?.hide();
 }
 
 /** Normalize a spec arg from the ▶ button / a card — the tep-qualified handle
@@ -122,27 +142,54 @@ export function registerOrchestrateCommands(
     deps.output ?? vscode.window.createOutputChannel("Thinkube Orchestrator");
   context.subscriptions.push(
     output,
-    // Human stop control (2026-07-14): before this, the only way to stop a run was
-    // killing worker processes by hand. Aborts every in-flight worker and flags the
-    // run to halt — it drains, finalizes, and records its bookkeeping (same semantics
-    // as the failure-threshold halt; nothing is orphaned).
-    vscode.commands.registerCommand("thinkube.orchestrate.stop", () => {
-      if (liveOrchestrators.size === 0) {
-        vscode.window.showInformationMessage(
-          "No orchestration run is in flight.",
+    // Human stop control (2026-07-14; per-run 2026-07-15): halts ONE run — the spec
+    // passed by the webview button / status bar, or the palette's pick when several
+    // are in flight. Halt semantics per run are unchanged (aborts that run's workers;
+    // it drains, finalizes, records bookkeeping — same as the failure-threshold halt).
+    // "All runs" remains available, but only as an explicit pick, never the default.
+    { dispose: onRunsChange(updateStopControl) },
+    vscode.commands.registerCommand(
+      "thinkube.orchestrate.stop",
+      async (specArg?: string) => {
+        const running = runningRunSpecs();
+        if (running.length === 0) {
+          vscode.window.showInformationMessage(
+            "No orchestration run is in flight.",
+          );
+          return;
+        }
+        let targets: string[];
+        if (typeof specArg === "string" && specArg.trim()) {
+          const spec = normalizeSpecArg(specArg);
+          if (!getRun(spec)) {
+            vscode.window.showInformationMessage(
+              `SP-${spec} has no run in flight.`,
+            );
+            return;
+          }
+          targets = [spec];
+        } else if (running.length === 1) {
+          targets = running;
+        } else {
+          const pick = await vscode.window.showQuickPick(
+            [...running.map((s) => `SP-${s}`), "All runs"],
+            { placeHolder: "Stop which orchestration run?" },
+          );
+          if (!pick) return;
+          targets = pick === "All runs" ? running : [pick.replace(/^SP-/, "")];
+        }
+        let aborted = 0;
+        for (const spec of targets) aborted += getRun(spec)?.requestHalt() ?? 0;
+        const label = targets.map((s) => `SP-${s}`).join(", ");
+        output.appendLine(
+          `■ STOP requested for ${label} — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
         );
-        return;
-      }
-      let aborted = 0;
-      for (const o of liveOrchestrators) aborted += o.requestHalt();
-      output.appendLine(
-        `■ STOP requested from the command palette — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
-      );
-      output.show(true);
-      vscode.window.showInformationMessage(
-        `Stop requested — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
-      );
-    }),
+        output.show(true);
+        vscode.window.showInformationMessage(
+          `Stop requested for ${label} — ${aborted} in-flight worker(s) aborted; the run drains and finalizes.`,
+        );
+      },
+    ),
     vscode.commands.registerCommand(
       "thinkube.orchestrate",
       async (
@@ -342,7 +389,7 @@ export function registerOrchestrateCommands(
                 vscode.workspace
                   .getConfiguration("thinkube.orchestrator")
                   .get<number>("maxConcurrent") ?? 4;
-              liveOrchestrators.add(orchestrator);
+              startRun(spec, orchestrator);
               // The Stop BUTTON's visibility key: a command with an icon only
               // renders when placed in a menu, and the menu entry shows only
               // while a run is actually in flight.
@@ -351,18 +398,16 @@ export function registerOrchestrateCommands(
                 "thinkube.orchestrationRunning",
                 true,
               );
-              showStopControl(spec);
               const r = await orchestrator
                 .dispatchSpec(spec, cap)
                 .finally(() => {
-                  liveOrchestrators.delete(orchestrator);
-                  if (liveOrchestrators.size === 0) {
+                  endRun(spec);
+                  if (runningRunSpecs().length === 0) {
                     void vscode.commands.executeCommand(
                       "setContext",
                       "thinkube.orchestrationRunning",
                       false,
                     );
-                    hideStopControl();
                   }
                 });
               if (!r.ok) {
