@@ -4515,6 +4515,13 @@ export class OrchestratorService {
           return undefined;
         }
         const t = text.trim();
+        // Verbose supervision (2026-07-15, maintainer request): the supervisor's
+        // FULL verdict is narrated to the channel every time it works — the human
+        // watches the audit happen, not a one-word summary of it.
+        for (const ln of t.split("\n").slice(0, 14))
+          args.log(`  [supervisor ${args.sliceHandle}] ${ln}`);
+        if (t.split("\n").length > 14)
+          args.log(`  [supervisor ${args.sliceHandle}] … (${t.split("\n").length - 14} more lines in the worker's verify reply)`);
         if (/^DISCLOSE:/.test(t)) {
           // The leak ledger: every authorized disclosure IS a contract gap, on
           // the record verbatim — blinding erosion measured, never stolen.
