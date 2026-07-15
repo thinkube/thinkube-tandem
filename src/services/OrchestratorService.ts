@@ -2598,9 +2598,85 @@ export class OrchestratorService {
     // against a worker "fixing" healthy code off a stale diagnosis. Red / no runnable
     // oracle → normal dispatch, now against a measured rather than recorded state.
     if (freshTree && gradeFirst.size > 0) {
+      // Batched pre-grade (2026-07-15): every candidate is graded against the SAME
+      // freshly-reset committed state, so N per-slice rounds were N-1 redundant
+      // builds. ONE oracle carries the union of runnable checks + probe files; the
+      // per-AC results partition back to slices via their satisfies ordinals. A
+      // batch that cannot arm falls back to the per-slice path unchanged.
+      const runnableAcs = (handle: string): number[] => {
+        const sat = slices.find((sl) => sl.handle === handle)?.satisfies ?? [];
+        return specVerifs
+          .filter((v) => sat.includes(v.ac) && v.env !== "assessment" && !!v.run)
+          .map((v) => v.ac);
+      };
+      const batchHandles = [...gradeFirst.keys()].filter(
+        (h) => runnableAcs(h).length > 0,
+      );
+      let batchAcPass: Map<number, boolean> | undefined;
+      if (batchHandles.length > 1) {
+        try {
+          const batchOracle = await this.buildSliceOracle({
+            sliceHandle: batchHandles[0],
+            sliceHandles: batchHandles,
+            specNumber,
+            worktreePath,
+            testerPath,
+            slices,
+            unitsBySlice,
+            verifs: specVerifs,
+            log: (l) => output.appendLine(l),
+          });
+          if (batchOracle) {
+            const res = await batchOracle.verify();
+            if (res.kind === "results")
+              batchAcPass = new Map(res.results.map((r) => [r.ac, r.pass]));
+            else if (res.kind === "build-failed")
+              // Nothing can pass an unbuildable state — every candidate grades red.
+              batchAcPass = new Map();
+            output.appendLine(
+              `▸ SP-${specNumber}: grade-first batch — one build, ${batchHandles.length} slice(s) graded.`,
+            );
+          }
+        } catch (err) {
+          output.appendLine(
+            `▸ SP-${specNumber}: grade-first batch errored (${(err as Error).message}) — per-slice grading.`,
+          );
+        }
+      }
       for (const [handle, pending] of gradeFirst) {
         let green = false;
         try {
+          if (batchAcPass) {
+            const acs = runnableAcs(handle);
+            if (acs.length === 0) {
+              output.appendLine(
+                `▸ ${handle}: grade-first skipped (no runnable oracle) — normal dispatch.`,
+              );
+              continue;
+            }
+            green = acs.every((a) => batchAcPass!.get(a) === true);
+            if (!green)
+              output.appendLine(
+                `▸ ${handle}: grade-first ${acs.filter((a) => batchAcPass!.get(a) === true).length}/${acs.length} pass → workers dispatch.`,
+              );
+            if (!green) continue;
+            output.appendLine(
+              `✓ ${handle}: grade-first GREEN — the committed state already passes; no workers re-author it.`,
+            );
+            for (const u of pending) {
+              state.done.add(u.id);
+              await this.checkpointUnit(
+                worktreePath,
+                handle,
+                u.id,
+                u.footprint ?? [],
+              );
+            }
+            state.done.add(handle);
+            landed.add(handle);
+            remaining.delete(handle);
+            continue;
+          }
           const oracle = await oracleFor(handle);
           if (!oracle) {
             output.appendLine(
@@ -4277,6 +4353,10 @@ export class OrchestratorService {
    */
   private async buildSliceOracle(args: {
     sliceHandle: string;
+    /** Batched pre-grade (2026-07-15): when set, the oracle carries the UNION of
+     *  these slices' runnable verifications and probe files — one runner round,
+     *  one build, grading every candidate against the same committed state. */
+    sliceHandles?: string[];
     specNumber: string;
     worktreePath: string;
     testerPath?: string;
@@ -4292,14 +4372,20 @@ export class OrchestratorService {
     const recipe =
       (await defaultAcceptanceRecipeResolver(this.deps.canonicalRepo)) ??
       (await defaultAcceptanceRecipeResolver(args.worktreePath));
-    const satisfies =
-      args.slices.find((s) => s.handle === args.sliceHandle)?.satisfies ?? [];
+    const handles = args.sliceHandles?.length
+      ? args.sliceHandles
+      : [args.sliceHandle];
+    const satisfies = handles.flatMap(
+      (h) => args.slices.find((s) => s.handle === h)?.satisfies ?? [],
+    );
     const sliceVerifs = args.verifs.filter(
       (v) => satisfies.includes(v.ac) && v.env !== "assessment" && !!v.run,
     );
-    const probeFiles = (args.unitsBySlice.get(args.sliceHandle) ?? [])
-      .filter((u) => (u.role ?? "code") === "test")
-      .flatMap((u) => u.footprint);
+    const probeFiles = handles.flatMap((h) =>
+      (args.unitsBySlice.get(h) ?? [])
+        .filter((u) => (u.role ?? "code") === "test")
+        .flatMap((u) => u.footprint),
+    );
     if (!recipe?.prepare || sliceVerifs.length === 0 || probeFiles.length === 0)
       return undefined;
     // The runner: a detached snapshot of the same spec branch, in its own baseDir so its
