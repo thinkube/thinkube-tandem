@@ -261,13 +261,54 @@ export function createPhaseWorker(deps: PhaseWorkerDeps): WorkerRun {
   };
 }
 
+/** Minimal structural type of the Claude Agent SDK `query()` we depend on — kept
+ *  loose (the same shape auditorRunner uses) so the lazy import doesn't pull SDK
+ *  types into the module graph. */
+type AgentSdkQuery = (args: {
+  prompt: string;
+  options: Record<string, unknown>;
+}) => AsyncIterable<unknown>;
+
 /**
- * Build the production QueryFn thunk (a () => QueryFn) using the Anthropic
- * SDK — the same integration pattern the orchestrator's assessor/judge runners
- * use. This is the session's default when deps.loadQuery is absent.
+ * Map the contract's logical MCP tool groups onto Claude Agent SDK `allowedTools`
+ * names, so the spawned headless Claude can ACTUALLY invoke the live tools rather
+ * than merely read their names in a prompt line (SP-21/3 AC #15 — "production
+ * research is live-grounded", not answered from training data).
  *
- * The thunk constructs a new SDK client on every call so each worker round gets
- * a fresh request (matches the assessor/judge runner pattern).
+ *   - "web-fetch"          → the built-in WebFetch + WebSearch tools
+ *   - every other group    → an MCP server, allowed at the server level as
+ *                            `mcp__<server>` (grants all of that server's tools)
+ *
+ * The three contract groups therefore resolve to:
+ *   tk-package-version → mcp__tk-package-version  (package-version registry checks)
+ *   web-fetch          → WebFetch, WebSearch      (fetch pinned-version docs / search)
+ *   repo-explorer      → mcp__repo-explorer       (explore pinned source trees)
+ */
+export function deriveAllowedTools(mcpTools: string[] | undefined): string[] {
+  const allowed: string[] = [];
+  for (const group of mcpTools ?? []) {
+    if (group === "web-fetch") {
+      allowed.push("WebFetch", "WebSearch");
+    } else {
+      allowed.push(`mcp__${group}`);
+    }
+  }
+  return allowed;
+}
+
+/**
+ * Build the production QueryFn thunk (a () => QueryFn) using the Claude Agent SDK
+ * `query()` — the SAME headless-Claude spawn path the orchestrator's auditor /
+ * assessor runners use (`@anthropic-ai/claude-agent-sdk`). This is the session's
+ * default when deps.loadQuery is absent.
+ *
+ * The Agent SDK (not the raw Messages API) is what runs a real tool-use loop, so
+ * the worker's declared tools are genuinely callable: the round's `mcpTools` groups
+ * are mapped to `allowedTools` (see {@link deriveAllowedTools}) and handed to the
+ * spawn, giving the model an actual mechanism to hit package registries and fetch
+ * pinned-version docs instead of answering from training data. `modelId` is passed
+ * as an SDK model alias (e.g. "sonnet"), which the Agent SDK — unlike the raw
+ * Messages API — accepts.
  */
 export function makeProductionQueryFnThunk(modelId: string): () => QueryFn {
   return (): QueryFn =>
@@ -275,24 +316,22 @@ export function makeProductionQueryFnThunk(modelId: string): () => QueryFn {
       prompt: string;
       options: QueryOptions;
     }): AsyncIterable<WorkerMessage> {
-      // Dynamic import avoids loading the SDK at extension startup and keeps
-      // the module importable in plain node tests where the fake is injected
-      // via loadQuery (no SDK needed in that path).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let AnthropicCtor: any;
+      // Dynamic import keeps the SDK out of the module graph at extension startup
+      // and lets plain node tests inject a fake via loadQuery (no SDK on that path).
+      let sdkQuery: AgentSdkQuery;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require("@anthropic-ai/sdk") as { default?: unknown };
-        AnthropicCtor = mod.default ?? mod;
+        const mod = (await import("@anthropic-ai/claude-agent-sdk")) as {
+          query: AgentSdkQuery;
+        };
+        sdkQuery = mod.query;
       } catch {
         // SDK not available — yield nothing gracefully
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const client: any = new AnthropicCtor();
-
-      // Build system prompt encoding the gate constraints
+      // Build the system preamble encoding the gate constraints + JSON output
+      // shape, folded into the prompt so it travels with the spawn without
+      // depending on an SDK system-prompt option.
       const systemParts: string[] = [
         "You are a Tandem Scratchpad worker. Your job is to generate structured actions for the thinking space.",
         `Allowed tools: ${args.options.allowedTools.join(", ") || "(none)"}`,
@@ -300,7 +339,7 @@ export function makeProductionQueryFnThunk(modelId: string): () => QueryFn {
       ];
       if (args.options.mcpTools && args.options.mcpTools.length > 0) {
         systemParts.push(
-          `MCP tool groups available: ${args.options.mcpTools.join(", ")}`,
+          `MCP tool groups available (call them — do not answer from memory): ${args.options.mcpTools.join(", ")}`,
         );
       }
       if (args.options.corpusPaths && args.options.corpusPaths.length > 0) {
@@ -313,25 +352,53 @@ export function makeProductionQueryFnThunk(modelId: string): () => QueryFn {
         "Each action must conform to the Action type and use only allowed tools.",
       );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const stream: any = client.messages.stream({
-        model: modelId,
-        max_tokens: 4096,
-        system: systemParts.join("\n"),
-        messages: [{ role: "user", content: args.prompt }],
-      });
+      // WIRE THE LIVE TOOLS: turn the round's mcpTools groups into allowedTools the
+      // spawned agent may actually invoke. Without this the model has no mechanism
+      // to reach the registry/docs and would answer from training data (AC #15).
+      const allowedTools = deriveAllowedTools(args.options.mcpTools);
 
-      // Collect streamed text then parse
-      let fullText = "";
-      for await (const chunk of stream) {
-        if (
-          chunk.type === "content_block_delta" &&
-          chunk.delta?.type === "text_delta" &&
-          chunk.delta.text
-        ) {
-          fullText += chunk.delta.text as string;
-        }
+      const options: Record<string, unknown> = {
+        // Pin the worker's model explicitly so it never inherits the session/env model.
+        model: modelId,
+        // Research is read-only investigation — bypass interactive permission prompts
+        // so the spawned agent can run its tool calls unattended (matches the auditor).
+        permissionMode: "bypassPermissions",
+        // Thinking OFF for workers (matches the OrchestratorService worker seam): the
+        // worker's reasoning lives in its tool calls and the artifacts it is handed.
+        thinking: { type: "disabled" },
+      };
+      if (allowedTools.length > 0) {
+        options.allowedTools = allowedTools;
       }
+
+      const fullPrompt = `${systemParts.join("\n")}\n\n${args.prompt}`;
+
+      // Drive the spawn; the Agent SDK runs the tool-use loop internally. Collect the
+      // final result text (falling back to concatenated assistant text) and parse the
+      // actions JSON out of it.
+      let resultText = "";
+      let assistantText = "";
+      try {
+        for await (const msg of sdkQuery({ prompt: fullPrompt, options })) {
+          const rec = msg as Record<string, unknown>;
+          if (rec.type === "assistant") {
+            const m = rec.message as { content?: unknown } | undefined;
+            const content = Array.isArray(m?.content) ? m!.content : [];
+            for (const b of content as Array<Record<string, unknown>>) {
+              if (b.type === "text" && typeof b.text === "string") {
+                assistantText += b.text;
+              }
+            }
+          } else if (rec.type === "result" && typeof rec.result === "string") {
+            resultText = rec.result;
+          }
+        }
+      } catch {
+        // Spawn/run failure — land the round with zero actions rather than crash.
+        return;
+      }
+
+      const fullText = resultText || assistantText;
 
       // Extract JSON actions from the response
       try {
