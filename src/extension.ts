@@ -50,6 +50,7 @@ import {
 } from "./commands/archive";
 import { registerWorktreeCommands } from "./commands/worktree";
 import { registerOrchestrateCommands } from "./commands/orchestrate";
+import { registerDefectCommands } from "./commands/defects";
 import { showFreshMarkdownPreview } from "./commands/freshPreview";
 import {
   registerScratchpadCommands,
@@ -442,6 +443,11 @@ export function activate(context: vscode.ExtensionContext): TandemExtensionApi {
 
   // Scratchpad: human-paced intent authoring surface (TEP-21).
   registerScratchpadCommands(context);
+
+  // Defect distributions (TEP-22/SP-1): the three tables + the manual-entry row.
+  registerDefectCommands(context, {
+    getThinkingSpaceDir: () => specsProvider.repoEntry?.thinkingSpaceDir,
+  });
 
   // Control-request watcher: the standalone Kanban MCP server can't
   // open a VS Code session itself, so its `start_spec_worktree` tool drops a
