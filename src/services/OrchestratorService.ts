@@ -1639,11 +1639,14 @@ export class OrchestratorService {
       role: "code" | "test";
       note: string;
     }[];
+    /** Dependency edges for sibling scoping (2026-07-15). */
+    unitRequires?: { unit: string; slice: string; requires: string[] }[];
   } = {
     specBody: "",
     tepBody: "",
     sliceBodies: new Map(),
     unitNotes: [],
+    unitRequires: [],
   };
 
   /** Per-slice resume state read from frontmatter: whether a slice's units already
@@ -1774,6 +1777,7 @@ export class OrchestratorService {
       tepBody,
       sliceBodies,
       unitNotes: this.promptCtx.unitNotes,
+      unitRequires: this.promptCtx.unitRequires,
     };
   }
 
@@ -2222,6 +2226,13 @@ export class OrchestratorService {
         role: (u.role ?? "code") as "code" | "test",
         note: (u.note ?? "").trim(),
       }));
+    // Dependency edges for sibling SCOPING (2026-07-15): which slices each unit
+    // waits on — lets the prompt site include only same-slice + chain siblings.
+    this.promptCtx.unitRequires = dag.map((u) => ({
+      unit: u.id,
+      slice: u.slice,
+      requires: u.requires ?? [],
+    }));
 
     // Deterministic gate: reject a malformed DAG before any worker runs.
     const v = validateDag(dag.map((u) => ({ id: u.id, requires: u.requires })));
@@ -4455,9 +4466,27 @@ export class OrchestratorService {
       tepBody: this.promptCtx.tepBody,
       // `?? []`: a direct runViaSdk caller (tests, future embedders) may carry a promptCtx
       // predating the unitNotes field — the sibling block then simply doesn't render.
-      siblingNotes: (this.promptCtx.unitNotes ?? []).filter(
-        (n) => n.unit !== unit.id,
-      ),
+      // Sibling scoping (2026-07-15): a worker aligns with its OWN slice's units and
+      // its real dependency edges — not the whole run. All-units notes made every
+      // brief carry the entire spec's plans, so a one-line slice paid a 100KB
+      // bootstrap; alignment beyond the dependency chain is the contract's job.
+      siblingNotes: (() => {
+        const producerSlices = new Set(
+          (unit.requires ?? []).map((id) => id.split("#")[0]),
+        );
+        const dependentSlices = new Set(
+          (this.promptCtx.unitRequires ?? [])
+            .filter((r) => r.requires.some((id) => id.split("#")[0] === unit.slice))
+            .map((r) => r.slice),
+        );
+        return (this.promptCtx.unitNotes ?? []).filter(
+          (n) =>
+            n.unit !== unit.id &&
+            (n.slice === unit.slice ||
+              producerSlices.has(n.slice) ||
+              dependentSlices.has(n.slice)),
+        );
+      })(),
       testConvention,
       exampleTest,
       selfVerifyCommand,
