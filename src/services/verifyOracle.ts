@@ -191,6 +191,47 @@ export function sharedFailureSignature(
 }
 
 /**
+ * Identifier-level diagnostics safe to hand a coder for TEST-side compile errors
+ * (2026-07-15). A bare "boundary broke in AC-10" sent workers guessing — and a
+ * guessing worker drifts (one invented a parallel DryRunResult rather than fix an
+ * export). Whitelisted TS codes name only identifiers/modules the shared contract
+ * already makes public (missing export / name / member and their did-you-mean
+ * variants); every other diagnostic is reduced to its code alone, so no probe
+ * expression or literal text ever crosses the blinding boundary. Deterministic.
+ */
+export function redactTestSideDiagnostics(
+  output: string,
+  testFiles: string[],
+): string {
+  const SAFE = new Set([
+    "TS2305", // module has no exported member 'x'
+    "TS2304", // cannot find name 'x'
+    "TS2339", // property 'x' does not exist on type 'Y'
+    "TS2551", // property 'x' does not exist — did you mean 'y'?
+    "TS2724", // module has no exported member — did you mean 'y'?
+    "TS2694", // namespace has no exported member 'x'
+    "TS2307", // cannot find module 'x'
+  ]);
+  const out: string[] = [];
+  for (const raw of output.split("\n")) {
+    const m = /^(.+?)\((\d+),\d+\): error (TS\d+): (.*)$/.exec(raw.trim());
+    if (!m) continue;
+    const [, file, line, code, msg] = m;
+    if (!testFiles.some((t) => file.endsWith(t) || t.endsWith(file))) continue;
+    out.push(
+      SAFE.has(code)
+        ? `${file}(${line}): error ${code}: ${msg}`
+        : `${file}(${line}): error ${code} (details withheld)`,
+    );
+    if (out.length >= 30) {
+      out.push("… (more diagnostics truncated)");
+      break;
+    }
+  }
+  return out.join("\n");
+}
+
+/**
  * Render a {@link VerifyResult} as the tool reply the coder reads. Pure. Never leaks
  * probe SOURCE — only locations, pass/fail and assertion output. A test-side build
  * fault tells the coder to keep working from the contract (the orchestrator routes the
@@ -211,8 +252,15 @@ export function formatVerifyReply(r: VerifyResult): string {
       // Location is NOT fault: an error inside a check file occurs both when the check is
       // wrong AND when the implementation drifted from the SPEC CONTRACT the check was
       // written to (a dropped field, a renamed export). Never assert whose fault it is.
+      const idDiags = redactTestSideDiagnostics(r.output, r.errorFiles);
       return [
         `BUILD FAILED at the boundary between your implementation and this slice's checks (in: ${r.errorFiles.join(", ")}).`,
+        ...(idDiags
+          ? [
+              "Identifier-level diagnostics (check source withheld — these name what the checks expected of YOUR exports):",
+              idDiags,
+            ]
+          : []),
         "The checks are written to the SPEC CONTRACT. Compare your exports against the contract SIGNATURE BY SIGNATURE — every field, every optional marker, every name — the most common cause is an implementation that drifted from the contract. Fix any drift and verify again.",
         "If your implementation already matches the contract exactly, say so explicitly in your final summary and stop — the mismatch will be reviewed on the other side.",
       ].join("\n");

@@ -15,6 +15,7 @@ import {
   createVerifyOracle,
   type VerifyOracleDeps,
   type VerifyResult,
+  redactTestSideDiagnostics,
 } from "./verifyOracle";
 
 // ── parsePorcelain ───────────────────────────────────────────────────────────
@@ -363,4 +364,20 @@ test("oracle: an outcome CHANGE resets the stall counter", async () => {
   await oracle.verify(); // fail/pass — resets the counter
   const r = await oracle.verify(); // fail/pass again (count 2) — still runs
   assert.equal(r.kind, "results", "progress resets the stall counter — no premature stop");
+});
+
+// ── redactTestSideDiagnostics (2026-07-15): identifier truth, no probe source ──
+
+test("redactTestSideDiagnostics: safe codes verbatim, unsafe reduced, non-test files dropped", () => {
+  const out = [
+    `src/acceptance/SP-21_3_AC-10.test.ts(12,5): error TS2305: Module '"../scratchpad/model"' has no exported member 'supersededBy'.`,
+    `src/acceptance/SP-21_3_AC-10.test.ts(30,9): error TS2345: Argument of type '{ secret: "leak" }' is not assignable to parameter.`,
+    `src/scratchpad/model.ts(4,1): error TS2304: Cannot find name 'oops'.`,
+    "some non-diagnostic line",
+  ].join("\n");
+  const r = redactTestSideDiagnostics(out, ["src/acceptance/SP-21_3_AC-10.test.ts"]);
+  assert.match(r, /TS2305: Module .* has no exported member 'supersededBy'/);
+  assert.match(r, /TS2345 \(details withheld\)/);
+  assert.ok(!r.includes("leak"), "unsafe message text must not leak");
+  assert.ok(!r.includes("model.ts(4"), "non-test-side lines are dropped");
 });
