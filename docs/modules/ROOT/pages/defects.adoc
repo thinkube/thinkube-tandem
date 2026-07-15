@@ -1,0 +1,132 @@
+= Defect distributions
+:page-type: reference
+:page-docref: tk22d
+
+The defect-distribution surface lets you ask "where is the methodology weak right now?" and get a data-grounded answer from the structured defect log that observation points (gates, audits, fences, judge verdicts, worker flags) append to automatically.
+Three tables answer the core questions: which defect *type* is most common, whether the catch-point *trigger* is moving earlier or later, and which *integrity violations* (false greens) need immediate attention.
+
+== thinkube.defects.show
+
+*Show Defect Distributions* — command palette entry: `Thinkube Tandem: Show Defect Distributions`
+
+Also reachable via the graph icon ($(graph)) in the *Specs* view title bar.
+
+Opens (or reveals) a webview panel titled *Tandem Defects* that aggregates every `defects/{YYYY-MM}.jsonl` file under the active thinking space.
+The panel is a singleton: invoking the command again refreshes the existing panel rather than opening a duplicate.
+
+=== Sections
+
+The panel always contains the three sections below, in document order.
+The integrity list is suppressed when there are no integrity-class entries — in that case the type table leads.
+
+[cols="1,3",options="header"]
+|===
+| Section | Content
+
+| Integrity Violations (`integrity-list`)
+| Every entry whose `impact` is `integrity` (a *false green* — the worst class), listed individually newest-first.
+Shown first, in red, and *only* when at least one such entry exists.
+The integrity class must never be quiet: if this section appears, act on it.
+
+| Defect Types by Month (`type-table`)
+| A pivot table: rows are months (YYYY-MM), columns are defect type values, cells are counts.
+Only rows whose `type` field is filled are included — type is an ODC fix-time attribute and may be absent on find-time-only entries.
+
+| Catch-Point Curve (`trigger-table`)
+| Counts by trigger value, ordered from the *earliest* (cheapest) catch-point to the *latest* (most expensive).
+Unknown trigger values appear last, sorted alphabetically.
+Drift toward the top of this table — toward authoring-time audit or preflight — is the primary Tandem health signal.
+|===
+
+If any lines in the JSONL logs could not be parsed, a count of malformed lines appears above the sections.
+
+=== Thinking space resolution
+
+The command reads from:
+
+. `specsProvider.repoEntry?.thinkingSpaceDir` — the thinking space currently selected in the Thinking Spaces navigator, if any.
+. `vscode.workspace.workspaceFolders[0]` — the first workspace folder, used as a fallback.
+
+If neither resolves, an error message is shown.
+
+=== Catch-point order
+
+The canonical trigger order — exported as `TRIGGER_ORDER` from `src/services/defectStats.ts` — is:
+
+. authoring-time audit
+. preflight
+. fence denial / containment
+. build gate (prepare)
+. gate-verifier failure
+. judge contradiction
+. worker flag (⚑)
+. human challenge
+. post-hoc diagnosis
+
+This order is the *single source of truth* for catch-point ranking.
+Capture-side code and future consumers (TEP-23) import `TRIGGER_ORDER` rather than re-declaring the sequence.
+
+== thinkube.defects.add
+
+*Add Defect Entry* — command palette entry: `Thinkube Tandem: Add Defect Entry`
+
+Manual entry path for defects that no observation machinery captures automatically — for example, a wrong-but-green outcome the maintainer catches at acceptance.
+
+=== Programmatic (no-UI) path
+
+When invoked with a full attribute object — the only form used by automated callers — no quick-input is shown:
+
+[source,typescript]
+----
+await vscode.commands.executeCommand("thinkube.defects.add", {
+  activity: "verify: lifecycle",
+  trigger:  "human challenge",
+  type:     "lifecycle definition",
+  qualifier: "missing",
+  impact:   "round lost",
+  detail:   "Slice status did not advance; no gate ran.",
+});
+----
+
+All six attributes are accepted; `type` and `qualifier` are optional.
+The row is appended to `defects/{YYYY-MM}.jsonl` in the active thinking space immediately, with `spec` set to `"manual"` and `ts` auto-stamped to the current ISO time.
+The command resolves after the append and returns `true` on success.
+
+=== Interactive path
+
+When invoked with no argument from the command palette, a sequence of quick-input prompts walks through:
+
+. *Activity* — which Tandem stage owned the defect
+. *Trigger* — which catch point exposed it (quick-pick from the canonical order)
+. *Impact* — the cost class (quick-pick: integrity, round lost, mis-routed rework, prevented, contained)
+. *Detail* — free-text description of the evidence
+. *Type* (optional) — ODC defect type or Tandem methodology type
+. *Qualifier* (optional, shown only when type is provided) — missing, incorrect, or extraneous
+
+Dismissing any required prompt aborts the entry with no write.
+
+== JSONL schema
+
+Each appended row follows the v1 schema defined in `src/services/defectLog.ts` (`DefectEntry`):
+
+[source,json]
+----
+{
+  "ts":       "2026-07-15T10:30:00.000Z",
+  "spec":     "manual",
+  "activity": "verify: lifecycle",
+  "trigger":  "human challenge",
+  "type":     "lifecycle definition",
+  "qualifier": "missing",
+  "impact":   "round lost",
+  "detail":   "Slice status did not advance; no gate ran."
+}
+----
+
+The `spec` field carries the literal `"manual"` for entries created by this command.
+Observation-point entries carry the actual spec id (e.g. `"22/1"`).
+
+== See also
+
+* xref:lifecycle.adoc[The Spec lifecycle] — the stages where defects are observed
+* xref:gates.adoc[Gates and verification] — the gate machinery that emits most find-time entries

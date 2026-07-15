@@ -383,6 +383,17 @@
         "title": "Author TEP (Scratchpad)",
         "category": "Tandem Scratchpad",
         "icon": "$(edit)"
+      },
+      {
+        "command": "thinkube.defects.show",
+        "title": "Show Defect Distributions",
+        "category": "Thinkube Tandem",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "thinkube.defects.add",
+        "title": "Add Defect Entry",
+        "category": "Thinkube Tandem"
       }
     ],
     "menus": {
@@ -446,6 +457,11 @@
           "command": "thinkube.specs.archiveAllCompleted",
           "when": "view == thinkubeSpecs",
           "group": "navigation@3"
+        },
+        {
+          "command": "thinkube.defects.show",
+          "when": "view == thinkubeSpecs",
+          "group": "navigation@4"
         },
         {
           "command": "thinkube.scratchpad.open",

@@ -10,3 +10,4 @@
 * xref:artifacts.adoc[Artifact shapes]
 * xref:toolkit.adoc[Skills, subagents, and tools]
 * xref:scratchpad.adoc[Scratchpad — Authoring TEPs]
+* xref:defects.adoc[Defect distributions]
