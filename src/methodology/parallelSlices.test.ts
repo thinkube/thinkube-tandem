@@ -13,6 +13,7 @@ import {
   footprintGuard,
   codeReadFence,
   codeTestFence,
+  ownedRetiredTestPaths,
   acquireClaim,
   releaseClaim,
   reconcileOwnership,
@@ -1150,4 +1151,66 @@ test("codeTestFence: with the oracle armed, Bash that reaches tests or the toolc
 test("codeTestFence: without the oracle, Bash is untouched (selfVerify still legitimate) but test writes stay denied", () => {
   assert.deepEqual(codeTestFence("Bash", { command: "npm test" }, false), { allow: true });
   assert.equal(codeTestFence("Write", { file_path: "a/b.test.ts" }, false).allow, false);
+});
+
+// ── Retirement blessing (2026-07-15): footprint-owned obsolete probes ───────
+// create_slice's blast-radius gate REQUIRES a slice deleting obsolete probes to
+// own them; the fences must honor exactly that ownership — and never the
+// current spec's own probes (the anti-self-grading line).
+
+test("retirement: owned obsolete probes pass the write/bash fences; own-spec probes never do", () => {
+  const owned = ownedRetiredTestPaths(
+    [
+      "src/scratchpad/model.ts",
+      "src/acceptance/SP-21_1_AC-1.test.ts",
+      "src/acceptance/SP-21_2_AC-3.host.ts",
+      "src/acceptance/SP-21_3_AC-2.test.ts", // current spec's probe — filtered out
+    ],
+    "21_3",
+  );
+  assert.deepEqual(owned, [
+    "src/acceptance/SP-21_1_AC-1.test.ts",
+    "src/acceptance/SP-21_2_AC-3.host.ts",
+  ]);
+  // Write/Edit on an owned retired probe: allowed. On the current spec's: denied.
+  assert.equal(
+    codeTestFence("Write", { file_path: "src/acceptance/SP-21_1_AC-1.test.ts" }, true, owned, "/wt").allow,
+    true,
+  );
+  assert.equal(
+    codeTestFence("Write", { file_path: "src/acceptance/SP-21_3_AC-2.test.ts" }, true, owned, "/wt").allow,
+    false,
+  );
+  // Bash rm of exactly the owned files (relative or absolute-in-cwd): allowed.
+  assert.equal(
+    codeTestFence("Bash", { command: "rm src/acceptance/SP-21_1_AC-1.test.ts src/acceptance/SP-21_2_AC-3.host.ts" }, true, owned, "/wt").allow,
+    true,
+  );
+  assert.equal(
+    codeTestFence("Bash", { command: "rm /wt/src/acceptance/SP-21_1_AC-1.test.ts" }, true, owned, "/wt").allow,
+    true,
+  );
+  // A command reaching ANY unowned test path (globs included) stays denied.
+  assert.equal(
+    codeTestFence("Bash", { command: "rm src/acceptance/SP-21_1_*.test.ts" }, true, owned, "/wt").allow,
+    false,
+  );
+  assert.equal(
+    codeTestFence("Bash", { command: "cat src/acceptance/SP-21_3_AC-2.test.ts" }, true, owned, "/wt").allow,
+    false,
+  );
+  // Toolchain stays denied even when test tokens are owned.
+  assert.equal(
+    codeTestFence("Bash", { command: "npx tsc src/acceptance/SP-21_1_AC-1.test.ts" }, true, owned, "/wt").allow,
+    false,
+  );
+  // resolveRoleFootprint keeps the blessed retired paths for a code unit — never own-spec ones.
+  const eff = resolveRoleFootprint(
+    "code",
+    ["src/a.ts", "src/acceptance/SP-21_1_AC-1.test.ts", "src/acceptance/SP-21_3_AC-2.test.ts"],
+    undefined,
+    "21_3",
+  );
+  assert.ok(eff.includes("src/acceptance/SP-21_1_AC-1.test.ts"));
+  assert.ok(!eff.includes("src/acceptance/SP-21_3_AC-2.test.ts"));
 });

@@ -12,6 +12,8 @@
  * *concurrency*, not on the whole thinking space.
  */
 
+import * as path from "node:path";
+
 export interface ParallelSliceInput {
   /** Slice handle used to name a conflict, e.g. "SP-3_SL-2". */
   handle: string;
@@ -598,6 +600,13 @@ export function resolveRoleFootprint(
   role: UnitRole | undefined,
   footprint: string[],
   opts?: AcceptanceEvidenceOpts,
+  /** Sanitized id of the spec being orchestrated (e.g. `21_3`). When given, a code
+   *  unit KEEPS declared test/acceptance paths that do NOT belong to this spec —
+   *  the retirement case (2026-07-15): create_slice's blast-radius gate requires a
+   *  slice deleting obsolete probes to own them, so the fences must honor exactly
+   *  that blessed ownership. The current spec's own probes (`SP-<id>_…`) are ALWAYS
+   *  stripped — a code author can never own the evidence it is graded on. */
+  specId?: string,
 ): string[] {
   if (role === "test")
     // Tests-first (2026-07-08): the test role owns ALL tests — the held-out acceptance
@@ -607,7 +616,33 @@ export function resolveRoleFootprint(
       (f) =>
         isAcceptanceEvidencePath(f, opts) || /\.test\.[cm]?[jt]sx?$/.test(f),
     );
-  return resolveFootprint(footprint, opts);
+  const base = resolveFootprint(footprint, opts);
+  if (!specId) return base;
+  const retired = (footprint ?? []).filter(
+    (f) =>
+      (isAcceptanceEvidencePath(f, opts) ||
+        /\.test\.[cm]?[jt]sx?$/.test(f)) &&
+      !f.includes(`SP-${specId}_`),
+  );
+  return [...base, ...retired];
+}
+
+/** The test/acceptance paths a CODE unit legitimately owns for retirement — its declared
+ *  footprint's test-shaped entries minus the current spec's own probes. Normalized like
+ *  the fences normalize (repo-relative). Empty for every ordinary code unit. */
+export function ownedRetiredTestPaths(
+  footprint: string[],
+  specId: string | undefined,
+  opts?: AcceptanceEvidenceOpts,
+): string[] {
+  return (footprint ?? [])
+    .filter(
+      (f) =>
+        (isAcceptanceEvidencePath(f, opts) ||
+          /\.test\.[cm]?[jt]sx?$/.test(f)) &&
+        (!specId || !f.includes(`SP-${specId}_`)),
+    )
+    .map(normalizeFilePath);
 }
 
 // ── Footprint enforcement (: the PreToolUse guard) ────────────
@@ -688,12 +723,16 @@ export function codeReadFence(
   toolInput: unknown,
   repoRoot: string,
   opts?: AcceptanceEvidenceOpts,
+  /** Retirement exemption (2026-07-15) — see {@link codeTestFence}. */
+  ownedTestPaths?: string[],
 ): FootprintDecision {
   if (toolName !== "Read") return { allow: true };
   const raw = (toolInput as { file_path?: unknown })?.file_path;
   if (typeof raw !== "string" || !raw.trim()) return { allow: true };
   const target = relToRepo(raw.trim(), repoRoot);
   if (!isAcceptanceEvidencePath(target, opts)) return { allow: true };
+  if ((ownedTestPaths ?? []).includes(normalizeFilePath(target)))
+    return { allow: true };
   return {
     allow: false,
     reason:
@@ -718,13 +757,30 @@ export function codeTestFence(
   toolName: string,
   toolInput: unknown,
   oracleWired: boolean,
+  /** Retirement exemption (2026-07-15): test paths this unit's blessed footprint OWNS
+   *  (see {@link ownedRetiredTestPaths}) — a write/delete targeting exactly these is
+   *  allowed, and a Bash command whose every test-shaped token is one of these is
+   *  allowed too (e.g. `rm` of the retired probes). Never contains the current spec's
+   *  own probes; the caller guarantees that via the specId filter. */
+  ownedTestPaths?: string[],
+  /** cwd the worker's paths resolve against (needed to normalize absolute targets). */
+  cwd?: string,
 ): FootprintDecision {
   const TEST_PATH = /(^|\/)acceptance\/|\.test\.[cm]?[jt]sx?$/;
+  const owned = new Set(ownedTestPaths ?? []);
+  const ownsTarget = (raw: string): boolean => {
+    if (owned.size === 0) return false;
+    let t = raw.trim().replace(/^['"`]|['"`]$/g, "");
+    if (/[*?[\]]/.test(t)) return false; // globs are never a blessed exact path
+    if (path.isAbsolute(t) && cwd) t = path.relative(path.resolve(cwd), t);
+    return owned.has(normalizeFilePath(t));
+  };
   if (GUARDED_TOOLS.has(toolName)) {
     const inp = toolInput as { file_path?: unknown; notebook_path?: unknown };
     const fp =
       typeof inp?.file_path === "string" ? inp.file_path : inp?.notebook_path;
-    if (typeof fp === "string" && TEST_PATH.test(fp.trim()))
+    if (typeof fp === "string" && TEST_PATH.test(fp.trim())) {
+      if (ownsTarget(fp)) return { allow: true };
       return {
         allow: false,
         reason:
@@ -732,15 +788,25 @@ export function codeTestFence(
           `unit's task. Implement within your footprint; if you believe a test must ` +
           `change, stop and state the question.`,
       };
+    }
     return { allow: true };
   }
   if (oracleWired && toolName === "Bash") {
     const cmd = (toolInput as { command?: unknown })?.command;
     if (typeof cmd !== "string" || !cmd.trim()) return { allow: true };
+    // Retirement carve-out: a command whose EVERY test-shaped token is an owned
+    // retired path is fair use (deleting/listing exactly what the footprint blesses).
+    const testTokens = cmd
+      .split(/[\s;|&()<>]+/)
+      .map((t) => t.replace(/^['"`]|['"`]$/g, ""))
+      .filter((t) => TEST_PATH.test(t) || /-test\//.test(t));
+    const allTokensOwned =
+      testTokens.length > 0 && testTokens.every((t) => ownsTarget(t));
     const reachesTests =
-      /(^|[\s/'"`(=])acceptance\//.test(cmd) ||
-      /\.test\.[cm]?[jt]sx?\b/.test(cmd) ||
-      /-test\//.test(cmd);
+      !allTokensOwned &&
+      (/(^|[\s/'"`(=])acceptance\//.test(cmd) ||
+        /\.test\.[cm]?[jt]sx?\b/.test(cmd) ||
+        /-test\//.test(cmd));
     const runsToolchain =
       /(^|[\s;&|(])(npm|npx|yarn|pnpm|tsc)(\s|$)/.test(cmd) ||
       /\bnode\s+--test\b/.test(cmd) ||

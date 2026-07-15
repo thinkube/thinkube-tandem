@@ -97,6 +97,7 @@ import {
   codeTestFence,
   resolveFootprint,
   resolveRoleFootprint,
+  ownedRetiredTestPaths,
   normalizeFilePath,
   type ContainmentResult,
 } from "../methodology/parallelSlices";
@@ -2646,8 +2647,16 @@ export class OrchestratorService {
     // So the union's acceptance paths come ONLY from their real role:test owners: sibling probes stay
     // exempt (concurrent held-out authors don't revert each other) while a code-author's acceptance
     // write — even one it brazenly declared in footprint — is NOT in the union and is caught.
+    const dagSpecM = /TEP-([A-Za-z0-9]+)_SP-([A-Za-z0-9]+)_SL-/.exec(
+      dag[0]?.id ?? "",
+    );
+    const dagSanSpec = dagSpecM ? `${dagSpecM[1]}_${dagSpecM[2]}` : undefined;
     const unionFootprint = [
-      ...new Set(dag.flatMap((u) => resolveRoleFootprint(u.role, u.footprint))),
+      ...new Set(
+        dag.flatMap((u) =>
+          resolveRoleFootprint(u.role, u.footprint, undefined, dagSanSpec),
+        ),
+      ),
     ];
     const running = new Map<string, Promise<UnitDone>>();
     const parked = new Set<string>(); // dispatched but suspended awaiting an answer (off the cap)
@@ -4575,10 +4584,25 @@ export class OrchestratorService {
                   // Screen an Edit/Write against the unit's ROLE-effective footprint (SP-6/7): a
                   // `test` unit may only touch its held-out `acceptance/` probe; a `code` unit can
                   // never touch `acceptance/` — so the two hands can't reach into each other's work.
+                  // Retirement blessing (2026-07-15): a code unit whose footprint carries
+                  // OTHER specs' obsolete probes (create_slice's deletion-unit demand) may
+                  // operate on exactly those files — never on this spec's own probes.
+                  const specM = /TEP-([A-Za-z0-9]+)_SP-([A-Za-z0-9]+)_SL-/.exec(
+                    unit.id,
+                  );
+                  const sanSpec = specM ? `${specM[1]}_${specM[2]}` : undefined;
+                  const ownedRetired = !isTest
+                    ? ownedRetiredTestPaths(unit.footprint, sanSpec)
+                    : [];
                   const d = footprintGuard(
                     inp.tool_name ?? "",
                     inp.tool_input,
-                    resolveRoleFootprint(unit.role, unit.footprint),
+                    resolveRoleFootprint(
+                      unit.role,
+                      unit.footprint,
+                      undefined,
+                      sanSpec,
+                    ),
                     cwd,
                   );
                   // SP-6/7 reverse-leak closure: a `role: code` worker must not read the grading
@@ -4586,7 +4610,13 @@ export class OrchestratorService {
                   // a Read of an acceptance-evidence path, tersely. A test unit needs no read
                   // fence at all: its cwd is the tester snapshot (nothing to hide in its tree).
                   const r = !isTest
-                    ? codeReadFence(inp.tool_name ?? "", inp.tool_input, cwd)
+                    ? codeReadFence(
+                        inp.tool_name ?? "",
+                        inp.tool_input,
+                        cwd,
+                        undefined,
+                        ownedRetired,
+                      )
                     : ({ allow: true } as const);
                   // SP-16: `Grep` is no longer denied to a `role: test` worker (dropped from
                   // `disallowedToolsForRole`) — instead it is scoped to the worker's own cwd
@@ -4605,6 +4635,8 @@ export class OrchestratorService {
                         inp.tool_name ?? "",
                         inp.tool_input,
                         !!oracle,
+                        ownedRetired,
+                        cwd,
                       )
                     : ({ allow: true } as const);
                   if (d.allow && r.allow && g.allow && t.allow) {
