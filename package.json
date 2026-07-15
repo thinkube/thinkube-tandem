@@ -394,6 +394,18 @@
         "command": "thinkube.defects.add",
         "title": "Add Defect Entry",
         "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.thinkingSpace.openDoc",
+        "title": "Open Thinking Space Document",
+        "category": "Tandem ThinkingSpaces",
+        "icon": "$(notebook)"
+      },
+      {
+        "command": "thinkube.thinkingSpace.newDoc",
+        "title": "New Thinking Space Document",
+        "category": "Tandem ThinkingSpaces",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -618,6 +630,16 @@
         {
           "command": "thinkube.editPermissions",
           "when": "view == claudeConfigTree && viewItem == permissions-section",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.thinkingSpace.openDoc",
+          "when": "view == thinkubeThinkingSpaces && viewItem == thinkingDoc",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.thinkingSpace.newDoc",
+          "when": "view == thinkubeThinkingSpaces && viewItem == newThinkingDoc",
           "group": "inline"
         }
       ],

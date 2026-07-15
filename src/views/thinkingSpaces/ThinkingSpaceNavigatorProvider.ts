@@ -79,11 +79,34 @@ export interface ProjectNode {
   tag: string;
 }
 
+/**
+ * A named thinking-space document — a `thinking/<name>.json` file under the
+ * repo's or project's namespace directory. Clicking it opens the scratchpad
+ * panel for that document.
+ */
+export interface ThinkingDocNode {
+  kind: "thinkingDoc";
+  namespace: string;
+  name: string;
+}
+
+/**
+ * The "New thinking space…" sentinel node — appears as the last child of
+ * every repo and project node; invoking it prompts for a name and seeds a
+ * fresh document.
+ */
+export interface NewThinkingDocNode {
+  kind: "newThinkingDoc";
+  namespace: string;
+}
+
 export type ThinkingSpaceNode =
   | RepoEntry
   | ThinkingSpaceMessageNode
   | ProductNode
-  | ProjectNode;
+  | ProjectNode
+  | ThinkingDocNode
+  | NewThinkingDocNode;
 
 /**
  * Find git repos across the open workspace folders (depth-limited), marking
@@ -225,6 +248,36 @@ function walk(
   }
 }
 
+/**
+ * List the named thinking-space documents under a namespace directory.
+ * Returns ThinkingDocNodes (one per *.json in <namespaceDir>/thinking/)
+ * followed by one NewThinkingDocNode.
+ */
+function listThinkingDocChildren(
+  namespace: string,
+  namespaceDir: string,
+): ThinkingSpaceNode[] {
+  const thinkingDir = path.join(namespaceDir, "thinking");
+  const nodes: ThinkingSpaceNode[] = [];
+  try {
+    const entries = fs.readdirSync(thinkingDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isFile() && e.name.endsWith(".json")) {
+        nodes.push({
+          kind: "thinkingDoc",
+          namespace,
+          name: e.name.slice(0, -5), // strip .json
+        });
+      }
+    }
+  } catch {
+    // Directory missing or unreadable — just show the New node.
+  }
+  // Always append the "New thinking space…" sentinel as the last child.
+  nodes.push({ kind: "newThinkingDoc", namespace });
+  return nodes;
+}
+
 export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<ThinkingSpaceNode> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<
     ThinkingSpaceNode | undefined
@@ -287,7 +340,9 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
           .getConfiguration("thinkube.thinkingSpace")
           .get<string>("root")
           ?.trim() || undefined;
-      const products = thinkingSpaceRoot ? discoverProducts(thinkingSpaceRoot) : [];
+      const products = thinkingSpaceRoot
+        ? discoverProducts(thinkingSpaceRoot)
+        : [];
       if (thinkingSpaceRoot && products.length) {
         const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
           name: f.name,
@@ -297,7 +352,11 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
           path: r.path,
           namespace: namespaceForRepo(r.path, folders),
         }));
-        const tree = buildProductTree(products, discoverProjects(thinkingSpaceRoot), refs);
+        const tree = buildProductTree(
+          products,
+          discoverProjects(thinkingSpaceRoot),
+          refs,
+        );
         const byPath = new Map(repos.map((r) => [r.path, r]));
         const lookup = (p: string): RepoEntry | undefined => byPath.get(p);
         const productNodes: ThinkingSpaceNode[] = tree.products.map((g) => ({
@@ -324,12 +383,47 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
     if (element.kind === "product") {
       return [...element.repos, ...element.projects];
     }
-    // A Project is a leaf in the navigator: selecting it drives the
-    // TEPs → Specs side-views, exactly like a Thinking Space — no in-tree drill-down.
-    if (element.kind === "project") return [];
-    // A Thinking Space is a leaf — the methodology is delivered as a versioned
-    // plugin (one marketplace install), not a per-repo bundle, so a repo has no
-    // bundle-status child to expand.
+    if (element.kind === "project") {
+      // A project's namespace directory is under the configured board root:
+      // <sidecarRoot>/<product>/projects/<id>
+      const thinkingSpaceRoot =
+        vscode.workspace
+          .getConfiguration("thinkube.thinkingSpace")
+          .get<string>("root")
+          ?.trim() || undefined;
+      if (!thinkingSpaceRoot) return [];
+      const namespaceDir = path.join(
+        thinkingSpaceRoot,
+        element.product,
+        "projects",
+        element.id,
+      );
+      const namespace = `${element.product}/projects/${element.id}`;
+      return listThinkingDocChildren(namespace, namespaceDir);
+    }
+    if (element.kind === "repo") {
+      // Repo nodes stop being leaves — list thinking documents under the repo's
+      // namespace directory (thinkingSpaceDir), then a New node.
+      // Only expand enabled repos (those with a namespace/thinkingSpace dir).
+      const namespaceDir = element.thinkingSpaceDir;
+      // Derive the namespace string from the dir path.
+      // For repos with a central root, thinkingSpaceDir = <root>/<namespace>;
+      // we use a relative path as the namespace key.
+      const thinkingSpaceRoot =
+        vscode.workspace
+          .getConfiguration("thinkube.thinkingSpace")
+          .get<string>("root")
+          ?.trim() || undefined;
+      let namespace: string;
+      if (thinkingSpaceRoot && namespaceDir.startsWith(thinkingSpaceRoot)) {
+        namespace = path.relative(thinkingSpaceRoot, namespaceDir);
+      } else {
+        // Co-located .thinkube — use the repo name as the namespace
+        namespace = element.name;
+      }
+      return listThinkingDocChildren(namespace, namespaceDir);
+    }
+    // ThinkingDocNode and NewThinkingDocNode are leaves (no children).
     return [];
   }
 
@@ -347,11 +441,10 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
       return item;
     }
     if (node.kind === "project") {
-      // A leaf that drives the TEPs → Specs side-views; selecting it
-      // scopes the TEPs view to the project's umbrella TEPs.
+      // A project now expands to show its thinking documents.
       const item = new vscode.TreeItem(
         node.name,
-        vscode.TreeItemCollapsibleState.None,
+        vscode.TreeItemCollapsibleState.Collapsed,
       );
       item.description = node.state === "done" ? "✓ done" : "open";
       item.tooltip = `Project ${node.product}/${node.id} · ${node.state}`;
@@ -372,14 +465,45 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
       item.contextValue = "tandemThinkingSpaceUnavailable";
       return item;
     }
-    // A linked worktree reads as "<repo> · <name>" labeled a worktree, not a
+    if (node.kind === "thinkingDoc") {
+      const item = new vscode.TreeItem(
+        node.name,
+        vscode.TreeItemCollapsibleState.None,
+      );
+      item.tooltip = `Thinking space: ${node.namespace}/${node.name}`;
+      item.contextValue = "thinkingDoc";
+      item.iconPath = new vscode.ThemeIcon("notebook");
+      // Default click command: open the document.
+      item.command = {
+        command: "thinkube.thinkingSpace.openDoc",
+        title: "Open Thinking Space Document",
+        arguments: [node.namespace, node.name],
+      };
+      return item;
+    }
+    if (node.kind === "newThinkingDoc") {
+      const item = new vscode.TreeItem(
+        "New thinking space…",
+        vscode.TreeItemCollapsibleState.None,
+      );
+      item.tooltip = `Create a new thinking space in ${node.namespace}`;
+      item.contextValue = "newThinkingDoc";
+      item.iconPath = new vscode.ThemeIcon("add");
+      item.command = {
+        command: "thinkube.thinkingSpace.newDoc",
+        title: "New Thinking Space Document",
+        arguments: [node.namespace],
+      };
+      return item;
+    }
+    // RepoEntry — a linked worktree reads as "<repo> · <name>" labeled a worktree, not a
     // standalone repo (SP-5). It is still an enabled, openable thinking space.
     const label = node.worktreeOf
       ? `${node.worktreeOf.repo} · ${node.worktreeOf.name}`
       : node.name;
     const item = new vscode.TreeItem(
       label,
-      vscode.TreeItemCollapsibleState.None,
+      vscode.TreeItemCollapsibleState.Collapsed,
     );
     item.description = node.worktreeOf
       ? "worktree"
@@ -405,4 +529,3 @@ export class ThinkingSpaceNavigatorProvider implements vscode.TreeDataProvider<T
     return item;
   }
 }
-

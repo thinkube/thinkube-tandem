@@ -1,93 +1,190 @@
-= Scratchpad — Authoring TEPs
-:description: How to author a TEP using the live Scratchpad surface in Thinkube Tandem.
+= Thinking Spaces
+:description: How thinking spaces work in Thinkube Tandem — the living checklists that produce TEPs.
 
-The Scratchpad is a live, persistent authoring surface for TEPs (Tandem Enhancement Proposals).
-It replaces the old "New TEP" quick-create command with a structured, AI-assisted workflow where every change is tracked, resumable, and explicit.
+A *thinking space* is a named, durable surface inside a repo or project where you accumulate intent as checklists of discrete items.
+Unlike the old scratchpad, a thinking space outlives any single proposal: you freeze a subset of items into a TEP, the space stays open, and the next TEP reuses all the research and context already gathered.
 
-== Opening the Scratchpad
+== The tree
 
-Click the *Author TEP (Scratchpad)* icon (pencil) in the *TEPs* view title bar, or run `Tandem Scratchpad: Author TEP (Scratchpad)` from the command palette.
+Thinking spaces appear as named nodes in the *Thinking Spaces* sidebar view.
+Each repo or project node expands to list its named thinking-space documents, with a *New thinking space...* node at the end.
 
-The panel opens with the view type `thinkubeScratchpad` and the title *Thinkube Scratchpad*.
-If you previously had an in-progress session, it resumes exactly where you left off (see xref:scratchpad.adoc#resume[Resume after close or restart]).
+[source]
+----
+Thinking Spaces
++-- my-repo                      (repo node -- click to expand)
+|   +-- feature-x                (thinking-space document)
+|   +-- api-redesign             (thinking-space document)
+|   +-- New thinking space...    (creates a new document)
++-- Platform / my-project        (project node -- click to expand)
+    +-- q3-intent
+    +-- New thinking space...
+----
 
-== Authoring with visible deltas
+Click a *thinking-space document* node to open its panel.
+Click *New thinking space...* to be prompted for a name, after which the panel opens on the freshly seeded document.
 
-The Scratchpad renders every section of the working model alongside its state marker:
+A fresh document seeds exactly one empty checklist per section kind: _goal_, _constraints_, _elements_, _gap_, _criteria_, and _verification_.
 
-[cols="1,3",options="header"]
-|===
-| Marker | State
+== Sections and items (checklists)
 
-| ○ | empty — not yet written
-| ◌ | proposed — a worker has suggested content, awaiting your review
-| ◑ | shaping — content is in progress
-| ● | settled — you have accepted this content
-|===
+Every section except the intent editor shows its content as a list of discrete items.
+Each item carries:
 
-Below the sections, the *Changes* panel logs every applied action in order, showing the field path, the value *before* the change, and the value *after* the change.
-This gives you a full audit trail of how the model evolved, including worker proposals.
+* A *checkbox* -- only you (the human) can check it; a worker proposal always lands unchecked.
+* A *modality marker* -- *mandatory* or *optional*, shown beside the item.
+* *Evaluation facets* -- *complexity* and *risk*, each rated 1--3 when relevant.
+* *Origin* -- where the item came from: human, gap-filler, integrator, or research.
+* *State* -- active, shipped, deferred, or dropped (see below).
+* *Evidence chips* -- research findings attached to the item, each carrying method, date, and a dossier reference.
 
-== Authoring in the panel
+You can add an item to any section at any time.
+Items added by hand (direct manipulation or the command field) are born checked; worker-proposed items are born unchecked and await your decision.
 
-The Scratchpad panel exposes four authoring controls, each wired to one enumerated webview message.
-Every control routes through the single reducer path — the same as programmatic `dispatch()` calls.
+== The intent editor
 
-=== Goal input
+The panel contains exactly one intent editor at the top.
+Write your rough intent there -- a few lines is enough to seed the first prefill round.
+The reframe worker rewrites the intent statement from your *checked* items only; the original draft is the seed, not the output.
 
-The *Goal* textarea (`#goal-input`) at the top of the panel pre-fills with the current goal text when the panel renders.
-Click *Confirm goal* to commit your text:
+== Only you settle
 
-* If the goal section was *empty* when the panel last rendered, clicking confirm sends `seedGoal` — this also advances the model phase from `drafting` to `shaping`.
-* If the goal section already had *content* when the panel last rendered, clicking confirm sends `editGoal` — this updates the goal text without changing the phase.
+The reducer enforces this mechanically: any action that would check an item and whose actor is not `human` is *rejected* -- the model reference stays unchanged and the delta is logged as rejected.
+Workers can *propose* items, *propose edits* to checked items, and attach *evidence*, but they can never set the checkbox.
+The command field counts as human: typing "accept all constraints" checks those items on your behalf.
 
-The textarea is pre-filled with the model's current goal text, so a reopened panel shows exactly what you left.
+== Worker rounds and their visibility
 
-=== Per-section edit control
+Worker rounds are visible while they run.
+While a round is in flight:
 
-Every rendered section has a *Save edit* button (`class="edit-section"`, `data-section-id`).
-Edit the textarea above the button, then click *Save edit* to post an `editSection` message with the section ID and the new text.
-The section text updates immediately and the change appears in the delta log.
+* The control that started it carries the `disabled` attribute.
+* Every section the round targets shows `data-activity="running"`.
 
-=== Per-section add-note control
+When a round completes, sections flip to `data-activity="landed"`.
+When a round fails, sections flip to `data-activity="failed"` and a round-error element appears inside the section -- never a silent nothing.
 
-Every rendered section has an *Add note* button (`class="add-note"`, `data-section-id`).
-Type a short note in the input field beside it and click *Add note* to post an `addNote` message.
-Notes accumulate under their section in the order they were added and persist with the model.
+The rounds:
 
-=== Ask for structure
+*Prefill* (triggered by clicking *Prefill*)::
+Runs the gap-filler worker.
+The prompt carries your intent text, every existing item including shipped ones, and each item's evidence dossier references -- the space's full accumulated context travels with every round.
+Proposed items land unchecked in their sections with recommended modality and evaluations.
 
-Click the *Ask for structure* button (`#ask-structure`) to invoke the gap-filling worker.
+*Reframe* (triggered by clicking *Reframe*)::
+Runs the reframe worker.
+The prompt carries the text of *checked* items only -- no unchecked item's text is included.
+The result rewrites the intent statement.
 
-== Asking for structure
+*Integrator* (automatic)::
+Runs automatically after a debounced human batch (resolving an edit, editing item text, or adding an item), and never while another round is in flight.
+Folds your changes back into the space.
 
-Click *Ask for structure* (or call `askForStructure()` through the API) to invoke the gap-filling worker.
-The worker analyses the current model and proposes sections that are missing or underdeveloped.
-Each proposal lands through the same reducer path as a manual edit, so it appears immediately in the section list and in the delta log.
+== Pending edits (old to new pairs)
 
-The worker always uses the model configured at `thinkube.orchestrator.workerModel` (default: `sonnet`).
+When a worker proposes an edit to a *checked* item, the proposal lands as a pending old-to-new pair rendered on that item.
+The old text is shown struck through and the new text is shown inserted.
 
-== The Freeze control
+The checked text never changes until you accept or reject the proposal.
+Either way, the item's provenance (origin, evidence, notes) is persisted in the space document.
 
-The *Freeze* button in the *Freeze* panel reflects the live readiness state of the model:
+== Research and the dossier
 
-* *Disabled* (`disabled` attribute present) — the latest readiness record does not have both `covered` and `cleanCut` set to `true`, or no readiness record exists yet.
-* *Enabled* (no `disabled` attribute) — the latest readiness record confirms full coverage and a clean cut, so the artifact is ready to be signed.
+You can trigger research:
 
-Use `recordReadiness` (dispatched through the panel or the API) to update the readiness state after reviewing coverage and slice decomposition.
+* *Per item* -- a research control on each item.
+  The topic is derived from the item's text (slugified: lowercase, spaces to hyphens, non-alphanumeric stripped).
+* *Free subject* -- the research input field accepts a free-form subject string.
 
-[#resume]
-== Resume after close or restart
+The research worker is *dossier-first*: before running any live search, it reads `research/{topic}.md` under the space's namespace directory.
+When the dossier file exists, its markdown is included verbatim in the round's prompt -- later sessions and later TEPs of the same space reuse the accumulated research automatically.
 
-The session is persisted automatically to `<thinkingSpaceRoot>/scratchpad/current.json` after every change (with a short debounce).
-`thinkingSpaceRoot` is read from the `thinkube.thinkingSpace.root` setting.
+Research findings land only as:
 
-When you reopen the Scratchpad panel (or restart the extension host), the session resumes from disk:
+* Unchecked proposed items (never checked -- the gate enforces this).
+* Evidence chips attached to items, each carrying `method`, `checkedAt` (ISO date), and a `dossierRef` pointing at the dossier file the round wrote.
 
-* The full working model is restored, including all sections, objections, and readiness history.
-* The delta log shown in the panel reflects the deltas accumulated in the current session (since the last `openScratchpad()` call), not the full historical log.
+The research worker's query options carry:
 
-If `thinkube.thinkingSpace.root` is empty, the session runs in-memory only — no file is written and closing VS Code discards the state.
+* `mcpTools`: `tk-package-version`, `web-fetch`, `repo-explorer` -- live registry checks, doc fetches, and the repo corpus.
+* `corpusPaths`: the board corpus under the namespace (TEPs, retros, defect log).
+
+The research gate rejects any action that would check an item or write outside the dossier.
+
+=== The dossier persists at the space level
+
+A research run writes `research/{topic}.md` under the thinking space's namespace in the board sidecar.
+Because the board sidecar is committed like every other board artifact, research survives sessions and syncs across machines.
+A second research trigger on the same topic -- in any session, for any TEP of that space -- consults the existing dossier before going live again.
+
+== The command field
+
+The command input field accepts plain-language commands that drive the form.
+Examples:
+
+* `"add this constraint: the API must be versioned"` -- adds an item to the constraints section.
+* `"accept all constraints"` -- checks every unchecked active item in constraints.
+* `"accept all lists"` -- checks every unchecked active item in every section.
+* `"defer the third gap item"` -- marks an item deferred.
+* `"remove the optional element about caching"` -- drops an item.
+
+Every returned action carries `actor:"human"` -- the utterance is your act, the interpreter only translates.
+The field disables while interpretation is in flight.
+An unrecognized utterance returns an explanation rendered under the field -- no model change.
+
+*Freeze is not in the interpreter's vocabulary.*
+A model reply containing a freeze action is caught by the gate inside the interpreter and surfaces as an explanation, never as a model change.
+
+== Coverage and readiness
+
+Coverage is item-derived:
+
+* A non-goal section is *covered* when it has at least one checked, active item.
+* The goal section is *covered* when the intent text is non-empty.
+
+The *Check readiness* control runs a non-committing dry run of the slicer against your current intent text and records the result.
+Freeze enablement reads the *latest* readiness record.
+
+== Freeze and the multi-TEP life of a space
+
+The *Freeze* button is enabled only when:
+
+1. Every section is covered (all non-goal sections have a checked active item; the goal section has non-empty intent text).
+2. The latest readiness check returned a clean cut from the dry-run slicer.
+
+When blocked, the button's `data-reason` attribute names the first failing signal:
+
+* `coverage:<kind>` -- the named section lacks a checked active item (e.g. `coverage:constraints`).
+* `dryrun:<kind>` -- the dry run could not cut cleanly, pointing at the offending section.
+* (empty string) -- the button is enabled; both signals are green.
+
+The freeze pipeline (on your click):
+
+1. Project the checked, active items (state `active` and checked) into a TEP body, grouped by section.
+   A superseding item's line carries `(supersedes <shipped item text>)`.
+2. Stamp the body with a provenance signature.
+3. Write the TEP artifact with `status: "proposed"`.
+4. Mark the projected items as `shipped` with their TEP id.
+5. Save.
+
+After a freeze:
+
+* Shipped items render locked with `data-state="shipped"` and `data-shipped-in="<tep>"`.
+* The space remains open and editable -- the intent editor stays, new items can be added.
+* A later prefill round's prompt includes the shipped items and their evidence dossier references.
+* The *next* freeze ships only the newly checked, active items -- shipped items are never re-projected.
+
+=== Deferred items
+
+Mark an item deferred instead of dropped to keep it in the space without checking it.
+Deferred items persist with their modality, evaluations, and evidence, and reappear whenever the space is reopened.
+
+=== Superseding a shipped item
+
+A new item can supersede a shipped item by declaring which item it supersedes.
+Both items carry visible markers: the new item shows which item it supersedes, the shipped item shows which item supersedes it.
+
+The superseding item ships in the next TEP with a supersedes annotation in the body.
 
 == Configuration
 
@@ -96,15 +193,17 @@ If `thinkube.thinkingSpace.root` is empty, the session runs in-memory only — n
 | Setting | Description
 
 | `thinkube.thinkingSpace.root`
-| Root directory for the session file.
-  Empty = in-memory only.
+| Board sidecar root directory.
+  Thinking-space documents live at `<root>/<namespace>/thinking/<name>.json`.
+  Dossier files live at `<root>/<namespace>/research/<topic>.md`.
+  Empty = in-memory only (no files written).
 
 | `thinkube.orchestrator.workerModel`
-| Model id used by gap-filling and other workers.
+| Model used by all worker rounds (prefill, reframe, integrator, research, interpreter).
   Default: `sonnet`.
 |===
 
 == See also
 
-* xref:hierarchy.adoc[TEPs, Specs, and Slices] — how a TEP becomes a Spec
-* xref:lifecycle.adoc[The Spec lifecycle] — what happens after a TEP is frozen
+* xref:hierarchy.adoc[TEPs, Specs, and Slices] -- how a TEP becomes a Spec
+* xref:lifecycle.adoc[The Spec lifecycle] -- what happens after a TEP is frozen
