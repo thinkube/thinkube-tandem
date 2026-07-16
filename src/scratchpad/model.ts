@@ -310,6 +310,21 @@ export function reduce(
       if (goalIdx === -1) throw new Error("No goal section");
       const goal = model.sections[goalIdx];
       const before = goal.text;
+      // Erasure guard (2026-07-16, field defect): an EMPTY rewrite never
+      // overwrites a non-empty intent — a blank worker output is a failed
+      // round, not a new goal. Applies to every actor; clearing on purpose
+      // is not a gesture the surface offers.
+      if (!action.text.trim() && before.trim()) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason:
+              "empty rewrite refused — it would erase a non-empty intent",
+          },
+        };
+      }
       const newGoal: Section = { ...goal, text: action.text };
       const newSections = [...model.sections];
       newSections[goalIdx] = newGoal;

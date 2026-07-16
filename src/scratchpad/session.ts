@@ -507,6 +507,24 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         break;
       case "reframe":
         // Runs reframe worker; prompt carries checked items only.
+        // Guard (2026-07-16): with NOTHING checked, a reframe would rewrite the
+        // intent from an empty set — the worker returns a blank and the author's
+        // goal is erased (field defect, first real session). Refuse in place.
+        if (
+          !this._model.sections.some((sec) =>
+            (sec.items ?? []).some((it) => it.checked && it.state === "active"),
+          )
+        ) {
+          this._roundActivity = {
+            state: "failed",
+            targetedKinds: ["goal"],
+            errors: {
+              goal: "Nothing is settled yet — check at least one item before reframing; the intent is rewritten FROM the checked items.",
+            },
+          };
+          this._updatePanel();
+          break;
+        }
         await this.runReframe();
         break;
       case "research":
