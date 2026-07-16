@@ -92,6 +92,8 @@ export interface RoundActivity {
   errors: Partial<Record<SectionKind, string>>;
   /** Overall state for all targeted sections. */
   state: SectionActivity;
+  /** Human-readable round name for the busy banner ("prefill", "research"…). */
+  label?: string;
 }
 
 /** Escape HTML special characters. */
@@ -252,7 +254,7 @@ function itemHtml(
       (hint ? ` · ${hint}` : "");
     return (
       `<button class="eval-badge ${facet}${value !== undefined ? ` v${value}` : " unset"}${hint ? " hinted" : ""}"` +
-      ` data-facet="${facet}" title="${esc(title)}">${label}${value ?? "·"}</button>`
+      ` data-facet="${facet}" data-value="${value ?? 0}" title="${esc(title)}">${label}${value ?? "·"}</button>`
     );
   };
   // Structural hints: derived signals challenge (or fill in for) claimed scores.
@@ -376,6 +378,7 @@ function itemHtml(
           .map(
             (n) =>
               `<div class="item-note" data-note-id="${esc(n.id)}">${esc(n.text)}` +
+              `<span class="note-by">— ${esc(n.by ?? "unknown origin")}</span>` +
               `<button class="note-remove" title="Remove this note (human-only — workers can never delete an annotation)">✕</button></div>`,
           )
           .join("")}</div>`
@@ -608,11 +611,14 @@ export function buildScratchpadHtml(
   // an output of the shaping, not an input — so the shaping inputs (what must
   // hold, what's unknown, what success means) come first. Render-order only:
   // persisted section arrays are untouched.
+  // Elements come FIRST (the user's model, 2026-07-16): they are the subject
+  // matter — the goal decomposed into parts — and constraints/gap/criteria/
+  // verification derive FROM them.
   const displayRank: Record<string, number> = {
-    constraints: 0,
-    gap: 1,
-    criteria: 2,
-    elements: 3,
+    elements: 0,
+    constraints: 1,
+    gap: 2,
+    criteria: 3,
     verification: 4,
   };
   const nonGoalSections = model.sections
@@ -634,6 +640,18 @@ export function buildScratchpadHtml(
 
   // A round is in flight when roundActivity.state === "running"
   const roundInFlight = roundActivity?.state === "running";
+
+  // BUSY BANNER (field defect 2026-07-16: "the UI is not reactive" — worker
+  // rounds take 30–60s and the only signal was a subtle section attribute, so
+  // working buttons read as dead). Sticky, unmissable, names the round.
+  const busyBanner =
+    roundInFlight || commandInFlight
+      ? `<div id="busy-banner"><span class="spinner"></span> ${
+          commandInFlight
+            ? "Interpreting command…"
+            : `${esc(roundActivity?.label ?? "worker")} round running…`
+        } <span class="busy-hint">workers are thinking — the panel updates when it lands</span></div>`
+      : "";
 
   const goalHtml = goalSec
     ? goalSectionHtml(
@@ -847,6 +865,12 @@ export function buildScratchpadHtml(
     .dep-chip { background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-charts-green, #89d185); border-radius: 8px; padding: 1px 8px; cursor: pointer; font-size: 0.95em; margin: 2px; }
     .dep-chip.broken { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
     .item-deps { white-space: nowrap; }
+    #busy-banner, #optimistic-busy { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--vscode-progressBar-background, #0e70c0); border-radius: 4px; background: var(--vscode-editor-background); font-weight: bold; }
+    #busy-banner .busy-hint, #optimistic-busy .busy-hint { font-weight: normal; opacity: 0.7; font-size: 0.85em; }
+    .spinner { width: 12px; height: 12px; border: 2px solid var(--vscode-progressBar-background, #0e70c0); border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    section.section[data-activity="running"] { border-color: var(--vscode-progressBar-background, #0e70c0); animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.65; } }
     .rough-requests { margin-top: 8px; }
     .rough-request { font-size: 0.9em; opacity: 0.9; padding: 3px 8px; border-left: 2px solid var(--vscode-charts-blue, #3794ff); margin-bottom: 3px; white-space: pre-wrap; }
     .rough-request-input-area { display: flex; gap: 6px; margin-top: 6px; }
@@ -874,6 +898,7 @@ export function buildScratchpadHtml(
     .edit-reject:hover { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
     .item-notes { flex-basis: 100%; margin: 4px 0 2px 24px; }
     .item-note { font-size: 0.85em; opacity: 0.85; padding: 4px 8px; border-left: 2px solid var(--vscode-panel-border); margin-bottom: 4px; white-space: pre-wrap; position: relative; }
+    .note-by { opacity: 0.55; font-size: 0.85em; margin-left: 6px; font-style: italic; }
     .note-remove { background: transparent; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; font-size: 0.9em; margin-left: 6px; opacity: 0; }
     .item-note:hover .note-remove { opacity: 1; }
     .note-remove:hover { color: var(--vscode-errorForeground); }
@@ -888,6 +913,7 @@ export function buildScratchpadHtml(
 </head>
 <body>
   <h1>Thinking Space <span style="opacity:0.5;font-size:0.8em;">${esc(model.phase)}</span></h1>
+  ${busyBanner}
   ${goalHtml}
   ${cutBar}
   ${selectionBar}
@@ -921,6 +947,18 @@ export function buildScratchpadHtml(
   <script>
     const vscode = acquireVsCodeApi();
 
+    // Optimistic busy: show feedback IMMEDIATELY on gestures that start a
+    // worker round — the server-rendered banner replaces this on the next
+    // panel update (every update rebuilds the whole HTML, clearing it).
+    function showBusy(label, btn) {
+      if (btn && btn.tagName === 'BUTTON') { btn.disabled = true; btn.dataset.prevText = btn.textContent; btn.textContent = '…'; }
+      if (document.getElementById('busy-banner') || document.getElementById('optimistic-busy')) return;
+      var div = document.createElement('div');
+      div.id = 'optimistic-busy';
+      div.innerHTML = '<span class="spinner"></span> ' + label + ' <span class="busy-hint">workers are thinking — the panel updates when it lands</span>';
+      document.body.insertBefore(div, document.body.firstChild.nextSibling);
+    }
+
     function confirmGoal(wasEmpty) {
       const textarea = document.getElementById('goal-input');
       const text = textarea ? textarea.value.trim() : '';
@@ -941,18 +979,22 @@ export function buildScratchpadHtml(
     }
 
     function triggerReadiness() {
+      showBusy('Readiness check running…', document.getElementById('check-readiness'));
       vscode.postMessage({ type: 'checkReadiness' });
     }
 
     function triggerPrefill() {
+      showBusy('Prefill round starting…', document.getElementById('prefill-btn'));
       vscode.postMessage({ type: 'prefill' });
     }
 
     function triggerReframe() {
+      showBusy('Reframe round starting…', document.getElementById('reframe-btn'));
       vscode.postMessage({ type: 'reframe' });
     }
 
     function triggerExplainAll() {
+      showBusy('Explain round starting…', document.getElementById('explain-btn'));
       vscode.postMessage({ type: 'explainAll' });
     }
 
@@ -960,6 +1002,7 @@ export function buildScratchpadHtml(
       var input = document.getElementById('rough-request-input');
       var text = input ? input.value.trim() : '';
       if (!text) return;
+      showBusy('Absorbing the rough request (expansion round)…', document.getElementById('rough-request-btn'));
       vscode.postMessage({ type: 'addRoughRequest', text: text });
       if (input) input.value = '';
     }
@@ -976,6 +1019,7 @@ export function buildScratchpadHtml(
       var input = document.getElementById('research-input');
       var subject = input ? input.value.trim() : '';
       if (!subject) return;
+      showBusy('Research round starting…', document.getElementById('research-btn'));
       vscode.postMessage({ type: 'research', subject: subject });
       if (input) input.value = '';
     }
@@ -984,6 +1028,7 @@ export function buildScratchpadHtml(
       var input = document.getElementById('command-input');
       var utterance = input ? input.value.trim() : '';
       if (!utterance) return;
+      showBusy('Interpreting command…', document.getElementById('command-btn'));
       vscode.postMessage({ type: 'command', utterance: utterance });
       if (input) input.value = '';
     }
@@ -1025,10 +1070,11 @@ export function buildScratchpadHtml(
       if (!itemId) return;
       if (isEval) {
         var facet = target.getAttribute('data-facet');
-        var label = target.textContent || '';
-        var cur = parseInt(label.slice(1), 10);
-        var next = isNaN(cur) ? 1 : cur >= 3 ? 1 : cur + 1;
-        vscode.postMessage({ type: 'setEval', itemId: itemId, facet: facet, value: next });
+        var cur = parseInt(target.getAttribute('data-value') || '0', 10);
+        var next = cur >= 3 ? 1 : cur + 1;
+        if (facet === 'complexity' || facet === 'risk') {
+          vscode.postMessage({ type: 'setEval', itemId: itemId, facet: facet, value: next });
+        }
         return;
       }
       if (isAccept || isReject) {
@@ -1036,6 +1082,8 @@ export function buildScratchpadHtml(
         return;
       }
       var type = isExplain ? 'explainItem' : isDeps ? 'toggleDepFocus' : isResearch ? 'research' : isCut ? 'toggleCut' : 'toggleSelect';
+      if (isExplain) showBusy('Explain round starting…', target);
+      if (isResearch) showBusy('Research round starting…', target);
       vscode.postMessage({ type: type, itemId: itemId });
     });
 

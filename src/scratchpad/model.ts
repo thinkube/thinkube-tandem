@@ -129,6 +129,10 @@ export type ToolName =
 export interface Note {
   id: string;
   text: string;
+  /** Who wrote it — "human", "gap-filler", "integrator", "research"
+   *  (2026-07-16: notes rendered with no provenance; unattributed prose on a
+   *  decision surface is unreviewable). Absent on pre-existing notes. */
+  by?: string;
 }
 
 export interface Proposal {
@@ -635,7 +639,13 @@ export function reduce(
       const newItemId = `item-${action.sectionId}-${itemIdx}`;
       const initialNotes: Note[] =
         action.item.note !== undefined && action.item.note.trim()
-          ? [{ id: `note-${newItemId}-0`, text: action.item.note.trim() }]
+          ? [
+              {
+                id: `note-${newItemId}-0`,
+                text: action.item.note.trim(),
+                by: action.actor,
+              },
+            ]
           : [];
       const newItem: Item = {
         id: newItemId,
@@ -1114,6 +1124,7 @@ export function reduce(
       const note: Note = {
         id: `note-${item.id}-${noteIdx}`,
         text: action.text,
+        by: action.actor,
       };
       const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
         ...it,

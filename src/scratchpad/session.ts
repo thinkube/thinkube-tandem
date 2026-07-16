@@ -495,6 +495,18 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         });
         break;
       case "setEval":
+        if (
+          (message.facet !== "complexity" && message.facet !== "risk") ||
+          ![1, 2, 3].includes(message.value)
+        ) {
+          break;
+        }
+        if (
+          (message.facet !== "complexity" && message.facet !== "risk") ||
+          ![1, 2, 3].includes(message.value)
+        ) {
+          break;
+        }
         this.dispatch({
           type: "setEval",
           actor: "human",
@@ -537,10 +549,15 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         // never a round per item (field refinement 2026-07-16).
         const targets: string[] = [];
         const kinds = new Set<SectionKind>();
+        // Only a Why-shaped note counts as an explanation — research findings
+        // and other annotations must not exempt an item from explanation
+        // (field defect 2026-07-16: items with notes but no Why were skipped).
+        const hasExplanation = (notes: { text: string }[]): boolean =>
+          notes.some((n) => /^\s*Why\s*:/i.test(n.text));
         for (const sec of this._model.sections) {
           if (sec.kind === "goal") continue;
           for (const it of sec.items) {
-            if (it.state === "active" && it.notes.length === 0) {
+            if (it.state === "active" && !hasExplanation(it.notes)) {
               targets.push(it.id);
               kinds.add(sec.kind);
             }
@@ -592,7 +609,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
                   (it) =>
                     targets.includes(it.id) &&
                     it.state === "active" &&
-                    it.notes.length === 0,
+                    !hasExplanation(it.notes),
                 ).length,
           0,
         );
@@ -1022,7 +1039,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
    * (the automatic integrator path checks before calling; explicit triggers always run).
    */
   private async _runWorkerRound(
-    _roundName: string,
+    roundName: string,
     targetedKinds: SectionKind[],
     work: () => Promise<Action[]>,
   ): Promise<void> {
@@ -1032,6 +1049,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
       targetedKinds,
       errors: {},
       state: "running",
+      label: roundName,
     };
     this._updatePanel();
 
@@ -1044,6 +1062,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         targetedKinds,
         errors: {},
         state: "landed",
+        label: roundName,
       };
       this._roundInFlight = false;
       // Apply all returned actions (dispatch updates the panel with "landed")
@@ -1068,6 +1087,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         targetedKinds,
         errors,
         state: "failed",
+        label: roundName,
       };
     } finally {
       // Always clear the in-flight flag (may already be cleared in success path)
