@@ -51,6 +51,7 @@ export type ScratchpadInboundMessage =
   //    first (command or per-item toggle), then apply over the selection.
   | { type: "explainItem"; itemId: string }
   | { type: "explainAll" }
+  | { type: "removeNote"; itemId: string; noteId: string }
   | { type: "toggleDepFocus"; itemId: string }
   | { type: "toggleSelect"; itemId: string }
   | { type: "clearSelection" }
@@ -247,6 +248,7 @@ function itemHtml(item: Item, selected = false, dep?: ItemDepMeta): string {
     item.state === "active"
       ? `<span class="item-actions">` +
         depsButton +
+        `<button class="item-research" title="Research this item — investigate it with live tools, attach evidence, and propose findings (covers a gap)">research</button>` +
         `<button class="item-explain" title="Analyze — attach a Why / Impact / Modality note to inform your decision">why?</button>` +
         `<button class="item-select" title="${
           selected
@@ -283,7 +285,11 @@ function itemHtml(item: Item, selected = false, dep?: ItemDepMeta): string {
   const notesHtml =
     item.notes.length > 0
       ? `<div class="item-notes">${item.notes
-          .map((n) => `<div class="item-note">${esc(n.text)}</div>`)
+          .map(
+            (n) =>
+              `<div class="item-note" data-note-id="${esc(n.id)}">${esc(n.text)}` +
+              `<button class="note-remove" title="Remove this note (human-only — workers can never delete an annotation)">✕</button></div>`,
+          )
           .join("")}</div>`
       : "";
   return (
@@ -669,7 +675,10 @@ export function buildScratchpadHtml(
     .dep-chip.broken { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
     .item-deps { white-space: nowrap; }
     .item-notes { flex-basis: 100%; margin: 4px 0 2px 24px; }
-    .item-note { font-size: 0.85em; opacity: 0.85; padding: 4px 8px; border-left: 2px solid var(--vscode-panel-border); margin-bottom: 4px; white-space: pre-wrap; }
+    .item-note { font-size: 0.85em; opacity: 0.85; padding: 4px 8px; border-left: 2px solid var(--vscode-panel-border); margin-bottom: 4px; white-space: pre-wrap; position: relative; }
+    .note-remove { background: transparent; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; font-size: 0.9em; margin-left: 6px; opacity: 0; }
+    .item-note:hover .note-remove { opacity: 1; }
+    .note-remove:hover { color: var(--vscode-errorForeground); }
     li.item[data-state="deferred"] { opacity: 0.55; }
     li.item[data-state="deferred"] .item-text::after { content: " (deferred)"; font-size: 0.85em; opacity: 0.8; }
     #selection-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--vscode-focusBorder); border-radius: 4px; background: var(--vscode-editor-background); }
@@ -773,15 +782,27 @@ export function buildScratchpadHtml(
         if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
+      // Note removal (human-only annotation cleanup).
+      if (target.classList.contains('note-remove')) {
+        var noteDiv = target.closest('.item-note');
+        var noteLi = target.closest('li.item');
+        if (noteDiv && noteLi) {
+          var nid = noteDiv.getAttribute('data-note-id');
+          var niid = noteLi.getAttribute('data-item-id');
+          if (nid && niid) vscode.postMessage({ type: 'removeNote', itemId: niid, noteId: nid });
+        }
+        return;
+      }
       var isSelect = target.classList.contains('item-select');
       var isExplain = target.classList.contains('item-explain');
       var isDeps = target.classList.contains('item-deps');
-      if (!isSelect && !isExplain && !isDeps) return;
+      var isResearch = target.classList.contains('item-research');
+      if (!isSelect && !isExplain && !isDeps && !isResearch) return;
       var li = target.closest('li.item');
       if (!li) return;
       var itemId = li.getAttribute('data-item-id');
       if (!itemId) return;
-      var type = isExplain ? 'explainItem' : isDeps ? 'toggleDepFocus' : 'toggleSelect';
+      var type = isExplain ? 'explainItem' : isDeps ? 'toggleDepFocus' : isResearch ? 'research' : 'toggleSelect';
       vscode.postMessage({ type: type, itemId: itemId });
     });
 

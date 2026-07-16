@@ -190,6 +190,9 @@ export type Action =
     }
   | { type: "resolveEdit"; actor: "human"; itemId: string; accept: boolean }
   | { type: "addItemNote"; actor: "human"; itemId: string; text: string }
+  // Human-only: workers may never destroy an annotation (2026-07-16 — needed
+  // to clean duplicate/contradictory explainer notes).
+  | { type: "removeNote"; actor: "human"; itemId: string; noteId: string }
   | { type: "attachEvidence"; actor: Actor; itemId: string; evidence: Evidence }
   | { type: "stampShipped"; itemIds: string[]; tepId: string };
 
@@ -925,6 +928,39 @@ export function reduce(
           field: `sections.${sectionIdx}.items.${itemIdx}.notes.${noteIdx}`,
           before: undefined,
           after: note,
+        },
+      };
+    }
+
+    case "removeNote": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      const { sectionIdx, itemIdx } = loc;
+      const item = model.sections[sectionIdx].items[itemIdx];
+      const noteIdx = item.notes.findIndex((n) => n.id === action.noteId);
+      if (noteIdx === -1) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: `Note '${action.noteId}' not found on item '${action.itemId}'`,
+          },
+        };
+      }
+      const removed = item.notes[noteIdx];
+      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+        ...it,
+        notes: it.notes.filter((n) => n.id !== action.noteId),
+      }));
+      return {
+        model: newModel,
+        delta: {
+          kind: "applied",
+          action,
+          field: `sections.${sectionIdx}.items.${itemIdx}.notes`,
+          before: removed,
+          after: undefined,
         },
       };
     }

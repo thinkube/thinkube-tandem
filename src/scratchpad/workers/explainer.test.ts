@@ -137,3 +137,60 @@ test("proposeItem with a note attaches it at creation (prefill delivers explanat
   assert.match(item.notes[0].text, /^Why: it matters/);
 });
 
+
+test("explainer run dedupes to one note per target — first wins", async () => {
+  const { model, itemId } = modelWithItem();
+  const fake: () => QueryFn = () =>
+    async function* (): AsyncIterable<WorkerMessage> {
+      yield {
+        type: "actions",
+        actions: [
+          { type: "addItemNote", itemId, text: "Why: the first explanation." },
+          { type: "addItemNote", itemId, text: "Why: a contradictory second." },
+        ] as unknown as Action[],
+      };
+    };
+  const worker = explainer({ loadQuery: fake, model: "sonnet" }, [itemId]);
+  const actions = await worker.run(model, []);
+  assert.equal(actions.length, 1);
+  assert.match((actions[0] as { text: string }).text, /first explanation/);
+});
+
+test("removeNote: human-only cleanup removes exactly the named note; unknown note rejects", () => {
+  let { model, itemId } = modelWithItem();
+  model = reduce(model, {
+    type: "addItemNote",
+    actor: "human",
+    itemId,
+    text: "note one",
+  }).model;
+  model = reduce(model, {
+    type: "addItemNote",
+    actor: "human",
+    itemId,
+    text: "note two",
+  }).model;
+  const notes = model.sections.find((s) => s.kind === "constraints")!.items[0]
+    .notes;
+  assert.equal(notes.length, 2);
+
+  const { model: next, delta } = reduce(model, {
+    type: "removeNote",
+    actor: "human",
+    itemId,
+    noteId: notes[0].id,
+  });
+  assert.equal(delta.kind, "applied");
+  const remaining = next.sections.find((s) => s.kind === "constraints")!
+    .items[0].notes;
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].text, "note two");
+
+  const { delta: rejectedDelta } = reduce(next, {
+    type: "removeNote",
+    actor: "human",
+    itemId,
+    noteId: "note-ghost",
+  });
+  assert.equal(rejectedDelta.kind, "rejected");
+});

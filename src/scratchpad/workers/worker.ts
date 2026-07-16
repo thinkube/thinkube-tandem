@@ -649,8 +649,9 @@ export function explainer(
       }
 
       return (
-        `You are the item-explainer worker. Produce EXACTLY ONE addItemNote action PER TARGET ITEM below, ` +
-        `giving the human what they need to decide whether to settle (check), defer, or drop each one.\n\n` +
+        `You are the item-explainer worker. Produce EXACTLY ONE addItemNote action PER TARGET ITEM below — ` +
+        `every target gets exactly one note; skipping a target or noting one twice is a failed round. ` +
+        `The notes give the human what they need to decide whether to settle (check), defer, or drop each item.\n\n` +
         `Each note's text must have exactly this shape:\n` +
         `Why: <1-2 sentences — the role this item plays in the intent; what question or risk it settles>\n` +
         `Impact: <1-2 sentences — what including it commits the work to, and what is lost or risked if it is dropped>\n` +
@@ -678,13 +679,23 @@ export function explainer(
       conversation: string[],
     ): Promise<Action[]> {
       const actions = await base.run.call(this, workingModel, conversation);
-      // Belt over the prompt pin: silently drop notes aimed outside the
-      // target set (the gate already limits the TYPE to addItemNote).
-      return actions.filter(
-        (a) =>
-          a.type !== "addItemNote" ||
-          targets.has((a as { itemId: string }).itemId),
-      );
+      // Belt over the prompt pin: drop notes aimed outside the target set,
+      // and DEDUPE to one note per target (first wins) — a worker emitting
+      // two divergent explanations for one item was a field defect
+      // (2026-07-16: duplicated, contradictory whys).
+      const seen = new Set<string>();
+      const result: Action[] = [];
+      for (const a of actions) {
+        if (a.type !== "addItemNote") {
+          result.push(a);
+          continue;
+        }
+        const itemId = (a as { itemId: string }).itemId;
+        if (!targets.has(itemId) || seen.has(itemId)) continue;
+        seen.add(itemId);
+        result.push(a);
+      }
+      return result;
     },
   };
 }

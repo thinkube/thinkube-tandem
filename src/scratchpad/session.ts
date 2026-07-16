@@ -538,14 +538,64 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           break;
         }
         await this._runWorkerRound("explain", [...kinds], async () => {
+          // Verify-and-retry (field defect 2026-07-16: partial coverage
+          // landed silently as success): run once, compute the targets the
+          // worker actually covered from its returned actions, retry the
+          // missed ones ONCE, then let the honest count surface below.
           const worker = explainer(
             { loadQuery: this._loadQueryFn, model: this._workerModelId },
             targets,
           );
-          return worker.run(this._model, []);
+          const actions = await worker.run(this._model, []);
+          const covered = new Set(
+            actions
+              .filter((a) => a.type === "addItemNote")
+              .map((a) => (a as { itemId: string }).itemId),
+          );
+          const missed = targets.filter((id) => !covered.has(id));
+          if (missed.length === 0) return actions;
+          const retry = explainer(
+            { loadQuery: this._loadQueryFn, model: this._workerModelId },
+            missed,
+          );
+          try {
+            const retryActions = await retry.run(this._model, []);
+            return [...actions, ...retryActions];
+          } catch {
+            // Retry produced nothing usable — land what the first pass got;
+            // the honest completion message below names the shortfall.
+            return actions;
+          }
         });
+        // Honest completion report: never let partial coverage read as done.
+        const stillMissing = this._model.sections.reduce(
+          (n, sec) =>
+            sec.kind === "goal"
+              ? n
+              : n +
+                sec.items.filter(
+                  (it) =>
+                    targets.includes(it.id) &&
+                    it.state === "active" &&
+                    it.notes.length === 0,
+                ).length,
+          0,
+        );
+        this._commandMessage =
+          stillMissing === 0
+            ? `Explained ${targets.length} item${targets.length === 1 ? "" : "s"}.`
+            : `Explained ${targets.length - stillMissing} of ${targets.length} items — ${stillMissing} still lack an explanation (run Explain again, or use the per-item "why?").`;
+        this._updatePanel();
         break;
       }
+      case "removeNote":
+        this.dispatch({
+          type: "removeNote",
+          actor: "human",
+          itemId: message.itemId,
+          noteId: message.noteId,
+        });
+        break;
       case "toggleDepFocus":
         // Transient dependency-focus highlight (illumination channel —
         // distinct from checked/settled and from staged-for-action).
