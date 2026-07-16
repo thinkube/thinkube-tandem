@@ -136,6 +136,18 @@ function itemHtml(item: Item): string {
     })
     .join("");
 
+  // Per-item human controls (field request 2026-07-16: dropItem/deferItem were
+  // in the model and the session vocabulary, but the surface never rendered a
+  // control — and item ids are not human-visible, so the command field could
+  // not reach them either). Active items only; shipped/deferred rows are inert.
+  const itemControls =
+    item.state === "active"
+      ? `<span class="item-actions">` +
+        `<button class="item-defer" title="Defer — park this item for a later TEP">defer</button>` +
+        `<button class="item-drop" title="Drop — remove this item from the space">✕</button>` +
+        `</span>`
+      : "";
+
   return (
     `<li ${liAttrs.join(" ")}>` +
     `<input type="checkbox" class="item-check"${checkedAttr}>` +
@@ -144,6 +156,7 @@ function itemHtml(item: Item): string {
     `<span class="item-text">${esc(item.text)}</span>` +
     pendingEditSpan +
     evidenceChips +
+    itemControls +
     `</li>`
   );
 }
@@ -425,6 +438,12 @@ export function buildScratchpadHtml(
     .freeze-controls-row button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 12px; border-radius: 2px; cursor: pointer; }
     .freeze-controls-row button:disabled { opacity: 0.5; cursor: not-allowed; }
     .freeze-status { margin-top: 8px; font-size: 0.85em; opacity: 0.85; }
+    .item-actions { margin-left: auto; display: inline-flex; gap: 4px; opacity: 0; }
+    li.item:hover .item-actions { opacity: 1; }
+    .item-actions button { background: transparent; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-panel-border); padding: 0 6px; border-radius: 2px; cursor: pointer; font-size: 0.8em; }
+    .item-actions button:hover { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
+    li.item[data-state="deferred"] { opacity: 0.55; }
+    li.item[data-state="deferred"] .item-text::after { content: " (deferred)"; font-size: 0.85em; opacity: 0.8; }
   </style>
   ${commandMessage ? `<style>.command-error { margin-top: 8px; padding: 6px 10px; border-radius: 3px; background: var(--vscode-inputValidation-errorBackground, rgba(244,67,54,0.1)); color: var(--vscode-errorForeground); font-size: 0.85em; }</style>` : ""}
 </head>
@@ -505,6 +524,20 @@ export function buildScratchpadHtml(
       vscode.postMessage({ type: 'command', utterance: utterance });
       if (input) input.value = '';
     }
+
+    // Per-item defer/drop handler (event delegation, like the checkbox handler)
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      if (!target || !target.classList) return;
+      var isDrop = target.classList.contains('item-drop');
+      var isDefer = target.classList.contains('item-defer');
+      if (!isDrop && !isDefer) return;
+      var li = target.closest('li.item');
+      if (!li) return;
+      var itemId = li.getAttribute('data-item-id');
+      if (!itemId) return;
+      vscode.postMessage({ type: isDrop ? 'dropItem' : 'deferItem', itemId: itemId });
+    });
 
     // Checkbox toggle handler
     document.addEventListener('change', function(e) {
