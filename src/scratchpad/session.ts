@@ -614,9 +614,23 @@ class ScratchpadSessionImpl implements ScratchpadSession {
             // Call the slicer directly (not via dryRunSlice) so that the
             // SlicerVerdict type (a minimal subset of DryRunResult) works with
             // injected fakes that omit `decomposition`.
+            // The judged text is the goal PLUS the settled (checked, active)
+            // items per section — freeze signs the checked items, so judging
+            // the bare goal alone could neither see nor explain a
+            // section-level gap (2026-07-16).
             const goalSec = this._model.sections.find((s) => s.kind === "goal");
-            const intentText = goalSec?.text ?? "";
-            const verdict = await this._runSlicer(intentText);
+            const lines: string[] = [goalSec?.text ?? ""];
+            for (const sec of this._model.sections) {
+              if (sec.kind === "goal") continue;
+              const checked = sec.items.filter(
+                (it) => it.checked && it.state === "active",
+              );
+              if (checked.length > 0) {
+                lines.push(`\n${sec.kind} (settled):`);
+                for (const it of checked) lines.push(`- ${it.text}`);
+              }
+            }
+            const verdict = await this._runSlicer(lines.join("\n"));
             const record = toReadinessRecord(this._model, verdict);
             this.dispatch({ type: "recordReadiness", record });
           } catch {

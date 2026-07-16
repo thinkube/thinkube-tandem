@@ -102,6 +102,10 @@ export interface ReadinessRecord {
   covered: boolean;
   cleanCut: boolean;
   gapSection: SectionKind | null;
+  /** The judge's own explanation of what is missing or ambiguous — carried
+   *  verbatim so the surface can say WHY, not just where (2026-07-16: a bare
+   *  section kind produced "found a gap in 'gap'"). */
+  note?: string;
 }
 
 export interface WorkingModel {

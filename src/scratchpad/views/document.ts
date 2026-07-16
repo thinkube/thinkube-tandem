@@ -294,8 +294,17 @@ export function freezeStatusText(
     return "Freeze locked — the last readiness run saw incomplete coverage; re-run “Check readiness” now that items are checked.";
   }
   if (!latest.cleanCut) {
+    // Prefer the judge's own explanation (carried in note) — a bare section
+    // kind is unactionable, and for the section literally named "gap" it read
+    // as nonsense ("found a gap in 'gap'").
+    const where = latest.gapSection
+      ? ` (${latest.gapSection} section)`
+      : "";
+    if (latest.note) {
+      return `Freeze locked — readiness check${where}: ${latest.note} Re-run “Check readiness” after addressing it.`;
+    }
     return latest.gapSection
-      ? `Freeze locked — the readiness check found a gap in “${latest.gapSection}”; settle it and re-run “Check readiness”.`
+      ? `Freeze locked — the readiness check flagged the ${latest.gapSection} section as incomplete or ambiguous; settle it and re-run “Check readiness”.`
       : "Freeze locked — the readiness check did not find a clean cut; refine the intent and re-run “Check readiness”.";
   }
   return "Freeze locked — run “Check readiness”.";

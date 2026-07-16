@@ -15,6 +15,8 @@ export interface DryRunResult {
   cleanCut: boolean;
   gapSection: string | null;
   decomposition: string[];
+  /** The judge's one-sentence explanation of the gap (absent when cleanCut). */
+  reason?: string;
 }
 
 /**
@@ -49,6 +51,8 @@ export async function dryRunSlice(
 export interface SlicerVerdict {
   cleanCut: boolean;
   gapSection: string | null;
+  /** The judge's one-sentence explanation of the gap (absent when cleanCut). */
+  reason?: string;
 }
 
 /**
@@ -63,13 +67,17 @@ export function toReadinessRecord(
   model: WorkingModel,
   dry: SlicerVerdict,
 ): ReadinessRecord {
-  return {
+  const record: ReadinessRecord = {
     covered: uncoveredSections(model).length === 0,
     cleanCut: dry.cleanCut,
     // gapSection is string|null on SlicerVerdict/DryRunResult; the cast is safe
     // because real slicers always return a valid SectionKind string.
     gapSection: dry.gapSection as SectionKind | null,
   };
+  if (dry.reason !== undefined && dry.reason.trim()) {
+    record.note = dry.reason.trim();
+  }
+  return record;
 }
 
 // ── Production runSlicer (wiring gap found in field use, 2026-07-16) ──────────
@@ -113,11 +121,19 @@ export function parseSlicerVerdict(text: string): DryRunResult {
       : [];
     // cleanCut:false with no named gap is legal (gapSection null); cleanCut:true
     // always clears the gap.
-    return {
+    const result: DryRunResult = {
       cleanCut: parsed.cleanCut,
       gapSection: parsed.cleanCut ? null : gapSection,
       decomposition,
     };
+    if (
+      !parsed.cleanCut &&
+      typeof parsed.reason === "string" &&
+      parsed.reason.trim()
+    ) {
+      result.reason = parsed.reason.trim();
+    }
+    return result;
   } catch {
     return notReady;
   }
@@ -157,12 +173,14 @@ export function makeProductionRunSlicer(
       `into coherent work with no unresolved ambiguity a downstream planner would have to guess at. ` +
       `The thinking space is domain-agnostic — do not assume a software project or any technology ` +
       `beyond what the intent itself states.\n\n` +
-      `Intent:\n${intent}\n\n` +
+      `Intent and settled items:\n${intent}\n\n` +
       `Respond with EXACTLY ONE JSON object and nothing else:\n` +
       `{"cleanCut": <boolean>, "gapSection": <"constraints"|"elements"|"gap"|"criteria"|"verification"|null>, ` +
+      `"reason": "<when cleanCut is false: ONE concrete sentence naming exactly what is missing or ambiguous and what would settle it>", ` +
       `"decomposition": ["<work item title>", ...]}\n` +
       `cleanCut true only when the intent needs no further shaping; when false, name the section ` +
-      `whose content is missing or ambiguous in gapSection (or null if the gap is the intent itself).`;
+      `whose content is missing or ambiguous in gapSection (or null if the gap is the intent itself), ` +
+      `and make "reason" specific enough that the author knows what to write next — never restate the section name.`;
 
     try {
       let resultText = "";

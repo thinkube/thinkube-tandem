@@ -84,17 +84,49 @@ test("freezeStatusText: coverage green + no readiness run → points at Check re
   assert.doesNotMatch(text, /uncovered/);
 });
 
-test("freezeStatusText: a dry-run gap names the section; enabled state says ready", () => {
+test("freezeStatusText: a dry-run gap renders the judge's reason when present", () => {
+  let model = coveredModel();
+  model = reduce(model, {
+    type: "recordReadiness",
+    record: {
+      covered: true,
+      cleanCut: false,
+      gapSection: "gap",
+      note: "The intent names two unrelated outcomes; split them or state which one this TEP delivers.",
+    },
+  }).model;
+  const text = freezeStatusText(model, false);
+  assert.match(text, /two unrelated outcomes/);
+  assert.match(text, /\(gap section\)/);
+  // The unhelpful 2026-07-16 phrasing must be gone.
+  assert.doesNotMatch(text, /gap in “gap”/);
+});
+
+test("freezeStatusText: a dry-run gap without a note still reads sensibly; enabled state says ready", () => {
   let model = coveredModel();
   model = reduce(model, {
     type: "recordReadiness",
     record: { covered: true, cleanCut: false, gapSection: "criteria" },
   }).model;
-  assert.match(freezeStatusText(model, false), /gap in “criteria”/);
+  assert.match(
+    freezeStatusText(model, false),
+    /flagged the criteria section as incomplete or ambiguous/,
+  );
 
   model = reduce(model, {
     type: "recordReadiness",
     record: { covered: true, cleanCut: true, gapSection: null },
   }).model;
   assert.match(freezeStatusText(model, true), /Ready to freeze/);
+});
+
+test("parseSlicerVerdict: the reason is carried on failures and dropped on clean cuts", () => {
+  const failed = parseSlicerVerdict(
+    '{"cleanCut": false, "gapSection": "criteria", "reason": "No criterion says how success is observed.", "decomposition": []}',
+  );
+  assert.equal(failed.reason, "No criterion says how success is observed.");
+  const clean = parseSlicerVerdict(
+    '{"cleanCut": true, "gapSection": null, "reason": "irrelevant", "decomposition": []}',
+  );
+  assert.equal(clean.reason, undefined);
 });
