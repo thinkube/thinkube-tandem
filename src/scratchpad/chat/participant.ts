@@ -9,9 +9,7 @@
 
 import * as vscode from "vscode";
 import { getScratchpadSession } from "../session";
-import { handleThinkyRequest, type ThinkySessionLike } from "./chatCore";
-import { runThinkyAgentTurn } from "./agent";
-import type { ThinkyAgentSessionLike } from "./agent";
+
 
 export function registerThinkyParticipant(
   context: vscode.ExtensionContext,
@@ -56,64 +54,10 @@ export function registerThinkyParticipant(
     ),
   );
 
-  const chatApi = (
-    vscode as unknown as {
-      chat?: {
-        createChatParticipant?: (
-          id: string,
-          handler: (
-            request: {
-              prompt: string;
-              command?: string;
-            },
-            chatContext: unknown,
-            stream: {
-              markdown(value: string): void;
-              button(button: {
-                command: string;
-                title: string;
-                arguments?: unknown[];
-              }): void;
-            },
-            token: unknown,
-          ) => Promise<void>,
-        ) => vscode.Disposable & { iconPath?: vscode.Uri };
-      };
-    }
-  ).chat;
-  if (!chatApi?.createChatParticipant) {
-    return; // host has no chat surface — participant ships dark
-  }
+  // The @mention participant is GONE (2026-07-17): the session participant
+  // (id "thinky", declared in chatParticipants and created in
+  // thinkySession.ts) serves BOTH the session editor and @thinky mentions —
+  // two participants sharing the name broke the editor's agent lock, which
+  // silently routed session requests to the default agent + picked model.
 
-  const participant = chatApi.createChatParticipant(
-    "thinkube.thinky",
-    async (request, _chatContext, stream, _token) => {
-      const session = getScratchpadSession() as
-        | ThinkySessionLike
-        | undefined;
-      const scratchpad = getScratchpadSession();
-      await handleThinkyRequest(
-        { prompt: request.prompt, command: request.command },
-        session,
-        stream,
-        scratchpad
-          ? (prompt, onText) =>
-              runThinkyAgentTurn(
-                {
-                  session: scratchpad as unknown as ThinkyAgentSessionLike,
-                  spaceKey: `${scratchpad.namespace}/${scratchpad.space}`,
-                },
-                prompt,
-                onText,
-              )
-          : undefined,
-      );
-    },
-  );
-  participant.iconPath = vscode.Uri.joinPath(
-    context.extensionUri,
-    "resources",
-    "tk_ai.svg",
-  );
-  context.subscriptions.push(participant);
 }

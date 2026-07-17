@@ -182,6 +182,9 @@ export function registerThinkySession(
         // Bind to the session's OWN space when the request carries one;
         // untitled sessions fall back to the active space.
         const bound = boundSpaceFromChatContext(chatContext);
+        thinkyDiag(
+          `participant request: "${request.prompt.slice(0, 60)}" command=${request.command ?? "-"} bound=${JSON.stringify(bound)}`,
+        );
         let session: ThinkySessionLike | undefined;
         if (bound) {
           try {

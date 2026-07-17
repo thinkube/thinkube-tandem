@@ -12,6 +12,7 @@
  */
 
 import * as vscode from "vscode";
+import { thinkyDiag } from "./diag";
 import {
   aliasForModelId,
   estimateTokens,
@@ -29,9 +30,13 @@ async function respond(
   messages: readonly LmMessageLike[],
   progress: LmProgressLike,
 ): Promise<void> {
+  thinkyDiag(`LM provider request: model=${modelId} messages=${messages.length}`);
   try {
     await respondInner(modelId, messages, progress);
   } catch (err) {
+    thinkyDiag(
+      `LM provider ERROR: ${err instanceof Error ? err.message : String(err)}`,
+    );
     // Never fail the panel request raw — stream an honest error reply.
     const TextPart = (
       vscode as unknown as {
