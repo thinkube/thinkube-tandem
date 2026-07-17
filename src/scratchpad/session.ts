@@ -142,6 +142,9 @@ export interface ScratchpadSession {
   /** Identity: which document this session holds (chat binding, 2026-07-17). */
   readonly namespace: string;
   readonly space: string;
+  /** Items currently STAGED for action (selection-for-action, ephemeral).
+   *  The chat mouth reads it to offer the apply-verb buttons. */
+  readonly selectionCount: number;
 }
 
 // ===== Module-level state =====
@@ -268,6 +271,10 @@ class ScratchpadSessionImpl implements ScratchpadSession {
 
   get namespace(): string {
     return this._namespace;
+  }
+
+  get selectionCount(): number {
+    return this._selection.size;
   }
 
   get space(): string {

@@ -14,6 +14,15 @@ import { handleThinkyRequest, type ThinkySessionLike } from "./chatCore";
 export function registerThinkyParticipant(
   context: vscode.ExtensionContext,
 ): void {
+  // Follow-up button commands. Both surface their OUTCOME as a toast —
+  // field defect 2026-07-17: a button whose result lands only in the webview
+  // message strip is invisible from the chat.
+  const toastOutcome = (session: { lastCommandMessage: string | undefined }) => {
+    const msg = session.lastCommandMessage;
+    vscode.window.showInformationMessage(
+      msg ? msg.slice(0, 300) : "Done — see the thinking space.",
+    );
+  };
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "thinkube.thinky.say",
@@ -23,6 +32,24 @@ export function registerThinkyParticipant(
           return;
         }
         await session.postFromWebview({ type: "command", utterance });
+        toastOutcome(session);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "thinkube.thinky.applySelection",
+      async (verb: unknown) => {
+        const session = getScratchpadSession();
+        if (
+          !session ||
+          (verb !== "check" && verb !== "uncheck" && verb !== "defer" && verb !== "drop")
+        ) {
+          return;
+        }
+        const n = session.selectionCount;
+        await session.postFromWebview({ type: "applySelection", verb });
+        vscode.window.showInformationMessage(
+          `${verb === "check" ? "Settled" : verb === "drop" ? "Dropped (vetoed)" : verb === "defer" ? "Deferred" : "Unchecked"} ${n} staged item${n === 1 ? "" : "s"}.`,
+        );
       },
     ),
   );

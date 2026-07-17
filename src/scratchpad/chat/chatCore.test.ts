@@ -123,15 +123,55 @@ test("status counts settled/active per section and shows the curated title", () 
   assert.ok(status.includes("A short title"));
 });
 
-test("reply always carries the outcome then the status, plus follow-up buttons", async () => {
+test("reply carries outcome then status; unsettled empty space offers ONLY readiness", async () => {
   const session = fakeSession(emptyModel("tep"), "Link round done — 3 edges.");
   const stream = fakeStream();
   await handleThinkyRequest({ prompt: "link the space" }, session, stream);
   assert.equal(stream.markdowns[0], "Link round done — 3 edges.");
   assert.ok(stream.markdowns[1].includes("journal 1"));
-  assert.equal(stream.buttons.length, 2);
-  assert.equal(stream.buttons[0].command, "thinkube.thinky.say");
-  assert.deepEqual(stream.buttons[0].arguments, ["check readiness"]);
+  // Nothing staged, nothing settled: reframe would error, so it is NOT offered.
+  assert.deepEqual(
+    stream.buttons.map((b) => b.arguments?.[0]),
+    ["check readiness"],
+  );
+});
+
+test("staged selection switches the buttons to the apply verbs (field defect 2026-07-17)", async () => {
+  const session = Object.assign(
+    fakeSession(emptyModel("tep"), "5 items staged for action"),
+    { selectionCount: 5 },
+  );
+  const stream = fakeStream();
+  await handleThinkyRequest({ prompt: "select the elements" }, session, stream);
+  assert.deepEqual(
+    stream.buttons.map((b) => [b.command, b.arguments?.[0]]),
+    [
+      ["thinkube.thinky.applySelection", "check"],
+      ["thinkube.thinky.applySelection", "defer"],
+      ["thinkube.thinky.applySelection", "drop"],
+      ["thinkube.thinky.say", "clear selection"],
+    ],
+  );
+});
+
+test("reframe button appears once something is settled", async () => {
+  let model = emptyModel("tep");
+  const elements = model.sections.find((s) => s.kind === "elements")!;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: elements.id,
+    item: { text: "an element", modality: "optional", evals: {} },
+  }).model;
+  const itemId = model.sections.find((s) => s.kind === "elements")!.items[0].id;
+  model = reduce(model, { type: "checkItem", actor: "human", itemId }).model;
+  const session = fakeSession(model, "ok");
+  const stream = fakeStream();
+  await handleThinkyRequest({ prompt: "anything" }, session, stream);
+  assert.deepEqual(
+    stream.buttons.map((b) => b.arguments?.[0]),
+    ["check readiness", "reframe"],
+  );
 });
 
 // ── Session↔space binding (2026-07-17) ───────────────────────────────────────

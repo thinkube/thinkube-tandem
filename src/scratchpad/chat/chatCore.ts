@@ -62,6 +62,8 @@ export interface ThinkySessionLike {
   readonly model: WorkingModel;
   /** Outcome text of the last command routed through the session. */
   readonly lastCommandMessage: string | undefined;
+  /** Items staged for action (optional for fakes/back-compat). */
+  readonly selectionCount?: number;
   postFromWebview(message: ScratchpadInboundMessage): Promise<void>;
 }
 
@@ -144,12 +146,58 @@ export async function handleThinkyRequest(
   stream.markdown(outcome ?? "Done.");
   stream.markdown(`\n\n${renderThinkyStatus(session.model)}`);
 
-  if (stream.button) {
+  emitFollowUpButtons(session, stream);
+}
+
+/**
+ * Context-aware follow-up buttons (field defect 2026-07-17: after STAGING,
+ * the reply offered readiness/reframe — reframe then errored because staging
+ * is not checking; the right next act was an apply-verb). The buttons must
+ * mirror the state machine:
+ *  - staged selection pending → the apply verbs + clear
+ *  - otherwise → readiness always; reframe ONLY once something is settled
+ *    (the intent is rewritten FROM checked items — offering it earlier is a
+ *    guaranteed error).
+ */
+export function emitFollowUpButtons(
+  session: ThinkySessionLike,
+  stream: ThinkyStreamLike,
+): void {
+  if (!stream.button) return;
+  if ((session.selectionCount ?? 0) > 0) {
+    stream.button({
+      command: "thinkube.thinky.applySelection",
+      title: "Check staged (settle)",
+      arguments: ["check"],
+    });
+    stream.button({
+      command: "thinkube.thinky.applySelection",
+      title: "Defer staged",
+      arguments: ["defer"],
+    });
+    stream.button({
+      command: "thinkube.thinky.applySelection",
+      title: "Drop staged (veto)",
+      arguments: ["drop"],
+    });
     stream.button({
       command: "thinkube.thinky.say",
-      title: "Check readiness",
-      arguments: ["check readiness"],
+      title: "Clear selection",
+      arguments: ["clear selection"],
     });
+    return;
+  }
+  stream.button({
+    command: "thinkube.thinky.say",
+    title: "Check readiness",
+    arguments: ["check readiness"],
+  });
+  const anythingSettled = session.model.sections.some(
+    (s) =>
+      s.kind !== "goal" &&
+      s.items.some((it) => it.checked && it.state === "active"),
+  );
+  if (anythingSettled) {
     stream.button({
       command: "thinkube.thinky.say",
       title: "Reframe intent",
