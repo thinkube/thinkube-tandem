@@ -40,6 +40,11 @@ import {
 } from "./chatCore";
 import { runThinkyAgentTurn } from "./agent";
 import { thinkyDiag } from "./diag";
+import {
+  appendTranscriptTurn,
+  readTranscript,
+  transcriptPath,
+} from "./transcript";
 import type { ThinkyAgentSessionLike } from "./agent";
 
 export const THINKY_SESSION_TYPE = "thinky";
@@ -190,10 +195,28 @@ export function registerThinkySession(
         const scratchpad = session as unknown as
           | (ThinkyAgentSessionLike & { namespace: string; space: string })
           | undefined;
+        // Transcript persistence (2026-07-17): the content provider is the
+        // source of truth for provider-backed sessions — capture what this
+        // turn showed so reopening restores the conversation.
+        const root = boardRoot();
+        const tPath =
+          root && scratchpad
+            ? transcriptPath(root, scratchpad.namespace, scratchpad.space)
+            : undefined;
+        const replyChunks: string[] = [];
+        const capturingStream = {
+          markdown(value: string) {
+            replyChunks.push(value);
+            stream.markdown(value);
+          },
+          button(b: { command: string; title: string; arguments?: unknown[] }) {
+            stream.button(b);
+          },
+        };
         await handleThinkyRequest(
           { prompt: request.prompt, command: request.command },
           session,
-          stream,
+          capturingStream,
           scratchpad
             ? (prompt, onText) =>
                 runThinkyAgentTurn(
@@ -206,6 +229,12 @@ export function registerThinkySession(
                 )
             : undefined,
         );
+        if (tPath) {
+          if (request.prompt.trim())
+            appendTranscriptTurn(tPath, "user", request.prompt);
+          if (replyChunks.length > 0)
+            appendTranscriptTurn(tPath, "assistant", replyChunks.join("\n"));
+        }
       },
     );
     participant.iconPath = new vscode.ThemeIcon("sparkle");
@@ -262,14 +291,52 @@ export function registerThinkySession(
         thinkyDiag(
           `content: bound=${JSON.stringify(bound)} opening=${opening ? "yes" : "NO"}`,
         );
-        // A response turn in `history` with no preceding request is SILENTLY
-        // DROPPED by the panel's reconstruction (verified in the workbench:
-        // responses only attach to the previous request). The sanctioned
-        // vehicle for "the agent speaks first" is activeResponseCallback —
-        // an on-open response stream built exactly for requestless output.
-        const openingText = opening;
+        // Serve the persisted transcript as history (2026-07-17 field
+        // insight: reopening ALWAYS showed empty — for provider-backed
+        // sessions the content provider IS the transcript; the panel keeps
+        // no local copy). Pairing rule (verified in the workbench): request
+        // turns must be real vscode.ChatRequestTurn instances; a response
+        // renders by attaching to the PRECEDING request, so leading
+        // assistant turns are dropped — the greeting therefore rides
+        // activeResponseCallback instead of history.
+        const root = boardRoot();
+        const turns =
+          root && bound
+            ? readTranscript(transcriptPath(root, bound.namespace, bound.space))
+            : [];
+        const RequestTurn = (
+          vscode as unknown as {
+            ChatRequestTurn: new (
+              prompt: string,
+              command: string | undefined,
+              references: unknown[],
+              participant: string,
+              toolReferences: unknown[],
+            ) => unknown;
+          }
+        ).ChatRequestTurn;
+        const history: unknown[] = [];
+        let seenRequest = false;
+        for (const t of turns) {
+          if (t.role === "user") {
+            history.push(
+              new RequestTurn(t.text, undefined, [], THINKY_SESSION_TYPE, []),
+            );
+            seenRequest = true;
+          } else if (seenRequest) {
+            history.push({
+              response: [new vscode.ChatResponseMarkdownPart(t.text)],
+              participant: THINKY_SESSION_TYPE,
+              result: {},
+            });
+          }
+        }
+        thinkyDiag(
+          `content: serving ${history.length} history turn(s) from transcript`,
+        );
+        const openingText = history.length === 0 ? opening : undefined;
         return {
-          history: [],
+          history,
           requestHandler: undefined,
           ...(openingText
             ? {

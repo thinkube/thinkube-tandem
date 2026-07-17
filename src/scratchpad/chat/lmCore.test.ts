@@ -49,3 +49,36 @@ test("token estimate is chars/4 rounded up", () => {
   assert.equal(estimateTokens("abcde"), 2);
   assert.equal(estimateTokens(""), 0);
 });
+
+// ── Transcript store (2026-07-17: empty-reopen root cause) ───────────────────
+
+test("transcript parses tolerantly, keeps order, caps at limit", async () => {
+  const { parseTranscript } = await import("./transcript");
+  const raw = [
+    JSON.stringify({ role: "user", text: "first ask", ts: "t1" }),
+    "GARBAGE LINE {not json",
+    JSON.stringify({ role: "assistant", text: "first reply", ts: "t2" }),
+    JSON.stringify({ role: "bogus", text: "dropped" }),
+    JSON.stringify({ role: "user", text: "  " }),
+  ].join("\n");
+  const turns = parseTranscript(raw);
+  assert.deepEqual(
+    turns.map((t) => [t.role, t.text]),
+    [
+      ["user", "first ask"],
+      ["assistant", "first reply"],
+    ],
+  );
+  const many = Array.from({ length: 300 }, (_, i) =>
+    JSON.stringify({ role: "user", text: `t${i}` }),
+  ).join("\n");
+  assert.equal(parseTranscript(many, 200).length, 200);
+});
+
+test("transcript path lives in the space's sidecar", async () => {
+  const { transcriptPath } = await import("./transcript");
+  assert.equal(
+    transcriptPath("/root", "Platform/projects/x", "tt2"),
+    "/root/Platform/projects/x/thinking/.chat/tt2.jsonl",
+  );
+});
