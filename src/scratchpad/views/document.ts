@@ -66,6 +66,9 @@ export type ScratchpadInboundMessage =
   | { type: "previewTep" }
   | { type: "openEvidence"; dossierRef?: string; source: string }
   | { type: "suggestLinks" }
+  // ── Phase A (2026-07-17): panic + context layer ──
+  | { type: "panic" }
+  | { type: "contextualize" }
   | { type: "removeNote"; itemId: string; noteId: string }
   | { type: "toggleDepFocus"; itemId: string }
   | { type: "openDetail"; itemId: string }

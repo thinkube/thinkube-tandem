@@ -36,6 +36,8 @@ import type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
 import { makeServerSigningTool } from "./freeze";
 import { ThinkubeStore } from "../store/ThinkubeStore";
 import { workerLogEnabled } from "../services/workerLog";
+import { runContextualize } from "./workers/contextualizer";
+import { runChallenger } from "./workers/challenger";
 import { showFreshMarkdownPreview } from "../commands/freshPreview";
 export type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
 
@@ -366,6 +368,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         {
           loadQuery: this._loadQueryFn,
           model: this._workerModelId,
+          contextDigest: await this._readDigest(),
         },
         scope,
       );
@@ -683,6 +686,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           const worker = linker({
             loadQuery: this._loadQueryFn,
             model: this._workerModelId,
+            contextDigest: await this._readDigest(),
           });
           return worker.run(this._model, []);
         });
@@ -718,6 +722,67 @@ class ScratchpadSessionImpl implements ScratchpadSession {
             `Could not open evidence: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+        break;
+      }
+      case "panic": {
+        // The panic button: restart the DERIVATION, keep the human's words
+        // (journal + assumptions) and on-disk research artifacts. Reducer
+        // refuses after any freeze. Native modal confirmation.
+        const choice = await vscode.window.showWarningMessage(
+          "Panic — wipe everything derived (items, edges, evals, curated intent, readiness) and keep only your journal, assumptions, and research files?",
+          { modal: true },
+          "Wipe derived state",
+        );
+        if (choice !== "Wipe derived state") break;
+        const delta = this.dispatch({ type: "panicReset", actor: "human" });
+        if (delta.kind === "applied") {
+          this._selection.clear();
+          this._cut.clear();
+          this._focusItemId = undefined;
+          this._curatedScope = undefined;
+          this._commandMessage =
+            "Panic applied — journal and assumptions kept; everything derived wiped. Add an entry or run Prefill to re-derive.";
+        } else {
+          this._commandMessage = `Panic refused: ${(delta as { reason: string }).reason}`;
+        }
+        this._updatePanel();
+        break;
+      }
+      case "contextualize": {
+        // The context layer: a read-only round over DECLARED sources writes
+        // the digest dossier — the sanctioned context channel.
+        if (!this._dossier) {
+          this._commandMessage =
+            "Contextualize needs a thinking-space root (no dossier store available).";
+          this._updatePanel();
+          break;
+        }
+        const sources: string[] = [];
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (ws) sources.push(ws);
+        if (this._sidecarRoot) {
+          sources.push(nodePath.join(this._sidecarRoot, this._namespace));
+        }
+        await this._runWorkerRound("contextualize", ["goal"], async () => {
+          const ref = await runContextualize(
+            {
+              loadQuery: this._loadQueryFn,
+              model: this._workerModelId,
+              dossier: this._dossier!,
+              sources,
+            },
+            this._model,
+          );
+          if (ref) {
+            this.dispatch({ type: "setContextDigest", ref });
+            this._commandMessage = `Context digest written (${ref}) — every worker round now receives it. Open an evidence-style view of it any time via research/${"_context-digest"}.md.`;
+          } else {
+            this._commandMessage =
+              "Contextualize produced no digest (round failed) — try again; the space stays context-blind until it succeeds.";
+          }
+          return [];
+        });
+        this._updatePanel();
         break;
       }
       case "removeNote":
@@ -994,6 +1059,15 @@ class ScratchpadSessionImpl implements ScratchpadSession {
                 `\nNOTE: this readiness run is CUT-SCOPED — only the items below ship in the next TEP; unlisted journal entries may legitimately remain for future cuts (they are NOT gaps unless the intent claims them).`,
               );
             }
+            for (const [i, a] of (this._model.assumptions ?? []).entries()) {
+              lines.push(
+                `${i === 0 ? "\nStanding assumptions (human statements — contradiction = gap):\n" : ""}A${i + 1}. ${a.text}`,
+              );
+            }
+            const digestText = await this._readDigest();
+            if (digestText) {
+              lines.push(`\nContext digest (what exists — contradiction = gap):\n${digestText.slice(0, 4000)}`);
+            }
             if (this._model.curatedIntent?.trim()) {
               lines.push(`\nCurated intent:\n${this._model.curatedIntent.trim()}`);
             }
@@ -1137,6 +1211,14 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           await this.postFromWebview({ type: "clearSelection" });
           break;
         }
+        if (lowered === "panic") {
+          await this.postFromWebview({ type: "panic" });
+          break;
+        }
+        if (lowered === "contextualize" || lowered === "context") {
+          await this.postFromWebview({ type: "contextualize" });
+          break;
+        }
         // Clear prior message, mark in-flight, update panel to disable the field.
         this._commandMessage = undefined;
         this._commandInFlight = true;
@@ -1148,6 +1230,79 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           // Dispatch all returned actions (each carries actor:"human")
           for (const action of result.actions) {
             this.dispatch(action);
+          }
+          // Classifier routing (2026-07-17): statements become standing
+          // assumptions (+ challenger); asks become journal entries
+          // (+ expansion); questions get a respond-only answer.
+          if (result.classify === "statement") {
+            const delta = this.dispatch({
+              type: "addAssumption",
+              text: utterance,
+            });
+            if (delta.kind === "applied") {
+              let staged: string[] = [];
+              const digest = await this._readDigest();
+              await this._runWorkerRound(
+                "challenge",
+                this._model.sections
+                  .filter((s) => s.kind !== "goal" && s.items.length > 0)
+                  .map((s) => s.kind),
+                async () => {
+                  const res = await runChallenger(
+                    {
+                      loadQuery: this._loadQueryFn,
+                      model: this._workerModelId,
+                      contextDigest: digest,
+                    },
+                    this._model,
+                  );
+                  staged = res.selectedItemIds;
+                  return res.actions;
+                },
+              );
+              if (staged.length > 0) {
+                this._selection = new Set(staged);
+              }
+              this._commandMessage = `Recorded as standing assumption #${(this._model.assumptions ?? []).length}. ${
+                staged.length > 0
+                  ? `${staged.length} item(s) conflict with it — staged for your review (selection bar).`
+                  : "No existing items conflict with it."
+              }`;
+            } else {
+              this._commandMessage = `Assumption refused: ${(delta as { reason: string }).reason}`;
+            }
+            this._commandInFlight = false;
+            this._updatePanel();
+            break;
+          }
+          if (result.classify === "ask") {
+            this._commandInFlight = false;
+            this._updatePanel();
+            await this.postFromWebview({
+              type: "addRoughRequest",
+              text: utterance,
+            });
+            this._commandMessage =
+              "Recorded as a journal entry — the expansion round is absorbing it.";
+            this._updatePanel();
+            break;
+          }
+          if (result.classify === "question") {
+            const { runQuestionAnswer } = await import(
+              "./workers/contextualizer"
+            );
+            const answer = await runQuestionAnswer(
+              { model: this._workerModelId },
+              utterance,
+              this._model,
+              await this._readDigest(),
+            );
+            this._commandMessage = answer
+              ? answer.slice(0, 800)
+              : "Could not produce an answer — try rephrasing.";
+            this._commandInFlight = false;
+            this._updatePanel();
+            break;
           }
           // Selection-for-action: the command STAGED items — distinct from
           // checking (settling). The verb is applied from the selection bar
@@ -1260,6 +1415,21 @@ class ScratchpadSessionImpl implements ScratchpadSession {
       // Always clear the in-flight flag (may already be cleared in success path)
       this._roundInFlight = false;
       this._updatePanel();
+    }
+  }
+
+  /** Read the context digest markdown (fail-soft) — the sanctioned context
+   *  channel injected into every generative round (2026-07-17). */
+  private async _readDigest(): Promise<string | undefined> {
+    const ref = this._model.contextDigestRef;
+    if (!ref || !this._sidecarRoot) return undefined;
+    try {
+      return await nodeFs.readFile(
+        nodePath.join(this._sidecarRoot, this._namespace, ref),
+        "utf8",
+      );
+    } catch {
+      return undefined;
     }
   }
 

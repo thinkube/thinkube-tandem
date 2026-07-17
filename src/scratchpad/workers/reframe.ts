@@ -2,6 +2,7 @@ import { createPhaseWorker, GATES } from "./worker";
 import type { WorkerFactoryDeps, WorkerRun } from "./worker";
 import type { WorkingModel } from "../model";
 import { renderActionGuide } from "./actionGuide";
+import { renderGroundingBlocks } from "./worker";
 import { orderedGateElements } from "../projection";
 
 /**
@@ -80,7 +81,9 @@ export function reframe(
         `a precise, concise statement of what ${scope ? "this selection" : "this thinking space"} intends, ` +
         `grounded in the settled (checked) items below and covering the human's rough requests. ` +
         `You NEVER edit the human's words — the curated intent is a separate, derived statement.\n\n` +
-        `Rough requests (the human's raw asks — the curated intent must cover ${scope ? "the ones this cut addresses" : "ALL of them"}):\n${requestsBlock}\n\n` +
+        `Rough requests (the human's raw asks — the curated intent must cover ${scope ? "the ones this cut addresses" : "ALL of them"}):\n${requestsBlock}` +
+        renderGroundingBlocks(workingModel, deps.contextDigest) +
+        `\n\n` +
         `Shipping elements (use these labels in [delivered-by:]):\n${elementsBlock}\n\n` +
         `Checked items only${scope ? " (inside the cut)" : ""}:\n${checkedBlock}\n\n` +
         `Produce ONE curateIntent action carrying BOTH:\n` +

@@ -14,8 +14,14 @@ import { GATES } from "./worker";
 import type { QueryFn } from "./worker";
 import { normalizeWorkerActions, renderActionGuide } from "./actionGuide";
 
+export type UtteranceClass = "operation" | "statement" | "ask" | "question";
+
 export interface InterpretResult {
   actions: Action[];
+  /** How the utterance was classified (2026-07-17): operation (item ops),
+   *  statement (standing assumption), ask (journal expansion), question
+   *  (answer only). Absent for deterministic bulk paths. */
+  classify?: UtteranceClass;
   /**
    * Item ids STAGED for a human-applied action (selection-for-action).
    * Strictly distinct from checking: checked items are settled into the TEP;
@@ -131,8 +137,13 @@ async function queryRound(
   };
 
   const prompt =
-    `You are a command-field interpreter. Translate the human's plain-language command into ` +
-    `structured actions on the thinking space. Every action you produce MUST carry actor:"human". ` +
+    `You are a command-field interpreter. FIRST classify the human's utterance:\n` +
+    `- "operation": it names item operations (accept/check/drop/defer/set/select…) → translate to actions.\n` +
+    `- "statement": it asserts a standing FACT or constraint about the world/environment ` +
+    `("this is a single-user development platform") → NO actions; just classify.\n` +
+    `- "ask": it requests NEW scope/capability ("also handle X") → NO actions; just classify.\n` +
+    `- "question": it asks for information → NO actions; just classify.\n` +
+    `Then, for "operation" only, translate into structured actions. Every action you produce MUST carry actor:"human". ` +
     `A command may name items semantically (e.g. "the implementation-flavored items") — judge which ` +
     `items match, using the exact itemId values from the working model.\n\n` +
     `THE SPACE HAS TWO DISTINCT SELECTIONS — never confuse them:\n` +
@@ -149,16 +160,25 @@ async function queryRound(
     `Working model (JSON):\n${JSON.stringify(model, null, 2)}\n\n` +
     `${renderActionGuide(model, GATES.interpreter.allowedTools, "human")}\n\n` +
     `Human command: "${utterance}"\n\n` +
-    `Respond with a JSON object: { "actions": [...], "select": ["<itemId>", ...], "message": "optional explanation" }`;
+    `Respond with a JSON object: { "classify": "operation"|"statement"|"ask"|"question", "actions": [...], "select": ["<itemId>", ...], "message": "optional explanation" }`;
 
   const query = loadQuery();
   const rawActions: Action[] = [];
   const rawSelect: string[] = [];
+  let classify: UtteranceClass | undefined;
 
   for await (const msg of query({ prompt, options })) {
     if (msg.type === "actions") {
       rawActions.push(...msg.actions);
       if (msg.select) rawSelect.push(...msg.select);
+      if (
+        msg.classify === "operation" ||
+        msg.classify === "statement" ||
+        msg.classify === "ask" ||
+        msg.classify === "question"
+      ) {
+        classify = msg.classify;
+      }
     }
   }
 
@@ -194,14 +214,27 @@ async function queryRound(
   ) {
     return {
       actions: [],
+      classify,
       message: `Command not applied: ${rejected[0].reason}`,
     };
+  }
+
+  // Non-operation classes return empty-handed BY DESIGN — the session routes
+  // them (statement → assumption+challenger; ask → journal; question →
+  // respond-only round).
+  if (
+    classify === "statement" ||
+    classify === "ask" ||
+    classify === "question"
+  ) {
+    return { actions: [], classify };
   }
 
   // Nothing at all → unrecognized utterance
   if (validActions.length === 0 && selectedItemIds.length === 0) {
     return {
       actions: [],
+      classify,
       message:
         `I didn't understand "${utterance}". ` +
         `Try commands like "accept all constraints", "select the <description> items", or "reframe".`,
@@ -209,6 +242,7 @@ async function queryRound(
   }
 
   const result: InterpretResult = { actions: validActions };
+  if (classify !== undefined) result.classify = classify;
   if (selectedItemIds.length > 0) {
     result.selectedItemIds = selectedItemIds;
   }

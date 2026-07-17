@@ -212,6 +212,15 @@ export interface WorkingModel {
   /** Crisp TEP title (≤80 chars), synthesized alongside the curated intent.
    *  Projections fall back to a clipped first line when absent. */
   curatedTitle?: string;
+  /**
+   * Standing assumptions (2026-07-17): human statements — "this is a
+   * single-user development platform" — that constrain every worker round and
+   * against which existing items are challenged. Append-only human words.
+   */
+  assumptions?: RoughRequest[];
+  /** Space-relative ref of the context digest dossier (e.g.
+   *  "research/_context-digest.md") — the sanctioned context channel. */
+  contextDigestRef?: string;
 }
 
 export interface RoughRequest {
@@ -288,6 +297,15 @@ export type Action =
       facet: "complexity" | "risk";
       reason: string;
     }
+  // 2026-07-17 panic button: restart the DERIVATION while keeping the human's
+  // words (goal text + journal). Refused once any TEP has been frozen.
+  | { type: "panicReset"; actor: "human" }
+  // 2026-07-17 standing assumptions: append-only human statements that
+  // constrain all worker rounds ("this is a single-user platform").
+  | { type: "addAssumption"; text: string }
+  // 2026-07-17 context layer: record the digest ref after a contextualize
+  // round writes it. Internal (human-exempt like stampShipped).
+  | { type: "setContextDigest"; ref: string }
   | { type: "dropItem"; actor: "human"; itemId: string }
   | { type: "supersedeItem"; actor: Actor; itemId: string; supersedes: string }
   | {
@@ -997,6 +1015,105 @@ export function reduce(
           field: `sections.${sectionIdx}.items.${itemIdx}.state`,
           before,
           after: "resolved",
+        },
+      };
+    }
+
+    case "addAssumption": {
+      if (!action.text.trim()) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: "empty assumption refused",
+          },
+        };
+      }
+      const list = model.assumptions ?? [];
+      const entry: RoughRequest = {
+        id: `asm-${list.length}`,
+        text: action.text.trim(),
+      };
+      return {
+        model: { ...model, assumptions: [...list, entry] },
+        delta: {
+          kind: "applied",
+          action,
+          field: `assumptions.${list.length}`,
+          before: undefined,
+          after: entry,
+        },
+      };
+    }
+
+    case "setContextDigest": {
+      // Internal action — records where the sanctioned context lives.
+      if (!action.ref.trim()) {
+        return {
+          model,
+          delta: { kind: "rejected", action, reason: "empty digest ref" },
+        };
+      }
+      const before = model.contextDigestRef;
+      return {
+        model: { ...model, contextDigestRef: action.ref.trim() },
+        delta: {
+          kind: "applied",
+          action,
+          field: "contextDigestRef",
+          before,
+          after: action.ref.trim(),
+        },
+      };
+    }
+
+    case "panicReset": {
+      const frozen = model.sections.some((s) =>
+        s.items.some(
+          (it) => it.state === "shipped" || (it.flaggedBy?.length ?? 0) > 0,
+        ),
+      );
+      if (frozen) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason:
+              "panic refused — a TEP was already frozen from this space; shipped/flagged items are the record",
+          },
+        };
+      }
+      const next: WorkingModel = {
+        tenant: model.tenant,
+        phase: model.phase,
+        sections: model.sections.map((s) => ({
+          ...s,
+          items: [],
+          notes: [],
+          proposals: [],
+        })),
+        objections: [],
+        readinessHistory: [],
+      };
+      if (model.roughRequests !== undefined) {
+        next.roughRequests = model.roughRequests;
+      }
+      if (model.assumptions !== undefined) {
+        next.assumptions = model.assumptions;
+      }
+      if (model.contextDigestRef !== undefined) {
+        next.contextDigestRef = model.contextDigestRef;
+      }
+      return {
+        model: next,
+        delta: {
+          kind: "applied",
+          action,
+          field: "panicReset",
+          before: undefined,
+          after: "derived state cleared; journal kept",
         },
       };
     }

@@ -478,3 +478,167 @@ test("precision (2026-07-17): commitments traced [delivered-by:], every element 
   assert.equal(cov.missingDeliveredBy, 1);
 });
 
+// ── Phase A (2026-07-17): panic, assumptions, context digest ─────────────────
+
+test("panicReset: keeps journal+assumptions+digest ref, wipes derived, refuses after freeze", () => {
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "the goal" }).model;
+  m = reduce(m, { type: "addRoughRequest", text: "ask two" }).model;
+  m = reduce(m, { type: "addAssumption", text: "single-user platform" }).model;
+  m = reduce(m, { type: "setContextDigest", ref: "research/_context-digest.md" }).model;
+  const els = m.sections.find((s) => s.kind === "elements")!;
+  m = reduce(m, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: els.id,
+    item: { text: "derived item", modality: "optional", evals: {} },
+  }).model;
+  m = reduce(m, { type: "curateIntent", text: "derived intent" }).model;
+  m = reduce(m, {
+    type: "recordReadiness",
+    record: { covered: true, cleanCut: true, gapSection: null },
+  }).model;
+
+  const { model: wiped, delta } = reduce(m, {
+    type: "panicReset",
+    actor: "human",
+  });
+  assert.equal(delta.kind, "applied");
+  assert.equal(wiped.sections.find((s) => s.kind === "goal")!.text, "the goal");
+  assert.deepEqual(wiped.roughRequests!.map((r) => r.text), ["ask two"]);
+  assert.deepEqual(wiped.assumptions!.map((a) => a.text), ["single-user platform"]);
+  assert.equal(wiped.contextDigestRef, "research/_context-digest.md");
+  assert.equal(wiped.sections.every((s) => s.items.length === 0), true);
+  assert.equal(wiped.curatedIntent, undefined);
+  assert.equal(wiped.readinessHistory.length, 0);
+
+  // After a freeze (shipped item) panic refuses.
+  const itemId = m.sections.find((s) => s.kind === "elements")!.items[0].id;
+  const frozen = reduce(m, {
+    type: "stampShipped",
+    itemIds: [itemId],
+    tepId: "TEP-1",
+  }).model;
+  const { delta: refused } = reduce(frozen, {
+    type: "panicReset",
+    actor: "human",
+  });
+  assert.equal(refused.kind, "rejected");
+  assert.match((refused as { reason: string }).reason, /already frozen/);
+});
+
+test("addAssumption: append-only, empty refused; grounding blocks render into prompts", () => {
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "g" }).model;
+  const { delta: empty } = reduce(m, { type: "addAssumption", text: "  " });
+  assert.equal(empty.kind, "rejected");
+  m = reduce(m, { type: "addAssumption", text: "single-user dev platform" }).model;
+  m = reduce(m, { type: "addAssumption", text: "no external network" }).model;
+  assert.deepEqual(m.assumptions!.map((a) => a.text), [
+    "single-user dev platform",
+    "no external network",
+  ]);
+
+  const { renderGroundingBlocks, gapFiller } = require("./workers/worker") as {
+    renderGroundingBlocks: (mm: WorkingModel, d?: string) => string;
+    gapFiller: (deps: {
+      loadQuery: () => unknown;
+      model: string;
+      contextDigest?: string;
+    }) => { buildPrompt: (mm: WorkingModel, c: string[]) => string };
+  };
+  const block = renderGroundingBlocks(m, "## Digest\nfact (src/x.ts)");
+  assert.match(block, /STANDING ASSUMPTIONS/);
+  assert.match(block, /1\. single-user dev platform/);
+  assert.match(block, /CONTEXT DIGEST/);
+  assert.match(block, /fact \(src\/x\.ts\)/);
+
+  const prompt = gapFiller({
+    loadQuery: () => (async function* () {})(),
+    model: "sonnet",
+    contextDigest: "## Digest\nfact (src/x.ts)",
+  } as never).buildPrompt(m, []);
+  assert.match(prompt, /STANDING ASSUMPTIONS/);
+  assert.match(prompt, /CONTEXT DIGEST/);
+});
+
+test("challenger: stages contradicting items, applies only notes/edits, filters ghosts", async () => {
+  const { runChallenger, buildChallengerPrompt } =
+    require("./workers/challenger") as typeof import("./workers/challenger");
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "g" }).model;
+  m = reduce(m, { type: "addAssumption", text: "single-user platform" }).model;
+  const con = m.sections.find((s) => s.kind === "constraints")!;
+  m = reduce(m, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: con.id,
+    item: { text: "redact output for tenants", modality: "optional", evals: {} },
+  }).model;
+  const itemId = m.sections.find((s) => s.kind === "constraints")!.items[0].id;
+
+  const prompt = buildChallengerPrompt(m);
+  assert.match(prompt, /NEWEST ASSUMPTION.*single-user platform/);
+  assert.match(prompt, /never drop anything/);
+
+  const res = await runChallenger(
+    {
+      loadQuery:
+        () =>
+        async function* () {
+          yield {
+            type: "actions" as const,
+            actions: [
+              {
+                type: "addItemNote",
+                itemId,
+                text: "Challenged by assumption: single-user — redaction is moot.",
+              },
+              // out-of-gate emission must be rejected by the seam
+              { type: "proposeItem", sectionId: con.id, text: "sneak" },
+            ] as never,
+            select: [itemId, "item-ghost-9"],
+          };
+        },
+      model: "sonnet",
+    },
+    m,
+  );
+  assert.equal(res.actions.length, 1);
+  assert.equal(res.actions[0].type, "addItemNote");
+  assert.deepEqual(res.selectedItemIds, [itemId]);
+});
+
+test("interpreter classify: statement/ask/question return empty-handed with the class", async () => {
+  const { interpret } = require("./workers/interpreter") as typeof import("./workers/interpreter");
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "g" }).model;
+  for (const cls of ["statement", "ask", "question"] as const) {
+    const res = await interpret("whatever", m, {
+      loadQuery:
+        () =>
+        async function* () {
+          yield { type: "actions" as const, actions: [], classify: cls };
+        },
+    });
+    assert.equal(res.classify, cls);
+    assert.deepEqual(res.actions, []);
+  }
+});
+
+test("contextualize prompt: sources, journal, budget, refresh block", () => {
+  const { buildContextualizePrompt } =
+    require("./workers/contextualizer") as typeof import("./workers/contextualizer");
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "build the graph view" }).model;
+  const p1 = buildContextualizePrompt(m, ["/repo", "/store/ns"], undefined);
+  assert.match(p1, /DECLARED SOURCES/);
+  assert.match(p1, /- \/repo/);
+  assert.match(p1, /1\. build the graph view/);
+  assert.match(p1, /HARD BUDGET/);
+  assert.doesNotMatch(p1, /EXISTING DIGEST/);
+  const p2 = buildContextualizePrompt(m, ["/repo"], "old digest body");
+  assert.match(p2, /EXISTING DIGEST/);
+  assert.match(p2, /old digest body/);
+});
+

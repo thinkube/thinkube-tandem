@@ -22,6 +22,9 @@ export interface WorkerMessage {
    * interpreter round uses this channel.
    */
   select?: string[];
+  /** Utterance classification (interpreter rounds only, 2026-07-17):
+   *  operation | statement | ask | question. */
+  classify?: string;
 }
 
 /**
@@ -64,6 +67,9 @@ export interface PhaseWorkerDeps {
 export interface WorkerFactoryDeps {
   loadQuery: () => QueryFn;
   model: string;
+  /** The context digest's markdown (read by the session from
+   *  contextDigestRef) — the sanctioned context channel (2026-07-17). */
+  contextDigest?: string;
 }
 
 export interface WorkerRun {
@@ -78,6 +84,30 @@ export interface WorkerRun {
   run(model: WorkingModel, conversation: string[]): Promise<Action[]>;
 }
 
+/**
+ * Grounding blocks shared by every generative round (2026-07-17): the human's
+ * standing assumptions (from the model) and the context digest (the sanctioned
+ * context channel). Both clearly labeled so provenance stays traceable.
+ */
+export function renderGroundingBlocks(
+  workingModel: WorkingModel,
+  contextDigest?: string,
+): string {
+  let out = "";
+  const assumptions = workingModel.assumptions ?? [];
+  if (assumptions.length > 0) {
+    out +=
+      `\n\nSTANDING ASSUMPTIONS (human statements — nothing you produce may contradict them):\n` +
+      assumptions.map((a, i) => `${i + 1}. ${a.text}`).join("\n");
+  }
+  if (contextDigest?.trim()) {
+    out +=
+      `\n\nCONTEXT DIGEST (research/_context-digest.md — what already EXISTS; cite it, build on it, never silently contradict it):\n` +
+      contextDigest.trim();
+  }
+  return out;
+}
+
 // ===== Single source of truth for per-phase gates =====
 // Restated over the new item action vocabulary (SP-21/3 contract).
 
@@ -89,7 +119,8 @@ export const GATES: Record<
   | "research"
   | "interpreter"
   | "explainer"
-  | "linker",
+  | "linker"
+  | "challenger",
   { allowedTools: ToolName[]; disallowedTools: ToolName[] }
 > = {
   /**
@@ -222,6 +253,27 @@ export const GATES: Record<
       "editGoal",
       "curateIntent",
       "resolveEdit",
+    ],
+  },
+  /**
+   * Challenger: applies a NEW standing assumption against existing items —
+   * stages contradicting items (select channel), proposes reconciling edits,
+   * and notes which assumption an item conflicts with. Never applies anything
+   * destructive itself.
+   */
+  challenger: {
+    allowedTools: ["proposeEdit", "addItemNote"],
+    disallowedTools: [
+      "proposeItem",
+      "checkItem",
+      "uncheckItem",
+      "addItem",
+      "freeze",
+      "editGoal",
+      "curateIntent",
+      "resolveEdit",
+      "attachEvidence",
+      "linkItems",
     ],
   },
   /**
@@ -540,6 +592,7 @@ export function makeProductionQueryFnThunk(
           const parsed = JSON.parse(jsonMatch[0]) as {
             actions: Action[];
             select?: unknown;
+            classify?: unknown;
           };
           if (Array.isArray(parsed.actions)) {
             const msg: WorkerMessage = {
@@ -552,6 +605,9 @@ export function makeProductionQueryFnThunk(
               msg.select = parsed.select.filter(
                 (id): id is string => typeof id === "string",
               );
+            }
+            if (typeof parsed.classify === "string") {
+              msg.classify = parsed.classify;
             }
             yield msg;
           }
@@ -629,6 +685,7 @@ export function gapFiller(deps: WorkerFactoryDeps): WorkerRun {
         `You are the gap-filler worker. Propose new items (proposeItem) for each thinking-space section to help elaborate the intent.\n\n` +
         `Intent (goal):\n${intentText}` +
         requestsBlock +
+        renderGroundingBlocks(workingModel, deps.contextDigest) +
         deltaDoctrine +
         itemsBlock +
         `\n\nGenerate proposeItem actions for sections that need more detail. Do not check items — only propose them. ` +
@@ -709,8 +766,9 @@ export function linker(deps: WorkerFactoryDeps): WorkerRun {
         `that judges one, a gap that questions one, a verification that checks one. Edges let a TEP cut pull the ` +
         `right context automatically — a WRONG edge pollutes every future cut, so be conservative: no edge is ` +
         `better than a doubtful edge. Do not link items that are merely thematically similar.\n\n` +
-        `Intent (goal):\n${intentText}\n\n` +
-        `Items:\n${itemLines.join("\n")}\n\n` +
+        `Intent (goal):\n${intentText}` +
+        renderGroundingBlocks(workingModel, deps.contextDigest) +
+        `\n\nItems:\n${itemLines.join("\n")}\n\n` +
         renderActionGuide(workingModel, GATES.linker.allowedTools, "integrator")
       );
     },
