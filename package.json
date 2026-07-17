@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.249",
+  "version": "0.1.250",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -771,7 +771,34 @@
           "description": "Enable Claude Code's experimental agent teams in VS Code (SP-tgnb5o). When on, the extension exports `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + a synthetic `$TMUX` to Claude sessions/terminals and installs a fake-`tmux` shim on PATH so teammates render as native VS Code terminal panes. Off by default: it shadows `tmux` on the terminal PATH and sets `$TMUX`, so opt in deliberately. Takes effect for sessions/terminals started after a window reload."
         }
       }
-    }
+    },
+    "chatParticipants": [
+      {
+        "id": "thinkube.thinky",
+        "name": "thinky",
+        "fullName": "Thinky",
+        "description": "Talk to your thinking space — statements, asks, questions, operations",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "readiness",
+            "description": "Run the four-dimension readiness check"
+          },
+          {
+            "name": "reframe",
+            "description": "Re-synthesize the curated intent from the journal and settled items"
+          },
+          {
+            "name": "contextualize",
+            "description": "Refresh the context digest from the declared sources"
+          },
+          {
+            "name": "panic",
+            "description": "Wipe derived state, keep the journal (refused after any freeze)"
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -128,6 +128,11 @@ export interface ScratchpadSession {
    * Returns after the message is fully applied.
    */
   postFromWebview(message: ScratchpadInboundMessage): Promise<void>;
+  /**
+   * Outcome text of the last routed command (what the panel shows under the
+   * command field). The @thinky chat participant reads it to reply (Phase C).
+   */
+  readonly lastCommandMessage: string | undefined;
 }
 
 // ===== Module-level state =====
@@ -246,6 +251,10 @@ class ScratchpadSessionImpl implements ScratchpadSession {
 
   get deltas(): Delta[] {
     return this._deltas;
+  }
+
+  get lastCommandMessage(): string | undefined {
+    return this._commandMessage;
   }
 
   dispatch(action: Action): Delta {

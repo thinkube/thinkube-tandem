@@ -58,6 +58,7 @@ import {
   getScratchpadSession,
 } from "./scratchpad";
 import type { ScratchpadSessionDeps, ScratchpadSession } from "./scratchpad";
+import { registerThinkyParticipant } from "./scratchpad/chat/participant";
 
 /** Public API returned by activate() — the runtime seam for extension-host probes. */
 export interface TandemExtensionApi {
@@ -443,6 +444,10 @@ export function activate(context: vscode.ExtensionContext): TandemExtensionApi {
 
   // Scratchpad: human-paced intent authoring surface (TEP-21).
   registerScratchpadCommands(context);
+
+  // @thinky chat participant (Phase C): the thinking-space chat mouth.
+  // Guarded inside — ships dark on hosts without the chat API.
+  registerThinkyParticipant(context);
 
   // Defect distributions (TEP-22/SP-1): the three tables + the manual-entry row.
   registerDefectCommands(context, {
