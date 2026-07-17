@@ -240,6 +240,7 @@ export const GATES: Record<
       "dropItem",
       "supersedeItem",
       "resolveEdit",
+      "resolveItem",
       "addItemNote",
     ],
     disallowedTools: ["freeze"],

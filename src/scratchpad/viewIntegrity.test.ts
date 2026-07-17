@@ -123,6 +123,9 @@ test("every delegated control class rendered is handled by the click listener", 
     "note-remove",
     "dep-chip",
     "evidence-chip",
+    "item-resolve",
+    "research-direction-go",
+    "research-direction-cancel",
   ];
   for (const cls of delegated) {
     if (!html.includes(`class="${cls}`) && !html.includes(` ${cls}`)) continue;

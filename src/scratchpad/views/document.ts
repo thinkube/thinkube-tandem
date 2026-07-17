@@ -38,6 +38,7 @@ export type ScratchpadInboundMessage =
       value: 1 | 2 | 3;
     }
   | { type: "deferItem"; itemId: string }
+  | { type: "resolveItem"; itemId: string }
   | { type: "dropItem"; itemId: string }
   | { type: "supersedeItem"; itemId: string; supersedes: string }
   | { type: "resolveEdit"; itemId: string; accept: boolean }
@@ -199,6 +200,7 @@ function itemHtml(
   isElement = false,
   inCut = false,
   cutRole?: "context" | "context-unsettled",
+  isGap = false,
 ): string {
   const depClass =
     dep?.focusRole !== undefined ? ` dep-${dep.focusRole}` : "";
@@ -348,12 +350,17 @@ function itemHtml(
           ? "Remove from selection"
           : "Select — then apply an action from the selection bar"
       }">${selected ? "deselect" : "select"}</button>`;
+  const resolveButton =
+    isGap && item.state === "active"
+      ? `<button class="item-resolve" title="Resolve — this question has been ANSWERED (typically after research): closes it as a visible record">resolve</button>`
+      : "";
   const itemControls =
     item.state === "active"
       ? `<span class="item-actions">` +
         cutButton +
         depsButton +
-        `<button class="item-research" title="Research this item — investigate it with live tools, attach evidence, and propose findings (covers a gap)">research</button>` +
+        resolveButton +
+        `<button class="item-research" title="Research this item — a direction field opens so you can say WHAT to investigate">research</button>` +
         `<button class="item-explain" title="Analyze — attach a Why / Impact / Modality note to inform your decision">why?</button>` +
         selectButton +
         `</span>`
@@ -420,6 +427,13 @@ function itemHtml(
     pendingEditSpan +
     evidenceChips +
     itemControls +
+    (item.state === "active"
+      ? `<div class="research-direction" hidden>
+      <input type="text" class="research-direction-input" placeholder="Research what? — direct the investigation (empty = the item text itself)">
+      <button class="research-direction-go">Go</button>
+      <button class="research-direction-cancel">✕</button>
+    </div>`
+      : "") +
     depChips +
     notesHtml +
     `</li>`
@@ -530,6 +544,7 @@ function checklistSectionHtml(
                 : cutContext?.unsettled.has(it.id)
                   ? "context-unsettled"
                   : undefined,
+              section.kind === "gap",
             ),
           )
           .join("")}</ul>`
@@ -619,7 +634,11 @@ export function freezeStatusText(
   const uncovered = uncoveredSections(model);
   if (uncovered.length > 0) {
     const parts = uncovered.map((k) =>
-      k === "goal" ? "goal (write the intent text)" : k,
+      k === "goal"
+        ? "goal (write the first journal entry)"
+        : k === "gap"
+          ? "gap (attend every open question — check, resolve, defer, or drop each)"
+          : k,
     );
     return `Freeze locked — every section needs at least one CHECKED item; still uncovered: ${parts.join(", ")}.${mandatoryWarning}`;
   }
@@ -1008,6 +1027,11 @@ export function buildScratchpadHtml(
     .note-remove:hover { color: var(--vscode-errorForeground); }
     li.item[data-state="deferred"] { opacity: 0.55; }
     li.item[data-state="deferred"] .item-text::after { content: " (deferred)"; font-size: 0.85em; opacity: 0.8; }
+    li.item[data-state="resolved"] { opacity: 0.6; }
+    li.item[data-state="resolved"] .item-text::after { content: " ✓ resolved"; font-size: 0.85em; color: var(--vscode-charts-green, #89d185); }
+    .research-direction { flex-basis: 100%; display: flex; gap: 6px; margin: 4px 0 2px 24px; }
+    .research-direction input { flex: 1; padding: 3px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
+    .research-direction button { border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); border-radius: 2px; padding: 0 8px; cursor: pointer; }
     #selection-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--vscode-focusBorder); border-radius: 4px; background: var(--vscode-editor-background); }
     #selection-bar .selection-count { font-weight: bold; margin-right: 4px; }
     #selection-bar button { background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); border: 1px solid var(--vscode-panel-border); padding: 2px 10px; border-radius: 2px; cursor: pointer; }
@@ -1211,7 +1235,10 @@ export function buildScratchpadHtml(
       var isEval = target.classList.contains('eval-badge');
       var isAccept = target.classList.contains('edit-accept');
       var isReject = target.classList.contains('edit-reject');
-      if (!isSelect && !isExplain && !isDeps && !isResearch && !isCut && !isEval && !isAccept && !isReject) return;
+      var isResolve = target.classList.contains('item-resolve');
+      var isDirGo = target.classList.contains('research-direction-go');
+      var isDirCancel = target.classList.contains('research-direction-cancel');
+      if (!isSelect && !isExplain && !isDeps && !isResearch && !isCut && !isEval && !isAccept && !isReject && !isResolve && !isDirGo && !isDirCancel) return;
       var li = target.closest('li.item');
       if (!li) return;
       var itemId = li.getAttribute('data-item-id');
@@ -1229,9 +1256,33 @@ export function buildScratchpadHtml(
         vscode.postMessage({ type: 'resolveEdit', itemId: itemId, accept: isAccept });
         return;
       }
-      var type = isExplain ? 'explainItem' : isDeps ? 'toggleDepFocus' : isResearch ? 'research' : isCut ? 'toggleCut' : 'toggleSelect';
+      if (isResolve) {
+        vscode.postMessage({ type: 'resolveItem', itemId: itemId });
+        return;
+      }
+      if (isResearch) {
+        // Open the direction field — the human says WHAT to research
+        // (field requirement 2026-07-17); empty direction = the item text.
+        var form = li.querySelector('.research-direction');
+        if (form) {
+          form.hidden = !form.hidden;
+          if (!form.hidden) { var di = form.querySelector('input'); if (di) di.focus(); }
+        }
+        return;
+      }
+      if (isDirGo || isDirCancel) {
+        var dirForm = target.closest('.research-direction');
+        if (!dirForm) return;
+        if (isDirCancel) { dirForm.hidden = true; return; }
+        var dirInput = dirForm.querySelector('input');
+        var direction = dirInput && dirInput.value.trim() ? dirInput.value.trim() : undefined;
+        showBusy('Research round starting…', target);
+        vscode.postMessage({ type: 'research', itemId: itemId, subject: direction });
+        dirForm.hidden = true;
+        return;
+      }
+      var type = isExplain ? 'explainItem' : isDeps ? 'toggleDepFocus' : isCut ? 'toggleCut' : 'toggleSelect';
       if (isExplain) showBusy('Explain round starting…', target);
-      if (isResearch) showBusy('Research round starting…', target);
       vscode.postMessage({ type: type, itemId: itemId });
     });
 

@@ -150,6 +150,15 @@ function evalSuffix(it: {
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 
+/** A crisp title: the curated title when present, else the first line
+ *  clipped to 80 characters (2026-07-17: the draft header carried the whole
+ *  intent — a title is a headline, not a paragraph). */
+function projectionTitle(model: WorkingModel, intentSource: string): string {
+  if (model.curatedTitle?.trim()) return model.curatedTitle.trim();
+  const firstLine = (intentSource.split("\n")[0] ?? "").trim();
+  return firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 79)}…`;
+}
+
 export function projectDelta(model: WorkingModel): {
   title: string;
   body: string;
@@ -159,7 +168,7 @@ export function projectDelta(model: WorkingModel): {
   // The curated intent (2026-07-16 redesign) is what freeze signs as the
   // TEP's intent; the raw goal text is the fallback for pre-redesign spaces.
   const intentSource = model.curatedIntent?.trim() || goal.text;
-  const title = (intentSource.split("\n")[0] ?? "").trim();
+  const title = projectionTitle(model, intentSource);
   const itemIds: string[] = [];
   const parts: string[] = [];
   const textById = new Map<string, string>();
@@ -259,7 +268,7 @@ export function projectCut(
     cut.intent?.trim() ||
     model.curatedIntent?.trim() ||
     goalSection(model).text;
-  const title = (intentSource.split("\n")[0] ?? "").trim();
+  const title = projectionTitle(model, intentSource);
 
   const included = new Set([...shipIds, ...flagIds]);
   const parts: string[] = [];

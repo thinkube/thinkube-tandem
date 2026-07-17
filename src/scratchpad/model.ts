@@ -44,7 +44,15 @@ export const RISK_FACTORS: readonly RiskFactor[] = [
   "integrity",
   "hack-debt",
 ];
-export type ItemState = "active" | "shipped" | "deferred" | "dropped";
+export type ItemState =
+  | "active"
+  | "shipped"
+  | "deferred"
+  | "dropped"
+  // 2026-07-17: a gap item whose question has been ANSWERED (typically after
+  // research). Stays visible as record; excluded from coverage pressure,
+  // projection, reframe, and cuts. The closure gesture gaps never had.
+  | "resolved";
 export type ItemOrigin = "human" | "gap-filler" | "integrator" | "research";
 export type Actor = ItemOrigin | "interpreter";
 
@@ -127,7 +135,9 @@ export type ToolName =
   | "curateIntent"
   // 2026-07-17: dependency edges on EXISTING items (pre-edge spaces have
   // none, so cuts pulled zero context) — the linker round's only tool.
-  | "linkItems";
+  | "linkItems"
+  // 2026-07-17: close an answered gap (human settling gesture).
+  | "resolveItem";
 
 export interface Note {
   id: string;
@@ -192,6 +202,9 @@ export interface WorkingModel {
    * intent (falling back to the goal text when absent).
    */
   curatedIntent?: string;
+  /** Crisp TEP title (≤80 chars), synthesized alongside the curated intent.
+   *  Projections fall back to a clipped first line when absent. */
+  curatedTitle?: string;
 }
 
 export interface RoughRequest {
@@ -256,6 +269,9 @@ export type Action =
       value: 1 | 2 | 3;
     }
   | { type: "deferItem"; actor: "human"; itemId: string }
+  // 2026-07-17: mark an answered question resolved — visible record, no
+  // longer open. State transition only (allowed even on flagged items).
+  | { type: "resolveItem"; actor: "human"; itemId: string }
   | { type: "dropItem"; actor: "human"; itemId: string }
   | { type: "supersedeItem"; actor: Actor; itemId: string; supersedes: string }
   | {
@@ -280,7 +296,7 @@ export type Action =
     }
   // ── 2026-07-16 redesign actions ──
   | { type: "addRoughRequest"; text: string } // human-only, append-only
-  | { type: "curateIntent"; text: string } // reframe worker (or human edit)
+  | { type: "curateIntent"; text: string; title?: string } // reframe worker (or human edit)
   // 2026-07-17: add dependency edges to an EXISTING item (merge-unique).
   // Structural metadata for future cuts — allowed even on protected items
   // (it never alters their recorded content).
@@ -948,6 +964,27 @@ export function reduce(
       };
     }
 
+    case "resolveItem": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      const { sectionIdx, itemIdx } = loc;
+      const before = model.sections[sectionIdx].items[itemIdx].state;
+      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+        ...it,
+        state: "resolved",
+      }));
+      return {
+        model: newModel,
+        delta: {
+          kind: "applied",
+          action,
+          field: `sections.${sectionIdx}.items.${itemIdx}.state`,
+          before,
+          after: "resolved",
+        },
+      };
+    }
+
     case "dropItem": {
       const loc = findItem(model, action.itemId);
       if (!loc) throw new Error(`Item '${action.itemId}' not found`);
@@ -1338,8 +1375,19 @@ export function reduce(
           },
         };
       }
+      const next: WorkingModel = {
+        ...model,
+        curatedIntent: action.text.trim(),
+      };
+      // The title tracks its text: a fresh curation without a title clears
+      // the stale one rather than pairing old title with new text.
+      if (action.title !== undefined && action.title.trim()) {
+        next.curatedTitle = action.title.trim().slice(0, 80);
+      } else {
+        delete next.curatedTitle;
+      }
       return {
-        model: { ...model, curatedIntent: action.text.trim() },
+        model: next,
         delta: {
           kind: "applied",
           action,

@@ -211,3 +211,66 @@ test("curated intent: set by curateIntent; empty-over-nonempty refused; freeze t
   });
   assert.equal(proj.title, "Deliver element A under its constraint");
 });
+
+test("gap closure (2026-07-17): resolveItem closes a question; coverage rewards attended gaps", () => {
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "goal" }).model;
+  const gapSec = m.sections.find((s) => s.kind === "gap")!;
+  m = reduce(m, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: gapSec.id,
+    item: { text: "an open question", modality: "optional", evals: {} },
+  }).model;
+  const qId = m.sections.find((s) => s.kind === "gap")!.items[0].id;
+
+  // Unattended open question → gap uncovered.
+  const { uncoveredSections } = require("./coverage") as {
+    uncoveredSections: (mm: WorkingModel) => string[];
+  };
+  assert.ok(uncoveredSections(m).includes("gap"));
+
+  // Resolving the answered question covers the gap section (no open items).
+  m = reduce(m, { type: "resolveItem", actor: "human", itemId: qId }).model;
+  const item = m.sections.find((s) => s.kind === "gap")!.items[0];
+  assert.equal(item.state, "resolved");
+  assert.ok(!uncoveredSections(m).includes("gap"));
+
+  // Resolved items never enter a projection.
+  m = reduce(m, { type: "checkItem", actor: "human", itemId: qId }).model;
+  const { projectDelta } = require("./projection") as {
+    projectDelta: (mm: WorkingModel) => { itemIds: string[] };
+  };
+  assert.ok(!projectDelta(m).itemIds.includes(qId));
+});
+
+test("curated title (2026-07-17): stored ≤80, used by projections; long first lines clip", () => {
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "g" }).model;
+  m = reduce(m, {
+    type: "curateIntent",
+    text: "A long intent statement that describes everything the space wants to deliver in detail across many words.",
+    title: "Orchestration graph: auditors, gate, and live logs",
+  }).model;
+  assert.equal(
+    m.curatedTitle,
+    "Orchestration graph: auditors, gate, and live logs",
+  );
+  const { projectDelta } = require("./projection") as {
+    projectDelta: (mm: WorkingModel) => { title: string };
+  };
+  assert.equal(
+    projectDelta(m).title,
+    "Orchestration graph: auditors, gate, and live logs",
+  );
+
+  // Without a title: first line clipped to 80.
+  m = reduce(m, {
+    type: "curateIntent",
+    text: "x".repeat(200),
+  }).model;
+  assert.equal(m.curatedTitle, undefined);
+  const t = projectDelta(m).title;
+  assert.ok(t.length <= 80, `title too long: ${t.length}`);
+});
+

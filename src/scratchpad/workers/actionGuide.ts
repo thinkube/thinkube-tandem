@@ -85,6 +85,7 @@ const HUMAN_EMITTABLE: ReadonlySet<string> = new Set([
   "dropItem",
   "supersedeItem",
   "resolveEdit",
+  "resolveItem",
   "addItemNote",
 ]);
 
@@ -109,6 +110,7 @@ const ITEM_TAKING: ReadonlySet<string> = new Set([
   "dropItem",
   "supersedeItem",
   "resolveEdit",
+  "resolveItem",
 ]);
 
 // ── Small coercion helpers ───────────────────────────────────────────────────
@@ -241,7 +243,7 @@ export function renderActionGuide(
       `{"type":"attachEvidence","actor":"${actor}","itemId":"${exampleItemId}",` +
       `"evidence":{"source":"<where>","method":"<how verified>","checkedAt":"<ISO timestamp>","dossierRef":"research/<topic>.md"}}`,
     editGoal: `{"type":"editGoal","text":"<the rewritten goal statement>"}`,
-    curateIntent: `{"type":"curateIntent","text":"<the curated intent — the synthesized statement of what this space (or cut) intends>"}`,
+    curateIntent: `{"type":"curateIntent","title":"<crisp TEP title — max 80 characters, a headline not a sentence dump>","text":"<the curated intent — the synthesized statement of what this space (or cut) intends>"}`,
     linkItems:
       `{"type":"linkItems","actor":"${actor}","itemId":"${exampleItemId}","requires":["<itemId this item depends on>"]}` +
       ` — declare an edge ONLY where this item's meaning genuinely depends on the other (a constraint governing an element, ` +
@@ -254,6 +256,8 @@ export function renderActionGuide(
     setModality: `{"type":"setModality","actor":"human","itemId":"${exampleItemId}","modality":"mandatory"}`,
     setEval: `{"type":"setEval","actor":"human","itemId":"${exampleItemId}","facet":"risk","value":2}`,
     deferItem: `{"type":"deferItem","actor":"human","itemId":"${exampleItemId}"}`,
+    resolveItem: `{"type":"resolveItem","actor":"human","itemId":"${exampleItemId}"}` +
+      ` — closes an ANSWERED question (gap item): visible record, no longer open`,
     dropItem: `{"type":"dropItem","actor":"human","itemId":"${exampleItemId}"}`,
     supersedeItem: `{"type":"supersedeItem","actor":"human","itemId":"${exampleItemId}","supersedes":"<itemId being superseded>"}`,
     resolveEdit: `{"type":"resolveEdit","actor":"human","itemId":"${exampleItemId}","accept":true}`,
@@ -561,7 +565,12 @@ export function normalizeWorkerActions(
           continue;
         }
         // Erasure guard lives in the reducer (empty over non-empty rejected).
-        valid.push({ type: "curateIntent", text: rec.text });
+        const curate: Action = { type: "curateIntent", text: rec.text };
+        const title = asNonEmptyString(rec.title);
+        if (title !== null) {
+          (curate as { title?: string }).title = title.slice(0, 80);
+        }
+        valid.push(curate);
         continue;
       }
 
@@ -647,6 +656,7 @@ export function normalizeWorkerActions(
       case "checkItem":
       case "uncheckItem":
       case "deferItem":
+      case "resolveItem":
       case "dropItem": {
         const itemId = resolveItemId(model, rec.itemId ?? rec.id ?? rec.item);
         if (itemId === null) {

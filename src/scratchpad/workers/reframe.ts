@@ -34,7 +34,10 @@ export function reframe(
       const checkedLines: string[] = [];
       for (const section of workingModel.sections) {
         for (const item of section.items) {
-          if (!item.checked) continue;
+          // Active only: shipped items belong to past TEPs, resolved gaps are
+          // answered questions, deferred/dropped are out — none may leak into
+          // the curated intent.
+          if (!item.checked || item.state !== "active") continue;
           if (scope !== undefined && !scope.itemIds.has(item.id)) continue;
           checkedLines.push(`  [${section.kind}] ${item.text}`);
         }
@@ -62,7 +65,12 @@ export function reframe(
         `You NEVER edit the human's words — the curated intent is a separate, derived statement.\n\n` +
         `Rough requests (the human's raw asks — the curated intent must cover ${scope ? "the ones this cut addresses" : "ALL of them"}):\n${requestsBlock}\n\n` +
         `Checked items only${scope ? " (inside the cut)" : ""}:\n${checkedBlock}\n\n` +
-        `Produce a curateIntent action. Do not include any unchecked item's content.\n\n` +
+        `Produce ONE curateIntent action carrying BOTH:\n` +
+        `- "title": a crisp headline for the TEP, MAX 80 CHARACTERS — a name, not a summary.\n` +
+        `- "text": the curated intent itself.\n` +
+        `Gap items are OPEN QUESTIONS, never content: do NOT copy or enumerate them in the intent — ` +
+        `the intent states what will be delivered and under which constraints/criteria. ` +
+        `Do not include any unchecked item's content.\n\n` +
         renderActionGuide(workingModel, GATES.reframe.allowedTools, "integrator")
       );
     },

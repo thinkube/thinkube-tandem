@@ -552,6 +552,13 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           itemId: message.itemId,
         });
         break;
+      case "resolveItem":
+        this.dispatch({
+          type: "resolveItem",
+          actor: "human",
+          itemId: message.itemId,
+        });
+        break;
       case "dropItem":
         this.dispatch({
           type: "dropItem",

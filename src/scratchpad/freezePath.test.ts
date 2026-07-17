@@ -73,7 +73,8 @@ function coveredModel(): WorkingModel {
 test("freezeStatusText: a fresh space names every uncovered section including the goal", () => {
   const text = freezeStatusText(emptyModel("tep"), false);
   assert.match(text, /Freeze locked/);
-  assert.match(text, /goal \(write the intent text\)/);
+  assert.match(text, /goal \(write the first journal entry\)/);
+  assert.match(text, /gap \(attend every open question/);
   assert.match(text, /constraints/);
   assert.match(text, /verification/);
 });
