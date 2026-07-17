@@ -115,10 +115,31 @@ export function registerScratchpadCommands(
    * Routes through openScratchpad with namespace, space, and the configured board root.
    * Opening a different (namespace, space) pair replaces the singleton session.
    */
+  // Tree commands arrive two ways: the row's default click passes explicit
+  // string arguments; an INLINE menu button passes the tree NODE OBJECT as
+  // the first argument (field crash 2026-07-17: path.join received an
+  // Object). Accept both shapes.
+  const nodeString = (v: unknown, key: "namespace" | "name"): string | undefined => {
+    if (typeof v === "string") return v;
+    if (typeof v === "object" && v !== null) {
+      const val = (v as Record<string, unknown>)[key];
+      if (typeof val === "string") return val;
+    }
+    return undefined;
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "thinkube.thinkingSpace.openDoc",
-      async (namespace: string, name: string) => {
+      async (nsArg: unknown, nameArg: unknown) => {
+        const namespace = nodeString(nsArg, "namespace");
+        const name = nodeString(nameArg, "name") ?? nodeString(nsArg, "name");
+        if (!namespace || !name) {
+          vscode.window.showErrorMessage(
+            "Open thinking space: could not resolve the namespace/name from the tree node.",
+          );
+          return;
+        }
         const sidecarRoot = boardRoot();
         await openScratchpad({ namespace, space: name, sidecarRoot });
       },
@@ -133,7 +154,14 @@ export function registerScratchpadCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "thinkube.thinkingSpace.newDoc",
-      async (namespace: string) => {
+      async (nsArg: unknown) => {
+        const namespace = nodeString(nsArg, "namespace");
+        if (!namespace) {
+          vscode.window.showErrorMessage(
+            "New thinking space: could not resolve the namespace from the tree node.",
+          );
+          return;
+        }
         const sidecarRoot = boardRoot();
 
         // Prompt for a document name.

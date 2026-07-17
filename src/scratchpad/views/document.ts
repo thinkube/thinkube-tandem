@@ -68,6 +68,8 @@ export type ScratchpadInboundMessage =
   | { type: "suggestLinks" }
   | { type: "removeNote"; itemId: string; noteId: string }
   | { type: "toggleDepFocus"; itemId: string }
+  | { type: "openDetail"; itemId: string }
+  | { type: "closeDetail" }
   | { type: "toggleSelect"; itemId: string }
   | { type: "clearSelection" }
   | {
@@ -426,20 +428,11 @@ function itemHtml(
           .join(" ")}</div>`
       : "";
 
-  // Notes render under the item (field request 2026-07-16: notes existed in
-  // the model but the surface never showed them — an informed settle/defer/
-  // drop decision needs the why and the impact visible).
-  const notesHtml =
-    item.notes.length > 0
-      ? `<div class="item-notes">${item.notes
-          .map(
-            (n) =>
-              `<div class="item-note" data-note-id="${esc(n.id)}">${esc(n.text)}` +
-              `<span class="note-by">— ${esc(n.by ?? "unknown origin")}</span>` +
-              `<button class="note-remove" title="Remove this note (human-only — workers can never delete an annotation)">✕</button></div>`,
-          )
-          .join("")}</div>`
-      : "";
+  // Row shows ONLY the Why's first line (full notes live in the ⋯ dialog).
+  const whyNote = item.notes.find((n) => /^\s*Why\s*:/i.test(n.text));
+  const whyPreview = whyNote
+    ? `<div class="why-preview" title="${esc(whyNote.text)}">${esc(whyNote.text.split("\n")[0].slice(0, 140))}</div>`
+    : "";
   return (
     `<li ${liAttrs.join(" ")}>` +
     `<input type="checkbox" class="item-check"${checkedAttr}>` +
@@ -454,20 +447,8 @@ function itemHtml(
     pendingEditSpan +
     evidenceChips +
     itemControls +
-    (item.state === "active"
-      ? `<div class="research-direction" hidden>
-      <input type="text" class="research-direction-input" placeholder="Research what? — direct the investigation (empty = the item text itself)">
-      <button class="research-direction-go">Go</button>
-      <button class="research-direction-cancel">✕</button>
-    </div>
-    <div class="accept-reason" hidden>
-      <input type="text" class="accept-reason-input" placeholder="Why is this residual acceptable? — the reason is SIGNED into the TEP">
-      <button class="accept-reason-go">Accept</button>
-      <button class="accept-reason-cancel">✕</button>
-    </div>`
-      : "") +
     depChips +
-    notesHtml +
+    whyPreview +
     `</li>`
   );
 }
