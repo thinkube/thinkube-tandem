@@ -98,17 +98,34 @@ export function buildThinkySystemPrompt(): string {
     `- Be honest about outcomes: report what tools actually returned, including rejections.\n` +
     `- Be concise and conversational. No headers, no ceremony. Reference items by their text, ` +
     `with ids in parentheses.\n` +
-    `- If the request needs no tool (a question about the space), answer directly from [SPACE STATE].`
+    `- If the request needs no tool (a question about the space), answer directly from [SPACE STATE].\n\n` +
+    `GUIDED FLOW (while the space has NO items yet — the wizard-as-dialogue):\n` +
+    `1. INTAKE: greet with "What do you want to build?" if the journal is empty. For EVERY message that adds ` +
+    `scope, call journal_verbatim (their words, mechanically verbatim) and ask what more — one short question, ` +
+    `no analysis yet. Keep going until they say it's all / that's everything.\n` +
+    `2. CONTEXT: then ask what already exists that matters here, and OFFER to check for yourself via ` +
+    `contextualize (the sanctioned read of the declared sources). Statements about the environment go through ` +
+    `assumption_verbatim.\n` +
+    `3. DECOMPOSE: once the digest exists (or they decline context), offer expand_space. Never call it ` +
+    `uninvited — the human triggers the derivation.\n` +
+    `The human may break the protocol at any time — follow them; the protocol is a guide, not a form.`
   );
 }
 
 // ── Tool executors (pure w.r.t. vscode; tested with fake sessions) ───────────
+
+export interface ThinkyToolCtx {
+  /** The human's CURRENT message, verbatim — the only sanctioned source for
+   *  journal/assumption content (the model cannot paraphrase the record). */
+  utterance: string;
+}
 
 export interface ThinkyToolDef {
   description: string;
   run(
     session: ThinkyAgentSessionLike,
     args: Record<string, unknown>,
+    ctx: ThinkyToolCtx,
   ): Promise<string>;
 }
 
@@ -221,32 +238,40 @@ export const THINKY_TOOLS: Record<string, ThinkyToolDef> = {
       return session.lastCommandMessage ?? "Research round completed.";
     },
   },
-  add_journal_entry: {
+  journal_verbatim: {
     description:
-      "Append a rough request to the journal (expands the space). Args: {text: string}",
-    async run(session, args) {
-      const text = typeof args.text === "string" ? args.text.trim() : "";
-      if (!text) return "Nothing added — empty text.";
+      "Record the human's CURRENT message as a journal entry, VERBATIM (their rough words, never yours). No arguments — the content is taken mechanically from what they just said. Use during guided intake and whenever they add scope.",
+    async run(session, _args, ctx) {
+      const text = ctx.utterance.trim();
+      if (!text) return "Nothing recorded — empty message.";
       await session.postFromWebview({ type: "addRoughRequest", text });
-      return (
-        session.lastCommandMessage ??
-        "Journal entry added — the expansion round is absorbing it."
-      );
+      return session.lastCommandMessage ?? "Journal entry recorded verbatim.";
     },
   },
-  record_assumption: {
+  assumption_verbatim: {
     description:
-      "Record a standing assumption (a human statement all workers must honor). Args: {text: string}",
-    async run(session, args) {
-      const text = typeof args.text === "string" ? args.text.trim() : "";
-      if (!text) return "Nothing recorded — empty text.";
+      "Record the human's CURRENT message as a standing assumption, VERBATIM (a statement all workers must honor). No arguments — the content is taken mechanically from what they just said.",
+    async run(session, _args, ctx) {
+      const text = ctx.utterance.trim();
+      if (!text) return "Nothing recorded — empty message.";
       if (!session.dispatch) return "This surface cannot record assumptions.";
       const delta = session.dispatch({ type: "addAssumption", text });
       const kind = (delta as { kind?: string }).kind;
       if (kind !== "applied") {
         return `Assumption refused: ${(delta as { reason?: string }).reason ?? "unknown reason"}`;
       }
-      return `Recorded standing assumption #${(session.model.assumptions ?? []).length}.`;
+      return `Recorded standing assumption #${(session.model.assumptions ?? []).length} (verbatim).`;
+    },
+  },
+  expand_space: {
+    description:
+      "Trigger the decomposition round: workers derive elements, constraints, gaps, criteria and verification items from the journal + context digest. Use once intake and context are done (or the human asks to proceed).",
+    async run(session) {
+      await session.postFromWebview({ type: "prefill" });
+      return (
+        session.lastCommandMessage ??
+        "Decomposition round completed — the board shows the derived items."
+      );
     },
   },
 };
@@ -307,15 +332,21 @@ export async function runThinkyAgentTurn(
     reframe: {},
     contextualize: {},
     research: { subject: z.string(), itemId: z.string().optional() },
-    add_journal_entry: { text: z.string() },
-    record_assumption: { text: z.string() },
+    journal_verbatim: {},
+    assumption_verbatim: {},
+    expand_space: {},
   };
+  const ctx = { utterance: prompt };
   const tools = Object.entries(THINKY_TOOLS).map(([name, def]) =>
     sdk.tool(name, def.description, schemas[name] ?? {}, async (args) => ({
       content: [
         {
           type: "text",
-          text: await def.run(deps.session, args as Record<string, unknown>),
+          text: await def.run(
+            deps.session,
+            args as Record<string, unknown>,
+            ctx,
+          ),
         },
       ],
     })),

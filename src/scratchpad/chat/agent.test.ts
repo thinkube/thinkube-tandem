@@ -84,9 +84,11 @@ test("system prompt states human sovereignty and id discipline", () => {
 test("cut_elements clears then toggles only valid ids, reports unknowns", async () => {
   const { model, elementId } = seeded();
   const session = fakeSession(model, "Cut: 1 element, 4 context items pulled.");
-  const out = await THINKY_TOOLS.cut_elements.run(session, {
-    itemIds: [elementId, "item-fake-99"],
-  });
+  const out = await THINKY_TOOLS.cut_elements.run(
+    session,
+    { itemIds: [elementId, "item-fake-99"] },
+    { utterance: "" },
+  );
   assert.deepEqual(session.posted[0], { type: "clearCut" });
   assert.deepEqual(session.posted[1], { type: "toggleCut", itemId: elementId });
   assert.equal(session.posted.length, 2);
@@ -96,9 +98,11 @@ test("cut_elements clears then toggles only valid ids, reports unknowns", async 
 test("stage_items refuses when no valid ids and never posts", async () => {
   const { model } = seeded();
   const session = fakeSession(model);
-  const out = await THINKY_TOOLS.stage_items.run(session, {
-    itemIds: ["nope"],
-  });
+  const out = await THINKY_TOOLS.stage_items.run(
+    session,
+    { itemIds: ["nope"] },
+    { utterance: "" },
+  );
   assert.equal(session.posted.length, 0);
   assert.ok(out.includes("Nothing staged"));
   assert.ok(out.includes("nope"));
@@ -107,9 +111,11 @@ test("stage_items refuses when no valid ids and never posts", async () => {
 test("stage_items stages valid ids through the selection channel", async () => {
   const { model, elementId } = seeded();
   const session = fakeSession(model);
-  const out = await THINKY_TOOLS.stage_items.run(session, {
-    itemIds: [elementId],
-  });
+  const out = await THINKY_TOOLS.stage_items.run(
+    session,
+    { itemIds: [elementId] },
+    { utterance: "" },
+  );
   assert.deepEqual(session.posted[0], { type: "clearSelection" });
   assert.deepEqual(session.posted[1], {
     type: "toggleSelect",
@@ -119,17 +125,50 @@ test("stage_items stages valid ids through the selection channel", async () => {
   assert.ok(out.includes("human"));
 });
 
-test("record_assumption dispatches and reports the count; empty text refused", async () => {
+test("assumption_verbatim records the UTTERANCE verbatim, ignoring any model text", async () => {
   const { model } = seeded();
   const session = fakeSession(model);
-  const out = await THINKY_TOOLS.record_assumption.run(session, {
-    text: "single-user platform",
-  });
+  const out = await THINKY_TOOLS.assumption_verbatim.run(
+    session,
+    { text: "a paraphrase the model tried to sneak in" },
+    { utterance: "single-user platform" },
+  );
   assert.ok(out.includes("assumption #1"));
-  const refused = await THINKY_TOOLS.record_assumption.run(session, {
-    text: "  ",
-  });
+  assert.equal(session.model.assumptions?.[0].text, "single-user platform");
+  const refused = await THINKY_TOOLS.assumption_verbatim.run(
+    session,
+    {},
+    { utterance: "   " },
+  );
   assert.ok(refused.includes("Nothing recorded"));
+});
+
+test("journal_verbatim posts the raw utterance through the seam, never model text", async () => {
+  const { model } = seeded();
+  const session = fakeSession(model);
+  await THINKY_TOOLS.journal_verbatim.run(
+    session,
+    { text: "model words" },
+    { utterance: "surface per-step log output in a node-anchored log panel" },
+  );
+  assert.deepEqual(session.posted[0], {
+    type: "addRoughRequest",
+    text: "surface per-step log output in a node-anchored log panel",
+  });
+});
+
+test("expand_space triggers the decomposition round through the seam", async () => {
+  const { model } = seeded();
+  const session = fakeSession(model);
+  await THINKY_TOOLS.expand_space.run(session, {}, { utterance: "go ahead" });
+  assert.deepEqual(session.posted[0], { type: "prefill" });
+});
+
+test("the system prompt carries the guided-flow protocol", () => {
+  const prompt = buildThinkySystemPrompt();
+  assert.ok(prompt.includes("GUIDED FLOW"));
+  assert.ok(prompt.includes("journal_verbatim"));
+  assert.ok(prompt.includes("Never call it uninvited"));
 });
 
 test("the belt contains NO settling, destructive, freeze, or panic tools", () => {
@@ -147,9 +186,13 @@ test("the belt contains NO settling, destructive, freeze, or panic tools", () =>
 test("readiness/reframe/research tools speak the exact seam messages", async () => {
   const { model } = seeded();
   const session = fakeSession(model, "outcome text");
-  await THINKY_TOOLS.check_readiness.run(session, {});
-  await THINKY_TOOLS.reframe.run(session, {});
-  await THINKY_TOOLS.research.run(session, { subject: "digest storage" });
+  await THINKY_TOOLS.check_readiness.run(session, {}, { utterance: "" });
+  await THINKY_TOOLS.reframe.run(session, {}, { utterance: "" });
+  await THINKY_TOOLS.research.run(
+    session,
+    { subject: "digest storage" },
+    { utterance: "" },
+  );
   assert.deepEqual(
     session.posted.map((m) => m.type),
     ["checkReadiness", "reframe", "research"],

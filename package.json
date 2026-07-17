@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.259",
+  "version": "0.1.260",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -819,9 +819,9 @@
         "displayName": "Thinky",
         "description": "Tandem thinking-space assistant — statements become standing assumptions, asks become journal entries, questions get grounded answers",
         "icon": "$(sparkle)",
-        "welcomeTitle": "Thinky",
-        "welcomeMessage": "Your thinking space, as a conversation. Statements become standing assumptions, asks expand the journal, questions get answered from the space. Open a thinking space first if none is active.",
-        "inputPlaceholder": "Tell Thinky about your intent…",
+        "welcomeTitle": "What do you want to build?",
+        "welcomeMessage": "Tell me in your own words — each message becomes a journal entry, verbatim, until you say that's all. Then we gather context, and only then derive the elements.",
+        "inputPlaceholder": "What do you want to build?",
         "capabilities": {
           "supportsFileAttachments": false
         },
