@@ -29,6 +29,7 @@ export interface ThinkyAgentSessionLike {
   readonly lastCommandMessage: string | undefined;
   readonly selectionCount?: number;
   readonly selectedItemIds?: readonly string[];
+  readonly contextSources?: readonly string[];
   postFromWebview(message: ScratchpadInboundMessage): Promise<void>;
   dispatch?(action: unknown): Delta;
 }
@@ -69,6 +70,11 @@ export function renderSpaceSnapshot(session: ThinkyAgentSessionLike): string {
     }
   }
   if (model.curatedTitle) lines.push(`Curated intent: ${model.curatedTitle}`);
+  if (session.contextSources?.length) {
+    lines.push(
+      `Declared context sources (contextualize reads EXACTLY these — not chooseable): ${session.contextSources.join(", ")}`,
+    );
+  }
   if ((session.selectionCount ?? 0) > 0) {
     lines.push(
       `Staged for human action: ${session.selectionCount} item(s)${
@@ -110,8 +116,9 @@ export function buildThinkySystemPrompt(): string {
     `mixes meta-talk with content ("yes, add this: …"), extract ONLY the content via the {text} excerpt — an ` +
     `exact substring; pure confirmations ("yes", "ok") and navigation words are NOT entries, do not journal ` +
     `them. Keep going until they say it's all / that's everything.\n` +
-    `2. CONTEXT: then ask what already exists that matters here, and OFFER to check for yourself via ` +
-    `contextualize (the sanctioned read of the declared sources). Statements about the environment go through ` +
+    `2. CONTEXT: then ask what already exists that matters here, and OFFER to run contextualize. Its sources ` +
+    `are DECLARED and fixed (listed in [SPACE STATE]) — NEVER ask the human for repo paths or files; name the ` +
+    `declared sources and ask "shall I read them?". Statements about the environment go through ` +
     `assumption_verbatim.\n` +
     `3. DECOMPOSE: once the digest exists (or they decline context), offer expand_space. Never call it ` +
     `uninvited — the human triggers the derivation.\n` +

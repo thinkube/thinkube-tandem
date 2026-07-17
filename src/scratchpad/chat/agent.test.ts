@@ -254,3 +254,15 @@ test("journal_verbatim records the validated excerpt and rejects rewrites", asyn
   assert.ok(rejected.includes("REJECTED"));
   assert.equal(session.posted.length, 1);
 });
+
+test("snapshot names the declared context sources; doctrine forbids path-fishing", () => {
+  const { model } = seeded();
+  const session = Object.assign(fakeSession(model), {
+    contextSources: ["/ws/root", "/store/Platform/projects/x"],
+  });
+  const snap = renderSpaceSnapshot(session);
+  assert.ok(snap.includes("Declared context sources"));
+  assert.ok(snap.includes("/store/Platform/projects/x"));
+  const prompt = buildThinkySystemPrompt();
+  assert.ok(prompt.includes("NEVER ask the human for repo paths"));
+});

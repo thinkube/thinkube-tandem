@@ -151,6 +151,9 @@ export interface ScratchpadSession {
   readonly selectedItemIds: readonly string[];
   /** Reveal the board panel (preserveFocus keeps the caret where it is). */
   revealPanel(preserveFocus?: boolean): void;
+  /** The DECLARED context sources the contextualize round reads — fixed by
+   *  the session, not chooseable per run (agent grounding, 2026-07-17). */
+  readonly contextSources: readonly string[];
 }
 
 // ===== Module-level state =====
@@ -285,6 +288,16 @@ class ScratchpadSessionImpl implements ScratchpadSession {
 
   get selectedItemIds(): readonly string[] {
     return [...this._selection];
+  }
+
+  get contextSources(): readonly string[] {
+    const sources: string[] = [];
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (ws) sources.push(ws);
+    if (this._sidecarRoot) {
+      sources.push(nodePath.join(this._sidecarRoot, this._namespace));
+    }
+    return sources;
   }
 
   get space(): string {
