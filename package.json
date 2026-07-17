@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.251",
+  "version": "0.1.252",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -23,7 +23,8 @@
     "url": "https://github.com/thinkube/thinkube-tandem"
   },
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onLanguageModelChatProvider:thinkube-claude"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -905,6 +906,12 @@
             "description": "Wipe derived state, keep the journal (refused after any freeze)"
           }
         ]
+      }
+    ],
+    "languageModelChatProviders": [
+      {
+        "vendor": "thinkube-claude",
+        "displayName": "Claude (Thinkube subscription)"
       }
     ]
   },

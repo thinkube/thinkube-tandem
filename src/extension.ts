@@ -60,6 +60,7 @@ import {
 import type { ScratchpadSessionDeps, ScratchpadSession } from "./scratchpad";
 import { registerThinkyParticipant } from "./scratchpad/chat/participant";
 import { registerItemsTree } from "./scratchpad/views/itemsTree";
+import { registerThinkyLanguageModel } from "./scratchpad/chat/lmProvider";
 
 /** Public API returned by activate() — the runtime seam for extension-host probes. */
 export interface TandemExtensionApi {
@@ -452,6 +453,11 @@ export function activate(context: vscode.ExtensionContext): TandemExtensionApi {
 
   // Native items tree (Phase D): checkbox settling + cut flow + gate report.
   registerItemsTree(context);
+
+  // Native model picker provider: Claude via the Agent SDK on the local
+  // Claude Code login — fills the chat panel's model list without GitHub
+  // auth or API keys. Guarded — ships dark on hosts without the LM API.
+  registerThinkyLanguageModel(context);
 
   // Defect distributions (TEP-22/SP-1): the three tables + the manual-entry row.
   registerDefectCommands(context, {
