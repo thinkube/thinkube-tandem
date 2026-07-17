@@ -107,7 +107,12 @@ export function registerThinkyLanguageModel(
         version: "1.0",
         maxInputTokens: 180_000,
         maxOutputTokens: 16_000,
-        capabilities: { toolCalling: false, imageInput: false },
+        // toolCalling declared so the models survive the AGENT-mode picker
+        // filter (the anonymous panel forces agent mode; suitableForAgentMode
+        // requires toolCalling). The provider answers in plain text and never
+        // emits tool calls — fine for Ask-style turns and @thinky, which does
+        // all its work through its own worker rounds.
+        capabilities: { toolCalling: true, imageInput: false },
       }));
     },
     async provideLanguageModelChatResponse(
