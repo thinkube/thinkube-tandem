@@ -203,6 +203,9 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   /** The CUT (third selection channel, 2026-07-16 redesign): element ids
    *  selected to ship as the next TEP. Ephemeral until frozen. */
   private _cut: Set<string> = new Set();
+  /** Scope of the LAST curation ("space" or "cut") — labels the curated-intent
+   *  panel so a cut-scoped synthesis is never mistaken for the whole space's. */
+  private _curatedScope: "space" | "cut" | undefined;
   /** The last command error/explanation message (cleared on the next command attempt). */
   private _commandMessage: string | undefined;
 
@@ -271,6 +274,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         [...this._selection],
         this._focusItemId,
         [...this._cut],
+        this._curatedScope,
       );
     }
     // Debounce-persist to disk
@@ -311,6 +315,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
       [...this._selection],
       this._focusItemId,
       [...this._cut],
+      this._curatedScope,
     );
   }
 
@@ -345,13 +350,13 @@ class ScratchpadSessionImpl implements ScratchpadSession {
    * Targets only the goal section (it may produce an editGoal action).
    */
   async runReframe(): Promise<void> {
+    const cutScoped = this._cut.size > 0;
     await this._runWorkerRound("reframe", ["goal"], async () => {
       // With a cut active, the curated intent is synthesized for the CUT —
       // it describes the upcoming TEP, not the whole space.
-      const scope =
-        this._cut.size > 0
-          ? { itemIds: this._cutClosureIds() }
-          : undefined;
+      const scope = cutScoped
+        ? { itemIds: this._cutClosureIds() }
+        : undefined;
       const worker = reframe(
         {
           loadQuery: this._loadQueryFn,
@@ -361,6 +366,10 @@ class ScratchpadSessionImpl implements ScratchpadSession {
       );
       return worker.run(this._model, []);
     });
+    if (this._model.curatedIntent?.trim()) {
+      this._curatedScope = cutScoped ? "cut" : "space";
+      this._updatePanel();
+    }
   }
 
   /**
@@ -1212,6 +1221,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         [...this._selection],
         this._focusItemId,
         [...this._cut],
+        this._curatedScope,
       );
     }
   }

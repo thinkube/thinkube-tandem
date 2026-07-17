@@ -657,6 +657,7 @@ export function buildScratchpadHtml(
   selectedItemIds?: readonly string[],
   focusItemId?: string,
   cutItemIds?: readonly string[],
+  curatedScope?: "space" | "cut",
 ): string {
   const selection: ReadonlySet<string> = new Set(selectedItemIds ?? []);
   const cut: ReadonlySet<string> = new Set(cutItemIds ?? []);
@@ -801,8 +802,14 @@ export function buildScratchpadHtml(
 
   // Curated intent panel (bottom): the derived synthesis freeze signs —
   // maintained by Reframe, never the human's raw words.
-  const curatedPanel = `<section class="curated-intent">
-    <h2>Curated intent <span class="curated-hint">(derived — maintained by Reframe; this is what Freeze signs)</span></h2>
+  const scopeLabel =
+    curatedScope === "cut"
+      ? "curated for the CURRENT CUT — describes the upcoming TEP, not the whole space; clear the cut and Reframe to re-synthesize space-wide"
+      : curatedScope === "space"
+        ? "curated for the whole space"
+        : "derived — maintained by Reframe; this is what Freeze signs";
+  const curatedPanel = `<section class="curated-intent${curatedScope === "cut" ? " cut-scoped" : ""}">
+    <h2>Curated intent <span class="curated-hint">(${scopeLabel})</span></h2>
     ${
       model.curatedIntent?.trim()
         ? `<div id="curated-intent-text">${esc(model.curatedIntent)}</div>`
@@ -977,6 +984,7 @@ export function buildScratchpadHtml(
     li.item.protected { background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-charts-yellow, #cca700) 8%); }
     .flag-badge { font-size: 0.8em; color: var(--vscode-charts-yellow, #cca700); border: 1px solid var(--vscode-charts-yellow, #cca700); border-radius: 3px; padding: 0 5px; }
     .curated-intent { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 12px; padding: 12px; }
+    .curated-intent.cut-scoped { border-left: 3px double var(--vscode-charts-yellow, #cca700); }
     .curated-intent .curated-hint { font-weight: normal; font-size: 0.75em; opacity: 0.7; }
     #curated-intent-text { white-space: pre-wrap; }
     #curated-intent-text.empty { opacity: 0.5; font-style: italic; }
@@ -1329,6 +1337,7 @@ export class ScratchpadDocumentView implements vscode.Disposable {
     selectedItemIds?: readonly string[],
     focusItemId?: string,
     cutItemIds?: readonly string[],
+    curatedScope?: "space" | "cut",
   ): void {
     if (this._panel) {
       this._panel.webview.html = buildScratchpadHtml(
@@ -1340,6 +1349,7 @@ export class ScratchpadDocumentView implements vscode.Disposable {
         selectedItemIds,
         focusItemId,
         cutItemIds,
+        curatedScope,
       );
     }
   }
