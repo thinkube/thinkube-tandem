@@ -350,6 +350,11 @@ function itemHtml(
           ? "Remove from selection"
           : "Select — then apply an action from the selection bar"
       }">${selected ? "deselect" : "select"}</button>`;
+  // Open gap questions BLOCK freeze — they must not hide in a long list.
+  const openQuestionBadge =
+    isGap && item.state === "active" && !item.checked
+      ? `<span class="open-question-badge" title="This open question blocks Freeze — check it (carry into the TEP), resolve it (answered), defer, or drop it">OPEN — blocks freeze</span>`
+      : "";
   const resolveButton =
     isGap && item.state === "active"
       ? `<button class="item-resolve" title="Resolve — this question has been ANSWERED (typically after research): closes it as a visible record">resolve</button>`
@@ -421,6 +426,7 @@ function itemHtml(
     evalsSpan +
     evalBadges +
     `<span class="item-text">${esc(item.text)}</span>` +
+    openQuestionBadge +
     staleBadge +
     cutContextBadge +
     flagBadge +
@@ -976,6 +982,7 @@ export function buildScratchpadHtml(
     li.item.dep-req { border-left: 3px solid var(--vscode-charts-green, #89d185); padding-left: 6px; }
     li.item.dep-dependent { border-left: 3px solid var(--vscode-charts-orange, #d18616); padding-left: 6px; }
     li.item.dep-dim { opacity: 0.35; }
+    .open-question-badge { font-size: 0.8em; color: var(--vscode-editor-background); background: var(--vscode-errorForeground); border-radius: 3px; padding: 0 6px; font-weight: bold; }
     .stale-badge { font-size: 0.8em; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-errorForeground); border-radius: 3px; padding: 0 5px; }
     .dep-chips { flex-basis: 100%; margin: 4px 0 2px 24px; font-size: 0.85em; opacity: 0.9; }
     .dep-chip { background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-charts-green, #89d185); border-radius: 8px; padding: 1px 8px; cursor: pointer; font-size: 0.95em; margin: 2px; }
