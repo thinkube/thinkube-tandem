@@ -78,7 +78,11 @@ export type ScratchpadInboundMessage =
   | {
       type: "applySelection";
       verb: "check" | "uncheck" | "defer" | "drop";
-    };
+    }
+  // ── Board (2026-07-17 redesign): the ONE selection + cut-as-result ──
+  | { type: "setSelection"; itemIds: string[] }
+  | { type: "setCutFromSelection" }
+  | { type: "askThinky" };
 
 /** Visual marker for each section state. */
 export const STATE_MARKERS: Record<SectionState, string> = {

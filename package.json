@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Thinkube integration for AI assistants - Launch Claude from explorer context menu with smart directory detection and project configuration",
-  "version": "0.1.258",
+  "version": "0.1.259",
   "publisher": "thinkube",
   "engines": {
     "vscode": "^1.101.0"
@@ -44,12 +44,6 @@
           "id": "thinkubeThinkingSpaces",
           "name": "Thinking Spaces",
           "contextualTitle": "Thinkube Thinking Spaces"
-        },
-        {
-          "id": "tandemThinkingItems",
-          "name": "Thinking Items",
-          "icon": "$(checklist)",
-          "contextualTitle": "Thinking Items"
         },
         {
           "id": "thinkubeTeps",
@@ -414,53 +408,6 @@
         "title": "New Thinking Space Document",
         "category": "Tandem ThinkingSpaces",
         "icon": "$(add)"
-      },
-      {
-        "command": "thinkube.items.refresh",
-        "title": "Refresh Thinking Items",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "thinkube.items.why",
-        "title": "Why? (explain this item)"
-      },
-      {
-        "command": "thinkube.items.research",
-        "title": "Research…"
-      },
-      {
-        "command": "thinkube.items.resolve",
-        "title": "Resolve (question answered)"
-      },
-      {
-        "command": "thinkube.items.defer",
-        "title": "Defer"
-      },
-      {
-        "command": "thinkube.items.drop",
-        "title": "Drop (permanent veto)"
-      },
-      {
-        "command": "thinkube.items.acceptEval",
-        "title": "Accept residual complexity/risk…"
-      },
-      {
-        "command": "thinkube.items.toggleCut",
-        "title": "Add/Remove from Cut"
-      },
-      {
-        "command": "thinkube.items.stage",
-        "title": "Stage for Action"
-      },
-      {
-        "command": "thinkube.items.cutFlow",
-        "title": "Cut a TEP…",
-        "icon": "$(scissors)"
-      },
-      {
-        "command": "thinkube.items.gateReport",
-        "title": "Gate Report",
-        "icon": "$(checklist)"
       }
     ],
     "menus": {
@@ -553,21 +500,6 @@
         {
           "command": "thinkube.teps.archiveAllCompleted",
           "when": "view == thinkubeTeps",
-          "group": "navigation@3"
-        },
-        {
-          "command": "thinkube.items.cutFlow",
-          "when": "view == tandemThinkingItems",
-          "group": "navigation@1"
-        },
-        {
-          "command": "thinkube.items.gateReport",
-          "when": "view == tandemThinkingItems",
-          "group": "navigation@2"
-        },
-        {
-          "command": "thinkube.items.refresh",
-          "when": "view == tandemThinkingItems",
           "group": "navigation@3"
         }
       ],
@@ -711,46 +643,6 @@
           "command": "thinkube.thinkingSpace.newDoc",
           "when": "view == thinkubeThinkingSpaces && viewItem == newThinkingDoc",
           "group": "inline"
-        },
-        {
-          "command": "thinkube.items.why",
-          "when": "view == tandemThinkingItems && (viewItem == tandemItem || viewItem == tandemItemProtected)",
-          "group": "1_info@1"
-        },
-        {
-          "command": "thinkube.items.research",
-          "when": "view == tandemThinkingItems && (viewItem == tandemItem || viewItem == tandemItemProtected)",
-          "group": "1_info@2"
-        },
-        {
-          "command": "thinkube.items.resolve",
-          "when": "view == tandemThinkingItems && viewItem == tandemItem",
-          "group": "2_settle@1"
-        },
-        {
-          "command": "thinkube.items.defer",
-          "when": "view == tandemThinkingItems && viewItem == tandemItem",
-          "group": "2_settle@2"
-        },
-        {
-          "command": "thinkube.items.drop",
-          "when": "view == tandemThinkingItems && viewItem == tandemItem",
-          "group": "2_settle@3"
-        },
-        {
-          "command": "thinkube.items.acceptEval",
-          "when": "view == tandemThinkingItems && viewItem == tandemItem",
-          "group": "2_settle@4"
-        },
-        {
-          "command": "thinkube.items.toggleCut",
-          "when": "view == tandemThinkingItems && (viewItem == tandemItem || viewItem == tandemItemProtected)",
-          "group": "3_cut@1"
-        },
-        {
-          "command": "thinkube.items.stage",
-          "when": "view == tandemThinkingItems && viewItem == tandemItem",
-          "group": "3_cut@2"
         }
       ],
       "explorer/context": [

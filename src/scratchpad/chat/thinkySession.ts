@@ -224,7 +224,10 @@ export function registerThinkySession(
         });
         if (bound) {
           try {
-            await ensureSpaceSession(bound);
+            const session = await ensureSpaceSession(bound);
+            // Bidirectional attachment: opening the chat session opens its
+            // board beside it, without stealing the caret from the chat.
+            session.revealPanel(true);
           } catch {
             /* space unreadable — session still opens, handler reports */
           }

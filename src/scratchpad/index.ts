@@ -98,18 +98,34 @@ function boardRoot(): string | undefined {
  * so this only surfaces the mouth. isPartialQuery keeps the mention in the
  * input without submitting. Fail-soft on hosts without the chat view.
  */
-async function openThinkyChat(): Promise<void> {
+async function openThinkyChat(namespace?: string, space?: string): Promise<void> {
   const enabled = vscode.workspace
     .getConfiguration("thinkube.thinky")
     .get<boolean>("openChatOnSpaceOpen", true);
   if (!enabled) return;
+  // Bidirectional attachment (2026-07-17): prefer opening the space's BOUND
+  // Thinky session (resource thinky:/<ns>/<space>); the generic chat view
+  // with the @thinky mention is the fallback on hosts where the session
+  // editor cannot be opened by resource.
+  if (namespace && space) {
+    try {
+      const uri = vscode.Uri.from({
+        scheme: "thinky",
+        path: `/${namespace}/${space}`,
+      });
+      await vscode.commands.executeCommand("vscode.open", uri);
+      return;
+    } catch {
+      /* fall through to the generic chat view */
+    }
+  }
   try {
     await vscode.commands.executeCommand("workbench.action.chat.open", {
       query: "@thinky ",
       isPartialQuery: true,
     });
   } catch {
-    // No chat surface in this host — the panel alone is fine.
+    // No chat surface in this host — the board alone is fine.
   }
 }
 
@@ -125,8 +141,8 @@ export function registerScratchpadCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand("thinkube.scratchpad.open", async () => {
-      await openScratchpad();
-      await openThinkyChat();
+      const session = await openScratchpad();
+      await openThinkyChat(session.namespace, session.space);
     }),
   );
 
@@ -165,7 +181,7 @@ export function registerScratchpadCommands(
         }
         const sidecarRoot = boardRoot();
         await openScratchpad({ namespace, space: name, sidecarRoot });
-        await openThinkyChat();
+        await openThinkyChat(namespace, name);
       },
     ),
   );
@@ -225,7 +241,7 @@ export function registerScratchpadCommands(
 
         // Open the (possibly just-seeded) document.
         await openScratchpad({ namespace, space: docName, sidecarRoot });
-        await openThinkyChat();
+        await openThinkyChat(namespace, docName);
       },
     ),
   );

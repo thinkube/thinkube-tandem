@@ -28,6 +28,7 @@ export interface ThinkyAgentSessionLike {
   readonly model: WorkingModel;
   readonly lastCommandMessage: string | undefined;
   readonly selectionCount?: number;
+  readonly selectedItemIds?: readonly string[];
   postFromWebview(message: ScratchpadInboundMessage): Promise<void>;
   dispatch?(action: unknown): Delta;
 }
@@ -69,7 +70,13 @@ export function renderSpaceSnapshot(session: ThinkyAgentSessionLike): string {
   }
   if (model.curatedTitle) lines.push(`Curated intent: ${model.curatedTitle}`);
   if ((session.selectionCount ?? 0) > 0) {
-    lines.push(`Staged for human action: ${session.selectionCount} item(s)`);
+    lines.push(
+      `Staged for human action: ${session.selectionCount} item(s)${
+        session.selectedItemIds?.length
+          ? ` [${session.selectedItemIds.join(", ")}]`
+          : ""
+      }`,
+    );
   }
   const out = lines.join("\n");
   return out.length <= 12000

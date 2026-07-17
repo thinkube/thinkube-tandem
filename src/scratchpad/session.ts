@@ -19,7 +19,9 @@ import type { DossierStore, ResearchTarget } from "./workers/research";
 export type { DossierStore } from "./workers/research";
 import type { QueryFn } from "./workers/worker";
 import { createLoop } from "./loop";
-import { buildScratchpadHtml, ScratchpadDocumentView } from "./views/document";
+import { buildScratchpadHtml } from "./views/document";
+import { BoardView } from "./views/board";
+import type { BoardOptions } from "./views/board";
 import type { RoundActivity, ScratchpadInboundMessage } from "./views/document";
 import { interpret } from "./workers/interpreter";
 import { freeze as doFreeze } from "./freeze";
@@ -145,6 +147,10 @@ export interface ScratchpadSession {
   /** Items currently STAGED for action (selection-for-action, ephemeral).
    *  The chat mouth reads it to offer the apply-verb buttons. */
   readonly selectionCount: number;
+  /** The staged ids themselves (board selection == chat staging, 2026-07-17). */
+  readonly selectedItemIds: readonly string[];
+  /** Reveal the board panel (preserveFocus keeps the caret where it is). */
+  revealPanel(preserveFocus?: boolean): void;
 }
 
 // ===== Module-level state =====
@@ -209,7 +215,7 @@ class ScratchpadSessionImpl implements ScratchpadSession {
   private readonly _runSlicer:
     ((intent: string) => Promise<SlicerVerdict>) | undefined;
   private readonly _signing: SigningTool | undefined;
-  private _view: ScratchpadDocumentView | undefined;
+  private _view: BoardView | undefined;
 
   /** Tracks whether any worker round is currently in flight. */
   private _roundInFlight = false;
@@ -277,6 +283,10 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     return this._selection.size;
   }
 
+  get selectedItemIds(): readonly string[] {
+    return [...this._selection];
+  }
+
   get space(): string {
     return this._space;
   }
@@ -304,18 +314,9 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     for (const listener of this._listeners) {
       listener(this._model);
     }
-    // Push updated model into the open panel (with current round activity + command state)
+    // Push updated model into the open panel (board, 2026-07-17)
     if (this._view) {
-      this._view.update(
-        this._model,
-        this._roundActivity,
-        this._commandMessage,
-        this._commandInFlight,
-        [...this._selection],
-        this._focusItemId,
-        [...this._cut],
-        this._curatedScope,
-      );
+      this._view.update(this._model, this._boardOptions());
     }
     // Debounce-persist to disk
     this._scheduleFlush();
@@ -1216,6 +1217,52 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           );
         }
         break;
+      case "setSelection": {
+        // The board's ONE selection (2026-07-17 redesign): replaces the whole
+        // set. Ids are validated against live items; unknown ids are dropped.
+        const known = new Set<string>();
+        for (const sec of this._model.sections)
+          for (const it of sec.items) known.add(it.id);
+        this._selection = new Set(
+          (message.itemIds ?? []).filter((id) => known.has(id)),
+        );
+        this._updatePanel();
+        break;
+      }
+      case "setCutFromSelection": {
+        // The cut is a RESULT of the selection, not a rival selection mode.
+        const elements = new Set(
+          this._model.sections
+            .filter((s) => s.kind === "elements")
+            .flatMap((s) => s.items)
+            .filter((it) => it.state === "active")
+            .map((it) => it.id),
+        );
+        const chosen = [...this._selection].filter((id) => elements.has(id));
+        const skipped = this._selection.size - chosen.length;
+        if (chosen.length === 0) {
+          this._commandMessage =
+            "Cut unchanged — the selection contains no active elements (cuts ship ELEMENTS; context is pulled by the closure).";
+        } else {
+          this._cut = new Set(chosen);
+          this._commandMessage = `Cut set: ${chosen.length} element${chosen.length === 1 ? "" : "s"}${
+            skipped > 0 ? ` (${skipped} non-element selection item${skipped === 1 ? "" : "s"} left out — context joins via edges)` : ""
+          }. Ask Thinky to check readiness, or Freeze when the gate is green.`;
+        }
+        this._updatePanel();
+        break;
+      }
+      case "askThinky": {
+        try {
+          await vscode.commands.executeCommand("workbench.action.chat.open", {
+            query: "@thinky ",
+            isPartialQuery: true,
+          });
+        } catch {
+          /* no chat surface — board remains usable */
+        }
+        break;
+      }
       case "command": {
         // SL-5: interpret the utterance, dispatch returned actions, render message.
         const utterance = message.utterance;
@@ -1362,16 +1409,20 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     }
   }
 
-  /** Reveal an existing panel or create a new one. */
-  revealPanel(): void {
+  /** Reveal an existing panel or create a new one (the board). */
+  revealPanel(preserveFocus = false): void {
     if (!_extensionUri) {
       return;
     }
     if (!this._view) {
-      this._view = new ScratchpadDocumentView();
+      this._view = new BoardView();
     }
-    this._view.show(_extensionUri, this._model, (msg) =>
-      this.postFromWebview(msg),
+    this._view.show(
+      _extensionUri,
+      this._model,
+      this._boardOptions(),
+      (msg) => this.postFromWebview(msg),
+      preserveFocus,
     );
   }
 
@@ -1478,20 +1529,20 @@ class ScratchpadSessionImpl implements ScratchpadSession {
     ]);
   }
 
-  /** Push the current model + round activity + command state into the open panel. */
+  /** Push the current model + selection/cut/command state into the board. */
   private _updatePanel(): void {
     if (this._view) {
-      this._view.update(
-        this._model,
-        this._roundActivity,
-        this._commandMessage,
-        this._commandInFlight,
-        [...this._selection],
-        this._focusItemId,
-        [...this._cut],
-        this._curatedScope,
-      );
+      this._view.update(this._model, this._boardOptions());
     }
+  }
+
+  private _boardOptions(): BoardOptions {
+    return {
+      selection: [...this._selection],
+      cut: [...this._cut],
+      commandMessage: this._commandMessage,
+      busy: this._commandInFlight || this._roundInFlight,
+    };
   }
 
   /**

@@ -59,7 +59,6 @@ import {
 } from "./scratchpad";
 import type { ScratchpadSessionDeps, ScratchpadSession } from "./scratchpad";
 import { registerThinkyParticipant } from "./scratchpad/chat/participant";
-import { registerItemsTree } from "./scratchpad/views/itemsTree";
 import { registerThinkyLanguageModel } from "./scratchpad/chat/lmProvider";
 import { registerThinkySession } from "./scratchpad/chat/thinkySession";
 
@@ -452,8 +451,9 @@ export function activate(context: vscode.ExtensionContext): TandemExtensionApi {
   // Guarded inside — ships dark on hosts without the chat API.
   registerThinkyParticipant(context);
 
-  // Native items tree (Phase D): checkbox settling + cut flow + gate report.
-  registerItemsTree(context);
+  // The items TreeView (Phase D) is RETIRED (2026-07-17): sidebar trees
+  // truncate everything and cannot open as tabs — the board (views/board.ts)
+  // is the reading/sovereignty surface now. Code kept dark in views/itemsTree.
 
   // Native model picker provider: Claude via the Agent SDK on the local
   // Claude Code login — fills the chat panel's model list without GitHub
