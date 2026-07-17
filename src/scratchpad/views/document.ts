@@ -460,13 +460,13 @@ function goalSectionHtml(
     <button id="explain-btn" class="worker-btn"${prefillDisabled} onclick="triggerExplainAll()" title="One round annotates every unexplained item with Why / Impact / Modality">Explain</button>
     <button id="link-btn" class="worker-btn"${prefillDisabled} onclick="suggestLinks()" title="One round proposes dependency links (requires edges) between existing items — cuts pull context through these">Link</button>
   </div>
-  ${
-    goalWasEmpty
-      ? `<textarea id="goal-input" placeholder="Write the first journal entry — the rough goal. Entries are permanent; the space grows from them."></textarea>
-  <button onclick="confirmGoal(true)">Confirm goal</button>`
-      : `<textarea id="goal-input" hidden>${esc(section.text)}</textarea>
+  <textarea id="goal-input" hidden>${esc(section.text)}</textarea>
   <div class="journal">
-    <div class="rough-request journal-origin" title="The first entry — the original ask">1. ${esc(section.text)}</div>
+    ${
+      goalWasEmpty
+        ? ""
+        : `<div class="rough-request journal-origin" title="The first entry — the original ask">1. ${esc(section.text)}</div>`
+    }
     ${(roughRequests ?? [])
       .map(
         (r, i) =>
@@ -474,11 +474,14 @@ function goalSectionHtml(
       )
       .join("")}
     <div class="rough-request-input-area">
-      <input type="text" id="rough-request-input" placeholder="Add a journal entry — a new raw ask that expands this space…">
+      <input type="text" id="rough-request-input" placeholder="${
+        goalWasEmpty
+          ? "Write the first entry — the rough goal. Entries are permanent; the space grows from them."
+          : "Add a journal entry — a new raw ask that expands this space…"
+      }">
       <button id="rough-request-btn"${roundInFlight ? " disabled" : ""} onclick="addRoughRequest()">Add entry</button>
     </div>
-  </div>`
-  }
+  </div>
   ${errorHtml}
 </section>`;
 }

@@ -699,13 +699,16 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         });
         break;
       case "addRoughRequest": {
-        // Append-only journal of raw human asks (2026-07-16 redesign). A
-        // landed request immediately triggers an expansion round so the
-        // space absorbs it into elements/constraints/gaps/criteria.
-        const delta = this.dispatch({
-          type: "addRoughRequest",
-          text: message.text,
-        });
+        // Append-only journal of raw human asks (2026-07-16 redesign). The
+        // FIRST entry seeds the goal — one input, no special first-run
+        // ceremony (2026-07-17). Every landed entry immediately triggers an
+        // expansion round so the space absorbs it.
+        const goalIsEmpty = !(
+          this._model.sections.find((s) => s.kind === "goal")?.text ?? ""
+        ).trim();
+        const delta = goalIsEmpty
+          ? this.dispatch({ type: "seedGoal", text: message.text })
+          : this.dispatch({ type: "addRoughRequest", text: message.text });
         if (delta.kind === "applied") {
           await this.askForStructure();
         }
