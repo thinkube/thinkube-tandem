@@ -307,6 +307,16 @@ export function normalizeWorkerActions(
   const batchTextToId = new Map<string, string>();
   const batchIds = new Set<string>();
 
+  // Duplicate wall (2026-07-17: per-entry expansion rounds piled up
+  // near-identical items): normalized text of every existing + this-batch
+  // item; duplicate proposals are rejected with a reason.
+  const normText = (t: string): string =>
+    t.toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/g, "").trim();
+  const knownTexts = new Set<string>();
+  for (const sec of model.sections)
+    for (const it of sec.items)
+      if (it.state !== "dropped") knownTexts.add(normText(it.text));
+
   /** Resolve one `requires` reference: existing id → in-batch predicted id →
    *  existing item exact text → earlier-in-batch proposed text. Null if none. */
   const resolveRequiresRef = (ref: string): string | null => {
@@ -376,6 +386,14 @@ export function normalizeWorkerActions(
           rejected.push({ raw, reason: "proposeItem carries no item text" });
           continue;
         }
+        if (knownTexts.has(normText(text))) {
+          rejected.push({
+            raw,
+            reason: `duplicate proposal dropped — an item with this text already exists: "${text.slice(0, 60)}"`,
+          });
+          continue;
+        }
+        knownTexts.add(normText(text));
         const evalsRec = asRecord(itemRec?.evals ?? rec.evals) ?? {};
         const evals: { complexity?: 1 | 2 | 3; risk?: 1 | 2 | 3 } = {};
         const complexity = asEvalValue(evalsRec.complexity);

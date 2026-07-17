@@ -586,12 +586,21 @@ export function gapFiller(deps: WorkerFactoryDeps): WorkerRun {
       const goalSection = workingModel.sections.find((s) => s.kind === "goal");
       const intentText = goalSection?.text ?? "";
       const requests = workingModel.roughRequests ?? [];
+      const newest =
+        requests.length > 0 ? requests[requests.length - 1].text : intentText;
       const requestsBlock =
         requests.length > 0
-          ? `\n\nRough requests (the human's raw asks, in their words — integrate ALL of them, the NEWEST especially):\n${requests
+          ? `\n\nJournal (the human's raw asks):\n${requests
               .map((r) => `- ${r.text}`)
               .join("\n")}`
           : "";
+      const deltaDoctrine =
+        `\n\nEXPANSION DOCTRINE (this round absorbs the NEWEST entry only):\n` +
+        `NEWEST entry: "${newest}"\n` +
+        `- Propose ONLY what the newest entry requires BEYOND the existing items — earlier entries are already absorbed.\n` +
+        `- SUFFICIENCY over coverage: a handful of sharp items beats a wall of plausible ones. Aim for the FEWEST items that make the newest entry spec-able (rarely more than 5-6 across all sections).\n` +
+        `- NEVER restate or near-duplicate an existing item. If a section already covers the newest entry, propose NOTHING for it.\n` +
+        `- Proposing zero items is a legitimate outcome when the space already covers the entry.`;
 
       const itemLines: string[] = [];
       for (const section of workingModel.sections) {
@@ -620,6 +629,7 @@ export function gapFiller(deps: WorkerFactoryDeps): WorkerRun {
         `You are the gap-filler worker. Propose new items (proposeItem) for each thinking-space section to help elaborate the intent.\n\n` +
         `Intent (goal):\n${intentText}` +
         requestsBlock +
+        deltaDoctrine +
         itemsBlock +
         `\n\nGenerate proposeItem actions for sections that need more detail. Do not check items — only propose them. ` +
         `Stay at intent altitude: propose what must hold, be decided, or be verified — not implementation choices ` +
