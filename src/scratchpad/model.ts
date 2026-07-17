@@ -100,6 +100,13 @@ export interface Item {
    * stale (derived at render, not stored).
    */
   requires?: string[];
+  /**
+   * Explicit human acceptance of residual complexity/risk (2026-07-17: the
+   * freeze gate demands complexity and risk MITIGATED — grounded by evidence
+   * or accepted with a signed reason that prints into the TEP). Never set by
+   * workers.
+   */
+  accepted?: { complexity?: { reason: string }; risk?: { reason: string } };
   evidence: Evidence[];
   notes: Note[];
   pendingEdit?: PendingEdit;
@@ -272,6 +279,15 @@ export type Action =
   // 2026-07-17: mark an answered question resolved — visible record, no
   // longer open. State transition only (allowed even on flagged items).
   | { type: "resolveItem"; actor: "human"; itemId: string }
+  // 2026-07-17 three-dimension freeze gate: explicit, reasoned human
+  // acceptance of residual risk/complexity on an item. Human-only.
+  | {
+      type: "acceptEval";
+      actor: "human";
+      itemId: string;
+      facet: "complexity" | "risk";
+      reason: string;
+    }
   | { type: "dropItem"; actor: "human"; itemId: string }
   | { type: "supersedeItem"; actor: Actor; itemId: string; supersedes: string }
   | {
@@ -981,6 +997,39 @@ export function reduce(
           field: `sections.${sectionIdx}.items.${itemIdx}.state`,
           before,
           after: "resolved",
+        },
+      };
+    }
+
+    case "acceptEval": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      if (!action.reason.trim()) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: "acceptEval requires a non-empty reason — residual risk is signed, never waved through",
+          },
+        };
+      }
+      const { sectionIdx, itemIdx } = loc;
+      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+        ...it,
+        accepted: {
+          ...(it.accepted ?? {}),
+          [action.facet]: { reason: action.reason.trim() },
+        },
+      }));
+      return {
+        model: newModel,
+        delta: {
+          kind: "applied",
+          action,
+          field: `sections.${sectionIdx}.items.${itemIdx}.accepted.${action.facet}`,
+          before: undefined,
+          after: action.reason.trim(),
         },
       };
     }

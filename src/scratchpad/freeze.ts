@@ -4,7 +4,7 @@ import type { ThinkubeStore } from "../store/ThinkubeStore";
 import type { Frontmatter } from "../store/frontmatter";
 import type { WorkingModel } from "./model";
 import { freezeEnabled } from "./model";
-import { projectDelta, projectCut } from "./projection";
+import { projectDelta, projectCut, cutReadiness } from "./projection";
 
 /**
  * A human-approval token. Any non-null token means "the human approved."
@@ -128,6 +128,41 @@ export async function freeze(
   if (!freezeEnabled(model)) {
     throw new Error(
       "Freeze is not enabled: the model has not passed the readiness check (coverage and clean-cut required)",
+    );
+  }
+
+  // THREE-DIMENSION GATE (2026-07-17, the user's contract): every shipping
+  // element must be CONVERGED (settled criteria+verification linked, no open
+  // question in reach) with complexity and risk EVALUATED and MITIGATED
+  // (evidence or signed acceptance). Applies to cut and whole-space alike.
+  const gateElementIds =
+    cut !== undefined
+      ? [...cut.elementIds]
+      : model.sections
+          .filter((s) => s.kind === "elements")
+          .flatMap((s) =>
+            s.items
+              .filter((it) => it.checked && it.state === "active")
+              .map((it) => it.id),
+          );
+  const readiness = cutReadiness(model, gateElementIds);
+  if (!readiness.pass) {
+    const lines: string[] = [];
+    if (readiness.openGaps.length > 0) {
+      lines.push(
+        `${readiness.openGaps.length} open question(s) in reach — resolve or drop them: ${readiness.openGaps
+          .slice(0, 3)
+          .map((g) => `"${g.slice(0, 60)}"`)
+          .join("; ")}`,
+      );
+    }
+    for (const el of readiness.elements) {
+      for (const b of el.blockers) {
+        lines.push(`"${el.text.slice(0, 50)}": ${b}`);
+      }
+    }
+    throw new Error(
+      `Freeze refused — the cut is not spec-ready (convergence/complexity/risk):\n- ${lines.slice(0, 8).join("\n- ")}${lines.length > 8 ? `\n- …and ${lines.length - 8} more` : ""}`,
     );
   }
 

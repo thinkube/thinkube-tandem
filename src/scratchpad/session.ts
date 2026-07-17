@@ -559,6 +559,15 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           itemId: message.itemId,
         });
         break;
+      case "acceptEval":
+        this.dispatch({
+          type: "acceptEval",
+          actor: "human",
+          itemId: message.itemId,
+          facet: message.facet,
+          reason: message.reason,
+        });
+        break;
       case "dropItem":
         this.dispatch({
           type: "dropItem",
@@ -962,7 +971,16 @@ class ScratchpadSessionImpl implements ScratchpadSession {
               );
               if (checked.length > 0) {
                 lines.push(`\n${sec.kind} (settled):`);
-                for (const it of checked) lines.push(`- ${it.text}`);
+                for (const it of checked) {
+                  const ev: string[] = [];
+                  if (it.evals.complexity !== undefined)
+                    ev.push(`complexity ${it.evals.complexity}`);
+                  if (it.evals.risk !== undefined)
+                    ev.push(`risk ${it.evals.risk}`);
+                  lines.push(
+                    `- ${it.text}${ev.length ? ` [${ev.join(", ")}]` : ""}`,
+                  );
+                }
               }
             }
             // Unsettled MANDATORY items are disclosed to the judge: modality

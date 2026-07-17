@@ -274,3 +274,117 @@ test("curated title (2026-07-17): stored ≤80, used by projections; long first 
   assert.ok(t.length <= 80, `title too long: ${t.length}`);
 });
 
+test("three-dimension gate (2026-07-17): convergence, complexity, risk — evaluated AND mitigated", () => {
+  const { cutReadiness } = require("./projection") as {
+    cutReadiness: (
+      m: WorkingModel,
+      ids: readonly string[],
+    ) => {
+      pass: boolean;
+      openGaps: string[];
+      elements: { blockers: string[]; complexity: string; risk: string }[];
+    };
+  };
+  let m = emptyModel("tep");
+  m = reduce(m, { type: "seedGoal", text: "goal" }).model;
+  const sec = (kind: string): string =>
+    m.sections.find((s) => s.kind === kind)!.id;
+  const propose = (
+    sectionId: string,
+    text: string,
+    extra?: Partial<{
+      requires: string[];
+      evals: { complexity?: 1 | 2 | 3; risk?: 1 | 2 | 3 };
+    }>,
+  ): string => {
+    m = reduce(m, {
+      type: "proposeItem",
+      actor: "gap-filler",
+      sectionId,
+      item: {
+        text,
+        modality: "optional",
+        evals: extra?.evals ?? {},
+        requires: extra?.requires,
+      },
+    }).model;
+    const items = m.sections.find((s) => s.id === sectionId)!.items;
+    return items[items.length - 1].id;
+  };
+  const check = (id: string): void => {
+    m = reduce(m, { type: "checkItem", actor: "human", itemId: id }).model;
+  };
+
+  // A bare element: checked but unlinked, unevaluated → many blockers.
+  const el = propose(sec("elements"), "the element", {
+    evals: { complexity: 2 },
+  });
+  check(el);
+  let gate = cutReadiness(m, [el]);
+  assert.equal(gate.pass, false);
+  const blockers = gate.elements[0].blockers.join(" | ");
+  assert.match(blockers, /no settled criteria linked/);
+  assert.match(blockers, /no settled verification linked/);
+  assert.match(blockers, /risk never evaluated/);
+
+  // Converge it: linked settled criteria + verification; evaluate risk 3.
+  const cri = propose(sec("criteria"), "measurable outcome", {
+    requires: [el],
+  });
+  check(cri);
+  const ver = propose(sec("verification"), "how it is checked", {
+    requires: [el],
+  });
+  check(ver);
+  m = reduce(m, {
+    type: "setEval",
+    actor: "human",
+    itemId: el,
+    facet: "risk",
+    value: 3,
+  }).model;
+  gate = cutReadiness(m, [el]);
+  assert.equal(gate.pass, false);
+  assert.match(gate.elements[0].blockers.join(" "), /risk 3 unmitigated/);
+
+  // Mitigate by SIGNED acceptance (empty reason refused first).
+  const { delta: refused } = reduce(m, {
+    type: "acceptEval",
+    actor: "human",
+    itemId: el,
+    facet: "risk",
+    reason: "   ",
+  });
+  assert.equal(refused.kind, "rejected");
+  m = reduce(m, {
+    type: "acceptEval",
+    actor: "human",
+    itemId: el,
+    facet: "risk",
+    reason: "single-tenant tool; worst case is a re-run",
+  }).model;
+  gate = cutReadiness(m, [el]);
+  assert.equal(gate.pass, true, gate.elements[0].blockers.join(" | "));
+
+  // An OPEN question linked into the closure blocks the whole cut.
+  const q = propose(sec("gap"), "unanswered question", { requires: [el] });
+  check(q);
+  gate = cutReadiness(m, [el]);
+  assert.equal(gate.pass, false);
+  assert.equal(gate.openGaps.length, 1);
+  m = reduce(m, { type: "resolveItem", actor: "human", itemId: q }).model;
+  gate = cutReadiness(m, [el]);
+  assert.equal(gate.pass, true);
+
+  // The signed residual prints into the projection body.
+  const { projectCut } = require("./projection") as {
+    projectCut: (
+      mm: WorkingModel,
+      c: { elementIds: readonly string[] },
+    ) => { body: string };
+  };
+  const body = projectCut(m, { elementIds: [el] }).body;
+  assert.match(body, /## Accepted Residuals/);
+  assert.match(body, /Residual risk accepted — "the element": single-tenant tool/);
+});
+

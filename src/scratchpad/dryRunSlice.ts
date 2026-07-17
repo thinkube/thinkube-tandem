@@ -181,7 +181,9 @@ export function makeProductionRunSlicer(
       `"decomposition": ["<work item title>", ...]}\n` +
       `cleanCut true only when the intent needs no further shaping; when false, name the section ` +
       `whose content is missing or ambiguous in gapSection (or null if the gap is the intent itself), ` +
-      `and make "reason" specific enough that the author knows what to write next — never restate the section name.`;
+      `and make "reason" specific enough that the author knows what to write next — never restate the section name. ` +
+      `Also AUDIT the [complexity/risk] scores where shown: if an item's score plainly contradicts its content ` +
+      `(a trivially simple item scored 3, an irreversible commitment scored 1), that is a gap — say so in the reason.`;
 
     try {
       let resultText = "";

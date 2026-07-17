@@ -190,7 +190,37 @@ export function projectDelta(model: WorkingModel): {
     }
     parts.push("");
   }
+  appendResiduals(
+    parts,
+    model.sections.flatMap((s) =>
+      s.items.filter((it) => itemIds.includes(it.id)),
+    ),
+  );
   return { title, body: parts.join("\n").trim(), itemIds };
+}
+
+/** Signed residuals print INTO the artifact — uncertainty out the door is
+ *  enumerated and reasoned, never ambient (2026-07-17). */
+function appendResiduals(
+  parts: string[],
+  items: readonly WorkingModel["sections"][0]["items"][0][],
+): void {
+  const lines: string[] = [];
+  for (const it of items) {
+    if (it.accepted?.complexity) {
+      lines.push(
+        `- Residual complexity accepted — "${it.text}": ${it.accepted.complexity.reason}`,
+      );
+    }
+    if (it.accepted?.risk) {
+      lines.push(
+        `- Residual risk accepted — "${it.text}": ${it.accepted.risk.reason}`,
+      );
+    }
+  }
+  if (lines.length > 0) {
+    parts.push("## Accepted Residuals", ...lines, "");
+  }
 }
 
 /**
@@ -290,6 +320,13 @@ export function projectCut(
     }
     parts.push("");
   }
+  appendResiduals(
+    parts,
+    [...included].flatMap((id) => {
+      const e = byId.get(id);
+      return e ? [e.item] : [];
+    }),
+  );
   return {
     title,
     body: parts.join("\n").trim(),
@@ -299,3 +336,155 @@ export function projectCut(
     contextIds: [...context],
   };
 }
+
+// ── Three-dimension freeze gate (2026-07-17) ─────────────────────────────────
+// The user's contract, verbatim: "convergence, complexity and risk —
+// correctly evaluated, and complexity and risk mitigated". Freeze certifies
+// CONVERGENCE per element (spec-able through the graph: settled criteria and
+// verification linked, no open question in reach) and that both eval facets
+// are EVALUATED (scored, unchallenged by the structural cross-checks) and
+// MITIGATED (grounded by evidence, or explicitly human-accepted with a signed
+// reason that prints into the TEP). "Attended checkboxes" are not readiness.
+
+export type EvalDimension =
+  | "ok"
+  | "unset" // never evaluated
+  | "challenged" // structural cross-check contradicts the claimed score
+  | "unmitigated" // scored 3 with no evidence and no signed acceptance
+  | "accepted"; // scored 3, human-accepted with a reason
+
+export interface ElementReadiness {
+  elementId: string;
+  text: string;
+  /** Settled criteria item edge-linked to this element. */
+  criteriaLinked: boolean;
+  /** Settled verification item edge-linked to this element. */
+  verificationLinked: boolean;
+  complexity: EvalDimension;
+  risk: EvalDimension;
+  /** Every blocker as a human-readable line (empty = ready). */
+  blockers: string[];
+}
+
+export interface CutReadiness {
+  elements: ElementReadiness[];
+  /** Open questions (gap items neither resolved nor dropped) inside the
+   *  cut's closure — they block the WHOLE cut. */
+  openGaps: string[];
+  pass: boolean;
+}
+
+export function cutReadiness(
+  model: WorkingModel,
+  elementIds: readonly string[],
+): CutReadiness {
+  const byId = new Map<
+    string,
+    { kind: SectionKind; item: WorkingModel["sections"][0]["items"][0] }
+  >();
+  for (const s of model.sections)
+    for (const it of s.items) byId.set(it.id, { kind: s.kind, item: it });
+
+  const dependents = new Map<string, number>();
+  for (const { item } of byId.values())
+    for (const req of item.requires ?? [])
+      dependents.set(req, (dependents.get(req) ?? 0) + 1);
+
+  /** Direct edge in either direction. */
+  const linked = (aId: string, bId: string): boolean => {
+    const a = byId.get(aId)?.item;
+    const b = byId.get(bId)?.item;
+    return (
+      (a?.requires ?? []).includes(bId) || (b?.requires ?? []).includes(aId)
+    );
+  };
+
+  const proj = projectCut(model, { elementIds });
+  const closure = new Set([...proj.shipIds, ...proj.contextIds]);
+
+  const openGaps: string[] = [];
+  for (const id of closure) {
+    const e = byId.get(id);
+    if (!e || e.kind !== "gap") continue;
+    if (e.item.state !== "resolved" && e.item.state !== "dropped") {
+      openGaps.push(e.item.text);
+    }
+  }
+
+  const evalDim = (
+    item: WorkingModel["sections"][0]["items"][0],
+    facet: "complexity" | "risk",
+  ): EvalDimension => {
+    const score = item.evals[facet];
+    if (score === undefined) return "unset";
+    if (
+      facet === "risk" &&
+      score <= 1 &&
+      (dependents.get(item.id) ?? 0) >= 2
+    ) {
+      return "challenged"; // claims low risk while items depend on it
+    }
+    if (score === 3) {
+      if (item.accepted?.[facet]) return "accepted";
+      if (item.evidence.length > 0) return "ok"; // grounded by research
+      return "unmitigated";
+    }
+    return "ok";
+  };
+
+  const elements: ElementReadiness[] = [];
+  for (const id of elementIds) {
+    const e = byId.get(id);
+    if (!e || e.kind !== "elements") continue;
+    const it = e.item;
+    const settledLinked = (kind: SectionKind): boolean =>
+      [...byId.values()].some(
+        (o) =>
+          o.kind === kind &&
+          o.item.checked &&
+          o.item.state === "active" &&
+          linked(id, o.item.id),
+      );
+    const criteriaLinked = settledLinked("criteria");
+    const verificationLinked = settledLinked("verification");
+    const complexity = evalDim(it, "complexity");
+    const risk = evalDim(it, "risk");
+    const blockers: string[] = [];
+    if (!criteriaLinked)
+      blockers.push(
+        "no settled criteria linked — the spec author would have to invent success conditions",
+      );
+    if (!verificationLinked)
+      blockers.push("no settled verification linked — criteria untestable");
+    if (complexity === "unset") blockers.push("complexity never evaluated");
+    if (risk === "unset") blockers.push("risk never evaluated");
+    if (complexity === "challenged")
+      blockers.push("complexity score contradicted by the structure");
+    if (risk === "challenged")
+      blockers.push(
+        "risk scored low while other items depend on this — re-evaluate or justify",
+      );
+    if (complexity === "unmitigated")
+      blockers.push(
+        "complexity 3 unmitigated — research it (evidence) or accept it with a reason",
+      );
+    if (risk === "unmitigated")
+      blockers.push(
+        "risk 3 unmitigated — research it (evidence) or accept it with a reason",
+      );
+    elements.push({
+      elementId: id,
+      text: it.text,
+      criteriaLinked,
+      verificationLinked,
+      complexity,
+      risk,
+      blockers,
+    });
+  }
+
+  const pass =
+    openGaps.length === 0 && elements.every((el) => el.blockers.length === 0);
+  return { elements, openGaps, pass };
+}
+

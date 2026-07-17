@@ -15,7 +15,7 @@ import type {
 } from "../model";
 import { freezeEnabled } from "../model";
 import { uncoveredSections } from "../coverage";
-import { projectCut } from "../projection";
+import { projectCut, cutReadiness } from "../projection";
 
 /**
  * The complete inbound message protocol (webview → extension).
@@ -39,6 +39,12 @@ export type ScratchpadInboundMessage =
     }
   | { type: "deferItem"; itemId: string }
   | { type: "resolveItem"; itemId: string }
+  | {
+      type: "acceptEval";
+      itemId: string;
+      facet: "complexity" | "risk";
+      reason: string;
+    }
   | { type: "dropItem"; itemId: string }
   | { type: "supersedeItem"; itemId: string; supersedes: string }
   | { type: "resolveEdit"; itemId: string; accept: boolean }
@@ -258,14 +264,16 @@ function itemHtml(
     factor: string | undefined,
     hint: string | undefined,
   ): string => {
+    const acceptedReason = item.accepted?.[facet]?.reason;
     const title =
       (value === undefined
         ? `${facet}: unset — click to set`
         : `${facet} ${value}${factor ? ` [${factor}]` : " — no factor claimed"} — click to cycle`) +
+      (acceptedReason ? ` · residual ACCEPTED: ${acceptedReason}` : "") +
       (hint ? ` · ${hint}` : "");
     return (
-      `<button class="eval-badge ${facet}${value !== undefined ? ` v${value}` : " unset"}${hint ? " hinted" : ""}"` +
-      ` data-facet="${facet}" data-value="${value ?? 0}" title="${esc(title)}">${label}${value ?? "·"}</button>`
+      `<button class="eval-badge ${facet}${value !== undefined ? ` v${value}` : " unset"}${hint ? " hinted" : ""}${acceptedReason ? " accepted" : ""}"` +
+      ` data-facet="${facet}" data-value="${value ?? 0}" title="${esc(title)}">${label}${value ?? "·"}${acceptedReason ? "✓" : ""}</button>`
     );
   };
   // Structural hints: derived signals challenge (or fill in for) claimed scores.
@@ -355,6 +363,18 @@ function itemHtml(
     isGap && item.state === "active" && !item.checked
       ? `<span class="open-question-badge" title="This open question blocks Freeze — check it (carry into the TEP), resolve it (answered), defer, or drop it">OPEN — blocks freeze</span>`
       : "";
+  const needsAccept = (facet: "complexity" | "risk"): boolean =>
+    item.evals[facet] === 3 &&
+    !item.accepted?.[facet] &&
+    item.evidence.length === 0 &&
+    item.state === "active";
+  const acceptButtons =
+    (needsAccept("complexity")
+      ? `<button class="item-accept" data-facet="complexity" title="Accept residual complexity 3 with a signed reason (or research it to ground it)">accept C3</button>`
+      : "") +
+    (needsAccept("risk")
+      ? `<button class="item-accept" data-facet="risk" title="Accept residual risk 3 with a signed reason (or research it to ground it)">accept R3</button>`
+      : "");
   const resolveButton =
     isGap && item.state === "active"
       ? `<button class="item-resolve" title="Resolve — this question has been ANSWERED (typically after research): closes it as a visible record">resolve</button>`
@@ -365,6 +385,7 @@ function itemHtml(
         cutButton +
         depsButton +
         resolveButton +
+        acceptButtons +
         `<button class="item-research" title="Research this item — a direction field opens so you can say WHAT to investigate">research</button>` +
         `<button class="item-explain" title="Analyze — attach a Why / Impact / Modality note to inform your decision">why?</button>` +
         selectButton +
@@ -438,6 +459,11 @@ function itemHtml(
       <input type="text" class="research-direction-input" placeholder="Research what? — direct the investigation (empty = the item text itself)">
       <button class="research-direction-go">Go</button>
       <button class="research-direction-cancel">✕</button>
+    </div>
+    <div class="accept-reason" hidden>
+      <input type="text" class="accept-reason-input" placeholder="Why is this residual acceptable? — the reason is SIGNED into the TEP">
+      <button class="accept-reason-go">Accept</button>
+      <button class="accept-reason-cancel">✕</button>
     </div>`
       : "") +
     depChips +
@@ -907,6 +933,39 @@ export function buildScratchpadHtml(
   // answer on the surface).
   const freezeStatus = freezeStatusText(model, canFreeze);
 
+  // Three-dimension gate report (2026-07-17): convergence / complexity / risk
+  // per shipping element, rendered so the human sees the blockers BEFORE
+  // pressing Freeze (which enforces the same computation).
+  const gateElementIds =
+    cutElementsForRows.length > 0
+      ? cutElementsForRows
+      : model.sections
+          .filter((s) => s.kind === "elements")
+          .flatMap((s) =>
+            s.items
+              .filter((it) => it.checked && it.state === "active")
+              .map((it) => it.id),
+          );
+  let readinessReport = "";
+  if (gateElementIds.length > 0) {
+    const gate = cutReadiness(model, gateElementIds);
+    const rows: string[] = [];
+    if (gate.openGaps.length > 0) {
+      rows.push(
+        `<li class="gate-blocker">⛔ ${gate.openGaps.length} open question(s) in reach — resolve or drop them</li>`,
+      );
+    }
+    for (const el of gate.elements) {
+      if (el.blockers.length === 0) continue;
+      rows.push(
+        `<li class="gate-blocker">⛔ <b>${esc(el.text.slice(0, 60))}</b>: ${esc(el.blockers.join("; "))}</li>`,
+      );
+    }
+    readinessReport = gate.pass
+      ? `<div class="gate-report pass">✅ Spec-ready: all ${gate.elements.length} shipping element(s) converged, complexity and risk evaluated and mitigated.</div>`
+      : `<div class="gate-report"><b>Not spec-ready (${rows.length} blocker group(s)):</b><ul>${rows.join("")}</ul></div>`;
+  }
+
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -982,6 +1041,14 @@ export function buildScratchpadHtml(
     li.item.dep-req { border-left: 3px solid var(--vscode-charts-green, #89d185); padding-left: 6px; }
     li.item.dep-dependent { border-left: 3px solid var(--vscode-charts-orange, #d18616); padding-left: 6px; }
     li.item.dep-dim { opacity: 0.35; }
+    .gate-report { margin-top: 8px; font-size: 0.85em; border: 1px solid var(--vscode-errorForeground); border-radius: 4px; padding: 8px 10px; }
+    .gate-report.pass { border-color: var(--vscode-charts-green, #89d185); }
+    .gate-report ul { margin: 4px 0 0 16px; padding: 0; }
+    .gate-blocker { margin-bottom: 3px; }
+    .accept-reason { flex-basis: 100%; display: flex; gap: 6px; margin: 4px 0 2px 24px; }
+    .accept-reason input { flex: 1; padding: 3px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
+    .accept-reason button { border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); border-radius: 2px; padding: 0 8px; cursor: pointer; }
+    .eval-badge.accepted { border-style: solid; border-color: var(--vscode-charts-green, #89d185); }
     .open-question-badge { font-size: 0.8em; color: var(--vscode-editor-background); background: var(--vscode-errorForeground); border-radius: 3px; padding: 0 6px; font-weight: bold; }
     .stale-badge { font-size: 0.8em; color: var(--vscode-errorForeground); border: 1px solid var(--vscode-errorForeground); border-radius: 3px; padding: 0 5px; }
     .dep-chips { flex-basis: 100%; margin: 4px 0 2px 24px; font-size: 0.85em; opacity: 0.9; }
@@ -1078,6 +1145,7 @@ export function buildScratchpadHtml(
       ${freezeBtn}
     </div>
     <div class="freeze-status">${esc(freezeStatus)}</div>
+    ${readinessReport}
   </section>
   <script>
     const vscode = acquireVsCodeApi();
@@ -1245,7 +1313,10 @@ export function buildScratchpadHtml(
       var isResolve = target.classList.contains('item-resolve');
       var isDirGo = target.classList.contains('research-direction-go');
       var isDirCancel = target.classList.contains('research-direction-cancel');
-      if (!isSelect && !isExplain && !isDeps && !isResearch && !isCut && !isEval && !isAccept && !isReject && !isResolve && !isDirGo && !isDirCancel) return;
+      var isAcceptEval = target.classList.contains('item-accept');
+      var isAccGo = target.classList.contains('accept-reason-go');
+      var isAccCancel = target.classList.contains('accept-reason-cancel');
+      if (!isSelect && !isExplain && !isDeps && !isResearch && !isCut && !isEval && !isAccept && !isReject && !isResolve && !isDirGo && !isDirCancel && !isAcceptEval && !isAccGo && !isAccCancel) return;
       var li = target.closest('li.item');
       if (!li) return;
       var itemId = li.getAttribute('data-item-id');
@@ -1265,6 +1336,26 @@ export function buildScratchpadHtml(
       }
       if (isResolve) {
         vscode.postMessage({ type: 'resolveItem', itemId: itemId });
+        return;
+      }
+      if (isAcceptEval) {
+        var accForm = li.querySelector('.accept-reason');
+        if (accForm) {
+          accForm.hidden = !accForm.hidden;
+          accForm.dataset.facet = target.getAttribute('data-facet') || 'risk';
+          if (!accForm.hidden) { var ai = accForm.querySelector('input'); if (ai) ai.focus(); }
+        }
+        return;
+      }
+      if (isAccGo || isAccCancel) {
+        var accF = target.closest('.accept-reason');
+        if (!accF) return;
+        if (isAccCancel) { accF.hidden = true; return; }
+        var accInput = accF.querySelector('input');
+        var reason = accInput && accInput.value.trim();
+        if (!reason) return;
+        vscode.postMessage({ type: 'acceptEval', itemId: itemId, facet: accF.dataset.facet || 'risk', reason: reason });
+        accF.hidden = true;
         return;
       }
       if (isResearch) {
