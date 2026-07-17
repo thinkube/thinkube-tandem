@@ -92,6 +92,28 @@ function boardRoot(): string | undefined {
 }
 
 /**
+ * Open the chat view with @thinky pre-typed (2026-07-17 field request:
+ * "open the chat wired to the thinking space when it is opened"). The wiring
+ * itself is inherent — @thinky always talks to the active session singleton —
+ * so this only surfaces the mouth. isPartialQuery keeps the mention in the
+ * input without submitting. Fail-soft on hosts without the chat view.
+ */
+async function openThinkyChat(): Promise<void> {
+  const enabled = vscode.workspace
+    .getConfiguration("thinkube.thinky")
+    .get<boolean>("openChatOnSpaceOpen", true);
+  if (!enabled) return;
+  try {
+    await vscode.commands.executeCommand("workbench.action.chat.open", {
+      query: "@thinky ",
+      isPartialQuery: true,
+    });
+  } catch {
+    // No chat surface in this host — the panel alone is fine.
+  }
+}
+
+/**
  * Register the Scratchpad commands with VS Code.
  * Call this from extension.ts activate().
  */
@@ -104,6 +126,7 @@ export function registerScratchpadCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand("thinkube.scratchpad.open", async () => {
       await openScratchpad();
+      await openThinkyChat();
     }),
   );
 
@@ -142,6 +165,7 @@ export function registerScratchpadCommands(
         }
         const sidecarRoot = boardRoot();
         await openScratchpad({ namespace, space: name, sidecarRoot });
+        await openThinkyChat();
       },
     ),
   );
@@ -201,6 +225,7 @@ export function registerScratchpadCommands(
 
         // Open the (possibly just-seeded) document.
         await openScratchpad({ namespace, space: docName, sidecarRoot });
+        await openThinkyChat();
       },
     ),
   );
