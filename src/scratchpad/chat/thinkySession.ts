@@ -34,6 +34,7 @@ import type { ScratchpadSession } from "../session";
 import {
   boundSpaceFromChatContext,
   handleThinkyRequest,
+  renderThinkyStatus,
   spaceToSessionPath,
   type ThinkySessionLike,
 } from "./chatCore";
@@ -222,17 +223,48 @@ export function registerThinkySession(
             chatSessionItem: { resource: { path: String(path) } },
           },
         });
+        let opening: string | undefined;
         if (bound) {
           try {
             const session = await ensureSpaceSession(bound);
             // Bidirectional attachment: opening the chat session opens its
             // board beside it, without stealing the caret from the chat.
             session.revealPanel(true);
+            // Thinky SPEAKS FIRST (field defect 2026-07-17: "no welcome
+            // message and no initial request" — the manifest welcome only
+            // renders in locked-agent widgets, and the participant only
+            // answers when spoken to). Seed the transcript: guided-intake
+            // greeting for a fresh space, a status recap otherwise.
+            const model = session.model;
+            const journalCount =
+              (model.roughRequests?.length ?? 0) +
+              ((model.sections.find((s) => s.kind === "goal")?.text.trim() ?? "")
+                ? 1
+                : 0);
+            const hasItems = model.sections.some(
+              (s) => s.kind !== "goal" && s.items.length > 0,
+            );
+            opening =
+              journalCount === 0 && !hasItems
+                ? "**What do you want to build?**\n\nTell me in your own words — " +
+                  "each message becomes a journal entry, verbatim, until you say " +
+                  "*that's all*. Then we'll gather context, and only then derive " +
+                  "the elements."
+                : `Welcome back — here is where the space stands:\n\n${renderThinkyStatus(model)}\n\nContinue where you left off, or ask me anything about it.`;
           } catch {
             /* space unreadable — session still opens, handler reports */
           }
         }
-        return { history: [], requestHandler: undefined };
+        const history = opening
+          ? [
+              {
+                response: [new vscode.ChatResponseMarkdownPart(opening)],
+                participant: THINKY_SESSION_TYPE,
+                result: {},
+              },
+            ]
+          : [];
+        return { history, requestHandler: undefined };
       },
     };
     context.subscriptions.push(
