@@ -321,6 +321,7 @@ export function buildBoardHtml(
       ? `<details class="fold"><summary>Assumptions (${assumptions.length})</summary>` +
         `<ol>${assumptions.map((a) => `<li>${esc(a.text)}</li>`).join("")}</ol></details>`
       : "") +
+    integrityFold +
     [...model.sections.filter((s) => s.kind !== "goal")]
       .sort(
         (a, b) =>
