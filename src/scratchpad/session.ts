@@ -48,6 +48,7 @@ import {
   repairWorker,
 } from "./workers/expansionPipeline";
 import { computeIntegrity, integritySummary } from "./integrityGate";
+import { runGapClose, openGaps } from "./workers/gapClose";
 import { showFreshMarkdownPreview } from "../commands/freshPreview";
 export type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
 
@@ -453,6 +454,26 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         },
       );
       integrity = computeIntegrity(this._model);
+    }
+    // Stage 6 — SELF-DRIVING gap-close (2026-07-18 fork b): the machine reads
+    // the product sources and closes every RESEARCHABLE gap itself, and
+    // RECOMMENDS a decision on each decision-gap for the human to ratify — no
+    // manual "now close the gaps" trigger.
+    const gapsToClose = openGaps(this._model);
+    if (gapsToClose.length > 0 && this._sidecarRoot) {
+      this._commandMessage = `Closing gaps — researching ${gapsToClose.length} open question(s)…`;
+      this._updatePanel();
+      await this._runWorkerRound("gap-close", ["gap"], async () => {
+        return runGapClose(
+          {
+            model: this._workerModelId,
+            sources: [...this.contextSources],
+            contextDigest: digest,
+            now: this._now,
+          },
+          this._model,
+        );
+      });
     }
     // Stage 5b — final integrity read.
     const counts = this._model.sections

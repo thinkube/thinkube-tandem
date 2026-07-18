@@ -86,6 +86,13 @@ export interface Item {
    */
   rationale?: { complexity?: string; risk?: string };
   /**
+   * A gap that is a DECISION (no fact to find) carries the machine's
+   * researched recommendation awaiting human ratification (self-drive fork b,
+   * 2026-07-18). Ratify = resolveItem (accept); override = the human decides
+   * otherwise. Set by the gap-close round only on gap items.
+   */
+  decisionProposal?: { recommendation: string; reasoning: string };
+  /**
    * Journal-entry group an ELEMENT serves (expansion redesign 2026-07-18):
    * the index of the numbered journal entry (goal = 1) this element was
    * derived from. The parking key — deferring a group defers an entry's whole
@@ -157,6 +164,8 @@ export type ToolName =
   // none, so cuts pulled zero context) — the linker round's only tool.
   | "linkItems"
   | "reclassifyItem"
+  | "closeGap"
+  | "proposeDecision"
   // 2026-07-17: close an answered gap (human settling gesture).
   | "resolveItem";
 
@@ -339,6 +348,22 @@ export type Action =
   // to clean duplicate/contradictory explainer notes).
   | { type: "removeNote"; actor: "human"; itemId: string; noteId: string }
   | { type: "attachEvidence"; actor: Actor; itemId: string; evidence: Evidence }
+  // Gap-close round (self-drive 2026-07-18): the machine CLOSES a researchable
+  // gap it answered from the sources (resolve + evidence in one), or PROPOSES
+  // a decision on a decision-gap (recommendation awaiting human ratification).
+  | {
+      type: "closeGap";
+      actor: Exclude<Actor, "human">;
+      itemId: string;
+      evidence: Evidence;
+    }
+  | {
+      type: "proposeDecision";
+      actor: Exclude<Actor, "human">;
+      itemId: string;
+      recommendation: string;
+      reasoning: string;
+    }
   | {
       type: "stampShipped";
       itemIds: string[];
@@ -1060,6 +1085,70 @@ export function reduce(
           field: `sections.${sectionIdx}.items.${itemIdx}.state`,
           before,
           after: "resolved",
+        },
+      };
+    }
+
+    case "closeGap": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      const { sectionIdx, itemIdx } = loc;
+      const item = model.sections[sectionIdx].items[itemIdx];
+      if (model.sections[sectionIdx].kind !== "gap") {
+        return {
+          model,
+          delta: { kind: "rejected", action, reason: "closeGap targets a non-gap item" },
+        };
+      }
+      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+        ...it,
+        state: "resolved",
+        evidence: [...it.evidence, action.evidence],
+      }));
+      return {
+        model: newModel,
+        delta: {
+          kind: "applied",
+          action,
+          field: `sections.${sectionIdx}.items.${itemIdx}.state`,
+          before: item.state,
+          after: "resolved",
+        },
+      };
+    }
+
+    case "proposeDecision": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      const { sectionIdx, itemIdx } = loc;
+      if (
+        model.sections[sectionIdx].kind !== "gap" ||
+        !action.recommendation.trim()
+      ) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: "proposeDecision needs a gap item and a recommendation",
+          },
+        };
+      }
+      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+        ...it,
+        decisionProposal: {
+          recommendation: action.recommendation.trim(),
+          reasoning: action.reasoning.trim(),
+        },
+      }));
+      return {
+        model: newModel,
+        delta: {
+          kind: "applied",
+          action,
+          field: `sections.${sectionIdx}.items.${itemIdx}.decisionProposal`,
+          before: undefined,
+          after: action.recommendation.trim(),
         },
       };
     }

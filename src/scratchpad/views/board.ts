@@ -120,6 +120,14 @@ function detailHtml(item: Item, model: WorkingModel): string {
     const r = computeElementRisk(model, item.id);
     rows.push(`<div class="riskrat"><b>Risk ${r.score}:</b> ${esc(r.rationale.replace(/^Risk \d+ — /, ""))}</div>`);
   }
+  if (item.decisionProposal) {
+    rows.push(
+      `<div class="decision"><b>Decision needed</b> — recommended: <i>${esc(item.decisionProposal.recommendation)}</i>` +
+        (item.decisionProposal.reasoning ? `<div class="dreason">${esc(item.decisionProposal.reasoning)}</div>` : "") +
+        `<div class="dact"><button data-ratify="${item.id}" title="Accept the recommendation and close this decision">Ratify</button> ` +
+        `<span class="dhint">or resolve it your own way</span></div></div>`,
+    );
+  }
   if (item.rationale?.complexity)
     rows.push(`<div class="cxrat"><b>Complexity:</b> ${esc(item.rationale.complexity)}</div>`);
   for (const note of item.notes) {
@@ -200,6 +208,9 @@ function rowHtml(
     kind === "elements" && item.state === "active"
       ? computeElementRisk(model, item.id)
       : null;
+  const decisionBadge = item.decisionProposal
+    ? `<span class="badge flag decision" title="Decision needed — recommendation ready to ratify">decision</span>`
+    : "";
   const riskBadge = derivedRisk
     ? `<span class="badge risk r${derivedRisk.score}" title="${esc(derivedRisk.rationale)}">R${derivedRisk.score}</span>`
     : "";
@@ -221,7 +232,7 @@ function rowHtml(
     `<button class="chev" data-chev="${item.id}">▸</button>` +
     checkbox +
     `<span class="text">${esc(item.text)}</span>` +
-    `<span class="badges">${inCut ? `<span class="badge cutb">cut</span>` : ""}${flagBadges}${riskBadge}${badges(item)}</span>` +
+    `<span class="badges">${inCut ? `<span class="badge cutb">cut</span>` : ""}${decisionBadge}${flagBadges}${riskBadge}${badges(item)}</span>` +
     `</div>` +
     // Detail content is always rendered; CSS hides it until the chevron opens
     // it (open state is client-restored from webview state across re-renders).
@@ -382,6 +393,10 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);margin
 .badge.risk.r2{border-color:var(--vscode-charts-yellow);color:var(--vscode-charts-yellow)}
 .badge.risk.r3{border-color:var(--vscode-errorForeground);color:var(--vscode-errorForeground)}
 .detail .riskrat,.detail .cxrat{margin:2px 0}
+.detail .decision{margin:4px 0;padding:4px 6px;border-left:2px solid var(--vscode-charts-blue)}
+.detail .decision .dreason{opacity:.85;margin:2px 0;font-size:.9em}
+.detail .decision .dhint{opacity:.6;font-size:.85em}
+.badge.flag.decision{border-color:var(--vscode-charts-blue);color:var(--vscode-charts-blue)}
 .fold.integrity summary{color:var(--vscode-errorForeground)}
 .fold.integrity .ig{margin:4px 0 4px 8px;font-size:.9em}
 .fold.integrity ul{margin:2px 0 6px 16px}
@@ -433,7 +448,7 @@ document.body.addEventListener('change', function(e){
 });
 document.body.addEventListener('click', function(e){
   let t = e.target;
-  while (t && t !== document.body && !(t.hasAttribute && (t.hasAttribute('data-open-evidence')||t.hasAttribute('data-park')||t.hasAttribute('data-journal-del')||t.hasAttribute('data-chev')||t.hasAttribute('data-verb')||t.hasAttribute('data-act')||t.hasAttribute('data-eval')||t.hasAttribute('data-accept')||t.hasAttribute('data-resolve')||t.hasAttribute('data-resolve-edit')||t.hasAttribute('data-item')||t.hasAttribute('data-check')))) t = t.parentElement;
+  while (t && t !== document.body && !(t.hasAttribute && (t.hasAttribute('data-ratify')||t.hasAttribute('data-open-evidence')||t.hasAttribute('data-park')||t.hasAttribute('data-journal-del')||t.hasAttribute('data-chev')||t.hasAttribute('data-verb')||t.hasAttribute('data-act')||t.hasAttribute('data-eval')||t.hasAttribute('data-accept')||t.hasAttribute('data-resolve')||t.hasAttribute('data-resolve-edit')||t.hasAttribute('data-item')||t.hasAttribute('data-check')))) t = t.parentElement;
   if (!t || t === document.body) return;
   if (t.hasAttribute('data-check')) return; // checkbox handled on change
   if (t.hasAttribute('data-journal-del')) {
@@ -442,6 +457,10 @@ document.body.addEventListener('click', function(e){
   }
   if (t.hasAttribute('data-park')) {
     vscodeApi.postMessage({type:'parkGroup', entry:Number(t.getAttribute('data-park'))});
+    return;
+  }
+  if (t.hasAttribute('data-ratify')) {
+    vscodeApi.postMessage({type:'resolveItem', itemId:t.getAttribute('data-ratify')});
     return;
   }
   if (t.hasAttribute('data-open-evidence')) {
