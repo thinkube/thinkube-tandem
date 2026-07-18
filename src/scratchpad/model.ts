@@ -80,6 +80,19 @@ export interface Item {
    *  (the old justification no longer applies). */
   evalFactors?: { complexity?: ComplexityFactor; risk?: RiskFactor };
   /**
+   * Explainable eval rationale (expansion redesign 2026-07-18): a short text
+   * justifying each score. risk = auto-generated (the open gaps driving it,
+   * regenerated as gaps close); complexity = the deriving worker's one-liner.
+   */
+  rationale?: { complexity?: string; risk?: string };
+  /**
+   * Journal-entry group an ELEMENT serves (expansion redesign 2026-07-18):
+   * the index of the numbered journal entry (goal = 1) this element was
+   * derived from. The parking key — deferring a group defers an entry's whole
+   * subtree. Set on elements only.
+   */
+  servesEntry?: number;
+  /**
    * TEPs this item served as CONTEXT for (cut flags, 2026-07-16). A flagged
    * item is protected — immutable, undroppable, uneditable; supersede is the
    * only evolution path — but stays ACTIVE and keeps serving future cuts.

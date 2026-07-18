@@ -158,3 +158,13 @@ test("Why/Impact/Modality notes render as three bold-labeled lines (2026-07-18)"
   assert.ok(html.includes("<b>Modality:</b> optional because minor."));
   assert.ok(html.includes('class="noteby"'));
 });
+
+test("elements render directly below the goal, before constraints (2026-07-18)", () => {
+  const html = buildBoardHtml(emptyModel("tep"), { selection: [], cut: [] });
+  const iElements = html.indexOf(">elements<");
+  const iConstraints = html.indexOf(">constraints<");
+  const iVerification = html.indexOf(">verification<");
+  assert.ok(iElements > 0 && iConstraints > 0);
+  assert.ok(iElements < iConstraints, "elements must precede constraints");
+  assert.ok(iConstraints < iVerification, "verification stays last");
+});

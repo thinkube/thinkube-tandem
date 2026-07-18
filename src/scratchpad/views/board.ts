@@ -27,9 +27,24 @@ function vs(): typeof vscode {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require("vscode") as typeof vscode;
 }
-import type { WorkingModel, Item, Section } from "../model";
+import type { WorkingModel, Item, Section, SectionKind } from "../model";
 import { freezeEnabled } from "../model";
 import type { ScratchpadInboundMessage } from "./document";
+
+/**
+ * Canonical DISPLAY order (2026-07-18 field defect: the board rendered
+ * sections in raw model-array order, where elements sits third — after
+ * constraints — despite the doctrine that elements are the SUBJECT MATTER
+ * and belong directly below the goal, with the other sections DERIVED from
+ * them). Applied at render only; the model array and item ids are untouched.
+ */
+const SECTION_DISPLAY_ORDER: SectionKind[] = [
+  "elements",
+  "constraints",
+  "gap",
+  "criteria",
+  "verification",
+];
 
 export interface BoardOptions {
   selection: readonly string[];
@@ -246,8 +261,12 @@ export function buildBoardHtml(
       ? `<details class="fold"><summary>Assumptions (${assumptions.length})</summary>` +
         `<ol>${assumptions.map((a) => `<li>${esc(a.text)}</li>`).join("")}</ol></details>`
       : "") +
-    model.sections
-      .filter((s) => s.kind !== "goal")
+    [...model.sections.filter((s) => s.kind !== "goal")]
+      .sort(
+        (a, b) =>
+          SECTION_DISPLAY_ORDER.indexOf(a.kind) -
+          SECTION_DISPLAY_ORDER.indexOf(b.kind),
+      )
       .map((s) => sectionHtml(s, model, opts, new Set()))
       .join("") +
     `<div class="bar ${selCount > 0 ? "show" : ""}">` +
