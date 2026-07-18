@@ -493,3 +493,29 @@ test("gap-filler prompt tombstones dropped/resolved items and forbids any-wordin
   assert.ok(prompt.includes("VETOED by the human"));
   assert.ok(prompt.includes("IN ANY WORDING"));
 });
+
+test("expansion doctrine covers the WHOLE journal, goal included, elements first (2026-07-18)", () => {
+  let model = emptyModel("tep");
+  model = reduce(model, { type: "seedGoal", text: "extend the graph" }).model;
+  model = reduce(model, {
+    type: "addRoughRequest",
+    text: "harden the verification layer",
+  }).model;
+  model = reduce(model, {
+    type: "addRoughRequest",
+    text: "resolve the open questions",
+  }).model;
+  const run = require("./worker").gapFiller({
+    loadQuery: () => async function* () {},
+    model: "m",
+  });
+  const prompt: string = run.buildPrompt(model, []);
+  // The goal is journal entry 1; every entry is numbered and in scope.
+  assert.ok(prompt.includes("1. extend the graph"));
+  assert.ok(prompt.includes("2. harden the verification layer"));
+  assert.ok(prompt.includes("3. resolve the open questions"));
+  assert.ok(prompt.includes("absorb the WHOLE journal"));
+  assert.ok(prompt.includes("ELEMENTS FIRST"));
+  assert.ok(!prompt.includes("NEWEST entry only"));
+  assert.ok(prompt.includes("ONLY when every journal entry is already covered"));
+});

@@ -642,22 +642,35 @@ export function gapFiller(deps: WorkerFactoryDeps): WorkerRun {
       const goalSection = workingModel.sections.find((s) => s.kind === "goal");
       const intentText = goalSection?.text ?? "";
       const requests = workingModel.roughRequests ?? [];
-      const newest =
-        requests.length > 0 ? requests[requests.length - 1].text : intentText;
+      // The journal INCLUDES the goal as entry 1 (the goal is the first rough
+      // entry by doctrine). 2026-07-18 field defect: the old "NEWEST entry
+      // only" doctrine assumed every entry had already triggered its own
+      // round — false since the guided flow decomposes ONCE at the human's
+      // word, which silently skipped the goal and all but the last entry
+      // (a 4-entry space expanded to 5 items, all from entry 4, 0 elements).
+      const journalEntries = [
+        ...(intentText.trim() ? [intentText.trim()] : []),
+        ...requests.map((r) => r.text),
+      ];
       const requestsBlock =
-        requests.length > 0
-          ? `\n\nJournal (the human's raw asks):\n${requests
-              .map((r) => `- ${r.text}`)
+        journalEntries.length > 0
+          ? `\n\nJournal (the human's raw asks, numbered — entry 1 is the goal):\n${journalEntries
+              .map((t, i) => `${i + 1}. ${t}`)
               .join("\n")}`
           : "";
       const deltaDoctrine =
-        `\n\nEXPANSION DOCTRINE (this round absorbs the NEWEST entry only):\n` +
-        `NEWEST entry: "${newest}"\n` +
-        `- Propose ONLY what the newest entry requires BEYOND the existing items — earlier entries are already absorbed.\n` +
-        `- SUFFICIENCY over coverage: a handful of sharp items beats a wall of plausible ones. Aim for the FEWEST items that make the newest entry spec-able (rarely more than 5-6 across all sections).\n` +
+        `\n\nEXPANSION DOCTRINE (absorb the WHOLE journal into the space):\n` +
+        `- COVERAGE: propose the items needed so that EVERY numbered journal entry's substance is represented ` +
+        `by items in the space. On an empty space that means decomposing ALL entries, the goal included. ` +
+        `When items already exist, propose only the missing delta — and say nothing for entries already covered.\n` +
+        `- ELEMENTS FIRST: elements are the SUBJECT MATTER — the concrete things the journal commits to building. ` +
+        `Derive constraints, gaps, criteria and verification FROM the elements, never free-floating. ` +
+        `An expansion that leaves the elements section empty while the journal names buildable things is WRONG.\n` +
+        `- SUFFICIENCY per entry: a handful of sharp items per entry beats a wall of plausible ones ` +
+        `(roughly 3-6 per entry across all sections, fewer when entries overlap).\n` +
         `- NEVER restate or near-duplicate ANY listed item IN ANY WORDING — including dropped (human veto) and resolved (answered) ones. ` +
         `If you believe a vetoed/answered concept must return, say so in an addItemNote on a related item instead of re-proposing it.\n` +
-        `- Proposing zero items is a legitimate outcome when the space already covers the entry.`;
+        `- Proposing zero items is a legitimate outcome ONLY when every journal entry is already covered by existing items.`;
 
       const itemLines: string[] = [];
       for (const section of workingModel.sections) {
