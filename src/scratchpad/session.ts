@@ -45,6 +45,7 @@ import {
   EXPANSION_STAGES,
   expansionStageWorker,
 } from "./workers/expansionPipeline";
+import { computeIntegrity, integritySummary } from "./integrityGate";
 import { showFreshMarkdownPreview } from "../commands/freshPreview";
 export type { DryRunResult, SlicerVerdict } from "./dryRunSlice";
 
@@ -427,12 +428,24 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         return loop.step(this._model, []);
       });
     }
+    // Stage 5 — closing integrity gate (2026-07-18): dedup + orphan + coverage.
+    const integrity = computeIntegrity(this._model);
     const counts = this._model.sections
       .filter((s) => s.kind !== "goal")
       .map((s) => `${s.kind} ${s.items.filter((it) => it.state === "active").length}`)
       .join(" · ");
-    this._commandMessage = `Expansion complete — ${counts}. Review on the board; nothing is settled yet.`;
+    this._commandMessage =
+      `Expansion complete — ${counts}. ${integritySummary(integrity)} ` +
+      `Review on the board; nothing is settled yet.`;
+    scratchpadLog(
+      `━━ integrity: ${integrity.orphans.length} orphans, ${integrity.uncoveredElements.length} uncovered, ${integrity.duplicates.length} dup-pairs`,
+    );
     this._updatePanel();
+  }
+
+  /** The last expansion's integrity report (for surfaces to render). */
+  computeIntegrity() {
+    return computeIntegrity(this._model);
   }
 
   /**
