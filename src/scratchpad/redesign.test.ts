@@ -42,7 +42,7 @@ function cutScenario(): {
   const elA = propose(sec("elements"), "element A");
   const elB = propose(sec("elements"), "element B");
   const conLinked = propose(sec("constraints"), "constraint on A", [elA]);
-  const criTransitive = propose(sec("criteria"), "criterion via constraint", [
+  const criTransitive = propose(sec("acceptance"), "criterion via constraint", [
     conLinked,
   ]);
   const conUnrelated = propose(sec("constraints"), "unrelated constraint");
@@ -323,19 +323,14 @@ test("three-dimension gate (2026-07-17): convergence, complexity, risk — evalu
   let gate = cutReadiness(m, [el]);
   assert.equal(gate.pass, false);
   const blockers = gate.elements[0].blockers.join(" | ");
-  assert.match(blockers, /no settled criteria linked/);
-  assert.match(blockers, /no settled verification linked/);
+  assert.match(blockers, /no settled acceptance linked/);
   assert.match(blockers, /risk never evaluated/);
 
-  // Converge it: linked settled criteria + verification; evaluate risk 3.
-  const cri = propose(sec("criteria"), "measurable outcome", {
+  // Converge it: linked settled acceptance; evaluate risk 3.
+  const cri = propose(sec("acceptance"), "measurable outcome", {
     requires: [el],
   });
   check(cri);
-  const ver = propose(sec("verification"), "how it is checked", {
-    requires: [el],
-  });
-  check(ver);
   m = reduce(m, {
     type: "setEval",
     actor: "human",

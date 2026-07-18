@@ -3,7 +3,7 @@
 export type Tenant = "tep" | "spec";
 export type Phase = "drafting" | "shaping" | "reframing" | "ready";
 export type SectionKind =
-  "goal" | "constraints" | "elements" | "gap" | "criteria" | "verification";
+  "goal" | "constraints" | "elements" | "gap" | "acceptance";
 export type SectionState = "empty" | "proposed" | "shaping" | "settled";
 export type Coverage = "unknown" | "assumed" | "verified";
 
@@ -409,16 +409,16 @@ function updateItemInModel(
 
 /**
  * Create an empty working model seeded with exactly one empty-items section
- * per kind: goal, constraints, elements, gap, criteria, verification.
+ * per kind: goal, elements, constraints, gap, acceptance (expansion redesign
+ * 2026-07-18 — elements SECOND, criteria+verification merged to acceptance).
  */
 export function emptyModel(tenant: Tenant): WorkingModel {
   const kinds: SectionKind[] = [
     "goal",
-    "constraints",
     "elements",
+    "constraints",
     "gap",
-    "criteria",
-    "verification",
+    "acceptance",
   ];
   const sections: Section[] = kinds.map((kind, idx) => ({
     id: `sec-${idx}`,

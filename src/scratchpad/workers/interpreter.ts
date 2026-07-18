@@ -52,10 +52,11 @@ const SECTION_NOUN_MAP: Record<string, SectionKind> = {
   elements: "elements",
   gap: "gap",
   gaps: "gap",
-  criteria: "criteria",
-  criterion: "criteria",
-  verification: "verification",
-  verifications: "verification",
+  criteria: "acceptance",
+  criterion: "acceptance",
+  acceptance: "acceptance",
+  verification: "acceptance",
+  verifications: "acceptance",
   list: "constraints", // generic "list" falls through to constraints; see "all lists"
 };
 

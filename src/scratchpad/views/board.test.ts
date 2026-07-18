@@ -163,8 +163,8 @@ test("elements render directly below the goal, before constraints (2026-07-18)",
   const html = buildBoardHtml(emptyModel("tep"), { selection: [], cut: [] });
   const iElements = html.indexOf(">elements<");
   const iConstraints = html.indexOf(">constraints<");
-  const iVerification = html.indexOf(">verification<");
+  const iAcceptance = html.indexOf(">acceptance<");
   assert.ok(iElements > 0 && iConstraints > 0);
   assert.ok(iElements < iConstraints, "elements must precede constraints");
-  assert.ok(iConstraints < iVerification, "verification stays last");
+  assert.ok(iConstraints < iAcceptance, "acceptance stays last");
 });

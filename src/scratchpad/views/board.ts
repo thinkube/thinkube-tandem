@@ -42,8 +42,7 @@ const SECTION_DISPLAY_ORDER: SectionKind[] = [
   "elements",
   "constraints",
   "gap",
-  "criteria",
-  "verification",
+  "acceptance",
 ];
 
 export interface BoardOptions {

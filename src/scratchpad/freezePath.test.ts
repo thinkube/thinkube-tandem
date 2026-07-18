@@ -16,7 +16,7 @@ import { computeDepMeta, freezeStatusText } from "./views/document";
 
 test("parseSlicerVerdict: a clean JSON verdict parses; cleanCut:true clears the gap", () => {
   const v = parseSlicerVerdict(
-    '{"cleanCut": true, "gapSection": "criteria", "decomposition": ["a", "b"]}',
+    '{"cleanCut": true, "gapSection": "acceptance", "decomposition": ["a", "b"]}',
   );
   assert.equal(v.cleanCut, true);
   assert.equal(v.gapSection, null);
@@ -25,17 +25,17 @@ test("parseSlicerVerdict: a clean JSON verdict parses; cleanCut:true clears the 
 
 test("parseSlicerVerdict: fenced/prose-wrapped replies still parse (the intent-check parser lesson)", () => {
   const v = parseSlicerVerdict(
-    'Here is my verdict:\n```json\n{"cleanCut": false, "gapSection": "criteria", "decomposition": []}\n```\nDone.',
+    'Here is my verdict:\n```json\n{"cleanCut": false, "gapSection": "acceptance", "decomposition": []}\n```\nDone.',
   );
   assert.equal(v.cleanCut, false);
-  assert.equal(v.gapSection, "criteria");
+  assert.equal(v.gapSection, "acceptance");
 });
 
 test("parseSlicerVerdict: garbage, missing cleanCut, or invalid gap kinds return the honest not-ready verdict", () => {
   for (const bad of [
     "no json here",
     "",
-    '{"gapSection": "criteria"}',
+    '{"gapSection": "acceptance"}',
     "{broken",
   ]) {
     const v = parseSlicerVerdict(bad);
@@ -76,7 +76,7 @@ test("freezeStatusText: a fresh space names every uncovered section including th
   assert.match(text, /goal \(write the first journal entry\)/);
   assert.match(text, /gap \(attend every open question/);
   assert.match(text, /constraints/);
-  assert.match(text, /verification/);
+  assert.match(text, /acceptance/);
 });
 
 test("freezeStatusText: coverage green + no readiness run → points at Check readiness", () => {
@@ -107,11 +107,11 @@ test("freezeStatusText: a dry-run gap without a note still reads sensibly; enabl
   let model = coveredModel();
   model = reduce(model, {
     type: "recordReadiness",
-    record: { covered: true, cleanCut: false, gapSection: "criteria" },
+    record: { covered: true, cleanCut: false, gapSection: "acceptance" },
   }).model;
   assert.match(
     freezeStatusText(model, false),
-    /flagged the criteria section as incomplete or ambiguous/,
+    /flagged the acceptance section as incomplete or ambiguous/,
   );
 
   model = reduce(model, {
@@ -203,7 +203,7 @@ test("computeDepMeta: focus roles, stale rationale on dropped dependency, and ch
 
 test("parseSlicerVerdict: the reason is carried on failures and dropped on clean cuts", () => {
   const failed = parseSlicerVerdict(
-    '{"cleanCut": false, "gapSection": "criteria", "reason": "No criterion says how success is observed.", "decomposition": []}',
+    '{"cleanCut": false, "gapSection": "acceptance", "reason": "No criterion says how success is observed.", "decomposition": []}',
   );
   assert.equal(failed.reason, "No criterion says how success is observed.");
   const clean = parseSlicerVerdict(

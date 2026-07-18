@@ -136,7 +136,7 @@ export async function run(_phase: number): Promise<void> {
   );
   const elementsSec = sp3.model.sections.find((s) => s.kind === "elements");
   const gapSec = sp3.model.sections.find((s) => s.kind === "gap");
-  const criteriaSec = sp3.model.sections.find((s) => s.kind === "criteria");
+  const criteriaSec = sp3.model.sections.find((s) => s.kind === "acceptance");
 
   assert.ok(
     constraintsSec,

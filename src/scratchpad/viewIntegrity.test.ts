@@ -139,7 +139,7 @@ test("every delegated control class rendered is handled by the click listener", 
   }
 });
 
-test("section display order: elements directly after goal, then constraints/gap/criteria/verification", () => {
+test("section display order: elements directly after goal, then constraints/gap/acceptance", () => {
   const html = fullHtml();
   const order = [...html.matchAll(/data-kind="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, [
@@ -147,8 +147,7 @@ test("section display order: elements directly after goal, then constraints/gap/
     "elements",
     "constraints",
     "gap",
-    "criteria",
-    "verification",
+    "acceptance",
   ]);
 });
 

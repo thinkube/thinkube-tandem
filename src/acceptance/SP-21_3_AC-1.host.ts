@@ -130,8 +130,7 @@ export async function run(_phase: number): Promise<void> {
     "constraints",
     "elements",
     "gap",
-    "criteria",
-    "verification",
+    "acceptance",
   ] as const) {
     assert.ok(
       kinds.includes(k),
@@ -165,8 +164,7 @@ export async function run(_phase: number): Promise<void> {
     "constraints",
     "elements",
     "gap",
-    "criteria",
-    "verification",
+    "acceptance",
   ]) {
     assert.ok(
       emptyHtml.includes(kind),

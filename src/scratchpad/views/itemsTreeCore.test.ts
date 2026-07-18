@@ -123,7 +123,7 @@ test("cut ranking orders settled elements by fewest blockers", () => {
   model = apply(model, { type: "checkItem", actor: "human", itemId: heavy.id });
   model = apply(model, { type: "checkItem", actor: "human", itemId: light.id });
   // Give "light" linked settled criteria+verification so it has fewer blockers.
-  for (const kind of ["criteria", "verification"] as const) {
+  for (const kind of ["acceptance"] as const) {
     const sec = model.sections.find((s) => s.kind === kind)!;
     model = apply(model, {
       type: "proposeItem",

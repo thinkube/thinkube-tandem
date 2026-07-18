@@ -201,7 +201,7 @@ export async function run(_phase: number): Promise<void> {
   } as unknown as Action);
 
   // Cover the remaining non-goal sections.
-  const COVER_KINDS = ["elements", "gap", "criteria", "verification"] as const;
+  const COVER_KINDS = ["elements", "gap", "acceptance"] as const;
   for (const kind of COVER_KINDS) {
     const sec = (
       session.model.sections as Array<{ id: string; kind: string }>

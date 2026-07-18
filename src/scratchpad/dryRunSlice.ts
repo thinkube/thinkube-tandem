@@ -91,8 +91,7 @@ const SECTION_KINDS = new Set([
   "constraints",
   "elements",
   "gap",
-  "criteria",
-  "verification",
+  "acceptance",
 ]);
 
 /**
@@ -176,7 +175,7 @@ export function makeProductionRunSlicer(
       `beyond what the intent itself states.\n\n` +
       `Intent and settled items:\n${intent}\n\n` +
       `Respond with EXACTLY ONE JSON object and nothing else:\n` +
-      `{"cleanCut": <boolean>, "gapSection": <"constraints"|"elements"|"gap"|"criteria"|"verification"|null>, ` +
+      `{"cleanCut": <boolean>, "gapSection": <"constraints"|"elements"|"gap"|"acceptance"|null>, ` +
       `"reason": "<when cleanCut is false: ONE concrete sentence naming exactly what is missing or ambiguous and what would settle it>", ` +
       `"decomposition": ["<work item title>", ...]}\n` +
       `cleanCut true only when the intent needs no further shaping; when false, name the section ` +

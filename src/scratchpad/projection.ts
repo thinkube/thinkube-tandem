@@ -12,11 +12,10 @@ export const FROZEN_TEP_STATUS: "proposed" = "proposed";
  */
 const KIND_TO_TEP_HEADER: Partial<Record<SectionKind, string>> = {
   goal: "## Goal",
-  criteria: "## User Expectation",
+  acceptance: "## User Expectation",
   constraints: "## Context",
   elements: "## Detailed Description",
   gap: "## Alternatives Considered",
-  verification: "## Implemented By",
 };
 
 /**
@@ -356,10 +355,9 @@ export type EvalDimension =
 export interface ElementReadiness {
   elementId: string;
   text: string;
-  /** Settled criteria item edge-linked to this element. */
-  criteriaLinked: boolean;
-  /** Settled verification item edge-linked to this element. */
-  verificationLinked: boolean;
+  /** Settled acceptance item edge-linked to this element (criteria+verification
+   *  merged, expansion redesign 2026-07-18). */
+  acceptanceLinked: boolean;
   complexity: EvalDimension;
   risk: EvalDimension;
   /** Every blocker as a human-readable line (empty = ready). */
@@ -445,17 +443,14 @@ export function cutReadiness(
           o.item.state === "active" &&
           linked(id, o.item.id),
       );
-    const criteriaLinked = settledLinked("criteria");
-    const verificationLinked = settledLinked("verification");
+    const acceptanceLinked = settledLinked("acceptance");
     const complexity = evalDim(it, "complexity");
     const risk = evalDim(it, "risk");
     const blockers: string[] = [];
-    if (!criteriaLinked)
+    if (!acceptanceLinked)
       blockers.push(
-        "no settled criteria linked — the spec author would have to invent success conditions",
+        "no settled acceptance linked — the spec author would have to invent success conditions",
       );
-    if (!verificationLinked)
-      blockers.push("no settled verification linked — criteria untestable");
     if (complexity === "unset") blockers.push("complexity never evaluated");
     if (risk === "unset") blockers.push("risk never evaluated");
     if (complexity === "challenged")
@@ -475,8 +470,7 @@ export function cutReadiness(
     elements.push({
       elementId: id,
       text: it.text,
-      criteriaLinked,
-      verificationLinked,
+      acceptanceLinked,
       complexity,
       risk,
       blockers,
