@@ -257,3 +257,57 @@ export function expansionStageWorker(
     },
   };
 }
+
+/**
+ * Build the ORPHAN-REPAIR prompt (self-repair 2026-07-18): given the orphans
+ * the integrity gate found and the live elements, the worker either links an
+ * orphan to the element it serves (linkItems) or promotes a mislabeled orphan
+ * into elements (reclassifyItem). It never drops — genuine noise stays flagged
+ * for the human.
+ */
+export function buildRepairPrompt(
+  model: WorkingModel,
+  orphans: { id: string; kind: string; text: string }[],
+): string {
+  const els = liveElements(model);
+  const elementBlock =
+    els.length > 0
+      ? els.map((e) => `  - ${e.id}: ${e.text}`).join("\n")
+      : "  (no elements)";
+  const orphanBlock = orphans
+    .map((o) => `  - ${o.id} [${o.kind}]: ${o.text}`)
+    .join("\n");
+  const guide = renderActionGuide(model, GATES.repair.allowedTools, "integrator");
+  return (
+    `You are the ORPHAN-REPAIR round. Each orphan below is tied to NO element — ` +
+    `the pipeline's own mistake. Heal each one:\n\n` +
+    `ELEMENTS:\n${elementBlock}\n\nORPHANS:\n${orphanBlock}\n\n` +
+    `For EACH orphan, choose exactly one:\n` +
+    `- If it genuinely serves one of the elements above (it is a real constraint / gap / ` +
+    `acceptance about that element), emit linkItems adding the requires edge to that element id.\n` +
+    `- If the orphan is ITSELF a buildable thing (an element mislabeled — e.g. a deliverable ` +
+    `sitting in constraints), emit reclassifyItem moving it to "elements" with servesEntry set ` +
+    `to the journal entry it belongs to.\n` +
+    `Do NOT invent elements or drop anything. If an orphan fits neither, leave it (the human decides).\n\n` +
+    guide
+  );
+}
+
+export function repairWorker(deps: WorkerFactoryDeps & { orphans: { id: string; kind: string; text: string }[] }): WorkerRun {
+  const base = createPhaseWorker({
+    loadQuery: deps.loadQuery,
+    model: deps.model,
+    allowedTools: GATES.repair.allowedTools,
+    disallowedTools: GATES.repair.disallowedTools,
+    actor: "integrator",
+  });
+  return {
+    ...base,
+    buildPrompt(model: WorkingModel): string {
+      return buildRepairPrompt(model, deps.orphans);
+    },
+    async run(model: WorkingModel, conversation: string[]): Promise<Action[]> {
+      return base.run(model, conversation);
+    },
+  };
+}

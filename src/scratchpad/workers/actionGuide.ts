@@ -69,6 +69,7 @@ const WORKER_EMITTABLE: ReadonlySet<string> = new Set([
   "curateIntent",
   "addObjection",
   "linkItems",
+  "reclassifyItem",
 ]);
 
 // The command-field interpreter's human vocabulary (GATES.interpreter).
@@ -98,6 +99,7 @@ const EMITTABLE: ReadonlySet<string> = new Set([
 const SECTION_TAKING: ReadonlySet<string> = new Set(["proposeItem", "addItem"]);
 const ITEM_TAKING: ReadonlySet<string> = new Set([
   "linkItems",
+  "reclassifyItem",
   "proposeEdit",
   "addItemNote",
   "attachEvidence",
@@ -677,6 +679,49 @@ export function normalizeWorkerActions(
               : asWorkerActor(rec.actor, opts.defaultActor),
           itemId,
           requires: [...new Set(resolved)],
+        });
+        continue;
+      }
+
+      case "reclassifyItem": {
+        const itemId = resolveItemId(model, rec.itemId ?? rec.id ?? rec.item);
+        if (itemId === null) {
+          rejected.push({ raw, reason: "reclassifyItem targets an unknown item" });
+          continue;
+        }
+        const toKind = asNonEmptyString(rec.toKind ?? rec.kind ?? rec.section);
+        const validKinds = new Set([
+          "elements",
+          "constraints",
+          "gap",
+          "acceptance",
+        ]);
+        if (toKind === null || !validKinds.has(toKind.toLowerCase())) {
+          rejected.push({
+            raw,
+            reason: `reclassifyItem toKind must be one of elements/constraints/gap/acceptance`,
+          });
+          continue;
+        }
+        const servesRaw = rec.servesEntry;
+        const servesNum =
+          typeof servesRaw === "number"
+            ? servesRaw
+            : typeof servesRaw === "string"
+              ? Number(servesRaw)
+              : NaN;
+        valid.push({
+          type: "reclassifyItem",
+          actor: asWorkerActor(rec.actor, opts.defaultActor),
+          itemId,
+          toKind: toKind.toLowerCase() as
+            | "elements"
+            | "constraints"
+            | "gap"
+            | "acceptance",
+          ...(Number.isInteger(servesNum) && servesNum >= 1
+            ? { servesEntry: servesNum }
+            : {}),
         });
         continue;
       }

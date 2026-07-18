@@ -156,6 +156,7 @@ export type ToolName =
   // 2026-07-17: dependency edges on EXISTING items (pre-edge spaces have
   // none, so cuts pulled zero context) — the linker round's only tool.
   | "linkItems"
+  | "reclassifyItem"
   // 2026-07-17: close an answered gap (human settling gesture).
   | "resolveItem";
 
@@ -356,7 +357,18 @@ export type Action =
   // 2026-07-17: add dependency edges to an EXISTING item (merge-unique).
   // Structural metadata for future cuts — allowed even on protected items
   // (it never alters their recorded content).
-  | { type: "linkItems"; actor: Actor; itemId: string; requires: string[] };
+  | { type: "linkItems"; actor: Actor; itemId: string; requires: string[] }
+  // Move an item to a different section (expansion self-repair 2026-07-18):
+  // an orphan that is really a mislabeled element gets promoted to elements;
+  // id and edges are preserved so dependents stay linked. Worker-emittable
+  // (the repair round); protected items reject it.
+  | {
+      type: "reclassifyItem";
+      actor: Exclude<Actor, "human">;
+      itemId: string;
+      toKind: SectionKind;
+      servesEntry?: number;
+    };
 
 /**
  * Delta describing a model mutation.
@@ -1436,6 +1448,64 @@ export function reduce(
           field: `sections.${sectionIdx}.items.${itemIdx}.evidence.${evidenceIdx}`,
           before: undefined,
           after: action.evidence,
+        },
+      };
+    }
+
+    case "reclassifyItem": {
+      const loc = findItem(model, action.itemId);
+      if (!loc) throw new Error(`Item '${action.itemId}' not found`);
+      const src = model.sections[loc.sectionIdx];
+      const item = src.items[loc.itemIdx];
+      if (isProtected(item)) {
+        return {
+          model,
+          delta: { kind: "rejected", action, reason: "item is TEP-protected" },
+        };
+      }
+      if (src.kind === action.toKind) {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: `already in the ${action.toKind} section`,
+          },
+        };
+      }
+      const destIdx = model.sections.findIndex(
+        (s) => s.kind === action.toKind,
+      );
+      if (destIdx === -1 || action.toKind === "goal") {
+        return {
+          model,
+          delta: {
+            kind: "rejected",
+            action,
+            reason: `cannot reclassify into '${action.toKind}'`,
+          },
+        };
+      }
+      const moved: Item = {
+        ...item,
+        ...(action.toKind === "elements" && action.servesEntry !== undefined
+          ? { servesEntry: action.servesEntry }
+          : {}),
+      };
+      const sections = model.sections.map((s, i) => {
+        if (i === loc.sectionIdx)
+          return { ...s, items: s.items.filter((_, j) => j !== loc.itemIdx) };
+        if (i === destIdx) return { ...s, items: [...s.items, moved] };
+        return s;
+      });
+      return {
+        model: { ...model, sections },
+        delta: {
+          kind: "applied",
+          action,
+          field: `reclassify.${action.itemId}`,
+          before: src.kind,
+          after: action.toKind,
         },
       };
     }

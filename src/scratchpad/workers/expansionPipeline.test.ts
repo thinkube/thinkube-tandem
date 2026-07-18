@@ -109,3 +109,59 @@ test("parking a group defers its elements + private context, keeps shared contex
   assert.ok(!parked.includes(shared), "shared constraint stays live");
   assert.ok(!parked.includes(e2), "other group's element untouched");
 });
+
+test("reclassifyItem promotes an orphan into elements, preserving id + edges", () => {
+  let model = emptyModel("tep");
+  const cId = model.sections.find((s) => s.kind === "constraints")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: cId,
+    item: { text: "self-test harnesses", modality: "optional", evals: {} },
+  }).model;
+  const orphanId = model.sections.find((s) => s.kind === "constraints")!.items[0].id;
+  // an acceptance item depends on it
+  const aId = model.sections.find((s) => s.kind === "acceptance")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: aId,
+    item: { text: "harnesses fail loudly", modality: "optional", evals: {}, requires: [orphanId] },
+  }).model;
+  const { model: next, delta } = reduce(model, {
+    type: "reclassifyItem",
+    actor: "integrator",
+    itemId: orphanId,
+    toKind: "elements",
+    servesEntry: 2,
+  });
+  assert.equal(delta.kind, "applied");
+  const el = next.sections.find((s) => s.kind === "elements")!.items.find((it) => it.id === orphanId);
+  assert.ok(el, "orphan now lives in elements");
+  assert.equal(el!.servesEntry, 2);
+  assert.equal(next.sections.find((s) => s.kind === "constraints")!.items.length, 0);
+  // the acceptance edge still points at the (now element) id — no longer orphan
+  const { computeIntegrity } = require("../integrityGate") as {
+    computeIntegrity: (m: typeof next) => { orphans: unknown[] };
+  };
+  assert.equal(computeIntegrity(next).orphans.length, 0);
+});
+
+test("buildRepairPrompt lists orphans + elements and forbids drop/invent", async () => {
+  const { buildRepairPrompt } = await import("./expansionPipeline");
+  let model = emptyModel("tep");
+  const elId = model.sections.find((s) => s.kind === "elements")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: elId,
+    item: { text: "an element", modality: "optional", evals: {}, servesEntry: 1 },
+  }).model;
+  const p = buildRepairPrompt(model, [
+    { id: "item-x", kind: "constraints", text: "orphan constraint" },
+  ]);
+  assert.ok(p.includes("ORPHAN-REPAIR"));
+  assert.ok(p.includes("orphan constraint"));
+  assert.ok(p.includes("reclassifyItem"));
+  assert.ok(p.includes("Do NOT invent elements or drop"));
+});

@@ -120,6 +120,7 @@ export const GATES: Record<
   | "interpreter"
   | "explainer"
   | "linker"
+  | "repair"
   | "challenger",
   { allowedTools: ToolName[]; disallowedTools: ToolName[] }
 > = {
@@ -241,6 +242,27 @@ export const GATES: Record<
    */
   linker: {
     allowedTools: ["linkItems"],
+    disallowedTools: [
+      "proposeItem",
+      "proposeEdit",
+      "addItemNote",
+      "attachEvidence",
+      "checkItem",
+      "uncheckItem",
+      "addItem",
+      "freeze",
+      "editGoal",
+      "curateIntent",
+      "resolveEdit",
+    ],
+  },
+  /**
+   * Repair: heals the pipeline's own structural mistakes (expansion self-repair
+   * 2026-07-18) — links an orphan to the element it serves, or reclassifies a
+   * mislabeled orphan into elements. Never drops (that stays human).
+   */
+  repair: {
+    allowedTools: ["linkItems", "reclassifyItem"],
     disallowedTools: [
       "proposeItem",
       "proposeEdit",

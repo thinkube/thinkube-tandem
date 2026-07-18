@@ -45,6 +45,7 @@ import {
   EXPANSION_STAGES,
   expansionStageWorker,
   groupItemIds,
+  repairWorker,
 } from "./workers/expansionPipeline";
 import { computeIntegrity, integritySummary } from "./integrityGate";
 import { showFreshMarkdownPreview } from "../commands/freshPreview";
@@ -429,8 +430,31 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         return loop.step(this._model, []);
       });
     }
-    // Stage 5 — closing integrity gate (2026-07-18): dedup + orphan + coverage.
-    const integrity = computeIntegrity(this._model);
+    // Stage 5a — SELF-REPAIR (2026-07-18): the pipeline heals its own orphans
+    // (link to the element they serve, or promote a mislabeled orphan into
+    // elements) so expand_space does not hand the human its own mistakes.
+    let integrity = computeIntegrity(this._model);
+    if (integrity.orphans.length > 0) {
+      this._commandMessage = `Repairing — ${integrity.orphans.length} orphan(s)…`;
+      this._updatePanel();
+      const orphans = integrity.orphans;
+      await this._runWorkerRound(
+        "repair",
+        ["elements", "constraints", "gap", "acceptance"],
+        async () => {
+          const worker = repairWorker({
+            loadQuery: this._loadQueryFn,
+            model: this._workerModelId,
+            contextDigest: digest,
+            orphans,
+          });
+          const loop = createLoop({ workerFor: () => worker });
+          return loop.step(this._model, []);
+        },
+      );
+      integrity = computeIntegrity(this._model);
+    }
+    // Stage 5b — final integrity read.
     const counts = this._model.sections
       .filter((s) => s.kind !== "goal")
       .map((s) => `${s.kind} ${s.items.filter((it) => it.state === "active").length}`)
