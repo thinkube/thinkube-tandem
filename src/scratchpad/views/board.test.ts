@@ -81,7 +81,8 @@ test("detail carries provenance notes, eval controls, and pending-edit resolutio
     text: "Why: it matters.",
   });
   const html = buildBoardHtml(model, { selection: [], cut: [] });
-  assert.ok(html.includes("<b>human</b>: Why: it matters."));
+  assert.ok(html.includes('<span class="noteby">human</span>'));
+  assert.ok(html.includes("<b>Why:</b> it matters."));
   assert.ok(html.includes(`data-eval="complexity" data-val="2" data-id="${itemId}"`));
   assert.ok(html.includes(`data-resolve="${itemId}"`));
 });
@@ -122,4 +123,38 @@ test("freeze button disabled while the gate blocks; journal fold lists entries",
   assert.ok(html.includes('data-act="freeze" disabled'));
   assert.ok(html.includes("Journal (2)"));
   assert.ok(html.includes("second entry"));
+});
+
+test("Why/Impact/Modality notes render as three bold-labeled lines (2026-07-18)", async () => {
+  const { splitExplainNote } = await import("./board");
+  const parts = splitExplainNote(
+    "Why: the journal requires it. Impact: without it the gate lies. Modality: mandatory because the goal names it.",
+  );
+  assert.deepEqual(
+    parts?.map((p) => p.label),
+    ["Why", "Impact", "Modality"],
+  );
+  assert.ok(parts?.[0].body.startsWith("the journal requires it"));
+  assert.ok(parts?.[2].body.startsWith("mandatory because"));
+  // Unstructured notes pass through untouched.
+  assert.equal(splitExplainNote("just a remark"), null);
+
+  let model = emptyModel("tep");
+  const elements = model.sections.find((s) => s.kind === "elements")!;
+  model = apply(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: elements.id,
+    item: {
+      text: "an element",
+      modality: "optional",
+      evals: {},
+      note: "Why: reason. Impact: consequence. Modality: optional because minor.",
+    },
+  });
+  const html = buildBoardHtml(model, { selection: [], cut: [] });
+  assert.ok(html.includes("<b>Why:</b> reason."));
+  assert.ok(html.includes("<b>Impact:</b> consequence."));
+  assert.ok(html.includes("<b>Modality:</b> optional because minor."));
+  assert.ok(html.includes('class="noteby"'));
 });

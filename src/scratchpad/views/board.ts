@@ -71,15 +71,44 @@ function badges(item: Item): string {
   return parts.join("");
 }
 
+/**
+ * Split a Why/Impact/Modality note into its labeled parts (2026-07-18 field
+ * request: the board flattened the structured note into one paragraph; the
+ * three labels render bold, each part on its own line). Notes without the
+ * structure pass through untouched.
+ */
+export function splitExplainNote(
+  text: string,
+): { label: string; body: string }[] | null {
+  const m = text.match(
+    /^\s*Why\s*:\s*([\s\S]*?)(?:\s*Impact\s*:\s*([\s\S]*?))?(?:\s*Modality\s*:\s*([\s\S]*?))?\s*$/i,
+  );
+  if (!m || m[1] === undefined) return null;
+  const parts: { label: string; body: string }[] = [
+    { label: "Why", body: m[1].trim() },
+  ];
+  if (m[2]?.trim()) parts.push({ label: "Impact", body: m[2].trim() });
+  if (m[3]?.trim()) parts.push({ label: "Modality", body: m[3].trim() });
+  return parts.length >= 1 && parts[0].body ? parts : null;
+}
+
 function detailHtml(item: Item, model: WorkingModel): string {
   const byId = new Map<string, string>();
   for (const s of model.sections)
     for (const it of s.items) byId.set(it.id, it.text);
   const rows: string[] = [];
   for (const note of item.notes) {
-    rows.push(
-      `<div class="note">${note.by ? `<b>${esc(note.by)}</b>: ` : ""}${esc(note.text)}</div>`,
-    );
+    const by = note.by ? `<span class="noteby">${esc(note.by)}</span>` : "";
+    const parts = splitExplainNote(note.text);
+    if (parts) {
+      rows.push(
+        `<div class="note">${by}${parts
+          .map((p) => `<div class="notepart"><b>${p.label}:</b> ${esc(p.body)}</div>`)
+          .join("")}</div>`,
+      );
+    } else {
+      rows.push(`<div class="note">${by}${esc(note.text)}</div>`);
+    }
   }
   for (const req of item.requires ?? []) {
     rows.push(`<div class="edge">requires: ${esc(byId.get(req) ?? req)}</div>`);
@@ -266,6 +295,9 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);margin
 .detail{display:none;padding:4px 16px 8px 46px;font-size:.9em;border-left:3px solid transparent}
 .detail.open{display:block}
 .detail .note,.detail .edge,.detail .evid,.detail .acc,.detail .pending{margin:2px 0;opacity:.9}
+.detail .noteby{display:inline-block;font-size:.75em;opacity:.55;margin-right:6px;text-transform:uppercase;letter-spacing:.05em}
+.detail .notepart{margin:2px 0}
+.detail .notepart b{opacity:1}
 .detail .dim{opacity:.5}
 .detail .controls{margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .evalset button{min-width:22px}
