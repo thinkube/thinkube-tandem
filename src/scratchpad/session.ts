@@ -40,7 +40,10 @@ import { ThinkubeStore } from "../store/ThinkubeStore";
 import { workerLogEnabled } from "../services/workerLog";
 import { runContextualize } from "./workers/contextualizer";
 import { thinkyDiag } from "./chat/diag";
-import { contextSourcesForSpace } from "./productContext";
+import {
+  candidateRepoSources,
+  contextSourcesForSpace,
+} from "./productContext";
 import { runChallenger } from "./workers/challenger";
 import {
   EXPANSION_STAGES,
@@ -310,7 +313,53 @@ class ScratchpadSessionImpl implements ScratchpadSession {
       name: f.name,
       path: f.uri.fsPath,
     }));
-    return contextSourcesForSpace(this._sidecarRoot, this._namespace, folders);
+    return contextSourcesForSpace(
+      this._sidecarRoot,
+      this._namespace,
+      folders,
+      this._model.contextScope,
+    );
+  }
+
+  /** The product's candidate repositories — what a scope selection picks FROM. */
+  private _candidateRepos(): string[] {
+    const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+      name: f.name,
+      path: f.uri.fsPath,
+    }));
+    return candidateRepoSources(this._sidecarRoot, this._namespace, folders);
+  }
+
+  /**
+   * Present the product's candidate repositories for the human to SELECT which
+   * the context rounds should read (2026-07-18). A native multi-select,
+   * pre-checked by the current scope (or all). Persists via setContextScope.
+   * Returns true if a selection was made (false = cancelled).
+   */
+  async scopeContext(): Promise<boolean> {
+    const candidates = this._candidateRepos();
+    if (candidates.length <= 1) return true; // nothing to narrow
+    const current = new Set(this._model.contextScope ?? candidates);
+    const picks = candidates.map((p) => ({
+      label: nodePath.basename(p),
+      description: p,
+      picked: current.has(p),
+      _path: p,
+    }));
+    const chosen = await vscode.window.showQuickPick(picks, {
+      canPickMany: true,
+      title: "Context — which repositories should the space read?",
+      placeHolder: "Uncheck the ones this space does not touch",
+    });
+    if (!chosen) return false; // cancelled
+    this.dispatch({
+      type: "setContextScope",
+      actor: "human",
+      paths: chosen.map((c) => c._path),
+    });
+    this._commandMessage = `Context scope: ${chosen.length} of ${candidates.length} repositories.`;
+    this._updatePanel();
+    return true;
   }
 
   get space(): string {
@@ -933,9 +982,22 @@ class ScratchpadSessionImpl implements ScratchpadSession {
         this._updatePanel();
         break;
       }
+      case "scopeContext": {
+        await this.scopeContext();
+        break;
+      }
       case "contextualize": {
-        // The context layer: a read-only round over DECLARED sources writes
-        // the digest dossier — the sanctioned context channel.
+        // The context layer: a read-only round over the SCOPED sources writes
+        // the digest dossier — the sanctioned context channel. Offer the
+        // scope picker first when the human has not narrowed and there is
+        // more than one candidate repo (2026-07-18).
+        if (
+          this._model.contextScope === undefined &&
+          this._candidateRepos().length > 1
+        ) {
+          const ok = await this.scopeContext();
+          if (!ok) break; // cancelled the picker → abort contextualize
+        }
         if (!this._dossier) {
           this._commandMessage =
             "Contextualize needs a thinking-space root (no dossier store available).";
@@ -1508,6 +1570,14 @@ class ScratchpadSessionImpl implements ScratchpadSession {
           this._commandMessage = undefined;
           this._updatePanel();
           await this.closeOpenGaps();
+          break;
+        }
+        if (
+          lowered === "scope" ||
+          lowered === "select context" ||
+          lowered === "scope context"
+        ) {
+          await this.scopeContext();
           break;
         }
         // Clear prior message, mark in-flight, update panel to disable the field.

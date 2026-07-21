@@ -83,6 +83,7 @@ export type ScratchpadInboundMessage =
   | { type: "setSelection"; itemIds: string[] }
   | { type: "removeJournalEntry"; requestId: string }
   | { type: "parkGroup"; entry: number }
+  | { type: "scopeContext" }
   | { type: "setCutFromSelection" }
   | { type: "askThinky" };
 

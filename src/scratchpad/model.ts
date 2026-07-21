@@ -226,6 +226,12 @@ export interface WorkingModel {
    */
   roughRequests?: RoughRequest[];
   /**
+   * Human-SELECTED subset of the product's candidate repositories the context
+   * rounds read (2026-07-18). Absent = all candidates. The machine discovers
+   * the candidates (product tier); the human narrows by selection.
+   */
+  contextScope?: string[];
+  /**
    * The curated intent: the synthesized statement of what the space (or the
    * active cut) currently intends — maintained by the reframe worker, never
    * touching the human's rough words. This is what freeze signs as the TEP's
@@ -378,6 +384,7 @@ export type Action =
   // wrappers ("yes", "add new journal entry: ..."). A RECORDING ERROR is not
   // protected thought — deleting an entry is a sovereign human correction.
   | { type: "removeRoughRequest"; actor: "human"; requestId: string }
+  | { type: "setContextScope"; actor: "human"; paths: string[] }
   | { type: "curateIntent"; text: string; title?: string } // reframe worker (or human edit)
   // 2026-07-17: add dependency edges to an EXISTING item (merge-unique).
   // Structural metadata for future cuts — allowed even on protected items
@@ -1721,6 +1728,20 @@ export function reduce(
           field: `roughRequests.${requests.length}`,
           before: undefined,
           after: entry,
+        },
+      };
+    }
+
+    case "setContextScope": {
+      const paths = [...new Set(action.paths.filter((p) => p.startsWith("/")))];
+      return {
+        model: { ...model, contextScope: paths },
+        delta: {
+          kind: "applied",
+          action,
+          field: "contextScope",
+          before: model.contextScope,
+          after: paths,
         },
       };
     }

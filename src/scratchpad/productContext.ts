@@ -93,14 +93,30 @@ export function contextSourcesForSpace(
   sidecarRoot: string | undefined,
   namespace: string,
   folders: readonly WorkspaceFolderRef[],
+  scope?: readonly string[],
 ): string[] {
   if (!sidecarRoot) return [];
-  const sources = productRepoSources(
+  const candidates = productRepoSources(
     sidecarRoot,
     productOf(namespace),
     folders,
   );
+  const repos =
+    scope && scope.length > 0
+      ? candidates.filter((c) => scope.includes(c))
+      : candidates;
+  const sources = [...repos];
   const own = path.join(sidecarRoot, ...namespace.split("/"));
   if (fs.existsSync(own) && !sources.includes(own)) sources.push(own);
   return sources;
+}
+
+/** The candidate repositories under the product — what the human selects FROM. */
+export function candidateRepoSources(
+  sidecarRoot: string | undefined,
+  namespace: string,
+  folders: readonly WorkspaceFolderRef[],
+): string[] {
+  if (!sidecarRoot) return [];
+  return productRepoSources(sidecarRoot, productOf(namespace), folders);
 }

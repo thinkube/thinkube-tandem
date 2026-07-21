@@ -264,5 +264,6 @@ test("snapshot names the declared context sources; doctrine forbids path-fishing
   assert.ok(snap.includes("Declared context sources"));
   assert.ok(snap.includes("/store/Platform/projects/x"));
   const prompt = buildThinkySystemPrompt();
-  assert.ok(prompt.includes("NEVER ask the human for repo paths"));
+  assert.ok(prompt.includes("never ask for paths"));
+  assert.ok(prompt.includes("scope_context"));
 });

@@ -659,3 +659,15 @@ test("removeRoughRequest deletes an entry, refuses unknown ids, and later ids ne
   const ids = model.roughRequests!.map((r) => r.id);
   assert.equal(new Set(ids).size, ids.length);
 });
+
+test("context scope: setContextScope persists a selected subset; contextSourcesForSpace honors it (2026-07-18)", () => {
+  let m = emptyModel("tep");
+  const applied = reduce(m, {
+    type: "setContextScope",
+    actor: "human",
+    paths: ["/repo/a", "relative-ignored", "/repo/b"],
+  });
+  assert.equal(applied.delta.kind, "applied");
+  m = applied.model;
+  assert.deepEqual(m.contextScope, ["/repo/a", "/repo/b"]);
+});

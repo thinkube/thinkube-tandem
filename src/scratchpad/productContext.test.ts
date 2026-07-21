@@ -93,3 +93,26 @@ test("no sidecar root -> no sources (honest empty, no guessing)", () => {
     [],
   );
 });
+
+test("scope filters candidate repos; sidecar always included (2026-07-18)", () => {
+  const { store, platformRepo, folders } = makeTree();
+  const tandem = path.join(platformRepo, "extensions", "thinkube-tandem");
+  const scoped = contextSourcesForSpace(
+    store,
+    "Platform/projects/plugin-delivery",
+    folders,
+    [tandem],
+  );
+  // only the selected repo + the space sidecar
+  assert.ok(scoped.includes(tandem));
+  assert.ok(scoped.some((s) => s.includes("plugin-delivery")));
+  assert.ok(!scoped.some((s) => s.includes("thinkube-control")));
+});
+
+test("candidateRepoSources lists the product repos to select from", async () => {
+  const { store, platformRepo, folders } = makeTree();
+  const { candidateRepoSources } = await import("./productContext");
+  const cands = candidateRepoSources(store, "Platform/projects/plugin-delivery", folders);
+  assert.equal(cands.length, 2);
+  assert.ok(cands.every((c) => c.startsWith(platformRepo)));
+});

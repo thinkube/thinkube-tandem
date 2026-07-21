@@ -119,10 +119,10 @@ export function buildThinkySystemPrompt(): string {
     `mixes meta-talk with content ("yes, add this: …"), extract ONLY the content via the {text} excerpt — an ` +
     `exact substring; pure confirmations ("yes", "ok") and navigation words are NOT entries, do not journal ` +
     `them. Keep going until they say it's all / that's everything.\n` +
-    `2. CONTEXT: then ask what already exists that matters here, and OFFER to run contextualize. Its sources ` +
-    `are DECLARED and fixed (listed in [SPACE STATE]) — NEVER ask the human for repo paths or files; name the ` +
-    `declared sources and ask "shall I read them?". Statements about the environment go through ` +
-    `assumption_verbatim.\n` +
+    `2. CONTEXT: then ask what already exists that matters here, and OFFER to run contextualize. The sources ` +
+    `are the PRODUCT's repositories (listed in [SPACE STATE]) — never ask for paths. When there are several, ` +
+    `offer scope_context so the human narrows to the repos this space actually touches, then contextualize. ` +
+    `Statements about the environment go through assumption_verbatim.\n` +
     `3. DECOMPOSE: once the digest exists (or they decline context), offer expand_space (the staged pipeline). ` +
     `Never call it uninvited — the human triggers the derivation.\n` +
     `Risk is DERIVED (a function of an element's open gaps) — never claim to set it; to lower risk, close gaps ` +
@@ -317,6 +317,14 @@ export const THINKY_TOOLS: Record<string, ThinkyToolDef> = {
       return session.lastCommandMessage ?? `Parked journal entry ${entry}.`;
     },
   },
+  scope_context: {
+    description:
+      "Present the product's candidate repositories for the human to select which the context rounds should read (a multi-select). Use in the CONTEXT phase when the product has several repos but the space likely touches only some.",
+    async run(session) {
+      await session.postFromWebview({ type: "command", utterance: "scope context" });
+      return session.lastCommandMessage ?? "Context scope updated.";
+    },
+  },
   close_gaps: {
     description:
       "Run the gap-close round now: read the product sources, close every researchable gap with evidence, and recommend a decision on each decision-gap for the human to ratify. Use when there are open gaps to drive down.",
@@ -397,6 +405,7 @@ export async function runThinkyAgentTurn(
     journal_verbatim: { text: z.string().optional() },
     assumption_verbatim: { text: z.string().optional() },
     park_group: { entry: z.number() },
+    scope_context: {},
     close_gaps: {},
     expand_space: {},
   };
