@@ -162,6 +162,8 @@ export function buildThinkySystemPrompt(): string {
     `panic (wipe derived state, keep the journal) = the Panic button in the board's top bar; deleting a ` +
     `mis-captured journal entry = the ✕ next to it in the board's Journal fold. Point at the real control; ` +
     `never invent UI.\n` +
+    `- Dropping a constraint the machine DECIDED re-opens the gap it settled — the question returns ` +
+    `unanswered rather than the space pretending it is closed. Say so before you drop one.\n` +
     `- The journal is a DRAFT, not an axiom — creativity is iterative. When the human says an ask was ` +
     `WRONG (not merely incomplete), propose_revision drafts a new wording and shows what it would cost; ` +
     `refine the text with them for free, offer test_revision to see what it would break, and apply_revision ` +
@@ -381,6 +383,10 @@ export const THINKY_TOOLS: Record<string, ThinkyToolDef> = {
       if (item.evals.complexity !== undefined)
         out.push(
           `complexity: C${item.evals.complexity}${item.rationale?.complexity ? ` — ${item.rationale.complexity}` : ""}`,
+        );
+      if (item.decidedFrom)
+        out.push(
+          `decided by the machine to settle gap ${item.decidedFrom} — dropping this constraint RE-OPENS that gap`,
         );
       if (item.decisionProposal)
         out.push(

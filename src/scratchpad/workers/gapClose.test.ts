@@ -136,3 +136,139 @@ test("closeGap resolves a gap + attaches evidence; proposeDecision flags it", ()
   assert.equal(g1!.decisionProposal?.recommendation, "use X");
   assert.equal(g1!.state, "active"); // stays open until the human ratifies
 });
+
+// ── Rejecting a decision re-opens its question (2026-07-23) ─────────────────
+
+test("a decided constraint records the gap it settled", () => {
+  let model = emptyModel("tep");
+  const gapSec = model.sections.find((s) => s.kind === "gap")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: gapSec,
+    item: { text: "which render library", modality: "optional", evals: {} },
+  }).model;
+  const gapId = model.sections.find((s) => s.kind === "gap")!.items[0].id;
+  const raw = `{"actions":[{"type":"decide","itemId":"${gapId}","constraint":"render via the native canvas","rationale":"already available","evidence":{"source":"pkg.json"}}]}`;
+  const actions = parseGapCloseActions(
+    raw,
+    gapMapOf(model),
+    constraintsSec(model),
+    "t",
+  );
+  const propose = actions.find((a) => a.type === "proposeItem");
+  assert.ok(propose && propose.type === "proposeItem");
+  if (propose.type === "proposeItem") {
+    assert.equal(propose.item.decidedFrom, gapId);
+  }
+});
+
+test("dropping a machine-decided constraint re-opens the gap it closed", () => {
+  let model = emptyModel("tep");
+  const gapSec = model.sections.find((s) => s.kind === "gap")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: gapSec,
+    item: { text: "which render library", modality: "mandatory", evals: {} },
+  }).model;
+  const gapId = model.sections.find((s) => s.kind === "gap")!.items[0].id;
+  const conSec = model.sections.find((s) => s.kind === "constraints")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "research",
+    sectionId: conSec,
+    item: {
+      text: "render with the built-in graph view",
+      modality: "mandatory",
+      evals: {},
+      decidedFrom: gapId,
+    },
+  }).model;
+  const conId = model.sections.find((s) => s.kind === "constraints")!.items[0].id;
+  model = reduce(model, {
+    type: "closeGap",
+    actor: "research",
+    itemId: gapId,
+    evidence: {
+      source: "self-decided",
+      method: "decided",
+      checkedAt: "2026-07-23T00:00:00.000Z",
+    },
+  }).model;
+  assert.equal(
+    model.sections.find((s) => s.kind === "gap")!.items[0].state,
+    "resolved",
+  );
+
+  const { model: after } = reduce(model, {
+    type: "dropItem",
+    actor: "human",
+    itemId: conId,
+  });
+  const gap = after.sections.find((s) => s.kind === "gap")!.items[0];
+  assert.equal(gap.state, "active", "the question is open again");
+  assert.match(gap.notes[gap.notes.length - 1].text, /Re-opened/);
+  assert.match(gap.notes[gap.notes.length - 1].text, /built-in graph view/);
+});
+
+test("dropping an ordinary constraint touches no gap", () => {
+  let model = emptyModel("tep");
+  const gapSec = model.sections.find((s) => s.kind === "gap")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: gapSec,
+    item: { text: "an unrelated unknown", modality: "mandatory", evals: {} },
+  }).model;
+  const conSec = model.sections.find((s) => s.kind === "constraints")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: conSec,
+    item: { text: "a hand-written constraint", modality: "mandatory", evals: {} },
+  }).model;
+  const conId = model.sections.find((s) => s.kind === "constraints")!.items[0].id;
+  const { model: after } = reduce(model, {
+    type: "dropItem",
+    actor: "human",
+    itemId: conId,
+  });
+  assert.equal(
+    after.sections.find((s) => s.kind === "gap")!.items[0].state,
+    "active",
+    "an unrelated gap is untouched",
+  );
+  assert.equal(after.sections.find((s) => s.kind === "gap")!.items[0].notes.length, 0);
+});
+
+test("a gap the HUMAN resolved is not re-opened by an unrelated drop", () => {
+  let model = emptyModel("tep");
+  const gapSec = model.sections.find((s) => s.kind === "gap")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: gapSec,
+    item: { text: "answered by the human", modality: "mandatory", evals: {} },
+  }).model;
+  const gapId = model.sections.find((s) => s.kind === "gap")!.items[0].id;
+  model = reduce(model, { type: "resolveItem", actor: "human", itemId: gapId }).model;
+  const conSec = model.sections.find((s) => s.kind === "constraints")!.id;
+  model = reduce(model, {
+    type: "proposeItem",
+    actor: "gap-filler",
+    sectionId: conSec,
+    item: { text: "some constraint", modality: "mandatory", evals: {} },
+  }).model;
+  const conId = model.sections.find((s) => s.kind === "constraints")!.items[0].id;
+  const { model: after } = reduce(model, {
+    type: "dropItem",
+    actor: "human",
+    itemId: conId,
+  });
+  assert.equal(
+    after.sections.find((s) => s.kind === "gap")!.items[0].state,
+    "resolved",
+    "a human-settled question stays settled",
+  );
+});

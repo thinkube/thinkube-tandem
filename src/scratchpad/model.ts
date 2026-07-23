@@ -1,3 +1,5 @@
+import { anchorElementsFor, buildAdjacency, indexItems } from "./graph";
+
 // ===== Shared working model =====
 
 export type Tenant = "tep" | "spec";
@@ -110,6 +112,14 @@ export interface Item {
   /** Legacy single anchor (pre-2026-07-23 spaces). Read, never written. */
   servesEntry?: number;
   /**
+   * The gap this constraint SETTLED, when the machine decided it rather than
+   * the human (2026-07-23). Dropping such a constraint re-opens that gap: the
+   * question was never answered on its merits, it was answered by this
+   * decision, and rejecting the answer must put the question back rather than
+   * leave the space quietly believing it is settled.
+   */
+  decidedFrom?: string;
+  /**
    * TEPs this item served as CONTEXT for (cut flags, 2026-07-16). A flagged
    * item is protected — immutable, undroppable, uneditable; supersede is the
    * only evolution path — but stays ACTIVE and keeps serving future cuts.
@@ -155,6 +165,19 @@ export function entriesOf(model: WorkingModel, item: Item): number[] {
   const set = item.servesEntries;
   if (set && set.length > 0) return [...set];
   if (item.servesEntry !== undefined) return [item.servesEntry];
+  // Before falling back to the whole space, ask the GRAPH: an item with no
+  // ask tag but an edge to an element serves whatever that element serves.
+  // Legacy spaces are full of these, and "all entries" would be needlessly
+  // coarse when the edges already say something precise.
+  const byId = indexItems(model);
+  const viaElements = new Set<number>();
+  for (const el of anchorElementsFor(byId, buildAdjacency(byId), item.id)) {
+    const e = byId.get(el)?.item;
+    if (!e) continue;
+    if (e.servesEntries?.length) for (const n of e.servesEntries) viaElements.add(n);
+    else if (e.servesEntry !== undefined) viaElements.add(e.servesEntry);
+  }
+  if (viaElements.size > 0) return [...viaElements].sort((a, b) => a - b);
   return allEntryNumbers(model);
 }
 
@@ -347,6 +370,8 @@ export type Action =
          *  (servesEntry); the stamping layer stores the SET. */
         servesEntry?: number;
         servesEntries?: number[];
+        /** The gap a machine-decided constraint settles. */
+        decidedFrom?: string;
         /** One-line complexity justification (explainable evals). */
         complexityRationale?: string;
       };
@@ -869,6 +894,9 @@ export function reduce(
         newItem.servesEntries = [...new Set(action.item.servesEntries)];
       } else if (action.item.servesEntry !== undefined) {
         newItem.servesEntries = [action.item.servesEntry];
+      }
+      if (action.item.decidedFrom !== undefined) {
+        newItem.decidedFrom = action.item.decidedFrom;
       }
       if (
         action.item.complexityRationale !== undefined &&
@@ -1396,11 +1424,43 @@ export function reduce(
         }
       }
       const { sectionIdx, itemIdx } = loc;
-      const before = model.sections[sectionIdx].items[itemIdx].state;
-      const newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
+      const dropped = model.sections[sectionIdx].items[itemIdx];
+      const before = dropped.state;
+      let newModel = updateItemInModel(model, sectionIdx, itemIdx, (it) => ({
         ...it,
         state: "dropped",
       }));
+      // Rejecting a machine-made decision re-opens the question it closed.
+      // Leaving the gap resolved would let the space believe an answer exists
+      // when the human has just thrown it away — the one state that would make
+      // a freeze sign something nobody decided.
+      if (dropped.decidedFrom !== undefined) {
+        const gapLoc = findItem(newModel, dropped.decidedFrom);
+        if (
+          gapLoc &&
+          newModel.sections[gapLoc.sectionIdx].kind === "gap" &&
+          newModel.sections[gapLoc.sectionIdx].items[gapLoc.itemIdx].state ===
+            "resolved"
+        ) {
+          newModel = updateItemInModel(
+            newModel,
+            gapLoc.sectionIdx,
+            gapLoc.itemIdx,
+            (it) => ({
+              ...it,
+              state: "active",
+              notes: [
+                ...it.notes,
+                {
+                  id: `note-reopen-${it.notes.length}`,
+                  by: "human",
+                  text: `Re-opened — the decided constraint that closed this was dropped: "${dropped.text.slice(0, 120)}"`,
+                },
+              ],
+            }),
+          );
+        }
+      }
       return {
         model: newModel,
         delta: {

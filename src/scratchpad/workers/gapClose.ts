@@ -279,6 +279,8 @@ export function parseGapCloseActions(
           ...(gap.servesEntries?.length
             ? { servesEntries: gap.servesEntries }
             : {}),
+          // Back-link: dropping this constraint re-opens the gap it settled.
+          decidedFrom: itemId,
         },
       });
       // ...and the gap it settles is resolved, recording that the machine
