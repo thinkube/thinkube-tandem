@@ -45,6 +45,14 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     for (const n of unprovable) lines.push(`  ⚠ ${n.sentence}`);
   }
 
+  const openQuestions = space.questions.filter(
+    (q) => !q.decided && members.some((m) => m.serves.includes(q.askId)),
+  );
+  if (openQuestions.length) {
+    lines.push(`Unresolved questions on these asks (decide before signing):`);
+    for (const q of openQuestions) lines.push(`  ? ${q.text}`);
+  }
+
   const ungrounded = members.filter((n) => !n.grounding);
   if (ungrounded.length) {
     lines.push(`Not grounded (no place in the code yet):`);

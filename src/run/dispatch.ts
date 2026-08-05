@@ -236,6 +236,11 @@ function renderTepBody(space: Space, cut: Cut): string {
   lines.push(`# ${cut.tepId ?? cut.id}`);
   lines.push(`## The asks (verbatim)`);
   for (const a of asks) lines.push(`- ${a.text.trim()}`);
+  const decided = space.questions.filter((q) => q.decided);
+  if (decided.length) {
+    lines.push(`## Decisions in force (the human settled these — build under them)`);
+    for (const q of decided) lines.push(`- ${q.decided!.text}`);
+  }
   lines.push(`## The changes`);
   for (const c of members) {
     lines.push(`- ${c!.sentence}`);
