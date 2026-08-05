@@ -33,3 +33,10 @@ of them there — nothing has users.
 - **knip governs v2-authored code only.** The imported engine's public
   surface is canonical v1 API — pinned by the split-fidelity manifest, not
   by usage analysis. Un-exporting it would alter imported code (I1).
+
+- **Probes are authored as `.test.mjs` node:test modules** run directly with
+  `node --test` — no build step, so probes run identically in any target
+  repo. (The spec's `.test.ts` template assumed a compiling host; this is
+  the language-agnostic reading of the same convention.)
+- **The night dispatcher walks the DAG serially**; the parallel frontier
+  pump returns with the full shell re-host — recorded, not silent.

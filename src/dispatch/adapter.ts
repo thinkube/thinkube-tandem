@@ -120,7 +120,7 @@ export function tepSlices({ space, cut, spaceName }: TepSlicesArgs): SliceForDag
     const testUnits: (WorkUnit & { note?: string })[] = criteria.map(
       (crit, k) => ({
         footprint: [
-          `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.ts`,
+          `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`,
         ],
         execution: "fan-out",
         role: "test",

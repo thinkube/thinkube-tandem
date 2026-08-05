@@ -25,9 +25,16 @@ interface DeliveryVM {
   undelivered?: string[];
 }
 
+interface RunView {
+  units: { id: string; slice: string; role: "code" | "test"; state: string; question?: string }[];
+  logs: string[];
+  parked: { unitId: string; question: string }[];
+}
+
 export interface SpacePush {
   kind: "space";
   running: boolean;
+  run?: RunView;
   units: UnitVM[];
   edges: { from: string; to: string }[];
   cutScreen: string;
@@ -39,6 +46,8 @@ export interface SpacePush {
 export type WebToHost =
   | { action: "capture"; text: string }
   | { action: "reground" }
+  | { action: "answer-worker"; unitId: string; text: string }
+  | { action: "stop-run" }
   | { action: "select-unit"; unitId: string }
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }

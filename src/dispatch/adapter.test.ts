@@ -77,7 +77,7 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
   assert.ok(sl1.workUnits[0].note!.includes("done when: typing an ask"));
   assert.deepEqual(
     sl1.workUnits.filter((u) => u.role === "test").map((u) => u.footprint[0]),
-    ["probes/toolbar_space__SL-1_AC-1.test.ts", "probes/toolbar_space__SL-1_AC-2.test.ts"],
+    ["probes/toolbar_space__SL-1_AC-1.test.mjs", "probes/toolbar_space__SL-1_AC-2.test.mjs"],
   );
   assert.deepEqual(sl1.satisfies, [1, 2]);
 

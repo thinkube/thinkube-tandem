@@ -203,6 +203,59 @@ function UnitsMap(props: {
   );
 }
 
+function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element {
+  const { run } = props;
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const dot: Record<string, string> = {
+    ready: "#8b949e", running: "#3fb950", parked: "#d29922", done: "#58a6ff", failed: "#f85149",
+  };
+  return (
+    <section data-run-view style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <strong>The run</strong>
+        <button
+          data-stop-run
+          title="Stop the run — aborts every live worker; the run drains and reports"
+          style={{ marginLeft: "auto", background: "var(--vscode-statusBarItem-errorBackground, #c72e2e)", color: "#fff", border: "none", borderRadius: 4, padding: "2px 10px", cursor: "pointer" }}
+          onClick={() => post({ action: "stop-run" })}
+        >
+          ■ Stop
+        </button>
+      </div>
+      {run.units.map((u) => (
+        <div key={u.id} data-run-unit={u.id} style={{ display: "flex", gap: 6, alignItems: "center", padding: "2px 0", fontSize: 12 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: dot[u.state] ?? "#8b949e", display: "inline-block" }} />
+          <span style={{ flex: 1 }}>{u.id} · {u.role}</span>
+          <span style={{ opacity: 0.7 }}>{u.state}</span>
+        </div>
+      ))}
+      {run.parked.map((p) => (
+        <div key={p.unitId} data-parked={p.unitId} style={{ margin: "6px 0", padding: 6, border: "1px solid #d29922", borderRadius: 6 }}>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>❓ {p.unitId}: {p.question}</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              data-answer-input={p.unitId}
+              value={answers[p.unitId] ?? ""}
+              onChange={(e) => setAnswers((a) => ({ ...a, [p.unitId]: e.target.value }))}
+              style={{ flex: 1, fontSize: 12 }}
+            />
+            <button
+              data-answer-send={p.unitId}
+              onClick={() => {
+                const text = (answers[p.unitId] ?? "").trim();
+                if (text) post({ action: "answer-worker", unitId: p.unitId, text });
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      ))}
+      <pre style={{ fontSize: 11, opacity: 0.8, whiteSpace: "pre-wrap", maxHeight: 160, overflowY: "auto" }}>{run.logs.join("\n")}</pre>
+    </section>
+  );
+}
+
 function SidePanel(props: {
   push: SpacePush;
   selected: string | null;
@@ -280,6 +333,7 @@ function SidePanel(props: {
           </button>
         </section>
       ) : null}
+      {push.run ? <RunSection run={push.run} /> : null}
       {push.deliveries.map((d) => (
         <section key={d.id} data-delivery={d.id} style={{ marginBottom: 16 }}>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{d.page}</pre>

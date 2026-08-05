@@ -16,8 +16,10 @@ import { runGrounding } from "../derive/ground";
 import { RoundDeps } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
-import { runCut, RunDeps, RunOutcome } from "../dispatch/run";
 import { Forge } from "../dispatch/forge";
+import { tepSlices } from "../dispatch/adapter";
+import { dispatchTep, DispatchOutcome } from "../run/dispatch";
+import { RunState } from "../run/state";
 import {
   approvalContentHash,
   approvalStatus,
@@ -44,6 +46,8 @@ export const SESSION_ACTIONS: string[] = [
   "accept-delivery",
   "reground",
   "flip-face",
+  "answer-worker",
+  "stop-run",
 ];
 
 export interface SessionDeps {
@@ -58,7 +62,7 @@ export interface SessionDeps {
   forge?: Forge;
   suiteCommand?: string[];
   ground?: typeof runGrounding;
-  run?: typeof runCut;
+  dispatch?: typeof dispatchTep;
   readCurrentStamp?: () => Promise<SourceStamp[]>;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
@@ -73,6 +77,7 @@ export class TandemSession {
   cutNodeIds = new Set<string>();
   stale = new Set<string>();
   running = false;
+  runState: RunState | undefined;
 
   constructor(private deps: SessionDeps) {
     this._approvals = createApprovalStore(deps.storageDir);
@@ -201,8 +206,8 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** The run between the gates: worktree, blind probes, builders, proofs, forge. */
-  async execute(cutId: string): Promise<RunOutcome | undefined> {
+  /** The run between the gates, driven by the imported engine. */
+  async execute(cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;
     const approval = cut.tepId ? this.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
@@ -215,17 +220,28 @@ export class TandemSession {
       return undefined;
     }
     this.running = true;
-    this.changed(`Building ${cutId}…`);
+    this.runState = new RunState(() => this.deps.onChanged?.());
+    this.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
-      const runDeps: RunDeps = {
-        repoRoot: this.deps.round.repoRoot,
-        model: this.deps.round.model,
-        suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
-        forge: this.deps.forge,
-        log: (l) => this.deps.onChanged?.(l),
-      };
-      const run = this.deps.run ?? runCut;
-      const outcome = await run(runDeps, this.space, cut);
+      const slices = tepSlices({
+        space: this.space,
+        cut,
+        spaceName: path.basename(this.deps.storeDir),
+      });
+      const dispatch = this.deps.dispatch ?? dispatchTep;
+      const outcome = await dispatch(
+        {
+          repoRoot: this.deps.round.repoRoot,
+          model: this.deps.round.model,
+          suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
+          forge: this.deps.forge,
+          state: this.runState,
+          spaceName: path.basename(this.deps.storeDir),
+        },
+        this.space,
+        cut,
+        slices,
+      );
       if (outcome.delivery) {
         this.space = {
           ...this.space,
@@ -248,6 +264,20 @@ export class TandemSession {
     } finally {
       this.running = false;
     }
+  }
+
+  /** Answer a parked worker — the oracle's door on the run view. */
+  answerWorker(unitId: string, text: string): boolean {
+    const ok = this.runState?.answer(unitId, text) ?? false;
+    if (ok) this.changed(`Answered ${unitId}.`);
+    return ok;
+  }
+
+  /** Stop the run: abort every live worker; the run drains and reports. */
+  stopRun(): number {
+    const n = this.runState?.halt() ?? 0;
+    this.changed(n ? `Stopped — ${n} worker(s) aborted.` : "Nothing to stop.");
+    return n;
   }
 
   deliveryPage(deliveryId: string): string | undefined {

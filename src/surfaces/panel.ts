@@ -20,6 +20,7 @@ interface InboundAction {
   action: string;
   text?: string;
   unitId?: string;
+  // answer-worker carries unitId + text; stop-run carries nothing.
   changeIds?: string[];
   deliveryId?: string;
 }
@@ -33,6 +34,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
   return {
     kind: "space",
     running: session.running,
+    run: session.runState?.view(),
     units: session.units.map((u) => {
       const nodes = u.changeIds
         .map((id) => byId.get(id))
@@ -113,6 +115,10 @@ export class SpacePanel implements vscodeTypes.Disposable {
         } else if (msg.action === "accept-delivery" && msg.deliveryId) {
           const r = await session.acceptDelivery(msg.deliveryId);
           note = r.ok ? undefined : r.reason;
+        } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
+          session.answerWorker(msg.unitId, msg.text);
+        } else if (msg.action === "stop-run") {
+          session.stopRun();
         } else if (msg.action === "reground") {
           this._push(session, "Re-grounding…");
           await session.reground();

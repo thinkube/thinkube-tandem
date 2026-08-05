@@ -54,6 +54,17 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "press the ⌄ chevron to open the machine face",
     },
   },
+  "answer-worker": {
+    kind: "human",
+    affordance: {
+      surface: "run view",
+      gesture: "type into a parked worker's answer box and press Send",
+    },
+  },
+  "stop-run": {
+    kind: "human",
+    affordance: { surface: "run view", gesture: "press Stop" },
+  },
   reground: {
     kind: "human",
     affordance: {
