@@ -32,6 +32,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   const deps = {
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "2026-08-05T19:00:00Z",
     readCurrentStamp: async () => [],
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => [
@@ -56,6 +57,16 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
   assert.equal(session.space.cuts.length, 1);
   assert.ok(session.space.cuts[0].signature, "signature bound at the click");
+  const tepId = session.space.cuts[0].tepId!;
+  assert.match(tepId, /^TEP-user-1$/);
+  assert.equal(session.tepApproval(tepId).approved, true, "the click minted a real content-bound token");
+  session.space = {
+    ...session.space,
+    nodes: session.space.nodes.map((n) => ({ ...n, sentence: n.sentence + " (edited)" })),
+  };
+  const stale = session.tepApproval(tepId);
+  assert.equal(stale.approved, false, "editing the signed content re-arms the gate");
+  assert.equal(stale.reason, "content-mismatch");
 
   session.space = {
     ...session.space,

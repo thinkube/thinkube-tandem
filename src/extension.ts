@@ -84,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
             repoRoot,
           },
           storeDir: path.join(storeRoot, "spaces", spaceName),
+          storageDir: context.globalStorageUri.fsPath,
           now: () => new Date().toISOString(),
           author: await gitAuthor(repoRoot),
           forge,

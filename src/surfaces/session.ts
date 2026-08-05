@@ -18,6 +18,13 @@ import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { runCut, RunDeps, RunOutcome } from "../dispatch/run";
 import { Forge } from "../dispatch/forge";
+import {
+  approvalContentHash,
+  approvalStatus,
+  loadOrCreateApprovalSecret,
+  mintApproval,
+} from "../engine/approvalToken";
+import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 
 type SessionAction =
   | { action: "capture"; text: string }
@@ -42,6 +49,8 @@ export const SESSION_ACTIONS: string[] = [
 export interface SessionDeps {
   round: RoundDeps;
   storeDir: string;
+  /** Machine-local secret + token store home (globalStorage in the host). */
+  storageDir: string;
   now: () => string;
   /** Author identity (git user.name), for author-scoped TEP numbers. */
   author?: string;
@@ -57,6 +66,8 @@ export interface SessionDeps {
 
 export class TandemSession {
   space: Space = emptySpace();
+  private _approvals: ApprovalStore;
+  private _secret: Buffer;
   units: Unit[] = [];
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
@@ -64,7 +75,32 @@ export class TandemSession {
   running = false;
 
   constructor(private deps: SessionDeps) {
+    this._approvals = createApprovalStore(deps.storageDir);
+    this._secret = loadOrCreateApprovalSecret(deps.storageDir);
     this.load();
+  }
+
+  /** The signed pair's content: the render the human read + the grounded
+   *  member hash — what the minted token binds. */
+  private tepContentHash(cut: { changeIds: string[]; tepId?: string }): string {
+    const render = renderCutScreen(this.space, { id: "pair", changeIds: cut.changeIds });
+    const sig = signCut(this.space, { id: "pair", changeIds: cut.changeIds }, "t", "x");
+    const grounding = sig.ok ? sig.cut.signature!.groundingHash : "";
+    return approvalContentHash(`${render}\u0000${grounding}`);
+  }
+
+  /** Token verdict for a minted TEP — dispatch refuses anything but approved. */
+  tepApproval(tepId: string): { approved: boolean; reason?: string } {
+    const cut = this.space.cuts.find((c) => c.tepId === tepId);
+    if (!cut) return { approved: false, reason: "unknown TEP" };
+    const status = approvalStatus(this._approvals.get(`tep:${tepId}`), {
+      subjectKey: `tep:${tepId}`,
+      contentHash: this.tepContentHash(cut),
+      secret: this._secret,
+    });
+    return status.ok
+      ? { approved: true }
+      : { approved: false, reason: status.reason };
   }
 
   private changed(message?: string): void {
@@ -152,6 +188,13 @@ export class TandemSession {
     const r = signCut(this.space, cut, this.deps.now(), this.deps.author ?? "user");
     if (!r.ok) return r;
     this.space = { ...this.space, cuts: [...this.space.cuts, r.cut] };
+    // The human's click IS the mint (this message only arrives from the
+    // panel): a content-bound token in the machine-local store — the same
+    // no-expiry, edit-re-arms discipline the engine's gates verify.
+    this._approvals.put(
+      `tep:${r.cut.tepId}`,
+      mintApproval(`tep:${r.cut.tepId}`, this.tepContentHash(r.cut), Date.now(), this._secret),
+    );
     this.cutNodeIds.clear();
     this.changed(`${r.cut.tepId} minted — the run is starting.`);
     void this.execute(r.cut.id);
@@ -162,6 +205,11 @@ export class TandemSession {
   async execute(cutId: string): Promise<RunOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;
+    const approval = cut.tepId ? this.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
+    if (!approval.approved) {
+      this.changed(`Dispatch refused: ${approval.reason} — re-sign the cut.`);
+      return undefined;
+    }
     if (!this.deps.forge) {
       this.changed("No forge is configured — the cut stays signed, undelivered.");
       return undefined;
