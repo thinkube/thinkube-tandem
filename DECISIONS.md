@@ -8,3 +8,12 @@ of them there — nothing has users.
   "accept anyway" case, it gets added as an explicit, recorded act — not as
   a default.
 - **Render budget: 30 lines.** Both gate renders are tested against it.
+
+- **Work-order contracts carry sentences + resolved anchors for now.** Exact
+  export signatures are authored by a judgment round that lands with the
+  first field cut — the slot exists, the round does not yet.
+- **CI proof collectors land with the first Thinkube-hosted delivery.** The
+  Proof type accepts kind "ci" today; the fetcher that fills it from the
+  platform pipeline is built when there is a real pipeline to read.
+- **Unknown git hosts resolve to the Gitea adapter.** The self-hosted
+  platform is the default world; github.com is the special case.
