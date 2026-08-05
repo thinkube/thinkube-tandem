@@ -24,7 +24,7 @@ test("no capability without a door: every session action is registered", () => {
     }
   }
   assert.ok(gestureFor("sign-cut")!.includes("press Sign"));
-  assert.equal(gestureFor("reground"), undefined, "machine-only has no gesture line");
+  assert.ok(gestureFor("reground")!.includes("stale badge"), "re-grounding has a human door");
 });
 
 test("session round-trip: capture grounds and clusters; sign; accept only on green; persistence keeps both", async () => {
@@ -33,6 +33,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: dir,
     now: () => "2026-08-05T19:00:00Z",
+    readCurrentStamp: async () => [],
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => [
       {
         id: `node-${opts.nextIndex}`,
@@ -52,7 +53,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
 
   session.toggleCut(session.units[0].nodeIds);
   assert.ok(session.cutScreen().includes("1 change(s)"));
-  assert.ok(session.signCut().ok);
+  assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
   assert.equal(session.space.cuts.length, 1);
   assert.ok(session.space.cuts[0].signature, "signature bound at the click");
 
@@ -62,9 +63,9 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
       { id: "d-1", cutId: "cut-1", branch: "tandem/cut-1", proofs: [{ kind: "suite", label: "suite", verdict: "pending" }] },
     ],
   };
-  assert.equal(session.acceptDelivery("d-1").ok, false, "pending proof blocks");
+  assert.equal((await session.acceptDelivery("d-1")).ok, false, "pending proof blocks");
   session.space.deliveries[0].proofs[0].verdict = "green";
-  assert.ok(session.acceptDelivery("d-1").ok);
+  assert.ok((await session.acceptDelivery("d-1")).ok);
 
   const reloaded = new TandemSession(deps as never);
   assert.equal(reloaded.space.asks.length, 1, "the space survives a reload");

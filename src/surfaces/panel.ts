@@ -32,6 +32,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
   return {
     kind: "space",
+    running: session.running,
     units: session.units.map((u) => {
       const nodes = u.nodeIds
         .map((id) => byId.get(id))
@@ -44,6 +45,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         nodeIds: u.nodeIds,
         island: island.get(u.id) ?? 0,
         inCut: u.nodeIds.every((id) => session.cutNodeIds.has(id)) && u.nodeIds.length > 0,
+        stale: u.nodeIds.some((id) => session.stale.has(id)),
         nodes: nodes.map((n) => ({
           id: n.id,
           sentence: n.sentence,
@@ -61,6 +63,8 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       id: d.id,
       page: session.deliveryPage(d.id) ?? "",
       accepted: !!d.acceptedAt,
+      ...(d.url ? { url: d.url } : {}),
+      ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
     })),
     ...(message ? { message } : {}),
   };
@@ -107,8 +111,11 @@ export class SpacePanel implements vscodeTypes.Disposable {
           const r = session.signCut();
           note = r.ok ? "Cut signed." : r.reason;
         } else if (msg.action === "accept-delivery" && msg.deliveryId) {
-          const r = session.acceptDelivery(msg.deliveryId);
-          note = r.ok ? "Accepted." : r.reason;
+          const r = await session.acceptDelivery(msg.deliveryId);
+          note = r.ok ? undefined : r.reason;
+        } else if (msg.action === "reground") {
+          this._push(session, "Re-grounding…");
+          await session.reground();
         }
         this._push(session, note);
       }),
@@ -117,6 +124,11 @@ export class SpacePanel implements vscodeTypes.Disposable {
       }),
     );
     this._push(session);
+  }
+
+  /** Public so the session's onChanged hook can re-push mid-run. */
+  pushFrom(session: TandemSession, message?: string): void {
+    this._push(session, message);
   }
 
   private _push(session: TandemSession, message?: string): void {

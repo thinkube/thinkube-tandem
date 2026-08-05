@@ -120,6 +120,10 @@ export interface Delivery {
   cutId: string;
   branch: string;
   proofs: Proof[];
+  /** The delivery's home on the forge (pull request URL). */
+  url?: string;
+  /** Declared gaps from the run's workers — honest, never hidden. */
+  undelivered?: string[];
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
 }

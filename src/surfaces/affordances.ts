@@ -55,9 +55,11 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     },
   },
   reground: {
-    kind: "machine-only",
-    reason:
-      "runs automatically when a stamp mismatch is detected on read; the human sees the result as a stale badge clearing",
+    kind: "human",
+    affordance: {
+      surface: "units map",
+      gesture: "press a stale badge to re-ground the changes it marks",
+    },
   },
 };
 

@@ -11,6 +11,8 @@ export interface UnitVM {
   nodeIds: string[];
   island: number;
   inCut: boolean;
+  /** Some of this unit's grounding no longer matches the repo. */
+  stale: boolean;
   /** The machine face: the unit's nodes with grounding, for the flip. */
   nodes: { id: string; sentence: string; touchpoints: string[]; checks: string[] }[];
 }
@@ -19,10 +21,13 @@ export interface DeliveryVM {
   id: string;
   page: string;
   accepted: boolean;
+  url?: string;
+  undelivered?: string[];
 }
 
 export interface SpacePush {
   kind: "space";
+  running: boolean;
   units: UnitVM[];
   edges: { from: string; to: string }[];
   cutScreen: string;
@@ -33,6 +38,7 @@ export interface SpacePush {
 
 export type WebToHost =
   | { action: "capture"; text: string }
+  | { action: "reground" }
   | { action: "select-unit"; unitId: string }
   | { action: "toggle-cut"; nodeIds: string[] }
   | { action: "sign-cut" }

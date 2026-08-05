@@ -66,6 +66,9 @@ export function App(): JSX.Element {
             borderRadius: 6,
           }}
         />
+        {push.running ? (
+          <span style={{ fontSize: 12, color: "#3fb950" }}>● building…</span>
+        ) : null}
         {push.message ? (
           <span style={{ fontSize: 12, opacity: 0.75 }}>{push.message}</span>
         ) : null}
@@ -176,6 +179,23 @@ function UnitsMap(props: {
             {rep !== "far" && u.inCut ? (
               <Badge x={UNIT_NODE_W - 70} y={6} text="in the cut" color="#c9a227" />
             ) : null}
+            {rep !== "far" && u.stale ? (
+              <g
+                data-stale={u.id}
+                style={{ cursor: "pointer" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  post({ action: "reground" });
+                }}
+              >
+                <Badge
+                  x={UNIT_NODE_W - 70}
+                  y={UNIT_NODE_H - 22}
+                  text="stale — press to re-ground"
+                  color="#f59e0b"
+                />
+              </g>
+            ) : null}
           </NodeFrame>
         );
       })}
@@ -263,6 +283,18 @@ function SidePanel(props: {
       {push.deliveries.map((d) => (
         <section key={d.id} data-delivery={d.id} style={{ marginBottom: 16 }}>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{d.page}</pre>
+          {d.undelivered?.length ? (
+            <div style={{ color: "#f59e0b", fontSize: 12, margin: "4px 0" }}>
+              {d.undelivered.map((u, i) => (
+                <div key={i}>UNDELIVERED: {u}</div>
+              ))}
+            </div>
+          ) : null}
+          {d.url ? (
+            <div style={{ fontSize: 12, margin: "4px 0" }}>
+              <a href={d.url}>{d.url}</a>
+            </div>
+          ) : null}
           {d.accepted ? (
             <span style={{ opacity: 0.7 }}>accepted</span>
           ) : (

@@ -38,6 +38,16 @@
           "type": "string",
           "default": "opus",
           "description": "Model for the grounding round (judgment stage)."
+        },
+        "thinkubeTandem.suiteCommand": {
+          "type": "string",
+          "default": "npm test",
+          "description": "Command that runs the project's test suite — its verdict is a delivery proof."
+        },
+        "thinkubeTandem.giteaToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for the platform's Gitea forge. Unused for github.com remotes."
         }
       }
     }
