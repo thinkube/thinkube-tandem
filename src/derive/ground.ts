@@ -7,9 +7,16 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { AcceptanceCriterion, Anchor, Ask, Change, validateAnchor } from "../core/schema";
+import { AcceptanceCriterion, Anchor, Ask, Change, Question, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { RoundDeps, runReadRound } from "./round";
+
+/** A question the round could not settle from the code, with the machine's
+ *  recommended answer — the human accepts or rewords; never left hanging. */
+export interface DerivedQuestion {
+  text: string;
+  recommendation: string;
+}
 
 /** A derived node before ids and stamps are assigned by the host. */
 export interface DerivedNode {
@@ -26,6 +33,8 @@ export function buildGroundingPrompt(args: {
   repoRoot: string;
   /** Established repo reading, when current — spares re-discovery. */
   digest?: string;
+  /** Decisions in force — accepted answers the round derives under. */
+  decisions?: string[];
 }): string {
   return (
     `You are grounding ONE ask into the intended changes it implies.\n\n` +
@@ -42,9 +51,14 @@ export function buildGroundingPrompt(args: {
     `NEVER put line numbers in a path; anchors are structural.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
     `- "acceptance": what proves this node done, as observable statements: [{"text":"…"}]. At least one per node.\n\n` +
+    (args.decisions?.length
+      ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
+      : "") +
+    `Also return "questions": what the CODE CANNOT SETTLE — a real fork where the repo supports more than one reading of the ask. For each: {"text":"the question as the author would answer it","recommendation":"your recommended answer, concrete"}. ` +
+    `Ambiguity is not yours to resolve silently and not the human's to be interrogated about mid-flow: raise it here WITH a recommended default. An unambiguous ask returns "questions":[] — that is the normal case.\n\n` +
     `Cut nodes where the CODE has seams, not where the prose has sentences: two intentions landing in the ` +
     `same file are ONE node. Most asks yield 1–5 nodes; returning fewer, sharper nodes beats returning many vague ones.\n\n` +
-    `Respond with ONE JSON object {"nodes":[{"sentence":"…","touchpoints":[…],"needs":[…],"acceptance":[…]}]} and nothing else.`
+    `Respond with ONE JSON object {"nodes":[…],"questions":[…]} and nothing else.`
   );
 }
 
@@ -61,13 +75,14 @@ export function parseGroundedNodes(
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) return [];
-  let parsed: { nodes?: unknown };
+  let parsed: { nodes?: unknown; questions?: unknown };
   try {
     parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
   } catch {
     return [];
   }
   const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+  void 0;
   const out: DerivedNode[] = [];
   for (const n of rawNodes) {
     if (typeof n !== "object" || n === null) continue;
@@ -103,6 +118,34 @@ export function parseGroundedNodes(
   return out;
 }
 
+/** Parse the round's unresolved questions (fail-soft to none). */
+export function parseGroundedQuestions(raw: string): DerivedQuestion[] {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end <= start) return [];
+  let parsed: { questions?: unknown };
+  try {
+    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
+  } catch {
+    return [];
+  }
+  const out: DerivedQuestion[] = [];
+  for (const q of Array.isArray(parsed.questions) ? parsed.questions : []) {
+    if (typeof q !== "object" || q === null) continue;
+    const rec = q as Record<string, unknown>;
+    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+    const recommendation =
+      typeof rec.recommendation === "string" ? rec.recommendation.trim() : "";
+    if (text && recommendation) out.push({ text, recommendation });
+  }
+  return out;
+}
+
+export interface GroundingResult {
+  changes: Change[];
+  questions: Omit<Question, "id">[];
+}
+
 /**
  * Run the grounding round end to end: prompt, round, parse, stamp, resolve.
  * Empty on any failure — the ask stays captured and can be re-grounded.
@@ -110,17 +153,30 @@ export function parseGroundedNodes(
 export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
-  opts: { digest?: string; nextIndex: number },
-): Promise<Change[]> {
+  opts: { digest?: string; nextIndex: number; decisions?: string[] },
+): Promise<GroundingResult> {
   const text = await runReadRound(
     deps,
-    buildGroundingPrompt({ ask, repoRoot: deps.repoRoot, digest: opts.digest }),
+    buildGroundingPrompt({
+      ask,
+      repoRoot: deps.repoRoot,
+      digest: opts.digest,
+      decisions: opts.decisions,
+    }),
   );
-  if (text === null) return [];
+  if (text === null) return { changes: [], questions: [] };
   const derived = parseGroundedNodes(text, deps.repoRoot);
-  if (derived.length === 0) return [];
+  const questions = parseGroundedQuestions(text).map((q) => ({
+    askId: ask.id,
+    text: q.text,
+    recommendation: q.recommendation,
+  }));
+  if (derived.length === 0) return { changes: [], questions };
   const stamp = [await readStamp(deps.repoRoot)];
-  return resolveDerived(derived, ask.id, stamp, opts.nextIndex);
+  return {
+    changes: resolveDerived(derived, ask.id, stamp, opts.nextIndex),
+    questions,
+  };
 }
 
 /**

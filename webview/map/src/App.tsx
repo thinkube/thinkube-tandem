@@ -203,6 +203,43 @@ function UnitsMap(props: {
   );
 }
 
+function Questions(props: { push: SpacePush }): JSX.Element {
+  const { push } = props;
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  return (
+    <section data-questions style={{ marginBottom: 16 }}>
+      <strong>Questions for you ({push.questions.length})</strong>
+      {push.questions.map((q) => (
+        <div key={q.id} data-question={q.id} style={{ margin: "6px 0", padding: 6, border: "1px solid #f59e0b", borderRadius: 6 }}>
+          <div style={{ fontSize: 12 }}>{q.text}</div>
+          <textarea
+            data-question-text={q.id}
+            disabled={push.running}
+            value={drafts[q.id] ?? q.recommendation ?? ""}
+            onChange={(e) => setDrafts((d) => ({ ...d, [q.id]: e.target.value }))}
+            style={{ width: "100%", minHeight: 40, fontSize: 12, margin: "4px 0" }}
+          />
+          <button
+            data-accept-question={q.id}
+            disabled={push.running}
+            title="Accept — this becomes a binding decision and the ask re-grounds under it"
+            onClick={() =>
+              post({ action: "accept-question", questionId: q.id, text: (drafts[q.id] ?? q.recommendation ?? "").trim() })
+            }
+          >
+            Accept
+          </button>
+        </div>
+      ))}
+      {push.decisions.length ? (
+        <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+          Decisions in force: {push.decisions.join(" · ")}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element {
   const { run } = props;
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -286,7 +323,22 @@ function SidePanel(props: {
       {unit ? (
         <section data-unit-panel style={{ marginBottom: 16 }}>
           <strong>{unit.title}</strong>
-          <div style={{ margin: "6px 0" }}>
+          <div style={{ margin: "6px 0", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {(() => {
+              const cutUnits = push.units.filter((u) => u.inCut);
+              return cutUnits.length >= 2 && unit.inCut ? (
+                <button
+                  data-pin-together
+                  title="These units are one thing — pin them into one slice; the pin outranks the computed grouping"
+                  onClick={() => {
+                    for (let i = 1; i < cutUnits.length; i++)
+                      post({ action: "pin", pinKind: "together", changeIds: [cutUnits[0].changeIds[0], cutUnits[i].changeIds[0]] });
+                  }}
+                >
+                  Merge {cutUnits.length} into one slice
+                </button>
+              ) : null;
+            })()}
             <button
               data-toggle-cut
               style={btn}
@@ -299,6 +351,19 @@ function SidePanel(props: {
             <div key={n.id} style={{ padding: "4px 0" }}>
               <div>
                 • {n.sentence}{" "}
+                {unit.changeIds.length > 1 ? (
+                  <button
+                    data-pin-apart={n.id}
+                    title="This change is not part of this unit — split it out; the pin outranks the computed grouping"
+                    style={{ fontSize: 10, marginRight: 4 }}
+                    onClick={() => {
+                      const other = unit.changeIds.find((id) => id !== n.id);
+                      if (other) post({ action: "pin", pinKind: "apart", changeIds: [n.id, other] });
+                    }}
+                  >
+                    Split out
+                  </button>
+                ) : null}{" "}
                 <span
                   data-flip={n.id}
                   title="Open the machine face"
@@ -333,6 +398,7 @@ function SidePanel(props: {
           </button>
         </section>
       ) : null}
+      {push.questions.length ? <Questions push={push} /> : null}
       {push.run ? <RunSection run={push.run} /> : null}
       {push.deliveries.map((d) => (
         <section key={d.id} data-delivery={d.id} style={{ marginBottom: 16 }}>

@@ -35,16 +35,22 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "2026-08-05T19:00:00Z",
     readCurrentStamp: async () => [],
-    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => [
-      {
-        id: `node-${opts.nextIndex}`,
-        sentence: "the toolbar gains a capture box",
-        serves: [ask.id],
-        needs: [],
-        acceptance: [{ id: "c1", text: "box visible" }],
-        grounding: { touchpoints: [{ path: "src/toolbar.ts" }], stamp: [] },
-      },
-    ],
+    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number; decisions?: string[] }) => ({
+      changes: [
+        {
+          id: `node-${opts.nextIndex}`,
+          sentence: opts.decisions?.length
+            ? `the toolbar gains a capture box (${opts.decisions[0]})`
+            : "the toolbar gains a capture box",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [{ id: "c1", text: "box visible" }],
+          grounding: { touchpoints: [{ path: "src/toolbar.ts" }], stamp: [] },
+        },
+      ],
+      questions:
+        opts.decisions?.length ? [] : [{ askId: ask.id, text: "top or side toolbar?", recommendation: "top" }],
+    }),
   };
   const session = new TandemSession(deps as never);
   const captured = await session.capture("I want to capture asks from the toolbar");
@@ -77,6 +83,18 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal((await session.acceptDelivery("d-1")).ok, false, "pending proof blocks");
   session.space.deliveries[0].proofs[0].verdict = "green";
   assert.ok((await session.acceptDelivery("d-1")).ok);
+
+  // The question the round raised: accept with an edited wording → a
+  // decision in force, and the ask re-grounds under it immediately.
+  assert.equal(session.space.questions.length, 1);
+  const accepted = await session.acceptQuestion(session.space.questions[0].id, "side, collapsible");
+  assert.ok(accepted.ok);
+  assert.deepEqual(session.decisionsInForce(), ["side, collapsible"]);
+  assert.ok(
+    session.space.nodes.some((n) => n.sentence.includes("side, collapsible")),
+    "the re-ground ran with the decision injected",
+  );
+  assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
 
   const reloaded = new TandemSession(deps as never);
   assert.equal(reloaded.space.asks.length, 1, "the space survives a reload");

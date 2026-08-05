@@ -136,7 +136,7 @@ export interface Delivery {
  * machine's recommendation. The human's accept turns it into a decision —
  * binding, recorded, and re-grounding whatever it affects.
  */
-interface Question {
+export interface Question {
   id: string;
   askId: string;
   text: string;
@@ -150,7 +150,7 @@ interface Question {
  * Pins outrank the computed coupling — the human's read of the structure
  * wins, and it survives re-clustering.
  */
-interface Pin {
+export interface Pin {
   kind: "together" | "apart";
   changeIds: [string, string];
 }

@@ -20,6 +20,8 @@ interface InboundAction {
   action: string;
   text?: string;
   unitId?: string;
+  questionId?: string;
+  pinKind?: string;
   // answer-worker carries unitId + text; stop-run carries nothing.
   changeIds?: string[];
   deliveryId?: string;
@@ -35,6 +37,12 @@ function spacePush(session: TandemSession, message?: string): unknown {
     kind: "space",
     running: session.running,
     run: session.runState?.view(),
+    questions: session.space.questions
+      .filter((q) => !q.decided)
+      .map((q) => ({ id: q.id, text: q.text, recommendation: q.recommendation })),
+    decisions: session.space.questions
+      .filter((q) => !!q.decided)
+      .map((q) => q.decided!.text),
     units: session.units.map((u) => {
       const nodes = u.changeIds
         .map((id) => byId.get(id))
@@ -115,6 +123,12 @@ export class SpacePanel implements vscodeTypes.Disposable {
         } else if (msg.action === "accept-delivery" && msg.deliveryId) {
           const r = await session.acceptDelivery(msg.deliveryId);
           note = r.ok ? undefined : r.reason;
+        } else if (msg.action === "accept-question" && msg.questionId) {
+          this._push(session, "Recording the decision…");
+          const r = await session.acceptQuestion(msg.questionId, msg.text);
+          note = r.ok ? undefined : r.reason;
+        } else if (msg.action === "pin" && msg.pinKind && msg.changeIds?.length === 2) {
+          session.pin(msg.pinKind as "together" | "apart", msg.changeIds[0], msg.changeIds[1]);
         } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
           session.answerWorker(msg.unitId, msg.text);
         } else if (msg.action === "stop-run") {

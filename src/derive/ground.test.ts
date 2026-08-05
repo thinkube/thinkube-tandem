@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   buildGroundingPrompt,
   parseGroundedNodes,
+  parseGroundedQuestions,
   resolveDerived,
 } from "./ground";
 
@@ -50,6 +51,21 @@ test("parser: positions refused, planned files marked, indices bounded, empty dr
   assert.deepEqual(nodes[0].needsIndices, [1], "out-of-range indices dropped");
   assert.equal(nodes[0].acceptance.length, 1);
   assert.deepEqual(parseGroundedNodes("no json", "/repo", exists), []);
+});
+
+test("questions parse: text+recommendation required; decisions ride the prompt", () => {
+  const qs = parseGroundedQuestions(
+    JSON.stringify({ nodes: [], questions: [
+      { text: "top or side?", recommendation: "top" },
+      { text: "missing rec" },
+      { recommendation: "orphan" },
+    ] }),
+  );
+  assert.deepEqual(qs, [{ text: "top or side?", recommendation: "top" }]);
+  const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo", decisions: ["side, collapsible"] });
+  assert.ok(prompt.includes("DECISIONS IN FORCE"));
+  assert.ok(prompt.includes("side, collapsible"));
+  assert.ok(prompt.includes('"questions"'), "the round is asked for what the code cannot settle");
 });
 
 test("resolution: ids assigned, needs indices become ids, self-needs dropped, stamp attached", () => {

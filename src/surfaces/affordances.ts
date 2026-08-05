@@ -54,6 +54,20 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "press the ⌄ chevron to open the machine face",
     },
   },
+  "accept-question": {
+    kind: "human",
+    affordance: {
+      surface: "questions panel",
+      gesture: "press Accept on a question — or edit its recommendation first and accept your wording",
+    },
+  },
+  pin: {
+    kind: "human",
+    affordance: {
+      surface: "unit panel",
+      gesture: "press 'Merge into one slice' with two or more units in the cut, or 'Split out' on a change",
+    },
+  },
   "answer-worker": {
     kind: "human",
     affordance: {

@@ -7,7 +7,7 @@
  *    needs-edges) are one unit (dense coupling);
  *  - a single needs-edge alone is an ordinary dependency between two units.
  */
-import { Change, Unit } from "./schema";
+import { Change, Pin, Unit } from "./schema";
 import * as path from "node:path";
 
 const COUPLING_THRESHOLD = 2;
@@ -35,7 +35,16 @@ export function couplingOf(a: Change, b: Change): number {
  * Form units over the nodes: union every pair whose coupling reaches the
  * threshold. Deterministic — input order decides ids, nothing else.
  */
-export function formUnits(nodes: readonly Change[]): Unit[] {
+export function formUnits(
+  nodes: readonly Change[],
+  pins: readonly Pin[] = [],
+): Unit[] {
+  const apart = new Set(
+    pins
+      .filter((p) => p.kind === "apart")
+      .map((p) => [...p.changeIds].sort().join("\u0000")),
+  );
+  const pairKey = (a: string, b: string) => [a, b].sort().join("\u0000");
   const parent = new Map<string, string>();
   const find = (id: string): string => {
     let cur = id;
@@ -48,9 +57,17 @@ export function formUnits(nodes: readonly Change[]): Unit[] {
   };
   for (const n of nodes) parent.set(n.id, n.id);
   for (let i = 0; i < nodes.length; i++)
-    for (let j = i + 1; j < nodes.length; j++)
+    for (let j = i + 1; j < nodes.length; j++) {
+      // A human "apart" pin severs the DIRECT tie between the pair; a
+      // transitive path through other changes still merges them (the pin
+      // is an override on the pair, not a wall through the graph).
+      if (apart.has(pairKey(nodes[i].id, nodes[j].id))) continue;
       if (couplingOf(nodes[i], nodes[j]) >= COUPLING_THRESHOLD)
         union(nodes[i].id, nodes[j].id);
+    }
+  // Human "together" pins outrank the computed coupling entirely.
+  for (const p of pins)
+    if (p.kind === "together") union(p.changeIds[0], p.changeIds[1]);
 
   const members = new Map<string, string[]>();
   for (const n of nodes) {

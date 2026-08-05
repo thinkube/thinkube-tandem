@@ -48,6 +48,8 @@ export const SESSION_ACTIONS: string[] = [
   "flip-face",
   "answer-worker",
   "stop-run",
+  "accept-question",
+  "pin",
 ];
 
 export interface SessionDeps {
@@ -119,16 +121,26 @@ export class TandemSession {
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
     const ground = this.deps.ground ?? runGrounding;
-    const nodes = await ground(this.deps.round, r.added, {
+    const grounded = await ground(this.deps.round, r.added, {
       nextIndex: this.space.nodes.length + 1,
+      decisions: this.decisionsInForce(),
     });
-    this.space = { ...this.space, nodes: [...this.space.nodes, ...nodes] };
+    const questions = grounded.questions.map((q, i) => ({
+      ...q,
+      id: `q-${this.space.questions.length + i + 1}`,
+    }));
+    this.space = {
+      ...this.space,
+      nodes: [...this.space.nodes, ...grounded.changes],
+      questions: [...this.space.questions, ...questions],
+    };
     this.recluster();
     await this.refreshStaleness();
+    const qNote = questions.length ? ` ${questions.length} question(s) need you.` : "";
     this.changed(
-      nodes.length
-        ? `Grounded into ${nodes.length} change(s).`
-        : "The round returned nothing — the ask is captured; re-ground any time.",
+      grounded.changes.length
+        ? `Grounded into ${grounded.changes.length} change(s).${qNote}`
+        : `The round returned no changes — the ask is captured; re-ground any time.${qNote}`,
     );
     return { ok: true };
   }
@@ -149,12 +161,66 @@ export class TandemSession {
       const keep = this.space.nodes.filter((n) => !n.serves.includes(askId));
       const fresh = await ground(this.deps.round, ask, {
         nextIndex: this.space.nodes.length + 1,
+        decisions: this.decisionsInForce(),
       });
-      this.space = { ...this.space, nodes: [...keep, ...fresh] };
+      this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
     }
     this.recluster();
     await this.refreshStaleness();
     this.changed("Re-grounded the stale changes.");
+  }
+
+  /** The accepted answers governing every later derivation, in force. */
+  decisionsInForce(): string[] {
+    return this.space.questions
+      .filter((q) => q.decided)
+      .map((q) => q.decided!.text);
+  }
+
+  /**
+   * The human's accept on a question: the recommendation (or their edited
+   * wording) becomes a DECISION — recorded, injected into every later
+   * round, and the affected ask re-grounds under it immediately.
+   */
+  async acceptQuestion(
+    questionId: string,
+    editedText?: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const q = this.space.questions.find((x) => x.id === questionId);
+    if (!q) return { ok: false, reason: `no question '${questionId}'` };
+    if (q.decided) return { ok: false, reason: "already decided" };
+    const text = (editedText ?? q.recommendation ?? "").trim();
+    if (!text) return { ok: false, reason: "a decision cannot be empty" };
+    this.space = {
+      ...this.space,
+      questions: this.space.questions.map((x) =>
+        x.id === questionId ? { ...x, decided: { text, at: this.deps.now() } } : x,
+      ),
+    };
+    this.changed(`Decision recorded — re-grounding the ask under it…`);
+    const ask = this.space.asks.find((a) => a.id === q.askId);
+    if (ask) {
+      const ground = this.deps.ground ?? runGrounding;
+      const keep = this.space.nodes.filter((n) => !n.serves.includes(ask.id));
+      const fresh = await ground(this.deps.round, ask, {
+        nextIndex: this.space.nodes.length + 1,
+        decisions: this.decisionsInForce(),
+      });
+      this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
+      this.recluster();
+    }
+    this.changed("Decision in force.");
+    return { ok: true };
+  }
+
+  /** A human pin: merge or split the pair's units — outranks the coupling. */
+  pin(kind: "together" | "apart", a: string, b: string): void {
+    this.space = {
+      ...this.space,
+      pins: [...this.space.pins, { kind, changeIds: [a, b] }],
+    };
+    this.recluster();
+    this.changed(kind === "together" ? "Pinned into one slice." : "Split apart.");
   }
 
   async refreshStaleness(): Promise<void> {
@@ -165,7 +231,7 @@ export class TandemSession {
   }
 
   recluster(): void {
-    this.units = formUnits(this.space.nodes);
+    this.units = formUnits(this.space.nodes, this.space.pins);
     this.edges = unitEdges(this.space.nodes, this.units);
     this.space = { ...this.space, units: this.units };
   }

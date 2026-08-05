@@ -35,6 +35,8 @@ export interface SpacePush {
   kind: "space";
   running: boolean;
   run?: RunView;
+  questions: { id: string; text: string; recommendation?: string }[];
+  decisions: string[];
   units: UnitVM[];
   edges: { from: string; to: string }[];
   cutScreen: string;
@@ -48,6 +50,8 @@ export type WebToHost =
   | { action: "reground" }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "stop-run" }
+  | { action: "accept-question"; questionId: string; text?: string }
+  | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }
   | { action: "select-unit"; unitId: string }
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
