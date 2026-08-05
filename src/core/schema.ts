@@ -23,6 +23,9 @@ export interface Ask {
 export interface Anchor {
   path: string;
   symbol?: string;
+  /** The file does not exist yet — grounding against planned structure.
+   *  Planned anchors are exempt from stamp checks until the file is born. */
+  planned?: boolean;
 }
 
 /** Refuses anchors that smuggle in positions (line/column suffixes). */
