@@ -43,7 +43,7 @@ export function detectForge(remoteUrl: string): RemoteTarget | undefined {
 
 export type Exec = (cmd: string, args: string[]) => Promise<string>;
 
-export const defaultExec: Exec = (cmd, args) =>
+const defaultExec: Exec = (cmd, args) =>
   new Promise((resolve, reject) => {
     execFile(cmd, args, { encoding: "utf8" }, (err, stdout) =>
       err ? reject(err) : resolve(stdout.trim()),
@@ -80,7 +80,7 @@ export type HttpCall = (
   payload?: unknown,
 ) => Promise<unknown>;
 
-export function giteaForge(
+function giteaForge(
   target: RemoteTarget,
   token: string,
   http: HttpCall,

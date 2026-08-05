@@ -19,7 +19,7 @@ import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { runCut, RunDeps, RunOutcome } from "../dispatch/run";
 import { Forge } from "../dispatch/forge";
 
-export type SessionAction =
+type SessionAction =
   | { action: "capture"; text: string }
   | { action: "select-unit"; unitId: string }
   | { action: "toggle-cut"; nodeIds: string[] }

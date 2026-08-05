@@ -5,7 +5,7 @@
  * accepted actions; a capability without a door fails the build.
  */
 
-export interface Affordance {
+interface Affordance {
   surface: string;
   gesture: string;
 }

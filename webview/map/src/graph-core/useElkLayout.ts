@@ -11,7 +11,7 @@ import {
   buildElkGraph,
 } from "../../../../src/surfaces/graphCore/layoutProfiles";
 
-export interface LaidOutNode {
+interface LaidOutNode {
   id: string;
   x: number;
   y: number;
@@ -20,7 +20,7 @@ export interface LaidOutNode {
   island?: number;
 }
 
-export interface Layout {
+interface Layout {
   nodes: Map<string, LaidOutNode>;
   /** Island id → absolute bounding box (for focus-on-island). */
   islands: Map<number, { x: number; y: number; w: number; h: number }>;

@@ -17,7 +17,7 @@ export interface UnitVM {
   nodes: { id: string; sentence: string; touchpoints: string[]; checks: string[] }[];
 }
 
-export interface DeliveryVM {
+interface DeliveryVM {
   id: string;
   page: string;
   accepted: boolean;

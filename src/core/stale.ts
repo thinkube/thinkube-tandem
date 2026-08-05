@@ -6,7 +6,7 @@
 import { ChangeNode, Space } from "./schema";
 import { SourceStamp, stampsEqual } from "./stamp";
 
-export function isStale(node: ChangeNode, current: SourceStamp[]): boolean {
+function isStale(node: ChangeNode, current: SourceStamp[]): boolean {
   if (!node.grounding) return false;
   if (node.grounding.touchpoints.every((t) => t.planned)) return false;
   if (node.grounding.stamp.length === 0) return false;

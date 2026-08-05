@@ -1,0 +1,17 @@
+{
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "webview/map": {
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    }
+  }
+}

@@ -24,7 +24,7 @@ interface InboundAction {
   deliveryId?: string;
 }
 
-export function spacePush(session: TandemSession, message?: string): unknown {
+function spacePush(session: TandemSession, message?: string): unknown {
   const island = islandsOf(
     session.units.map((u) => u.id),
     session.edges,

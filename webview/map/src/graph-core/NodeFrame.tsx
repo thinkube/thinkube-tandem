@@ -10,10 +10,8 @@ import {
   wrapBody,
 } from "../../../../src/surfaces/graphCore/expander";
 
-export const LINE_H = 14;
+const LINE_H = 14;
 
-/** Break a label into lines of at most `chars` characters (word-aware). */
-export const wrapLabel = wrapBody;
 
 export function NodeFrame(props: {
   x: number;

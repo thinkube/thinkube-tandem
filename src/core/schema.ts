@@ -36,7 +36,7 @@ export function validateAnchor(a: Anchor): string | undefined {
   return undefined;
 }
 
-export interface Grounding {
+interface Grounding {
   touchpoints: Anchor[];
   stamp: SourceStamp[];
 }
@@ -104,7 +104,7 @@ export interface WorkOrder {
   stamp: SourceStamp[];
 }
 
-export type ProofVerdict = "green" | "red" | "pending";
+type ProofVerdict = "green" | "red" | "pending";
 
 /** Evidence on a delivery: probe runs, suite verdicts, CI verdicts. */
 export interface Proof {
@@ -129,14 +129,40 @@ export interface Delivery {
 }
 
 /** One project's working graph. */
+/**
+ * Something the machine could not settle from the code: a question with the
+ * machine's recommendation. The human's accept turns it into a decision —
+ * binding, recorded, and re-grounding whatever it affects.
+ */
+interface Question {
+  id: string;
+  askId: string;
+  text: string;
+  recommendation?: string;
+  /** The accepted wording; set only by the human's act. */
+  decided?: { text: string; at: string };
+}
+
+/**
+ * A human override on unit formation: pin two nodes together or apart.
+ * Pins outrank the computed coupling — the human's read of the structure
+ * wins, and it survives re-clustering.
+ */
+interface Pin {
+  kind: "together" | "apart";
+  nodeIds: [string, string];
+}
+
 export interface Space {
   asks: Ask[];
   nodes: ChangeNode[];
   units: Unit[];
   cuts: Cut[];
   deliveries: Delivery[];
+  questions: Question[];
+  pins: Pin[];
 }
 
 export function emptySpace(): Space {
-  return { asks: [], nodes: [], units: [], cuts: [], deliveries: [] };
+  return { asks: [], nodes: [], units: [], cuts: [], deliveries: [], questions: [], pins: [] };
 }

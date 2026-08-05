@@ -10,7 +10,7 @@
 import { ChangeNode, Unit } from "./schema";
 import * as path from "node:path";
 
-export const COUPLING_THRESHOLD = 2;
+const COUPLING_THRESHOLD = 2;
 
 function moduleOf(p: string): string {
   const dir = path.dirname(p);

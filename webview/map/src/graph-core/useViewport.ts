@@ -24,7 +24,7 @@ export interface Viewport {
   clamps: Clamps;
 }
 
-export const DEFAULT_CLAMPS: Clamps = { min: 0.25, max: 2.5 };
+const DEFAULT_CLAMPS: Clamps = { min: 0.25, max: 2.5 };
 
 export function useViewport(clamps: Clamps = DEFAULT_CLAMPS): Viewport {
   const svgRef = useRef<SVGSVGElement>(null);

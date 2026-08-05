@@ -24,7 +24,7 @@ export interface RunDeps {
   log?: (line: string) => void;
 }
 
-export const defaultRunExec = (
+const defaultRunExec = (
   cmd: string,
   args: string[],
   cwd: string,

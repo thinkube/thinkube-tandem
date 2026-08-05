@@ -14,7 +14,7 @@ function sha(text: string): string {
 }
 
 /** The grounded half of the pair: members with their grounding, canonical. */
-export function groundingHashOf(space: Space, cut: Cut): string {
+function groundingHashOf(space: Space, cut: Cut): string {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const canonical = [...cut.nodeIds]
     .sort()
