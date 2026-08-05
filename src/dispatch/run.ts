@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { Cut, Delivery, Proof, Space } from "../core/schema";
 import { readStamp } from "../core/stamp";
-import { assembleWorkOrders, renderWorkOrderBrief } from "./orders";
+import { assembleSliceBriefs, renderSliceBrief } from "./briefs";
 import { Forge } from "./forge";
 import { renderProbeBrief, runWorker, WorkerDeps } from "./worker";
 
@@ -65,7 +65,7 @@ export async function runCut(
     return { refusals: [`worktree failed: ${wt.out.trim().slice(0, 300)}`], undelivered: [] };
 
   const stamp = [await readStamp(worktree)];
-  const assembled = assembleWorkOrders(space, cut, worktree, stamp);
+  const assembled = assembleSliceBriefs(space, cut, worktree, stamp);
   const refusals = assembled.flatMap((a) => (a.ok ? [] : a.refusals));
   if (refusals.length) {
     log(`run ${cut.id}: refused — ${refusals.join("; ")}`);
@@ -87,9 +87,9 @@ export async function runCut(
       renderProbeBrief({
         orderId: order.id,
         contracts: order.contracts,
-        checks: order.nodeIds.flatMap((id) => {
+        acceptance: order.changeIds.flatMap((id) => {
           const n = byId.get(id);
-          return (n?.checks ?? []).map((c) => ({ nodeSentence: n!.sentence, text: c.text }));
+          return (n?.acceptance ?? []).map((c) => ({ nodeSentence: n!.sentence, text: c.text }));
         }),
         probeDir,
       }),
@@ -100,7 +100,7 @@ export async function runCut(
     log(`${order.id}: builder`);
     const built = await worker(
       workerDeps,
-      renderWorkOrderBrief(space, { ...order, probes: [...order.probes, probeDir] }, a.resolved) +
+      renderSliceBrief(space, { ...order, probes: [...order.probes, probeDir] }, a.resolved) +
         `\n\nWhen the changes are in place, run the probes under ${probeDir}/ and the repo suite; ` +
         `iterate until they pass or an obligation is honestly UNDELIVERED.`,
     );

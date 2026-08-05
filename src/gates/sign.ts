@@ -16,7 +16,7 @@ function sha(text: string): string {
 /** The grounded half of the pair: members with their grounding, canonical. */
 function groundingHashOf(space: Space, cut: Cut): string {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
-  const canonical = [...cut.nodeIds]
+  const canonical = [...cut.changeIds]
     .sort()
     .map((id) => {
       const n = byId.get(id);
@@ -24,7 +24,7 @@ function groundingHashOf(space: Space, cut: Cut): string {
         id,
         sentence: n?.sentence,
         grounding: n?.grounding,
-        checks: n?.checks,
+        acceptance: n?.acceptance,
         needs: n?.needs,
       });
     })
@@ -37,14 +37,23 @@ export type SignResult =
   | { ok: false; reason: string };
 
 /** The human's first gate. Binds render + grounding at the moment of the click. */
-export function signCut(space: Space, cut: Cut, at: string): SignResult {
-  if (cut.nodeIds.length === 0)
+export function signCut(
+  space: Space,
+  cut: Cut,
+  at: string,
+  author = "user",
+): SignResult {
+  if (cut.changeIds.length === 0)
     return { ok: false, reason: "an empty cut cannot be signed" };
   if (cut.signature) return { ok: false, reason: "this cut is already signed" };
+  const mine = space.cuts.filter(
+    (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
+  ).length;
   return {
     ok: true,
     cut: {
       ...cut,
+      tepId: `TEP-${author}-${mine + 1}`,
       signature: {
         at,
         renderHash: sha(renderCutScreen(space, cut)),

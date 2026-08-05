@@ -3,15 +3,15 @@
  * A render exists so the human can make exactly one decision; if it cannot
  * fit the size budget, it is carrying machine context and must be cut.
  */
-import { ChangeNode, Cut, Delivery, Space } from "../core/schema";
+import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
 
 /** A render that exceeds this is not a decision — it is homework. */
 export const RENDER_LINE_BUDGET = 30;
 
-function nodesOf(space: Space, ids: readonly string[]): ChangeNode[] {
+function nodesOf(space: Space, ids: readonly string[]): Change[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
-  return ids.map((id) => byId.get(id)).filter((n): n is ChangeNode => !!n);
+  return ids.map((id) => byId.get(id)).filter((n): n is Change => !!n);
 }
 
 /**
@@ -19,8 +19,8 @@ function nodesOf(space: Space, ids: readonly string[]): ChangeNode[] {
  * yet provable, what is not grounded. One decision: sign or not.
  */
 export function renderCutScreen(space: Space, cut: Cut): string {
-  const members = nodesOf(space, cut.nodeIds);
-  const inCut = new Set(cut.nodeIds);
+  const members = nodesOf(space, cut.changeIds);
+  const inCut = new Set(cut.changeIds);
   const lines: string[] = [];
 
   lines.push(`CUT — ${members.length} change(s)`);
@@ -39,7 +39,7 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     for (const s of needsFirst) lines.push(`  → ${s}`);
   }
 
-  const unprovable = members.filter((n) => n.checks.length === 0);
+  const unprovable = members.filter((n) => n.acceptance.length === 0);
   if (unprovable.length) {
     lines.push(`Nothing proves these yet:`);
     for (const n of unprovable) lines.push(`  ⚠ ${n.sentence}`);
@@ -63,7 +63,7 @@ export function renderDeliveryPage(
   experience: ReadonlyMap<string, string> = new Map(),
 ): string {
   const cut = space.cuts.find((c) => c.id === delivery.cutId);
-  const members = cut ? nodesOf(space, cut.nodeIds) : [];
+  const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`DELIVERY on ${delivery.branch}`);
   const askLines = new Map<string, string[]>();

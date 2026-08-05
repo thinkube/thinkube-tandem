@@ -1,7 +1,7 @@
 /**
  * Workers: SDK sessions that execute one work order inside a worktree.
  * Two kinds, deliberately blind to each other:
- *  - the probe author sees checks and contracts, never the implementation —
+ *  - the probe author sees acceptance and contracts, never the implementation —
  *    it writes the held-out tests that define done;
  *  - the builder sees the brief with verified coordinates and the footprint
  *    boundary — it makes the probes pass.
@@ -90,11 +90,11 @@ export function parseUndelivered(finalText: string): string | undefined {
   return stripped.slice(idx + "UNDELIVERED:".length).trim() || "unspecified";
 }
 
-/** The probe author's brief: checks and contracts only — never the code. */
+/** The probe author's brief: acceptance and contracts only — never the code. */
 export function renderProbeBrief(args: {
   orderId: string;
   contracts: string[];
-  checks: { nodeSentence: string; text: string }[];
+  acceptance: { nodeSentence: string; text: string }[];
   probeDir: string;
 }): string {
   const lines: string[] = [];
@@ -107,7 +107,7 @@ export function renderProbeBrief(args: {
   for (const c of args.contracts) lines.push(`  - ${c}`);
   lines.push(``);
   lines.push(`WHAT MUST BE PROVABLE:`);
-  for (const c of args.checks) lines.push(`  - [${c.nodeSentence}] ${c.text}`);
+  for (const c of args.acceptance) lines.push(`  - [${c.nodeSentence}] ${c.text}`);
   lines.push(``);
   lines.push(
     `Write executable node:test files under ${args.probeDir}/ — one file per check, named after it. ` +

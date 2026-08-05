@@ -6,19 +6,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { couplingOf, formUnits, unitEdges } from "./cluster";
-import { ChangeNode } from "./schema";
+import { Change } from "./schema";
 
 function node(
   id: string,
   touchpoints: string[],
   needs: string[] = [],
-): ChangeNode {
+): Change {
   return {
     id,
     sentence: id,
     serves: ["ask-1"],
     needs,
-    checks: [],
+    acceptance: [],
     grounding: {
       touchpoints: touchpoints.map((path) => ({ path })),
       stamp: [],
@@ -36,7 +36,7 @@ test("prose-distinct nodes that are structurally one thing form ONE unit", () =>
   ];
   const units = formUnits(trio);
   assert.equal(units.length, 1, "one dense thing, one unit");
-  assert.deepEqual(units[0].nodeIds.sort(), ["n-expander", "n-lod", "n-substrate"]);
+  assert.deepEqual(units[0].changeIds.sort(), ["n-expander", "n-lod", "n-substrate"]);
 });
 
 test("same file is decisive; a single needs-edge alone is a dependency, not a merge", () => {
@@ -49,7 +49,7 @@ test("same file is decisive; a single needs-edge alone is a dependency, not a me
   const units = formUnits([c, d]);
   assert.equal(units.length, 2, "one edge → two units");
   assert.deepEqual(unitEdges([c, d], units), [
-    { from: units.find((u) => u.nodeIds.includes("d"))!.id, to: units.find((u) => u.nodeIds.includes("c"))!.id },
+    { from: units.find((u) => u.changeIds.includes("d"))!.id, to: units.find((u) => u.changeIds.includes("c"))!.id },
   ]);
 });
 

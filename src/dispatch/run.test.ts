@@ -21,7 +21,7 @@ function makeSpace(planned: boolean): Space {
     sentence: "the toolbar gains a capture box",
     serves: [a.added.id],
     needs: [],
-    checks: [{ id: "c1", text: "the box is visible" }],
+    acceptance: [{ id: "c1", text: "the box is visible" }],
     grounding: {
       touchpoints: [{ path: "src/toolbar/capture.ts", ...(planned ? { planned: true } : {}) }],
       stamp: [],
@@ -66,7 +66,7 @@ function fakes() {
 test("a signed cut becomes a delivery: worktree, blind probes, builder, proofs, forge", async () => {
   const space = makeSpace(true);
   const f = fakes();
-  const outcome = await runCut(f.deps as never, space, { id: "cut-1", nodeIds: [space.nodes[0].id] });
+  const outcome = await runCut(f.deps as never, space, { id: "cut-1", changeIds: [space.nodes[0].id] });
 
   assert.ok(f.commands.some((c) => c[1] === "-C" && c[3] === "worktree" && c[4] === "add"), "worktree created");
   assert.equal(f.workerPrompts.length, 2, "probe author then builder");
@@ -91,7 +91,7 @@ test("a red suite becomes a red proof — the delivery exists and cannot be acce
     f.commands.push([cmd, ...args]);
     return { code: cmd === "npm" ? 1 : 0, out: "1 failing" };
   };
-  const outcome = await runCut(f.deps as never, space, { id: "cut-1", nodeIds: [space.nodes[0].id] });
+  const outcome = await runCut(f.deps as never, space, { id: "cut-1", changeIds: [space.nodes[0].id] });
   const suite = outcome.delivery!.proofs.find((p) => p.kind === "suite")!;
   assert.equal(suite.verdict, "red");
 });
@@ -107,7 +107,7 @@ test("an UNDELIVERED worker report survives into the outcome and the forge body"
       ? { ok: false, finalText: "UNDELIVERED: the toolbar module refused the injection — question: is the box a command instead?", undelivered: "the toolbar module refused the injection — question: is the box a command instead?" }
       : { ok: true, finalText: "done" };
   };
-  const outcome = await runCut(f.deps as never, space, { id: "cut-1", nodeIds: [space.nodes[0].id] });
+  const outcome = await runCut(f.deps as never, space, { id: "cut-1", changeIds: [space.nodes[0].id] });
   assert.equal(outcome.undelivered.length, 1);
   assert.ok(f.forgeBodies[0].includes("UNDELIVERED"), "gaps are on the delivery, not hidden");
 });
@@ -115,17 +115,17 @@ test("an UNDELIVERED worker report survives into the outcome and the forge body"
 test("an anchor that does not resolve refuses the run with the premise named", async () => {
   const space = makeSpace(false);
   const f = fakes();
-  const outcome = await runCut(f.deps as never, space, { id: "cut-1", nodeIds: [space.nodes[0].id] });
+  const outcome = await runCut(f.deps as never, space, { id: "cut-1", changeIds: [space.nodes[0].id] });
   assert.equal(outcome.delivery, undefined);
   assert.ok(outcome.refusals[0].includes("does not exist"));
   assert.equal(f.workerPrompts.length, 0, "no worker runs on a broken premise");
 });
 
-test("probe brief carries checks and contracts only; UNDELIVERED parsing", () => {
+test("probe brief carries acceptance and contracts only; UNDELIVERED parsing", () => {
   const brief = renderProbeBrief({
     orderId: "order-1",
     contracts: ["the box — lands at src/toolbar/capture.ts"],
-    checks: [{ nodeSentence: "the box", text: "visible" }],
+    acceptance: [{ nodeSentence: "the box", text: "visible" }],
     probeDir: "probes/order-1",
   });
   assert.ok(brief.includes("must not look for it"));

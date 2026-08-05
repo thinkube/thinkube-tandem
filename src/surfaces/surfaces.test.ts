@@ -40,7 +40,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
         sentence: "the toolbar gains a capture box",
         serves: [ask.id],
         needs: [],
-        checks: [{ id: "c1", text: "box visible" }],
+        acceptance: [{ id: "c1", text: "box visible" }],
         grounding: { touchpoints: [{ path: "src/toolbar.ts" }], stamp: [] },
       },
     ],
@@ -51,7 +51,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal(session.space.asks[0].text, "I want to capture asks from the toolbar");
   assert.equal(session.units.length, 1, "grounded node clustered into a unit");
 
-  session.toggleCut(session.units[0].nodeIds);
+  session.toggleCut(session.units[0].changeIds);
   assert.ok(session.cutScreen().includes("1 change(s)"));
   assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
   assert.equal(session.space.cuts.length, 1);

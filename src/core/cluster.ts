@@ -7,7 +7,7 @@
  *    needs-edges) are one unit (dense coupling);
  *  - a single needs-edge alone is an ordinary dependency between two units.
  */
-import { ChangeNode, Unit } from "./schema";
+import { Change, Unit } from "./schema";
 import * as path from "node:path";
 
 const COUPLING_THRESHOLD = 2;
@@ -18,7 +18,7 @@ function moduleOf(p: string): string {
 }
 
 /** Count the coupling signals between two nodes. */
-export function couplingOf(a: ChangeNode, b: ChangeNode): number {
+export function couplingOf(a: Change, b: Change): number {
   const filesA = new Set((a.grounding?.touchpoints ?? []).map((t) => t.path));
   const filesB = new Set((b.grounding?.touchpoints ?? []).map((t) => t.path));
   for (const f of filesA) if (filesB.has(f)) return COUPLING_THRESHOLD; // same file: decisive
@@ -35,7 +35,7 @@ export function couplingOf(a: ChangeNode, b: ChangeNode): number {
  * Form units over the nodes: union every pair whose coupling reaches the
  * threshold. Deterministic — input order decides ids, nothing else.
  */
-export function formUnits(nodes: readonly ChangeNode[]): Unit[] {
+export function formUnits(nodes: readonly Change[]): Unit[] {
   const parent = new Map<string, string>();
   const find = (id: string): string => {
     let cur = id;
@@ -58,9 +58,9 @@ export function formUnits(nodes: readonly ChangeNode[]): Unit[] {
     if (!members.has(root)) members.set(root, []);
     members.get(root)!.push(n.id);
   }
-  return [...members.values()].map((nodeIds, i) => ({
+  return [...members.values()].map((changeIds, i) => ({
     id: `unit-${i + 1}`,
-    nodeIds,
+    changeIds,
   }));
 }
 
@@ -70,11 +70,11 @@ export function formUnits(nodes: readonly ChangeNode[]): Unit[] {
  * build-order edge, not a merge signal.
  */
 export function unitEdges(
-  nodes: readonly ChangeNode[],
+  nodes: readonly Change[],
   units: readonly Unit[],
 ): { from: string; to: string }[] {
   const unitOf = new Map<string, string>();
-  for (const u of units) for (const id of u.nodeIds) unitOf.set(id, u.id);
+  for (const u of units) for (const id of u.changeIds) unitOf.set(id, u.id);
   const seen = new Set<string>();
   const edges: { from: string; to: string }[] = [];
   for (const n of nodes)

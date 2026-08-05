@@ -11,35 +11,35 @@ import { addAsk, addNode } from "../core/intent";
 import { RENDER_LINE_BUDGET, renderCutScreen, renderDeliveryPage } from "./render";
 import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
 
-function makeSpace(): { space: Space; nodeIds: string[] } {
+function makeSpace(): { space: Space; changeIds: string[] } {
   let s = emptySpace();
   const a = addAsk(s, "make the log panel follow the running step", "t");
   assert.ok(a.ok);
   s = a.space;
   const ids: string[] = [];
   const specs = [
-    { sentence: "the log panel scrolls with the active step", tp: "src/panel/log.ts", checks: [{ id: "c1", text: "scrolls on advance" }] },
-    { sentence: "a follow toggle in the panel header", tp: "src/panel/header.ts", checks: [{ id: "c2", text: "toggle visible and sticky" }] },
-    { sentence: "a change with nothing proving it yet", tp: "src/panel/other.ts", checks: [] },
+    { sentence: "the log panel scrolls with the active step", tp: "src/panel/log.ts", acceptance: [{ id: "c1", text: "scrolls on advance" }] },
+    { sentence: "a follow toggle in the panel header", tp: "src/panel/header.ts", acceptance: [{ id: "c2", text: "toggle visible and sticky" }] },
+    { sentence: "a change with nothing proving it yet", tp: "src/panel/other.ts", acceptance: [] },
   ];
   for (const sp of specs) {
     const r = addNode(s, {
       sentence: sp.sentence,
       serves: [a.added.id],
       needs: [],
-      checks: sp.checks,
+      acceptance: sp.acceptance,
       grounding: { touchpoints: [{ path: sp.tp }], stamp: [] },
     });
     assert.ok(r.ok);
     s = r.space;
     ids.push(r.added.id);
   }
-  return { space: s, nodeIds: ids };
+  return { space: s, changeIds: ids };
 }
 
 test("the cut screen fits the budget and surfaces what is not provable", () => {
-  const { space, nodeIds } = makeSpace();
-  const screen = renderCutScreen(space, { id: "cut-1", nodeIds });
+  const { space, changeIds } = makeSpace();
+  const screen = renderCutScreen(space, { id: "cut-1", changeIds });
   assert.ok(screen.split("\n").length <= RENDER_LINE_BUDGET, "decision-sized");
   assert.ok(screen.includes("3 change(s)"));
   assert.ok(screen.includes("Nothing proves these yet:"));
@@ -47,15 +47,15 @@ test("the cut screen fits the budget and surfaces what is not provable", () => {
 });
 
 test("signing binds the pair; each half's drift is told apart", () => {
-  const { space, nodeIds } = makeSpace();
-  const signed = signCut(space, { id: "cut-1", nodeIds }, "t1");
+  const { space, changeIds } = makeSpace();
+  const signed = signCut(space, { id: "cut-1", changeIds }, "t1");
   assert.ok(signed.ok);
   assert.equal(verifyCutSignature(space, signed.cut).ok, true);
 
   const groundMoved: Space = {
     ...space,
     nodes: space.nodes.map((n) =>
-      n.id === nodeIds[0]
+      n.id === changeIds[0]
         ? { ...n, grounding: { touchpoints: [{ path: "src/panel/moved.ts" }], stamp: [] } }
         : n,
     ),
@@ -64,7 +64,7 @@ test("signing binds the pair; each half's drift is told apart", () => {
   assert.ok(!v.ok && v.drift === "grounding", "grounding drift named as such");
 
   assert.equal(signCut(space, signed.cut, "t2").ok, false, "no double signing");
-  assert.equal(signCut(space, { id: "cut-2", nodeIds: [] }, "t").ok, false, "empty cut refused");
+  assert.equal(signCut(space, { id: "cut-2", changeIds: [] }, "t").ok, false, "empty cut refused");
 });
 
 test("acceptance is refused without green evidence, and records the moment", () => {
@@ -86,8 +86,8 @@ test("acceptance is refused without green evidence, and records the moment", () 
 });
 
 test("the delivery page speaks in the asks' words with proof and gestures beside", () => {
-  const { space, nodeIds } = makeSpace();
-  const s2: Space = { ...space, cuts: [{ id: "cut-1", nodeIds }] };
+  const { space, changeIds } = makeSpace();
+  const s2: Space = { ...space, cuts: [{ id: "cut-1", changeIds }] };
   const page = renderDeliveryPage(
     s2,
     { id: "d-1", cutId: "cut-1", branch: "tandem/cut-1", proofs: [{ kind: "suite", label: "suite", verdict: "green" }] },

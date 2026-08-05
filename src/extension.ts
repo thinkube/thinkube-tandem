@@ -14,6 +14,17 @@ import { Forge, forgeFor } from "./dispatch/forge";
 let session: TandemSession | undefined;
 let panel: SpacePanel | undefined;
 
+function gitAuthor(repoRoot: string): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["-C", repoRoot, "config", "user.name"],
+      { encoding: "utf8" },
+      (err, stdout) => resolve(err ? "user" : stdout.trim().replace(/\s+/g, "-").toLowerCase() || "user"),
+    );
+  });
+}
+
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
@@ -74,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
           },
           storeDir: path.join(storeRoot, "spaces", spaceName),
           now: () => new Date().toISOString(),
+          author: await gitAuthor(repoRoot),
           forge,
           suiteCommand: config
             .get<string>("suiteCommand", "npm test")

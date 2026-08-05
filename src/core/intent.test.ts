@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { addAsk, addNode, asksOf, orphanNodes } from "./intent";
+import { addAsk, addNode, asksOf, orphanChanges } from "./intent";
 import { emptySpace } from "./schema";
 
 test("an ask is stored byte for byte — whitespace, casing, everything", () => {
@@ -38,18 +38,18 @@ test("node edges are checked at the door; orphans are surfaced", () => {
   assert.ok(a.ok);
   s = a.space;
 
-  const bad = addNode(s, { sentence: "x", serves: ["ask-9"], needs: [], checks: [] });
+  const bad = addNode(s, { sentence: "x", serves: ["ask-9"], needs: [], acceptance: [] });
   assert.equal(bad.ok, false, "unknown ask refused");
 
-  const n1 = addNode(s, { sentence: "grounded change", serves: [a.added.id], needs: [], checks: [] });
+  const n1 = addNode(s, { sentence: "grounded change", serves: [a.added.id], needs: [], acceptance: [] });
   assert.ok(n1.ok);
   s = n1.space;
-  const badNeed = addNode(s, { sentence: "y", serves: [a.added.id], needs: ["node-7"], checks: [] });
+  const badNeed = addNode(s, { sentence: "y", serves: [a.added.id], needs: ["node-7"], acceptance: [] });
   assert.equal(badNeed.ok, false, "unknown need refused");
 
-  const orphan = addNode(s, { sentence: "who asked for this?", serves: [], needs: [], checks: [] });
+  const orphan = addNode(s, { sentence: "who asked for this?", serves: [], needs: [], acceptance: [] });
   assert.ok(orphan.ok);
   s = orphan.space;
-  assert.deepEqual(orphanNodes(s).map((n) => n.sentence), ["who asked for this?"]);
+  assert.deepEqual(orphanChanges(s).map((n) => n.sentence), ["who asked for this?"]);
   assert.deepEqual(asksOf(s, s.nodes[0]).map((x) => x.text), ["an ask"]);
 });

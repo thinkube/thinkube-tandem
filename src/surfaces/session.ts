@@ -11,7 +11,7 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { formUnits, unitEdges } from "../core/cluster";
 import { readStamp, SourceStamp } from "../core/stamp";
-import { staleNodeIds } from "../core/stale";
+import { staleChangeIds } from "../core/stale";
 import { runGrounding } from "../derive/ground";
 import { RoundDeps } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
@@ -22,7 +22,7 @@ import { Forge } from "../dispatch/forge";
 type SessionAction =
   | { action: "capture"; text: string }
   | { action: "select-unit"; unitId: string }
-  | { action: "toggle-cut"; nodeIds: string[] }
+  | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
   | { action: "reground" }
@@ -43,6 +43,8 @@ export interface SessionDeps {
   round: RoundDeps;
   storeDir: string;
   now: () => string;
+  /** Author identity (git user.name), for author-scoped TEP numbers. */
+  author?: string;
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;
   suiteCommand?: string[];
@@ -118,7 +120,7 @@ export class TandemSession {
     const read =
       this.deps.readCurrentStamp ??
       (async () => [await readStamp(this.deps.round.repoRoot)]);
-    this.stale = staleNodeIds(this.space, await read());
+    this.stale = staleChangeIds(this.space, await read());
   }
 
   recluster(): void {
@@ -127,8 +129,8 @@ export class TandemSession {
     this.space = { ...this.space, units: this.units };
   }
 
-  toggleCut(nodeIds: string[]): void {
-    for (const id of nodeIds)
+  toggleCut(changeIds: string[]): void {
+    for (const id of changeIds)
       if (this.cutNodeIds.has(id)) this.cutNodeIds.delete(id);
       else this.cutNodeIds.add(id);
     this.changed();
@@ -137,7 +139,7 @@ export class TandemSession {
   cutScreen(): string {
     return renderCutScreen(this.space, {
       id: `cut-${this.space.cuts.length + 1}`,
-      nodeIds: [...this.cutNodeIds],
+      changeIds: [...this.cutNodeIds],
     });
   }
 
@@ -145,13 +147,13 @@ export class TandemSession {
   signCut(): { ok: boolean; reason?: string } {
     const cut = {
       id: `cut-${this.space.cuts.length + 1}`,
-      nodeIds: [...this.cutNodeIds],
+      changeIds: [...this.cutNodeIds],
     };
-    const r = signCut(this.space, cut, this.deps.now());
+    const r = signCut(this.space, cut, this.deps.now(), this.deps.author ?? "user");
     if (!r.ok) return r;
     this.space = { ...this.space, cuts: [...this.space.cuts, r.cut] };
     this.cutNodeIds.clear();
-    this.changed("Cut signed — the run is starting.");
+    this.changed(`${r.cut.tepId} minted — the run is starting.`);
     void this.execute(r.cut.id);
     return { ok: true };
   }

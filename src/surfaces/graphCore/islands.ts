@@ -10,11 +10,11 @@ export interface IslandEdge {
 }
 
 export function islandsOf(
-  nodeIds: string[],
+  changeIds: string[],
   edges: IslandEdge[],
 ): Map<string, number> {
   const adj = new Map<string, string[]>();
-  for (const id of nodeIds) adj.set(id, []);
+  for (const id of changeIds) adj.set(id, []);
   for (const e of edges) {
     if (!adj.has(e.from) || !adj.has(e.to)) continue;
     adj.get(e.from)!.push(e.to);
@@ -22,7 +22,7 @@ export function islandsOf(
   }
   const island = new Map<string, number>();
   let next = 0;
-  for (const start of nodeIds) {
+  for (const start of changeIds) {
     if (island.has(start)) continue;
     const id = next++;
     const queue = [start];

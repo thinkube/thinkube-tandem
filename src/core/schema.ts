@@ -24,7 +24,7 @@ export interface Anchor {
   path: string;
   symbol?: string;
   /** The file does not exist yet — grounding against planned structure.
-   *  Planned anchors are exempt from stamp checks until the file is born. */
+   *  Planned anchors are exempt from stamp acceptance until the file is born. */
   planned?: boolean;
 }
 
@@ -42,7 +42,7 @@ interface Grounding {
 }
 
 /** What proves a node done. `probePath` binds the executable form. */
-export interface Check {
+export interface AcceptanceCriterion {
   id: string;
   text: string;
   probePath?: string;
@@ -51,9 +51,9 @@ export interface Check {
 /**
  * One grounded intended change: a sentence for the human, grounding
  * underneath, edges to the asks it serves and the nodes it needs, and the
- * checks that will prove it.
+ * acceptance that will prove it.
  */
-export interface ChangeNode {
+export interface Change {
   id: string;
   /** The human-facing sentence — a render, restamped when inputs move. */
   sentence: string;
@@ -62,21 +62,23 @@ export interface ChangeNode {
   /** Node ids this node needs built first. */
   needs: string[];
   grounding?: Grounding;
-  checks: Check[];
+  acceptance: AcceptanceCriterion[];
 }
 
 /** Nodes clustered by real coupling: shared touchpoints and edges. */
 export interface Unit {
   id: string;
-  nodeIds: string[];
+  changeIds: string[];
   /** Rendered title/abstract with the stamp of the inputs they described. */
   abstract?: { title: string; text?: string; stamp: SourceStamp[] };
 }
 
-/** A signed selection of nodes to build now. */
+/** A signed selection of changes to build now. Signing mints the TEP. */
 export interface Cut {
   id: string;
-  nodeIds: string[];
+  changeIds: string[];
+  /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
+  tepId?: string;
   /** Set when the human signs; binds the render AND the grounded members. */
   signature?: {
     at: string;
@@ -90,10 +92,10 @@ export interface Cut {
  * authored. Anchors resolve against the worker's actual worktree; the
  * rendered positions live only inside the brief text handed over.
  */
-export interface WorkOrder {
+export interface SliceBrief {
   id: string;
   cutId: string;
-  nodeIds: string[];
+  changeIds: string[];
   /** Files the worker may touch. */
   footprint: string[];
   anchors: Anchor[];
@@ -150,12 +152,12 @@ interface Question {
  */
 interface Pin {
   kind: "together" | "apart";
-  nodeIds: [string, string];
+  changeIds: [string, string];
 }
 
 export interface Space {
   asks: Ask[];
-  nodes: ChangeNode[];
+  nodes: Change[];
   units: Unit[];
   cuts: Cut[];
   deliveries: Delivery[];

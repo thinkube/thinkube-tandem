@@ -20,7 +20,7 @@ interface InboundAction {
   action: string;
   text?: string;
   unitId?: string;
-  nodeIds?: string[];
+  changeIds?: string[];
   deliveryId?: string;
 }
 
@@ -34,7 +34,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
     kind: "space",
     running: session.running,
     units: session.units.map((u) => {
-      const nodes = u.nodeIds
+      const nodes = u.changeIds
         .map((id) => byId.get(id))
         .filter((n): n is NonNullable<typeof n> => !!n);
       const first = nodes[0]?.sentence ?? u.id;
@@ -42,17 +42,17 @@ function spacePush(session: TandemSession, message?: string): unknown {
         id: u.id,
         title: nodes.length > 1 ? `${first} +${nodes.length - 1} more` : first,
         count: nodes.length,
-        nodeIds: u.nodeIds,
+        changeIds: u.changeIds,
         island: island.get(u.id) ?? 0,
-        inCut: u.nodeIds.every((id) => session.cutNodeIds.has(id)) && u.nodeIds.length > 0,
-        stale: u.nodeIds.some((id) => session.stale.has(id)),
+        inCut: u.changeIds.every((id) => session.cutNodeIds.has(id)) && u.changeIds.length > 0,
+        stale: u.changeIds.some((id) => session.stale.has(id)),
         nodes: nodes.map((n) => ({
           id: n.id,
           sentence: n.sentence,
           touchpoints: (n.grounding?.touchpoints ?? []).map(
             (t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new)" : ""),
           ),
-          checks: n.checks.map((c) => c.text),
+          acceptance: n.acceptance.map((c) => c.text),
         })),
       };
     }),
@@ -105,8 +105,8 @@ export class SpacePanel implements vscodeTypes.Disposable {
           this._push(session, "Grounding your ask…");
           const r = await session.capture(msg.text);
           note = r.ok ? undefined : r.reason;
-        } else if (msg.action === "toggle-cut" && msg.nodeIds) {
-          session.toggleCut(msg.nodeIds);
+        } else if (msg.action === "toggle-cut" && msg.changeIds) {
+          session.toggleCut(msg.changeIds);
         } else if (msg.action === "sign-cut") {
           const r = session.signCut();
           note = r.ok ? "Cut signed." : r.reason;

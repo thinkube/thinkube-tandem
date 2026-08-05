@@ -7,7 +7,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Anchor, Ask, ChangeNode, Check, validateAnchor } from "../core/schema";
+import { AcceptanceCriterion, Anchor, Ask, Change, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { RoundDeps, runReadRound } from "./round";
 
@@ -17,7 +17,7 @@ export interface DerivedNode {
   touchpoints: Anchor[];
   /** Indices into THIS round's node list (a round derives a closed set). */
   needsIndices: number[];
-  checks: Omit<Check, "id">[];
+  acceptance: Omit<AcceptanceCriterion, "id">[];
 }
 
 /** Build the derivation prompt. Pure; exported for tests. */
@@ -41,10 +41,10 @@ export function buildGroundingPrompt(args: {
     `Paths are repo-relative. A file that does not exist yet is a legitimate touchpoint — the change creates it. ` +
     `NEVER put line numbers in a path; anchors are structural.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
-    `- "checks": what proves this node done, as observable statements: [{"text":"…"}]. At least one per node.\n\n` +
+    `- "acceptance": what proves this node done, as observable statements: [{"text":"…"}]. At least one per node.\n\n` +
     `Cut nodes where the CODE has seams, not where the prose has sentences: two intentions landing in the ` +
     `same file are ONE node. Most asks yield 1–5 nodes; returning fewer, sharper nodes beats returning many vague ones.\n\n` +
-    `Respond with ONE JSON object {"nodes":[{"sentence":"…","touchpoints":[…],"needs":[…],"checks":[…]}]} and nothing else.`
+    `Respond with ONE JSON object {"nodes":[{"sentence":"…","touchpoints":[…],"needs":[…],"acceptance":[…]}]} and nothing else.`
   );
 }
 
@@ -91,14 +91,14 @@ export function parseGroundedNodes(
     const needsIndices = (Array.isArray(rec.needs) ? rec.needs : [])
       .filter((i): i is number => Number.isInteger(i) && (i as number) >= 0)
       .filter((i) => i < rawNodes.length);
-    const checks = (Array.isArray(rec.checks) ? rec.checks : [])
+    const acceptance = (Array.isArray(rec.acceptance) ? rec.acceptance : [])
       .map((c) =>
         typeof c === "object" && c !== null && typeof (c as Record<string, unknown>).text === "string"
           ? { text: ((c as Record<string, unknown>).text as string).trim() }
           : { text: "" },
       )
       .filter((c) => c.text.length > 0);
-    out.push({ sentence, touchpoints, needsIndices, checks });
+    out.push({ sentence, touchpoints, needsIndices, acceptance });
   }
   return out;
 }
@@ -111,7 +111,7 @@ export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
   opts: { digest?: string; nextIndex: number },
-): Promise<ChangeNode[]> {
+): Promise<Change[]> {
   const text = await runReadRound(
     deps,
     buildGroundingPrompt({ ask, repoRoot: deps.repoRoot, digest: opts.digest }),
@@ -132,7 +132,7 @@ export function resolveDerived(
   askId: string,
   stamp: SourceStamp[],
   nextIndex: number,
-): ChangeNode[] {
+): Change[] {
   const ids = derived.map((_, i) => `node-${nextIndex + i}`);
   return derived.map((d, i) => ({
     id: ids[i],
@@ -142,6 +142,6 @@ export function resolveDerived(
     ...(d.touchpoints.length
       ? { grounding: { touchpoints: d.touchpoints, stamp } }
       : {}),
-    checks: d.checks.map((c, j) => ({ id: `${ids[i]}-check-${j + 1}`, ...c })),
+    acceptance: d.acceptance.map((c, j) => ({ id: `${ids[i]}-check-${j + 1}`, ...c })),
   }));
 }

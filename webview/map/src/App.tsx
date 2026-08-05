@@ -237,7 +237,7 @@ function SidePanel(props: {
             <button
               data-toggle-cut
               style={btn}
-              onClick={() => post({ action: "toggle-cut", nodeIds: unit.nodeIds })}
+              onClick={() => post({ action: "toggle-cut", changeIds: unit.changeIds })}
             >
               {unit.inCut ? "Remove from cut" : "Add to cut"}
             </button>
@@ -265,7 +265,7 @@ function SidePanel(props: {
                     whiteSpace: "pre-wrap",
                   }}
                 >
-                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}\nproven by: ${n.checks.join("; ") || "(nothing yet)"}`}
+                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}\nproven by: ${n.acceptance.join("; ") || "(nothing yet)"}`}
                 </pre>
               ) : null}
             </div>

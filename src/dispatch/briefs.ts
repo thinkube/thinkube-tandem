@@ -5,41 +5,41 @@
  * resolved against the actual worktree at dispatch. Nothing here is
  * authored; an unresolvable anchor stops the order, not the worker.
  */
-import { ChangeNode, Cut, Space, WorkOrder } from "../core/schema";
+import { Change, Cut, Space, SliceBrief } from "../core/schema";
 import { SourceStamp } from "../core/stamp";
 import { formUnits } from "../core/cluster";
 import { ResolvedAnchor, resolveAnchor } from "./resolve";
 
-export type AssembledOrder =
-  | { ok: true; order: WorkOrder; resolved: ResolvedAnchor[] }
-  | { ok: false; nodeIds: string[]; refusals: string[] };
+export type AssembledSlice =
+  | { ok: true; order: SliceBrief; resolved: ResolvedAnchor[] }
+  | { ok: false; changeIds: string[]; refusals: string[] };
 
-export function assembleWorkOrders(
+export function assembleSliceBriefs(
   space: Space,
   cut: Cut,
   worktree: string,
   stamp: SourceStamp[],
   readFile?: (abs: string) => string | undefined,
-): AssembledOrder[] {
+): AssembledSlice[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
-  const members = cut.nodeIds
+  const members = cut.changeIds
     .map((id) => byId.get(id))
-    .filter((n): n is ChangeNode => !!n);
+    .filter((n): n is Change => !!n);
   const units = formUnits(members);
   return units.map((unit, i) => {
-    const nodes = unit.nodeIds.map((id) => byId.get(id)!);
+    const nodes = unit.changeIds.map((id) => byId.get(id)!);
     const anchors = nodes.flatMap((n) => n.grounding?.touchpoints ?? []);
     const resolved = anchors.map((a) => resolveAnchor(worktree, a, readFile));
     const refusals = resolved
       .filter((r): r is Extract<ResolvedAnchor, { ok: false }> => !r.ok)
       .map((r) => r.reason);
-    if (refusals.length) return { ok: false, nodeIds: unit.nodeIds, refusals };
+    if (refusals.length) return { ok: false, changeIds: unit.changeIds, refusals };
     return {
       ok: true,
       order: {
         id: `order-${cut.id}-${i + 1}`,
         cutId: cut.id,
-        nodeIds: unit.nodeIds,
+        changeIds: unit.changeIds,
         footprint: [...new Set(anchors.map((a) => a.path))],
         anchors,
         contracts: nodes.map(
@@ -53,7 +53,7 @@ export function assembleWorkOrders(
             }`,
         ),
         probes: nodes.flatMap((n) =>
-          n.checks.map((c) => c.probePath).filter((p): p is string => !!p),
+          n.acceptance.map((c) => c.probePath).filter((p): p is string => !!p),
         ),
         stamp,
       },
@@ -68,20 +68,20 @@ export function assembleWorkOrders(
  * and the honesty protocol. The worker's first tool call is an edit, not a
  * search — searching for a listed path is a bug.
  */
-export function renderWorkOrderBrief(
+export function renderSliceBrief(
   space: Space,
-  order: WorkOrder,
+  order: SliceBrief,
   resolved: ResolvedAnchor[],
 ): string {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const lines: string[] = [];
   lines.push(`WORK ORDER ${order.id}`);
   lines.push(`Deliver exactly these changes:`);
-  for (const id of order.nodeIds) {
+  for (const id of order.changeIds) {
     const n = byId.get(id);
     if (!n) continue;
     lines.push(`  • ${n.sentence}`);
-    for (const c of n.checks) lines.push(`      done when: ${c.text}`);
+    for (const c of n.acceptance) lines.push(`      done when: ${c.text}`);
   }
   lines.push(``);
   lines.push(

@@ -8,13 +8,13 @@ export interface UnitVM {
   id: string;
   title: string;
   count: number;
-  nodeIds: string[];
+  changeIds: string[];
   island: number;
   inCut: boolean;
   /** Some of this unit's grounding no longer matches the repo. */
   stale: boolean;
   /** The machine face: the unit's nodes with grounding, for the flip. */
-  nodes: { id: string; sentence: string; touchpoints: string[]; checks: string[] }[];
+  nodes: { id: string; sentence: string; touchpoints: string[]; acceptance: string[] }[];
 }
 
 interface DeliveryVM {
@@ -40,7 +40,7 @@ export type WebToHost =
   | { action: "capture"; text: string }
   | { action: "reground" }
   | { action: "select-unit"; unitId: string }
-  | { action: "toggle-cut"; nodeIds: string[] }
+  | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string };
 

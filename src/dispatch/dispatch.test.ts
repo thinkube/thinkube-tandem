@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveAnchor } from "./resolve";
-import { assembleWorkOrders, renderWorkOrderBrief } from "./orders";
+import { assembleSliceBriefs, renderSliceBrief } from "./briefs";
 import { detectForge, forgeFor, githubForge } from "./forge";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
@@ -46,7 +46,7 @@ function makeSpace(): Space {
     sentence: "the log panel scrolls with the active step",
     serves: [a.added.id],
     needs: [],
-    checks: [{ id: "c1", text: "scrolls", probePath: "probes/follow.test.ts" }],
+    acceptance: [{ id: "c1", text: "scrolls", probePath: "probes/follow.test.ts" }],
     grounding: { touchpoints: [{ path: "src/panel/log.ts", symbol: "LogPanel" }], stamp: [] },
   });
   assert.ok(n1.ok);
@@ -55,7 +55,7 @@ function makeSpace(): Space {
     sentence: "a capture box in the toolbar",
     serves: [a.added.id],
     needs: [],
-    checks: [{ id: "c2", text: "visible" }],
+    acceptance: [{ id: "c2", text: "visible" }],
     grounding: { touchpoints: [{ path: "src/toolbar/capture.ts", planned: true }], stamp: [] },
   });
   assert.ok(n2.ok);
@@ -64,8 +64,8 @@ function makeSpace(): Space {
 
 test("orders partition by unit with disjoint footprints; briefs carry coordinates and the honesty protocol", () => {
   const space = makeSpace();
-  const cut = { id: "cut-1", nodeIds: space.nodes.map((n) => n.id) };
-  const orders = assembleWorkOrders(space, cut, "/wt", [], readFile);
+  const cut = { id: "cut-1", changeIds: space.nodes.map((n) => n.id) };
+  const orders = assembleSliceBriefs(space, cut, "/wt", [], readFile);
   assert.equal(orders.length, 2, "two units, two orders");
   assert.ok(orders.every((o) => o.ok));
   const footprints = orders.flatMap((o) => (o.ok ? o.order.footprint : []));
@@ -73,7 +73,7 @@ test("orders partition by unit with disjoint footprints; briefs carry coordinate
 
   const first = orders.find((o) => o.ok && o.order.footprint.includes("src/panel/log.ts"))!;
   assert.ok(first.ok);
-  const brief = renderWorkOrderBrief(space, first.order, first.resolved);
+  const brief = renderSliceBrief(space, first.order, first.resolved);
   assert.ok(brief.includes("src/panel/log.ts:2 (LogPanel)"), "line rendered at dispatch");
   assert.ok(brief.includes("do NOT search"));
   assert.ok(brief.includes("done when: scrolls"));
@@ -83,8 +83,8 @@ test("orders partition by unit with disjoint footprints; briefs carry coordinate
 
 test("an anchor that no longer resolves refuses the order and names the broken premise", () => {
   const space = makeSpace();
-  const cut = { id: "cut-1", nodeIds: [space.nodes[0].id] };
-  const orders = assembleWorkOrders(space, cut, "/other-worktree", [], () => undefined);
+  const cut = { id: "cut-1", changeIds: [space.nodes[0].id] };
+  const orders = assembleSliceBriefs(space, cut, "/other-worktree", [], () => undefined);
   assert.equal(orders.length, 1);
   assert.ok(!orders[0].ok);
   assert.ok(!orders[0].ok && orders[0].refusals[0].includes("does not exist"));

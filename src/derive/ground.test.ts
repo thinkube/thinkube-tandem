@@ -34,10 +34,10 @@ test("parser: positions refused, planned files marked, indices bounded, empty dr
           { path: "src/panel/follow.ts" },
         ],
         needs: [1, 9, -1],
-        checks: [{ text: "the panel scrolls as the step advances" }, { text: "  " }],
+        acceptance: [{ text: "the panel scrolls as the step advances" }, { text: "  " }],
       },
-      { sentence: "  ", touchpoints: [], needs: [], checks: [] },
-      { sentence: "surface the follow toggle", touchpoints: [], needs: [0], checks: [{ text: "a toggle is visible" }] },
+      { sentence: "  ", touchpoints: [], needs: [], acceptance: [] },
+      { sentence: "surface the follow toggle", touchpoints: [], needs: [0], acceptance: [{ text: "a toggle is visible" }] },
     ],
   });
   const exists = (abs: string) => abs.endsWith("log.ts");
@@ -48,7 +48,7 @@ test("parser: positions refused, planned files marked, indices bounded, empty dr
     { path: "src/panel/follow.ts", planned: true },
   ], "the position-carrying anchor is refused; the unborn file is planned");
   assert.deepEqual(nodes[0].needsIndices, [1], "out-of-range indices dropped");
-  assert.equal(nodes[0].checks.length, 1);
+  assert.equal(nodes[0].acceptance.length, 1);
   assert.deepEqual(parseGroundedNodes("no json", "/repo", exists), []);
 });
 
@@ -56,8 +56,8 @@ test("resolution: ids assigned, needs indices become ids, self-needs dropped, st
   const stamp = [{ root: "/repo", head: "abc", dirty: "" }];
   const resolved = resolveDerived(
     [
-      { sentence: "a", touchpoints: [{ path: "src/a.ts" }], needsIndices: [1], checks: [{ text: "c" }] },
-      { sentence: "b", touchpoints: [], needsIndices: [1], checks: [{ text: "c" }] },
+      { sentence: "a", touchpoints: [{ path: "src/a.ts" }], needsIndices: [1], acceptance: [{ text: "c" }] },
+      { sentence: "b", touchpoints: [], needsIndices: [1], acceptance: [{ text: "c" }] },
     ],
     "ask-1",
     stamp,
@@ -69,5 +69,5 @@ test("resolution: ids assigned, needs indices become ids, self-needs dropped, st
   assert.deepEqual(resolved[0].grounding?.stamp, stamp);
   assert.equal(resolved[1].grounding, undefined, "no touchpoints, no grounding claim");
   assert.deepEqual(resolved[0].serves, ["ask-1"]);
-  assert.equal(resolved[0].checks[0].id, "node-7-check-1");
+  assert.equal(resolved[0].acceptance[0].id, "node-7-check-1");
 });

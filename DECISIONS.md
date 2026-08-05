@@ -24,3 +24,8 @@ of them there — nothing has users.
   for.
 - **Runs execute orders serially.** Parallel workers arrive when a real cut
   is big enough to need them; footprint disjointness is already enforced.
+
+- **H5 (prompt-asset "Spec"→"TEP" swap) executes at engine import** — the
+  assets arrive in step 2/5; the swap is part of their import commit.
+- **Module-size threshold 600 lines** (fail, not warn) for non-engine code.
+- **Author slug** = git user.name lowercased/hyphenated; "user" fallback.
