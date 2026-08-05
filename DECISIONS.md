@@ -17,3 +17,10 @@ of them there — nothing has users.
   platform pipeline is built when there is a real pipeline to read.
 - **Unknown git hosts resolve to the Gitea adapter.** The self-hosted
   platform is the default world; github.com is the special case.
+
+- **Re-grounding is a human act:** pressing a unit's stale badge re-derives
+  the asks its stale changes serve. Automatic re-grounding on load was
+  rejected — a surprise model round on open is a cost the human didn't ask
+  for.
+- **Runs execute orders serially.** Parallel workers arrive when a real cut
+  is big enough to need them; footprint disjointness is already enforced.
