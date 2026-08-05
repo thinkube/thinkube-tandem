@@ -8,11 +8,12 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
-import { SpacePanel } from "./surfaces/panel";
+import { SpacePanel, SpaceViewProvider } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 
 let session: TandemSession | undefined;
 let panel: SpacePanel | undefined;
+let sideView: SpaceViewProvider | undefined;
 
 function gitAuthor(repoRoot: string): Promise<string> {
   return new Promise((resolve) => {
@@ -63,42 +64,56 @@ async function resolveForge(
   }
 }
 
+async function ensureSession(
+  context: vscode.ExtensionContext,
+): Promise<TandemSession> {
+  if (session) return session;
+  const config = vscode.workspace.getConfiguration("thinkubeTandem");
+  const storeRoot =
+    config.get<string>("storeRoot", "") ||
+    path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  const repoRoot = folder?.uri.fsPath ?? process.cwd();
+  const spaceName = folder?.name ?? "default";
+  const forge = await resolveForge(
+    repoRoot,
+    config.get<string>("giteaToken", ""),
+  );
+  session = new TandemSession({
+    round: {
+      model: config.get<string>("groundingModel", "opus"),
+      repoRoot,
+    },
+    storeDir: path.join(storeRoot, "spaces", spaceName),
+    storageDir: context.globalStorageUri.fsPath,
+    now: () => new Date().toISOString(),
+    author: await gitAuthor(repoRoot),
+    forge,
+    suiteCommand: config
+      .get<string>("suiteCommand", "npm test")
+      .split(" ")
+      .filter(Boolean),
+    onChanged: (message) => {
+      if (!session) return;
+      panel?.pushFrom(session, message);
+      sideView?.pushFrom(session, message);
+    },
+  });
+  return session;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+  sideView = new SpaceViewProvider(context.extensionUri, () =>
+    ensureSession(context),
+  );
   context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("thinkubeTandemSpaceView", sideView, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
     vscode.commands.registerCommand("thinkube-tandem.openSpace", async () => {
-      const config = vscode.workspace.getConfiguration("thinkubeTandem");
-      const storeRoot =
-        config.get<string>("storeRoot", "") ||
-        path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
-      const folder = vscode.workspace.workspaceFolders?.[0];
-      const repoRoot = folder?.uri.fsPath ?? process.cwd();
-      const spaceName = folder?.name ?? "default";
-      if (!session) {
-        const forge = await resolveForge(
-          repoRoot,
-          config.get<string>("giteaToken", ""),
-        );
-        session = new TandemSession({
-          round: {
-            model: config.get<string>("groundingModel", "opus"),
-            repoRoot,
-          },
-          storeDir: path.join(storeRoot, "spaces", spaceName),
-          storageDir: context.globalStorageUri.fsPath,
-          now: () => new Date().toISOString(),
-          author: await gitAuthor(repoRoot),
-          forge,
-          suiteCommand: config
-            .get<string>("suiteCommand", "npm test")
-            .split(" ")
-            .filter(Boolean),
-          onChanged: (message) => {
-            if (session && panel) panel.pushFrom(session, message);
-          },
-        });
-      }
+      const s = await ensureSession(context);
       if (!panel) panel = new SpacePanel();
-      await panel.show(context.extensionUri, session);
+      await panel.show(context.extensionUri, s);
     }),
   );
 }

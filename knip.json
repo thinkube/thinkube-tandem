@@ -10,7 +10,8 @@
         "!src/engine/**"
       ],
       "ignoreDependencies": [
-        "yaml"
+        "yaml",
+        "@vscode/vsce"
       ]
     },
     "webview/map": {

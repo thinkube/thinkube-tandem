@@ -80,6 +80,41 @@ function spacePush(session: TandemSession, message?: string): unknown {
   };
 }
 
+async function handleInbound(
+  session: TandemSession,
+  msg: InboundAction,
+  push: (message?: string) => void,
+): Promise<void> {
+  let note: string | undefined;
+  if (msg.action === "capture" && msg.text) {
+    push("Grounding your ask…");
+    const r = await session.capture(msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "toggle-cut" && msg.changeIds) {
+    session.toggleCut(msg.changeIds);
+  } else if (msg.action === "sign-cut") {
+    const r = session.signCut();
+    note = r.ok ? "Cut signed." : r.reason;
+  } else if (msg.action === "accept-delivery" && msg.deliveryId) {
+    const r = await session.acceptDelivery(msg.deliveryId);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "accept-question" && msg.questionId) {
+    push("Recording the decision…");
+    const r = await session.acceptQuestion(msg.questionId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "pin" && msg.pinKind && msg.changeIds?.length === 2) {
+    session.pin(msg.pinKind as "together" | "apart", msg.changeIds[0], msg.changeIds[1]);
+  } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
+    session.answerWorker(msg.unitId, msg.text);
+  } else if (msg.action === "stop-run") {
+    session.stopRun();
+  } else if (msg.action === "reground") {
+    push("Re-grounding…");
+    await session.reground();
+  }
+  push(note);
+}
+
 export class SpacePanel implements vscodeTypes.Disposable {
   private _panel: vscodeTypes.WebviewPanel | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
@@ -108,37 +143,9 @@ export class SpacePanel implements vscodeTypes.Disposable {
       this._panel.webview,
     );
     this._disposables.push(
-      this._panel.webview.onDidReceiveMessage(async (raw) => {
-        const msg = raw as InboundAction;
-        let note: string | undefined;
-        if (msg.action === "capture" && msg.text) {
-          this._push(session, "Grounding your ask…");
-          const r = await session.capture(msg.text);
-          note = r.ok ? undefined : r.reason;
-        } else if (msg.action === "toggle-cut" && msg.changeIds) {
-          session.toggleCut(msg.changeIds);
-        } else if (msg.action === "sign-cut") {
-          const r = session.signCut();
-          note = r.ok ? "Cut signed." : r.reason;
-        } else if (msg.action === "accept-delivery" && msg.deliveryId) {
-          const r = await session.acceptDelivery(msg.deliveryId);
-          note = r.ok ? undefined : r.reason;
-        } else if (msg.action === "accept-question" && msg.questionId) {
-          this._push(session, "Recording the decision…");
-          const r = await session.acceptQuestion(msg.questionId, msg.text);
-          note = r.ok ? undefined : r.reason;
-        } else if (msg.action === "pin" && msg.pinKind && msg.changeIds?.length === 2) {
-          session.pin(msg.pinKind as "together" | "apart", msg.changeIds[0], msg.changeIds[1]);
-        } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
-          session.answerWorker(msg.unitId, msg.text);
-        } else if (msg.action === "stop-run") {
-          session.stopRun();
-        } else if (msg.action === "reground") {
-          this._push(session, "Re-grounding…");
-          await session.reground();
-        }
-        this._push(session, note);
-      }),
+      this._panel.webview.onDidReceiveMessage((raw) =>
+        handleInbound(session, raw as InboundAction, (m) => this._push(session, m)),
+      ),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
       }),
@@ -160,6 +167,41 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._disposables = [];
     this._panel?.dispose();
     this._panel = undefined;
+  }
+}
+
+/**
+ * The same space hosted in the activity-bar sidebar: one icon in the left
+ * bar opens the identical surface the editor panel shows. Both hosts share
+ * the session; a push reaches whichever webviews are alive.
+ */
+export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
+  private _view: vscodeTypes.WebviewView | undefined;
+
+  constructor(
+    private readonly extensionUri: vscodeTypes.Uri,
+    private readonly ensureSession: () => Promise<TandemSession>,
+  ) {}
+
+  async resolveWebviewView(view: vscodeTypes.WebviewView): Promise<void> {
+    this._view = view;
+    view.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.extensionUri],
+    };
+    view.webview.html = await renderBundleHtml(this.extensionUri, view.webview);
+    const session = await this.ensureSession();
+    view.webview.onDidReceiveMessage((raw) =>
+      handleInbound(session, raw as InboundAction, (m) => this.pushFrom(session, m)),
+    );
+    view.onDidDispose(() => {
+      this._view = undefined;
+    });
+    this.pushFrom(session);
+  }
+
+  pushFrom(session: TandemSession, message?: string): void {
+    void this._view?.webview.postMessage(spacePush(session, message));
   }
 }
 
