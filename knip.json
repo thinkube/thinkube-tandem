@@ -2,10 +2,15 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/**/*.test.ts"
+        "src/**/*.test.ts",
+        "!src/engine/**"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "!src/engine/**"
+      ],
+      "ignoreDependencies": [
+        "yaml"
       ]
     },
     "webview/map": {

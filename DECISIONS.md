@@ -29,3 +29,7 @@ of them there — nothing has users.
   assets arrive in step 2/5; the swap is part of their import commit.
 - **Module-size threshold 600 lines** (fail, not warn) for non-engine code.
 - **Author slug** = git user.name lowercased/hyphenated; "user" fallback.
+
+- **knip governs v2-authored code only.** The imported engine's public
+  surface is canonical v1 API — pinned by the split-fidelity manifest, not
+  by usage analysis. Un-exporting it would alter imported code (I1).
