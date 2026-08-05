@@ -19,9 +19,31 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [],
-  "contributes": {},
+  "contributes": {
+    "commands": [
+      {
+        "command": "thinkube-tandem.openSpace",
+        "title": "Tandem: Open the Space"
+      }
+    ],
+    "configuration": {
+      "title": "Thinkube Tandem",
+      "properties": {
+        "thinkubeTandem.storeRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Root of the tandem store — spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
+        },
+        "thinkubeTandem.groundingModel": {
+          "type": "string",
+          "default": "opus",
+          "description": "Model for the grounding round (judgment stage)."
+        }
+      }
+    }
+  },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cd webview/map && npm run build",
     "test": "tsc -p tsconfig.test.json && node --test out-test/"
   },
   "devDependencies": {
