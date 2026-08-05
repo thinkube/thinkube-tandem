@@ -1,8 +1,3 @@
-import { spawn } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 /**
  * Pure, vscode-free core of the thinking space orchestrator: the work-unit DAG +
  * scheduler, plus session-log helpers that parse a worker's persisted `.jsonl` events.

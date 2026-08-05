@@ -1,8 +1,3 @@
-import { spawn } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 // ── Judge guidance on the slice card (2026-07-12): the auditable rework channel ─────
 //
 // When the closing gate goes red and the judge routes the fault to one role, the judge's

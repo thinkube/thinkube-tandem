@@ -1,8 +1,3 @@
-import { spawn } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 import { StubScanHit } from "./stubScan";
 import { AcResult, AcVerification } from "./closingGate";
 import { Fault } from "./redispatch";

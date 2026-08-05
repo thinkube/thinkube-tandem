@@ -1,8 +1,3 @@
-import { spawn } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 // ── Atomic, resumable per-slice commit ────
 //
 // Today commit is all-or-nothing at run quiescence, so a partial gate or a git

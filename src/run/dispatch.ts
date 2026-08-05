@@ -8,7 +8,6 @@
  * never as silence.
  */
 import { execFile } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { Cut, Delivery, Proof, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";

@@ -1,8 +1,6 @@
 import { spawn } from "child_process";
-import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 import { clip } from "./guidance";
 // ── Closing AI-verification gate ──────────────────
 //

@@ -28,15 +28,6 @@ import {
 } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 
-type SessionAction =
-  | { action: "capture"; text: string }
-  | { action: "select-unit"; unitId: string }
-  | { action: "toggle-cut"; changeIds: string[] }
-  | { action: "sign-cut" }
-  | { action: "accept-delivery"; deliveryId: string }
-  | { action: "reground" }
-  | { action: "flip-face"; artifactId: string };
-
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
   "capture",

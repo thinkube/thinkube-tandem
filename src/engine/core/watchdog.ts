@@ -1,8 +1,3 @@
-import { spawn } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate } from "../promptTemplates";
 // ── Finalization watchdog ────────────────
 //
 // A run can land every execution unit and then silently wedge — the finalize tail
