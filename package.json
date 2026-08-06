@@ -1,8 +1,8 @@
 {
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
-  "description": "Tandem \u2014 ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.0",
+  "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
+  "version": "2.0.1",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -193,7 +193,7 @@
         "thinkubeTandem.storeRoot": {
           "type": "string",
           "default": "",
-          "description": "Root of the tandem store \u2014 spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
+          "description": "Root of the tandem store — spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
         },
         "thinkubeTandem.groundingModel": {
           "type": "string",
@@ -203,7 +203,7 @@
         "thinkubeTandem.suiteCommand": {
           "type": "string",
           "default": "npm test",
-          "description": "Command that runs the project's test suite \u2014 its verdict is a delivery proof."
+          "description": "Command that runs the project's test suite — its verdict is a delivery proof."
         },
         "thinkubeTandem.giteaToken": {
           "type": "string",
@@ -233,7 +233,7 @@
             "advisory"
           ],
           "default": "blocking",
-          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default \u2014 advisory let undocumented work reach Done."
+          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default — advisory let undocumented work reach Done."
         }
       }
     },
@@ -345,7 +345,7 @@
     "viewsWelcome": [
       {
         "view": "tandemProjects",
-        "contents": "No products yet. A product groups your projects (the v1 drill-down: product \u2192 project \u2192 work).\n[New Product](command:thinkube-tandem.newProduct)"
+        "contents": "No products yet. A product groups your projects (the v1 drill-down: product → project → work).\n[New Product](command:thinkube-tandem.newProduct)"
       }
     ],
     "submenus": [
