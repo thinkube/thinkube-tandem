@@ -31,6 +31,16 @@ env -u CODE_SERVER_PARENT_PID -u VSCODE_IPC_HOOK_CLI -u VSCODE_IPC_HOOK \
     -u VSCODE_PROXY_URI -u VSCODE_ESM_ENTRYPOINT \
     /usr/lib/code-server/bin/code-server --install-extension "${VSIX}" --force
 
+# Repoint the version-stable launcher symlink BEFORE pruning: the Claude
+# process wrapper resolves through extension-current, and a prune that
+# outruns the repoint leaves it dangling — every Claude spawn then fails
+# until a reload (the 2.0.0 outage; caught by the human).
+echo "▸ repoint extension-current → v${VERSION}…"
+STORAGE="${HOME}/.local/share/code-server/User/globalStorage/thinkube.thinkube-tandem"
+mkdir -p "$STORAGE"
+ln -sfn "${HOME}/.local/share/code-server/extensions/thinkube.thinkube-tandem-${VERSION}" \
+  "$STORAGE/extension-current"
+
 echo "▸ prune stale versions (dirs + old vsix files)…"
 EXT_ROOT="${HOME}/.local/share/code-server/extensions"
 for d in "${EXT_ROOT}"/thinkube.thinkube-tandem-*; do
