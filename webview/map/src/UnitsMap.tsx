@@ -118,6 +118,16 @@ export function UnitsMap(props: {
   const expandedKey = props.expandedIds.join(",");
   const { heights, probe } = useMeasuredHeights(cards, expandedKey, world.far);
   const [layouts, setLayouts] = useState<Map<string, LaidOut>>(new Map());
+  // Relayout only when the STRUCTURE changes (ids/heights), not on every
+  // liveness push — the churn the human saw as cards merging.
+  const layoutKey = useMemo(
+    () =>
+      islands
+        .map((i) => `${i.label}:${i.units.map((x) => `${x.id}@${heights.get(x.id) ?? 0}`).join(",")}`)
+        .join("|"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [islands, heights],
+  );
 
   // A reflow never moves the card you are touching: the card's position is
   // recorded before the layout recomputes, and the viewport shifts by the
@@ -179,7 +189,8 @@ export function UnitsMap(props: {
     return () => {
       alive = false;
     };
-  }, [islands, heights]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   if (push.units.length === 0)
     return (
@@ -277,6 +288,9 @@ export function UnitsMap(props: {
           isl.units.map((u) => {
             const c = g?.nodes.get(u.id);
             const card = cards.find((k) => k.id === u.id)!;
+            // A card with no coordinates yet stays unrendered — never a
+            // pile at the island origin while the layout computes.
+            if (!c) return null;
             return (
               <NodeCard
                 key={u.id}

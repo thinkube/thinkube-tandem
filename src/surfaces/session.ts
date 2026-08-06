@@ -452,7 +452,8 @@ export class TandemSession {
         this.changed(anchorRefusal);
         return undefined;
       }
-      const last = await dispatchScopePlan({
+      let last;
+      last = await dispatchScopePlan({
         plan,
         cut,
         space: () => this.space,
@@ -465,6 +466,10 @@ export class TandemSession {
         },
         changed: (m) => this.changed(m),
       });
+      if (last?.refusals.length && !last.delivery) {
+        this.runNote = `The build stopped: ${last.refusals.join(" · ")}`;
+        this.changed(this.runNote);
+      } else if (last?.delivery) this.runNote = undefined;
       return last;
     } finally {
       this.running = false;

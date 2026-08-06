@@ -340,10 +340,11 @@ export function App(): JSX.Element {
               post({ action: "select-unit", unitId: id });
             }}
           />
-        ) : push.run ? (
-          <RunSection run={push.run} world={flowWorld} />
-        ) : push.runNote ? (
-          <RunNote note={push.runNote} />
+        ) : push.run || push.runNote ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            {push.runNote ? <RunNote note={push.runNote} /> : null}
+            {push.run ? <RunSection run={push.run} world={flowWorld} /> : null}
+          </div>
         ) : (
           <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
             No build yet — sign a cut on the Units map and it appears here.
