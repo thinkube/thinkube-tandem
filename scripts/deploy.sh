@@ -41,14 +41,16 @@ mkdir -p "$STORAGE"
 ln -sfn "${HOME}/.local/share/code-server/extensions/thinkube.thinkube-tandem-${VERSION}" \
   "$STORAGE/extension-current"
 
-echo "▸ prune stale versions (dirs + old vsix files)…"
+# Keep the current AND the previous version: a window that has not
+# reloaded yet still runs the previous build, and pruning it out from
+# under the live extension host ENOENTs every lazy require (field-hit
+# on 2.0.12→2.0.13; same hazard class as the 2.0.0 wrapper outage).
+echo "▸ prune stale versions (keeping current + previous for live windows)…"
 EXT_ROOT="${HOME}/.local/share/code-server/extensions"
+KEEP=$(ls -d "${EXT_ROOT}"/thinkube.thinkube-tandem-* 2>/dev/null | sort -V | tail -2)
 for d in "${EXT_ROOT}"/thinkube.thinkube-tandem-*; do
   [ -d "$d" ] || continue
-  case "$d" in
-    *"thinkube.thinkube-tandem-${VERSION}") ;;
-    *) rm -rf "$d" && echo "  − $(basename "$d")" ;;
-  esac
+  echo "$KEEP" | grep -qx "$d" || { rm -rf "$d" && echo "  − $(basename "$d")"; }
 done
 for f in thinkube-tandem-*.vsix; do
   [ "$f" = "$VSIX" ] || rm -f "$f"
