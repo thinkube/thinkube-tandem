@@ -36,6 +36,20 @@ export function App(): JSX.Element {
   useEffect(() => onSpace(setPush), []);
 
   if (!push) return <div style={{ padding: 24, opacity: 0.7 }}>Loading the space…</div>;
+  if (push.needsRepo)
+    return (
+      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ opacity: 0.8 }}>Which project / repository are you working on?</div>
+        <button
+          data-choose-repo
+          style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-button-background, #0e639c)", color: "var(--vscode-button-foreground, #fff)", cursor: "pointer" }}
+          onClick={() => post({ action: "switch-repo" })}
+        >
+          Choose repository…
+        </button>
+        {push.message ? <div style={{ fontSize: 12, opacity: 0.7 }}>{push.message}</div> : null}
+      </div>
+    );
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div

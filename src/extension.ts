@@ -154,10 +154,11 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
 
 async function ensureSession(
   context: vscode.ExtensionContext,
-): Promise<TandemSession> {
+  interactive = true,
+): Promise<TandemSession | undefined> {
   let repoRoot = rememberedRepo(context);
-  if (!repoRoot) repoRoot = await chooseRepo(context);
-  if (!repoRoot) throw new Error("Tandem needs a workspace folder to work on — open one and retry.");
+  if (!repoRoot && interactive) repoRoot = await chooseRepo(context);
+  if (!repoRoot) return undefined;
   updateStatusBar(repoRoot);
   const existing = sessions.get(repoRoot);
   if (existing) return existing;
@@ -254,7 +255,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   sideView = new SpaceViewProvider(
     context.extensionUri,
-    () => ensureSession(context),
+    (interactive) => ensureSession(context, interactive),
     hooks,
   );
   context.subscriptions.push(
@@ -262,7 +263,8 @@ export function activate(context: vscode.ExtensionContext): void {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.commands.registerCommand("thinkube-tandem.openSpace", async () => {
-      await ensureSession(context);
+      const s = await ensureSession(context, true);
+      if (!s) return;
       if (!panel) panel = new SpacePanel(activeSession, hooks);
       await panel.show(context.extensionUri);
     }),
@@ -307,7 +309,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
       const picked = await chooseRepo(context);
       if (!picked) return;
-      await ensureSession(context);
+      await ensureSession(context, true);
       updateStatusBar(picked);
       pushActive(context, `Working on ${path.basename(picked)}.`);
     }),

@@ -37,6 +37,8 @@ export interface SpacePush {
   asks: { id: string; text: string }[];
   signedTeps: number;
   repoName?: string;
+  /** No repository chosen yet — the view renders the chooser state. */
+  needsRepo?: boolean;
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];

@@ -194,17 +194,41 @@ export class SpacePanel implements vscodeTypes.Disposable {
   }
 }
 
+/** The push a session-less view renders: choose the repository first. */
+function needsRepoPush(message?: string): unknown {
+  return {
+    kind: "space",
+    needsRepo: true,
+    running: false,
+    asks: [],
+    signedTeps: 0,
+    questions: [],
+    decisions: [],
+    units: [],
+    edges: [],
+    cutScreen: "",
+    cutCount: 0,
+    deliveries: [],
+    ...(message ? { message } : {}),
+  };
+}
+
 /**
  * The same space hosted in the activity-bar sidebar: one icon in the left
  * bar opens the identical surface the editor panel shows. Both hosts share
  * the session; a push reaches whichever webviews are alive.
+ *
+ * Resolution NEVER depends on a session: with no repository chosen the view
+ * renders a chooser state — prompting the human during silent view restore
+ * (a window reload) is exactly how a view load "errors". The QuickPick only
+ * opens on a real click.
  */
 export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
   private _view: vscodeTypes.WebviewView | undefined;
 
   constructor(
     private readonly extensionUri: vscodeTypes.Uri,
-    private readonly ensureSession: () => Promise<TandemSession>,
+    private readonly ensureSession: (interactive: boolean) => Promise<TandemSession | undefined>,
     private readonly hooks?: PanelHostHooks,
   ) {}
 
@@ -215,15 +239,27 @@ export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
     view.webview.html = await renderBundleHtml(this.extensionUri, view.webview);
-    const session = await this.ensureSession();
     view.webview.onDidReceiveMessage(async (raw) => {
-      const live = await this.ensureSession();
-      await handleInbound(live, raw as InboundAction, (m) => this.pushFrom(live, m), this.hooks);
+      const msg = raw as InboundAction;
+      if (msg.action === "switch-repo") {
+        await this.hooks?.onSwitchRepo?.();
+        return;
+      }
+      const live = await this.ensureSession(true).catch(() => undefined);
+      if (!live) {
+        void this._view?.webview.postMessage(
+          needsRepoPush("Choose the project / repository first."),
+        );
+        return;
+      }
+      await handleInbound(live, msg, (m) => this.pushFrom(live, m), this.hooks);
     });
     view.onDidDispose(() => {
       this._view = undefined;
     });
-    this.pushFrom(session);
+    const session = await this.ensureSession(false).catch(() => undefined);
+    if (session) this.pushFrom(session);
+    else void view.webview.postMessage(needsRepoPush());
   }
 
   pushFrom(session: TandemSession, message?: string): void {
