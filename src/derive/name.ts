@@ -30,7 +30,7 @@ export function buildNamingPrompt(units: UnitToName[]): string {
     .join("\n");
   return (
     `You are naming units of work for a human who decides at a glance.\n` +
-    `Each unit below is a cluster of intended code changes, one sentence per change.\n\n` +
+    `Each unit below bundles PROMISES — small provable things to build, one sentence each.\n\n` +
     `${list}\n\n` +
     `For EACH unit produce:\n` +
     `- "title": a noun-phrase name for the unit as a whole, at most ${TITLE_MAX} characters. ` +

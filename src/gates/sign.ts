@@ -37,6 +37,8 @@ export type SignResult =
   | { ok: false; reason: string };
 
 /** The human's first gate. Binds render + grounding at the moment of the click. */
+import { danglingNeeds } from "../core/cutClosure";
+
 export function signCut(
   space: Space,
   cut: Cut,
@@ -63,6 +65,14 @@ export function signCut(
     return {
       ok: false,
       reason: `not grounded: ${ungrounded.map((n) => n!.sentence).join("; ")} — re-ground before signing`,
+    };
+  const dangling = danglingNeeds(cut.changeIds, space.nodes);
+  if (dangling.length)
+    return {
+      ok: false,
+      reason: `depends on promises outside the cut: ${dangling
+        .map((d) => `"${d.sentence}" needs ${d.missing.join("; ")}`)
+        .join(" · ")} — they ship together`,
     };
   const askIds = new Set(members.flatMap((n) => n!.serves));
   const open = space.questions.filter((q) => !q.decided && askIds.has(q.askId));

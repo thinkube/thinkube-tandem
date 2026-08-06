@@ -145,3 +145,38 @@ export function panicFlow(space: Space): { space: Space } | { reason: string } {
     },
   };
 }
+
+/** The human's accepted check lands on the promise; assessment checks are
+ *  graded by an independent reviewer at delivery, probe checks become
+ *  runnable tests. */
+export function addCheckFlow(
+  space: Space,
+  changeId: string,
+  text: string,
+  kind: "probe" | "assessment",
+  author: string,
+): { space: Space; message: string } | { reason: string } {
+  if (!text.trim()) return { reason: "a check cannot be empty" };
+  const n = space.nodes.find((x) => x.id === changeId);
+  if (!n) return { reason: `no promise '${changeId}'` };
+  return {
+    space: {
+      ...space,
+      nodes: space.nodes.map((x) =>
+        x.id === changeId
+          ? {
+              ...x,
+              acceptance: [
+                ...x.acceptance,
+                { id: `c-${author}-${x.acceptance.length + 1}`, text: text.trim(), kind },
+              ],
+            }
+          : x,
+      ),
+    },
+    message:
+      kind === "assessment"
+        ? "Check added — an independent reviewer will grade it at delivery."
+        : "Check added — it becomes a runnable test at delivery.",
+  };
+}

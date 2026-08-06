@@ -48,6 +48,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
     repoName: session.repoName,
     activity: session.activity,
     lastAnswer: session.lastAnswer,
+    pendingCheck: session.pendingCheck,
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
@@ -108,7 +109,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
           touchpoints: (n.grounding?.touchpoints ?? []).map(
             (t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new)" : ""),
           ),
-          acceptance: n.acceptance.map((c) => c.text),
+          acceptance: n.acceptance.map((c) => (c.kind === "assessment" ? `${c.text} (by review)` : c.text)),
         })),
       };
     }),
@@ -187,6 +188,14 @@ async function handleInbound(
   } else if (msg.action === "panic") {
     const r = session.panic();
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "propose-check") {
+    await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
+  } else if (msg.action === "accept-check") {
+    session.acceptCheck(
+      msg.changeIds?.[0] ?? "",
+      msg.text ?? "",
+      msg.kind === "assessment" ? "assessment" : "probe",
+    );
   } else if (msg.action === "reground") {
     push("Re-grounding…");
     await session.reground();

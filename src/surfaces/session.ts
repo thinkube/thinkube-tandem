@@ -27,29 +27,14 @@ import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
+import { proposeCheck as proposeCheckRound } from "../derive/checks";
+import { addWithNeeds, removeWithDependents } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
-import { answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
+import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
+export { SESSION_ACTIONS } from "./affordances";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
-export const SESSION_ACTIONS: string[] = [
-  "capture",
-  "select-unit",
-  "toggle-cut",
-  "sign-cut",
-  "accept-delivery",
-  "reground",
-  "flip-face",
-  "answer-worker",
-  "stop-run",
-  "accept-question",
-  "pin",
-  "panic",
-  "accept-merge",
-  "reject-merge",
-  "accept-impact",
-  "dismiss-impact",
-];
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -65,32 +50,25 @@ export interface SessionDeps {
   ground?: typeof runDerivationPipeline;
   dispatch?: typeof dispatchTep;
   readCurrentStamp?: () => Promise<SourceStamp[]>;
-  /** Retire a merged TEP's worktrees (best-effort; injectable for tests). */
+  /** Retire a merged TEP's worktrees (best-effort; injectable). */
   retire?: (tepId: string) => Promise<void>;
-  /** Per-role worker models (judgment raised above the sonnet base). */
   workerModel?: WorkerModelConfig;
   /** Frontier width for the run (v1 default 4). */
   maxConcurrent?: number;
-  /** The docs gate blocks accepts by default; advisory is the escape hatch. */
   docsGateMode?: "blocking" | "advisory";
-  /** Injectable classifier + answer round for tests. */
   classify?: typeof classifyUtterance;
   answerRound?: typeof runReadRound;
   /** Injectable naming round (unit titles + abstracts) for tests. */
   name?: typeof nameUnits;
+  proposeCheck?: typeof proposeCheckRound;
   scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live
-  /** The project scope (§7quater): grounding reads the anchor dir
-   *  (round.repoRoot); git operations run at the enclosing repo root with
-   *  every path qualified by the prefix. Absent = whole-repo project. */
+  /** §7quater: grounding reads the anchor dir; git ops run at gitRoot. */
   scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
-  /** Resolve a member scope id to its open repository (§7quater); absent
-   *  or returning undefined means the scope is not open in this editor. */
+  /** Member scope id → its open repository; undefined = not open here. */
   resolveScope?: (
     scopeId: string,
   ) => Promise<{ gitRoot: string; prefix: string; forge?: Forge } | undefined>;
-  /** The project dir (spaces/<id>) holding EVERY user's subtree — the fold
-   *  reads all of them; this session appends only under storeDir (its own
-   *  user). Absent = single-user fold over storeDir alone. */
+  /** The fold dir holding every user's subtree; absent = single-user. */
   projectDir?: string;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
@@ -106,9 +84,9 @@ export class TandemSession {
   stale = new Set<string>();
   running = false;
   runState: RunState | undefined;
-  /** Liveness for the surface: what is being worked on right now. */
+  /** Liveness: what is being worked on right now. */
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
-  /** The latest in-board answer to a question-classified input. */
+  /** The latest in-board answer to a question. */
   lastAnswer: { question: string; answer: string } | undefined;
   private _captureAbort: AbortController | undefined;
 
@@ -122,12 +100,12 @@ export class TandemSession {
     return this.deps.author ?? "user";
   }
 
-  /** Token verdict for a minted TEP — dispatch refuses anything but approved. */
+  /** Token verdict for a minted TEP. */
   tepApproval(tepId: string): { approved: boolean; reason?: string } {
     return tepApprovalOf(this.space, this._approvals, this._secret, tepId);
   }
 
-  /** The project label this space is bound to — a label, never resolved. */
+  /** The bound project label — never resolved. */
   get repoName(): string {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
@@ -137,13 +115,12 @@ export class TandemSession {
     this.deps.onChanged?.(message);
   }
 
-  /** Per-ask context digests, file-backed beside the space. */
+  /** Per-ask digests, file-backed beside the space. */
   private digestStore(): DigestStore {
     return makeDigestStore(this.deps.storeDir);
   }
 
-  /** Classify a DRAFT — records nothing (TEP-22: the classifier never
-   *  silently records). A pasted list splits into items, previewed. */
+  /** Classify a DRAFT — records nothing; a pasted list previews items. */
   async classifyDraft(text: string): Promise<{ kind: UtteranceKind; items?: string[] }> {
     const items = splitList(text);
     if (items) return { kind: "ask", items };
@@ -151,12 +128,12 @@ export class TandemSession {
     return { kind: await classify(this.deps.round, text) };
   }
 
-  /** Cancel the in-flight derivation (the human pressed Cancel). */
+  /** The human pressed Cancel. */
   cancelCapture(): void {
     this._captureAbort?.abort();
   }
 
-  /** Record several asks at once — the confirmed list-paste. */
+  /** The confirmed list-paste: several asks in order. */
   async captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
     for (const t of texts) {
       const r = await this.capture(t, "ask");
@@ -165,9 +142,8 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Capture one utterance WITH ITS CONFIRMED KIND (the tag the human
-   *  pressed): an ask grounds, a question gets an answer and is recorded
-   *  nowhere, a rule becomes a decision in force born settled. */
+  /** Capture with the CONFIRMED kind: an ask grounds, a question is
+   *  answered and recorded nowhere, a rule becomes a decision. */
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = confirmedKind ?? (await classify(this.deps.round, text));
@@ -237,7 +213,7 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Re-derive every ask that has stale nodes; fresh grounding replaces old. */
+  /** Re-derive every stale ask; fresh grounding replaces old. */
   async reground(): Promise<void> {
     await this.refreshStaleness();
     const staleAsks = new Set(
@@ -266,7 +242,7 @@ export class TandemSession {
     await this.renderAbstracts();
   }
 
-  /** Wipe everything DERIVED — see panicFlow. Confirmation is surface-side. */
+  /** See panicFlow; confirmation is surface-side. */
   panic(): { ok: boolean; reason?: string } {
     if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
     const r = panicFlow(this.space);
@@ -279,7 +255,7 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** The accepted answers governing every later derivation, in force. */
+  /** Decisions in force — injected into every later round. */
   decisionsInForce(): string[] {
     return this.space.questions
       .filter((q) => q.decided)
@@ -318,8 +294,7 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Accept = re-derive the ask under the decisions in force; dismiss =
-   *  drop the suggestion, touching nothing. The decision stays in force. */
+  /** Accept = re-derive under the decisions; dismiss touches nothing. */
   async decideImpact(
     impactId: string,
     accept: boolean,
@@ -353,7 +328,7 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** A human pin: merge or split the pair's units — outranks the coupling. */
+  /** A human pin — outranks the computed coupling. */
   pin(kind: "together" | "apart", a: string, b: string): void {
     this.space = {
       ...this.space,
@@ -380,8 +355,7 @@ export class TandemSession {
 
   private _naming = false;
 
-  /** The naming pass — see surfaces/naming.ts. Guarded so overlapping
-   *  triggers collapse into one round; the next act re-triggers. */
+  /** The naming pass (surfaces/naming.ts); overlapping triggers collapse. */
   async renderAbstracts(): Promise<void> {
     if (this._naming) return;
     this._naming = true;
@@ -408,8 +382,7 @@ export class TandemSession {
     }
   }
 
-  /** The human's verdict on a staged merge: accept applies it; reject
-   *  vetoes the pair PERMANENTLY — it never re-proposes. */
+  /** Accept applies the staged merge; reject vetoes the pair FOREVER. */
   decideMerge(proposalId: string, accept: boolean): { ok: boolean; reason?: string } {
     const r = mergeVerdict(this.space, proposalId, accept);
     if ("reason" in r) return { ok: false, reason: r.reason };
@@ -421,11 +394,38 @@ export class TandemSession {
     return { ok: true };
   }
 
+  pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
+
+  /** The machine proposes a check; the human's wording wins. */
+  async proposeCheckFor(changeId: string): Promise<{ ok: boolean; reason?: string }> {
+    const n = this.space.nodes.find((x) => x.id === changeId);
+    if (!n) return { ok: false, reason: `no promise '${changeId}'` };
+    const ask = this.space.asks.find((a) => n.serves.includes(a.id));
+    this.activity = { label: "writing a check for the promise", current: 1, total: 1 };
+    this.deps.onChanged?.();
+    const p = await (this.deps.proposeCheck ?? proposeCheckRound)(this.deps.round, n, ask?.text ?? "").catch(() => undefined);
+    this.activity = undefined;
+    if (p) this.pendingCheck = { changeId, ...p };
+    this.deps.onChanged?.(p ? undefined : "The round could not write a check — try again or reword the promise.");
+    return p ? { ok: true } : { ok: false, reason: "no check produced" };
+  }
+
+  acceptCheck(changeId: string, text: string, kind: "probe" | "assessment"): { ok: boolean; reason?: string } {
+    const r = addCheckFlow(this.space, changeId, text, kind, this.author);
+    if ("reason" in r) return { ok: false, reason: r.reason };
+    this.space = r.space;
+    this.pendingCheck = undefined;
+    this.changed(r.message);
+    return { ok: true };
+  }
+
+  /** Closed under needs: adds pull dependencies, removals drop dependents. */
   toggleCut(changeIds: string[]): void {
-    for (const id of changeIds)
-      if (this.cutNodeIds.has(id)) this.cutNodeIds.delete(id);
-      else this.cutNodeIds.add(id);
-    this.changed();
+    const adding = changeIds.some((id) => !this.cutNodeIds.has(id));
+    const r = adding
+      ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes)
+      : removeWithDependents(this.cutNodeIds, changeIds, this.space.nodes);
+    this.changed(r.note);
   }
 
   cutScreen(): string {

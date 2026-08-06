@@ -48,6 +48,7 @@ export interface SpacePush {
   activity?: { label: string; current: number; total: number; askId?: string };
   /** The in-board answer to the latest question-classified input. */
   lastAnswer?: { question: string; answer: string };
+  pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
@@ -74,6 +75,8 @@ export type WebToHost =
   | { action: "capture-many"; items: string[] }
   | { action: "cancel-capture" }
   | { action: "reground" }
+  | { action: "propose-check"; changeIds: string[] }
+  | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "stop-run" }
   | { action: "accept-question"; questionId: string; text?: string }

@@ -19,15 +19,17 @@ const GAP = 46;
 function chipsFor(u: UnitVM): Chip[] {
   const chips: Chip[] = [
     {
-      text: `${u.count} change${u.count === 1 ? "" : "s"}`,
+      text: `${u.count} promise${u.count === 1 ? "" : "s"}`,
       kind: "el",
-      why: "How many separate code changes this unit bundles.",
+      why: "How many promises this unit bundles — each one small, provable thing to build.",
     },
-    {
-      text: `proof ${u.coverage.covered}/${u.coverage.total}${u.coverage.covered === u.coverage.total ? "" : " missing"}`,
-      kind: u.coverage.covered === u.coverage.total ? "ac" : "na",
-      why: "How many of the changes have a check that would prove they were delivered.",
-    },
+    u.coverage.covered === u.coverage.total
+      ? { text: "every promise has its check", kind: "ac", why: "Each promise carries a check that will prove it was kept." }
+      : {
+          text: `${u.coverage.total - u.coverage.covered} without a check`,
+          kind: "na",
+          why: "Some promises have no check yet — nothing would prove them. Open the unit and press 'Write a check'.",
+        },
   ];
   if (u.openQuestions > 0)
     chips.push({
@@ -35,12 +37,7 @@ function chipsFor(u: UnitVM): Chip[] {
       kind: "q",
       why: "The machine needs your answer — it is waiting in the panel on the right.",
     });
-  if (u.inCut)
-    chips.push({
-      text: "in cut",
-      kind: "cut",
-      why: "Chosen to be built when you press Sign. The cut is the batch you are about to approve.",
-    });
+
   if (u.stale)
     chips.push({
       text: "out of date — click to re-check",
@@ -108,6 +105,7 @@ export function UnitsMap(props: {
         title: u.title,
         abs: u.abs,
         chips: chipsFor(u),
+        inCut: u.inCut,
       })),
     [push.units],
   );

@@ -141,6 +141,21 @@ export function Rail(props: {
         </section>
       ) : null}
 
+      {(() => {
+        const ready = push.units.filter(
+          (u) => !u.inCut && !u.stale && u.openQuestions === 0 && u.coverage.covered === u.coverage.total,
+        );
+        return ready.length ? (
+          <button
+            data-cut-ready
+            style={{ ...btn, marginBottom: 10 }}
+            title="Every promise checked, no open questions, not out of date — add them all to the cut in one press."
+            onClick={() => post({ action: "toggle-cut", changeIds: ready.flatMap((u) => u.changeIds) })}
+          >
+            Add everything that is ready ({ready.length} unit{ready.length === 1 ? "" : "s"})
+          </button>
+        ) : null;
+      })()}
       {push.cutCount > 0 ? (
         <section data-cut-screen style={{ marginBottom: 14 }}>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, overflowX: "auto" }}>{push.cutScreen}</pre>
@@ -204,8 +219,21 @@ export function Rail(props: {
               </div>
               {props.flipped.has(n.id) ? (
                 <pre data-machine-face style={{ fontSize: 11, opacity: 0.85, margin: "3px 0 3px 12px", whiteSpace: "pre-wrap" }}>
-                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}\nproven by: ${n.acceptance.join("; ") || "(nothing yet)"}`}
+                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}\nchecked by: ${n.acceptance.join("; ") || "(no check yet)"}`}
                 </pre>
+              ) : null}
+              {n.acceptance.length === 0 && push.pendingCheck?.changeId !== n.id ? (
+                <button
+                  data-write-check={n.id}
+                  style={{ fontSize: 11, marginLeft: 12 }}
+                  title="The machine proposes one check for this promise; you accept or reword it."
+                  onClick={() => post({ action: "propose-check", changeIds: [n.id] })}
+                >
+                  Write a check
+                </button>
+              ) : null}
+              {push.pendingCheck?.changeId === n.id ? (
+                <PendingCheck changeId={n.id} text={push.pendingCheck.text} kind={push.pendingCheck.kind} />
               ) : null}
             </div>
           ))}
@@ -243,6 +271,31 @@ export function Rail(props: {
           )}
         </section>
       ))}
+    </div>
+  );
+}
+
+function PendingCheck(props: { changeId: string; text: string; kind: "probe" | "assessment" }): JSX.Element {
+  const [text, setText] = useState(props.text);
+  return (
+    <div data-pending-check style={{ margin: "4px 0 4px 12px", border: "1px solid var(--vscode-focusBorder, #3794ff)", borderRadius: 5, padding: 6 }}>
+      <div style={{ fontSize: 11, opacity: 0.7 }}>
+        {props.kind === "assessment"
+          ? "No runnable test fits this — an independent reviewer will grade it at delivery."
+          : "This becomes a runnable test at delivery."}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        style={{ width: "100%", minHeight: 40, fontSize: 12, marginTop: 4 }}
+      />
+      <button
+        data-accept-check
+        style={{ fontSize: 11, marginTop: 3 }}
+        onClick={() => post({ action: "accept-check", changeIds: [props.changeId], text, kind: props.kind })}
+      >
+        Accept — your wording wins
+      </button>
     </div>
   );
 }

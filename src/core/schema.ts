@@ -44,11 +44,14 @@ interface Grounding {
   stamp: SourceStamp[];
 }
 
-/** What proves a node done. `probePath` binds the executable form. */
+/** What proves a promise kept. `probePath` binds the executable form;
+ *  kind "assessment" marks a check no runnable test fits — graded at the
+ *  closing gate by a fresh, independent assessor, never the builder. */
 export interface AcceptanceCriterion {
   id: string;
   text: string;
   probePath?: string;
+  kind?: "probe" | "assessment";
 }
 
 /**

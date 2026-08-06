@@ -14,6 +14,12 @@ export type AffordanceEntry =
   | { kind: "human"; affordance: Affordance }
   | { kind: "machine-only"; reason: string };
 
+/** Every accepted session action — the reachability test's ground truth. */
+// prettier-ignore
+export const SESSION_ACTIONS: string[] = [
+  
+];
+
 export const AFFORDANCES: Record<string, AffordanceEntry> = {
   capture: {
     kind: "human",
@@ -100,6 +106,20 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     affordance: {
       surface: "map toolbar",
       gesture: "press Panic, then confirm — refused after any signed TEP",
+    },
+  },
+  "propose-check": {
+    kind: "human",
+    affordance: {
+      surface: "selected unit detail",
+      gesture: "press 'Write a check' on a promise that has none",
+    },
+  },
+  "accept-check": {
+    kind: "human",
+    affordance: {
+      surface: "selected unit detail",
+      gesture: "accept (or reword) the proposed check — your wording wins",
     },
   },
   reground: {

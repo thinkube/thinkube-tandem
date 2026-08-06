@@ -1,9 +1,7 @@
 /**
- * The approved prototype's node, ported: an HTML card — bold wrapping
- * title, a two-line clamped abstract with `more…` growing the node (ELK
- * reflows the neighbors), chip badges in the kind palette, an optional
- * decision strip. Overflow is impossible by construction: text wraps and
- * clamps; it never leaves the card.
+ * A unit card: bold wrapping title, the FULL abstract (always complete —
+ * the human's ruling; text wraps, never truncates), chip badges, an
+ * optional decision strip. A card in the cut wears gold all over.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 
@@ -22,6 +20,8 @@ export interface CardData {
   abs?: string;
   chips: Chip[];
   decision?: string;
+  /** In the cut: the whole card wears gold — the state IS the look. */
+  inCut?: boolean;
 }
 
 const CHIP_COLORS: Record<NonNullable<Chip["kind"]>, { border: string; color: string; bg?: string }> = {
@@ -59,15 +59,6 @@ function ChipEl(props: { chip: Chip }): JSX.Element {
   );
 }
 
-/**
- * Whether the body would be cut by the two-line clamp — only then is there
- * anything for `more…` to reveal. Line count is exact for the newline-
- * structured body; the length bound catches a long single line that wraps.
- */
-function overflowsClamp(abs: string): boolean {
-  return abs.split("\n").length > 2 || abs.length > 90;
-}
-
 export function NodeCard(props: {
   card: CardData;
   far: boolean;
@@ -86,11 +77,13 @@ export function NodeCard(props: {
       style={{
         position: "absolute",
         width: NODE_W,
-        background: "var(--vscode-editorWidget-background, #252526)",
-        border: `1px solid ${props.selected ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
+        background: card.inCut ? "#cca70014" : "var(--vscode-editorWidget-background, #252526)",
+        border: card.inCut
+          ? "2px solid var(--gold, #cca700)"
+          : `1px solid ${props.selected ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
         borderRadius: 6,
         padding: "8px 10px",
-        boxShadow: "0 2px 6px #0006",
+        boxShadow: card.inCut ? "0 0 0 1px #cca70055, 0 2px 6px #0006" : "0 2px 6px #0006",
         boxSizing: "border-box",
         transition: "left .35s, top .35s",
         cursor: props.onClick ? "pointer" : undefined,
@@ -101,38 +94,9 @@ export function NodeCard(props: {
         {card.title}
       </h3>
       {!far && card.abs ? (
-        <>
-          <div
-            style={
-              expanded
-                ? { color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-line" }
-                : {
-                    color: "var(--vscode-descriptionForeground, #9d9d9d)",
-                    fontSize: 12,
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    overflowWrap: "anywhere",
-                    whiteSpace: "pre-line",
-                  }
-            }
-          >
-            {card.abs}
-          </div>
-          {overflowsClamp(card.abs) ? (
-            <span
-              data-more={card.id}
-              style={{ color: "var(--vscode-textLink-foreground, #3794ff)", cursor: "pointer", fontSize: 12, userSelect: "none" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onToggle?.(card.id);
-              }}
-            >
-              {expanded ? "less" : "more…"}
-            </span>
-          ) : null}
-        </>
+        <div style={{ color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-line" }}>
+          {card.abs}
+        </div>
       ) : null}
       {!far && card.chips.length ? (
         <div style={{ display: "flex", gap: 5, marginTop: 5, flexWrap: "wrap" }}>
