@@ -1,17 +1,40 @@
 /**
  * Bringing a repository under Tandem respects the platform's order: a
  * repository is NEVER created here — new applications are born only by
- * template instantiation (the start-from-nothing flow), and everything
- * else already exists inside the open workspace roots. This flow only
- * ENABLES: pick an open folder, or name an EXISTING folder inside one
- * (a monorepo subtree like extensions/my-tool); the card is minted
- * there, nothing on disk is created.
+ * template instantiation (the start-from-nothing flow). The candidates
+ * are the git repositories FOUND INSIDE the open workspace roots
+ * (apps/*, user-templates/*, the platform's nested repos) — the roots
+ * themselves are containers (a root's own git, when present, is
+ * housekeeping, not a repository) and are never offered. The card is
+ * minted in place; nothing on disk is created.
  */
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { EnabledProject, mintCard, scopesNotOpen } from "../core/identity";
+
+/** Git repositories nested inside a root — the root itself is never a
+ *  candidate; found repos are leaves (no descent into them). */
+function reposInside(root: string, depth = 3): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, level: number): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules") continue;
+      const child = path.join(dir, e.name);
+      if (fs.existsSync(path.join(child, ".git"))) out.push(child);
+      else if (level < depth) walk(child, level + 1);
+    }
+  };
+  walk(root, 1);
+  return out;
+}
 
 export async function newProjectFlow(
   product: string,
@@ -20,34 +43,26 @@ export async function newProjectFlow(
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const carded = new Set(openProjects().map((p) => path.resolve(p.anchorDir)));
-  type Item = vscode.QuickPickItem & { dir?: string; insideOf?: string };
-  const items: Item[] = [
-    ...folders
-      .filter((f) => !carded.has(path.resolve(f.uri.fsPath)))
-      .map((f) => ({ label: f.name, description: f.uri.fsPath, dir: f.uri.fsPath })),
-    ...folders.map((f) => ({
-      label: `$(folder) A folder inside ${f.name}…`,
-      description: "an existing subtree, e.g. extensions/my-tool",
-      insideOf: f.uri.fsPath,
-    })),
-  ];
+  const items = folders.flatMap((f) =>
+    reposInside(f.uri.fsPath)
+      .filter((d) => !carded.has(path.resolve(d)))
+      .map((d) => ({
+        label: path.relative(path.dirname(f.uri.fsPath), d),
+        description: d,
+      })),
+  );
+  if (items.length === 0) {
+    void vscode.window.showInformationMessage(
+      "Tandem — every repository inside the open roots is already enabled. New applications come from a template.",
+    );
+    return;
+  }
   const pick = await vscode.window.showQuickPick(items, {
-    title: `Enable a repository under ${product} — which existing folder?`,
-    placeHolder: "Nothing is created here; new applications come from a template.",
+    title: `Enable a repository under ${product}`,
+    placeHolder: "Repositories found inside the open roots. Nothing is created here.",
   });
   if (!pick) return;
-  let anchorDir = pick.dir;
-  if (!anchorDir && pick.insideOf) {
-    const rel = await vscode.window.showInputBox({
-      title: `Existing folder inside ${path.basename(pick.insideOf)} (e.g. extensions/my-tool)`,
-      validateInput: (v) =>
-        v.trim() && fs.existsSync(path.join(pick.insideOf!, v.trim()))
-          ? undefined
-          : "that folder does not exist — Tandem never creates one here",
-    });
-    if (!rel?.trim()) return;
-    anchorDir = path.join(pick.insideOf, rel.trim());
-  }
+  const anchorDir = pick.description;
   if (!anchorDir) return;
   const label = await vscode.window.showInputBox({
     title: "Repository label (a name, never an identity)",
