@@ -1,126 +1,95 @@
 /**
- * The orchestration flow view — on the SAME shared graph-core as the units
- * map (TEP-22: one graph-core; no surface carries its own graph
- * infrastructure): layered ELK profile, d3-zoom viewport, LOD-aware run
- * nodes with live state colors and elapsed time, a pulsing running node,
- * a determinate progress header, parked workers answerable in place, Stop,
- * and the log tail.
+ * The orchestration flow view — the APPROVED PROTOTYPE's second tab: the
+ * SAME HTML node cards laid out by ELK (layered, RIGHT, orthogonal
+ * ELK-routed edges), run-state chips (pulsing `running`), elapsed time in
+ * the chip, the log panel ANCHORED under the running node, a parked
+ * worker's answer box inside its own card, Stop and a determinate
+ * progress header above the canvas.
  */
 import { useEffect, useMemo, useState } from "react";
 import { post, SpacePush } from "./vscode";
-import { Canvas, Edge, NodeFrame, useElkLayout, useViewport } from "./graph-core";
-import { ZOOM_MIN, ZOOM_MAX, representationFor } from "../../../src/surfaces/graphCore/lod";
-import {
-  RUN_NODE_H,
-  RUN_NODE_W,
-  RUN_STATE_COLOR,
-  runNodeSpec,
-} from "../../../src/surfaces/graphCore/runNode";
+import { World } from "./proto/world";
+import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
+import { edgePath, layoutLayered, LaidOut } from "./proto/elkRun";
 
-const CLAMPS = { min: ZOOM_MIN, max: ZOOM_MAX };
 
-function FlowGraph(props: {
-  units: NonNullable<SpacePush["run"]>["units"];
-  selected: string | null;
-  onSelect: (id: string) => void;
-  now: number;
-}): JSX.Element {
-  const { units } = props;
-  const viewport = useViewport(CLAMPS);
-  const edges = useMemo(
-    () => units.flatMap((u) => u.requires.map((r) => ({ from: r, to: u.id }))),
-    [units],
-  );
-  const elkNodes = useMemo(
-    () => units.map((u) => ({ id: u.id, w: RUN_NODE_W, h: RUN_NODE_H })),
-    [units],
-  );
-  const layout = useElkLayout(elkNodes, edges, "layered");
-  const rep = representationFor(viewport.transform.k);
-  return (
-    <Canvas viewport={viewport} contentBounds={layout.bounds}>
-      <style>{`@keyframes tandemPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }`}</style>
-      {edges.map((e, i) => {
-        const from = layout.nodes.get(e.from);
-        const to = layout.nodes.get(e.to);
-        if (!from || !to) return null;
-        return (
-          <Edge
-            key={i}
-            from={{ x: from.x + from.w, y: from.y + from.h / 2 }}
-            to={{ x: to.x, y: to.y + to.h / 2 }}
-          />
-        );
-      })}
-      {units.map((u) => {
-        const p = layout.nodes.get(u.id);
-        if (!p) return null;
-        const color = RUN_STATE_COLOR[u.state] ?? RUN_STATE_COLOR.ready;
-        const texts = runNodeSpec(
-          {
-            id: u.id,
-            slice: u.slice,
-            role: u.role,
-            state: u.state,
-            elapsedMs: u.startedAt ? props.now - u.startedAt : undefined,
-          },
-          rep,
-        );
-        return (
-          <g
-            key={u.id}
-            data-run-node={u.id}
-            style={u.state === "running" ? { animation: "tandemPulse 1.2s ease-in-out infinite" } : undefined}
-          >
-            <NodeFrame
-              x={p.x}
-              y={p.y}
-              w={RUN_NODE_W}
-              h={RUN_NODE_H}
-              accent={color}
-              stroke={props.selected === u.id ? "var(--vscode-focusBorder, #4da6ff)" : undefined}
-              title=""
-              onClick={() => props.onSelect(u.id)}
-              hoverTitle={`${u.id} — ${u.role}, ${u.state}`}
-            >
-              <circle cx={RUN_NODE_W - 14} cy={14} r={5} fill={color} />
-              {texts.map((t, i) => (
-                <text
-                  key={i}
-                  x={t.x}
-                  y={t.y}
-                  fontSize={t.fontSize}
-                  fontWeight={t.weight}
-                  fill={t.color}
-                  data-role={t.role}
-                >
-                  {t.text}
-                </text>
-              ))}
-            </NodeFrame>
-          </g>
-        );
-      })}
-    </Canvas>
-  );
+type RunUnits = NonNullable<SpacePush["run"]>["units"];
+
+/** `3m 12s` — elapsed, humanly. */
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element {
-  const { run } = props;
+function chipFor(u: RunUnits[number], now: number): Chip {
+  const elapsed =
+    u.startedAt && (u.state === "running" || u.state === "parked")
+      ? ` · ${formatElapsed(now - u.startedAt)}`
+      : "";
+  switch (u.state) {
+    case "running":
+      return { text: `running${elapsed}`, kind: "run" };
+    case "parked":
+      return { text: `needs you${elapsed}`, kind: "q" };
+    case "done":
+      return { text: "passed", kind: "pass" };
+    case "failed":
+      return { text: "failed", kind: "na" };
+    default:
+      return { text: "pending", kind: "plain" };
+  }
+}
+
+export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: World }): JSX.Element {
+  const { run, world } = props;
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [picked, setPicked] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  const cards: CardData[] = useMemo(
+    () =>
+      run.units.map((u) => ({
+        id: u.id,
+        title: u.id,
+        abs: `${u.role} unit of ${u.slice}`,
+        chips: [chipFor(u, now)],
+      })),
+    [run.units, now],
+  );
+  const edges = useMemo(
+    () => run.units.flatMap((u) => u.requires.map((r) => ({ from: r, to: u.id }))),
+    [run.units],
+  );
+  const { heights, probe } = useMeasuredHeights(cards, "", world.far);
+  const [layout, setLayout] = useState<LaidOut | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void layoutLayered({
+      nodes: run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 })),
+      edges,
+      direction: "RIGHT",
+    }).then((l) => {
+      if (alive) setLayout(l);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [run.units, edges, heights]);
+
   const done = run.units.filter((u) => u.state === "done").length;
   const total = run.units.length || 1;
-  const pickedUnit = run.units.find((u) => u.id === picked);
+  const running = run.units.find((u) => u.state === "running");
+  const anchor = running && layout?.nodes.get(running.id);
+
   return (
-    <section data-run-view style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <strong>The run</strong>
+    <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 12px" }}>
         <span data-run-progress-text style={{ fontSize: 12, opacity: 0.8 }}>
           {done} of {run.units.length} units done
         </span>
@@ -145,39 +114,106 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.E
           ■ Stop
         </button>
       </div>
-      <div style={{ height: 260, margin: "6px 0" }}>
-        <FlowGraph units={run.units} selected={picked} onSelect={setPicked} now={now} />
-      </div>
-      {pickedUnit ? (
-        <div data-graph-detail style={{ fontSize: 12, opacity: 0.85, margin: "2px 0 6px" }}>
-          {pickedUnit.id} — {pickedUnit.role} unit of {pickedUnit.slice}, {pickedUnit.state}
-          {pickedUnit.requires.length ? ` · waits on ${pickedUnit.requires.join(", ")}` : ""}
-          {pickedUnit.question ? ` · ❓ ${pickedUnit.question}` : ""}
-        </div>
-      ) : null}
-      {run.parked.map((p) => (
-        <div key={p.unitId} data-parked={p.unitId} style={{ margin: "6px 0", padding: 6, border: "1px solid #d29922", borderRadius: 6 }}>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>❓ {p.unitId}: {p.question}</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              data-answer-input={p.unitId}
-              value={answers[p.unitId] ?? ""}
-              onChange={(e) => setAnswers((a) => ({ ...a, [p.unitId]: e.target.value }))}
-              style={{ flex: 1, fontSize: 12 }}
-            />
-            <button
-              data-answer-send={p.unitId}
-              onClick={() => {
-                const text = (answers[p.unitId] ?? "").trim();
-                if (text) post({ action: "answer-worker", unitId: p.unitId, text });
+      <div
+        data-flow-canvas
+        style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 300 }}
+        onWheel={world.onWheel}
+        onMouseDown={world.onMouseDown}
+        onMouseMove={world.onMouseMove}
+        onMouseUp={world.onMouseUp}
+        onMouseLeave={world.onMouseUp}
+      >
+        {probe}
+        <style>{`@keyframes tandemPulse { 50% { opacity: 0.45 } }`}</style>
+        <div
+          style={{
+            position: "absolute",
+            transformOrigin: "0 0",
+            transform: `translate(${world.tx}px, ${world.ty}px) scale(${world.k})`,
+          }}
+        >
+          <svg style={{ position: "absolute", inset: 0, overflow: "visible", pointerEvents: "none" }}>
+            <defs>
+              <marker id="arrflow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+                <path d="M0,0L6,3L0,6" fill="none" stroke="#9d9d9d" />
+              </marker>
+            </defs>
+            {(layout?.edges ?? []).map((e, i) => (
+              <path
+                key={i}
+                d={edgePath(e.points, 0, 0)}
+                stroke="var(--vscode-descriptionForeground, #9d9d9d)"
+                strokeWidth={1.5}
+                fill="none"
+                markerEnd="url(#arrflow)"
+              />
+            ))}
+          </svg>
+          {run.units.map((u) => {
+            const c = layout?.nodes.get(u.id);
+            const card = cards.find((k) => k.id === u.id)!;
+            const parked = run.parked.find((p) => p.unitId === u.id);
+            return (
+              <NodeCard
+                key={u.id}
+                card={card}
+                far={world.far}
+                expanded={false}
+                style={{ left: c?.x ?? 0, top: c?.y ?? 0 }}
+              >
+                {parked && !world.far ? (
+                  <div data-parked={u.id} style={{ marginTop: 6, borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)", paddingTop: 6 }}>
+                    <div style={{ fontSize: 12, marginBottom: 4, color: "#e5c07b" }}>❓ {parked.question}</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        data-answer-input={u.id}
+                        value={answers[u.id] ?? ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setAnswers((a) => ({ ...a, [u.id]: e.target.value }))}
+                        style={{ flex: 1, fontSize: 12, minWidth: 0 }}
+                      />
+                      <button
+                        data-answer-send={u.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const text = (answers[u.id] ?? "").trim();
+                          if (text) post({ action: "answer-worker", unitId: u.id, text });
+                        }}
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </NodeCard>
+            );
+          })}
+          {anchor && !world.far ? (
+            <div
+              data-anchored-log
+              style={{
+                position: "absolute",
+                left: anchor.x,
+                top: anchor.y + anchor.h + 10,
+                width: 300,
+                background: "var(--vscode-editorWidget-background, #252526)",
+                border: "1px solid var(--vscode-focusBorder, #3794ff)",
+                borderRadius: 6,
+                padding: "6px 8px",
+                font: "11px/1.5 monospace",
+                whiteSpace: "pre-wrap",
+                maxHeight: 140,
+                overflowY: "auto",
               }}
             >
-              Send
-            </button>
-          </div>
+              <div style={{ color: "var(--vscode-textLink-foreground, #3794ff)", fontFamily: "system-ui", fontSize: 12, marginBottom: 2 }}>
+                {running!.id} — live log
+              </div>
+              {run.logs.slice(-8).join("\n")}
+            </div>
+          ) : null}
         </div>
-      ))}
-      <pre style={{ fontSize: 11, opacity: 0.8, whiteSpace: "pre-wrap", maxHeight: 160, overflowY: "auto" }}>{run.logs.join("\n")}</pre>
+      </div>
     </section>
   );
 }

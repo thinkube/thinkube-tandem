@@ -1,176 +1,222 @@
 /**
- * The units map on the shared graph-core: ELK islands layout, d3-zoom
- * viewport, LOD-aware unit cards with coverage and open-question badges,
- * in-canvas title expansion persisting across reflow, stale badges that
- * re-ground on press.
+ * The units map — the APPROVED PROTOTYPE ported
+ * (store-v1 …/articles/mockups/graph-core-mockup.html): HTML node cards
+ * (wrapping title, clamped abstract, `more…` grows the node and ELK
+ * reflows neighbors, chip badges in the kind palette), dashed ask-island
+ * frames with labels, per-island layered ELK layout over MEASURED sizes,
+ * ELK-routed orthogonal edges with arrowheads and `needs` labels, drag =
+ * pan, wheel = zoom, `far` simplification below the legibility floor.
  */
-import { useMemo } from "react";
-import { post, SpacePush } from "./vscode";
-import { Badge, Canvas, Edge, NodeFrame, useElkLayout, useViewport } from "./graph-core";
-import { ZOOM_MIN, ZOOM_MAX, representationFor } from "../../../src/surfaces/graphCore/lod";
-import { UNIT_NODE_W, UNIT_NODE_H, unitsNodeSpec } from "../../../src/surfaces/graphCore/unitsNode";
-import {
-  createExpansionStore,
-  expandableLabel,
-  wrapBody,
-} from "../../../src/surfaces/graphCore/expander";
+import { useEffect, useMemo, useState } from "react";
+import { post, SpacePush, UnitVM } from "./vscode";
+import { World } from "./proto/world";
+import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
+import { edgePath, layoutLayered, LaidOut } from "./proto/elkRun";
 
-const CLAMPS = { min: ZOOM_MIN, max: ZOOM_MAX };
+const PAD = 22;
+const GAP = 46;
+
+function chipsFor(u: UnitVM): Chip[] {
+  const chips: Chip[] = [
+    { text: `${u.count} change${u.count === 1 ? "" : "s"}`, kind: "el" },
+    {
+      text: `proof ${u.coverage.covered}/${u.coverage.total}${u.coverage.covered === u.coverage.total ? "" : " missing"}`,
+      kind: u.coverage.covered === u.coverage.total ? "ac" : "na",
+    },
+  ];
+  if (u.openQuestions > 0) chips.push({ text: `${u.openQuestions} open question${u.openQuestions === 1 ? "" : "s"}`, kind: "q" });
+  if (u.inCut) chips.push({ text: "in cut", kind: "cut" });
+  if (u.stale) chips.push({ text: "stale — click to re-ground", kind: "stale" });
+  return chips;
+}
+
+interface Island {
+  label: string;
+  units: UnitVM[];
+  edges: { from: string; to: string; label?: string }[];
+}
+
+function islandsByAsk(push: SpacePush): Island[] {
+  const groups = new Map<string, UnitVM[]>();
+  for (const u of push.units) {
+    if (!groups.has(u.askLabel)) groups.set(u.askLabel, []);
+    groups.get(u.askLabel)!.push(u);
+  }
+  return [...groups.entries()].map(([label, units]) => {
+    const ids = new Set(units.map((u) => u.id));
+    return {
+      label,
+      units,
+      edges: push.edges
+        .filter((e) => ids.has(e.from) && ids.has(e.to))
+        .map((e) => ({ ...e, label: "needs" })),
+    };
+  });
+}
 
 export function UnitsMap(props: {
   push: SpacePush;
-  expansion: ReturnType<typeof createExpansionStore>;
+  world: World;
+  expandedIds: string[];
+  onToggle: (id: string) => void;
   selected: string | null;
   onSelect: (id: string) => void;
 }): JSX.Element {
-  const { push, expansion } = props;
-  const viewport = useViewport(CLAMPS);
-  const TITLE_CHARS = 30;
-  const heightOf = (u: { id: string; title: string }): number => {
-    const label = expandableLabel({
-      text: u.title,
-      maxChars: TITLE_CHARS,
-      expanded: expansion.isExpanded(u.id),
-    });
-    return label.expanded
-      ? UNIT_NODE_H + (wrapBody(label.full, TITLE_CHARS).length - 1) * 14
-      : UNIT_NODE_H;
-  };
-  const elkNodes = useMemo(
+  const { push, world } = props;
+  const islands = useMemo(() => islandsByAsk(push), [push]);
+  const cards: CardData[] = useMemo(
     () =>
       push.units.map((u) => ({
         id: u.id,
-        w: UNIT_NODE_W,
-        h: heightOf(u),
-        island: u.island,
+        title: u.title,
+        abs: u.abs,
+        chips: chipsFor(u),
       })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [push.units, expansion.expandedIds().join(",")],
+    [push.units],
   );
-  const layout = useElkLayout(elkNodes, push.edges, "islands");
+  const expandedKey = props.expandedIds.join(",");
+  const { heights, probe } = useMeasuredHeights(cards, expandedKey, world.far);
+  const [layouts, setLayouts] = useState<Map<string, LaidOut>>(new Map());
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const next = new Map<string, LaidOut>();
+      for (const isl of islands) {
+        next.set(
+          isl.label,
+          await layoutLayered({
+            nodes: isl.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 90 })),
+            edges: isl.edges,
+            direction: "DOWN",
+          }),
+        );
+      }
+      if (alive) setLayouts(next);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [islands, heights]);
+
   if (push.units.length === 0)
     return (
       <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
         Nothing here yet — capture your first ask above.
+        {probe}
       </div>
     );
-  const rep = representationFor(viewport.transform.k);
+
+  // Islands side by side, exactly like the prototype's renderUnits().
+  let ox = 0;
+  const placed = islands.map((isl) => {
+    const g = layouts.get(isl.label);
+    const w = (g?.width ?? NODE_W) + 2 * PAD;
+    const h = (g?.height ?? 120) + 2 * PAD;
+    const at = { isl, g, ox, w, h };
+    ox += w + GAP;
+    return at;
+  });
+
   return (
-    <Canvas viewport={viewport} contentBounds={layout.bounds}>
-      {push.edges.map((e, i) => {
-        const from = layout.nodes.get(e.from);
-        const to = layout.nodes.get(e.to);
-        if (!from || !to) return null;
-        return (
-          <Edge
-            key={i}
-            from={{ x: from.x + from.w, y: from.y + from.h / 2 }}
-            to={{ x: to.x, y: to.y + to.h / 2 }}
-          />
-        );
-      })}
-      {push.units.map((u) => {
-        const p = layout.nodes.get(u.id);
-        if (!p) return null;
-        const label = expandableLabel({
-          text: u.title,
-          maxChars: TITLE_CHARS,
-          expanded: expansion.isExpanded(u.id),
-        });
-        const bodyLines = label.expanded ? wrapBody(label.full, TITLE_CHARS) : [label.body];
-        const texts = unitsNodeSpec(
-          { id: u.id, title: bodyLines[0], count: u.count, inCut: u.inCut },
-          rep,
-        ).map((t) => (t.role === "title" ? { ...t, text: bodyLines[0] } : t));
-        return (
-          <NodeFrame
-            key={u.id}
-            x={p.x}
-            y={p.y}
-            w={UNIT_NODE_W}
-            h={p.h}
-            accent={u.inCut ? "#c9a227" : "#14b8a6"}
-            stroke={
-              props.selected === u.id
-                ? "var(--vscode-focusBorder, #4da6ff)"
-                : undefined
-            }
-            title=""
-            onClick={() => props.onSelect(u.id)}
-            hoverTitle={u.title}
-          >
-            {texts.map((t, i) => (
-              <text
-                key={i}
-                x={t.x}
-                y={t.y}
-                fontSize={t.fontSize}
-                fontWeight={t.weight}
-                fill={t.color}
-                data-role={t.role}
-              >
-                {t.text}
-              </text>
-            ))}
-            {label.expanded
-              ? bodyLines.slice(1).map((line, i) => (
-                  <text key={`x${i}`} x={14} y={22 + 14 * (i + 1)} fontSize={12} fontWeight={600} fill="var(--vscode-foreground, #ddd)">
-                    {line}
-                  </text>
-                ))
-              : null}
-            {rep !== "far" && label.expander ? (
-              <text
-                data-expander={u.id}
-                x={UNIT_NODE_W - 52}
-                y={p.h - 8}
-                fontSize={11}
-                fill="var(--vscode-textLink-foreground, #4da6ff)"
-                style={{ cursor: "pointer" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  expansion.toggle(u.id);
-                }}
-              >
-                {label.expander.label}
-              </text>
-            ) : null}
-            {rep !== "far" ? (
-              <>
-                <text data-coverage={u.id} x={14} y={p.h - 8} fontSize={11} fill={u.coverage.covered === u.coverage.total ? "#3fb950" : "#f59e0b"}>
-                  proof {u.coverage.covered}/{u.coverage.total}
-                </text>
-                {u.openQuestions > 0 ? (
-                  <text data-open-questions={u.id} x={80} y={p.h - 8} fontSize={11} fill="#d29922">
-                    ❓ {u.openQuestions}
+    <div
+      data-units-map
+      style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 320 }}
+      onWheel={world.onWheel}
+      onMouseDown={world.onMouseDown}
+      onMouseMove={world.onMouseMove}
+      onMouseUp={world.onMouseUp}
+      onMouseLeave={world.onMouseUp}
+    >
+      {probe}
+      <div
+        style={{
+          position: "absolute",
+          transformOrigin: "0 0",
+          transform: `translate(${world.tx}px, ${world.ty}px) scale(${world.k})`,
+        }}
+      >
+        <svg style={{ position: "absolute", inset: 0, overflow: "visible", pointerEvents: "none" }}>
+          <defs>
+            <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+              <path d="M0,0L6,3L0,6" fill="none" stroke="#9d9d9d" />
+            </marker>
+          </defs>
+          {placed.flatMap(({ g, ox: x, isl }) =>
+            (g?.edges ?? []).map((e, i) => (
+              <g key={`${isl.label}${i}`}>
+                <path
+                  d={edgePath(e.points, x + PAD, PAD)}
+                  stroke="var(--vscode-descriptionForeground, #9d9d9d)"
+                  strokeWidth={1.5}
+                  fill="none"
+                  markerEnd="url(#arr)"
+                />
+                {e.label ? (
+                  <text
+                    x={x + PAD + e.points[0].x + 6}
+                    y={PAD + (e.points[0].y + e.points[e.points.length - 1].y) / 2}
+                    fill="var(--vscode-descriptionForeground, #9d9d9d)"
+                    fontSize={11}
+                  >
+                    {e.label}
                   </text>
                 ) : null}
-              </>
-            ) : null}
-            {rep !== "far" && u.inCut ? (
-              <Badge x={UNIT_NODE_W - 70} y={6} text="in the cut" color="#c9a227" />
-            ) : null}
-            {rep !== "far" && u.stale ? (
-              <g
-                data-stale={u.id}
-                style={{ cursor: "pointer" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  post({ action: "reground" });
-                }}
-              >
-                <Badge
-                  x={UNIT_NODE_W - 70}
-                  y={UNIT_NODE_H - 22}
-                  text="stale — press to re-ground"
-                  color="#f59e0b"
-                />
               </g>
-            ) : null}
-          </NodeFrame>
-        );
-      })}
-    </Canvas>
+            )),
+          )}
+        </svg>
+        {placed.map(({ isl, ox: x, w, h }) => (
+          <div
+            key={isl.label}
+            data-island={isl.label}
+            style={{
+              position: "absolute",
+              left: x,
+              top: 0,
+              width: w,
+              height: h,
+              border: "1px dashed var(--vscode-panel-border, #3c3c3c)",
+              borderRadius: 10,
+            }}
+          >
+            <label
+              style={{
+                position: "absolute",
+                top: -9,
+                left: 14,
+                background: "var(--vscode-editor-background, #1f1f1f)",
+                padding: "0 6px",
+                color: "var(--vscode-descriptionForeground, #9d9d9d)",
+                fontSize: 12,
+              }}
+            >
+              {isl.label}
+            </label>
+          </div>
+        ))}
+        {placed.flatMap(({ isl, g, ox: x }) =>
+          isl.units.map((u) => {
+            const c = g?.nodes.get(u.id);
+            const card = cards.find((k) => k.id === u.id)!;
+            return (
+              <NodeCard
+                key={u.id}
+                card={card}
+                far={world.far}
+                expanded={props.expandedIds.includes(u.id)}
+                onToggle={props.onToggle}
+                selected={props.selected === u.id}
+                onClick={(id) => {
+                  props.onSelect(id);
+                  if (u.stale) post({ action: "reground" });
+                }}
+                style={{ left: x + PAD + (c?.x ?? 0), top: PAD + (c?.y ?? 0) }}
+              />
+            );
+          }),
+        )}
+      </div>
+    </div>
   );
 }
-

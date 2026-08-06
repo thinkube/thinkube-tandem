@@ -77,8 +77,14 @@ function spacePush(session: TandemSession, message?: string): unknown {
         .filter((n): n is NonNullable<typeof n> => !!n);
       const first = nodes[0]?.sentence ?? u.id;
       const askIds = new Set(nodes.flatMap((n) => n.serves));
+      const firstAskIdx = session.space.asks.findIndex((a) => askIds.has(a.id));
+      const firstAsk = firstAskIdx >= 0 ? session.space.asks[firstAskIdx] : undefined;
       return {
         id: u.id,
+        askLabel: firstAsk
+          ? `ask ${firstAskIdx + 1} — ${firstAsk.text.split(/\s+/).slice(0, 7).join(" ")}${firstAsk.text.split(/\s+/).length > 7 ? "…" : ""}`
+          : "unassigned",
+        abs: nodes.map((n) => n.sentence).join(" · "),
         title: nodes.length > 1 ? `${first} +${nodes.length - 1} more` : first,
         count: nodes.length,
         changeIds: u.changeIds,

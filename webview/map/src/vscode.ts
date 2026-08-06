@@ -7,6 +7,8 @@
 export interface UnitVM {
   coverage: { covered: number; total: number };
   openQuestions: number;
+  askLabel: string;
+  abs: string;
   id: string;
   title: string;
   count: number;
