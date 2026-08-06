@@ -117,11 +117,7 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
       <div
         data-flow-canvas
         style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 300 }}
-        onWheel={world.onWheel}
-        onMouseDown={world.onMouseDown}
-        onMouseMove={world.onMouseMove}
-        onMouseUp={world.onMouseUp}
-        onMouseLeave={world.onMouseUp}
+        ref={world.ref}
       >
         {probe}
         <style>{`@keyframes tandemPulse { 50% { opacity: 0.45 } }`}</style>

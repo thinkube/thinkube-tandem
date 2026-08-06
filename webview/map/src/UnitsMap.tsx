@@ -122,11 +122,7 @@ export function UnitsMap(props: {
     <div
       data-units-map
       style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 320 }}
-      onWheel={world.onWheel}
-      onMouseDown={world.onMouseDown}
-      onMouseMove={world.onMouseMove}
-      onMouseUp={world.onMouseUp}
-      onMouseLeave={world.onMouseUp}
+      ref={world.ref}
     >
       {probe}
       <div
