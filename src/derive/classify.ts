@@ -32,6 +32,29 @@ function parseKind(raw: string | null): UtteranceKind {
   return (m?.[1] as UtteranceKind) ?? "ask";
 }
 
+/**
+ * List-paste detection: numbered, bulleted, or plain multi-line text splits
+ * into one ask per item — previewed before anything is recorded. Null when
+ * the text is a single utterance.
+ */
+export function splitList(text: string): string[] | null {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+  const stripped = lines.map((l) =>
+    l.replace(/^\d+[.)]\s+/, "").replace(/^[-*•]\s+/, "").trim(),
+  );
+  const marked = lines.filter((l) => /^(\d+[.)]|[-*•])\s+/.test(l)).length;
+  // Two or more marked lines is a list; unmarked multi-line stays one ask
+  // (people write paragraphs) unless EVERY line is short and marker-free
+  // lists are exactly what list-paste is for — be conservative: require
+  // markers on at least two lines.
+  if (marked < 2) return null;
+  return stripped.filter(Boolean);
+}
+
 export async function classifyUtterance(
   deps: RoundDeps,
   text: string,

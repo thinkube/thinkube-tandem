@@ -4,7 +4,8 @@
  * pushes; every abstract flips to its machine face with one gesture.
  */
 import { useEffect, useMemo, useState } from "react";
-import { onSpace, post, SpacePush, UnitVM } from "./vscode";
+import { DraftPush, onDraft, onSpace, post, SpacePush, UnitVM } from "./vscode";
+import { RunSection } from "./Run";
 import {
   Badge,
   Canvas,
@@ -31,11 +32,24 @@ export function App(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState("");
+  const [classifying, setClassifying] = useState(false);
+  const [tag, setTag] = useState<DraftPush | null>(null);
   const [panicArmed, setPanicArmed] = useState(false);
 
   useEffect(() => onSpace(setPush), []);
+  useEffect(
+    () =>
+      onDraft((d) => {
+        setClassifying(false);
+        setTag(d);
+      }),
+    [],
+  );
 
   if (!push) return <div style={{ padding: 24, opacity: 0.7 }}>Loading the space…</div>;
+  const spinStyle = (
+    <style>{`@keyframes tandemSpinKf { from { transform: rotate(0) } to { transform: rotate(360deg) } } .tandem-spin { animation: tandemSpinKf 1.1s linear infinite }`}</style>
+  );
   if (push.needsRepo)
     return (
       <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
@@ -52,6 +66,29 @@ export function App(): JSX.Element {
     );
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {spinStyle}
+      <div
+        data-asking-in
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "baseline",
+          padding: "6px 12px 0",
+          fontSize: 12,
+        }}
+      >
+        <span style={{ opacity: 0.7 }}>Asking in</span>
+        <strong style={{ fontSize: 13 }}>{push.repoName ?? "no project chosen"}</strong>
+        <span style={{ opacity: 0.5 }}>— its code is read; its repository receives the delivery</span>
+        <button
+          data-switch-repo
+          title="Switch the project this space works on"
+          style={{ marginLeft: "auto", fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "1px 8px" }}
+          onClick={() => post({ action: "switch-repo" })}
+        >
+          switch
+        </button>
+      </div>
       <div
         style={{
           display: "flex",
@@ -67,14 +104,18 @@ export function App(): JSX.Element {
           value={draft}
           rows={Math.min(6, Math.max(2, draft.split("\n").length))}
           placeholder="Say what you want — your words are kept verbatim. Enter sends, Shift+Enter is a new line."
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setTag(null);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+            if (e.key === "Enter" && !e.shiftKey && draft.trim() && !classifying) {
               e.preventDefault();
-              post({ action: "capture", text: draft });
-              setDraft("");
+              setClassifying(true);
+              post({ action: "classify", text: draft });
             }
           }}
+          disabled={!!push.activity}
           style={{
             flexBasis: "100%",
             minWidth: 0,
@@ -88,15 +129,97 @@ export function App(): JSX.Element {
             borderRadius: 6,
           }}
         />
-        <button
-          data-switch-repo
-          title="Switch the project this space works on"
-          style={{ fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "2px 8px" }}
-          onClick={() => post({ action: "switch-repo" })}
-        >
-          {push.repoName ?? "choose project"} ▾
-        </button>
-        <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
+        {classifying ? (
+          <span data-classifying style={{ fontSize: 12, opacity: 0.75 }}>⟳ reading your words…</span>
+        ) : null}
+        {tag && !tag.items ? (
+          <div data-tag-row style={{ flexBasis: "100%", display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+            <span style={{ opacity: 0.7 }}>This looks like — press to record:</span>
+            {[
+              { k: "ask", label: "Ask (build it)" },
+              { k: "question", label: "Question (just answer)" },
+              { k: "statement", label: "Rule (build under it)" },
+            ].map((t) => (
+              <button
+                key={t.k}
+                data-tag={t.k}
+                style={{
+                  cursor: "pointer",
+                  borderRadius: 10,
+                  padding: "2px 10px",
+                  border: tag.guessed === t.k ? "2px solid var(--vscode-focusBorder, #3794ff)" : "1px solid var(--vscode-input-border, #444)",
+                  background: "var(--vscode-input-background, #222)",
+                  color: "inherit",
+                  fontWeight: tag.guessed === t.k ? 600 : 400,
+                }}
+                onClick={() => {
+                  post({ action: "capture", text: tag.text, kind: t.k });
+                  setTag(null);
+                  setDraft("");
+                }}
+              >
+                {tag.guessed === t.k ? "✓ " : ""}{t.label}
+              </button>
+            ))}
+            <span style={{ opacity: 0.55 }}>nothing is saved until you press one</span>
+          </div>
+        ) : null}
+        {tag?.items ? (
+          <div data-list-preview style={{ flexBasis: "100%", fontSize: 12 }}>
+            <div style={{ opacity: 0.8, marginBottom: 4 }}>
+              That looks like a list — record {tag.items.length} separate asks?
+            </div>
+            <ol style={{ margin: "0 0 6px 18px", padding: 0 }}>
+              {tag.items.map((it, i) => (
+                <li key={i} style={{ opacity: 0.85 }}>{it}</li>
+              ))}
+            </ol>
+            <button
+              data-record-list
+              style={{ cursor: "pointer", borderRadius: 4, padding: "2px 10px" }}
+              onClick={() => {
+                post({ action: "capture-many", items: tag.items! });
+                setTag(null);
+                setDraft("");
+              }}
+            >
+              Record {tag.items.length} asks
+            </button>
+            <button
+              style={{ marginLeft: 8, cursor: "pointer", background: "none", border: "none", color: "inherit", opacity: 0.7 }}
+              onClick={() => setTag(null)}
+            >
+              keep editing
+            </button>
+          </div>
+        ) : null}
+        {push.activity ? (
+          <div data-activity style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+            <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span>
+            <span>
+              {push.activity.label}… ({push.activity.current}/{push.activity.total})
+            </span>
+            <span style={{ flex: 1, height: 4, background: "var(--vscode-input-background, #222)", borderRadius: 2, overflow: "hidden" }}>
+              <span
+                style={{
+                  display: "block",
+                  height: "100%",
+                  width: `${Math.round((push.activity.current / push.activity.total) * 100)}%`,
+                  background: "var(--vscode-progressBar-background, #3794ff)",
+                  transition: "width 300ms",
+                }}
+              />
+            </span>
+            <button
+              data-cancel-capture
+              style={{ cursor: "pointer", background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, color: "inherit", fontSize: 11 }}
+              onClick={() => post({ action: "cancel-capture" })}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
+                <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
           {push.units.length} unit(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
         </span>
         {!push.running && push.signedTeps === 0 && (push.units.length > 0 || push.questions.length > 0) ? (
@@ -297,153 +420,6 @@ function Questions(props: { push: SpacePush }): JSX.Element {
 
 /** Layered layout for the orchestration graph: a unit's column is one past
  *  its deepest dependency, so edges always point left → right. */
-function graphLayers(units: { id: string; requires: string[] }[]): Map<string, number> {
-  const depth = new Map<string, number>();
-  const byId = new Map(units.map((u) => [u.id, u]));
-  const of = (id: string, seen: Set<string>): number => {
-    if (depth.has(id)) return depth.get(id)!;
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const u = byId.get(id);
-    const d = u && u.requires.length ? Math.max(...u.requires.map((r) => of(r, seen))) + 1 : 0;
-    depth.set(id, d);
-    return d;
-  };
-  for (const u of units) of(u.id, new Set());
-  return depth;
-}
-
-const STATE_COLOR: Record<string, string> = {
-  ready: "#8b949e", running: "#3fb950", parked: "#d29922", done: "#58a6ff", failed: "#f85149",
-};
-
-/** The orchestration graph: units as nodes (colored by live state), the
- *  DAG's requires edges left → right, a running node pulses; click for the
- *  unit's detail beneath. */
-function RunGraph(props: {
-  units: { id: string; slice: string; role: string; state: string; requires: string[] }[];
-  selected: string | null;
-  onSelect: (id: string) => void;
-}): JSX.Element {
-  const { units } = props;
-  const layers = graphLayers(units);
-  const cols = new Map<number, string[]>();
-  for (const u of units) {
-    const c = layers.get(u.id) ?? 0;
-    if (!cols.has(c)) cols.set(c, []);
-    cols.get(c)!.push(u.id);
-  }
-  const W = 150, H = 34, GX = 46, GY = 12;
-  const pos = new Map<string, { x: number; y: number }>();
-  for (const [c, ids] of cols) ids.forEach((id, i) => pos.set(id, { x: c * (W + GX), y: i * (H + GY) }));
-  const width = (Math.max(...[...cols.keys()], 0) + 1) * (W + GX) - GX;
-  const height = Math.max(...[...cols.values()].map((ids) => ids.length), 1) * (H + GY) - GY;
-  return (
-    <svg
-      data-run-graph
-      viewBox={`-4 -4 ${width + 8} ${height + 8}`}
-      style={{ width: "100%", maxWidth: width + 8, height: "auto", margin: "6px 0" }}
-    >
-      <style>{`@keyframes tandemPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }`}</style>
-      {units.flatMap((u) =>
-        u.requires.map((r) => {
-          const a = pos.get(r), b = pos.get(u.id);
-          if (!a || !b) return null;
-          return (
-            <line
-              key={`${r}->${u.id}`}
-              x1={a.x + W} y1={a.y + H / 2} x2={b.x} y2={b.y + H / 2}
-              stroke="var(--vscode-panel-border, #555)" strokeWidth={1.2}
-            />
-          );
-        }),
-      )}
-      {units.map((u) => {
-        const p = pos.get(u.id)!;
-        const color = STATE_COLOR[u.state] ?? "#8b949e";
-        return (
-          <g
-            key={u.id}
-            data-graph-node={u.id}
-            transform={`translate(${p.x},${p.y})`}
-            style={{ cursor: "pointer" }}
-            onClick={() => props.onSelect(u.id)}
-          >
-            <rect
-              width={W} height={H} rx={7}
-              fill="var(--vscode-editorWidget-background, #1e1e1e)"
-              stroke={color} strokeWidth={props.selected === u.id ? 2.5 : 1.5}
-              style={u.state === "running" ? { animation: "tandemPulse 1.2s ease-in-out infinite" } : undefined}
-            />
-            <circle cx={12} cy={H / 2} r={4.5} fill={color} />
-            <text x={22} y={H / 2 - 2} fontSize={9.5} fill="var(--vscode-foreground, #ccc)">
-              {u.id.length > 20 ? u.id.slice(0, 19) + "…" : u.id}
-            </text>
-            <text x={22} y={H / 2 + 10} fontSize={8.5} fill="var(--vscode-descriptionForeground, #888)">
-              {u.role} · {u.state}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element {
-  const { run } = props;
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [picked, setPicked] = useState<string | null>(null);
-  const pickedUnit = run.units.find((u) => u.id === picked);
-  return (
-    <section data-run-view style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <strong>The run</strong>
-        <button
-          data-stop-run
-          title="Stop the run — aborts every live worker; the run drains and reports"
-          style={{ marginLeft: "auto", background: "var(--vscode-statusBarItem-errorBackground, #c72e2e)", color: "#fff", border: "none", borderRadius: 4, padding: "2px 10px", cursor: "pointer" }}
-          onClick={() => post({ action: "stop-run" })}
-        >
-          ■ Stop
-        </button>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <RunGraph units={run.units} selected={picked} onSelect={setPicked} />
-      </div>
-      {pickedUnit ? (
-        <div data-graph-detail style={{ fontSize: 12, opacity: 0.85, margin: "2px 0 6px" }}>
-          {pickedUnit.id} — {pickedUnit.role} unit of {pickedUnit.slice}, {pickedUnit.state}
-          {pickedUnit.requires.length ? ` · waits on ${pickedUnit.requires.join(", ")}` : ""}
-          {pickedUnit.question ? ` · ❓ ${pickedUnit.question}` : ""}
-        </div>
-      ) : null}
-      {run.parked.map((p) => (
-        <div key={p.unitId} data-parked={p.unitId} style={{ margin: "6px 0", padding: 6, border: "1px solid #d29922", borderRadius: 6 }}>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>❓ {p.unitId}: {p.question}</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              data-answer-input={p.unitId}
-              value={answers[p.unitId] ?? ""}
-              onChange={(e) => setAnswers((a) => ({ ...a, [p.unitId]: e.target.value }))}
-              style={{ flex: 1, fontSize: 12 }}
-            />
-            <button
-              data-answer-send={p.unitId}
-              onClick={() => {
-                const text = (answers[p.unitId] ?? "").trim();
-                if (text) post({ action: "answer-worker", unitId: p.unitId, text });
-              }}
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      ))}
-      <pre style={{ fontSize: 11, opacity: 0.8, whiteSpace: "pre-wrap", maxHeight: 160, overflowY: "auto" }}>{run.logs.join("\n")}</pre>
-    </section>
-  );
-}
-
 function SidePanel(props: {
   push: SpacePush;
   selected: string | null;
@@ -548,6 +524,11 @@ function SidePanel(props: {
             {push.asks.map((a) => (
               <li key={a.id} data-ask={a.id} style={{ fontSize: 12, opacity: 0.85 }}>
                 {a.text}
+                {push.activity?.askId === a.id ? (
+                  <span style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
+                    ⟳ {push.activity.label}… ({push.activity.current}/{push.activity.total})
+                  </span>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -559,6 +540,12 @@ function SidePanel(props: {
           <button data-sign style={btn} onClick={() => post({ action: "sign-cut" })}>
             Sign
           </button>
+        </section>
+      ) : null}
+      {push.lastAnswer ? (
+        <section data-answer style={{ margin: "8px 12px", padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
+          <div style={{ fontSize: 11, opacity: 0.6 }}>You asked: {push.lastAnswer.question}</div>
+          <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
         </section>
       ) : null}
       {push.questions.length ? <Questions push={push} /> : null}

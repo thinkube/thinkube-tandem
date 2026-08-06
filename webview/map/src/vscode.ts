@@ -26,7 +26,7 @@ interface DeliveryVM {
 }
 
 interface RunView {
-  units: { id: string; slice: string; role: "code" | "test"; state: string; requires: string[]; question?: string }[];
+  units: { id: string; slice: string; role: "code" | "test"; state: string; requires: string[]; startedAt?: number; question?: string }[];
   logs: string[];
   parked: { unitId: string; question: string }[];
 }
@@ -39,6 +39,10 @@ export interface SpacePush {
   repoName?: string;
   /** No repository chosen yet — the view renders the chooser state. */
   needsRepo?: boolean;
+  /** Liveness: what the machine is doing right now, and for which ask. */
+  activity?: { label: string; current: number; total: number; askId?: string };
+  /** The in-board answer to the latest question-classified input. */
+  lastAnswer?: { question: string; answer: string };
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
@@ -50,8 +54,18 @@ export interface SpacePush {
   message?: string;
 }
 
+export interface DraftPush {
+  kind: "draft";
+  text: string;
+  guessed: string;
+  items?: string[];
+}
+
 export type WebToHost =
-  | { action: "capture"; text: string }
+  | { action: "classify"; text: string }
+  | { action: "capture"; text: string; kind: string }
+  | { action: "capture-many"; items: string[] }
+  | { action: "cancel-capture" }
   | { action: "reground" }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "stop-run" }
@@ -76,6 +90,15 @@ const api: VsCodeApi =
 
 export function post(msg: WebToHost): void {
   api.postMessage(msg);
+}
+
+export function onDraft(handler: (d: DraftPush) => void): () => void {
+  const listener = (e: MessageEvent): void => {
+    const data = e.data as DraftPush;
+    if (data && data.kind === "draft") handler(data);
+  };
+  window.addEventListener("message", listener);
+  return () => window.removeEventListener("message", listener);
 }
 
 export function onSpace(handler: (push: SpacePush) => void): () => void {

@@ -272,7 +272,7 @@ test("the capture seam classifies: a question is answered and recorded nowhere; 
   const q = await session.capture("where does the toolbar render?");
   assert.ok(q.ok);
   assert.equal(session.space.asks.length, 0, "a question is not an ask");
-  assert.ok(messages.some((m) => m.includes("src/toolbar.ts")), "the answer reached the human");
+  assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"), "the answer reached the in-board panel");
 
   const st = await session.capture("we always deploy through the platform CI");
   assert.ok(st.ok);
@@ -281,4 +281,113 @@ test("the capture seam classifies: a question is answered and recorded nowhere; 
 
   await session.capture("build the toolbar");
   assert.equal(session.space.asks.length, 1, "an ask grounds as before");
+});
+
+test("the confirmation tag: classifyDraft records NOTHING; capture records only with the confirmed kind", async () => {
+  let classifierCalls = 0;
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    classify: async () => {
+      classifierCalls++;
+      return "question" as const;
+    },
+    answerRound: async () => "the answer",
+    ground: async (_d: unknown, ask: { id: string }) => ({
+      changes: [
+        {
+          id: `node-x`,
+          sentence: "a change",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [{ id: "c", text: "x" }],
+          grounding: { touchpoints: [{ path: "src/x.ts" }], stamp: [] },
+        },
+      ],
+      questions: [],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+
+  const draft = await session.classifyDraft("where does it render?");
+  assert.equal(draft.kind, "question");
+  assert.equal(session.space.asks.length, 0, "a draft records nothing");
+  assert.equal(session.lastAnswer, undefined, "not even an answer");
+
+  // The human corrected the tag: recorded as an ASK despite the guess —
+  // and the classifier is NOT consulted again (the human's tag wins).
+  classifierCalls = 0;
+  await session.capture("where does it render?", "ask");
+  assert.equal(classifierCalls, 0, "the confirmed kind is authoritative");
+  assert.equal(session.space.asks.length, 1, "recorded as the human said");
+});
+
+test("list-paste: a pasted list previews as N items and records N independent asks", async () => {
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  const draft = await session.classifyDraft("1. add a clear button\n2. rename the toolbar\n- fix the tooltip");
+  assert.deepEqual(draft.items, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
+  assert.equal(session.space.asks.length, 0, "the preview records nothing");
+  await session.captureMany(draft.items!);
+  assert.equal(session.space.asks.length, 3, "confirming records exactly N asks");
+  assert.ok(session.space.asks.every((a, i) => a.text === draft.items![i]));
+});
+
+test("a question's answer lands as state for the in-board panel, not as a toast", async () => {
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    classify: async () => "question" as const,
+    answerRound: async () => "It renders in src/toolbar.ts.",
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("where does the toolbar render?", "question");
+  assert.equal(session.lastAnswer?.question, "where does the toolbar render?");
+  assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"));
+  assert.equal(session.space.asks.length, 0, "a question is recorded nowhere");
+});
+
+test("liveness: the pipeline's stages surface as activity tied to the ask being grounded", async () => {
+  const stages: string[] = [];
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    ground: async (
+      _d: unknown,
+      ask: { id: string },
+      opts: { onStage?: (l: string, i: number, n: number) => void },
+    ) => {
+      opts.onStage?.("reading your code", 1, 7);
+      opts.onStage?.("deriving the changes", 2, 7);
+      return { changes: [], questions: [] };
+    },
+    onChanged: () => {
+      const s = (session as unknown as { activity?: { label: string; askId?: string } }).activity;
+      if (s) stages.push(`${s.label}@${s.askId}`);
+    },
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("build the thing", "ask");
+  assert.ok(stages.some((x) => x.startsWith("reading your code@ask-")), "stage 1 surfaced against the ask");
+  assert.ok(stages.some((x) => x.startsWith("deriving the changes@")), "stage 2 surfaced");
+  assert.equal(session.activity, undefined, "activity clears when the pipeline ends");
 });

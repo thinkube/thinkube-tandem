@@ -11,6 +11,8 @@ export interface RoundDeps {
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   maxTurns?: number;
   log?: (line: string) => void;
+  /** Cancels the round mid-flight (the human pressed Cancel). */
+  abort?: AbortController;
 }
 
 type SdkQuery = (args: {
@@ -40,6 +42,7 @@ export async function runReadRound(
       prompt,
       options: {
         model: deps.model,
+        ...(deps.abort ? { abortController: deps.abort } : {}),
         permissionMode: "bypassPermissions",
         thinking: { type: "adaptive" },
         effort: deps.effort ?? "high",

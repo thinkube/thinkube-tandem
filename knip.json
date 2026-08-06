@@ -10,7 +10,6 @@
         "!src/engine/**"
       ],
       "ignoreDependencies": [
-        "yaml",
         "@vscode/vsce",
         "antora",
         "asciidoctor-kroki"

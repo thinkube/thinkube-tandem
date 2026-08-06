@@ -24,6 +24,8 @@ export interface PanelHostHooks {
 interface InboundAction {
   action: string;
   text?: string;
+  kind?: string;
+  items?: string[];
   unitId?: string;
   questionId?: string;
   pinKind?: string;
@@ -42,6 +44,8 @@ function spacePush(session: TandemSession, message?: string): unknown {
     kind: "space",
     running: session.running,
     repoName: session.repoName,
+    activity: session.activity,
+    lastAnswer: session.lastAnswer,
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
@@ -93,16 +97,28 @@ async function handleInbound(
   msg: InboundAction,
   push: (message?: string) => void,
   hooks?: PanelHostHooks,
+  pushDraft: (draft: { kind: string; items?: string[] }, text: string) => void = () => {},
 ): Promise<void> {
   if (msg.action === "switch-repo") {
     await hooks?.onSwitchRepo?.();
     return;
   }
   let note: string | undefined;
-  if (msg.action === "capture" && msg.text) {
-    push("Grounding your ask…");
-    const r = await session.capture(msg.text);
+  if (msg.action === "classify" && msg.text) {
+    // Draft classification — records NOTHING; the webview renders the tag.
+    const draft = await session.classifyDraft(msg.text);
+    push(undefined);
+    void session; // the draft rides its own message, not the space push
+    return pushDraft(draft, msg.text);
+  } else if (msg.action === "capture" && msg.text) {
+    const r = await session.capture(msg.text, msg.kind as never);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "capture-many" && msg.items?.length) {
+    const r = await session.captureMany(msg.items);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "cancel-capture") {
+    session.cancelCapture();
+    note = "Cancelled.";
   } else if (msg.action === "toggle-cut" && msg.changeIds) {
     session.toggleCut(msg.changeIds);
   } else if (msg.action === "sign-cut") {
@@ -162,14 +178,45 @@ export class SpacePanel implements vscodeTypes.Disposable {
       this._panel.webview,
     );
     this._disposables.push(
-      this._panel.webview.onDidReceiveMessage((raw) =>
-        handleInbound(
-          this.getSession(),
-          raw as InboundAction,
-          (m) => this._push(this.getSession(), m),
-          this.hooks,
-        ),
-      ),
+      this._panel.webview.onDidReceiveMessage(async (raw) => {
+        const msg = raw as InboundAction;
+        const session = this.getSession();
+        const run = () =>
+          handleInbound(
+            session,
+            msg,
+            (m) => this._push(this.getSession(), m),
+            this.hooks,
+            (draft, text) =>
+              void this._panel?.webview.postMessage({ kind: "draft", guessed: draft.kind, items: draft.items, text }),
+          );
+        // Industry-standard liveness: a real progress notification with a
+        // working Cancel for anything that thinks longer than a beat.
+        if (msg.action === "capture" || msg.action === "capture-many") {
+          await vs().window.withProgress(
+            {
+              location: vs().ProgressLocation.Notification,
+              title: "Tandem is thinking about your ask",
+              cancellable: true,
+            },
+            async (progress, token) => {
+              token.onCancellationRequested(() => session.cancelCapture());
+              const tick = setInterval(() => {
+                const a = session.activity;
+                if (a)
+                  progress.report({ message: `${a.label} (${a.current}/${a.total})` });
+              }, 400);
+              try {
+                await run();
+              } finally {
+                clearInterval(tick);
+              }
+            },
+          );
+          return;
+        }
+        await run();
+      }),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
       }),
@@ -191,79 +238,6 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._disposables = [];
     this._panel?.dispose();
     this._panel = undefined;
-  }
-}
-
-/** The push a session-less view renders: choose the repository first. */
-function needsRepoPush(message?: string): unknown {
-  return {
-    kind: "space",
-    needsRepo: true,
-    running: false,
-    asks: [],
-    signedTeps: 0,
-    questions: [],
-    decisions: [],
-    units: [],
-    edges: [],
-    cutScreen: "",
-    cutCount: 0,
-    deliveries: [],
-    ...(message ? { message } : {}),
-  };
-}
-
-/**
- * The same space hosted in the activity-bar sidebar: one icon in the left
- * bar opens the identical surface the editor panel shows. Both hosts share
- * the session; a push reaches whichever webviews are alive.
- *
- * Resolution NEVER depends on a session: with no repository chosen the view
- * renders a chooser state — prompting the human during silent view restore
- * (a window reload) is exactly how a view load "errors". The QuickPick only
- * opens on a real click.
- */
-export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
-  private _view: vscodeTypes.WebviewView | undefined;
-
-  constructor(
-    private readonly extensionUri: vscodeTypes.Uri,
-    private readonly ensureSession: (interactive: boolean) => Promise<TandemSession | undefined>,
-    private readonly hooks?: PanelHostHooks,
-  ) {}
-
-  async resolveWebviewView(view: vscodeTypes.WebviewView): Promise<void> {
-    this._view = view;
-    view.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this.extensionUri],
-    };
-    view.webview.html = await renderBundleHtml(this.extensionUri, view.webview);
-    view.webview.onDidReceiveMessage(async (raw) => {
-      const msg = raw as InboundAction;
-      if (msg.action === "switch-repo") {
-        await this.hooks?.onSwitchRepo?.();
-        return;
-      }
-      const live = await this.ensureSession(true).catch(() => undefined);
-      if (!live) {
-        void this._view?.webview.postMessage(
-          needsRepoPush("Choose the project / repository first."),
-        );
-        return;
-      }
-      await handleInbound(live, msg, (m) => this.pushFrom(live, m), this.hooks);
-    });
-    view.onDidDispose(() => {
-      this._view = undefined;
-    });
-    const session = await this.ensureSession(false).catch(() => undefined);
-    if (session) this.pushFrom(session);
-    else void view.webview.postMessage(needsRepoPush());
-  }
-
-  pushFrom(session: TandemSession, message?: string): void {
-    void this._view?.webview.postMessage(spacePush(session, message));
   }
 }
 

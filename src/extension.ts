@@ -8,15 +8,19 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
-import { SpacePanel, SpaceViewProvider } from "./surfaces/panel";
+import { SpacePanel } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import {
+  createProduct,
   discoverProjects,
   EnabledProject,
+  listProducts,
   mintCard,
   scopesNotOpen,
 } from "./core/identity";
+import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
+import { newProjectFlow } from "./hostui/projectOps";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { ConfigTreeProvider } from "./engine/host/ConfigTreeProvider";
 import { registerConfigCommands } from "./engine/host/configCommands";
@@ -30,7 +34,7 @@ import { parseDefectLog } from "./engine/defectStats";
 import * as nodeFs from "node:fs";
 
 let panel: SpacePanel | undefined;
-let sideView: SpaceViewProvider | undefined;
+let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
 /** Author identity is mechanical (§7ter): the git user.email localpart,
@@ -226,12 +230,58 @@ function updateStatusBar(project: EnabledProject | undefined): void {
   statusBar.show();
 }
 
+function storeRootOf(): string {
+  const config = vscode.workspace.getConfiguration("thinkubeTandem");
+  return (
+    config.get<string>("storeRoot", "") ||
+    path.join(process.env.HOME ?? "~", "thinkube-tandem-store")
+  );
+}
+
+/** The status bar is the run's heartbeat — visible from any tab: spinner
+ *  with units progress while building, LOUD when a worker waits on the
+ *  human, the project name otherwise. */
+function heartbeat(context: vscode.ExtensionContext): void {
+  if (!statusBar) return;
+  const project = rememberedProject(context);
+  const s = project ? sessions.get(project.card.id) : undefined;
+  if (s?.running && s.runState) {
+    const v = s.runState.view();
+    const done = v.units.filter((u) => u.state === "done").length;
+    if (v.parked.length) {
+      statusBar.text = `$(warning) Tandem: a worker needs your answer`;
+      statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+    } else {
+      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
+      statusBar.backgroundColor = undefined;
+    }
+    statusBar.show();
+    return;
+  }
+  if (s?.activity) {
+    statusBar.text = `$(sync~spin) Tandem: ${s.activity.label}… (${s.activity.current}/${s.activity.total})`;
+    statusBar.backgroundColor = undefined;
+    statusBar.show();
+    return;
+  }
+  statusBar.backgroundColor = undefined;
+  updateStatusBar(project);
+}
+
 function pushActive(context: vscode.ExtensionContext, message?: string): void {
+  heartbeat(context);
   const project = rememberedProject(context);
   const s = project ? sessions.get(project.card.id) : undefined;
   if (!s) return;
   panel?.pushFrom(s, message);
-  sideView?.pushFrom(s, message);
+  if (message?.startsWith("Delivery ready"))
+    void vscode.window
+      .showInformationMessage(`Tandem — ${message}`, "Open the space")
+      .then((pick) => {
+        if (pick) void vscode.commands.executeCommand("thinkube-tandem.openSpace");
+      });
+  else if (message?.startsWith("The run refused"))
+    void vscode.window.showWarningMessage(`Tandem — ${message}`);
 }
 
 async function ensureSession(
@@ -301,12 +351,26 @@ async function ensureSession(
 export function activate(context: vscode.ExtensionContext): void {
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
-  statusBar.tooltip = "Switch the project / repository Tandem works on";
+  statusBar.tooltip = "Switch the project Tandem works on";
   updateStatusBar(rememberedProject(context));
   context.subscriptions.push(statusBar);
 
-  // The Configuration area (v1, verbatim): hooks / commands / skills /
-  // agents / MCP / permissions / plugins per scope, in the same container.
+  // The sidebar NAVIGATES; the editor WORKS (the v1 shell rule): the
+  // Projects tree + Configuration tree live in the container, the space is
+  // an editor tab. Products first — a project is born under its product.
+  projectsTree = new ProjectsTreeProvider(
+    () => listProducts(storeRootOf(), openProjects()),
+    openProjects,
+    () => rememberedProject(context)?.card.id,
+  );
+  context.subscriptions.push(
+    vscode.window.createTreeView("tandemProjects", {
+      treeDataProvider: projectsTree,
+      showCollapseAll: true,
+    }),
+  );
+
+  // The Configuration area (v1, verbatim).
   const seedPath =
     rememberedProject(context)?.gitRoot ??
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
@@ -348,20 +412,62 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
     },
   };
-  sideView = new SpaceViewProvider(
-    context.extensionUri,
-    (interactive) => ensureSession(context, interactive),
-    hooks,
-  );
+  const openSpaceFor = async (projectId?: string): Promise<void> => {
+    if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
+    const s = await ensureSession(context, true);
+    if (!s) return;
+    updateStatusBar(rememberedProject(context));
+    projectsTree?.refresh();
+    if (!panel) panel = new SpacePanel(activeSession, hooks);
+    await panel.show(context.extensionUri);
+    pushActive(context);
+  };
+
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("thinkubeTandemSpaceView", sideView, {
-      webviewOptions: { retainContextWhenHidden: true },
+    vscode.commands.registerCommand("thinkube-tandem.openSpace", () => openSpaceFor()),
+    vscode.commands.registerCommand("thinkube-tandem.activateProject", (id: string) =>
+      openSpaceFor(id),
+    ),
+    vscode.commands.registerCommand("thinkube-tandem.refreshProjects", () =>
+      projectsTree?.refresh(),
+    ),
+    vscode.commands.registerCommand("thinkube-tandem.newProduct", async () => {
+      const name = await vscode.window.showInputBox({
+        title: "New Product — the top-level grouping (e.g. KubeXlat)",
+        placeHolder: "product name",
+      });
+      if (!name?.trim()) return;
+      const r = createProduct(storeRootOf(), name);
+      if (!r.ok) {
+        void vscode.window.showErrorMessage(`Tandem: ${r.reason}`);
+        return;
+      }
+      projectsTree?.refresh();
     }),
-    vscode.commands.registerCommand("thinkube-tandem.openSpace", async () => {
-      const s = await ensureSession(context, true);
-      if (!s) return;
-      if (!panel) panel = new SpacePanel(activeSession, hooks);
-      await panel.show(context.extensionUri);
+    vscode.commands.registerCommand(
+      "thinkube-tandem.newProject",
+      async (node?: ProductItem) => {
+        let product = node?.product;
+        if (!product || product === "(unassigned)") {
+          const names = listProducts(storeRootOf(), openProjects());
+          if (names.length === 0) {
+            void vscode.window.showErrorMessage(
+              "Tandem: create a Product first (the + on the Projects view title).",
+            );
+            return;
+          }
+          product = await vscode.window.showQuickPick(names, {
+            title: "New Project — under which product?",
+          });
+          if (!product) return;
+        }
+        await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+      },
+    ),
+    vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
+      const picked = await chooseProject(context);
+      if (!picked) return;
+      await openSpaceFor(picked.card.id);
     }),
     vscode.commands.registerCommand("thinkube-tandem.openDocs", async () => {
       const pagesDir = vscode.Uri.joinPath(
@@ -430,15 +536,9 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       await vscode.window.showTextDocument(doc, { preview: true });
     }),
-    vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
-      const picked = await chooseProject(context);
-      if (!picked) return;
-      await ensureSession(context, true);
-      updateStatusBar(picked);
-      pushActive(context, `Working on ${picked.card.label}.`);
-    }),
   );
 }
+
 
 export function deactivate(): void {
   panel?.dispose();

@@ -5,7 +5,6 @@
  * (worktree, blind probes, builders, proofs, forge delivery) and accepting
  * a delivery merges it. The panel is a thin shell around postMessage.
  */
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
@@ -21,19 +20,14 @@ import { tepSlices } from "../dispatch/adapter";
 import { planScopes, qualifyProbes, qualifySpace } from "../dispatch/scopes";
 import { dispatchTep, DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
-import {
-  approvalContentHash,
-  approvalStatus,
-  loadOrCreateApprovalSecret,
-  mintApproval,
-} from "../engine/approvalToken";
+import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { acceptOrder } from "../engine/acceptOrder";
+import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { WorkerModelConfig } from "../engine/workerModel";
-import { scanForSecrets } from "../engine/store/frontmatter";
 import { runReadRound } from "../derive/round";
-import { buildAnswerPrompt, classifyUtterance } from "../derive/classify";
-import { appendRecord, loadFolded } from "../core/records";
+import { buildAnswerPrompt, classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
+import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
@@ -103,6 +97,11 @@ export class TandemSession {
   stale = new Set<string>();
   running = false;
   runState: RunState | undefined;
+  /** Liveness for the surface: what is being worked on right now. */
+  activity: { label: string; current: number; total: number; askId?: string } | undefined;
+  /** The latest in-board answer to a question-classified input. */
+  lastAnswer: { question: string; answer: string } | undefined;
+  private _captureAbort: AbortController | undefined;
 
   constructor(private deps: SessionDeps) {
     this._approvals = createApprovalStore(deps.storageDir);
@@ -110,31 +109,13 @@ export class TandemSession {
     this.load();
   }
 
-  /** The signed pair's content: the render the human read + the grounded
-   *  member hash — what the minted token binds. */
-  private tepContentHash(cut: { changeIds: string[]; tepId?: string }): string {
-    const render = renderCutScreen(this.space, { id: "pair", changeIds: cut.changeIds });
-    const sig = signCut(this.space, { id: "pair", changeIds: cut.changeIds }, "t", "x");
-    const grounding = sig.ok ? sig.cut.signature!.groundingHash : "";
-    return approvalContentHash(`${render}\u0000${grounding}`);
+  private get author(): string {
+    return this.deps.author ?? "user";
   }
 
   /** Token verdict for a minted TEP — dispatch refuses anything but approved. */
   tepApproval(tepId: string): { approved: boolean; reason?: string } {
-    const cut = this.space.cuts.find((c) => c.tepId === tepId);
-    if (!cut) return { approved: false, reason: "unknown TEP" };
-    const status = approvalStatus(this._approvals.get(`tep:${tepId}`), {
-      subjectKey: `tep:${tepId}`,
-      contentHash: this.tepContentHash(cut),
-      secret: this._secret,
-    });
-    return status.ok
-      ? { approved: true }
-      : { approved: false, reason: status.reason };
-  }
-
-  private get author(): string {
-    return this.deps.author ?? "user";
+    return tepApprovalOf(this.space, this._approvals, this._secret, tepId);
   }
 
   /** The project label this space is bound to — a label, never resolved. */
@@ -149,31 +130,43 @@ export class TandemSession {
 
   /** Per-ask context digests, file-backed beside the space. */
   private digestStore(): DigestStore {
-    const dir = path.join(this.deps.storeDir, "digests");
-    return {
-      load: (askId) => {
-        try {
-          return fs.readFileSync(path.join(dir, `${askId}.md`), "utf8");
-        } catch {
-          return undefined;
-        }
-      },
-      save: (askId, text) => {
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, `${askId}.md`), text);
-      },
-    };
+    return makeDigestStore(this.deps.storeDir);
   }
 
-  /**
-   * Capture one utterance through the classifier seam: an ask grounds (the
-   * normal case), a question gets an answer and is recorded nowhere, a
-   * statement becomes a decision in force born settled. Fail-soft: an
-   * unclassifiable utterance is an ask.
-   */
-  async capture(text: string): Promise<{ ok: boolean; reason?: string }> {
+  /** Classify a DRAFT — records nothing (TEP-22: the classifier never
+   *  silently records). A pasted list splits into items, previewed. */
+  async classifyDraft(
+    text: string,
+  ): Promise<{ kind: UtteranceKind; items?: string[] }> {
+    const items = splitList(text);
+    if (items) return { kind: "ask", items };
     const classify = this.deps.classify ?? classifyUtterance;
-    const kind = await classify(this.deps.round, text);
+    return { kind: await classify(this.deps.round, text) };
+  }
+
+  /** Cancel the in-flight derivation (the human pressed Cancel). */
+  cancelCapture(): void {
+    this._captureAbort?.abort();
+  }
+
+  /** Record several asks at once — the confirmed list-paste. */
+  async captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
+    for (const t of texts) {
+      const r = await this.capture(t, "ask");
+      if (!r.ok) return r;
+    }
+    return { ok: true };
+  }
+
+  /** Capture one utterance WITH ITS CONFIRMED KIND (the tag the human
+   *  pressed): an ask grounds, a question gets an answer and is recorded
+   *  nowhere, a rule becomes a decision in force born settled. */
+  async capture(
+    text: string,
+    confirmedKind?: UtteranceKind,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const classify = this.deps.classify ?? classifyUtterance;
+    const kind = confirmedKind ?? (await classify(this.deps.round, text));
     if (kind === "question") {
       const lastAsk = this.space.asks[this.space.asks.length - 1];
       const answer = await (this.deps.answerRound ?? runReadRound)(
@@ -186,7 +179,11 @@ export class TandemSession {
           repoRoot: this.deps.round.repoRoot,
         }),
       );
-      this.deps.onChanged?.(answer?.trim() || "I could not answer that from the space or the code.");
+      this.lastAnswer = {
+        question: text,
+        answer: answer?.trim() || "I could not answer that from the space or the code.",
+      };
+      this.deps.onChanged?.();
       return { ok: true };
     }
     if (kind === "statement") {
@@ -203,13 +200,25 @@ export class TandemSession {
     );
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
+    this.changed(); // the ask is visibly on the list BEFORE any thinking starts
     const ground = this.deps.ground ?? runDerivationPipeline;
-    const grounded = await ground(this.deps.round, r.added, {
-      nextIndex: this.space.nodes.length + 1,
-      decisions: this.decisionsInForce(),
-      digestStore: this.digestStore(),
-      mintNodeId: (n) => `node-${this.author}-${n}`,
-    });
+    this._captureAbort = new AbortController();
+    const grounded = await ground(
+      { ...this.deps.round, abort: this._captureAbort },
+      r.added,
+      {
+        nextIndex: this.space.nodes.length + 1,
+        decisions: this.decisionsInForce(),
+        digestStore: this.digestStore(),
+        mintNodeId: (n) => `node-${this.author}-${n}`,
+        onStage: (label, current, total) => {
+          this.activity = { label, current, total, askId: r.added.id };
+          this.deps.onChanged?.();
+        },
+      },
+    );
+    this.activity = undefined;
+    this._captureAbort = undefined;
     const questions = grounded.questions.map((q, i) => ({
       ...q,
       id: `q-${this.author}-${this.space.questions.length + i + 1}`,
@@ -376,7 +385,7 @@ export class TandemSession {
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     this._approvals.put(
       `tep:${r.cut.tepId}`,
-      mintApproval(`tep:${r.cut.tepId}`, this.tepContentHash(r.cut), Date.now(), this._secret),
+      mintApproval(`tep:${r.cut.tepId}`, tepContentHash(this.space, r.cut), Date.now(), this._secret),
     );
     this.cutNodeIds.clear();
     this.changed(`${r.cut.tepId} minted — the run is starting.`);
@@ -548,42 +557,28 @@ export class TandemSession {
 
   private _lastWritten = "";
 
-  /** Append-only store: every change appends ONE immutable record file in
-   *  this user's own subtree — never an edit, conflict-free by construction.
-   *  Every write runs the secret scan; a hit refuses the write (the state
-   *  stays live in memory; the message names the leak). */
+  /** Append-only store: every change appends ONE immutable record in this
+   *  user's own subtree; the state is the fold. Secret-scanned. */
   persist(): void {
-    const body = JSON.stringify({ space: this.space, cut: [...this.cutNodeIds] });
-    if (body === this._lastWritten) return;
-    const secrets = scanForSecrets(body);
-    if (secrets.length) {
-      this.deps.onChanged?.(
-        `REFUSED to write the store: secret-shaped content detected (${secrets
-          .map((m) => m.pattern)
-          .join(", ")}) — remove it from the ask/changes first.`,
-      );
-      return;
-    }
-    appendRecord(this.deps.storeDir, {
-      at: this.deps.now(),
+    this._lastWritten = persistSpace({
+      storeDir: this.deps.storeDir,
       author: this.author,
-      kind: "snapshot",
+      now: this.deps.now,
       space: this.space,
       cut: [...this.cutNodeIds],
+      lastWritten: this._lastWritten,
+      onRefused: (m) => this.deps.onChanged?.(m),
     });
-    this._lastWritten = body;
   }
 
-  /** The space is a FOLD over every user's latest record (deterministic,
-   *  total; contradictory decisions surface as a question). */
   load(): void {
     try {
-      const folded = loadFolded(
-        this.deps.projectDir ?? this.deps.storeDir,
-        this.deps.storeDir,
-        this.author,
-        this.deps.now,
-      );
+      const folded = loadSpace({
+        projectDir: this.deps.projectDir,
+        storeDir: this.deps.storeDir,
+        author: this.author,
+        now: this.deps.now,
+      });
       this.space = folded.space;
       this.cutNodeIds = new Set(folded.cut);
       this.recluster();
@@ -591,5 +586,6 @@ export class TandemSession {
     } catch {
       this.space = emptySpace();
     }
+  
   }
 }

@@ -13,6 +13,8 @@ export interface RunUnitView {
   state: UnitState;
   /** Unit ids this unit waits on — the run graph's edges. */
   requires: string[];
+  /** Epoch ms when the unit started running — the surface renders elapsed. */
+  startedAt?: number;
   question?: string;
 }
 
@@ -33,6 +35,7 @@ export class RunState {
   set(id: string, state: UnitState, question?: string): void {
     const u = this.units.get(id);
     if (!u) return;
+    if (state === "running" && u.state !== "parked") u.startedAt = Date.now();
     u.state = state;
     u.question = state === "parked" ? question : undefined;
     this.onChange();

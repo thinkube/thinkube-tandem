@@ -44,6 +44,9 @@ export interface PipelineOpts {
   mintNodeId?: (n: number) => string;
   /** Member scopes of a multirepo project open in this workspace. */
   scopes?: { id: string; dir: string; label?: string }[];
+  /** Liveness: called as each round starts — (stage label, 1-based index,
+   *  total). The surface renders it; silence here was ledger lesson #79. */
+  onStage?: (stage: string, index: number, total: number) => void;
   decisions?: string[];
   digest?: string;
   digestStore?: DigestStore;
@@ -242,8 +245,15 @@ export async function runDerivationPipeline(
 ): Promise<GroundingResult> {
   const round = opts.round ?? runReadRound;
   const log = deps.log ?? (() => {});
+  const TOTAL_STAGES = 7;
+  let stageNo = 0;
+  const stage = (label: string): void => {
+    stageNo++;
+    opts.onStage?.(label, stageNo, TOTAL_STAGES);
+  };
 
   // 1. Contextualize (reuse a stored digest; otherwise one bounded reading).
+  stage("reading your code");
   let digest = opts.digest ?? opts.digestStore?.load(ask.id);
   if (!digest) {
     const fresh = await runContextualize(deps, ask, round);
@@ -255,6 +265,7 @@ export async function runDerivationPipeline(
   }
 
   // 2. Ground.
+  stage("deriving the changes");
   const grounded = await runGrounding(
     { ...deps, log },
     ask,
@@ -285,18 +296,21 @@ export async function runDerivationPipeline(
   };
 
   // 3. Gap-close judge (two outcomes: complete, or concrete additions).
+  stage("judging completeness");
   await addFrom(
     await round(deps, buildGapClosePrompt({ ask, changes, repoRoot: deps.repoRoot })),
     "gap-close",
   );
 
   // 4. Impact pass (the adjacent code that must move too).
+  stage("finding affected code");
   await addFrom(
     await round(deps, buildImpactPrompt({ ask, changes, repoRoot: deps.repoRoot })),
     "impact",
   );
 
   // 5. Intent coverage — uncovered clauses become questions, never silence.
+  stage("checking every clause of your ask is covered");
   const coverage = await round(deps, buildIntentCoveragePrompt({ ask, changes }));
   if (coverage !== null)
     for (const u of parseUncovered(coverage))
@@ -307,6 +321,7 @@ export async function runDerivationPipeline(
       });
 
   // 6. Criteria assessment — vague criteria come back observable.
+  stage("sharpening the acceptance criteria");
   const assessed = await round(deps, buildCriteriaPrompt({ changes }));
   if (assessed !== null) {
     const rewrites = parseCriteriaRewrites(assessed, changes);
@@ -327,6 +342,7 @@ export async function runDerivationPipeline(
   }
 
   // 7. Challenger — contradictions with decisions in force become questions.
+  stage("checking against your decisions");
   if (opts.decisions?.length) {
     const challenged = await round(
       deps,

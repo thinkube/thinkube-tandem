@@ -99,3 +99,15 @@ test("minted ids stay human-tolerable and unique-suffixed", () => {
   assert.match(mintId("My Great Project!"), /^my-great-project-[0-9a-f]{6}$/);
   assert.match(mintId("   "), /^space-[0-9a-f]{6}$/);
 });
+
+test("products: an empty product persists as a file; the list unions files with card labels", async () => {
+  const { listProducts, createProduct } = await import("./identity");
+  const storeRoot = tmp();
+  assert.ok(createProduct(storeRoot, "KubeXlat").ok);
+  assert.ok(!createProduct(storeRoot, "KubeXlat").ok, "no duplicate product");
+  const dir = tmp();
+  const m = mintCard(dir, { label: "tool", product: "Platform" }, () => "p1");
+  assert.ok(m.ok);
+  const projects = discoverProjects(dir);
+  assert.deepEqual(listProducts(storeRoot, projects), ["KubeXlat", "Platform"]);
+});

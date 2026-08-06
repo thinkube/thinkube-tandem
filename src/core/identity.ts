@@ -173,3 +173,41 @@ export function scopesNotOpen(
   const openIds = new Set(open.map((p) => p.card.id));
   return (project.card.scopes ?? []).filter((s) => !s.id || !openIds.has(s.id));
 }
+
+/** Products are labels; one lives as a tiny file so an EMPTY product (just
+ *  created, no projects yet) still exists. The list is the union of these
+ *  files and every enabled project's product label. */
+export function listProducts(storeRoot: string, projects: EnabledProject[]): string[] {
+  const names = new Set(projects.map((p) => p.card.product).filter((x): x is string => !!x));
+  try {
+    for (const f of fs.readdirSync(path.join(storeRoot, "products")))
+      if (f.endsWith(".yaml")) {
+        try {
+          const raw = parseYaml(
+            fs.readFileSync(path.join(storeRoot, "products", f), "utf8"),
+          ) as { name?: string };
+          if (raw?.name) names.add(raw.name);
+        } catch {
+          /* an unreadable product file is skipped */
+        }
+      }
+  } catch {
+    /* no products dir yet */
+  }
+  return [...names].sort();
+}
+
+/** Create a product — one immutable file, refused if the name exists. */
+export function createProduct(
+  storeRoot: string,
+  name: string,
+): { ok: true } | { ok: false; reason: string } {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, reason: "a product needs a name" };
+  const dir = path.join(storeRoot, "products");
+  const file = path.join(dir, `${mintId(trimmed, () => "").replace(/-$/, "")}.yaml`);
+  if (fs.existsSync(file)) return { ok: false, reason: `product "${trimmed}" already exists` };
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, stringifyYaml({ name: trimmed }));
+  return { ok: true };
+}
