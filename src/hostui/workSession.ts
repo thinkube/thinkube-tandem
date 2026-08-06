@@ -10,7 +10,7 @@
 import type * as vscodeTypes from "vscode";
 import { createRequire } from "node:module";
 import { EnabledProject } from "../core/identity";
-import { thinkingSpaceDirs } from "../core/spaces";
+import { nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
 import {
   listWorkProjects,
   readContextScope,
@@ -133,6 +133,7 @@ export async function ensureWorkSession(args: {
     },
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
+    nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     onChanged: args.onChanged,
   });
   args.sessions.set(key, s);

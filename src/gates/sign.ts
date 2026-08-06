@@ -44,6 +44,7 @@ export function signCut(
   cut: Cut,
   at: string,
   author = "user",
+  tepNumber?: number,
 ): SignResult {
   if (cut.changeIds.length === 0)
     return { ok: false, reason: "an empty cut cannot be signed" };
@@ -88,7 +89,7 @@ export function signCut(
     ok: true,
     cut: {
       ...cut,
-      tepId: `TEP-${author}-${mine + 1}`,
+      tepId: `TEP-${author}-${tepNumber ?? mine + 1}`,
       signature: {
         at,
         renderHash: sha(renderCutScreen(space, cut)),

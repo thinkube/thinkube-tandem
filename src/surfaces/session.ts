@@ -61,6 +61,7 @@ export interface SessionDeps {
   /** Injectable naming round (unit titles + abstracts) for tests. */
   name?: typeof nameUnits;
   proposeCheck?: typeof proposeCheckRound;
+  nextTepNumber?: () => number; // owner-level, unique across the owner's spaces
   scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live
   /** §7quater: grounding reads the anchor dir; git ops run at gitRoot. */
   scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
@@ -441,7 +442,7 @@ export class TandemSession {
       id: `cut-${this.author}-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
     };
-    const r = signCut(this.space, cut, this.deps.now(), this.author);
+    const r = signCut(this.space, cut, this.deps.now(), this.author, this.deps.nextTepNumber?.());
     if (!r.ok) return r;
     this.space = { ...this.space, cuts: [...this.space.cuts, r.cut] };
     // The human's click IS the mint (this message only arrives from the
@@ -457,8 +458,7 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** The run: one dispatch PER SCOPE ordered by cross-scope needs
-   *  (§7quater) — one branch + delivery per repository the TEP touches. */
+  /** One dispatch PER SCOPE (§7quater): a branch + delivery per repository. */
   async execute(cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;

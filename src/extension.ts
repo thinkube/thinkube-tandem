@@ -19,7 +19,7 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
-import { deleteThinkingSpace, listThinkingSpaces, thinkingSpaceDirs } from "./core/spaces";
+import { deleteThinkingSpace, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
 import {
   chooseThinkingSpace,
   configuredStoreRoot,
@@ -278,6 +278,7 @@ async function ensureSession(
     },
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
+    nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, message),
   });
   sessions.set(sessionKey, s);

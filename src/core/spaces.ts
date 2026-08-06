@@ -109,3 +109,29 @@ export function deleteThinkingSpace(
   fs.rmSync(dir, { recursive: true, force: true });
   return { ok: true };
 }
+
+/**
+ * TEP numbers are unique PER OWNER (repository or project) across all of
+ * its thinking spaces — Amendment §2's "branches never collide". A
+ * durable counter file at the owner level is the source; single writer
+ * per author (the same structural discipline as author-scoped ids).
+ */
+export function nextTepNumber(
+  storeRoot: string,
+  ownerId: string,
+  author: string,
+  kind: SpaceOwnerKind = "repository",
+): number {
+  const home = spacesHome(storeRoot, ownerId, kind);
+  fs.mkdirSync(home, { recursive: true });
+  const file = path.join(home, `tep-counter-${author}.txt`);
+  let n = 0;
+  try {
+    n = parseInt(fs.readFileSync(file, "utf8").trim(), 10) || 0;
+  } catch {
+    /* first TEP for this author under this owner */
+  }
+  const next = n + 1;
+  fs.writeFileSync(file, `${next}\n`);
+  return next;
+}

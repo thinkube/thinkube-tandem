@@ -80,3 +80,13 @@ test("deletion: fine while nothing is signed; refused forever after a signature"
   assert.ok(refused.reason!.includes("signed"), "the refusal says why");
   assert.equal(listThinkingSpaces(root, "repo-1").length, 1, "nothing was removed");
 });
+
+test("TEP numbers are unique per owner ACROSS thinking spaces (the branch-collision fix)", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-tep-"));
+  const { nextTepNumber } = require("./spaces") as typeof import("./spaces");
+  assert.equal(nextTepNumber(root, "repo-1", "alice"), 1);
+  assert.equal(nextTepNumber(root, "repo-1", "alice"), 2, "a second space of the same repo continues, never repeats");
+  assert.equal(nextTepNumber(root, "repo-1", "bob"), 1, "authors count separately");
+  assert.equal(nextTepNumber(root, "repo-2", "alice"), 1, "owners count separately");
+  assert.equal(nextTepNumber(root, "wp-1", "alice", "project"), 1, "projects have their own home");
+});
