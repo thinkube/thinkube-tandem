@@ -38,11 +38,12 @@ import {
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
 import { isStubScannableFile, scanStubMarkers } from "../engine/core/stubScan";
+import { buildVerificationTrace } from "../engine/core/trace";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, ensureSnapshot, sliceOracleFactory } from "./oracle";
+import { copyRel, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { foldBlastRadius } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -103,16 +104,6 @@ export interface DispatchOutcome {
   url?: string;
 }
 
-
-/** Probe runs and oracle rounds must not inherit the host test-runner's
- *  context: a child `node --test` that detects a parent runner SKIPS itself
- *  and exits 0 — a false green. */
-function scrubbedEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const k of Object.keys(env))
-    if (/^NODE_TEST|^TEST_|^NODE_OPTIONS$/.test(k)) delete env[k];
-  return env;
-}
 
 export async function dispatchTep(
   deps: DispatchDeps,
@@ -519,6 +510,27 @@ export async function dispatchTep(
   }
   const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
+
+  // The delivery's MACHINE FACE persists beside the space: the engine's
+  // structured verification trace plus the run facts — the delivery page is
+  // a render, this file is the evidence record.
+  if (deps.storeDir) {
+    try {
+      const trace = buildVerificationTrace({ round: 1, declared: verifs, acResults });
+      const dir = path.join(deps.storeDir, "deliveries");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, `${tep}.json`),
+        JSON.stringify(
+          { tep, branch, baseSha, proofs, undelivered, trace },
+          null,
+          2,
+        ),
+      );
+    } catch {
+      /* the record is best-effort; the run's verdicts already live on the delivery */
+    }
+  }
 
   // Docs gate: a slice that declares documentation (a docs/ touchpoint)
   // must have LANDED it — the engine's obligation check runs against the

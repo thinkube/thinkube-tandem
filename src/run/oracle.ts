@@ -18,6 +18,16 @@ import {
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 
+/** Probe runs and oracle rounds must not inherit the host test-runner's
+ *  context: a child `node --test` that detects a parent runner SKIPS itself
+ *  and exits 0 — a false green. */
+export function scrubbedEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of Object.keys(env))
+    if (/^NODE_TEST|^TEST_|^NODE_OPTIONS$/.test(k)) delete env[k];
+  return env;
+}
+
 export type Exec = (
   cmd: string,
   args: string[],

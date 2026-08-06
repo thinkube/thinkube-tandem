@@ -527,4 +527,9 @@ test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISC
     rows.some((r) => r.includes("DISCLOSE") && r.includes("supervisor")),
     "the disclosure is a ledgered contract gap",
   );
+  const record = JSON.parse(
+    fs.readFileSync(path.join(ledger, "deliveries", "TEP-t-10.json"), "utf8"),
+  );
+  assert.equal(record.tep, "TEP-t-10");
+  assert.ok(Array.isArray(record.trace) && record.trace.length > 0, "the engine's verification trace persisted as the machine face");
 });

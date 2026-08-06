@@ -35,6 +35,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "2026-08-05T19:00:00Z",
     readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number; decisions?: string[] }) => ({
       changes: [
         {
@@ -115,6 +116,7 @@ test("accept runs the engine's canonical order: merge → stamp → retire, and 
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
     forge: {
       openDelivery: async () => "https://forge/pr/1",
       merge: async () => {
@@ -155,6 +157,7 @@ test("a refused merge aborts the accept before any stamp", async () => {
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
     forge: {
       openDelivery: async () => "https://forge/pr/1",
       merge: async () => {
@@ -190,6 +193,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "t",
     readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
       changes: [
         {
@@ -228,6 +232,7 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
     now: () => "t",
     readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
     onChanged: (m?: string) => {
       if (m) messages.push(m);
     },
@@ -241,4 +246,39 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
   );
   assert.ok(!fs.existsSync(path.join(dir, "space.json")), "nothing secret-shaped reached disk");
   assert.equal(session.space.asks.length, 1, "the in-memory state stays live");
+});
+
+test("the capture seam classifies: a question is answered and recorded nowhere; a statement becomes a decision in force", async () => {
+  const messages: string[] = [];
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    classify: async (_d: unknown, text: string) =>
+      text.endsWith("?") ? ("question" as const) : text.startsWith("we always") ? ("statement" as const) : ("ask" as const),
+    answerRound: async (_d: unknown, prompt: string) => {
+      assert.ok(prompt.includes("where does the toolbar render?"), "the question rides the answer prompt verbatim");
+      return "The toolbar renders in src/toolbar.ts.";
+    },
+    onChanged: (m?: string) => {
+      if (m) messages.push(m);
+    },
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+
+  const q = await session.capture("where does the toolbar render?");
+  assert.ok(q.ok);
+  assert.equal(session.space.asks.length, 0, "a question is not an ask");
+  assert.ok(messages.some((m) => m.includes("src/toolbar.ts")), "the answer reached the human");
+
+  const st = await session.capture("we always deploy through the platform CI");
+  assert.ok(st.ok);
+  assert.equal(session.space.asks.length, 0, "a statement is not an ask");
+  assert.deepEqual(session.decisionsInForce(), ["we always deploy through the platform CI"]);
+
+  await session.capture("build the toolbar");
+  assert.equal(session.space.asks.length, 1, "an ask grounds as before");
 });

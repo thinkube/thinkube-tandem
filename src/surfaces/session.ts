@@ -31,6 +31,7 @@ import { acceptOrder } from "../engine/acceptOrder";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { scanForSecrets } from "../engine/store/frontmatter";
 import { runReadRound } from "../derive/round";
+import { buildAnswerPrompt, classifyUtterance } from "../derive/classify";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
@@ -70,6 +71,9 @@ export interface SessionDeps {
   maxConcurrent?: number;
   /** The docs gate blocks accepts by default; advisory is the escape hatch. */
   docsGateMode?: "blocking" | "advisory";
+  /** Injectable classifier + answer round for tests. */
+  classify?: typeof classifyUtterance;
+  answerRound?: typeof runReadRound;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
 }
@@ -137,8 +141,49 @@ export class TandemSession {
     };
   }
 
-  /** Capture an ask verbatim, ground it, recluster, refresh staleness. */
+  /**
+   * Capture one utterance through the classifier seam: an ask grounds (the
+   * normal case), a question gets an answer and is recorded nowhere, a
+   * statement becomes a decision in force born settled. Fail-soft: an
+   * unclassifiable utterance is an ask.
+   */
   async capture(text: string): Promise<{ ok: boolean; reason?: string }> {
+    const classify = this.deps.classify ?? classifyUtterance;
+    const kind = await classify(this.deps.round, text);
+    if (kind === "question") {
+      const answer = await (this.deps.answerRound ?? runReadRound)(
+        this.deps.round,
+        buildAnswerPrompt({
+          text,
+          asks: this.space.asks,
+          decisions: this.decisionsInForce(),
+          digest: this.space.asks.length
+            ? this.digestStore().load(this.space.asks[this.space.asks.length - 1].id)
+            : undefined,
+          repoRoot: this.deps.round.repoRoot,
+        }),
+      );
+      this.deps.onChanged?.(
+        answer?.trim() || "I could not answer that from the space or the code.",
+      );
+      return { ok: true };
+    }
+    if (kind === "statement") {
+      this.space = {
+        ...this.space,
+        questions: [
+          ...this.space.questions,
+          {
+            id: `q-${this.space.questions.length + 1}`,
+            askId: "",
+            text,
+            decided: { text, at: this.deps.now() },
+          },
+        ],
+      };
+      this.changed("Recorded as a decision in force — every later derivation builds under it.");
+      return { ok: true };
+    }
     const r = addAsk(this.space, text, this.deps.now());
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
@@ -205,7 +250,8 @@ export class TandemSession {
     this.space = {
       ...this.space,
       nodes: [],
-      questions: [],
+      // Decisions the human settled survive a panic; open machine questions go.
+      questions: this.space.questions.filter((q) => q.decided),
       pins: [],
       cuts: [],
     };
