@@ -128,3 +128,17 @@ test("Gitea merge uses the PR INDEX extracted from the stored URL (A4)", async (
   assert.ok(calls[0].endsWith("/pulls/5/merge"), `hit ${calls[0]}`);
   await assert.rejects(() => forge.merge("https://git.thinkube.com/no/number/here"), /no pull-request number/);
 });
+
+test("A5: an anchorless (project) plan refuses unscoped promises by name", async () => {
+  const { refuseAnchorless } = await import("./scopes");
+  const space = {
+    ...(await import("../core/schema")).emptySpace(),
+    nodes: [
+      { id: "n1", sentence: "a promise with no repository", serves: [], needs: [], acceptance: [] },
+    ],
+  };
+  const plan = { ok: true as const, groups: new Map([["", ["n1"]]]), order: [""] };
+  const r = refuseAnchorless(plan, space);
+  assert.ok(r!.includes("a promise with no repository") && r!.includes("never built into the store".replace("never ", "")));
+  assert.equal(refuseAnchorless({ ok: true, groups: new Map([["repo-a", ["n1"]]]), order: ["repo-a"] }, space), undefined);
+});

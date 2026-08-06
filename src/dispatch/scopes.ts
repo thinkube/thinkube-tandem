@@ -95,3 +95,18 @@ export function qualifyProbes(slices: SliceForDag[], prefix: string): void {
     for (const u of sl.workUnits)
       if (u.role === "test") u.footprint = u.footprint.map((f) => `${prefix}/${f}`);
 }
+
+/** A project space anchors at the STORE — promises that name no
+ *  repository must refuse by name, never build there (Amendment §3). */
+export function refuseAnchorless(
+  plan: { ok: true; groups: Map<string, string[]>; order: string[] },
+  space: Space,
+): string | undefined {
+  const orphans = (plan.groups.get("") ?? []).map(
+    (id) => space.nodes.find((n) => n.id === id)?.sentence ?? id,
+  );
+  if (!orphans.length) return undefined;
+  return `The build could not start: these promises name no repository: ${orphans.join(
+    "; ",
+  )} — check the reading list and re-derive so each promise lands in one repository. Nothing is ever built into the store.`;
+}

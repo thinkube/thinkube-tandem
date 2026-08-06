@@ -9,22 +9,19 @@ import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggestions";
-import { readStamp, SourceStamp } from "../core/stamp";
+import { readStamp } from "../core/stamp";
 import { staleChangeIds } from "../core/stale";
 import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
-import { RoundDeps, runReadRound } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
-import { Forge } from "../dispatch/forge";
-import { planScopes } from "../dispatch/scopes";
+import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
-import { dispatchTep, DispatchOutcome } from "../run/dispatch";
+import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { acceptOrder } from "../engine/acceptOrder";
 import { tepApprovalOf, tepContentHash } from "../gates/approval";
-import { WorkerModelConfig } from "../engine/workerModel";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
@@ -32,48 +29,12 @@ import { addWithNeeds, removeWithDependents } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
+import { SessionDeps } from "./sessionDeps";
+export type { SessionDeps } from "./sessionDeps";
 export { SESSION_ACTIONS } from "./affordances";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 
-export interface SessionDeps {
-  round: RoundDeps;
-  storeDir: string;
-  /** Machine-local secret + token store home (globalStorage in the host). */
-  storageDir: string;
-  now: () => string;
-  /** Author identity (git user.name), for author-scoped TEP numbers. */
-  author?: string;
-  /** The forge for this repo; absent means deliveries stay local branches. */
-  forge?: Forge;
-  suiteCommand?: string[];
-  ground?: typeof runDerivationPipeline;
-  dispatch?: typeof dispatchTep;
-  readCurrentStamp?: () => Promise<SourceStamp[]>;
-  /** Retire a merged TEP's worktrees (best-effort; injectable). */
-  retire?: (tepId: string) => Promise<void>;
-  workerModel?: WorkerModelConfig;
-  /** Frontier width for the run (v1 default 4). */
-  maxConcurrent?: number;
-  docsGateMode?: "blocking" | "advisory";
-  classify?: typeof classifyUtterance;
-  answerRound?: typeof runReadRound;
-  /** Injectable naming round (unit titles + abstracts) for tests. */
-  name?: typeof nameUnits;
-  proposeCheck?: typeof proposeCheckRound;
-  nextTepNumber?: () => number; // owner-level, unique across the owner's spaces
-  scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live
-  /** §7quater: grounding reads the anchor dir; git ops run at gitRoot. */
-  scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
-  /** Member scope id → its open repository; undefined = not open here. */
-  resolveScope?: (
-    scopeId: string,
-  ) => Promise<{ gitRoot: string; prefix: string; forge?: Forge } | undefined>;
-  /** The fold dir holding every user's subtree; absent = single-user. */
-  projectDir?: string;
-  /** Called after every state change so the panel can re-push. */
-  onChanged?: (message?: string) => void;
-}
 
 export class TandemSession {
   space: Space = emptySpace();
@@ -243,7 +204,6 @@ export class TandemSession {
     await this.renderAbstracts();
   }
 
-  /** See panicFlow; confirmation is surface-side. */
   panic(): { ok: boolean; reason?: string } {
     if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
     const r = panicFlow(this.space);
@@ -256,7 +216,6 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Decisions in force — injected into every later round. */
   decisionsInForce(): string[] {
     return this.space.questions
       .filter((q) => q.decided)
@@ -356,7 +315,6 @@ export class TandemSession {
 
   private _naming = false;
 
-  /** The naming pass (surfaces/naming.ts); overlapping triggers collapse. */
   async renderAbstracts(): Promise<void> {
     if (this._naming) return;
     this._naming = true;
@@ -458,7 +416,6 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** One dispatch PER SCOPE (§7quater): a branch + delivery per repository. */
   async execute(cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;
@@ -468,7 +425,9 @@ export class TandemSession {
       this.changed(this.runNote);
       return undefined;
     }
-    if (!this.deps.forge) {
+    // A project space resolves a forge PER REPOSITORY BATCH; only a
+    // plain repository session needs the anchor forge.
+    if (!this.deps.forge && !this.deps.resolveScope) {
       this.runNote =
         "The build could not start: no forge is reachable for this repository — set thinkubeTandem.giteaToken (or use a repository whose remote carries its credential). The cut stays signed, undelivered.";
       this.changed(this.runNote);
@@ -484,6 +443,13 @@ export class TandemSession {
         this.running = false;
         this.runNote = `The build could not start: ${plan.reason}.`;
         this.changed(this.runNote);
+        return undefined;
+      }
+      const anchorRefusal = this.deps.anchorless ? refuseAnchorless(plan, this.space) : undefined;
+      if (anchorRefusal) {
+        this.running = false;
+        this.runNote = anchorRefusal;
+        this.changed(anchorRefusal);
         return undefined;
       }
       const last = await dispatchScopePlan({

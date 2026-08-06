@@ -134,6 +134,7 @@ export async function ensureWorkSession(args: {
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
+    anchorless: true,
     onChanged: args.onChanged,
   });
   args.sessions.set(key, s);
