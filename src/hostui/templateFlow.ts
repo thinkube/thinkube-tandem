@@ -132,6 +132,15 @@ async function newAppFromTemplate(args: {
     validateInput: (v) => (/^[a-z][a-z0-9-]{1,38}$/.test(v) ? undefined : "lowercase-with-dashes"),
   });
   if (!appName) return;
+  // A leftover folder makes the platform's git step push the wrong branch
+  // (the todo/master incident) — refuse up front with the cure named.
+  const dest = path.join(args.appsRoot, appName);
+  if (fs.existsSync(dest)) {
+    void vsc.window.showWarningMessage(
+      `Tandem — ${dest} already exists. Delete that folder or pick another name; the platform will not deploy over it.`,
+    );
+    return;
+  }
   const description =
     (await vsc.window.showInputBox({ title: "One line: what is this application?" })) ?? "";
   let deploymentId: string;
@@ -180,7 +189,6 @@ async function newAppFromTemplate(args: {
     void vsc.window.showErrorMessage(`Tandem — the instantiation did not finish: ${outcome.detail}`);
     return;
   }
-  const dest = path.join(args.appsRoot, appName);
   if (!fs.existsSync(dest))
     await new Promise<void>((resolve, reject) =>
       execFile("git", ["clone", cloneUrlFor(args.appsRoot, appName), dest], (err) =>
