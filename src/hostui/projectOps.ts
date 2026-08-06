@@ -94,3 +94,31 @@ export async function newProjectFlow(
   refresh();
   await vscode.commands.executeCommand("thinkube-tandem.activateProject", minted.card.id);
 }
+
+/** Retire a merged TEP's worktrees (code, tester snapshot, oracle runners) —
+ *  best-effort: a missing tree is a no-op, the accept never fails on cleanup. */
+export async function retireTepWorktrees(repoRoot: string, tepId: string): Promise<void> {
+  const run = (args: string[]): Promise<string> =>
+    new Promise((resolve) =>
+      execFile("git", ["-C", repoRoot, ...args], { encoding: "utf8" }, (_e, out) =>
+        resolve(out ?? ""),
+      ),
+    );
+  const wtRoot = path.join(
+    path.dirname(repoRoot),
+    `${path.basename(repoRoot)}-worktrees`,
+  );
+  const listed = await run(["worktree", "list", "--porcelain"]);
+  const targets = listed
+    .split("\n")
+    .filter((l) => l.startsWith("worktree "))
+    .map((l) => l.slice("worktree ".length))
+    .filter(
+      (p) =>
+        p === path.join(wtRoot, tepId) ||
+        p === path.join(wtRoot, `${tepId}-tester`) ||
+        p.startsWith(path.join(wtRoot, "oracle-runners", `${tepId}-`)),
+    );
+  for (const t of targets) await run(["worktree", "remove", "--force", t]);
+  await run(["worktree", "prune"]);
+}

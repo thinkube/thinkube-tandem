@@ -21,7 +21,9 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
-import { newProjectFlow } from "./hostui/projectOps";
+import { thinkingSpaceDirs } from "./core/spaces";
+import { chooseThinkingSpace, configuredStoreRoot } from "./hostui/spaceOps";
+import { newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { LauncherService } from "./engine/host/LauncherService";
 import { SessionLinkService } from "./engine/host/SessionLinkService";
@@ -94,33 +96,6 @@ async function resolveForge(
   }
 }
 
-/** Retire a merged TEP's worktrees (code, tester snapshot, oracle runners) —
- *  best-effort: a missing tree is a no-op, the accept never fails on cleanup. */
-async function retireTepWorktrees(repoRoot: string, tepId: string): Promise<void> {
-  const run = (args: string[]): Promise<string> =>
-    new Promise((resolve) =>
-      execFile("git", ["-C", repoRoot, ...args], { encoding: "utf8" }, (_e, out) =>
-        resolve(out ?? ""),
-      ),
-    );
-  const wtRoot = path.join(
-    path.dirname(repoRoot),
-    `${path.basename(repoRoot)}-worktrees`,
-  );
-  const listed = await run(["worktree", "list", "--porcelain"]);
-  const targets = listed
-    .split("\n")
-    .filter((l) => l.startsWith("worktree "))
-    .map((l) => l.slice("worktree ".length))
-    .filter(
-      (p) =>
-        p === path.join(wtRoot, tepId) ||
-        p === path.join(wtRoot, `${tepId}-tester`) ||
-        p.startsWith(path.join(wtRoot, "oracle-runners", `${tepId}-`)),
-    );
-  for (const t of targets) await run(["worktree", "remove", "--force", t]);
-  await run(["worktree", "prune"]);
-}
 
 /**
  * Projects, not folders (§7quater): the picker lists ENABLED projects —
@@ -129,6 +104,17 @@ async function retireTepWorktrees(repoRoot: string, tepId: string): Promise<void
  * is a remembered identity, never a positional accident.
  */
 const sessions = new Map<string, TandemSession>();
+
+/** The session of the remembered (repository, thinking space) pair. */
+function activeSession(
+  context: vscode.ExtensionContext,
+  project?: EnabledProject,
+): TandemSession | undefined {
+  const p = project ?? rememberedProject(context);
+  if (!p) return undefined;
+  const slug = context.workspaceState.get<string>(`tandem.space.${p.card.id}`);
+  return slug ? sessions.get(`${p.card.id}/${slug}`) : undefined;
+}
 let statusBar: vscode.StatusBarItem | undefined;
 
 function openProjects(): EnabledProject[] {
@@ -148,6 +134,7 @@ function rememberedProject(context: vscode.ExtensionContext): EnabledProject | u
   if (open.length === 1) return open[0];
   return undefined;
 }
+
 
 async function chooseProject(context: vscode.ExtensionContext): Promise<EnabledProject | undefined> {
   const open = openProjects();
@@ -247,7 +234,7 @@ function storeRootOf(): string {
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
-  const s = project ? sessions.get(project.card.id) : undefined;
+  const s = project ? activeSession(context, project) : undefined;
   if (s?.running && s.runState) {
     const v = s.runState.view();
     const done = v.units.filter((u) => u.state === "done").length;
@@ -274,7 +261,7 @@ function heartbeat(context: vscode.ExtensionContext): void {
 function pushActive(context: vscode.ExtensionContext, message?: string): void {
   heartbeat(context);
   const project = rememberedProject(context);
-  const s = project ? sessions.get(project.card.id) : undefined;
+  const s = project ? activeSession(context, project) : undefined;
   if (!s) return;
   panel?.pushFrom(s, message);
   if (message?.startsWith("Delivery ready"))
@@ -295,12 +282,13 @@ async function ensureSession(
   if (!project && interactive) project = await chooseProject(context);
   if (!project) return undefined;
   updateStatusBar(project);
-  const existing = sessions.get(project.card.id);
+  const spaceSlug = await chooseThinkingSpace(context, project.card.id, interactive);
+  if (!spaceSlug) return undefined;
+  const sessionKey = `${project.card.id}/${spaceSlug}`;
+  const existing = sessions.get(sessionKey);
   if (existing) return existing;
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
-  const storeRoot =
-    config.get<string>("storeRoot", "") ||
-    path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
+  const storeRoot = configuredStoreRoot();
   const forge = await resolveForge(
     project.gitRoot,
     config.get<string>("giteaToken", ""),
@@ -314,10 +302,10 @@ async function ensureSession(
       // sub-project, the repo root otherwise.
       repoRoot: project.anchorDir,
     },
-    // The store is keyed by minted identity, per-user append-scoped
-    // (§7ter / multi-user provision) — never by a folder spelling.
-    storeDir: path.join(storeRoot, "spaces", project.card.id, author),
-    projectDir: path.join(storeRoot, "spaces", project.card.id),
+    // The store is keyed by minted identity, then by THINKING SPACE
+    // (Amendment 1), per-user append-scoped — never by a folder spelling.
+    storeDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).storeDir,
+    projectDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).foldDir,
     storageDir: context.globalStorageUri.fsPath,
     now: () => new Date().toISOString(),
     author,
@@ -343,7 +331,7 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     onChanged: (message) => pushActive(context, message),
   });
-  sessions.set(project.card.id, s);
+  sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
   // not only after the next act.
   void s.renderAbstracts();
@@ -421,9 +409,8 @@ export function activate(context: vscode.ExtensionContext): void {
     updateConfigContext,
   });
 
-  const activeSession = (): TandemSession => {
-    const project = rememberedProject(context);
-    const s = project ? sessions.get(project.card.id) : undefined;
+  const requireSession = (): TandemSession => {
+    const s = activeSession(context);
     if (!s) throw new Error("no active Tandem session — open the space first");
     return s;
   };
@@ -438,7 +425,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!s) return;
     updateStatusBar(rememberedProject(context));
     projectsTree?.refresh();
-    if (!panel) panel = new SpacePanel(activeSession, hooks);
+    if (!panel) panel = new SpacePanel(requireSession, hooks);
     await panel.show(context.extensionUri);
     pushActive(context);
   };
