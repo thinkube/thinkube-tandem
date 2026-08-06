@@ -211,3 +211,18 @@ export function createProduct(
   fs.writeFileSync(file, stringifyYaml({ name: trimmed }));
   return { ok: true };
 }
+
+/** Set or change a card's PRODUCT — a label edit; the minted id is never
+ *  touched. Refused when the directory is not enabled. */
+export function setCardProduct(
+  dir: string,
+  product: string,
+): { ok: true } | { ok: false; reason: string } {
+  const card = readCard(dir);
+  if (!card) return { ok: false, reason: "not an enabled project (no card)" };
+  fs.writeFileSync(
+    path.join(dir, CARD_RELPATH),
+    stringifyYaml({ ...card, product: product.trim() }),
+  );
+  return { ok: true };
+}

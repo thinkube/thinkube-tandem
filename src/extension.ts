@@ -18,6 +18,7 @@ import {
   listProducts,
   mintCard,
   scopesNotOpen,
+  setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { newProjectFlow } from "./hostui/projectOps";
@@ -481,6 +482,31 @@ export function activate(context: vscode.ExtensionContext): void {
           if (!product) return;
         }
         await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+      },
+    ),
+    vscode.commands.registerCommand(
+      "thinkube-tandem.setProduct",
+      async (node?: { project?: EnabledProject }) => {
+        const project =
+          node?.project ??
+          openProjects().find((p) => p.card.id === rememberedProject(context)?.card.id);
+        if (!project) return;
+        const names = listProducts(storeRootOf(), openProjects());
+        const pick = await vscode.window.showQuickPick(
+          [...names.map((n) => ({ label: n })), { label: "$(add) New product…" }],
+          { title: `Which product does “${project.card.label}” belong to?` },
+        );
+        if (!pick) return;
+        let product = pick.label;
+        if (product.startsWith("$(add)")) {
+          const typed = await vscode.window.showInputBox({ title: "New product name" });
+          if (!typed?.trim()) return;
+          createProduct(storeRootOf(), typed);
+          product = typed.trim();
+        }
+        const r = setCardProduct(project.anchorDir, product);
+        if (!r.ok) void vscode.window.showErrorMessage(`Tandem: ${r.reason}`);
+        projectsTree?.refresh();
       },
     ),
     vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {

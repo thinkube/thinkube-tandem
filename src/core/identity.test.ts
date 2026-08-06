@@ -111,3 +111,15 @@ test("products: an empty product persists as a file; the list unions files with 
   const projects = discoverProjects(dir);
   assert.deepEqual(listProducts(storeRoot, projects), ["KubeXlat", "Platform"]);
 });
+
+test("setting a product later is a label edit — the id survives untouched", async () => {
+  const { setCardProduct } = await import("./identity");
+  const dir = tmp();
+  const m = mintCard(dir, { label: "legacy project" }, () => "l1");
+  assert.ok(m.ok);
+  assert.ok(setCardProduct(dir, "Platform").ok);
+  const read = readCard(dir)!;
+  assert.equal(read.product, "Platform");
+  assert.equal(read.id, "legacy-project-l1", "identity is immutable through the label edit");
+  assert.ok(!setCardProduct(tmp(), "X").ok, "an un-enabled directory refuses");
+});

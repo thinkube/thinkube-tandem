@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DraftPush, onDraft, onSpace, post, SpacePush, UnitVM } from "./vscode";
 import { RunSection } from "./Run";
 import { UnitsMap } from "./UnitsMap";
-import { SidePanel } from "./SidePanel";
+import { Rail } from "./Rail";
 import { useWorld, ZoomControls } from "./proto/world";
 
 
@@ -242,6 +242,67 @@ export function App(): JSX.Element {
           <span style={{ fontSize: 12, opacity: 0.75 }}>{push.message}</span>
         ) : null}
       </div>
+      {push.asks.length ? (
+        <section data-asks style={{ margin: "6px 12px 0" }}>
+          <ol style={{ margin: 0, paddingLeft: 18 }}>
+            {push.asks.map((a) => (
+              <li key={a.id} data-ask={a.id} style={{ fontSize: 12, opacity: 0.85 }}>
+                {a.text}
+                {push.activity?.askId === a.id ? (
+                  <span style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
+                    ⟳ {push.activity.label}… ({push.activity.current}/{push.activity.total})
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+      {push.lastAnswer ? (
+        <section data-answer style={{ margin: "6px 12px 0", padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
+          <div style={{ fontSize: 11, opacity: 0.6 }}>You asked: {push.lastAnswer.question}</div>
+          <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
+        </section>
+      ) : null}
+      {(() => {
+        const uncovered = push.units.filter((u) => u.coverage.covered < u.coverage.total);
+        const staleUnits = push.units.filter((u) => u.stale);
+        const chips: { key: string; label: string; color: string; unitId?: string }[] = [
+          ...push.questions.map((q, i) => ({
+            key: `q${i}`,
+            label: `❓ ${q.text.length > 40 ? q.text.slice(0, 39) + "…" : q.text}`,
+            color: "#e5c07b",
+            unitId: undefined as string | undefined,
+          })),
+          ...uncovered.map((u) => ({
+            key: `c${u.id}`,
+            label: `⚠ nothing proves: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
+            color: "#f59e0b",
+            unitId: u.id as string | undefined,
+          })),
+          ...staleUnits.map((u) => ({
+            key: `s${u.id}`,
+            label: `stale: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
+            color: "#8b949e",
+            unitId: u.id as string | undefined,
+          })),
+        ];
+        return chips.length ? (
+          <div data-next-actions style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "6px 12px 0", alignItems: "center" }}>
+            <span style={{ fontSize: 11, opacity: 0.6 }}>needs you:</span>
+            {chips.map((c) => (
+              <button
+                key={c.key}
+                data-next-action={c.key}
+                style={{ fontSize: 11, border: `1px solid ${c.color}`, color: c.color, background: "none", borderRadius: 10, padding: "1px 8px", cursor: c.unitId ? "pointer" : "default" }}
+                onClick={() => c.unitId && setSelected(c.unitId)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        ) : null;
+      })()}
       <div data-tabs style={{ display: "flex", gap: 6, padding: "8px 10px 0", alignItems: "center" }}>
         <button
           data-tab-units
@@ -300,90 +361,20 @@ export function App(): JSX.Element {
           </div>
         )}
         <ZoomControls world={tab === "units" ? unitsWorld : flowWorld} />
-        <div
-          data-rail
-          style={{
-            width: 240,
-            borderLeft: "1px solid var(--vscode-panel-border, #3c3c3c)",
-            padding: 10,
-            overflowY: "auto",
-            fontSize: 12,
-          }}
-        >
-          <h4 style={{ margin: "2px 0 8px", fontSize: 12, color: "var(--vscode-descriptionForeground, #9d9d9d)", textTransform: "uppercase" }}>
-            Space-wide (governs every unit)
-          </h4>
-          {push.decisions.length === 0 ? (
-            <div style={{ opacity: 0.6 }}>No decisions yet.</div>
-          ) : (
-            push.decisions.map((d, i) => (
-              <div
-                key={i}
-                data-decision={i}
-                style={{ border: "1px solid var(--vscode-panel-border, #3c3c3c)", borderRadius: 5, padding: "6px 8px", marginBottom: 8 }}
-              >
-                {d}{" "}
-                <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 8, border: "1px solid #4ec9b0", color: "#4ec9b0" }}>
-                  decision
-                </span>
-              </div>
-            ))
-          )}
-          <SidePanel
-            push={push}
-            selected={selected}
-            flipped={flipped}
-            onFlip={(id) =>
-              setFlipped((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              })
-            }
-          />
-        </div>
+        <Rail
+          push={push}
+          selected={selected}
+          flipped={flipped}
+          onFlip={(id) =>
+            setFlipped((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+        />
       </div>
     </div>
   );
 }
-
-function Questions(props: { push: SpacePush }): JSX.Element {
-  const { push } = props;
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  return (
-    <section data-questions style={{ marginBottom: 16 }}>
-      <strong>Questions for you ({push.questions.length})</strong>
-      {push.questions.map((q) => (
-        <div key={q.id} data-question={q.id} style={{ margin: "6px 0", padding: 6, border: "1px solid #f59e0b", borderRadius: 6 }}>
-          <div style={{ fontSize: 12 }}>{q.text}</div>
-          <textarea
-            data-question-text={q.id}
-            disabled={push.running}
-            value={drafts[q.id] ?? q.recommendation ?? ""}
-            onChange={(e) => setDrafts((d) => ({ ...d, [q.id]: e.target.value }))}
-            style={{ width: "100%", minHeight: 40, fontSize: 12, margin: "4px 0" }}
-          />
-          <button
-            data-accept-question={q.id}
-            disabled={push.running}
-            title="Accept — this becomes a binding decision and the ask re-grounds under it"
-            onClick={() =>
-              post({ action: "accept-question", questionId: q.id, text: (drafts[q.id] ?? q.recommendation ?? "").trim() })
-            }
-          >
-            Accept
-          </button>
-        </div>
-      ))}
-      {push.decisions.length ? (
-        <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-          Decisions in force: {push.decisions.join(" · ")}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-/** Layered layout for the orchestration graph: a unit's column is one past
- *  its deepest dependency, so edges always point left → right. */
