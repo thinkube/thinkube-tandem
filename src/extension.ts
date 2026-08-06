@@ -11,6 +11,12 @@ import { TandemSession } from "./surfaces/session";
 import { SpacePanel, SpaceViewProvider } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
+import {
+  discoverProjects,
+  EnabledProject,
+  mintCard,
+  scopesNotOpen,
+} from "./core/identity";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { ConfigTreeProvider } from "./engine/host/ConfigTreeProvider";
 import { registerConfigCommands } from "./engine/host/configCommands";
@@ -27,13 +33,18 @@ let panel: SpacePanel | undefined;
 let sideView: SpaceViewProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
+/** Author identity is mechanical (§7ter): the git user.email localpart,
+ *  never a typed display name. */
 function gitAuthor(repoRoot: string): Promise<string> {
   return new Promise((resolve) => {
     execFile(
       "git",
-      ["-C", repoRoot, "config", "user.name"],
+      ["-C", repoRoot, "config", "user.email"],
       { encoding: "utf8" },
-      (err, stdout) => resolve(err ? "user" : stdout.trim().replace(/\s+/g, "-").toLowerCase() || "user"),
+      (err, stdout) => {
+        const local = err ? "" : (stdout.trim().split("@")[0] ?? "");
+        resolve(local.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase() || "user");
+      },
     );
   });
 }
@@ -105,48 +116,119 @@ async function retireTepWorktrees(repoRoot: string, tepId: string): Promise<void
 }
 
 /**
- * The active repository is an explicit choice, never a positional accident:
- * a remembered pick, else the single workspace folder, else the human
- * chooses. One session per repository; the store namespaces by repo name.
+ * Projects, not folders (§7quater): the picker lists ENABLED projects —
+ * identity cards discovered across the workspace, grouped by their product
+ * label — plus enablement for folders without a card. The active project
+ * is a remembered identity, never a positional accident.
  */
 const sessions = new Map<string, TandemSession>();
 let statusBar: vscode.StatusBarItem | undefined;
 
-function rememberedRepo(context: vscode.ExtensionContext): string | undefined {
-  const saved = context.workspaceState.get<string>("tandem.activeRepo");
+function openProjects(): EnabledProject[] {
   const folders = vscode.workspace.workspaceFolders ?? [];
-  if (saved && folders.some((f) => f.uri.fsPath === saved)) return saved;
-  if (folders.length === 1) return folders[0].uri.fsPath;
+  const seen = new Map<string, EnabledProject>();
+  for (const f of folders)
+    for (const p of discoverProjects(f.uri.fsPath))
+      if (!seen.has(p.card.id)) seen.set(p.card.id, p);
+  return [...seen.values()];
+}
+
+function rememberedProject(context: vscode.ExtensionContext): EnabledProject | undefined {
+  const open = openProjects();
+  const saved = context.workspaceState.get<string>("tandem.activeProject");
+  const hit = saved ? open.find((p) => p.card.id === saved) : undefined;
+  if (hit) return hit;
+  if (open.length === 1) return open[0];
   return undefined;
 }
 
-async function chooseRepo(context: vscode.ExtensionContext): Promise<string | undefined> {
+async function chooseProject(context: vscode.ExtensionContext): Promise<EnabledProject | undefined> {
+  const open = openProjects();
   const folders = vscode.workspace.workspaceFolders ?? [];
-  if (folders.length === 0) return undefined;
-  const pick = await vscode.window.showQuickPick(
-    folders.map((f) => ({
-      label: f.name,
-      description: f.uri.fsPath,
-      path: f.uri.fsPath,
-    })),
-    { title: "Tandem — which project / repository are you working on?" },
-  );
+  type Item = vscode.QuickPickItem & { project?: EnabledProject; enableDir?: string };
+  const items: Item[] = [];
+  const byProduct = new Map<string, EnabledProject[]>();
+  for (const p of open) {
+    const k = p.card.product ?? "";
+    if (!byProduct.has(k)) byProduct.set(k, []);
+    byProduct.get(k)!.push(p);
+  }
+  for (const [product, ps] of [...byProduct.entries()].sort()) {
+    if (product)
+      items.push({ label: product, kind: vscode.QuickPickItemKind.Separator });
+    for (const p of ps) {
+      const missing = scopesNotOpen(p, open);
+      items.push({
+        label: p.card.label,
+        description: p.prefix ? `${path.basename(p.gitRoot)}/${p.prefix}` : path.basename(p.gitRoot),
+        detail: missing.length
+          ? `⚠ scope(s) not open in this workspace: ${missing.map((s) => s.label ?? s.id ?? s.remote ?? "?").join(", ")}`
+          : undefined,
+        project: p,
+      });
+    }
+  }
+  const carded = new Set(open.map((p) => path.resolve(p.anchorDir)));
+  const enableable = folders.filter((f) => !carded.has(path.resolve(f.uri.fsPath)));
+  if (enableable.length) {
+    items.push({ label: "Enable as a project", kind: vscode.QuickPickItemKind.Separator });
+    for (const f of enableable)
+      items.push({
+        label: `$(add) Enable ${f.name}…`,
+        description: f.uri.fsPath,
+        enableDir: f.uri.fsPath,
+      });
+  }
+  const pick = await vscode.window.showQuickPick(items, {
+    title: "Tandem — which project are you working on?",
+  });
   if (!pick) return undefined;
-  await context.workspaceState.update("tandem.activeRepo", pick.path);
-  return pick.path;
+  if (pick.enableDir) {
+    const label = await vscode.window.showInputBox({
+      title: "Project label (a name, never an identity)",
+      value: path.basename(pick.enableDir),
+    });
+    if (!label) return undefined;
+    const product = await vscode.window.showInputBox({
+      title: "Product grouping label (optional — e.g. KubeXlat, Platform)",
+      value: "",
+    });
+    const remote = await new Promise<string | undefined>((resolve) =>
+      execFile(
+        "git",
+        ["-C", pick.enableDir!, "remote", "get-url", "origin"],
+        { encoding: "utf8" },
+        (err, out) => resolve(err ? undefined : out.trim()),
+      ),
+    );
+    const minted = mintCard(pick.enableDir, {
+      label,
+      ...(product ? { product } : {}),
+      ...(remote ? { remote } : {}),
+    });
+    if (!minted.ok) {
+      void vscode.window.showErrorMessage(`Tandem: ${minted.reason}`);
+      return undefined;
+    }
+    const enabled = openProjects().find((p) => p.card.id === minted.card.id);
+    if (enabled) await context.workspaceState.update("tandem.activeProject", enabled.card.id);
+    return enabled;
+  }
+  await context.workspaceState.update("tandem.activeProject", pick.project!.card.id);
+  return pick.project;
 }
 
-function updateStatusBar(repoRoot: string | undefined): void {
+function updateStatusBar(project: EnabledProject | undefined): void {
   if (!statusBar) return;
-  statusBar.text = repoRoot
-    ? `$(repo) Tandem: ${path.basename(repoRoot)}`
-    : "$(repo) Tandem: choose repo";
+  statusBar.text = project
+    ? `$(repo) Tandem: ${project.card.product ? `${project.card.product} / ` : ""}${project.card.label}`
+    : "$(repo) Tandem: choose project";
   statusBar.show();
 }
 
 function pushActive(context: vscode.ExtensionContext, message?: string): void {
-  const repo = rememberedRepo(context);
-  const s = repo ? sessions.get(repo) : undefined;
+  const project = rememberedProject(context);
+  const s = project ? sessions.get(project.card.id) : undefined;
   if (!s) return;
   panel?.pushFrom(s, message);
   sideView?.pushFrom(s, message);
@@ -156,37 +238,49 @@ async function ensureSession(
   context: vscode.ExtensionContext,
   interactive = true,
 ): Promise<TandemSession | undefined> {
-  let repoRoot = rememberedRepo(context);
-  if (!repoRoot && interactive) repoRoot = await chooseRepo(context);
-  if (!repoRoot) return undefined;
-  updateStatusBar(repoRoot);
-  const existing = sessions.get(repoRoot);
+  let project = rememberedProject(context);
+  if (!project && interactive) project = await chooseProject(context);
+  if (!project) return undefined;
+  updateStatusBar(project);
+  const existing = sessions.get(project.card.id);
   if (existing) return existing;
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const storeRoot =
     config.get<string>("storeRoot", "") ||
     path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
-  const spaceName = path.basename(repoRoot);
   const forge = await resolveForge(
-    repoRoot,
+    project.gitRoot,
     config.get<string>("giteaToken", ""),
   );
-  const boundRepo = repoRoot;
+  const author = await gitAuthor(project.gitRoot);
+  const bound = project;
   const s = new TandemSession({
     round: {
       model: config.get<string>("groundingModel", "opus"),
-      repoRoot,
+      // Grounding reads the ANCHOR scope — the subtree for a monorepo
+      // sub-project, the repo root otherwise.
+      repoRoot: project.anchorDir,
     },
-    storeDir: path.join(storeRoot, "spaces", spaceName),
+    // The store is keyed by minted identity, per-user append-scoped
+    // (§7ter / multi-user provision) — never by a folder spelling.
+    storeDir: path.join(storeRoot, "spaces", project.card.id, author),
     storageDir: context.globalStorageUri.fsPath,
     now: () => new Date().toISOString(),
-    author: await gitAuthor(repoRoot),
+    author,
     forge,
+    scope: {
+      gitRoot: project.gitRoot,
+      prefix: project.prefix,
+      projectId: project.card.id,
+      label: project.card.product
+        ? `${project.card.product} / ${project.card.label}`
+        : project.card.label,
+    },
     suiteCommand: config
       .get<string>("suiteCommand", "npm test")
       .split(" ")
       .filter(Boolean),
-    retire: (tepId) => retireTepWorktrees(boundRepo, tepId),
+    retire: (tepId) => retireTepWorktrees(bound.gitRoot, tepId),
     workerModel: {
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
@@ -195,7 +289,7 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     onChanged: (message) => pushActive(context, message),
   });
-  sessions.set(repoRoot, s);
+  sessions.set(project.card.id, s);
   if (!storeSync) {
     storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
     storeSync.start();
@@ -207,13 +301,13 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
   statusBar.tooltip = "Switch the project / repository Tandem works on";
-  updateStatusBar(rememberedRepo(context));
+  updateStatusBar(rememberedProject(context));
   context.subscriptions.push(statusBar);
 
   // The Configuration area (v1, verbatim): hooks / commands / skills /
   // agents / MCP / permissions / plugins per scope, in the same container.
   const seedPath =
-    rememberedRepo(context) ??
+    rememberedProject(context)?.gitRoot ??
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
     process.env.HOME ??
     "/";
@@ -228,7 +322,7 @@ export function activate(context: vscode.ExtensionContext): void {
   configService.onConfigChanged(() => {
     void updateConfigContext();
   });
-  void updateActiveContext(rememberedRepo(context));
+  void updateActiveContext(rememberedProject(context)?.gitRoot);
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => {
       void updateActiveContext();
@@ -243,8 +337,8 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const activeSession = (): TandemSession => {
-    const repo = rememberedRepo(context);
-    const s = repo ? sessions.get(repo) : undefined;
+    const project = rememberedProject(context);
+    const s = project ? sessions.get(project.card.id) : undefined;
     if (!s) throw new Error("no active Tandem session — open the space first");
     return s;
   };
@@ -301,9 +395,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const storeRoot =
         config.get<string>("storeRoot", "") ||
         path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
-      const repo = rememberedRepo(context);
-      const dirs = repo
-        ? [path.join(storeRoot, "spaces", path.basename(repo), "defects")]
+      const project = rememberedProject(context);
+      const author = project ? await gitAuthor(project.gitRoot) : "user";
+      const dirs = project
+        ? [path.join(storeRoot, "spaces", project.card.id, author, "defects")]
         : [];
       const lines: string[] = ["# Tandem defects — find-time ledger", ""];
       let total = 0;
@@ -335,11 +430,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.window.showTextDocument(doc, { preview: true });
     }),
     vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
-      const picked = await chooseRepo(context);
+      const picked = await chooseProject(context);
       if (!picked) return;
       await ensureSession(context, true);
       updateStatusBar(picked);
-      pushActive(context, `Working on ${path.basename(picked)}.`);
+      pushActive(context, `Working on ${picked.card.label}.`);
     }),
   );
 }

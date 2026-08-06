@@ -20,7 +20,6 @@
  * Every failure lands as an artifact — UNDELIVERED, containment, red
  * proofs — never as silence.
  */
-import { execFile } from "node:child_process";
 import { accessSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -43,7 +42,7 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { copyRel, defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { foldBlastRadius } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -60,6 +59,9 @@ export interface DispatchDeps {
   forge?: Forge;
   state: RunState;
   spaceName: string;
+  /** Project identity — qualifies branch and worktree names so two
+   *  projects' runs in the same monorepo never collide (§7quater). */
+  projectId?: string;
   /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
   storeDir?: string;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
@@ -73,29 +75,6 @@ export interface DispatchDeps {
   supervisorRound?: typeof runReadRound;
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
 }
-
-const defaultExec = (
-  cmd: string,
-  args: string[],
-  cwd: string,
-): Promise<{ code: number; out: string }> =>
-  new Promise((resolve) => {
-    execFile(
-      cmd,
-      args,
-      { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      (err, stdout, stderr) =>
-        resolve({
-          code:
-            err && typeof (err as { code?: unknown }).code === "number"
-              ? ((err as { code?: number }).code as number)
-              : err
-                ? 1
-                : 0,
-          out: `${stdout}\n${stderr}`,
-        }),
-    );
-  });
 
 export interface DispatchOutcome {
   delivery?: Delivery;
@@ -115,14 +94,16 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const branch = `tandem/${tep}`;
+  const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
+  const branch = `tandem/${runName}`;
   const wtRoot = path.join(
     path.dirname(deps.repoRoot),
     `${path.basename(deps.repoRoot)}-worktrees`,
   );
-  const worktree = path.join(wtRoot, tep);
-  const testerWt = path.join(wtRoot, `${tep}-tester`);
-  const storeDir = path.join(wtRoot, "oracle-store", tep);
+  const wtName = runName.replace(/\//g, "__");
+  const worktree = path.join(wtRoot, wtName);
+  const testerWt = path.join(wtRoot, `${wtName}-tester`);
+  const storeDir = path.join(wtRoot, "oracle-store", wtName);
   const log = (l: string) => st.log(l);
   const env = scrubbedEnv();
   const boundedExec = (cmd: string, cwd: string) =>
@@ -202,7 +183,7 @@ export async function dispatchTep(
     repoRoot: deps.repoRoot,
     branch,
     wtRoot,
-    tep,
+    tep: wtName,
     worktree,
     testerWt,
     sliceProbes,

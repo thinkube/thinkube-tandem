@@ -74,6 +74,10 @@ export interface SessionDeps {
   /** Injectable classifier + answer round for tests. */
   classify?: typeof classifyUtterance;
   answerRound?: typeof runReadRound;
+  /** The project scope (§7quater): grounding reads the anchor dir
+   *  (round.repoRoot); git operations run at the enclosing repo root with
+   *  every path qualified by the prefix. Absent = whole-repo project. */
+  scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
 }
@@ -118,9 +122,9 @@ export class TandemSession {
       : { approved: false, reason: status.reason };
   }
 
-  /** The repository this space is bound to — shown on the surface. */
+  /** The project label this space is bound to — a label, never resolved. */
   get repoName(): string {
-    return path.basename(this.deps.round.repoRoot);
+    return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
 
   private changed(message?: string): void {
@@ -387,13 +391,40 @@ export class TandemSession {
     this.runState = new RunState(() => this.deps.onChanged?.());
     this.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
+      // Monorepo scope: every grounded path is subtree-relative; qualify
+      // with the scope prefix so the engine works repo-root-relative.
+      const prefix = this.deps.scope?.prefix ?? "";
+      const qualified = prefix
+        ? {
+            ...this.space,
+            nodes: this.space.nodes.map((n) =>
+              n.grounding
+                ? {
+                    ...n,
+                    grounding: {
+                      ...n.grounding,
+                      touchpoints: n.grounding.touchpoints.map((t) => ({
+                        ...t,
+                        path: `${prefix}/${t.path}`,
+                      })),
+                    },
+                  }
+                : n,
+            ),
+          }
+        : this.space;
       let slices;
       try {
         slices = tepSlices({
-          space: this.space,
+          space: qualified,
           cut,
-          spaceName: path.basename(this.deps.storeDir),
+          spaceName: this.deps.scope?.projectId ?? path.basename(this.deps.storeDir),
         });
+        if (prefix)
+          for (const sl of slices)
+            for (const u of sl.workUnits)
+              if (u.role === "test")
+                u.footprint = u.footprint.map((f) => `${prefix}/${f}`);
       } catch (err) {
         this.running = false;
         this.changed(
@@ -404,7 +435,8 @@ export class TandemSession {
       const dispatch = this.deps.dispatch ?? dispatchTep;
       const outcome = await dispatch(
         {
-          repoRoot: this.deps.round.repoRoot,
+          repoRoot: this.deps.scope?.gitRoot ?? this.deps.round.repoRoot,
+          projectId: this.deps.scope?.projectId,
           model: this.deps.round.model,
           workerModel: this.deps.workerModel,
           concurrency: this.deps.maxConcurrent,

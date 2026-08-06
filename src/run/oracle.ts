@@ -6,6 +6,7 @@
  * answers one question: does the worker possess the information its task
  * requires? A DISCLOSE is by definition a contract gap and is ledgered.
  */
+import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
@@ -33,6 +34,25 @@ export type Exec = (
   args: string[],
   cwd: string,
 ) => Promise<{ code: number; out: string }>;
+
+export const defaultExec: Exec = (cmd, args, cwd) =>
+  new Promise((resolve) => {
+    execFile(
+      cmd,
+      args,
+      { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+      (err, stdout, stderr) =>
+        resolve({
+          code:
+            err && typeof (err as { code?: unknown }).code === "number"
+              ? ((err as { code?: number }).code as number)
+              : err
+                ? 1
+                : 0,
+          out: `${stdout}\n${stderr}`,
+        }),
+    );
+  });
 
 /**
  * Create or re-point a detached snapshot worktree at `ref`'s current commit.

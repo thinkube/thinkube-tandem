@@ -39,13 +39,13 @@ export function App(): JSX.Element {
   if (push.needsRepo)
     return (
       <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
-        <div style={{ opacity: 0.8 }}>Which project / repository are you working on?</div>
+        <div style={{ opacity: 0.8 }}>Which project are you working on?</div>
         <button
           data-choose-repo
           style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-button-background, #0e639c)", color: "var(--vscode-button-foreground, #fff)", cursor: "pointer" }}
           onClick={() => post({ action: "switch-repo" })}
         >
-          Choose repository…
+          Choose project…
         </button>
         {push.message ? <div style={{ fontSize: 12, opacity: 0.7 }}>{push.message}</div> : null}
       </div>
@@ -90,11 +90,11 @@ export function App(): JSX.Element {
         />
         <button
           data-switch-repo
-          title="Switch the project / repository this space works on"
+          title="Switch the project this space works on"
           style={{ fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "2px 8px" }}
           onClick={() => post({ action: "switch-repo" })}
         >
-          {push.repoName ?? "choose repo"} ▾
+          {push.repoName ?? "choose project"} ▾
         </button>
         <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
           {push.units.length} unit(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
