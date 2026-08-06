@@ -22,6 +22,8 @@ import {
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { newProjectFlow } from "./hostui/projectOps";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
+import { LauncherService } from "./engine/host/LauncherService";
+import { SessionLinkService } from "./engine/host/SessionLinkService";
 import { ConfigTreeProvider } from "./engine/host/ConfigTreeProvider";
 import { registerConfigCommands } from "./engine/host/configCommands";
 import {
@@ -355,6 +357,20 @@ export function activate(context: vscode.ExtensionContext): void {
   updateStatusBar(rememberedProject(context));
   context.subscriptions.push(statusBar);
 
+  // The Claude launcher (v1, verbatim): registers the cwd-patching wrapper
+  // under claudeCode.claudeProcessWrapper — through the version-stable
+  // extension-current symlink, so extension updates and the deploy script's
+  // stale-version pruning never orphan the setting — and mirrors
+  // launcher-created sessions into the Session History picker.
+  const sessionLinks = new SessionLinkService(context);
+  sessionLinks.activate();
+  context.subscriptions.push(sessionLinks);
+  const launcher = new LauncherService(context, sessionLinks);
+  context.subscriptions.push(launcher);
+  launcher.activate().catch((err) => {
+    console.error("LauncherService activation failed:", err);
+  });
+
   // The sidebar NAVIGATES; the editor WORKS (the v1 shell rule): the
   // Projects tree + Configuration tree live in the container, the space is
   // an editor tab. Products first — a project is born under its product.
@@ -424,6 +440,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("thinkube-ai.claude.openHere", (uri?: vscode.Uri) =>
+      launcher.openHere(uri),
+    ),
     vscode.commands.registerCommand("thinkube-tandem.openSpace", () => openSpaceFor()),
     vscode.commands.registerCommand("thinkube-tandem.activateProject", (id: string) =>
       openSpaceFor(id),
