@@ -152,6 +152,9 @@ export function Rail(props: {
 
       {unit ? (
         <section data-unit-panel style={{ marginBottom: 14 }}>
+          <h4 style={{ margin: "2px 0 8px", fontSize: 12, color: "var(--vscode-descriptionForeground, #9d9d9d)", textTransform: "uppercase" }}>
+            Selected unit
+          </h4>
           <strong style={{ fontSize: 12 }}>{unit.title}</strong>
           <div style={{ margin: "6px 0", display: "flex", gap: 6, flexWrap: "wrap" }}>
             {(() => {
@@ -208,7 +211,12 @@ export function Rail(props: {
           ))}
         </section>
       ) : (
-        <div style={{ opacity: 0.55, marginBottom: 14 }}>Click a unit card for its detail.</div>
+        <section data-unit-panel style={{ marginBottom: 14 }}>
+          <h4 style={{ margin: "2px 0 8px", fontSize: 12, color: "var(--vscode-descriptionForeground, #9d9d9d)", textTransform: "uppercase" }}>
+            Selected unit
+          </h4>
+          <div style={{ opacity: 0.55 }}>Click a unit card for its detail.</div>
+        </section>
       )}
 
       {push.deliveries.map((d) => (

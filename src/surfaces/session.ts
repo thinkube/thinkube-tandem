@@ -27,7 +27,11 @@ import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
-import { answerQuestionFlow, statementFlow } from "./captureFlows";
+import { nameUnits } from "../derive/name";
+import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
+import {
+  answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow,
+} from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
@@ -75,6 +79,8 @@ export interface SessionDeps {
   /** Injectable classifier + answer round for tests. */
   classify?: typeof classifyUtterance;
   answerRound?: typeof runReadRound;
+  /** Injectable naming round (unit titles + abstracts) for tests. */
+  name?: typeof nameUnits;
   /** The project scope (§7quater): grounding reads the anchor dir
    *  (round.repoRoot); git operations run at the enclosing repo root with
    *  every path qualified by the prefix. Absent = whole-repo project. */
@@ -140,9 +146,7 @@ export class TandemSession {
 
   /** Classify a DRAFT — records nothing (TEP-22: the classifier never
    *  silently records). A pasted list splits into items, previewed. */
-  async classifyDraft(
-    text: string,
-  ): Promise<{ kind: UtteranceKind; items?: string[] }> {
+  async classifyDraft(text: string): Promise<{ kind: UtteranceKind; items?: string[] }> {
     const items = splitList(text);
     if (items) return { kind: "ask", items };
     const classify = this.deps.classify ?? classifyUtterance;
@@ -166,10 +170,7 @@ export class TandemSession {
   /** Capture one utterance WITH ITS CONFIRMED KIND (the tag the human
    *  pressed): an ask grounds, a question gets an answer and is recorded
    *  nowhere, a rule becomes a decision in force born settled. */
-  async capture(
-    text: string,
-    confirmedKind?: UtteranceKind,
-  ): Promise<{ ok: boolean; reason?: string }> {
+  async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = confirmedKind ?? (await classify(this.deps.round, text));
     if (kind === "question") {
@@ -233,6 +234,7 @@ export class TandemSession {
         ? `Grounded into ${grounded.changes.length} change(s).${qNote}`
         : `The round returned no changes — the ask is captured; re-ground any time.${qNote}`,
     );
+    await this.renderAbstracts();
     return { ok: true };
   }
 
@@ -245,40 +247,31 @@ export class TandemSession {
         .flatMap((n) => n.serves),
     );
     if (staleAsks.size === 0) return;
-    const ground = this.deps.ground ?? runDerivationPipeline;
     for (const askId of staleAsks) {
       const ask = this.space.asks.find((a) => a.id === askId);
       if (!ask) continue;
-      const keep = this.space.nodes.filter((n) => !n.serves.includes(askId));
-      const fresh = await ground(this.deps.round, ask, {
-        nextIndex: this.space.nodes.length + 1,
+      this.space = await rederiveAskFlow({
+        space: this.space,
+        ask,
+        round: this.deps.round,
+        ground: this.deps.ground ?? runDerivationPipeline,
         decisions: this.decisionsInForce(),
-        digestStore: this.digestStore(),
+        digests: this.digestStore(),
         mintNodeId: (n) => `node-${this.author}-${n}`,
       });
-      this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
     }
     this.recluster();
     await this.refreshStaleness();
     this.changed("Re-grounded the stale changes.");
+    await this.renderAbstracts();
   }
 
-  /** Wipe everything DERIVED and start thinking again: asks survive (your
-   *  words are never machine-deleted), deliveries survive (history), but
-   *  nodes, questions, pins and unsigned cuts go. Refused once any TEP was
-   *  signed — a frozen scope is not erasable. Confirmation is surface-side. */
+  /** Wipe everything DERIVED — see panicFlow. Confirmation is surface-side. */
   panic(): { ok: boolean; reason?: string } {
-    if (this.space.cuts.some((c) => c.signature))
-      return { ok: false, reason: "a TEP was already signed in this space — panic is refused after a freeze" };
     if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
-    this.space = {
-      ...this.space,
-      nodes: [],
-      // Decisions the human settled survive a panic; open machine questions go.
-      questions: this.space.questions.filter((q) => q.decided),
-      pins: [],
-      cuts: [],
-    };
+    const r = panicFlow(this.space);
+    if ("reason" in r) return { ok: false, reason: r.reason };
+    this.space = r.space;
     this.cutNodeIds = new Set();
     this.stale = new Set();
     this.recluster();
@@ -302,32 +295,26 @@ export class TandemSession {
     questionId: string,
     editedText?: string,
   ): Promise<{ ok: boolean; reason?: string }> {
-    const q = this.space.questions.find((x) => x.id === questionId);
-    if (!q) return { ok: false, reason: `no question '${questionId}'` };
-    if (q.decided) return { ok: false, reason: "already decided" };
-    const text = (editedText ?? q.recommendation ?? "").trim();
-    if (!text) return { ok: false, reason: "a decision cannot be empty" };
-    this.space = {
-      ...this.space,
-      questions: this.space.questions.map((x) =>
-        x.id === questionId ? { ...x, decided: { text, at: this.deps.now() } } : x,
-      ),
-    };
-    // TEP-22: implications are STAGED, never auto-applied.
-    const affected = q.askId
-      ? [{
-          id: `impact-${this.author}-${(this.space.impacts ?? []).length + 1}`,
-          questionId,
-          askId: q.askId,
-          decision: text,
-        }]
-      : [];
-    this.space = { ...this.space, impacts: [...(this.space.impacts ?? []), ...affected] };
+    const r = decideQuestionFlow({
+      space: this.space,
+      questionId,
+      editedText,
+      now: this.deps.now(),
+      author: this.author,
+    });
+    if ("reason" in r) return { ok: false, reason: r.reason };
+    this.space = r.space;
+    if (r.askId) {
+      // SPEC: re-name units whose question was since decided.
+      this.space = clearAbstractsServingAsk(this.space, r.askId);
+      this.units = this.space.units;
+    }
     this.changed(
-      affected.length
+      r.staged
         ? "Decision in force — its implication is staged below; accept it to re-derive."
         : "Decision in force.",
     );
+    void this.renderAbstracts();
     return { ok: true };
   }
 
@@ -349,30 +336,19 @@ export class TandemSession {
     }
     const ask = this.space.asks.find((a) => a.id === im.askId);
     if (!ask) return { ok: false, reason: "the ask no longer exists" };
-    const ground = this.deps.ground ?? runDerivationPipeline;
-    const old = new Set(
-      this.space.nodes.filter((n) => n.serves.includes(ask.id)).map((n) => n.id),
-    );
-    const fresh = await ground(this.deps.round, ask, {
-      nextIndex: this.space.nodes.length + 1,
+    this.space = await rederiveAskFlow({
+      space: this.space,
+      ask,
+      round: this.deps.round,
+      ground: this.deps.ground ?? runDerivationPipeline,
       decisions: this.decisionsInForce(),
-      digestStore: this.digestStore(),
+      digests: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${n}`,
     });
-    this.space = {
-      ...this.space,
-      nodes: [
-        ...this.space.nodes.filter((n) => !old.has(n.id)),
-        ...fresh.changes,
-      ],
-      // A HUMAN act: old members leave their units; fresh ones re-enter.
-      units: this.space.units
-        .map((u) => ({ ...u, changeIds: u.changeIds.filter((id) => !old.has(id)) }))
-        .filter((u) => u.changeIds.length > 0),
-    };
     this.recluster();
     await this.refreshStaleness();
     this.changed("Re-derived under the decision.");
+    await this.renderAbstracts();
     return { ok: true };
   }
 
@@ -384,6 +360,7 @@ export class TandemSession {
     };
     this.recluster();
     this.changed(kind === "together" ? "Pinned into one slice." : "Split apart.");
+    void this.renderAbstracts();
   }
 
   async refreshStaleness(): Promise<void> {
@@ -400,6 +377,36 @@ export class TandemSession {
     this.edges = unitEdges(this.space.nodes, this.units);
   }
 
+  private _naming = false;
+
+  /** The naming pass — see surfaces/naming.ts. Guarded so overlapping
+   *  triggers collapse into one round; the next act re-triggers. */
+  async renderAbstracts(): Promise<void> {
+    if (this._naming) return;
+    this._naming = true;
+    try {
+      const next = await renderUnitAbstracts({
+        space: this.space,
+        round: this.deps.round,
+        name: this.deps.name ?? nameUnits,
+        readStamps:
+          this.deps.readCurrentStamp ??
+          (async () => [await readStamp(this.deps.round.repoRoot)]),
+        onActivity: (a) => {
+          this.activity = a;
+          this.deps.onChanged?.();
+        },
+      });
+      if (next) {
+        this.space = next;
+        this.units = this.space.units;
+        this.changed();
+      }
+    } finally {
+      this._naming = false;
+    }
+  }
+
   /** The human's verdict on a staged merge: accept applies it; reject
    *  vetoes the pair PERMANENTLY — it never re-proposes. */
   decideMerge(proposalId: string, accept: boolean): { ok: boolean; reason?: string } {
@@ -409,6 +416,7 @@ export class TandemSession {
     this.units = this.space.units;
     this.edges = unitEdges(this.space.nodes, this.units);
     this.changed(r.message);
+    void this.renderAbstracts();
     return { ok: true };
   }
 

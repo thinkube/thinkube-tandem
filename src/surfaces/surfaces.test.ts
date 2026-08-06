@@ -33,6 +33,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: dir,
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "2026-08-05T19:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -122,6 +123,7 @@ test("accept runs the engine's canonical order: merge → stamp → retire, and 
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -163,6 +165,7 @@ test("a refused merge aborts the accept before any stamp", async () => {
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -199,6 +202,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -238,6 +242,7 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: dir,
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -262,6 +267,7 @@ test("the capture seam classifies: a question is answered and recorded nowhere; 
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async (_d: unknown, text: string) =>
@@ -297,6 +303,7 @@ test("the confirmation tag: classifyDraft records NOTHING; capture records only 
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => {
@@ -338,6 +345,7 @@ test("list-paste: a pasted list previews as N items and records N independent as
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -357,6 +365,7 @@ test("a question's answer lands as state for the in-board panel, not as a toast"
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "question" as const,
@@ -376,6 +385,7 @@ test("liveness: the pipeline's stages surface as activity tied to the ask being 
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
@@ -398,4 +408,72 @@ test("liveness: the pipeline's stages surface as activity tied to the ask being 
   assert.ok(stages.some((x) => x.startsWith("reading your code@ask-")), "stage 1 surfaced against the ask");
   assert.ok(stages.some((x) => x.startsWith("deriving the changes@")), "stage 2 surfaced");
   assert.equal(session.activity, undefined, "activity clears when the pipeline ends");
+});
+
+test("naming round: units get stamped titles + abstracts; a decided question re-names; renders persist", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-name-"));
+  const calls: string[][] = [];
+  let batch = 0;
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-name-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [{ root: "/repo", head: "h1", dirty: "" }],
+    classify: async () => "ask" as const,
+    name: async (_r: unknown, units: { id: string; sentences: string[] }[]) => {
+      calls.push(units.map((u) => u.id));
+      batch++;
+      return units.map((u) => ({
+        unitId: u.id,
+        title: `T${batch} ${u.id}`,
+        text: `what ${u.id} delivers as a whole`,
+      }));
+    },
+    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
+      changes: [
+        {
+          id: `node-${opts.nextIndex}`,
+          sentence: "a clear button in the toolbar",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [],
+          grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+        },
+        {
+          id: `node-${opts.nextIndex + 1}`,
+          sentence: "a persisted retrievable log",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [],
+          grounding: { touchpoints: [{ path: "src/b.ts" }], stamp: [] },
+        },
+      ],
+      questions: [{ askId: ask.id, text: "which toolbar?", recommendation: "top" }],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("two decoupled things");
+  assert.equal(session.units.length, 2, "disjoint touchpoints form two units");
+  assert.deepEqual(calls, [[session.units[0].id, session.units[1].id]], "one batched naming call");
+  for (const u of session.units) {
+    assert.equal(u.abstract!.title, `T1 ${u.id}`);
+    assert.ok(u.abstract!.text!.includes("delivers as a whole"));
+    assert.deepEqual(u.abstract!.of, u.changeIds, "the render records the member set it described");
+    assert.equal(u.abstract!.stamp[0].head, "h1", "the render is stamped");
+  }
+
+  // SPEC: re-name units whose question was since decided.
+  await session.acceptQuestion(session.space.questions[0].id, "the top toolbar");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.length, 2, "deciding the question re-named the serving units");
+  for (const u of session.units) assert.equal(u.abstract!.title, `T2 ${u.id}`);
+
+  // A fresh session over the same store loads the renders back.
+  const reloaded = new TandemSession(deps as never);
+  for (const u of reloaded.space.units) assert.ok(u.abstract!.title.startsWith("T2"));
+
+  // Nothing due → the naming round is not called again.
+  await reloaded.renderAbstracts();
+  assert.equal(calls.length, 2, "a fresh render set names nothing");
 });

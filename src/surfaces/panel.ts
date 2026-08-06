@@ -79,26 +79,17 @@ function spacePush(session: TandemSession, message?: string): unknown {
       const askIds = new Set(nodes.flatMap((n) => n.serves));
       const firstAskIdx = session.space.asks.findIndex((a) => askIds.has(a.id));
       const firstAsk = firstAskIdx >= 0 ? session.space.asks[firstAskIdx] : undefined;
-      // The card body carries what the title cannot: the unit's OTHER member
-      // changes, where each lands in the code, and what proves it. The title
-      // (the first member's sentence) never repeats here — `more…` must always
-      // reveal genuinely new content.
-      const absLines = [
-        ...nodes.slice(1).map((n) => `• ${n.sentence}`),
-        ...nodes.flatMap((n) =>
-          (n.grounding?.touchpoints ?? []).map(
-            (t) => `→ ${t.path}${t.symbol ? ` › ${t.symbol}` : ""}${t.planned ? " (new)" : ""}`,
-          ),
-        ),
-        ...nodes.flatMap((n) => n.acceptance.map((c) => `✓ ${c.text}`)),
-      ];
       return {
         id: u.id,
         askLabel: firstAsk
           ? `ask ${firstAskIdx + 1} — ${firstAsk.text.split(/\s+/).slice(0, 7).join(" ")}${firstAsk.text.split(/\s+/).length > 7 ? "…" : ""}`
           : "unassigned",
-        ...(absLines.length ? { abs: absLines.join("\n") } : {}),
-        title: first,
+        // Two faces, one source: the card shows the naming round's rendered
+        // title + decision-sized abstract; the machine face (touchpoints,
+        // proofs) stays one gesture away behind the flip. Fallback title
+        // always: an unnamed unit shows its first member sentence, no body.
+        ...(u.abstract?.text ? { abs: u.abstract.text } : {}),
+        title: u.abstract?.title ?? first,
         count: nodes.length,
         changeIds: u.changeIds,
         island: island.get(u.id) ?? 0,

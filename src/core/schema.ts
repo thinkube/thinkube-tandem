@@ -72,8 +72,10 @@ export interface Change {
 export interface Unit {
   id: string;
   changeIds: string[];
-  /** Rendered title/abstract with the stamp of the inputs they described. */
-  abstract?: { title: string; text?: string; stamp: SourceStamp[] };
+  /** Rendered title/abstract with the stamp of the inputs they described.
+   *  `of` records the member set the render described — membership moving
+   *  past it is what makes the render stale and due for re-naming. */
+  abstract?: { title: string; text?: string; stamp: SourceStamp[]; of?: string[] };
 }
 
 /** A signed selection of changes to build now. Signing mints the TEP. */
