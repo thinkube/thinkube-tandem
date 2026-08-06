@@ -28,6 +28,7 @@ import {
 import { chooseProject, newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
 import { editContextScope, ensureWorkSession, findWorkProject } from "./hostui/workSession";
 import { createWorkProject, listWorkProjects, setWorkProjectState } from "./core/workProjects";
+import { newAppGesture } from "./hostui/templateFlow";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { LauncherService } from "./engine/host/LauncherService";
 import { SessionLinkService } from "./engine/host/SessionLinkService";
@@ -46,8 +47,7 @@ let panel: SpacePanel | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
-/** Author identity is mechanical (§7ter): the git user.email localpart,
- *  never a typed display name. */
+/** Author identity is mechanical (§7ter): git user.email localpart. */
 function gitAuthor(repoRoot: string): Promise<string> {
   return new Promise((resolve) => {
     execFile(
@@ -100,13 +100,8 @@ async function resolveForge(
   }
 }
 
-
-/**
- * Projects, not folders (§7quater): the picker lists ENABLED projects —
- * identity cards discovered across the workspace, grouped by their product
- * label — plus enablement for folders without a card. The active project
- * is a remembered identity, never a positional accident.
- */
+/** Sessions key by (owner, thinking space); the active owner is a
+ *  remembered identity, never a positional accident (§7quater). */
 const sessions = new Map<string, TandemSession>();
 
 /** The session of the remembered (owner, thinking space) pair — the owner
@@ -148,8 +143,6 @@ function rememberedProject(context: vscode.ExtensionContext): EnabledProject | u
   return undefined;
 }
 
-
-
 function updateStatusBar(project: EnabledProject | undefined): void {
   if (!statusBar) return;
   statusBar.text = project
@@ -172,7 +165,7 @@ function storeRootOf(): string {
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
-  const s = project ? activeSession(context, project) : undefined;
+  const s = activeSession(context);
   if (s?.running && s.runState) {
     const v = s.runState.view();
     const done = v.units.filter((u) => u.state === "done").length;
@@ -198,8 +191,7 @@ function heartbeat(context: vscode.ExtensionContext): void {
 
 function pushActive(context: vscode.ExtensionContext, message?: string): void {
   heartbeat(context);
-  const project = rememberedProject(context);
-  const s = project ? activeSession(context, project) : undefined;
+  const s = activeSession(context);
   if (!s) return;
   panel?.pushFrom(s, message);
   if (message?.startsWith("Delivery ready"))
@@ -442,12 +434,26 @@ export function activate(context: vscode.ExtensionContext): void {
           [
             { label: "Enable a repository", description: "an existing folder in the open workspace", k: "repo" },
             { label: "New project", description: "work that may touch several repositories — no code of its own", k: "work" },
+            { label: "New application from a template", description: "the platform instantiates it (Gitea + CI); thinking grounds in the real code", k: "app" },
           ],
           { title: `New under ${product}` },
         );
         if (!kind) return;
         if (kind.k === "repo") {
           await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+          return;
+        }
+        if (kind.k === "app") {
+          const owner = activeOwnerKey(context);
+          const slug = owner ? context.workspaceState.get<string>(`tandem.space.${owner}`) : undefined;
+          await newAppGesture({
+            product,
+            storeRoot: configuredStoreRoot(),
+            ...(owner ? { ownerKey: owner } : {}),
+            ...(slug ? { activeSlug: slug } : {}),
+            refresh: () => projectsTree?.refresh(),
+            activate: (cardId) => openSpaceFor(cardId),
+          });
           return;
         }
         const name = await vscode.window.showInputBox({
@@ -586,7 +592,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 }
-
 
 export function deactivate(): void {
   panel?.dispose();

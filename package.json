@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -264,6 +264,16 @@
           ],
           "default": "blocking",
           "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default — advisory let undocumented work reach Done."
+        },
+        "thinkubeTandem.controlUrl": {
+          "type": "string",
+          "default": "",
+          "description": "thinkube-control base URL for the template catalog and instantiation. Empty reads the connected MCP server's config."
+        },
+        "thinkubeTandem.controlToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for thinkube-control. Empty reads the connected MCP server's config."
         }
       }
     },
