@@ -77,6 +77,7 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "greet space",
       worker: async (w, brief) => {
         briefs.push({ role: w.role, text: brief });
@@ -145,6 +146,7 @@ test("MANDATORY-GREEN: a wrong implementation is not done — the oracle's evide
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "greet space",
       worker: async (w, brief) => {
         if (w.role === "test") {
@@ -191,6 +193,7 @@ test("the in-loop verify tool grades the coder's current work against the real p
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -226,6 +229,7 @@ test("a red probe is a red proof — the delivery exists and says so", async () 
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -284,6 +288,7 @@ test("independent slices run on the parallel frontier — two probe authors in f
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "pair space",
       concurrency: 2,
       worker: async (w) => {
@@ -334,6 +339,7 @@ test("parked worker: the question surfaces, the answer resumes, UNDELIVERED is h
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -384,6 +390,7 @@ test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELI
       model: "sonnet",
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
+      supervisorRound: async () => null,
       spaceName: "docs space",
       worker: async (w) => {
         // The probe passes trivially; the coder never writes the guide.
@@ -403,5 +410,121 @@ test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELI
   assert.ok(
     outcome.undelivered.some((u) => u.includes("docs obligation unmet")),
     "the engine's docs gate speaks on the delivery",
+  );
+});
+
+test("grade-first: when the committed state already satisfies the checks, no coder is spent", async () => {
+  const repo = tmpRepo();
+  // The implementation already exists on the base commit.
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src/greet.mjs"), `export function greet() { return "hello"; }\n`);
+  execFileSync("git", ["-C", repo, "add", "-A"], { encoding: "utf8" });
+  execFileSync("git", ["-C", repo, "commit", "-qm", "already built"], { encoding: "utf8" });
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-8" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const rolesDispatched: string[] = [];
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      spaceName: "greet space",
+      worker: async (w) => {
+        rolesDispatched.push(w.role);
+        if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.deepEqual(rolesDispatched, ["test"], "only the probe author ran — the coder was graded first");
+  assert.equal(outcome.undelivered.length, 0);
+  assert.ok([...state.units.values()].every((u) => u.state === "done"));
+});
+
+test("the honesty scan: a delivered confession marker is UNDELIVERED on the delivery's face", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-9" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+        else
+          writeInto(
+            w.worktree,
+            "src/greet.mjs",
+            `// !DEFERRAL_T!: handle non-English greetings\nexport function greet() { return "hello"; }\n`.replace("!DEFERRAL_T!", "TO" + "DO"),
+          );
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.ok(
+    outcome.undelivered.some((u) => u.includes("confesses a deferral")),
+    "the confession surfaced as UNDELIVERED, not a footnote",
+  );
+});
+
+test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISCLOSE is ledgered as a defect", async () => {
+  const repo = tmpRepo();
+  const ledger = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ledger-"));
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-10" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let coderBrief: string | undefined;
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      storeDir: ledger,
+      supervisorRound: async (_d, prompt) => {
+        assert.ok(prompt.includes("RUN SUPERVISOR"), "the supervisor doctrine rides the prompt");
+        return "DISCLOSE: the check expects the exact literal 'hello'.";
+      },
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+        } else {
+          coderBrief = brief;
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        }
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.ok(coderBrief!.includes("SUPERVISOR PRE-FLIGHT"), "the disclosure reached the brief");
+  assert.ok(coderBrief!.includes("exact literal 'hello'"));
+  const defectDir = path.join(ledger, "defects");
+  const rows = fs
+    .readdirSync(defectDir)
+    .flatMap((f) => fs.readFileSync(path.join(defectDir, f), "utf8").trim().split("\n"));
+  assert.ok(
+    rows.some((r) => r.includes("DISCLOSE") && r.includes("supervisor")),
+    "the disclosure is a ledgered contract gap",
   );
 });

@@ -34,6 +34,8 @@ interface RunView {
 export interface SpacePush {
   kind: "space";
   running: boolean;
+  asks: { id: string; text: string }[];
+  signedTeps: number;
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
@@ -55,7 +57,8 @@ export type WebToHost =
   | { action: "select-unit"; unitId: string }
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
-  | { action: "accept-delivery"; deliveryId: string };
+  | { action: "accept-delivery"; deliveryId: string }
+  | { action: "panic" };
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;

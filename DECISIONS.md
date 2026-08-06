@@ -40,3 +40,16 @@ of them there — nothing has users.
   the language-agnostic reading of the same convention.)
 - **The night dispatcher walks the DAG serially**; the parallel frontier
   pump returns with the full shell re-host — recorded, not silent.
+
+## Parity batch (2026-08-06, post-audit)
+- Sign refuses unprovable/ungrounded changes and undecided questions on the
+  cut's asks — the freeze-gate refusals moved from warnings into the gate.
+- The docs obligation derives from grounding: a slice declaring a docs/
+  touchpoint must land it; blocking at accept by default (advisory setting
+  is the recorded escape hatch).
+- The retired-symbol importer gate stays unwired until grounding grows a
+  `retires` declaration for symbol-deleting changes — it arms the day that
+  field exists; the module is imported and tested.
+- Supervisor rounds resolve on the judge role (workerModelByRole raises it);
+  ESCALATE falls through to the stalled park, DISCLOSE is ledgered.
+- Frontier concurrency default follows v1 (4), setting thinkubeTandem.maxConcurrent.

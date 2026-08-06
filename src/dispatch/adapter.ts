@@ -30,6 +30,17 @@ export function tepSlices({ space, cut, spaceName }: TepSlicesArgs): SliceForDag
   const members = cut.changeIds
     .map((id) => byId.get(id))
     .filter((c): c is Change => !!c);
+  // Repo containment: a touchpoint that escapes the scope's repository can
+  // never be dispatched — refuse before the engine sees the plan.
+  const escaping = members.flatMap((c) =>
+    (c.grounding?.touchpoints ?? [])
+      .map((t) => t.path)
+      .filter((p) => p.startsWith("/") || p.split("/").includes("..")),
+  );
+  if (escaping.length)
+    throw new Error(
+      `touchpoint(s) escape the repository: ${[...new Set(escaping)].join(", ")} — re-ground with repo-relative paths`,
+    );
   const units = formUnits(members);
   const sliceOf = new Map<string, number>();
   units.forEach((u, i) => u.changeIds.forEach((id) => sliceOf.set(id, i + 1)));

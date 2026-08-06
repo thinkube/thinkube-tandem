@@ -46,6 +46,31 @@ export function signCut(
   if (cut.changeIds.length === 0)
     return { ok: false, reason: "an empty cut cannot be signed" };
   if (cut.signature) return { ok: false, reason: "this cut is already signed" };
+  // The freeze refusals: what cannot be proven, placed, or is still an open
+  // question is not signable — the cut screen names these before the click.
+  const byId = new Map(space.nodes.map((n) => [n.id, n]));
+  const members = cut.changeIds.map((id) => byId.get(id)).filter((n) => !!n);
+  const unprovable = members.filter((n) => n!.acceptance.length === 0);
+  if (unprovable.length)
+    return {
+      ok: false,
+      reason: `nothing proves: ${unprovable.map((n) => n!.sentence).join("; ")} — add acceptance criteria before signing`,
+    };
+  const ungrounded = members.filter(
+    (n) => !n!.grounding || (n!.grounding.touchpoints ?? []).length === 0,
+  );
+  if (ungrounded.length)
+    return {
+      ok: false,
+      reason: `not grounded: ${ungrounded.map((n) => n!.sentence).join("; ")} — re-ground before signing`,
+    };
+  const askIds = new Set(members.flatMap((n) => n!.serves));
+  const open = space.questions.filter((q) => !q.decided && askIds.has(q.askId));
+  if (open.length)
+    return {
+      ok: false,
+      reason: `undecided question(s) on these asks: ${open.map((q) => q.text).join(" · ")} — decide them before signing`,
+    };
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
   ).length;
@@ -89,8 +114,13 @@ export type AcceptResult =
   | { ok: true; delivery: Delivery }
   | { ok: false; reason: string };
 
-/** The human's second gate. Refused while evidence is missing or red. */
-export function acceptDelivery(delivery: Delivery, at: string): AcceptResult {
+/** The human's second gate. Refused while evidence is missing or red; the
+ *  docs gate blocks by default (advisory is the recorded escape hatch). */
+export function acceptDelivery(
+  delivery: Delivery,
+  at: string,
+  docsGateMode: "blocking" | "advisory" = "blocking",
+): AcceptResult {
   if (delivery.acceptedAt)
     return { ok: false, reason: "this delivery is already accepted" };
   const notGreen = delivery.proofs.filter((p) => p.verdict !== "green");
@@ -100,6 +130,14 @@ export function acceptDelivery(delivery: Delivery, at: string): AcceptResult {
     return {
       ok: false,
       reason: `proof outstanding: ${notGreen.map((p) => `${p.label} (${p.verdict})`).join(", ")}`,
+    };
+  const docsUnmet = (delivery.undelivered ?? []).filter((u) =>
+    u.includes("docs obligation unmet"),
+  );
+  if (docsGateMode === "blocking" && docsUnmet.length)
+    return {
+      ok: false,
+      reason: `the docs gate blocks this accept: ${docsUnmet.join(" · ")}`,
     };
   return { ok: true, delivery: { ...delivery, acceptedAt: at } };
 }

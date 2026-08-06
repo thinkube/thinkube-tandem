@@ -79,6 +79,13 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "run view", gesture: "press Stop" },
   },
+  panic: {
+    kind: "human",
+    affordance: {
+      surface: "map toolbar",
+      gesture: "press Panic, then confirm — refused after any signed TEP",
+    },
+  },
   reground: {
     kind: "human",
     affordance: {

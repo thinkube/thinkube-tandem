@@ -113,7 +113,7 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
 test("engine-hash gate: engine sources change only with an ENGINE-CHANGE.md marker", () => {
   const repo = path.resolve(__dirname, "..", "..");
   const engineDir = path.join(repo, "src", "engine");
-  const mine = new Set(["importSmoke.test.ts", "splitFidelity.test.ts"]);
+  const mine = new Set(["importSmoke.test.ts", "splitFidelity.test.ts", "storeSync.test.ts"]);
   const current: Record<string, string> = {};
   const walk = (d: string) => {
     for (const name of fs.readdirSync(d).sort()) {
@@ -141,4 +141,28 @@ test("engine-hash gate: engine sources change only with an ENGINE-CHANGE.md mark
   } else {
     assert.deepEqual(changed, []);
   }
+});
+
+test("repo containment: a touchpoint escaping the repository refuses the plan", () => {
+  let s = emptySpace();
+  const a = addAsk(s, "escape", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "a change pointing outside",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c", text: "x" }],
+    grounding: { touchpoints: [{ path: "../outside/evil.ts" }], stamp: [] },
+  });
+  assert.ok(n.ok);
+  assert.throws(
+    () =>
+      tepSlices({
+        space: n.space,
+        cut: { id: "c", changeIds: [n.added.id] },
+        spaceName: "s",
+      }),
+    /escape the repository/,
+  );
 });

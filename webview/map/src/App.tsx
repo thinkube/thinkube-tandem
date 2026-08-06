@@ -31,6 +31,7 @@ export function App(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState("");
+  const [panicArmed, setPanicArmed] = useState(false);
 
   useEffect(() => onSpace(setPush), []);
 
@@ -66,6 +67,31 @@ export function App(): JSX.Element {
             borderRadius: 6,
           }}
         />
+        <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
+          {push.units.length} unit(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
+        </span>
+        {!push.running && push.signedTeps === 0 && (push.units.length > 0 || push.questions.length > 0) ? (
+          panicArmed ? (
+            <button
+              data-panic-confirm
+              style={{ fontSize: 11, color: "#f85149", background: "none", border: "1px solid #f85149", borderRadius: 4, cursor: "pointer" }}
+              onClick={() => {
+                setPanicArmed(false);
+                post({ action: "panic" });
+              }}
+            >
+              Really clear derived thinking?
+            </button>
+          ) : (
+            <button
+              data-panic
+              style={{ fontSize: 11, opacity: 0.6, background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+              onClick={() => setPanicArmed(true)}
+            >
+              Panic
+            </button>
+          )
+        ) : null}
         {push.running ? (
           <span style={{ fontSize: 12, color: "#3fb950" }}>● building…</span>
         ) : null}
@@ -388,6 +414,18 @@ function SidePanel(props: {
               ) : null}
             </div>
           ))}
+        </section>
+      ) : null}
+      {push.asks.length ? (
+        <section data-asks style={{ margin: "8px 12px" }}>
+          <strong style={{ fontSize: 12 }}>You asked</strong>
+          <ol style={{ margin: "4px 0 0 18px", padding: 0 }}>
+            {push.asks.map((a) => (
+              <li key={a.id} data-ask={a.id} style={{ fontSize: 12, opacity: 0.85 }}>
+                {a.text}
+              </li>
+            ))}
+          </ol>
         </section>
       ) : null}
       {push.cutCount > 0 ? (

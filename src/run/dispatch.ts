@@ -37,12 +37,15 @@ import {
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
-import {
-  createVerifyOracle,
-  formatVerifyReply,
-  VerifyOracle,
-} from "../engine/verifyOracle";
+import { isStubScannableFile, scanStubMarkers } from "../engine/core/stubScan";
+import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
+import { appendDefect } from "../engine/defectLog";
+import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
+import { copyRel, ensureSnapshot, sliceOracleFactory } from "./oracle";
+import { foldBlastRadius } from "./plan";
+import { renderTepBody } from "./briefs";
+import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
@@ -50,17 +53,23 @@ import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 export interface DispatchDeps {
   repoRoot: string;
   model: string;
+  /** Per-role model resolution (judgment raised above the base). */
+  workerModel?: WorkerModelConfig;
   suiteCommand: string[];
   forge?: Forge;
   state: RunState;
   spaceName: string;
-  /** Concurrent workers on the ready frontier (default 2). */
+  /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
+  storeDir?: string;
+  /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
   /** Injectable for tests: replaces the SDK worker. */
   worker?: (
     deps: Parameters<typeof runUnitWorker>[0],
     brief: string,
   ) => Promise<WorkerOutcome>;
+  /** Injectable for tests: replaces the supervisor's SDK round. */
+  supervisorRound?: typeof runReadRound;
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
 }
 
@@ -94,7 +103,6 @@ export interface DispatchOutcome {
   url?: string;
 }
 
-type Exec = NonNullable<DispatchDeps["exec"]>;
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -104,39 +112,6 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
   for (const k of Object.keys(env))
     if (/^NODE_TEST|^TEST_|^NODE_OPTIONS$/.test(k)) delete env[k];
   return env;
-}
-
-/**
- * Create or re-point a detached snapshot worktree at `ref`'s current commit.
- * Reuse = re-snapshot: hard reset + `clean -fd` (no -x — provisioning like
- * node_modules survives), so every use grades a fresh base.
- */
-async function ensureSnapshot(
-  repoRoot: string,
-  ref: string,
-  dir: string,
-  exec: Exec,
-): Promise<boolean> {
-  const sha = (await exec("git", ["-C", repoRoot, "rev-parse", ref], repoRoot)).out.trim();
-  const reg = await exec("git", ["-C", repoRoot, "worktree", "list", "--porcelain"], repoRoot);
-  if (reg.out.includes(`worktree ${dir}`)) {
-    await exec("git", ["-C", dir, "reset", "--hard", sha], dir);
-    await exec("git", ["-C", dir, "clean", "-fd"], dir);
-    return true;
-  }
-  await fs.mkdir(path.dirname(dir), { recursive: true });
-  const add = await exec(
-    "git",
-    ["-C", repoRoot, "worktree", "add", "--detach", dir, sha],
-    repoRoot,
-  );
-  return add.code === 0;
-}
-
-async function copyRel(fromRoot: string, toRoot: string, rel: string): Promise<void> {
-  const dst = path.join(toRoot, rel);
-  await fs.mkdir(path.dirname(dst), { recursive: true });
-  await fs.copyFile(path.join(fromRoot, rel), dst);
 }
 
 export async function dispatchTep(
@@ -162,6 +137,22 @@ export async function dispatchTep(
   const boundedExec = (cmd: string, cwd: string) =>
     runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env });
 
+  const defect = (entry: {
+    slice?: string;
+    unit?: string;
+    activity: string;
+    trigger: string;
+    type?: string;
+    qualifier?: string;
+    impact: string;
+    detail: string;
+  }): void => {
+    if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, ...entry });
+  };
+
+  const blast = await foldBlastRadius(slices, deps.repoRoot, exec, log);
+  if (blast) return { refusals: [blast], undelivered: [] };
+
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
@@ -178,6 +169,7 @@ export async function dispatchTep(
     return { refusals: [`worktree failed: ${wt.out.trim().slice(0, 300)}`], undelivered: [] };
   if (!(await ensureSnapshot(deps.repoRoot, branch, testerWt, exec)))
     return { refusals: [`tester snapshot failed at ${testerWt}`], undelivered: [] };
+  const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   await restoreProbes(storeDir, testerWt);
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
 
@@ -208,36 +200,25 @@ export async function dispatchTep(
   for (const u of dag)
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
 
-  const oracles = new Map<string, VerifyOracle>();
-  const buildOracle = (slice: string): VerifyOracle | undefined => {
-    const probes = sliceProbes.get(slice) ?? [];
-    const verifs = sliceVerifs.get(slice) ?? [];
-    if (!probes.length || !verifs.length) return undefined;
-    const existing = oracles.get(slice);
-    if (existing) return existing;
-    const runnerDir = path.join(wtRoot, "oracle-runners", `${tep}-${slice}`);
-    const oracle = createVerifyOracle({
-      codeWorktree: worktree,
-      testerWorktree: testerWt,
-      runnerDir,
-      probeFiles: probes,
-      verifications: verifs,
-      exec: boundedExec,
-      porcelain: async (cwd) =>
-        (await exec("git", ["-C", cwd, "status", "--porcelain", "--untracked-files=all"], cwd)).out,
-      resetRunner: async () => {
-        await ensureSnapshot(deps.repoRoot, branch, runnerDir, exec);
-      },
-      copyIn: (fromRoot, rel) => copyRel(fromRoot, runnerDir, rel),
-      removeIn: async (rel) => {
-        await fs.rm(path.join(runnerDir, rel), { force: true });
-      },
-      readFile: (root, rel) => fs.readFile(path.join(root, rel)),
-      log,
-    });
-    oracles.set(slice, oracle);
-    return oracle;
-  };
+  const briefBySlice = new Map<string, string>();
+  const buildOracle = sliceOracleFactory({
+    repoRoot: deps.repoRoot,
+    branch,
+    wtRoot,
+    tep,
+    worktree,
+    testerWt,
+    sliceProbes,
+    sliceVerifs,
+    briefBySlice,
+    model: deps.model,
+    workerModel: deps.workerModel,
+    supervisorRound: deps.supervisorRound,
+    exec,
+    boundedExec,
+    log,
+    defect,
+  });
 
   // Containment across the frontier: a unit is fenced to its own footprint,
   // but writes by OTHER live units in the same tree are theirs, not strays.
@@ -299,6 +280,21 @@ export async function dispatchTep(
 
     const oracle = role === "code" ? buildOracle(next.slice) : undefined;
     if (role === "code") await restoreProbes(storeDir, testerWt);
+
+    // Grade-first: when the committed state already satisfies the checks
+    // (a resume, a re-run, an earlier slice's work), the unit completes
+    // without spending a worker.
+    if (oracle) {
+      const pre = await oracle.confirmGreen();
+      if (pre.green) {
+        log(`✓ ${next.id}: grade-first — the checks are already green, no worker spent`);
+        st.aborts.delete(next.id);
+        liveFootprints.delete(next.id);
+        await finishUnit(next.id, next.slice, true);
+        return;
+      }
+    }
+
     const baseBrief = buildWorkerPrompt(next, tep, {
       specBody,
       tepBody: specBody,
@@ -306,17 +302,28 @@ export async function dispatchTep(
       testConvention:
         "node:test ESM modules run directly with `node --test <file>` — name probe files exactly as the footprint states (.test.mjs, no build step)",
     });
+    briefBySlice.set(next.slice, baseBrief);
     const oracleStanza = oracle
       ? "\n\nA `verify` tool is available (tandem MCP): it runs this slice's acceptance checks against your CURRENT work in an isolated runner and returns per-criterion PASS/FAIL with evidence. Use it before declaring done — your completion is judged by its green, not by your claim."
       : "";
+    // Dispatch-time information audit: the brief's completeness against the
+    // checks is static — a missing decidable fact is missing at round zero.
+    let disclosure = "";
+    if (oracle?.preflight) {
+      const pf = await oracle.preflight();
+      if (pf) disclosure = `\n\n──── SUPERVISOR PRE-FLIGHT (information the checks require) ────\n${pf}`;
+    }
 
     let ok = false;
     const attempts = oracle ? MAX_REWORK_ATTEMPTS : 1;
-    let brief = baseBrief + oracleStanza;
+    let brief = baseBrief + oracleStanza + disclosure;
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
       const outcome = await worker(
         {
-          model: deps.model,
+          model: resolveWorkerModel(
+            deps.workerModel ?? { workerModel: deps.model },
+            role,
+          ),
           worktree: tree,
           role,
           footprint: next.footprint,
@@ -338,6 +345,14 @@ export async function dispatchTep(
       );
       if (outcome.containment) {
         log(`⛔ ${next.id}: footprint violation — run halted`);
+        defect({
+          slice: next.slice,
+          unit: next.id,
+          activity: "unit execution",
+          trigger: "containment",
+          impact: "run halted",
+          detail: "worker wrote outside its footprint; offending paths reverted",
+        });
         st.halt();
         break;
       }
@@ -361,7 +376,7 @@ export async function dispatchTep(
       const r = confirm.result;
       if (r.kind === "stalled" || r.kind === "exhausted") {
         undelivered.push(
-          `${next.id}: verify oracle ${r.kind} — the checks never went green`,
+          `${next.id}: verify oracle ${r.kind} — the checks are not green`,
         );
         break;
       }
@@ -370,11 +385,21 @@ export async function dispatchTep(
         brief =
           baseBrief +
           oracleStanza +
+          disclosure +
           `\n\nREWORK ${attempt + 1}/${attempts} — a previous attempt left the checks NOT GREEN. The oracle's last verdict:\n${formatVerifyReply(r)}`;
       } else {
         undelivered.push(
           `${next.id}: checks not green after ${attempts} attempts — ${formatVerifyReply(r).split("\n")[0]}`,
         );
+        defect({
+          slice: next.slice,
+          unit: next.id,
+          activity: "unit execution",
+          trigger: "gate-verifier",
+          type: "code",
+          impact: "unit undelivered",
+          detail: formatVerifyReply(r).slice(0, 1000),
+        });
       }
     }
     st.aborts.delete(next.id);
@@ -447,6 +472,51 @@ export async function dispatchTep(
     verdict: r.pass ? "green" : "red",
     ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
   }));
+  for (const r of acResults)
+    if (!r.pass && /12[67]/.test(String((r as { code?: number }).code ?? "")))
+      defect({
+        activity: "closing gate",
+        trigger: "gate-infra",
+        type: "gate",
+        impact: "verification unavailable",
+        detail: `AC-${r.ac} runner exited 126/127 — a gate defect, not a code verdict`,
+      });
+
+  // The honesty scan over the delivered code: a self-declared deferral in a
+  // shipped file is UNDELIVERED on the delivery's face, never a footnote.
+  {
+    const delivered = (
+      await exec(
+        "git",
+        ["-C", worktree, "diff", "--name-only", "--diff-filter=d", `${baseSha}..HEAD`],
+        worktree,
+      )
+    ).out
+      .split("\n")
+      .concat(await porcelainPaths(worktree))
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const rel of [...new Set(delivered)]) {
+      if (!isStubScannableFile(rel)) continue;
+      let content = "";
+      try {
+        content = await fs.readFile(path.join(worktree, rel), "utf8");
+      } catch {
+        continue;
+      }
+      const confessions = scanStubMarkers(rel, content).filter((h) => !h.weak);
+      for (const h of confessions) {
+        undelivered.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
+        defect({
+          activity: "closing gate",
+          trigger: "stub-scan",
+          qualifier: "missing",
+          impact: "undelivered surfaced",
+          detail: `${h.file}:${h.line} ${h.text}`,
+        });
+      }
+    }
+  }
   const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
 
@@ -507,30 +577,4 @@ export async function dispatchTep(
       ...(undelivered.length ? { undelivered } : {}),
     },
   };
-}
-
-/** The TEP rendered for briefs: the asks' words plus the grounded slices. */
-function renderTepBody(space: Space, cut: Cut): string {
-  const byId = new Map(space.nodes.map((n) => [n.id, n]));
-  const members = cut.changeIds.map((id) => byId.get(id)).filter((c) => !!c);
-  const askIds = new Set(members.flatMap((c) => c!.serves));
-  const asks = space.asks.filter((a) => askIds.has(a.id));
-  const lines: string[] = [];
-  lines.push(`# ${cut.tepId ?? cut.id}`);
-  lines.push(`## The asks (verbatim)`);
-  for (const a of asks) lines.push(`- ${a.text.trim()}`);
-  const decided = space.questions.filter((q) => q.decided);
-  if (decided.length) {
-    lines.push(`## Decisions in force (the human settled these — build under them)`);
-    for (const q of decided) lines.push(`- ${q.decided!.text}`);
-  }
-  lines.push(`## The changes`);
-  for (const c of members) {
-    lines.push(`- ${c!.sentence}`);
-    for (const t of c!.grounding?.touchpoints ?? [])
-      lines.push(`  - lands at ${t.path}${t.symbol ? ` › ${t.symbol}` : ""}${t.planned ? " (new file)" : ""}`);
-    lines.push(`  ## Acceptance Criteria`);
-    for (const ac of c!.acceptance) lines.push(`  - [ ] ${ac.text}`);
-  }
-  return lines.join("\n");
 }

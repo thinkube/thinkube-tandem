@@ -28,6 +28,9 @@ import {
 } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { acceptOrder } from "../engine/acceptOrder";
+import { WorkerModelConfig } from "../engine/workerModel";
+import { scanForSecrets } from "../engine/store/frontmatter";
+import { runReadRound } from "../derive/round";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
@@ -42,6 +45,7 @@ export const SESSION_ACTIONS: string[] = [
   "stop-run",
   "accept-question",
   "pin",
+  "panic",
 ];
 
 export interface SessionDeps {
@@ -60,6 +64,12 @@ export interface SessionDeps {
   readCurrentStamp?: () => Promise<SourceStamp[]>;
   /** Retire a merged TEP's worktrees (best-effort; injectable for tests). */
   retire?: (tepId: string) => Promise<void>;
+  /** Per-role worker models (judgment raised above the sonnet base). */
+  workerModel?: WorkerModelConfig;
+  /** Frontier width for the run (v1 default 4). */
+  maxConcurrent?: number;
+  /** The docs gate blocks accepts by default; advisory is the escape hatch. */
+  docsGateMode?: "blocking" | "advisory";
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
 }
@@ -184,6 +194,28 @@ export class TandemSession {
     this.changed("Re-grounded the stale changes.");
   }
 
+  /** Wipe everything DERIVED and start thinking again: asks survive (your
+   *  words are never machine-deleted), deliveries survive (history), but
+   *  nodes, questions, pins and unsigned cuts go. Refused once any TEP was
+   *  signed — a frozen scope is not erasable. Confirmation is surface-side. */
+  panic(): { ok: boolean; reason?: string } {
+    if (this.space.cuts.some((c) => c.signature))
+      return { ok: false, reason: "a TEP was already signed in this space — panic is refused after a freeze" };
+    if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
+    this.space = {
+      ...this.space,
+      nodes: [],
+      questions: [],
+      pins: [],
+      cuts: [],
+    };
+    this.cutNodeIds = new Set();
+    this.stale = new Set();
+    this.recluster();
+    this.changed("Cleared the derived thinking — your asks are untouched; re-ground when ready.");
+    return { ok: true };
+  }
+
   /** The accepted answers governing every later derivation, in force. */
   decisionsInForce(): string[] {
     return this.space.questions
@@ -304,20 +336,33 @@ export class TandemSession {
     this.runState = new RunState(() => this.deps.onChanged?.());
     this.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
-      const slices = tepSlices({
-        space: this.space,
-        cut,
-        spaceName: path.basename(this.deps.storeDir),
-      });
+      let slices;
+      try {
+        slices = tepSlices({
+          space: this.space,
+          cut,
+          spaceName: path.basename(this.deps.storeDir),
+        });
+      } catch (err) {
+        this.running = false;
+        this.changed(
+          `Dispatch refused: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return undefined;
+      }
       const dispatch = this.deps.dispatch ?? dispatchTep;
       const outcome = await dispatch(
         {
           repoRoot: this.deps.round.repoRoot,
           model: this.deps.round.model,
+          workerModel: this.deps.workerModel,
+          concurrency: this.deps.maxConcurrent,
           suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
           forge: this.deps.forge,
           state: this.runState,
           spaceName: path.basename(this.deps.storeDir),
+          storeDir: this.deps.storeDir,
+          supervisorRound: runReadRound,
         },
         this.space,
         cut,
@@ -373,7 +418,7 @@ export class TandemSession {
   ): Promise<{ ok: boolean; reason?: string }> {
     const d = this.space.deliveries.find((x) => x.id === deliveryId);
     if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
-    const r = acceptDelivery(d, this.deps.now());
+    const r = acceptDelivery(d, this.deps.now(), this.deps.docsGateMode ?? "blocking");
     if (!r.ok) return r;
     const cut = this.space.cuts.find((c) => c.id === d.cutId);
     const tepId = cut?.tepId;
@@ -405,13 +450,26 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Both faces on disk: the data, and the abstracts rendered from it. */
+  /** Both faces on disk: the data, and the abstracts rendered from it.
+   *  Every store write runs the secret scan — a hit refuses the write
+   *  (the state stays live in memory; the message names the leak). */
   persist(): void {
-    fs.mkdirSync(this.deps.storeDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(this.deps.storeDir, "space.json"),
-      JSON.stringify({ space: this.space, cut: [...this.cutNodeIds] }, null, 2),
+    const body = JSON.stringify(
+      { space: this.space, cut: [...this.cutNodeIds] },
+      null,
+      2,
     );
+    const secrets = scanForSecrets(body);
+    if (secrets.length) {
+      this.deps.onChanged?.(
+        `REFUSED to write the store: secret-shaped content detected (${secrets
+          .map((m) => m.pattern)
+          .join(", ")}) — remove it from the ask/changes first.`,
+      );
+      return;
+    }
+    fs.mkdirSync(this.deps.storeDir, { recursive: true });
+    fs.writeFileSync(path.join(this.deps.storeDir, "space.json"), body);
   }
 
   load(): void {

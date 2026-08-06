@@ -1,7 +1,7 @@
 {
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
-  "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
+  "description": "Tandem \u2014 ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
   "version": "2.0.0-alpha.0",
   "publisher": "thinkube",
   "icon": "icon.png",
@@ -50,7 +50,7 @@
         "thinkubeTandem.storeRoot": {
           "type": "string",
           "default": "",
-          "description": "Root of the tandem store — spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
+          "description": "Root of the tandem store \u2014 spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
         },
         "thinkubeTandem.groundingModel": {
           "type": "string",
@@ -60,12 +60,37 @@
         "thinkubeTandem.suiteCommand": {
           "type": "string",
           "default": "npm test",
-          "description": "Command that runs the project's test suite — its verdict is a delivery proof."
+          "description": "Command that runs the project's test suite \u2014 its verdict is a delivery proof."
         },
         "thinkubeTandem.giteaToken": {
           "type": "string",
           "default": "",
           "description": "API token for the platform's Gitea forge. Unused for github.com remotes."
+        },
+        "thinkubeTandem.workerModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Base model every run worker resolves to (never inherited from the environment)."
+        },
+        "thinkubeTandem.workerModelByRole": {
+          "type": "object",
+          "default": {},
+          "description": "Per-role model overrides that RAISE a role above the base (e.g. {\"judge\": \"opus\"})."
+        },
+        "thinkubeTandem.maxConcurrent": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "description": "Concurrent workers on the run's ready frontier."
+        },
+        "thinkubeTandem.docsGateMode": {
+          "type": "string",
+          "enum": [
+            "blocking",
+            "advisory"
+          ],
+          "default": "blocking",
+          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default \u2014 advisory let undocumented work reach Done."
         }
       }
     }

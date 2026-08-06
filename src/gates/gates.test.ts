@@ -47,7 +47,8 @@ test("the cut screen fits the budget and surfaces what is not provable", () => {
 });
 
 test("signing binds the pair; each half's drift is told apart", () => {
-  const { space, changeIds } = makeSpace();
+  const { space, changeIds: all } = makeSpace();
+  const changeIds = all.slice(0, 2); // the third is unprovable — refused below
   const signed = signCut(space, { id: "cut-1", changeIds }, "t1");
   assert.ok(signed.ok);
   assert.equal(verifyCutSignature(space, signed.cut).ok, true);
@@ -112,4 +113,41 @@ test("what did NOT arrive is on the delivery page's face", () => {
   });
   assert.ok(page.includes("⚠ undelivered:"), "the gap is visible on the page");
   assert.ok(page.includes("docs obligation unmet"), "the docs gate speaks on the page");
+});
+
+test("the freeze refusals: unprovable, ungrounded, and open questions refuse the sign", () => {
+  const { space, changeIds } = makeSpace();
+  const unprovable = signCut(space, { id: "c", changeIds }, "t");
+  assert.ok(!unprovable.ok && unprovable.reason.includes("nothing proves"), "no criteria, no signature");
+
+  const ungroundedSpace: Space = {
+    ...space,
+    nodes: space.nodes.map((n) =>
+      n.id === changeIds[0] ? { ...n, grounding: undefined } : n,
+    ),
+  };
+  const ungrounded = signCut(ungroundedSpace, { id: "c", changeIds: changeIds.slice(0, 2) }, "t");
+  assert.ok(!ungrounded.ok && ungrounded.reason.includes("not grounded"));
+
+  const asked: Space = {
+    ...space,
+    questions: [
+      { id: "q-1", askId: space.asks[0].id, text: "which panel?", recommendation: "the log panel" },
+    ],
+  };
+  const open = signCut(asked, { id: "c", changeIds: changeIds.slice(0, 2) }, "t");
+  assert.ok(!open.ok && open.reason.includes("which panel?"), "the refusal names the question");
+});
+
+test("the docs gate blocks an accept by default; advisory is the explicit escape hatch", () => {
+  const d = {
+    id: "d-1",
+    cutId: "cut-1",
+    branch: "tandem/cut-1",
+    proofs: [{ kind: "suite" as const, label: "suite", verdict: "green" as const }],
+    undelivered: ["SL-1: docs obligation unmet: declared doc-module path(s) not present in the landed tree: docs/x.md. The documentation must land with the slice before it can reach Done."],
+  };
+  const blocked = acceptDelivery(d, "t");
+  assert.ok(!blocked.ok && blocked.reason.includes("docs gate"), "blocking by default");
+  assert.ok(acceptDelivery(d, "t", "advisory").ok, "advisory lets it through, on the record");
 });

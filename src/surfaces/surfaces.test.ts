@@ -58,6 +58,24 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal(session.space.asks[0].text, "I want to capture asks from the toolbar");
   assert.equal(session.units.length, 1, "grounded node clustered into a unit");
 
+  // An undecided question on the ask REFUSES the sign — decide first.
+  session.toggleCut(session.units[0].changeIds);
+  const refused = session.signCut();
+  assert.equal(refused.ok, false, "open question blocks the sign");
+  assert.ok(refused.reason!.includes("top or side toolbar?"), "the refusal names the question");
+
+  // The question the round raised: accept with an edited wording → a
+  // decision in force, and the ask re-grounds under it immediately.
+  assert.equal(session.space.questions.length, 1);
+  const accepted = await session.acceptQuestion(session.space.questions[0].id, "side, collapsible");
+  assert.ok(accepted.ok);
+  assert.deepEqual(session.decisionsInForce(), ["side, collapsible"]);
+  assert.ok(
+    session.space.nodes.some((n) => n.sentence.includes("side, collapsible")),
+    "the re-ground ran with the decision injected",
+  );
+  assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
+
   session.toggleCut(session.units[0].changeIds);
   assert.ok(session.cutScreen().includes("1 change(s)"));
   assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
@@ -83,18 +101,6 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal((await session.acceptDelivery("d-1")).ok, false, "pending proof blocks");
   session.space.deliveries[0].proofs[0].verdict = "green";
   assert.ok((await session.acceptDelivery("d-1")).ok);
-
-  // The question the round raised: accept with an edited wording → a
-  // decision in force, and the ask re-grounds under it immediately.
-  assert.equal(session.space.questions.length, 1);
-  const accepted = await session.acceptQuestion(session.space.questions[0].id, "side, collapsible");
-  assert.ok(accepted.ok);
-  assert.deepEqual(session.decisionsInForce(), ["side, collapsible"]);
-  assert.ok(
-    session.space.nodes.some((n) => n.sentence.includes("side, collapsible")),
-    "the re-ground ran with the decision injected",
-  );
-  assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
 
   const reloaded = new TandemSession(deps as never);
   assert.equal(reloaded.space.asks.length, 1, "the space survives a reload");
@@ -175,4 +181,64 @@ test("a refused merge aborts the accept before any stamp", async () => {
   assert.equal(r.ok, false);
   assert.ok(r.reason!.includes("branch conflicts"));
   assert.equal(session.space.deliveries[0].acceptedAt, undefined, "never stamped");
+});
+
+test("panic clears the derived thinking, keeps the asks, and is refused after any signed TEP", async () => {
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
+      changes: [
+        {
+          id: `node-${opts.nextIndex}`,
+          sentence: "a derived change",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [{ id: "c", text: "visible" }],
+          grounding: { touchpoints: [{ path: "src/x.ts" }], stamp: [] },
+        },
+      ],
+      questions: [],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("something derived");
+  assert.equal(session.units.length, 1);
+  const r = session.panic();
+  assert.ok(r.ok);
+  assert.equal(session.space.nodes.length, 0, "derived changes cleared");
+  assert.equal(session.space.asks.length, 1, "the human's words survive");
+
+  await session.capture("again");
+  session.toggleCut(session.units[0].changeIds);
+  assert.ok(session.signCut().ok);
+  const refused = session.panic();
+  assert.ok(!refused.ok && refused.reason!.includes("signed"), "a freeze makes panic refuse");
+});
+
+test("a secret-shaped ask refuses the store write and says why; the state stays live", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const messages: string[] = [];
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "t",
+    readCurrentStamp: async () => [],
+    onChanged: (m?: string) => {
+      if (m) messages.push(m);
+    },
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("use the key AKIA" + "ABCDEFGHIJKLMNOP to talk to S3");
+  assert.ok(
+    messages.some((m) => m.includes("REFUSED to write the store") && m.includes("aws-access-key")),
+    "the refusal names the leak",
+  );
+  assert.ok(!fs.existsSync(path.join(dir, "space.json")), "nothing secret-shaped reached disk");
+  assert.equal(session.space.asks.length, 1, "the in-memory state stays live");
 });

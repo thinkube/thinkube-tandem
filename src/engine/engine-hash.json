@@ -1,4 +1,5 @@
 {
+ "src/engine/StoreSyncService.ts": "9bd37940bd608ff1a11a518a1432335da91f5a2437e5ca2f349e8481e13aefe4",
  "src/engine/WorktreeService.test.ts": "736da30f3183c8a25a6eec7fc559bcd0b28960258a35cf55b83f571965a80a8f",
  "src/engine/WorktreeService.ts": "4f577c4f3a0f772d0970273931b961a5ec2c202a175441696e502663265f49ab",
  "src/engine/acExec.test.ts": "1b4a30cc8a12a5d7e14507fa738266576c2395c2ac1b5a1e6f344318e1658a84",

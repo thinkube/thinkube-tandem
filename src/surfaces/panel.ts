@@ -36,6 +36,8 @@ function spacePush(session: TandemSession, message?: string): unknown {
   return {
     kind: "space",
     running: session.running,
+    asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
+    signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
     questions: session.space.questions
       .filter((q) => !q.decided)
@@ -108,6 +110,9 @@ async function handleInbound(
     session.answerWorker(msg.unitId, msg.text);
   } else if (msg.action === "stop-run") {
     session.stopRun();
+  } else if (msg.action === "panic") {
+    const r = session.panic();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "reground") {
     push("Re-grounding…");
     await session.reground();

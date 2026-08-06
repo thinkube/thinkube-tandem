@@ -10,10 +10,12 @@ import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel, SpaceViewProvider } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
+import { StoreSyncService } from "./engine/StoreSyncService";
 
 let session: TandemSession | undefined;
 let panel: SpacePanel | undefined;
 let sideView: SpaceViewProvider | undefined;
+let storeSync: StoreSyncService | undefined;
 
 function gitAuthor(repoRoot: string): Promise<string> {
   return new Promise((resolve) => {
@@ -122,12 +124,22 @@ async function ensureSession(
       .split(" ")
       .filter(Boolean),
     retire: (tepId) => retireTepWorktrees(repoRoot, tepId),
+    workerModel: {
+      workerModel: config.get<string>("workerModel", "sonnet"),
+      workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
+    },
+    maxConcurrent: config.get<number>("maxConcurrent", 4),
+    docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     onChanged: (message) => {
       if (!session) return;
       panel?.pushFrom(session, message);
       sideView?.pushFrom(session, message);
     },
   });
+  if (!storeSync) {
+    storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
+    storeSync.start();
+  }
   return session;
 }
 
@@ -149,4 +161,5 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   panel?.dispose();
+  storeSync?.dispose();
 }
