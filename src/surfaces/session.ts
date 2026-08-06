@@ -25,7 +25,7 @@ import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
-import { addWithNeeds, removeWithDependents } from "../core/cutClosure";
+import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
@@ -382,7 +382,7 @@ export class TandemSession {
   toggleCut(changeIds: string[]): void {
     const adding = changeIds.some((id) => !this.cutNodeIds.has(id));
     const r = adding
-      ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes)
+      ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes, signedIds(this.space.cuts))
       : removeWithDependents(this.cutNodeIds, changeIds, this.space.nodes);
     this.changed(r.note);
   }

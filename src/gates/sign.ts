@@ -67,6 +67,15 @@ export function signCut(
       ok: false,
       reason: `the machine has not placed these promises in the code yet: ${ungrounded.map((n) => n!.sentence).join("; ")} — press the out-of-date badge to re-read the code`,
     };
+  const alreadySigned = new Set(
+    space.cuts.filter((c) => c.signature).flatMap((c) => c.changeIds),
+  );
+  const resigned = members.filter((n) => alreadySigned.has(n!.id));
+  if (resigned.length)
+    return {
+      ok: false,
+      reason: `already in a signed work order: ${resigned.map((n) => n!.sentence).join("; ")} — a signed promise is a record; change it by superseding, never by signing twice`,
+    };
   const dangling = danglingNeeds(cut.changeIds, space.nodes);
   if (dangling.length)
     return {

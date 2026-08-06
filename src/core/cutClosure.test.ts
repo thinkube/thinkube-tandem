@@ -55,3 +55,12 @@ test("check proposal: prompt carries the promise; parse is strict", () => {
   assert.equal(parseProposedCheck(null), undefined);
   assert.equal(parseProposedCheck("no json")?.kind, undefined);
 });
+
+test("A6: signed promises refuse re-cutting — in the basket AND at the gate", () => {
+  const nodes = [N("a"), N("b")];
+  const signed = new Set(["a"]);
+  const cut = new Set<string>();
+  const r = addWithNeeds(cut, ["a", "b"], nodes, signed);
+  assert.deepEqual([...cut], ["b"], "the signed promise never enters");
+  assert.ok(r.note!.includes("signed work order"));
+});

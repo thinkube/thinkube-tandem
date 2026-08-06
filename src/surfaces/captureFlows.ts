@@ -109,8 +109,14 @@ export async function rederiveAskFlow(args: {
   mintNodeId: (n: number) => string;
   scopes?: { id: string; dir: string; label?: string }[];
 }): Promise<Space> {
+  const signed = new Set(
+    args.space.cuts.filter((cu) => cu.signature).flatMap((cu) => cu.changeIds),
+  );
+  // Signed promises are records: re-derivation replaces only the unsigned.
   const old = new Set(
-    args.space.nodes.filter((n) => n.serves.includes(args.ask.id)).map((n) => n.id),
+    args.space.nodes
+      .filter((n) => n.serves.includes(args.ask.id) && !signed.has(n.id))
+      .map((n) => n.id),
   );
   const fresh = await args.ground(args.round, args.ask, {
     nextIndex: args.space.nodes.length + 1,

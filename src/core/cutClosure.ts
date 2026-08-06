@@ -6,26 +6,42 @@
  */
 import { Change } from "./schema";
 
-/** Add ids and their transitive needs. Returns what came along uninvited. */
+/** Promises already inside a SIGNED cut are records — never re-cut. */
+export function signedIds(cuts: readonly { changeIds: string[]; signature?: unknown }[]): Set<string> {
+  const out = new Set<string>();
+  for (const c of cuts) if (c.signature) for (const id of c.changeIds) out.add(id);
+  return out;
+}
+
+/** Add ids and their transitive needs. Returns what came along uninvited.
+ *  Signed promises refuse — the note says so instead of adding them. */
 export function addWithNeeds(
   cut: Set<string>,
   ids: readonly string[],
   nodes: readonly Change[],
+  signed: ReadonlySet<string> = new Set(),
 ): { note?: string } {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const asked = new Set(ids);
   const queue = [...ids];
   let pulled = 0;
+  let refusedSigned = 0;
   while (queue.length) {
     const id = queue.pop()!;
     if (!byId.has(id) || cut.has(id)) continue;
+    if (signed.has(id)) {
+      refusedSigned++;
+      continue;
+    }
     cut.add(id);
     if (!asked.has(id)) pulled++;
     for (const dep of byId.get(id)!.needs) queue.push(dep);
   }
-  return pulled
-    ? { note: `Also added ${pulled} change(s) this depends on — they ship together.` }
-    : {};
+  const notes: string[] = [];
+  if (pulled) notes.push(`Also added ${pulled} promise(s) this depends on — they ship together.`);
+  if (refusedSigned)
+    notes.push(`${refusedSigned} promise(s) are already in a signed work order and were not added.`);
+  return notes.length ? { note: notes.join(" ") } : {};
 }
 
 /** Remove ids and everything in the cut that needs them (transitively). */
@@ -54,7 +70,7 @@ export function removeWithDependents(
     if (!asked.has(id)) dropped++;
   }
   return dropped
-    ? { note: `Also removed ${dropped} change(s) that needed what you removed.` }
+    ? { note: `Also removed ${dropped} promise(s) that needed what you removed.` }
     : {};
 }
 
