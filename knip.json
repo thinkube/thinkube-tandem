@@ -12,7 +12,8 @@
       "ignoreDependencies": [
         "yaml",
         "@vscode/vsce",
-        "antora"
+        "antora",
+        "asciidoctor-kroki"
       ]
     },
     "webview/map": {
