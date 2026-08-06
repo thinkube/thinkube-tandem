@@ -113,3 +113,18 @@ test("the GitHub adapter builds the exact commands; merge is the acceptance act"
   assert.deepEqual(calls[0].slice(0, 4), ["gh", "pr", "create", "--repo"]);
   assert.deepEqual(calls[1].slice(0, 3), ["gh", "pr", "merge"]);
 });
+
+test("Gitea merge uses the PR INDEX extracted from the stored URL (A4)", async () => {
+  const calls: string[] = [];
+  const { forgeFor } = await import("./forge");
+  const forge = forgeFor("https://git.thinkube.com/thinkube-deployments/todo.git", {
+    giteaToken: "t",
+    http: async (_m, url) => {
+      calls.push(url);
+      return {};
+    },
+  });
+  await forge.merge("https://git.thinkube.com/thinkube-deployments/todo/pulls/5");
+  assert.ok(calls[0].endsWith("/pulls/5/merge"), `hit ${calls[0]}`);
+  await assert.rejects(() => forge.merge("https://git.thinkube.com/no/number/here"), /no pull-request number/);
+});

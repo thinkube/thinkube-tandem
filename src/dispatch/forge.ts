@@ -98,7 +98,11 @@ function giteaForge(
       return res.html_url ?? `${api}/pulls/${res.number}`;
     },
     merge: async (ref) => {
-      await http("POST", `${api}/pulls/${ref}/merge`, token, {
+      // The ref arrives as the stored PR URL; Gitea's merge endpoint
+      // takes the PR INDEX — extract it, refuse plainly when absent.
+      const index = /(\d+)\/?$/.exec(ref)?.[1];
+      if (!index) throw new Error(`cannot merge "${ref}" — no pull-request number in the reference`);
+      await http("POST", `${api}/pulls/${index}/merge`, token, {
         Do: "merge",
       });
     },
