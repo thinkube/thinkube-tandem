@@ -344,6 +344,9 @@ async function ensureSession(
     onChanged: (message) => pushActive(context, message),
   });
   sessions.set(project.card.id, s);
+  // Units loaded unnamed (or renamed past their render) get titles at open,
+  // not only after the next act.
+  void s.renderAbstracts();
   if (!storeSync) {
     storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
     storeSync.start();
