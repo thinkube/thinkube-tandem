@@ -24,11 +24,17 @@ export interface RunWorkerDeps {
   role: "code" | "test";
   /** Files this unit may touch; everything else is reverted + terminal. */
   footprint: string[];
+  /** Live footprints of OTHER units sharing this tree — their writes are
+   *  legitimate, not this unit's strays (the frontier runs in parallel). */
+  alsoAllowed?: () => string[];
   /** Paths already dirty at unit start — exempt from containment. */
   baseline: Set<string>;
   abort: AbortController;
   onPark: (question: string, answer: (a: string) => void) => void;
   log: (line: string) => void;
+  /** In-loop black-box check: runs the slice's acceptance checks against the
+   *  current work and returns the oracle's formatted verdict. */
+  verifyTool?: () => Promise<string>;
   maxTurns?: number;
 }
 
@@ -70,6 +76,18 @@ export function containmentViolations(
   );
 }
 
+type SdkTool = (
+  name: string,
+  description: string,
+  schema: Record<string, never>,
+  handler: () => Promise<{ content: { type: "text"; text: string }[] }>,
+) => unknown;
+type SdkCreateServer = (cfg: {
+  name: string;
+  version: string;
+  tools: unknown[];
+}) => unknown;
+
 type SdkQuery = (args: {
   prompt: AsyncIterable<{ type: "user"; message: { role: "user"; content: string } }> | string;
   options: Record<string, unknown>;
@@ -80,9 +98,33 @@ export async function runUnitWorker(
   brief: string,
 ): Promise<WorkerOutcome> {
   let query: SdkQuery;
+  let mcpServers: Record<string, unknown> | undefined;
   try {
-    const mod = (await import("@anthropic-ai/claude-agent-sdk")) as { query: SdkQuery };
+    const mod = (await import("@anthropic-ai/claude-agent-sdk")) as {
+      query: SdkQuery;
+      tool?: SdkTool;
+      createSdkMcpServer?: SdkCreateServer;
+    };
     query = mod.query;
+    if (deps.verifyTool && mod.tool && mod.createSdkMcpServer) {
+      const verify = deps.verifyTool;
+      mcpServers = {
+        tandem: mod.createSdkMcpServer({
+          name: "tandem",
+          version: "1.0.0",
+          tools: [
+            mod.tool(
+              "verify",
+              "Run this slice's acceptance checks against your current work in an isolated runner (black box). Returns per-criterion PASS/FAIL with evidence. Your completion is judged by this going green.",
+              {},
+              async () => ({
+                content: [{ type: "text" as const, text: await verify() }],
+              }),
+            ),
+          ],
+        }),
+      };
+    }
   } catch (err) {
     return {
       ok: false,
@@ -115,6 +157,7 @@ export async function runUnitWorker(
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
         abortController: deps.abort,
+        ...(mcpServers ? { mcpServers } : {}),
         disallowedTools:
           deps.role === "test"
             ? ["Bash", "WebFetch", "WebSearch", "Task", "AskUserQuestion", "ExitPlanMode"]
@@ -147,7 +190,11 @@ export async function runUnitWorker(
                   if (!["Write", "Edit", "NotebookEdit", "Bash"].includes(h.tool_name ?? ""))
                     return {};
                   const dirty = await porcelainPaths(deps.worktree);
-                  const bad = containmentViolations(dirty, deps.footprint, deps.baseline);
+                  const bad = containmentViolations(
+                    dirty,
+                    [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
+                    deps.baseline,
+                  );
                   if (bad.length) {
                     deps.log(`⛔ containment: ${bad.join(", ")} — reverted, unit failed`);
                     await revertPaths(deps.worktree, bad);

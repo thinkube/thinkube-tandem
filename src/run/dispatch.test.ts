@@ -1,9 +1,11 @@
 /**
  * The engine-driven run, end to end over a REAL temporary git repo: the
- * DAG orders tests first, the fake worker writes a real probe and a real
- * implementation, the REAL closing gate (runAcVerifications → runBounded)
- * executes the probe, and the delivery carries honest proofs. Parking and
- * containment are covered at their seams.
+ * DAG orders tests first, probes are authored in the detached tester
+ * snapshot (structural blinding), the REAL verify oracle overlays and
+ * grades the coder's work (MANDATORY-GREEN + rework), probes persist in
+ * the oracle store and ride the branch, the REAL closing gate executes
+ * them, and the delivery carries honest proofs. Parking, containment and
+ * the parallel frontier are covered at their seams.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -47,13 +49,27 @@ function spaceWithOneChange(): { space: Space; ids: string[] } {
   return { space: n.space, ids: [n.added.id] };
 }
 
-test("a signed TEP runs through the engine: tests-first, real probe executed by the real gate, proofs honest", async () => {
+const GREEN_PROBE =
+  `// WHY (INVARIANT): greet() must return the greeting the acceptance criterion names.\n` +
+  `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+  `import { greet } from "../src/greet.mjs";\n` +
+  `test("greet", () => assert.equal(greet(), "hello"));\n`;
+
+function writeInto(root: string, rel: string, content: string): void {
+  const abs = path.join(root, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, content);
+}
+
+test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-confirmed green, honest proofs", async () => {
   const repo = tmpRepo();
   const { space, ids } = spaceWithOneChange();
   const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-1" };
   const slices = tepSlices({ space, cut, spaceName: "greet space" });
   const state = new RunState(() => {});
   const briefs: { role: string; text: string }[] = [];
+  const trees: Record<string, string> = {};
+  let probeVisibleToCoder: boolean | undefined;
 
   const outcome = await dispatchTep(
     {
@@ -64,21 +80,16 @@ test("a signed TEP runs through the engine: tests-first, real probe executed by 
       spaceName: "greet space",
       worker: async (w, brief) => {
         briefs.push({ role: w.role, text: brief });
+        trees[w.role] = w.worktree;
         if (w.role === "test") {
-          const probe = w.footprint[0];
-          const abs = path.join(w.worktree, probe);
-          fs.mkdirSync(path.dirname(abs), { recursive: true });
-          fs.writeFileSync(
-            abs,
-            `// WHY (INVARIANT): greet() must return the greeting the acceptance criterion names.\n` +
-              `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
-              `import { greet } from "../src/greet.mjs";\n` +
-              `test("greet", () => assert.equal(greet(), "hello"));\n`,
-          );
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
         } else {
-          const abs = path.join(w.worktree, "src/greet.mjs");
-          fs.mkdirSync(path.dirname(abs), { recursive: true });
-          fs.writeFileSync(abs, `export function greet() { return "hello"; }\n`);
+          // Structural blinding: the probe the tester wrote must NOT exist
+          // in the coder's tree at dispatch time.
+          probeVisibleToCoder = fs.existsSync(
+            path.join(w.worktree, slices[0].workUnits.find((u) => u.role === "test")!.footprint[0]),
+          );
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
         }
         return { ok: true, finalText: "done" };
       },
@@ -92,6 +103,10 @@ test("a signed TEP runs through the engine: tests-first, real probe executed by 
   assert.ok(briefs[0].text.includes("TEST AUTHOR"), "engine brief for the tester");
   assert.ok(briefs[1].text.includes("SERIAL unit"), "engine brief for the coder");
   assert.ok(briefs[1].text.includes("THE INTENT"), "the TEP body rides the brief as the north star");
+  assert.ok(briefs[1].text.includes("verify"), "the coder is told about the in-loop verify tool");
+
+  assert.notEqual(trees.test, trees.code, "tester and coder work in different trees");
+  assert.equal(probeVisibleToCoder, false, "blinding is structural: no probe in the coder's tree");
 
   assert.ok(outcome.delivery, "a delivery exists");
   const probeProof = outcome.delivery!.proofs.find((p) => p.kind === "probe")!;
@@ -101,6 +116,102 @@ test("a signed TEP runs through the engine: tests-first, real probe executed by 
   assert.equal(outcome.undelivered.length, 0);
   const states = [...state.units.values()].map((u) => u.state);
   assert.ok(states.every((s) => s === "done"));
+
+  // The probes persisted in the oracle store and ride the branch.
+  const store = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`, "oracle-store", "TEP-t-1");
+  const probeRel = slices[0].workUnits.find((u) => u.role === "test")!.footprint[0];
+  assert.ok(fs.existsSync(path.join(store, "files", probeRel)), "probe persisted in the oracle store");
+  const shipped = execFileSync(
+    "git",
+    ["-C", repo, "ls-tree", "-r", "--name-only", "tandem/TEP-t-1"],
+    { encoding: "utf8" },
+  );
+  assert.ok(shipped.includes(probeRel), "the probe is committed on the delivery branch");
+  assert.ok(shipped.includes("src/greet.mjs"), "the implementation is committed on the delivery branch");
+});
+
+test("MANDATORY-GREEN: a wrong implementation is not done — the oracle's evidence routes a rework that fixes it", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-4" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let codeAttempts = 0;
+  let reworkBrief: string | undefined;
+
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "done" };
+        }
+        codeAttempts++;
+        if (codeAttempts === 1) {
+          // Claims done, but the work is wrong — the self-report must count
+          // for nothing.
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hola"; }\n`);
+        } else {
+          reworkBrief = brief;
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        }
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+
+  assert.equal(codeAttempts, 2, "the oracle's red verdict routed exactly one rework");
+  assert.ok(reworkBrief!.includes("REWORK"), "the rework brief names itself");
+  assert.ok(reworkBrief!.includes("PROBES:"), "the oracle's evidence rides the rework brief");
+  assert.equal(outcome.undelivered.length, 0);
+  const probeProof = outcome.delivery!.proofs.find((p) => p.kind === "probe")!;
+  assert.equal(probeProof.verdict, "green", "after rework the closing gate is green");
+});
+
+test("the in-loop verify tool grades the coder's current work against the real probes", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-5" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let replyWrong: string | undefined;
+  let replyRight: string | undefined;
+
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "done" };
+        }
+        assert.ok(w.verifyTool, "the coder has the verify tool");
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hola"; }\n`);
+        replyWrong = await w.verifyTool!();
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        replyRight = await w.verifyTool!();
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+
+  assert.ok(replyWrong!.includes("0/1 pass") || replyWrong!.includes("FAIL"), "wrong work reads FAIL with evidence");
+  assert.ok(replyRight!.includes("1/1 pass"), "fixed work reads PASS");
 });
 
 test("a red probe is a red proof — the delivery exists and says so", async () => {
@@ -118,10 +229,9 @@ test("a red probe is a red proof — the delivery exists and says so", async () 
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
-          const abs = path.join(w.worktree, w.footprint[0]);
-          fs.mkdirSync(path.dirname(abs), { recursive: true });
-          fs.writeFileSync(
-            abs,
+          writeInto(
+            w.worktree,
+            w.footprint[0],
             `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
               `test("fails", () => assert.equal(1, 2));\n`,
           );
@@ -136,6 +246,73 @@ test("a red probe is a red proof — the delivery exists and says so", async () 
   const probeProof = outcome.delivery!.proofs.find((p) => p.kind === "probe")!;
   assert.equal(probeProof.verdict, "red");
   assert.ok(probeProof.ref, "evidence rides the proof");
+  assert.ok(
+    outcome.undelivered.some((u) => u.includes("not green")),
+    "the never-green coder unit is UNDELIVERED, not silently done",
+  );
+});
+
+test("independent slices run on the parallel frontier — two probe authors in flight at once", async () => {
+  const repo = tmpRepo();
+  let s = emptySpace();
+  const a = addAsk(s, "two independent modules", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const ids: string[] = [];
+  for (const name of ["alpha", "beta"]) {
+    const n = addNode(s, {
+      sentence: `the ${name} module`,
+      serves: [a.added.id],
+      needs: [],
+      acceptance: [{ id: `c-${name}`, text: `${name}() returns '${name}'` }],
+      grounding: { touchpoints: [{ path: `src/${name}.mjs`, planned: true }], stamp: [] },
+    });
+    assert.ok(n.ok);
+    s = n.space;
+    ids.push(n.added.id);
+  }
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-6" };
+  const slices = tepSlices({ space: s, cut, spaceName: "pair space" });
+  assert.equal(slices.length, 2, "two independent changes form two slices");
+  const state = new RunState(() => {});
+  let inflight = 0;
+  let maxInflight = 0;
+
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      spaceName: "pair space",
+      concurrency: 2,
+      worker: async (w) => {
+        inflight++;
+        maxInflight = Math.max(maxInflight, inflight);
+        await new Promise((r) => setTimeout(r, 20));
+        const name = w.footprint[0].includes("SL-1") || w.footprint[0].includes("alpha") ? "alpha" : "beta";
+        if (w.role === "test") {
+          writeInto(
+            w.worktree,
+            w.footprint[0],
+            `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+              `import { ${name} } from "../src/${name}.mjs";\n` +
+              `test("${name}", () => assert.equal(${name}(), "${name}"));\n`,
+          );
+        } else {
+          writeInto(w.worktree, `src/${name}.mjs`, `export function ${name}() { return "${name}"; }\n`);
+        }
+        inflight--;
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+
+  assert.ok(maxInflight >= 2, `the frontier pump ran units concurrently (saw ${maxInflight})`);
+  assert.equal([...state.units.values()].filter((u) => u.state !== "done").length, 0);
 });
 
 test("parked worker: the question surfaces, the answer resumes, UNDELIVERED is honest", async () => {
