@@ -47,7 +47,6 @@ let panel: SpacePanel | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
-/** Author identity is mechanical (§7ter): git user.email localpart. */
 function gitAuthor(repoRoot: string): Promise<string> {
   return new Promise((resolve) => {
     execFile(
@@ -77,11 +76,15 @@ async function resolveForge(
   repoRoot: string,
   giteaToken: string,
 ): Promise<Forge | undefined> {
-  const remote = await gitRemote(repoRoot);
+  let remote = await gitRemote(repoRoot);
   if (!remote) return undefined;
+  // Remotes may carry their credential (https://user:token@host/…): strip
+  // it for parsing; it doubles as the forge token when none is configured.
+  const creds = /^https?:\/\/([^/@:]+):([^/@]+)@/.exec(remote);
+  if (creds) remote = remote.replace(`${creds[1]}:${creds[2]}@`, "");
   try {
     return forgeFor(remote, {
-      giteaToken: giteaToken || undefined,
+      giteaToken: giteaToken || creds?.[2] || undefined,
       http: async (method, url, token, payload) => {
         const res = await fetch(url, {
           method,
@@ -100,8 +103,7 @@ async function resolveForge(
   }
 }
 
-/** Sessions key by (owner, thinking space); the active owner is a
- *  remembered identity, never a positional accident (§7quater). */
+/** Sessions key by (owner, thinking space); owners are identities. */
 const sessions = new Map<string, TandemSession>();
 
 /** The session of the remembered (owner, thinking space) pair — the owner
@@ -126,7 +128,6 @@ function openProjects(): EnabledProject[] {
   return [...seen.values()];
 }
 
-/** The active owner: a repository card id, or "wp:<id>" for a project. */
 function activeOwnerKey(context: vscode.ExtensionContext): string | undefined {
   const saved = context.workspaceState.get<string>("tandem.activeProject");
   if (saved?.startsWith("wp:")) return saved;
@@ -159,9 +160,8 @@ function storeRootOf(): string {
   );
 }
 
-/** The status bar is the run's heartbeat — visible from any tab: spinner
- *  with units progress while building, LOUD when a worker waits on the
- *  human, the project name otherwise. */
+/** The status bar heartbeat: building progress, LOUD when a worker
+ *  waits on the human, the project name otherwise. */
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
@@ -331,11 +331,9 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // The Configuration area (v1, verbatim).
-  const seedPath =
-    rememberedProject(context)?.gitRoot ??
-    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
-    process.env.HOME ??
-    "/";
+  // §7bis: never the first workspace folder — the remembered identity,
+  // else the user's home (a neutral seed until a repository is chosen).
+  const seedPath = rememberedProject(context)?.gitRoot ?? process.env.HOME ?? "/";
   const configService = new ClaudeConfigService(seedPath);
   const configTree = new ConfigTreeProvider(configService);
   const configView = vscode.window.createTreeView("claudeConfigTree", {

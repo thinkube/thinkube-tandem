@@ -43,6 +43,15 @@ function chipFor(u: RunUnits[number], now: number): Chip {
   }
 }
 
+export function RunNote(props: { note: string }): JSX.Element {
+  return (
+    <div data-run-note style={{ margin: 20, padding: 12, border: "1px solid var(--err, #f14c4c)", borderRadius: 6, maxWidth: 560 }}>
+      <strong>The build did not start.</strong>
+      <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{props.note}</div>
+    </div>
+  );
+}
+
 export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: World }): JSX.Element {
   const { run, world } = props;
   const [answers, setAnswers] = useState<Record<string, string>>({});

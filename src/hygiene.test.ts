@@ -47,3 +47,28 @@ test(`module size: no new file exceeds ${SIZE_LIMIT} lines (imported engine exem
   walk(path.join(repo, "webview", "map", "src"));
   assert.deepEqual(offenders, []);
 });
+
+function walkTs(root: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".ts") && !e.name.endsWith(".test.ts")) out.push(p);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+test("§7bis grep-gate: no code reads the first workspace folder", () => {
+  const banned = /workspaceFolders\?\.\[0\]|workspaceFolders!\[0\]|workspaceFolders\[0\]/;
+  // The imported engine host is legacy-exempt (ENGINE-CHANGE.md rules);
+  // v2's own code is what the gate guards.
+  const offenders: string[] = [];
+  for (const f of walkTs("src"))
+    if (!f.startsWith(path.join("src", "engine", "host")) && banned.test(fs.readFileSync(f, "utf8")))
+      offenders.push(f);
+  assert.deepEqual(offenders, [], "an explicit picker is the only door to a folder");
+});

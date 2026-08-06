@@ -23,8 +23,19 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   const inCut = new Set(cut.changeIds);
   const lines: string[] = [];
 
-  lines.push(`CUT — ${members.length} change(s)`);
-  for (const n of members) lines.push(`  • ${n.sentence}`);
+  lines.push(`CUT — ${members.length} promise(s). Signing approves exactly this.`);
+  for (const n of members) {
+    lines.push(`  • ${n.sentence}`);
+    const lands = (n.grounding?.touchpoints ?? [])
+      .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new)" : ""))
+      .join(", ");
+    lines.push(`      lands at: ${lands || "(not grounded)"}`);
+    if (n.acceptance.length === 0) lines.push(`      checked by: (no check yet)`);
+    for (const c of n.acceptance)
+      lines.push(
+        `      checked by: ${c.text}${c.kind === "assessment" ? " — graded by an independent reviewer" : " — runnable test"}`,
+      );
+  }
 
   const needsFirst = [
     ...new Set(

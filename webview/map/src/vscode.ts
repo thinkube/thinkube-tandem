@@ -16,6 +16,8 @@ export interface UnitVM {
   changeIds: string[];
   island: number;
   inCut: boolean;
+  /** Signed into this TEP — being built or already delivered. */
+  tep?: string;
   /** Some of this unit's grounding no longer matches the repo. */
   stale: boolean;
   /** The machine face: the unit's nodes with grounding, for the flip. */
@@ -49,6 +51,8 @@ export interface SpacePush {
   /** The in-board answer to the latest question-classified input. */
   lastAnswer?: { question: string; answer: string };
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
+  /** Why the last build did not start — rendered on the flow tab. */
+  runNote?: string;
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
@@ -75,6 +79,7 @@ export type WebToHost =
   | { action: "capture-many"; items: string[] }
   | { action: "cancel-capture" }
   | { action: "reground" }
+  | { action: "open-cut-review" }
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }

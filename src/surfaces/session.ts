@@ -88,6 +88,7 @@ export class TandemSession {
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
   /** The latest in-board answer to a question. */
   lastAnswer: { question: string; answer: string } | undefined;
+  runNote: string | undefined; // why the last build did not start — shown ON the flow tab
   private _captureAbort: AbortController | undefined;
 
   constructor(private deps: SessionDeps) {
@@ -105,7 +106,6 @@ export class TandemSession {
     return tepApprovalOf(this.space, this._approvals, this._secret, tepId);
   }
 
-  /** The bound project label — never resolved. */
   get repoName(): string {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
@@ -457,25 +457,24 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** The run between the gates, driven by the imported engine. */
-  /**
-   * The run — one dispatch PER SCOPE, ordered by cross-scope needs
-   * (§7quater): a TEP produces one branch + delivery in each repository it
-   * touches; the TEP closes when all are accepted. A change never mixes
-   * scopes; a cycle between scopes refuses with the cycle named.
-   */
+  /** The run: one dispatch PER SCOPE ordered by cross-scope needs
+   *  (§7quater) — one branch + delivery per repository the TEP touches. */
   async execute(cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;
     const approval = cut.tepId ? this.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
     if (!approval.approved) {
-      this.changed(`Dispatch refused: ${approval.reason} — re-sign the cut.`);
+      this.runNote = `The build could not start: ${approval.reason} — re-sign the cut.`;
+      this.changed(this.runNote);
       return undefined;
     }
     if (!this.deps.forge) {
-      this.changed("No forge is configured — the cut stays signed, undelivered.");
+      this.runNote =
+        "The build could not start: no forge is reachable for this repository — set thinkubeTandem.giteaToken (or use a repository whose remote carries its credential). The cut stays signed, undelivered.";
+      this.changed(this.runNote);
       return undefined;
     }
+    this.runNote = undefined;
     this.running = true;
     this.runState = new RunState(() => this.deps.onChanged?.());
     this.changed(`Building ${cut.tepId ?? cutId}…`);
@@ -483,7 +482,8 @@ export class TandemSession {
       const plan = planScopes(this.space, cut);
       if (!plan.ok) {
         this.running = false;
-        this.changed(`Dispatch refused: ${plan.reason}.`);
+        this.runNote = `The build could not start: ${plan.reason}.`;
+        this.changed(this.runNote);
         return undefined;
       }
       const last = await dispatchScopePlan({

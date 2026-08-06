@@ -41,7 +41,7 @@ test("the cut screen fits the budget and surfaces what is not provable", () => {
   const { space, changeIds } = makeSpace();
   const screen = renderCutScreen(space, { id: "cut-1", changeIds });
   assert.ok(screen.split("\n").length <= RENDER_LINE_BUDGET, "decision-sized");
-  assert.ok(screen.includes("3 change(s)"));
+  assert.ok(screen.includes("3 promise(s)"));
   assert.ok(screen.includes("Nothing proves these yet:"));
   assert.ok(screen.includes("a change with nothing proving it yet"));
 });
@@ -118,7 +118,7 @@ test("what did NOT arrive is on the delivery page's face", () => {
 test("the freeze refusals: unprovable, ungrounded, and open questions refuse the sign", () => {
   const { space, changeIds } = makeSpace();
   const unprovable = signCut(space, { id: "c", changeIds }, "t");
-  assert.ok(!unprovable.ok && unprovable.reason.includes("nothing proves"), "no criteria, no signature");
+  assert.ok(!unprovable.ok && unprovable.reason.includes("no check yet"), "no check, no signature");
 
   const ungroundedSpace: Space = {
     ...space,
@@ -127,7 +127,7 @@ test("the freeze refusals: unprovable, ungrounded, and open questions refuse the
     ),
   };
   const ungrounded = signCut(ungroundedSpace, { id: "c", changeIds: changeIds.slice(0, 2) }, "t");
-  assert.ok(!ungrounded.ok && ungrounded.reason.includes("not grounded"));
+  assert.ok(!ungrounded.ok && ungrounded.reason.includes("not placed these promises"));
 
   const asked: Space = {
     ...space,

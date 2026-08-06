@@ -13,6 +13,7 @@ import { AFFORDANCES, gestureFor } from "./affordances";
 import { SESSION_ACTIONS, TandemSession } from "./session";
 
 test("no capability without a door: every session action is registered", () => {
+  assert.ok(SESSION_ACTIONS.length >= 15, "the gate must never go vacuous — the registry drives it");
   for (const action of SESSION_ACTIONS) {
     const entry = AFFORDANCES[action];
     assert.ok(entry, `action '${action}' has no affordance entry`);
@@ -87,7 +88,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
 
   session.toggleCut(session.units[0].changeIds);
-  assert.ok(session.cutScreen().includes("1 change(s)"));
+  assert.ok(session.cutScreen().includes("1 promise(s)"));
   assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
   assert.equal(session.space.cuts.length, 1);
   assert.ok(session.space.cuts[0].signature, "signature bound at the click");

@@ -49,6 +49,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
     activity: session.activity,
     lastAnswer: session.lastAnswer,
     pendingCheck: session.pendingCheck,
+    runNote: session.runNote,
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
@@ -73,6 +74,9 @@ function spacePush(session: TandemSession, message?: string): unknown {
       affected: session.space.nodes.filter((n) => n.serves.includes(im.askId)).length,
     })),
     units: session.units.map((u) => {
+      const signedIn = session.space.cuts.find(
+        (c) => c.signature && u.changeIds.some((id) => c.changeIds.includes(id)),
+      );
       const nodes = u.changeIds
         .map((id) => byId.get(id))
         .filter((n): n is NonNullable<typeof n> => !!n);
@@ -95,6 +99,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
         changeIds: u.changeIds,
         island: island.get(u.id) ?? 0,
         inCut: u.changeIds.every((id) => session.cutNodeIds.has(id)) && u.changeIds.length > 0,
+        ...(signedIn?.tepId ? { tep: signedIn.tepId } : {}),
         stale: u.changeIds.some((id) => session.stale.has(id)),
         coverage: {
           covered: nodes.filter((n) => n.acceptance.length > 0).length,
@@ -188,6 +193,12 @@ async function handleInbound(
   } else if (msg.action === "panic") {
     const r = session.panic();
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "open-cut-review") {
+    const doc = await vs().workspace.openTextDocument({
+      content: session.cutScreen(),
+      language: "markdown",
+    });
+    await vs().window.showTextDocument(doc, { preview: true });
   } else if (msg.action === "propose-check") {
     await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
   } else if (msg.action === "accept-check") {

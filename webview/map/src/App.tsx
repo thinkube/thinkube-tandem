@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { DraftPush, onDraft, onSpace, post, SpacePush, UnitVM } from "./vscode";
-import { RunSection } from "./Run";
+import { RunNote, RunSection } from "./Run";
 import { UnitsMap } from "./UnitsMap";
 import { Rail } from "./Rail";
 import { useWorld, ZoomControls } from "./proto/world";
@@ -58,6 +58,32 @@ export function App(): JSX.Element {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {spinStyle}
+      {push.activity ? (
+        <div
+          data-thinking
+          style={{
+            position: "fixed",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            background: "var(--vscode-editorWidget-background, #252526)",
+            border: "1px solid var(--vscode-focusBorder, #3794ff)",
+            borderRadius: 14,
+            padding: "4px 14px",
+            fontSize: 12,
+            boxShadow: "0 2px 8px #0008",
+          }}
+        >
+          <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span>
+          <span>
+            The machine is {push.activity.label}… ({push.activity.current}/{push.activity.total})
+          </span>
+        </div>
+      ) : null}
       <div
         data-asking-in
         style={{
@@ -316,9 +342,11 @@ export function App(): JSX.Element {
           />
         ) : push.run ? (
           <RunSection run={push.run} world={flowWorld} />
+        ) : push.runNote ? (
+          <RunNote note={push.runNote} />
         ) : (
           <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-            No run yet — sign a cut on the Units map and the flow appears here.
+            No build yet — sign a cut on the Units map and it appears here.
           </div>
         )}
         <ZoomControls world={tab === "units" ? unitsWorld : flowWorld} />

@@ -107,10 +107,10 @@ export function Rail(props: {
                 “{p.aTitle}” + “{p.bTitle}” look like one slice
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
-                <button data-merge-accept={p.id} onClick={() => post({ action: "accept-merge", proposalId: p.id })}>
+                <button data-merge-accept={p.id} title="Merge the two units into one — they will be built as one slice." onClick={() => post({ action: "accept-merge", proposalId: p.id })}>
                   Merge
                 </button>
-                <button data-merge-reject={p.id} style={{ opacity: 0.75 }} onClick={() => post({ action: "reject-merge", proposalId: p.id })}>
+                <button data-merge-reject={p.id} title="Keep them separate — this pair is never suggested again." style={{ opacity: 0.75 }} onClick={() => post({ action: "reject-merge", proposalId: p.id })}>
                   Reject
                 </button>
               </div>
@@ -129,10 +129,10 @@ export function Rail(props: {
                 {im.askText.length > 40 ? im.askText.slice(0, 39) + "…" : im.askText}” — nothing changed yet
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
-                <button data-impact-accept={im.id} onClick={() => post({ action: "accept-impact", impactId: im.id })}>
+                <button data-impact-accept={im.id} title="Re-derive the affected promises under this decision now." onClick={() => post({ action: "accept-impact", impactId: im.id })}>
                   Re-derive
                 </button>
-                <button data-impact-dismiss={im.id} style={{ opacity: 0.75 }} onClick={() => post({ action: "dismiss-impact", impactId: im.id })}>
+                <button data-impact-dismiss={im.id} title="Leave everything as it is — the decision stays in force." style={{ opacity: 0.75 }} onClick={() => post({ action: "dismiss-impact", impactId: im.id })}>
                   Dismiss
                 </button>
               </div>
@@ -143,7 +143,7 @@ export function Rail(props: {
 
       {(() => {
         const ready = push.units.filter(
-          (u) => !u.inCut && !u.stale && u.openQuestions === 0 && u.coverage.covered === u.coverage.total,
+          (u) => !u.inCut && !u.tep && !u.stale && u.openQuestions === 0 && u.coverage.covered === u.coverage.total,
         );
         return ready.length ? (
           <button
@@ -159,9 +159,18 @@ export function Rail(props: {
       {push.cutCount > 0 ? (
         <section data-cut-screen style={{ marginBottom: 14 }}>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, overflowX: "auto" }}>{push.cutScreen}</pre>
-          <button data-sign style={btn} onClick={() => post({ action: "sign-cut" })}>
-            Sign
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              data-review-cut
+              title="Read the whole cut before signing: every promise, where it lands, and the exact checks."
+              onClick={() => post({ action: "open-cut-review" })}
+            >
+              Read it first
+            </button>
+            <button data-sign style={btn} title="Signing approves exactly what the review shows and starts the build." onClick={() => post({ action: "sign-cut" })}>
+              Sign
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -187,7 +196,7 @@ export function Rail(props: {
                 </button>
               ) : null;
             })()}
-            <button data-toggle-cut style={btn} onClick={() => post({ action: "toggle-cut", changeIds: unit.changeIds })}>
+            <button data-toggle-cut style={btn} title="Add or remove this unit's promises from the batch you will sign. Dependencies ride along automatically." onClick={() => post({ action: "toggle-cut", changeIds: unit.changeIds })}>
               {unit.inCut ? "Remove from cut" : "Add to cut"}
             </button>
           </div>
@@ -225,11 +234,12 @@ export function Rail(props: {
               {n.acceptance.length === 0 && push.pendingCheck?.changeId !== n.id ? (
                 <button
                   data-write-check={n.id}
+                  disabled={!!push.activity}
                   style={{ fontSize: 11, marginLeft: 12 }}
-                  title="The machine proposes one check for this promise; you accept or reword it."
+                  title="The machine writes one check for this promise (takes a moment); you then accept or reword it — your wording wins."
                   onClick={() => post({ action: "propose-check", changeIds: [n.id] })}
                 >
-                  Write a check
+                  {push.activity?.label.includes("check") ? "⟳ writing the check…" : "Write a check"}
                 </button>
               ) : null}
               {push.pendingCheck?.changeId === n.id ? (

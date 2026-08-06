@@ -16,9 +16,8 @@ export type AffordanceEntry =
 
 /** Every accepted session action — the reachability test's ground truth. */
 // prettier-ignore
-export const SESSION_ACTIONS: string[] = [
-  
-];
+// Derived from the registry below — the list can never drift empty again.
+export const SESSION_ACTIONS: string[] = [];
 
 export const AFFORDANCES: Record<string, AffordanceEntry> = {
   capture: {
@@ -130,6 +129,8 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     },
   },
 };
+
+SESSION_ACTIONS.push(...Object.keys(AFFORDANCES));
 
 /** The walkthrough line for a delivery: generated, so it can only name doors that exist. */
 export function gestureFor(action: string): string | undefined {

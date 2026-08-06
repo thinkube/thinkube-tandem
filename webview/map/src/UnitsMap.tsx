@@ -38,6 +38,12 @@ function chipsFor(u: UnitVM): Chip[] {
       why: "The machine needs your answer — it is waiting in the panel on the right.",
     });
 
+  if (u.tep)
+    chips.push({
+      text: `signed — ${u.tep}`,
+      kind: "pass",
+      why: "These promises are in a signed work order — being built or already delivered. They cannot be cut again.",
+    });
   if (u.stale)
     chips.push({
       text: "out of date — click to re-check",

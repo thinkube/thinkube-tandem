@@ -56,7 +56,7 @@ export function signCut(
   if (unprovable.length)
     return {
       ok: false,
-      reason: `nothing proves: ${unprovable.map((n) => n!.sentence).join("; ")} — add acceptance criteria before signing`,
+      reason: `these promises have no check yet: ${unprovable.map((n) => n!.sentence).join("; ")} — open each unit and press "Write a check" first`,
     };
   const ungrounded = members.filter(
     (n) => !n!.grounding || (n!.grounding.touchpoints ?? []).length === 0,
@@ -64,7 +64,7 @@ export function signCut(
   if (ungrounded.length)
     return {
       ok: false,
-      reason: `not grounded: ${ungrounded.map((n) => n!.sentence).join("; ")} — re-ground before signing`,
+      reason: `the machine has not placed these promises in the code yet: ${ungrounded.map((n) => n!.sentence).join("; ")} — press the out-of-date badge to re-read the code`,
     };
   const dangling = danglingNeeds(cut.changeIds, space.nodes);
   if (dangling.length)
