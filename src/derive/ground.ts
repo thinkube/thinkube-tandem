@@ -154,8 +154,9 @@ export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
   opts: { digest?: string; nextIndex: number; decisions?: string[] },
+  round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
 ): Promise<GroundingResult> {
-  const text = await runReadRound(
+  const text = await round(
     deps,
     buildGroundingPrompt({
       ask,

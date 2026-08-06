@@ -12,7 +12,7 @@ import { addAsk } from "../core/intent";
 import { formUnits, unitEdges } from "../core/cluster";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { staleChangeIds } from "../core/stale";
-import { runGrounding } from "../derive/ground";
+import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
 import { RoundDeps } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
@@ -55,7 +55,7 @@ export interface SessionDeps {
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;
   suiteCommand?: string[];
-  ground?: typeof runGrounding;
+  ground?: typeof runDerivationPipeline;
   dispatch?: typeof dispatchTep;
   readCurrentStamp?: () => Promise<SourceStamp[]>;
   /** Retire a merged TEP's worktrees (best-effort; injectable for tests). */
@@ -109,15 +109,34 @@ export class TandemSession {
     this.deps.onChanged?.(message);
   }
 
+  /** Per-ask context digests, file-backed beside the space. */
+  private digestStore(): DigestStore {
+    const dir = path.join(this.deps.storeDir, "digests");
+    return {
+      load: (askId) => {
+        try {
+          return fs.readFileSync(path.join(dir, `${askId}.md`), "utf8");
+        } catch {
+          return undefined;
+        }
+      },
+      save: (askId, text) => {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `${askId}.md`), text);
+      },
+    };
+  }
+
   /** Capture an ask verbatim, ground it, recluster, refresh staleness. */
   async capture(text: string): Promise<{ ok: boolean; reason?: string }> {
     const r = addAsk(this.space, text, this.deps.now());
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
-    const ground = this.deps.ground ?? runGrounding;
+    const ground = this.deps.ground ?? runDerivationPipeline;
     const grounded = await ground(this.deps.round, r.added, {
       nextIndex: this.space.nodes.length + 1,
       decisions: this.decisionsInForce(),
+      digestStore: this.digestStore(),
     });
     const questions = grounded.questions.map((q, i) => ({
       ...q,
@@ -148,7 +167,7 @@ export class TandemSession {
         .flatMap((n) => n.serves),
     );
     if (staleAsks.size === 0) return;
-    const ground = this.deps.ground ?? runGrounding;
+    const ground = this.deps.ground ?? runDerivationPipeline;
     for (const askId of staleAsks) {
       const ask = this.space.asks.find((a) => a.id === askId);
       if (!ask) continue;
@@ -156,6 +175,7 @@ export class TandemSession {
       const fresh = await ground(this.deps.round, ask, {
         nextIndex: this.space.nodes.length + 1,
         decisions: this.decisionsInForce(),
+        digestStore: this.digestStore(),
       });
       this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
     }
@@ -194,11 +214,12 @@ export class TandemSession {
     this.changed(`Decision recorded — re-grounding the ask under it…`);
     const ask = this.space.asks.find((a) => a.id === q.askId);
     if (ask) {
-      const ground = this.deps.ground ?? runGrounding;
+      const ground = this.deps.ground ?? runDerivationPipeline;
       const keep = this.space.nodes.filter((n) => !n.serves.includes(ask.id));
       const fresh = await ground(this.deps.round, ask, {
         nextIndex: this.space.nodes.length + 1,
         decisions: this.decisionsInForce(),
+        digestStore: this.digestStore(),
       });
       this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
       this.recluster();
