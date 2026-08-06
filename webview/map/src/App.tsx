@@ -6,6 +6,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { DraftPush, onDraft, onSpace, post, SpacePush, UnitVM } from "./vscode";
 import { RunSection } from "./Run";
+import { UnitsMap } from "./UnitsMap";
+import {
+  createExpansionStore,
+  expandableLabel,
+  wrapBody,
+} from "../../../src/surfaces/graphCore/expander";
 import {
   Badge,
   Canvas,
@@ -35,6 +41,9 @@ export function App(): JSX.Element {
   const [classifying, setClassifying] = useState(false);
   const [tag, setTag] = useState<DraftPush | null>(null);
   const [panicArmed, setPanicArmed] = useState(false);
+  const expansion = useMemo(() => createExpansionStore(), []);
+  const [, forceRender] = useState(0);
+  useEffect(() => expansion.subscribe(() => forceRender((n) => n + 1)), [expansion]);
 
   useEffect(() => onSpace(setPush), []);
   useEffect(
@@ -254,6 +263,7 @@ export function App(): JSX.Element {
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <UnitsMap
           push={push}
+          expansion={expansion}
           selected={selected}
           onSelect={(id) => {
             setSelected(id);
@@ -275,109 +285,6 @@ export function App(): JSX.Element {
         />
       </div>
     </div>
-  );
-}
-
-function UnitsMap(props: {
-  push: SpacePush;
-  selected: string | null;
-  onSelect: (id: string) => void;
-}): JSX.Element {
-  const { push } = props;
-  const viewport = useViewport(CLAMPS);
-  const elkNodes = useMemo(
-    () =>
-      push.units.map((u) => ({
-        id: u.id,
-        w: UNIT_NODE_W,
-        h: UNIT_NODE_H,
-        island: u.island,
-      })),
-    [push.units],
-  );
-  const layout = useElkLayout(elkNodes, push.edges, "islands");
-  if (push.units.length === 0)
-    return (
-      <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-        Nothing here yet — capture your first ask above.
-      </div>
-    );
-  const rep = representationFor(viewport.transform.k);
-  return (
-    <Canvas viewport={viewport} contentBounds={layout.bounds}>
-      {push.edges.map((e, i) => {
-        const from = layout.nodes.get(e.from);
-        const to = layout.nodes.get(e.to);
-        if (!from || !to) return null;
-        return (
-          <Edge
-            key={i}
-            from={{ x: from.x + from.w, y: from.y + from.h / 2 }}
-            to={{ x: to.x, y: to.y + to.h / 2 }}
-          />
-        );
-      })}
-      {push.units.map((u) => {
-        const p = layout.nodes.get(u.id);
-        if (!p) return null;
-        const texts = unitsNodeSpec(
-          { id: u.id, title: u.title, count: u.count, inCut: u.inCut },
-          rep,
-        );
-        return (
-          <NodeFrame
-            key={u.id}
-            x={p.x}
-            y={p.y}
-            w={UNIT_NODE_W}
-            h={UNIT_NODE_H}
-            accent={u.inCut ? "#c9a227" : "#14b8a6"}
-            stroke={
-              props.selected === u.id
-                ? "var(--vscode-focusBorder, #4da6ff)"
-                : undefined
-            }
-            title=""
-            onClick={() => props.onSelect(u.id)}
-            hoverTitle={u.title}
-          >
-            {texts.map((t, i) => (
-              <text
-                key={i}
-                x={t.x}
-                y={t.y}
-                fontSize={t.fontSize}
-                fontWeight={t.weight}
-                fill={t.color}
-                data-role={t.role}
-              >
-                {t.text}
-              </text>
-            ))}
-            {rep !== "far" && u.inCut ? (
-              <Badge x={UNIT_NODE_W - 70} y={6} text="in the cut" color="#c9a227" />
-            ) : null}
-            {rep !== "far" && u.stale ? (
-              <g
-                data-stale={u.id}
-                style={{ cursor: "pointer" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  post({ action: "reground" });
-                }}
-              >
-                <Badge
-                  x={UNIT_NODE_W - 70}
-                  y={UNIT_NODE_H - 22}
-                  text="stale — press to re-ground"
-                  color="#f59e0b"
-                />
-              </g>
-            ) : null}
-          </NodeFrame>
-        );
-      })}
-    </Canvas>
   );
 }
 
@@ -517,6 +424,47 @@ function SidePanel(props: {
           ))}
         </section>
       ) : null}
+      {(() => {
+        const uncovered = push.units.filter((u) => u.coverage.covered < u.coverage.total);
+        const staleUnits = push.units.filter((u) => u.stale);
+        const chips: { key: string; label: string; color: string; unitId?: string }[] = [
+          ...push.questions.map((q, i) => ({
+            key: `q${i}`,
+            label: `❓ ${q.text.length > 40 ? q.text.slice(0, 39) + "…" : q.text}`,
+            color: "#d29922",
+            unitId: push.units.find((u) =>
+              u.nodes.some((n) => push.questions.some((x) => x.id === q.id)),
+            )?.id,
+          })),
+          ...uncovered.map((u) => ({
+            key: `c${u.id}`,
+            label: `⚠ nothing proves: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
+            color: "#f59e0b",
+            unitId: u.id,
+          })),
+          ...staleUnits.map((u) => ({
+            key: `s${u.id}`,
+            label: `stale: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
+            color: "#8b949e",
+            unitId: u.id,
+          })),
+        ];
+        return chips.length ? (
+          <div data-next-actions style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "6px 12px 0", alignItems: "center" }}>
+            <span style={{ fontSize: 11, opacity: 0.6 }}>needs you:</span>
+            {chips.map((c) => (
+              <button
+                key={c.key}
+                data-next-action={c.key}
+                style={{ fontSize: 11, border: `1px solid ${c.color}`, color: c.color, background: "none", borderRadius: 10, padding: "1px 8px", cursor: c.unitId ? "pointer" : "default" }}
+                onClick={() => c.unitId && setSelected(c.unitId)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        ) : null;
+      })()}
       {push.asks.length ? (
         <section data-asks style={{ margin: "8px 12px" }}>
           <strong style={{ fontSize: 12 }}>You asked</strong>

@@ -60,6 +60,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
         .map((id) => byId.get(id))
         .filter((n): n is NonNullable<typeof n> => !!n);
       const first = nodes[0]?.sentence ?? u.id;
+      const askIds = new Set(nodes.flatMap((n) => n.serves));
       return {
         id: u.id,
         title: nodes.length > 1 ? `${first} +${nodes.length - 1} more` : first,
@@ -68,6 +69,13 @@ function spacePush(session: TandemSession, message?: string): unknown {
         island: island.get(u.id) ?? 0,
         inCut: u.changeIds.every((id) => session.cutNodeIds.has(id)) && u.changeIds.length > 0,
         stale: u.changeIds.some((id) => session.stale.has(id)),
+        coverage: {
+          covered: nodes.filter((n) => n.acceptance.length > 0).length,
+          total: nodes.length,
+        },
+        openQuestions: session.space.questions.filter(
+          (q) => !q.decided && askIds.has(q.askId),
+        ).length,
         nodes: nodes.map((n) => ({
           id: n.id,
           sentence: n.sentence,

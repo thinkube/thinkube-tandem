@@ -5,6 +5,8 @@
  */
 
 export interface UnitVM {
+  coverage: { covered: number; total: number };
+  openQuestions: number;
   id: string;
   title: string;
   count: number;
