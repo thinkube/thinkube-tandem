@@ -145,23 +145,25 @@ export async function chooseProject(
     }
   }
   const carded = new Set(open.map((p) => path.resolve(p.anchorDir)));
-  const enableable = folders.filter((f) => !carded.has(path.resolve(f.uri.fsPath)));
+  const enableable = folders.flatMap((f) =>
+    reposInside(f.uri.fsPath).filter((d) => !carded.has(path.resolve(d))),
+  );
   if (enableable.length) {
-    items.push({ label: "Enable as a project", kind: vscode.QuickPickItemKind.Separator });
-    for (const f of enableable)
+    items.push({ label: "Enable a repository", kind: vscode.QuickPickItemKind.Separator });
+    for (const d of enableable)
       items.push({
-        label: `$(add) Enable ${f.name}…`,
-        description: f.uri.fsPath,
-        enableDir: f.uri.fsPath,
+        label: `$(add) Enable ${path.basename(d)}…`,
+        description: d,
+        enableDir: d,
       });
   }
   const pick = await vscode.window.showQuickPick(items, {
-    title: "Tandem — which project are you working on?",
+    title: "Tandem — which repository or project are you working on?",
   });
   if (!pick) return undefined;
   if (pick.enableDir) {
     const label = await vscode.window.showInputBox({
-      title: "Project label (a name, never an identity)",
+      title: "Repository label (a name, never an identity)",
       value: path.basename(pick.enableDir),
     });
     if (!label) return undefined;

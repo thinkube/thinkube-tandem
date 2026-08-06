@@ -99,7 +99,7 @@ export function renderDeliveryPage(
   }
   for (const p of delivery.proofs)
     lines.push(
-      `  proof: ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
+      `  check: ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
     );
   // What did NOT arrive is part of the decision, on the page's face —
   // including any unmet documentation obligation.

@@ -168,7 +168,7 @@ export class TandemSession {
     const qNote = questions.length ? ` ${questions.length} question(s) need you.` : "";
     this.changed(
       grounded.changes.length
-        ? `Grounded into ${grounded.changes.length} change(s).${qNote}`
+        ? `Read the code and derived ${grounded.changes.length} promise(s).${qNote}`
         : `The round returned no changes — the ask is captured; re-ground any time.${qNote}`,
     );
     await this.renderAbstracts();
@@ -200,7 +200,7 @@ export class TandemSession {
     }
     this.recluster();
     await this.refreshStaleness();
-    this.changed("Re-grounded the stale changes.");
+    this.changed("Re-read the code and refreshed the out-of-date promises.");
     await this.renderAbstracts();
   }
 
@@ -283,7 +283,7 @@ export class TandemSession {
     });
     this.recluster();
     await this.refreshStaleness();
-    this.changed("Re-derived under the decision.");
+    this.changed("Re-derived the promises under the decision.");
     await this.renderAbstracts();
     return { ok: true };
   }
@@ -357,6 +357,7 @@ export class TandemSession {
 
   /** The machine proposes a check; the human's wording wins. */
   async proposeCheckFor(changeId: string): Promise<{ ok: boolean; reason?: string }> {
+    if (this.activity) return { ok: false, reason: "the machine is busy — wait for the current step to finish" };
     const n = this.space.nodes.find((x) => x.id === changeId);
     if (!n) return { ok: false, reason: `no promise '${changeId}'` };
     const ask = this.space.asks.find((a) => n.serves.includes(a.id));

@@ -25,7 +25,7 @@ test("no capability without a door: every session action is registered", () => {
     }
   }
   assert.ok(gestureFor("sign-cut")!.includes("press Sign"));
-  assert.ok(gestureFor("reground")!.includes("stale badge"), "re-grounding has a human door");
+  assert.ok(gestureFor("reground")!.includes("out-of-date badge"), "re-grounding has a human door");
 });
 
 test("session round-trip: capture grounds and clusters; sign; accept only on green; persistence keeps both", async () => {

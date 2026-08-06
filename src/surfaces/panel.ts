@@ -200,7 +200,8 @@ async function handleInbound(
     });
     await vs().window.showTextDocument(doc, { preview: true });
   } else if (msg.action === "propose-check") {
-    await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
+    const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-check") {
     session.acceptCheck(
       msg.changeIds?.[0] ?? "",

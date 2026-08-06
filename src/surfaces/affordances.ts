@@ -125,7 +125,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "units map",
-      gesture: "press a stale badge to re-ground the changes it marks",
+      gesture: "press an out-of-date badge to re-read the code under those promises",
     },
   },
 };

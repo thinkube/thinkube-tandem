@@ -322,7 +322,7 @@ export function App(): JSX.Element {
           Orchestration flow{push.running ? " ●" : ""}
         </button>
         <span style={{ marginLeft: "auto", color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12 }}>
-          drag to move · scroll to zoom · “more…” opens a card in place · zoomed far out, cards show only their title
+          drag to move · scroll to zoom · cards always show everything · zoomed far out, only titles
         </span>
       </div>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>

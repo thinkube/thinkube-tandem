@@ -96,7 +96,7 @@ test("the delivery page speaks in the asks' words with proof and gestures beside
   );
   assert.ok(page.includes("You asked: make the log panel follow the running step"));
   assert.ok(page.includes("✓ the log panel scrolls with the active step"));
-  assert.ok(page.includes("proof: suite — green"));
+  assert.ok(page.includes("check: suite — green"));
   assert.ok(page.includes("see it: the follow toggle — open the panel and press Follow"));
   assert.ok(page.split("\n").length <= RENDER_LINE_BUDGET);
 });

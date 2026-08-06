@@ -103,11 +103,9 @@ async function resolveForge(
   }
 }
 
-/** Sessions key by (owner, thinking space); owners are identities. */
 const sessions = new Map<string, TandemSession>();
 
-/** The session of the remembered (owner, thinking space) pair — the owner
- *  is a repository card or a project ("wp:<id>"). */
+/** The active (owner, thinking space) session; owner = card id or wp:<id>. */
 function activeSession(
   context: vscode.ExtensionContext,
   project?: EnabledProject,
@@ -152,16 +150,9 @@ function updateStatusBar(project: EnabledProject | undefined): void {
   statusBar.show();
 }
 
-function storeRootOf(): string {
-  const config = vscode.workspace.getConfiguration("thinkubeTandem");
-  return (
-    config.get<string>("storeRoot", "") ||
-    path.join(process.env.HOME ?? "~", "thinkube-tandem-store")
-  );
-}
+const storeRootOf = configuredStoreRoot;
 
-/** The status bar heartbeat: building progress, LOUD when a worker
- *  waits on the human, the project name otherwise. */
+/** The heartbeat: building progress, LOUD when a worker waits. */
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
@@ -209,7 +200,11 @@ async function ensureSession(
   interactive = true,
 ): Promise<TandemSession | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
-  if (savedOwner.startsWith("wp:"))
+  if (savedOwner.startsWith("wp:")) {
+    if (!storeSync) {
+      storeSync = new StoreSyncService(configuredStoreRoot(), (l) => console.log(l));
+      storeSync.start();
+    }
     return ensureWorkSession({
       context,
       ownerKey: savedOwner,
@@ -227,6 +222,7 @@ async function ensureSession(
       onChanged: (message) => pushActive(context, message),
       storageDir: context.globalStorageUri.fsPath,
     });
+  }
   let project = rememberedProject(context);
   if (!project && interactive) project = await chooseProject(context, openProjects);
   if (!project) return undefined;
@@ -295,7 +291,7 @@ async function ensureSession(
 export function activate(context: vscode.ExtensionContext): void {
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
-  statusBar.tooltip = "Switch the project Tandem works on";
+  statusBar.tooltip = "Switch the repository or project Tandem works on";
   updateStatusBar(rememberedProject(context));
   context.subscriptions.push(statusBar);
 

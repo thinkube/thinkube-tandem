@@ -125,7 +125,7 @@ export function Rail(props: {
           {push.impacts.map((im) => (
             <div key={im.id} data-impact={im.id} style={{ padding: "4px 0" }}>
               <div style={{ opacity: 0.85 }}>
-                “{im.decision}” implies re-deriving {im.affected} change(s) of “
+                “{im.decision}” implies re-deriving {im.affected} promise(s) of “
                 {im.askText.length > 40 ? im.askText.slice(0, 39) + "…" : im.askText}” — nothing changed yet
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
