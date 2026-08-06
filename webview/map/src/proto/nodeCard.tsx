@@ -12,6 +12,8 @@ export const NODE_W = 230;
 export interface Chip {
   text: string;
   kind?: "el" | "con" | "ac" | "q" | "stale" | "cut" | "na" | "run" | "pass" | "plain";
+  /** Plain-English hover explanation of why this chip is on the card. */
+  why?: string;
 }
 
 export interface CardData {
@@ -39,6 +41,7 @@ function ChipEl(props: { chip: Chip }): JSX.Element {
   const c = CHIP_COLORS[props.chip.kind ?? "plain"];
   return (
     <span
+      title={props.chip.why}
       style={{
         fontSize: 11,
         padding: "1px 7px",

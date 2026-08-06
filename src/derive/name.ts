@@ -37,6 +37,8 @@ export function buildNamingPrompt(units: UnitToName[]): string {
     `A name, not a sentence — no trailing period, never a copy of a member sentence.\n` +
     `- "text": a one-to-two sentence abstract of what the unit delivers as a whole, ` +
     `decision-sized. It must not repeat the title's wording.\n\n` +
+    `Write BOTH in plain English: short sentences, common words, no method jargon ` +
+    `and no internal identifiers. A non-programmer must understand every word.\n\n` +
     `Do not read any files. Answer with ONLY a JSON array, no prose:\n` +
     `[{"unitId": "...", "title": "...", "text": "..."}]`
   );

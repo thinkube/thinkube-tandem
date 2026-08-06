@@ -122,18 +122,25 @@ export async function dispatchTep(
     if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, ...entry });
   };
 
+  // A refusal is itself a find-time defect observation: one journal line,
+  // then the refusal surfaces as before.
+  const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
+    defect({ activity: "preflight", trigger, ...(type ? { type } : {}), impact: "run refused", detail: refusal.slice(0, 500) });
+    return { refusals: [refusal], undelivered: [] };
+  };
+
   const blast = await foldBlastRadius(slices, deps.repoRoot, exec, log);
-  if (blast) return { refusals: [blast], undelivered: [] };
+  if (blast) return refuse("blast-radius", blast);
 
   const lock = await claimRunLock(wtRoot, wtName, runName, slices);
-  if (lock.refusal) return { refusals: [lock.refusal], undelivered: [] };
+  if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
 
   try {
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
-    return { refusals: [`the engine refused the plan: ${JSON.stringify(verdict)}`], undelivered: [] };
+    return refuse("plan-validation", `the engine refused the plan: ${JSON.stringify(verdict)}`);
   for (const u of dag)
     st.seed(
       u.id,
@@ -148,10 +155,9 @@ export async function dispatchTep(
   await exec("git", ["-C", deps.repoRoot, "worktree", "prune"], deps.repoRoot);
   await exec("git", ["-C", deps.repoRoot, "branch", "-D", branch], deps.repoRoot);
   const wt = await exec("git", ["-C", deps.repoRoot, "worktree", "add", "-b", branch, worktree], deps.repoRoot);
-  if (wt.code !== 0)
-    return { refusals: [`worktree failed: ${wt.out.trim().slice(0, 300)}`], undelivered: [] };
+  if (wt.code !== 0) return refuse("worktree", `worktree failed: ${wt.out.trim().slice(0, 300)}`, "gate");
   if (!(await ensureSnapshot(deps.repoRoot, branch, testerWt, exec)))
-    return { refusals: [`tester snapshot failed at ${testerWt}`], undelivered: [] };
+    return refuse("tester-snapshot", `tester snapshot failed at ${testerWt}`, "gate");
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   await restoreProbes(storeDir, testerWt);
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
@@ -456,14 +462,18 @@ export async function dispatchTep(
     ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
   }));
   for (const r of acResults)
-    if (!r.pass && /12[67]/.test(String((r as { code?: number }).code ?? "")))
+    if (!r.pass) {
+      const infra = /12[67]/.test(String((r as { code?: number }).code ?? ""));
       defect({
         activity: "closing gate",
-        trigger: "gate-infra",
-        type: "gate",
-        impact: "verification unavailable",
-        detail: `AC-${r.ac} runner exited 126/127 — a gate defect, not a code verdict`,
+        trigger: infra ? "gate-infra" : "gate-ac",
+        type: infra ? "gate" : "code",
+        impact: infra ? "verification unavailable" : "acceptance check red",
+        detail: infra
+          ? `AC-${r.ac} runner exited 126/127 — a gate defect, not a code verdict`
+          : `AC-${r.ac} failed${r.evidence ? ` — ${r.evidence.slice(0, 300)}` : ""}`,
       });
+    }
 
   // The honesty scan over the delivered code: a self-declared deferral in a
   // shipped file is UNDELIVERED on the delivery's face, never a footnote.

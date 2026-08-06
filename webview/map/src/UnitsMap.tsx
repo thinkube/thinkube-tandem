@@ -7,7 +7,7 @@
  * ELK-routed orthogonal edges with arrowheads and `needs` labels, drag =
  * pan, wheel = zoom, `far` simplification below the legibility floor.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush, UnitVM } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
@@ -18,15 +18,35 @@ const GAP = 46;
 
 function chipsFor(u: UnitVM): Chip[] {
   const chips: Chip[] = [
-    { text: `${u.count} change${u.count === 1 ? "" : "s"}`, kind: "el" },
+    {
+      text: `${u.count} change${u.count === 1 ? "" : "s"}`,
+      kind: "el",
+      why: "How many separate code changes this unit bundles.",
+    },
     {
       text: `proof ${u.coverage.covered}/${u.coverage.total}${u.coverage.covered === u.coverage.total ? "" : " missing"}`,
       kind: u.coverage.covered === u.coverage.total ? "ac" : "na",
+      why: "How many of the changes have a check that would prove they were delivered.",
     },
   ];
-  if (u.openQuestions > 0) chips.push({ text: `${u.openQuestions} open question${u.openQuestions === 1 ? "" : "s"}`, kind: "q" });
-  if (u.inCut) chips.push({ text: "in cut", kind: "cut" });
-  if (u.stale) chips.push({ text: "stale — click to re-ground", kind: "stale" });
+  if (u.openQuestions > 0)
+    chips.push({
+      text: `${u.openQuestions} open question${u.openQuestions === 1 ? "" : "s"}`,
+      kind: "q",
+      why: "The machine needs your answer — it is waiting in the panel on the right.",
+    });
+  if (u.inCut)
+    chips.push({
+      text: "in cut",
+      kind: "cut",
+      why: "Chosen to be built when you press Sign. The cut is the batch you are about to approve.",
+    });
+  if (u.stale)
+    chips.push({
+      text: "out of date — click to re-check",
+      kind: "stale",
+      why: "The code changed underneath this unit since the machine read it. Clicking re-reads the code.",
+    });
   return chips;
 }
 
@@ -54,6 +74,23 @@ function islandsByAsk(push: SpacePush): Island[] {
   });
 }
 
+/** Every unit's position in world coordinates — the same island-row math
+ *  the renderer uses, factored so anchoring reads it before and after a
+ *  reflow. */
+function positionsOf(islands: Island[], layouts: Map<string, LaidOut>): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>();
+  let ox = 0;
+  for (const isl of islands) {
+    const g = layouts.get(isl.label);
+    for (const u of isl.units) {
+      const c = g?.nodes.get(u.id);
+      if (c) out.set(u.id, { x: ox + PAD + c.x, y: PAD + c.y });
+    }
+    ox += (g?.width ?? NODE_W) + 2 * PAD + GAP;
+  }
+  return out;
+}
+
 export function UnitsMap(props: {
   push: SpacePush;
   world: World;
@@ -77,6 +114,47 @@ export function UnitsMap(props: {
   const expandedKey = props.expandedIds.join(",");
   const { heights, probe } = useMeasuredHeights(cards, expandedKey, world.far);
   const [layouts, setLayouts] = useState<Map<string, LaidOut>>(new Map());
+
+  // A reflow never moves the card you are touching: the card's position is
+  // recorded before the layout recomputes, and the viewport shifts by the
+  // delta after — the neighbors move, the anchor stays pixel-fixed.
+  const anchor = useRef<{ id: string; x: number; y: number } | null>(null);
+  const handleToggle = (id: string): void => {
+    const p = positionsOf(islands, layouts).get(id);
+    if (p) anchor.current = { id, ...p };
+    props.onToggle(id);
+  };
+  // Crossing the legibility floor reflows every card; anchor on the one
+  // nearest the middle of the view so the map does not jump under the zoom.
+  const prevFar = useRef(world.far);
+  useEffect(() => {
+    if (prevFar.current === world.far) return;
+    prevFar.current = world.far;
+    const el = world.element;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = (r.width / 2 - world.tx) / world.k;
+    const cy = (r.height / 2 - world.ty) / world.k;
+    let best: { id: string; x: number; y: number } | null = null;
+    let bd = Infinity;
+    for (const [id, p] of positionsOf(islands, layouts)) {
+      const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = { id, ...p };
+      }
+    }
+    if (best) anchor.current = best;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world.far]);
+  useEffect(() => {
+    const a = anchor.current;
+    if (!a) return;
+    anchor.current = null;
+    const p = positionsOf(islands, layouts).get(a.id);
+    if (p) world.shiftBy((a.x - p.x) * world.k, (a.y - p.y) * world.k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layouts]);
 
   useEffect(() => {
     let alive = true;
@@ -201,7 +279,7 @@ export function UnitsMap(props: {
                 card={card}
                 far={world.far}
                 expanded={props.expandedIds.includes(u.id)}
-                onToggle={props.onToggle}
+                onToggle={handleToggle}
                 selected={props.selected === u.id}
                 onClick={(id) => {
                   props.onSelect(id);

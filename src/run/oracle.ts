@@ -122,6 +122,15 @@ export function sliceOracleFactory(
   const supervise =
     (slice: string) =>
     async (evidence: string, failingAcs: number[]): Promise<string | undefined> => {
+      // The supervisor is consulted exactly when rounds stall — that trip is
+      // itself a find-time defect observation.
+      a.defect({
+        slice,
+        activity: "verify rounds",
+        trigger: "stall-breaker",
+        impact: "supervisor consulted",
+        detail: `check(s) ${failingAcs.join(", ") || "?"} repeating an identical failure`,
+      });
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
       for (const rel of probes) {
@@ -162,6 +171,8 @@ export function sliceOracleFactory(
         prompt,
       );
       if (!reply) return undefined;
+      // The judge's routed fault attribution — each verdict class is a
+      // distinct defect type in the journal.
       if (reply.trimStart().startsWith("DISCLOSE"))
         a.defect({
           slice,
@@ -171,7 +182,25 @@ export function sliceOracleFactory(
           impact: "round lost",
           detail: reply.slice(0, 1000),
         });
-      if (reply.trimStart().startsWith("ESCALATE")) return undefined;
+      if (reply.trimStart().startsWith("TEST-FAULT"))
+        a.defect({
+          slice,
+          activity: "verify-oracle supervision",
+          trigger: "supervisor",
+          type: "test",
+          impact: "a check contradicts the intent",
+          detail: reply.slice(0, 1000),
+        });
+      if (reply.trimStart().startsWith("ESCALATE")) {
+        a.defect({
+          slice,
+          activity: "verify-oracle supervision",
+          trigger: "supervisor",
+          impact: "a person must decide",
+          detail: reply.slice(0, 500),
+        });
+        return undefined;
+      }
       return reply.slice(0, 4000);
     };
 

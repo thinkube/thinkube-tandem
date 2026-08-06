@@ -15,6 +15,11 @@ export interface World {
   far: boolean;
   /** Put this on the canvas element — it wires wheel + drag natively. */
   ref: (el: HTMLElement | null) => void;
+  /** The wired canvas element, for viewport-geometry reads. */
+  element: HTMLElement | null;
+  /** Imperative pan by screen pixels — used to hold an anchor card
+   *  pixel-fixed through a layout reflow. */
+  shiftBy: (dx: number, dy: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   fit: () => void;
@@ -88,6 +93,13 @@ export function useWorld(): World {
     ...t,
     far: t.k < FAR_BELOW,
     ref,
+    element: el,
+    shiftBy: (dx: number, dy: number) => {
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+      const next = { ...live.current, tx: live.current.tx + dx, ty: live.current.ty + dy };
+      live.current = next;
+      setT(next);
+    },
     zoomIn: () => setT((c) => ({ ...c, k: Math.min(K_MAX, c.k * 1.2) })),
     zoomOut: () => setT((c) => ({ ...c, k: Math.max(K_MIN, c.k / 1.2) })),
     fit: () => setT({ tx: 30, ty: 30, k: 1 }),
