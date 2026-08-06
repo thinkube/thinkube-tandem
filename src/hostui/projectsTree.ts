@@ -1,39 +1,66 @@
 /**
- * The Projects tree — the v1 sidebar convention over the v2 model:
- * products are the top level (created explicitly, existing even when
- * empty), projects strictly underneath (created from their product node),
- * the active project dotted. Click a project to make it active and open
- * its space in the editor. The tree renders labels only; identity stays
- * in the cards.
+ * The navigator — the v1 three-level drill-down restored (Amendment 1):
+ * products at the top, REPOSITORIES underneath (code homes; the cards),
+ * and under every repository its named THINKING SPACES plus a permanent
+ * "New thinking space…" row. Clicking a space opens that space's map.
+ * The tree renders labels only; identity stays in the cards.
  */
 import * as vscode from "vscode";
 import { EnabledProject } from "../core/identity";
+import { SpaceRef } from "../core/spaces";
 
-class ProjectItem extends vscode.TreeItem {
+class RepositoryItem extends vscode.TreeItem {
   constructor(
     public readonly project: EnabledProject,
     active: boolean,
   ) {
-    super(project.card.label, vscode.TreeItemCollapsibleState.None);
+    super(project.card.label, vscode.TreeItemCollapsibleState.Expanded);
     this.id = project.card.id;
-    this.contextValue = "tandem-project";
+    this.contextValue = "tandem-repository";
     this.description =
       (project.prefix
         ? `${vscode.workspace.asRelativePath(project.gitRoot)}/${project.prefix}`
         : vscode.workspace.asRelativePath(project.gitRoot)) + (active ? "  ●" : "");
     this.iconPath = new vscode.ThemeIcon(active ? "repo" : "repo-clone");
     this.tooltip = [
-      project.card.label,
+      `Repository: ${project.card.label}`,
       project.card.product ? `product: ${project.card.product}` : undefined,
-      `anchor: ${project.anchorDir}`,
+      `folder: ${project.anchorDir}`,
       project.card.remote ? `remote: ${project.card.remote}` : undefined,
     ]
       .filter(Boolean)
       .join("\n");
+  }
+}
+
+class ThinkingSpaceItem extends vscode.TreeItem {
+  constructor(ownerId: string, space: SpaceRef, active: boolean) {
+    super(space.label, vscode.TreeItemCollapsibleState.None);
+    this.id = `${ownerId}/${space.slug}`;
+    this.contextValue = "tandem-thinking-space";
+    this.iconPath = new vscode.ThemeIcon("notebook");
+    if (active) this.description = "●";
+    this.tooltip = `Thinking space "${space.label}" — click to open its map.`;
     this.command = {
-      command: "thinkube-tandem.activateProject",
-      title: "Open this project's space",
-      arguments: [project.card.id],
+      command: "thinkube-tandem.openThinkingSpace",
+      title: "Open this thinking space",
+      arguments: [ownerId, space.slug],
+    };
+  }
+}
+
+/** The permanent creation row — v1's gesture, verbatim. */
+class NewSpaceItem extends vscode.TreeItem {
+  constructor(ownerId: string) {
+    super("New thinking space…", vscode.TreeItemCollapsibleState.None);
+    this.id = `${ownerId}/…new`;
+    this.contextValue = "tandem-new-space";
+    this.iconPath = new vscode.ThemeIcon("add");
+    this.tooltip = "Start a new, independent stream of thinking here.";
+    this.command = {
+      command: "thinkube-tandem.newThinkingSpace",
+      title: "New thinking space",
+      arguments: [ownerId],
     };
   }
 }
@@ -46,11 +73,11 @@ export class ProductItem extends vscode.TreeItem {
     super(product, vscode.TreeItemCollapsibleState.Expanded);
     this.contextValue = "tandem-product";
     this.iconPath = new vscode.ThemeIcon("archive");
-    if (empty) this.description = "no projects yet — use + on this row";
+    if (empty) this.description = "no repositories yet — use + on this row";
   }
 }
 
-type Node = ProductItem | ProjectItem;
+type Node = ProductItem | RepositoryItem | ThinkingSpaceItem | NewSpaceItem;
 
 export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
   private _emitter = new vscode.EventEmitter<void>();
@@ -58,8 +85,10 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
 
   constructor(
     private readonly listProductNames: () => string[],
-    private readonly listProjects: () => EnabledProject[],
+    private readonly listRepositories: () => EnabledProject[],
     private readonly activeId: () => string | undefined,
+    private readonly listSpaces: (ownerId: string) => SpaceRef[],
+    private readonly activeSpace: (ownerId: string) => string | undefined,
   ) {}
 
   refresh(): void {
@@ -71,27 +100,38 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getChildren(el?: Node): Node[] {
-    const projects = this.listProjects();
+    const repos = this.listRepositories();
     if (!el) {
       const names = new Set(this.listProductNames());
       // Legacy cards without a product surface under an explicit group so
       // they are visible — and nameable — rather than hidden.
-      if (projects.some((p) => !p.card.product)) names.add("(unassigned)");
+      if (repos.some((p) => !p.card.product)) names.add("(unassigned)");
       return [...names]
         .sort()
         .map(
           (n) =>
             new ProductItem(
               n,
-              !projects.some((p) => (p.card.product ?? "(unassigned)") === n),
+              !repos.some((p) => (p.card.product ?? "(unassigned)") === n),
             ),
         );
     }
     if (el instanceof ProductItem)
-      return projects
+      return repos
         .filter((p) => (p.card.product ?? "(unassigned)") === el.product)
         .sort((a, b) => a.card.label.localeCompare(b.card.label))
-        .map((p) => new ProjectItem(p, p.card.id === this.activeId()));
+        .map((p) => new RepositoryItem(p, p.card.id === this.activeId()));
+    if (el instanceof RepositoryItem) {
+      const ownerId = el.project.card.id;
+      const activeSlug =
+        ownerId === this.activeId() ? this.activeSpace(ownerId) : undefined;
+      return [
+        ...this.listSpaces(ownerId).map(
+          (s) => new ThinkingSpaceItem(ownerId, s, s.slug === activeSlug),
+        ),
+        new NewSpaceItem(ownerId),
+      ];
+    }
     return [];
   }
 }

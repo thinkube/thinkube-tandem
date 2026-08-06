@@ -21,7 +21,7 @@ export async function newProjectFlow(
       { label: "New sub-project in an open repository", k: "sub", description: "a folder inside a monorepo" },
       { label: "New repository", k: "repo", description: "a brand new folder with git initialized" },
     ],
-    { title: `New Project under ${product} — where does it live?` },
+    { title: `New Repository under ${product} — where does it live?` },
   );
   if (!kind) return;
   const folders = vscode.workspace.workspaceFolders ?? [];

@@ -21,8 +21,12 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
-import { thinkingSpaceDirs } from "./core/spaces";
-import { chooseThinkingSpace, configuredStoreRoot } from "./hostui/spaceOps";
+import { deleteThinkingSpace, listThinkingSpaces, thinkingSpaceDirs } from "./core/spaces";
+import {
+  chooseThinkingSpace,
+  configuredStoreRoot,
+  registerSpaceCommands,
+} from "./hostui/spaceOps";
 import { newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { LauncherService } from "./engine/host/LauncherService";
@@ -365,11 +369,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // The sidebar NAVIGATES; the editor WORKS (the v1 shell rule): the
   // Projects tree + Configuration tree live in the container, the space is
-  // an editor tab. Products first — a project is born under its product.
+  // an editor tab. Products first — a repository is born under its product.
   projectsTree = new ProjectsTreeProvider(
     () => listProducts(storeRootOf(), openProjects()),
     openProjects,
     () => rememberedProject(context)?.card.id,
+    (ownerId) => listThinkingSpaces(configuredStoreRoot(), ownerId),
+    (ownerId) => context.workspaceState.get<string>(`tandem.space.${ownerId}`),
   );
   context.subscriptions.push(
     vscode.window.createTreeView("tandemProjects", {
@@ -438,6 +444,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("thinkube-tandem.activateProject", (id: string) =>
       openSpaceFor(id),
     ),
+    // The v1 gestures (open / create / delete a thinking space) — spaceOps.
+    ...registerSpaceCommands(context, {
+      openSpaceFor,
+      refreshTree: () => projectsTree?.refresh(),
+      dropSession: (key) => void sessions.delete(key),
+      deleteSpace: deleteThinkingSpace,
+    }),
     vscode.commands.registerCommand("thinkube-tandem.refreshProjects", () =>
       projectsTree?.refresh(),
     ),
@@ -467,7 +480,7 @@ export function activate(context: vscode.ExtensionContext): void {
             return;
           }
           product = await vscode.window.showQuickPick(names, {
-            title: "New Project — under which product?",
+            title: "New Repository — under which product?",
           });
           if (!product) return;
         }

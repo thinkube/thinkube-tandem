@@ -55,7 +55,7 @@
       },
       {
         "command": "thinkube-tandem.switchProject",
-        "title": "Tandem: Switch Project / Repository"
+        "title": "Tandem: Switch Repository"
       },
       {
         "command": "thinkube.refreshConfig",
@@ -172,7 +172,7 @@
       },
       {
         "command": "thinkube-tandem.newProject",
-        "title": "New Project",
+        "title": "New Repository",
         "icon": "$(new-folder)",
         "category": "Tandem"
       },
@@ -184,11 +184,26 @@
       },
       {
         "command": "thinkube-tandem.activateProject",
-        "title": "Tandem: Activate Project"
+        "title": "Tandem: Activate Repository"
       },
       {
         "command": "thinkube-tandem.setProduct",
         "title": "Set Product…",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.openThinkingSpace",
+        "title": "Tandem: Open Thinking Space"
+      },
+      {
+        "command": "thinkube-tandem.newThinkingSpace",
+        "title": "Tandem: New Thinking Space",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube-tandem.deleteThinkingSpace",
+        "title": "Delete Thinking Space",
+        "icon": "$(trash)",
         "category": "Tandem"
       }
     ],
@@ -328,8 +343,13 @@
         },
         {
           "command": "thinkube-tandem.setProduct",
-          "when": "view == tandemProjects && viewItem == tandem-project",
+          "when": "view == tandemProjects && viewItem == tandem-repository",
           "group": "1_edit"
+        },
+        {
+          "command": "thinkube-tandem.deleteThinkingSpace",
+          "when": "view == tandemProjects && viewItem == tandem-thinking-space",
+          "group": "inline"
         }
       ],
       "explorer/context": [
@@ -355,7 +375,7 @@
     "viewsWelcome": [
       {
         "view": "tandemProjects",
-        "contents": "No products yet. A product groups your projects (the v1 drill-down: product → project → work).\n[New Product](command:thinkube-tandem.newProduct)"
+        "contents": "No products yet. A product groups your repositories (the v1 drill-down: product → repository → thinking spaces).\n[New Product](command:thinkube-tandem.newProduct)"
       }
     ],
     "submenus": [

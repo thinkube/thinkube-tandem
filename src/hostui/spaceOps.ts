@@ -22,6 +22,74 @@ export function configuredStoreRoot(): string {
   );
 }
 
+/** The three v1 gestures on the tree: open a space, create one from the
+ *  permanent row, delete one (refused after any signature). */
+export function registerSpaceCommands(
+  context: vscodeTypes.ExtensionContext,
+  deps: {
+    openSpaceFor: (ownerId: string) => Promise<void>;
+    refreshTree: () => void;
+    dropSession: (key: string) => void;
+    deleteSpace: (
+      storeRoot: string,
+      ownerId: string,
+      slug: string,
+      now: () => string,
+    ) => { ok: boolean; reason?: string };
+  },
+): vscodeTypes.Disposable[] {
+  const vsc = vs();
+  return [
+    vsc.commands.registerCommand(
+      "thinkube-tandem.openThinkingSpace",
+      async (ownerId: string, slug: string) => {
+        await context.workspaceState.update(`tandem.space.${ownerId}`, slug);
+        await deps.openSpaceFor(ownerId);
+      },
+    ),
+    vsc.commands.registerCommand("thinkube-tandem.newThinkingSpace", async (ownerId: string) => {
+      const name = await vsc.window.showInputBox({
+        title: "Name the new thinking space",
+        prompt: "One stream of thinking — independent of the others.",
+        placeHolder: "e.g. plugin delivery, rebrand",
+      });
+      if (!name) return;
+      const made = createThinkingSpace(configuredStoreRoot(), ownerId, name);
+      if (!made.ok) {
+        void vsc.window.showWarningMessage(`Tandem — ${made.reason}`);
+        return;
+      }
+      deps.refreshTree();
+      await context.workspaceState.update(`tandem.space.${ownerId}`, made.slug);
+      await deps.openSpaceFor(ownerId);
+    }),
+    vsc.commands.registerCommand(
+      "thinkube-tandem.deleteThinkingSpace",
+      async (node?: { id?: string }) => {
+        const [ownerId, slug] = (node?.id ?? "").split("/");
+        if (!ownerId || !slug) return;
+        const sure = await vsc.window.showWarningMessage(
+          `Delete the thinking space "${slug}"? Everything unsigned in it is removed.`,
+          { modal: true },
+          "Delete",
+        );
+        if (sure !== "Delete") return;
+        const r = deps.deleteSpace(configuredStoreRoot(), ownerId, slug, () =>
+          new Date().toISOString(),
+        );
+        if (!r.ok) {
+          void vsc.window.showWarningMessage(`Tandem — ${r.reason}`);
+          return;
+        }
+        deps.dropSession(`${ownerId}/${slug}`);
+        if (context.workspaceState.get<string>(`tandem.space.${ownerId}`) === slug)
+          await context.workspaceState.update(`tandem.space.${ownerId}`, undefined);
+        deps.refreshTree();
+      },
+    ),
+  ];
+}
+
 /** Undefined = the human dismissed the prompt. */
 export async function chooseThinkingSpace(
   context: vscodeTypes.ExtensionContext,
