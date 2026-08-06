@@ -11,6 +11,8 @@ export interface RunUnitView {
   slice: string;
   role: "code" | "test";
   state: UnitState;
+  /** Unit ids this unit waits on — the run graph's edges. */
+  requires: string[];
   question?: string;
 }
 
@@ -23,8 +25,8 @@ export class RunState {
 
   constructor(private onChange: () => void) {}
 
-  seed(id: string, slice: string, role: "code" | "test"): void {
-    this.units.set(id, { id, slice, role, state: "ready" });
+  seed(id: string, slice: string, role: "code" | "test", requires: string[] = []): void {
+    this.units.set(id, { id, slice, role, state: "ready", requires });
     this.onChange();
   }
 

@@ -1,0 +1,44 @@
+= When something goes wrong
+:page-type: how-to
+
+[cols="1,1,2"]
+|===
+|Symptom |Cause |What to do
+
+|The sidebar shows "Which project / repository…"
+|No repository chosen yet in a multi-root workspace
+|Click *Choose repository…* — the choice is remembered per workspace.
+
+|"Dispatch refused: … re-sign the cut"
+|The signed content changed (an edit, a re-ground) — the approval token
+no longer matches
+|Review the cut screen and press *Sign* again. This is the gate working.
+
+|"No forge is configured"
+|The repository has no `origin` remote Tandem can open deliveries on
+|Add a remote (github.com uses the `gh` CLI; Gitea needs
+`thinkubeTandem.giteaToken`).
+
+|A red proof on the delivery
+|A probe failed against the delivered code — the truth, not a glitch
+|Read the evidence on the proof line. Ask for the fix in a new ask; the
+delivery stays refusable.
+
+|"⛔ containment: … — reverted, unit failed"
+|A worker wrote outside its declared footprint
+|The stray paths were reverted and the run halted. The defect row names
+the unit; re-sign to re-run.
+
+|"REFUSED to write the store: secret-shaped content …"
+|Your ask or a change contains something that looks like a credential
+|Remove the secret from the text; the space stays live in memory.
+
+|"docs gate blocks this accept"
+|A change declared a `docs/` file that never landed
+|Deliver the documentation (a new ask), or set
+`thinkubeTandem.docsGateMode: advisory` — on the record.
+
+|The run seems stuck on a unit
+|The worker may be parked with a question
+|Open the run view — a parked node is amber; answer in its box.
+|===

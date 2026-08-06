@@ -1,0 +1,43 @@
+= The run and the orchestration graph
+:page-type: concept
+
+Signing starts the run; watching it is optional. The run view appears in
+the space with the *orchestration graph*: one node per execution unit,
+edges for the order the engine derived, colors for live state (grey
+ready, green running — pulsing, amber parked, blue done, red failed).
+Click a node for its detail; the log tail runs beneath; *Stop* aborts
+every live worker.
+
+== How the machine builds
+
+* *Tests first, blind.* For each acceptance criterion a probe author
+  writes an executable check — in a detached snapshot of the branch where
+  the implementation-in-progress does not exist. Blinding is structural,
+  not a promise in a prompt. Finished probes persist in a durable store.
+* *The coder builds against the brief*, with your ask verbatim as the
+  north star and your decisions in force attached. It has a real
+  `verify` tool: an isolated runner overlays its current work with the
+  held-out probes and returns per-criterion PASS/FAIL with evidence.
+* *Green is decided by the oracle, not the worker.* A unit completes
+  only when the checks are green for its current state
+  (MANDATORY-GREEN). Not green routes a bounded rework carrying the
+  oracle's evidence; a unit already green completes without spending a
+  worker at all (grade-first).
+* *A supervisor with both sides of the wall* audits whether the brief
+  contains every fact the checks require — before the coder spends
+  anything, and again when rounds stall. A disclosure is by definition a
+  contract gap and is recorded in the defect ledger.
+* *Containment.* A worker that writes outside its declared footprint has
+  the stray paths reverted and the run halts, named.
+* *Parallel frontier.* Ready units run concurrently (the
+  `maxConcurrent` setting); slices commit on the branch as they finish.
+* *Parked workers.* A worker that genuinely needs you parks with a
+  question; answer in the run view and it resumes.
+
+== The delivery
+
+The closing gate re-runs every probe from a clean environment, the
+honesty scan reads the delivered files for self-declared deferrals, and
+the branch becomes a pull request whose description carries the proofs
+and every UNDELIVERED line. The machine face — the structured
+verification trace — persists in the store beside the space.

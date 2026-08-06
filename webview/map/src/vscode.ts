@@ -26,7 +26,7 @@ interface DeliveryVM {
 }
 
 interface RunView {
-  units: { id: string; slice: string; role: "code" | "test"; state: string; question?: string }[];
+  units: { id: string; slice: string; role: "code" | "test"; state: string; requires: string[]; question?: string }[];
   logs: string[];
   parked: { unitId: string; question: string }[];
 }

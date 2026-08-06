@@ -11,7 +11,8 @@
       ],
       "ignoreDependencies": [
         "yaml",
-        "@vscode/vsce"
+        "@vscode/vsce",
+        "antora"
       ]
     },
     "webview/map": {

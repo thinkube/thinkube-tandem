@@ -295,12 +295,105 @@ function Questions(props: { push: SpacePush }): JSX.Element {
   );
 }
 
+/** Layered layout for the orchestration graph: a unit's column is one past
+ *  its deepest dependency, so edges always point left → right. */
+function graphLayers(units: { id: string; requires: string[] }[]): Map<string, number> {
+  const depth = new Map<string, number>();
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const of = (id: string, seen: Set<string>): number => {
+    if (depth.has(id)) return depth.get(id)!;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const u = byId.get(id);
+    const d = u && u.requires.length ? Math.max(...u.requires.map((r) => of(r, seen))) + 1 : 0;
+    depth.set(id, d);
+    return d;
+  };
+  for (const u of units) of(u.id, new Set());
+  return depth;
+}
+
+const STATE_COLOR: Record<string, string> = {
+  ready: "#8b949e", running: "#3fb950", parked: "#d29922", done: "#58a6ff", failed: "#f85149",
+};
+
+/** The orchestration graph: units as nodes (colored by live state), the
+ *  DAG's requires edges left → right, a running node pulses; click for the
+ *  unit's detail beneath. */
+function RunGraph(props: {
+  units: { id: string; slice: string; role: string; state: string; requires: string[] }[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}): JSX.Element {
+  const { units } = props;
+  const layers = graphLayers(units);
+  const cols = new Map<number, string[]>();
+  for (const u of units) {
+    const c = layers.get(u.id) ?? 0;
+    if (!cols.has(c)) cols.set(c, []);
+    cols.get(c)!.push(u.id);
+  }
+  const W = 150, H = 34, GX = 46, GY = 12;
+  const pos = new Map<string, { x: number; y: number }>();
+  for (const [c, ids] of cols) ids.forEach((id, i) => pos.set(id, { x: c * (W + GX), y: i * (H + GY) }));
+  const width = (Math.max(...[...cols.keys()], 0) + 1) * (W + GX) - GX;
+  const height = Math.max(...[...cols.values()].map((ids) => ids.length), 1) * (H + GY) - GY;
+  return (
+    <svg
+      data-run-graph
+      viewBox={`-4 -4 ${width + 8} ${height + 8}`}
+      style={{ width: "100%", maxWidth: width + 8, height: "auto", margin: "6px 0" }}
+    >
+      <style>{`@keyframes tandemPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }`}</style>
+      {units.flatMap((u) =>
+        u.requires.map((r) => {
+          const a = pos.get(r), b = pos.get(u.id);
+          if (!a || !b) return null;
+          return (
+            <line
+              key={`${r}->${u.id}`}
+              x1={a.x + W} y1={a.y + H / 2} x2={b.x} y2={b.y + H / 2}
+              stroke="var(--vscode-panel-border, #555)" strokeWidth={1.2}
+            />
+          );
+        }),
+      )}
+      {units.map((u) => {
+        const p = pos.get(u.id)!;
+        const color = STATE_COLOR[u.state] ?? "#8b949e";
+        return (
+          <g
+            key={u.id}
+            data-graph-node={u.id}
+            transform={`translate(${p.x},${p.y})`}
+            style={{ cursor: "pointer" }}
+            onClick={() => props.onSelect(u.id)}
+          >
+            <rect
+              width={W} height={H} rx={7}
+              fill="var(--vscode-editorWidget-background, #1e1e1e)"
+              stroke={color} strokeWidth={props.selected === u.id ? 2.5 : 1.5}
+              style={u.state === "running" ? { animation: "tandemPulse 1.2s ease-in-out infinite" } : undefined}
+            />
+            <circle cx={12} cy={H / 2} r={4.5} fill={color} />
+            <text x={22} y={H / 2 - 2} fontSize={9.5} fill="var(--vscode-foreground, #ccc)">
+              {u.id.length > 20 ? u.id.slice(0, 19) + "…" : u.id}
+            </text>
+            <text x={22} y={H / 2 + 10} fontSize={8.5} fill="var(--vscode-descriptionForeground, #888)">
+              {u.role} · {u.state}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element {
   const { run } = props;
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const dot: Record<string, string> = {
-    ready: "#8b949e", running: "#3fb950", parked: "#d29922", done: "#58a6ff", failed: "#f85149",
-  };
+  const [picked, setPicked] = useState<string | null>(null);
+  const pickedUnit = run.units.find((u) => u.id === picked);
   return (
     <section data-run-view style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -314,13 +407,16 @@ function RunSection(props: { run: NonNullable<SpacePush["run"]> }): JSX.Element 
           ■ Stop
         </button>
       </div>
-      {run.units.map((u) => (
-        <div key={u.id} data-run-unit={u.id} style={{ display: "flex", gap: 6, alignItems: "center", padding: "2px 0", fontSize: 12 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: dot[u.state] ?? "#8b949e", display: "inline-block" }} />
-          <span style={{ flex: 1 }}>{u.id} · {u.role}</span>
-          <span style={{ opacity: 0.7 }}>{u.state}</span>
+      <div style={{ overflowX: "auto" }}>
+        <RunGraph units={run.units} selected={picked} onSelect={setPicked} />
+      </div>
+      {pickedUnit ? (
+        <div data-graph-detail style={{ fontSize: 12, opacity: 0.85, margin: "2px 0 6px" }}>
+          {pickedUnit.id} — {pickedUnit.role} unit of {pickedUnit.slice}, {pickedUnit.state}
+          {pickedUnit.requires.length ? ` · waits on ${pickedUnit.requires.join(", ")}` : ""}
+          {pickedUnit.question ? ` · ❓ ${pickedUnit.question}` : ""}
         </div>
-      ))}
+      ) : null}
       {run.parked.map((p) => (
         <div key={p.unitId} data-parked={p.unitId} style={{ margin: "6px 0", padding: 6, border: "1px solid #d29922", borderRadius: 6 }}>
           <div style={{ fontSize: 12, marginBottom: 4 }}>❓ {p.unitId}: {p.question}</div>

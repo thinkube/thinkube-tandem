@@ -1,0 +1,23 @@
+= The store
+:page-type: reference
+
+The store is a sidecar git repository (default
+`~/thinkube-tandem-store`), separate from your code: your thinking never
+pollutes the project's history, and the project never sees half-formed
+plans.
+
+  spaces/<repo>/space.json        the space — asks, changes, cuts,
+                                  questions, decisions, deliveries
+  spaces/<repo>/digests/<ask>.md  the cited context digest per ask
+  spaces/<repo>/deliveries/       machine faces: verification traces
+  spaces/<repo>/defects/          find-time defect rows (JSONL, monthly)
+
+Three disciplines guard it:
+
+* *Autosync.* The store commits and pushes itself every five minutes
+  when dirty — the pushed remote is the backup.
+* *Secret scan.* Every write is scanned for secret-shaped content
+  (tokens, keys, private key blocks); a hit refuses the write and names
+  the pattern. Nothing secret-shaped reaches disk.
+* *Verbatim asks.* Your words are stored as typed and never
+  machine-edited.

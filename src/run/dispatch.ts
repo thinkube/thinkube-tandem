@@ -148,7 +148,13 @@ export async function dispatchTep(
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return { refusals: [`the engine refused the plan: ${JSON.stringify(verdict)}`], undelivered: [] };
-  for (const u of dag) st.seed(u.id, u.slice, (u.role ?? "code") as "code" | "test");
+  for (const u of dag)
+    st.seed(
+      u.id,
+      u.slice,
+      (u.role ?? "code") as "code" | "test",
+      u.requires.filter((r) => dag.some((x) => x.id === r)),
+    );
 
   log(`${tep}: worktree on ${branch}`);
   for (const stale of [worktree, testerWt])

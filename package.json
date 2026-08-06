@@ -1,7 +1,7 @@
 {
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
-  "description": "Tandem \u2014 ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
+  "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
   "version": "2.0.0-alpha.0",
   "publisher": "thinkube",
   "icon": "icon.png",
@@ -154,6 +154,10 @@
       {
         "command": "thinkube-tandem.showDefects",
         "title": "Tandem: Show Defects"
+      },
+      {
+        "command": "thinkube-tandem.openDocs",
+        "title": "Tandem: Open the Docs"
       }
     ],
     "configuration": {
@@ -162,7 +166,7 @@
         "thinkubeTandem.storeRoot": {
           "type": "string",
           "default": "",
-          "description": "Root of the tandem store \u2014 spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
+          "description": "Root of the tandem store — spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
         },
         "thinkubeTandem.groundingModel": {
           "type": "string",
@@ -172,7 +176,7 @@
         "thinkubeTandem.suiteCommand": {
           "type": "string",
           "default": "npm test",
-          "description": "Command that runs the project's test suite \u2014 its verdict is a delivery proof."
+          "description": "Command that runs the project's test suite — its verdict is a delivery proof."
         },
         "thinkubeTandem.giteaToken": {
           "type": "string",
@@ -202,7 +206,7 @@
             "advisory"
           ],
           "default": "blocking",
-          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default \u2014 advisory let undocumented work reach Done."
+          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default — advisory let undocumented work reach Done."
         }
       }
     },
@@ -280,12 +284,15 @@
   },
   "scripts": {
     "compile": "tsc -p ./ && cd webview/map && npm run build",
-    "test": "tsc -p tsconfig.test.json && node --test out-test/"
+    "test": "tsc -p tsconfig.test.json && node --test out-test/",
+    "docs": "node scripts/docs-build.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.9.2",
+    "antora": "^3.1.15",
+    "asciidoctor-kroki": "^0.18.1",
     "knip": "^6.31.0",
     "typescript": "^5.6.3"
   },

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The run and the orchestration graph :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="tandem" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-menu is-active" data-panel="menu">
+  <nav class="nav-menu">
+    <button class="nav-menu-toggle" aria-label="Toggle expand/collapse all" style="display: none"></button>
+    <h3 class="title"><a href="index.html">Thinkube Tandem</a></h3>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="0">
+    <button class="nav-item-toggle"></button>
+    <span class="nav-text">Thinkube Tandem</span>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="index.html">What Tandem is</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="getting-started.html">Getting started</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="gates.html">The two gates</a>
+  </li>
+  <li class="nav-item is-current-page" data-depth="1">
+    <a class="nav-link" href="the-run.html">The run and the orchestration graph</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="configuration.html">Configuration and settings</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="store.html">The store</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="defects.html">The defect ledger</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="troubleshooting.html">When something goes wrong</a>
+  </li>
+</ul>
+  </li>
+</ul>
+  </nav>
+</div>
+<div class="nav-panel-explore" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube Tandem</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+    <li class="component is-current">
+      <div class="title"><a href="index.html">Thinkube Tandem</a></div>
+    </li>
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li>Thinkube Tandem</li>
+    <li><a href="the-run.html">The run and the orchestration graph</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/ROOT/pages/the-run.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The run and the orchestration graph</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Signing starts the run; watching it is optional. The run view appears in
+the space with the <strong>orchestration graph</strong>: one node per execution unit,
+edges for the order the engine derived, colors for live state (grey
+ready, green running — pulsing, amber parked, blue done, red failed).
+Click a node for its detail; the log tail runs beneath; <strong>Stop</strong> aborts
+every live worker.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_how_the_machine_builds"><a class="anchor" href="#_how_the_machine_builds"></a>How the machine builds</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Tests first, blind.</strong> For each acceptance criterion a probe author
+writes an executable check — in a detached snapshot of the branch where
+the implementation-in-progress does not exist. Blinding is structural,
+not a promise in a prompt. Finished probes persist in a durable store.</p>
+</li>
+<li>
+<p><strong>The coder builds against the brief</strong>, with your ask verbatim as the
+north star and your decisions in force attached. It has a real
+<code>verify</code> tool: an isolated runner overlays its current work with the
+held-out probes and returns per-criterion PASS/FAIL with evidence.</p>
+</li>
+<li>
+<p><strong>Green is decided by the oracle, not the worker.</strong> A unit completes
+only when the checks are green for its current state
+(MANDATORY-GREEN). Not green routes a bounded rework carrying the
+oracle&#8217;s evidence; a unit already green completes without spending a
+worker at all (grade-first).</p>
+</li>
+<li>
+<p><strong>A supervisor with both sides of the wall</strong> audits whether the brief
+contains every fact the checks require — before the coder spends
+anything, and again when rounds stall. A disclosure is by definition a
+contract gap and is recorded in the defect ledger.</p>
+</li>
+<li>
+<p><strong>Containment.</strong> A worker that writes outside its declared footprint has
+the stray paths reverted and the run halts, named.</p>
+</li>
+<li>
+<p><strong>Parallel frontier.</strong> Ready units run concurrently (the
+<code>maxConcurrent</code> setting); slices commit on the branch as they finish.</p>
+</li>
+<li>
+<p><strong>Parked workers.</strong> A worker that genuinely needs you parks with a
+question; answer in the run view and it resumes.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_delivery"><a class="anchor" href="#_the_delivery"></a>The delivery</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The closing gate re-runs every probe from a clean environment, the
+honesty scan reads the delivered files for self-declared deferrals, and
+the branch becomes a pull request whose description carries the proofs
+and every UNDELIVERED line. The machine face — the structured
+verification trace — persists in the store beside the space.</p>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../_/js/site.js" data-ui-root-path="../_"></script>
+<script async src="../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

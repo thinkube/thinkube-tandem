@@ -1,0 +1,35 @@
+= The two gates
+:page-type: concept
+
+== Gate 1 — Sign
+
+Signing freezes a cut into a TEP. The gate refuses:
+
+* an empty cut;
+* a change with no acceptance criteria ("nothing proves this");
+* a change with no grounding (no place in the code);
+* an ask in the cut with an undecided question.
+
+The click mints `TEP-<you>-<n>` and a machine-local HMAC token bound to
+the pair you actually saw: the rendered cut screen plus the grounded
+content underneath it. There is no expiry — instead, any edit to the
+signed content makes the token stop matching, and dispatch refuses until
+you sign again. What runs is exactly what you approved, enforced
+cryptographically rather than by convention.
+
+== Gate 2 — Accept
+
+A delivery page lists every proof: one per acceptance criterion, executed
+by the real closing gate, plus the repository's own test suite. Accepting:
+
+* is refused while any proof is not green;
+* is refused while a declared documentation obligation is unmet (the
+  docs gate blocks by default; `thinkubeTandem.docsGateMode: advisory`
+  is the recorded escape hatch);
+* runs in the canonical order merge → stamp → retire: a refused merge
+  aborts before anything is stamped; worktree cleanup is best-effort and
+  never fails a landed accept.
+
+Everything that did NOT arrive is printed on the page — UNDELIVERED
+items, confessions found by the honesty scan, unmet obligations. Red is
+shown as red; there is no override.

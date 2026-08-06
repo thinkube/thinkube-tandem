@@ -1,0 +1,52 @@
+= Configuration and settings
+:page-type: reference
+
+== The Configuration tree
+
+Below the space in the Tandem container, the *Configuration* view manages
+Claude Code configuration per scope (project or user): hooks, commands,
+skills, agents, MCP servers, permissions, and installed plugins — with
+add / open / delete from the tree and its context menus. The view follows
+your active project.
+
+== Choosing the repository
+
+Tandem never assumes which folder of a multi-root workspace you mean.
+The active repository is chosen once and remembered per workspace:
+
+* the status-bar item `Tandem: <repo>`;
+* the `<repo> ▾` button in the map;
+* *Tandem: Switch Project / Repository* in the command palette.
+
+Each repository has its own session and its own space in the store.
+
+== Settings
+
+[cols="1,1,2"]
+|===
+|Setting |Default |Meaning
+
+|`thinkubeTandem.storeRoot` |`~/thinkube-tandem-store` |Root of the
+store; spaces persist at `<root>/spaces/<repo>`.
+
+|`thinkubeTandem.groundingModel` |`opus` |Model for the derivation
+rounds (judgment work).
+
+|`thinkubeTandem.workerModel` |`sonnet` |Base model for run workers —
+never inherited from the environment.
+
+|`thinkubeTandem.workerModelByRole` |`{}` |Per-role raises, e.g.
+`{"judge": "opus"}`.
+
+|`thinkubeTandem.maxConcurrent` |`4` |Concurrent workers on the run's
+ready frontier.
+
+|`thinkubeTandem.suiteCommand` |`npm test` |The project's test suite;
+its verdict is a delivery proof.
+
+|`thinkubeTandem.docsGateMode` |`blocking` |Whether an unmet
+documentation obligation blocks accepting.
+
+|`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
+(github.com remotes use the `gh` CLI instead).
+|===

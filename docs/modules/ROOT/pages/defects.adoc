@@ -1,0 +1,13 @@
+= The defect ledger
+:page-type: reference
+
+Every point where the run CATCHES a defect appends one structured row to
+the space's `defects/` ledger: a containment violation, a unit whose
+checks never went green, a gate that could not run (exit 126/127 — an
+infrastructure defect, not a code verdict), a supervisor disclosure
+(by definition a contract gap), a confession found by the honesty scan.
+
+Run *Tandem: Show Defects* to render the ledger as a table. The rows are
+find-time facts (what surfaced it, what it cost); reading them monthly is
+how the methodology learns — recurring rows are process defects, not
+code defects.

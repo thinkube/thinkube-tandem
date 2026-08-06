@@ -268,6 +268,34 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!panel) panel = new SpacePanel(activeSession, hooks);
       await panel.show(context.extensionUri);
     }),
+    vscode.commands.registerCommand("thinkube-tandem.openDocs", async () => {
+      const pagesDir = vscode.Uri.joinPath(
+        context.extensionUri,
+        "docs",
+        "modules",
+        "ROOT",
+        "pages",
+      );
+      const pages: { label: string; file: string }[] = [
+        { label: "What Tandem is", file: "index.adoc" },
+        { label: "Getting started", file: "getting-started.adoc" },
+        { label: "The space — asks, changes, units", file: "the-space.adoc" },
+        { label: "The two gates", file: "gates.adoc" },
+        { label: "The run and the orchestration graph", file: "the-run.adoc" },
+        { label: "Configuration and settings", file: "configuration.adoc" },
+        { label: "The store", file: "store.adoc" },
+        { label: "The defect ledger", file: "defects.adoc" },
+        { label: "When something goes wrong", file: "troubleshooting.adoc" },
+      ];
+      const pick = await vscode.window.showQuickPick(pages, {
+        title: "Tandem documentation",
+      });
+      if (!pick) return;
+      const doc = await vscode.workspace.openTextDocument(
+        vscode.Uri.joinPath(pagesDir, pick.file),
+      );
+      await vscode.window.showTextDocument(doc, { preview: true });
+    }),
     vscode.commands.registerCommand("thinkube-tandem.showDefects", async () => {
       const config = vscode.workspace.getConfiguration("thinkubeTandem");
       const storeRoot =
