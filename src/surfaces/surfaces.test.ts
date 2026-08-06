@@ -71,9 +71,17 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   const accepted = await session.acceptQuestion(session.space.questions[0].id, "side, collapsible");
   assert.ok(accepted.ok);
   assert.deepEqual(session.decisionsInForce(), ["side, collapsible"]);
+  // TEP-22: the decision's implication is STAGED — nothing re-derives yet.
+  assert.ok(
+    !session.space.nodes.some((n) => n.sentence.includes("side, collapsible")),
+    "definitions stay byte-identical until the human accepts the implication",
+  );
+  assert.equal(session.space.impacts?.length, 1, "the implication is staged");
+  const applied = await session.decideImpact(session.space.impacts![0].id, true);
+  assert.ok(applied.ok);
   assert.ok(
     session.space.nodes.some((n) => n.sentence.includes("side, collapsible")),
-    "the re-ground ran with the decision injected",
+    "accepting the implication re-derives under the decision",
   );
   assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
 

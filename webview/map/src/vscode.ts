@@ -48,6 +48,8 @@ export interface SpacePush {
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
+  proposals: { id: string; aTitle: string; bTitle: string }[];
+  impacts: { id: string; decision: string; askText: string; affected: number }[];
   units: UnitVM[];
   edges: { from: string; to: string }[];
   cutScreen: string;
@@ -77,6 +79,10 @@ export type WebToHost =
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
+  | { action: "accept-merge"; proposalId: string }
+  | { action: "reject-merge"; proposalId: string }
+  | { action: "accept-impact"; impactId: string }
+  | { action: "dismiss-impact"; impactId: string }
   | { action: "panic" }
   | { action: "switch-repo" };
 

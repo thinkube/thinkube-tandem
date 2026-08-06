@@ -79,6 +79,22 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "run view", gesture: "press Stop" },
   },
+  "accept-merge": {
+    kind: "human",
+    affordance: { surface: "suggestions panel", gesture: "press Merge on a staged merge suggestion" },
+  },
+  "reject-merge": {
+    kind: "human",
+    affordance: { surface: "suggestions panel", gesture: "press Reject — the pair is never proposed again" },
+  },
+  "accept-impact": {
+    kind: "human",
+    affordance: { surface: "decisions panel", gesture: "press Re-derive on a staged decision implication" },
+  },
+  "dismiss-impact": {
+    kind: "human",
+    affordance: { surface: "decisions panel", gesture: "press Dismiss — the definitions stay as they are" },
+  },
   panic: {
     kind: "human",
     affordance: {

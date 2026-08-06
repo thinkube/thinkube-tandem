@@ -496,6 +496,42 @@ function SidePanel(props: {
           <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
         </section>
       ) : null}
+      {push.proposals.length ? (
+        <section data-proposals style={{ margin: "8px 12px" }}>
+          <strong style={{ fontSize: 12 }}>The machine suggests merging ({push.proposals.length})</strong>
+          {push.proposals.map((p) => (
+            <div key={p.id} data-proposal={p.id} style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", padding: "3px 0" }}>
+              <span style={{ flex: 1, opacity: 0.85 }}>
+                “{p.aTitle}” + “{p.bTitle}” look like one slice
+              </span>
+              <button data-merge-accept={p.id} style={{ cursor: "pointer" }} onClick={() => post({ action: "accept-merge", proposalId: p.id })}>
+                Merge
+              </button>
+              <button data-merge-reject={p.id} style={{ cursor: "pointer", opacity: 0.75 }} onClick={() => post({ action: "reject-merge", proposalId: p.id })}>
+                Reject
+              </button>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {push.impacts.length ? (
+        <section data-impacts style={{ margin: "8px 12px" }}>
+          <strong style={{ fontSize: 12 }}>Your decisions imply changes ({push.impacts.length})</strong>
+          {push.impacts.map((im) => (
+            <div key={im.id} data-impact={im.id} style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", padding: "3px 0" }}>
+              <span style={{ flex: 1, opacity: 0.85 }}>
+                “{im.decision}” implies re-deriving {im.affected} change(s) of “{im.askText.length > 40 ? im.askText.slice(0, 39) + "…" : im.askText}” — nothing changed yet
+              </span>
+              <button data-impact-accept={im.id} style={{ cursor: "pointer" }} onClick={() => post({ action: "accept-impact", impactId: im.id })}>
+                Re-derive
+              </button>
+              <button data-impact-dismiss={im.id} style={{ cursor: "pointer", opacity: 0.75 }} onClick={() => post({ action: "dismiss-impact", impactId: im.id })}>
+                Dismiss
+              </button>
+            </div>
+          ))}
+        </section>
+      ) : null}
       {push.questions.length ? <Questions push={push} /> : null}
       {push.run ? <RunSection run={push.run} /> : null}
       {push.deliveries.map((d) => (

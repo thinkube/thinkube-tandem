@@ -158,6 +158,24 @@ export interface Pin {
   changeIds: [string, string];
 }
 
+/** A staged machine suggestion — visible, structurally inert until the
+ *  human accepts or rejects. A rejected merge is a PERMANENT veto. */
+export interface MergeProposal {
+  id: string;
+  a: string;
+  b: string;
+}
+
+/** A decision's staged implication: the ask whose changes the decision
+ *  implies re-deriving. Nothing changes until the human accepts. */
+interface ImpactSuggestionShape {
+  id: string;
+  questionId: string;
+  askId: string;
+  /** The decision's text, for the render. */
+  decision: string;
+}
+
 export interface Space {
   asks: Ask[];
   nodes: Change[];
@@ -166,6 +184,12 @@ export interface Space {
   deliveries: Delivery[];
   questions: Question[];
   pins: Pin[];
+  /** Staged machine merge suggestions awaiting the human. */
+  proposals?: MergeProposal[];
+  /** Permanent merge vetoes (pair keys) — a rejected pair is never re-proposed. */
+  vetoes?: string[];
+  /** Staged decision impacts awaiting the human. */
+  impacts?: ImpactSuggestionShape[];
 }
 
 export function emptySpace(): Space {

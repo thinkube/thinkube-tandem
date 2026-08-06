@@ -8,7 +8,7 @@
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
-import { formUnits, unitEdges } from "../core/cluster";
+import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggestions";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { staleChangeIds } from "../core/stale";
 import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
@@ -16,8 +16,8 @@ import { RoundDeps } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { Forge } from "../dispatch/forge";
-import { tepSlices } from "../dispatch/adapter";
-import { planScopes, qualifyProbes, qualifySpace } from "../dispatch/scopes";
+import { planScopes } from "../dispatch/scopes";
+import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dispatchTep, DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
@@ -26,7 +26,8 @@ import { acceptOrder } from "../engine/acceptOrder";
 import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
-import { buildAnswerPrompt, classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
+import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
+import { answerQuestionFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
@@ -43,6 +44,10 @@ export const SESSION_ACTIONS: string[] = [
   "accept-question",
   "pin",
   "panic",
+  "accept-merge",
+  "reject-merge",
+  "accept-impact",
+  "dismiss-impact",
 ];
 
 export interface SessionDeps {
@@ -168,27 +173,19 @@ export class TandemSession {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = confirmedKind ?? (await classify(this.deps.round, text));
     if (kind === "question") {
-      const lastAsk = this.space.asks[this.space.asks.length - 1];
-      const answer = await (this.deps.answerRound ?? runReadRound)(
-        this.deps.round,
-        buildAnswerPrompt({
-          text,
-          asks: this.space.asks,
-          decisions: this.decisionsInForce(),
-          digest: lastAsk ? this.digestStore().load(lastAsk.id) : undefined,
-          repoRoot: this.deps.round.repoRoot,
-        }),
-      );
-      this.lastAnswer = {
-        question: text,
-        answer: answer?.trim() || "I could not answer that from the space or the code.",
-      };
+      this.lastAnswer = await answerQuestionFlow({
+        round: this.deps.round,
+        space: this.space,
+        text,
+        decisions: this.decisionsInForce(),
+        digests: this.digestStore(),
+        answerRound: this.deps.answerRound,
+      });
       this.deps.onChanged?.();
       return { ok: true };
     }
     if (kind === "statement") {
-      const q = { id: `q-${this.author}-${this.space.questions.length + 1}`, askId: "", text, decided: { text, at: this.deps.now() } };
-      this.space = { ...this.space, questions: [...this.space.questions, q] };
+      this.space = statementFlow(this.space, this.author, this.deps.now(), text);
       this.changed("Recorded as a decision in force — every later derivation builds under it.");
       return { ok: true };
     }
@@ -316,21 +313,66 @@ export class TandemSession {
         x.id === questionId ? { ...x, decided: { text, at: this.deps.now() } } : x,
       ),
     };
-    this.changed(`Decision recorded — re-grounding the ask under it…`);
-    const ask = this.space.asks.find((a) => a.id === q.askId);
-    if (ask) {
-      const ground = this.deps.ground ?? runDerivationPipeline;
-      const keep = this.space.nodes.filter((n) => !n.serves.includes(ask.id));
-      const fresh = await ground(this.deps.round, ask, {
-        nextIndex: this.space.nodes.length + 1,
-        decisions: this.decisionsInForce(),
-        digestStore: this.digestStore(),
-        mintNodeId: (n) => `node-${this.author}-${n}`,
-      });
-      this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
-      this.recluster();
+    // TEP-22: implications are STAGED, never auto-applied.
+    const affected = q.askId
+      ? [{
+          id: `impact-${this.author}-${(this.space.impacts ?? []).length + 1}`,
+          questionId,
+          askId: q.askId,
+          decision: text,
+        }]
+      : [];
+    this.space = { ...this.space, impacts: [...(this.space.impacts ?? []), ...affected] };
+    this.changed(
+      affected.length
+        ? "Decision in force — its implication is staged below; accept it to re-derive."
+        : "Decision in force.",
+    );
+    return { ok: true };
+  }
+
+  /** Accept = re-derive the ask under the decisions in force; dismiss =
+   *  drop the suggestion, touching nothing. The decision stays in force. */
+  async decideImpact(
+    impactId: string,
+    accept: boolean,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const im = (this.space.impacts ?? []).find((x) => x.id === impactId);
+    if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
+    this.space = {
+      ...this.space,
+      impacts: (this.space.impacts ?? []).filter((x) => x.id !== impactId),
+    };
+    if (!accept) {
+      this.changed("Dismissed — the definitions stay as they are.");
+      return { ok: true };
     }
-    this.changed("Decision in force.");
+    const ask = this.space.asks.find((a) => a.id === im.askId);
+    if (!ask) return { ok: false, reason: "the ask no longer exists" };
+    const ground = this.deps.ground ?? runDerivationPipeline;
+    const old = new Set(
+      this.space.nodes.filter((n) => n.serves.includes(ask.id)).map((n) => n.id),
+    );
+    const fresh = await ground(this.deps.round, ask, {
+      nextIndex: this.space.nodes.length + 1,
+      decisions: this.decisionsInForce(),
+      digestStore: this.digestStore(),
+      mintNodeId: (n) => `node-${this.author}-${n}`,
+    });
+    this.space = {
+      ...this.space,
+      nodes: [
+        ...this.space.nodes.filter((n) => !old.has(n.id)),
+        ...fresh.changes,
+      ],
+      // A HUMAN act: old members leave their units; fresh ones re-enter.
+      units: this.space.units
+        .map((u) => ({ ...u, changeIds: u.changeIds.filter((id) => !old.has(id)) }))
+        .filter((u) => u.changeIds.length > 0),
+    };
+    this.recluster();
+    await this.refreshStaleness();
+    this.changed("Re-derived under the decision.");
     return { ok: true };
   }
 
@@ -351,10 +393,23 @@ export class TandemSession {
     this.stale = staleChangeIds(this.space, await read());
   }
 
+  /** Append-only membership (TEP-22) — see core/membership.ts. */
   recluster(): void {
-    this.units = formUnits(this.space.nodes, this.space.pins);
+    this.space = advanceSpaceMembership(this.space, this.author);
+    this.units = this.space.units;
     this.edges = unitEdges(this.space.nodes, this.units);
-    this.space = { ...this.space, units: this.units };
+  }
+
+  /** The human's verdict on a staged merge: accept applies it; reject
+   *  vetoes the pair PERMANENTLY — it never re-proposes. */
+  decideMerge(proposalId: string, accept: boolean): { ok: boolean; reason?: string } {
+    const r = mergeVerdict(this.space, proposalId, accept);
+    if ("reason" in r) return { ok: false, reason: r.reason };
+    this.space = r.space;
+    this.units = this.space.units;
+    this.edges = unitEdges(this.space.nodes, this.units);
+    this.changed(r.message);
+    return { ok: true };
   }
 
   toggleCut(changeIds: string[]): void {
@@ -422,75 +477,19 @@ export class TandemSession {
         this.changed(`Dispatch refused: ${plan.reason}.`);
         return undefined;
       }
-      const { groups, order: ordered } = plan;
-      const dispatch = this.deps.dispatch ?? dispatchTep;
-      let last: DispatchOutcome | undefined;
-      for (const sc of ordered) {
-        const target =
-          sc === ""
-            ? {
-                gitRoot: this.deps.scope?.gitRoot ?? this.deps.round.repoRoot,
-                prefix: this.deps.scope?.prefix ?? "",
-                forge: this.deps.forge,
-              }
-            : await this.deps.resolveScope?.(sc);
-        if (!target) {
-          this.changed(
-            `Dispatch stopped: scope "${sc}" is not open in this workspace — open its repository and re-sign.`,
-          );
-          break;
-        }
-        const prefix = target.prefix ?? "";
-        const scopedCut = { ...cut, changeIds: groups.get(sc)! };
-        let slices;
-        try {
-          slices = tepSlices({
-            space: qualifySpace(this.space, prefix),
-            cut: scopedCut,
-            spaceName: this.deps.scope?.projectId ?? path.basename(this.deps.storeDir),
-            handlePrefix: sc ? `${sc}.` : "",
-          });
-          qualifyProbes(slices, prefix);
-        } catch (err) {
-          this.changed(`Dispatch refused: ${err instanceof Error ? err.message : String(err)}`);
-          break;
-        }
-        const outcome = await dispatch(
-          {
-            repoRoot: target.gitRoot,
-            projectId: this.deps.scope?.projectId,
-            model: this.deps.round.model,
-            workerModel: this.deps.workerModel,
-            concurrency: this.deps.maxConcurrent,
-            suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
-            forge: target.forge ?? this.deps.forge,
-            state: this.runState,
-            spaceName: path.basename(this.deps.storeDir),
-            storeDir: this.deps.storeDir,
-            supervisorRound: runReadRound,
-          },
-          this.space,
-          scopedCut,
-          slices,
-        );
-        last = outcome;
-        if (outcome.delivery) {
-          const delivery = {
-            ...outcome.delivery,
-            id: sc ? `${outcome.delivery.id}-${sc}` : outcome.delivery.id,
-            ...(outcome.url ? { url: outcome.url } : {}),
-            ...(outcome.undelivered.length ? { undelivered: outcome.undelivered } : {}),
-          };
+      const last = await dispatchScopePlan({
+        plan,
+        cut,
+        space: () => this.space,
+        deps: this.deps,
+        runState: this.runState!,
+        spaceName: path.basename(this.deps.storeDir),
+        onDelivery: (delivery, note) => {
           this.space = { ...this.space, deliveries: [...this.space.deliveries, delivery] };
-          this.changed(
-            `Delivery ready on ${delivery.branch}${sc ? ` (scope ${sc})` : ""}.` +
-              (ordered.length > 1 ? ` ${ordered.indexOf(sc) + 1}/${ordered.length} scopes.` : ""),
-          );
-        } else {
-          this.changed(`The run refused: ${outcome.refusals.join("; ")}`);
-          break;
-        }
-      }
+          this.changed(note);
+        },
+        changed: (m) => this.changed(m),
+      });
       return last;
     } finally {
       this.running = false;

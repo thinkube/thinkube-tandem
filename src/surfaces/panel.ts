@@ -32,6 +32,8 @@ interface InboundAction {
   // answer-worker carries unitId + text; stop-run carries nothing.
   changeIds?: string[];
   deliveryId?: string;
+  proposalId?: string;
+  impactId?: string;
 }
 
 function spacePush(session: TandemSession, message?: string): unknown {
@@ -55,6 +57,20 @@ function spacePush(session: TandemSession, message?: string): unknown {
     decisions: session.space.questions
       .filter((q) => !!q.decided)
       .map((q) => q.decided!.text),
+    proposals: (session.space.proposals ?? []).map((p) => {
+      const title = (id: string) => {
+        const u = session.units.find((x) => x.id === id);
+        const first = u && session.space.nodes.find((n) => n.id === u.changeIds[0]);
+        return first?.sentence ?? id;
+      };
+      return { id: p.id, aTitle: title(p.a), bTitle: title(p.b) };
+    }),
+    impacts: (session.space.impacts ?? []).map((im) => ({
+      id: im.id,
+      decision: im.decision,
+      askText: session.space.asks.find((a) => a.id === im.askId)?.text ?? im.askId,
+      affected: session.space.nodes.filter((n) => n.serves.includes(im.askId)).length,
+    })),
     units: session.units.map((u) => {
       const nodes = u.changeIds
         .map((id) => byId.get(id))
@@ -145,6 +161,19 @@ async function handleInbound(
     session.answerWorker(msg.unitId, msg.text);
   } else if (msg.action === "stop-run") {
     session.stopRun();
+  } else if (msg.action === "accept-merge" && msg.proposalId) {
+    const r = session.decideMerge(msg.proposalId, true);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "reject-merge" && msg.proposalId) {
+    const r = session.decideMerge(msg.proposalId, false);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "accept-impact" && msg.impactId) {
+    push("Re-deriving under the decision…");
+    const r = await session.decideImpact(msg.impactId, true);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "dismiss-impact" && msg.impactId) {
+    const r = await session.decideImpact(msg.impactId, false);
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "panic") {
     const r = session.panic();
     note = r.ok ? undefined : r.reason;
