@@ -27,6 +27,7 @@ import {
   mintApproval,
 } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
+import { acceptOrder } from "../engine/acceptOrder";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
@@ -57,6 +58,8 @@ export interface SessionDeps {
   ground?: typeof runGrounding;
   dispatch?: typeof dispatchTep;
   readCurrentStamp?: () => Promise<SourceStamp[]>;
+  /** Retire a merged TEP's worktrees (best-effort; injectable for tests). */
+  retire?: (tepId: string) => Promise<void>;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
 }
@@ -342,7 +345,8 @@ export class TandemSession {
     return d ? renderDeliveryPage(this.space, d) : undefined;
   }
 
-  /** Gate 2. Acceptance merges on the forge; refused without green proof. */
+  /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
+   *  retire (best-effort) — refused without green proof BEFORE the merge. */
   async acceptDelivery(
     deliveryId: string,
   ): Promise<{ ok: boolean; reason?: string }> {
@@ -350,22 +354,32 @@ export class TandemSession {
     if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
     const r = acceptDelivery(d, this.deps.now());
     if (!r.ok) return r;
-    if (this.deps.forge && d.url) {
-      try {
-        await this.deps.forge.merge(d.url);
-      } catch (err) {
-        return {
-          ok: false,
-          reason: `the forge refused the merge: ${err instanceof Error ? err.message : String(err)}`,
-        };
-      }
+    const cut = this.space.cuts.find((c) => c.id === d.cutId);
+    const tepId = cut?.tepId;
+    try {
+      await acceptOrder({
+        merge: async () => {
+          if (this.deps.forge && d.url) await this.deps.forge.merge(d.url);
+          return { merged: !!(this.deps.forge && d.url) };
+        },
+        stamp: async () => {
+          this.space = {
+            ...this.space,
+            deliveries: this.space.deliveries.map((x) =>
+              x.id === deliveryId ? r.delivery : x,
+            ),
+          };
+        },
+        retire: async () => {
+          if (tepId && this.deps.retire) await this.deps.retire(tepId);
+        },
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        reason: `the forge refused the merge: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
-    this.space = {
-      ...this.space,
-      deliveries: this.space.deliveries.map((x) =>
-        x.id === deliveryId ? r.delivery : x,
-      ),
-    };
     this.changed("Accepted and merged.");
     return { ok: true };
   }

@@ -21,6 +21,7 @@
  * proofs — never as silence.
  */
 import { execFile } from "node:child_process";
+import { accessSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { Cut, Delivery, Proof, Space } from "../core/schema";
@@ -35,7 +36,7 @@ import {
   runBounded,
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
-import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
+import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
 import {
   createVerifyOracle,
   formatVerifyReply,
@@ -448,6 +449,29 @@ export async function dispatchTep(
   }));
   const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
+
+  // Docs gate: a slice that declares documentation (a docs/ touchpoint)
+  // must have LANDED it — the engine's obligation check runs against the
+  // real tree, and an unmet obligation is UNDELIVERED on the page's face.
+  for (const s of slices) {
+    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
+    const note = unmetDocsObligation(
+      {
+        docs: declaresDocs ? "required" : undefined,
+        files: s.files,
+        work_units: s.workUnits,
+      },
+      (rel) => {
+        try {
+          accessSync(path.join(worktree, rel));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    );
+    if (note) undelivered.push(`${s.handle}: ${note}`);
+  }
 
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);

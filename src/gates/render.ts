@@ -90,6 +90,10 @@ export function renderDeliveryPage(
     lines.push(
       `  proof: ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
     );
+  // What did NOT arrive is part of the decision, on the page's face —
+  // including any unmet documentation obligation.
+  for (const u of delivery.undelivered ?? [])
+    lines.push(`  ⚠ undelivered: ${u}`);
   for (const [label, gesture] of experience)
     lines.push(`  see it: ${label} — ${gesture}`);
   return lines.join("\n");

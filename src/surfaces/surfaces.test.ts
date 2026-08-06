@@ -100,3 +100,79 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   assert.equal(reloaded.space.asks.length, 1, "the space survives a reload");
   assert.equal(reloaded.space.deliveries[0].acceptedAt, "2026-08-05T19:00:00Z");
 });
+
+test("accept runs the engine's canonical order: merge → stamp → retire, and a retire failure never fails the accept", async () => {
+  const order: string[] = [];
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "2026-08-06T08:00:00Z",
+    readCurrentStamp: async () => [],
+    forge: {
+      openDelivery: async () => "https://forge/pr/1",
+      merge: async () => {
+        order.push("merge");
+      },
+    },
+    retire: async () => {
+      order.push("retire");
+      throw new Error("worktree already gone");
+    },
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  session.space = {
+    ...session.space,
+    cuts: [{ id: "cut-1", changeIds: [], tepId: "TEP-user-9" }],
+    deliveries: [
+      {
+        id: "d-1",
+        cutId: "cut-1",
+        branch: "tandem/TEP-user-9",
+        url: "https://forge/pr/1",
+        proofs: [{ kind: "suite", label: "suite", verdict: "green" }],
+      },
+    ],
+  };
+  const r = await session.acceptDelivery("d-1");
+  assert.ok(r.ok, "retire's failure is captured, not surfaced");
+  order.push("end");
+  assert.deepEqual(order, ["merge", "retire", "end"], "merge ran before retire");
+  assert.equal(session.space.deliveries[0].acceptedAt, "2026-08-06T08:00:00Z", "stamped after merge");
+});
+
+test("a refused merge aborts the accept before any stamp", async () => {
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    now: () => "2026-08-06T08:00:00Z",
+    readCurrentStamp: async () => [],
+    forge: {
+      openDelivery: async () => "https://forge/pr/1",
+      merge: async () => {
+        throw new Error("branch conflicts");
+      },
+    },
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  session.space = {
+    ...session.space,
+    cuts: [{ id: "cut-1", changeIds: [], tepId: "TEP-user-9" }],
+    deliveries: [
+      {
+        id: "d-1",
+        cutId: "cut-1",
+        branch: "tandem/TEP-user-9",
+        url: "https://forge/pr/1",
+        proofs: [{ kind: "suite", label: "suite", verdict: "green" }],
+      },
+    ],
+  };
+  const r = await session.acceptDelivery("d-1");
+  assert.equal(r.ok, false);
+  assert.ok(r.reason!.includes("branch conflicts"));
+  assert.equal(session.space.deliveries[0].acceptedAt, undefined, "never stamped");
+});

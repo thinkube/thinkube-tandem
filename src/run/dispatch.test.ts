@@ -357,3 +357,51 @@ test("containment math: outside-footprint paths are violations; baseline is exem
   const bad = containmentViolations(dirty, ["src/a.ts", "probes"], new Set(["pre-existing.txt"]));
   assert.deepEqual(bad, ["src/evil.ts"]);
 });
+
+test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELIVERED on the delivery", async () => {
+  const repo = tmpRepo();
+  let s = emptySpace();
+  const a = addAsk(s, "document the greeting", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "a guide page for the greeting",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c1", text: "the guide exists" }],
+    grounding: {
+      touchpoints: [{ path: "docs/guide.md", planned: true }],
+      stamp: [],
+    },
+  });
+  assert.ok(n.ok);
+  const cut = { id: "cut-1", changeIds: [n.added.id], tepId: "TEP-t-7" };
+  const slices = tepSlices({ space: n.space, cut, spaceName: "docs space" });
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      spaceName: "docs space",
+      worker: async (w) => {
+        // The probe passes trivially; the coder never writes the guide.
+        if (w.role === "test")
+          writeInto(
+            w.worktree,
+            w.footprint[0],
+            `import { test } from "node:test";\ntest("t", () => {});\n`,
+          );
+        return { ok: true, finalText: "done" };
+      },
+    },
+    n.space,
+    cut,
+    slices,
+  );
+  assert.ok(
+    outcome.undelivered.some((u) => u.includes("docs obligation unmet")),
+    "the engine's docs gate speaks on the delivery",
+  );
+});

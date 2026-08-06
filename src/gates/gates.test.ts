@@ -99,3 +99,17 @@ test("the delivery page speaks in the asks' words with proof and gestures beside
   assert.ok(page.includes("see it: the follow toggle — open the panel and press Follow"));
   assert.ok(page.split("\n").length <= RENDER_LINE_BUDGET);
 });
+
+test("what did NOT arrive is on the delivery page's face", () => {
+  const { space, changeIds } = makeSpace();
+  const s2: Space = { ...space, cuts: [{ id: "cut-1", changeIds }] };
+  const page = renderDeliveryPage(s2, {
+    id: "d-1",
+    cutId: "cut-1",
+    branch: "tandem/cut-1",
+    proofs: [{ kind: "suite", label: "suite", verdict: "green" }],
+    undelivered: ["SL-1: docs obligation unmet: declared doc-module path(s) not present in the landed tree: docs/guide.md. The documentation must land with the slice before it can reach Done."],
+  });
+  assert.ok(page.includes("⚠ undelivered:"), "the gap is visible on the page");
+  assert.ok(page.includes("docs obligation unmet"), "the docs gate speaks on the page");
+});
