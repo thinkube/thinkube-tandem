@@ -56,6 +56,15 @@ function ChipEl(props: { chip: Chip }): JSX.Element {
   );
 }
 
+/**
+ * Whether the body would be cut by the two-line clamp — only then is there
+ * anything for `more…` to reveal. Line count is exact for the newline-
+ * structured body; the length bound catches a long single line that wraps.
+ */
+function overflowsClamp(abs: string): boolean {
+  return abs.split("\n").length > 2 || abs.length > 90;
+}
+
 export function NodeCard(props: {
   card: CardData;
   far: boolean;
@@ -93,7 +102,7 @@ export function NodeCard(props: {
           <div
             style={
               expanded
-                ? { color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12, overflowWrap: "anywhere" }
+                ? { color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-line" }
                 : {
                     color: "var(--vscode-descriptionForeground, #9d9d9d)",
                     fontSize: 12,
@@ -102,21 +111,24 @@ export function NodeCard(props: {
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
                     overflowWrap: "anywhere",
+                    whiteSpace: "pre-line",
                   }
             }
           >
             {card.abs}
           </div>
-          <span
-            data-more={card.id}
-            style={{ color: "var(--vscode-textLink-foreground, #3794ff)", cursor: "pointer", fontSize: 12, userSelect: "none" }}
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onToggle?.(card.id);
-            }}
-          >
-            {expanded ? "less" : "more…"}
-          </span>
+          {overflowsClamp(card.abs) ? (
+            <span
+              data-more={card.id}
+              style={{ color: "var(--vscode-textLink-foreground, #3794ff)", cursor: "pointer", fontSize: 12, userSelect: "none" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onToggle?.(card.id);
+              }}
+            >
+              {expanded ? "less" : "more…"}
+            </span>
+          ) : null}
         </>
       ) : null}
       {!far && card.chips.length ? (

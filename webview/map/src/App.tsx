@@ -267,24 +267,27 @@ export function App(): JSX.Element {
       {(() => {
         const uncovered = push.units.filter((u) => u.coverage.covered < u.coverage.total);
         const staleUnits = push.units.filter((u) => u.stale);
-        const chips: { key: string; label: string; color: string; unitId?: string }[] = [
+        const chips: { key: string; label: string; color: string; unitId?: string; why: string }[] = [
           ...push.questions.map((q, i) => ({
             key: `q${i}`,
             label: `❓ ${q.text.length > 40 ? q.text.slice(0, 39) + "…" : q.text}`,
             color: "#e5c07b",
             unitId: undefined as string | undefined,
+            why: "An open question is waiting for your answer — it is in the panel on the right.",
           })),
           ...uncovered.map((u) => ({
             key: `c${u.id}`,
-            label: `⚠ nothing proves: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
+            label: `⚠ no proof yet: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
             color: "#f59e0b",
             unitId: u.id as string | undefined,
+            why: "This unit has a change with no acceptance criterion — nothing would prove it was delivered. Click to open the unit.",
           })),
           ...staleUnits.map((u) => ({
             key: `s${u.id}`,
             label: `stale: ${u.title.length > 32 ? u.title.slice(0, 31) + "…" : u.title}`,
             color: "#8b949e",
             unitId: u.id as string | undefined,
+            why: "A decision changed the ground under this unit — its grounding no longer matches the repo. Click to re-ground it.",
           })),
         ];
         return chips.length ? (
@@ -294,6 +297,7 @@ export function App(): JSX.Element {
               <button
                 key={c.key}
                 data-next-action={c.key}
+                title={c.why}
                 style={{ fontSize: 11, border: `1px solid ${c.color}`, color: c.color, background: "none", borderRadius: 10, padding: "1px 8px", cursor: c.unitId ? "pointer" : "default" }}
                 onClick={() => c.unitId && setSelected(c.unitId)}
               >

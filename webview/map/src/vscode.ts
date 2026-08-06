@@ -8,7 +8,8 @@ export interface UnitVM {
   coverage: { covered: number; total: number };
   openQuestions: number;
   askLabel: string;
-  abs: string;
+  /** Body lines beyond the title: other members, touchpoints, proofs. Absent when the title says it all. */
+  abs?: string;
   id: string;
   title: string;
   count: number;
