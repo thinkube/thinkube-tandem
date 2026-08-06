@@ -15,9 +15,10 @@ export function addAsk(
   space: Space,
   text: string,
   at: string,
+  id?: string,
 ): Applied<Ask> | Rejection {
   if (!text.trim()) return { ok: false, reason: "an ask cannot be empty" };
-  const ask: Ask = { id: `ask-${space.asks.length + 1}`, text, at };
+  const ask: Ask = { id: id ?? `ask-${space.asks.length + 1}`, text, at };
   return { ok: true, space: { ...space, asks: [...space.asks, ask] }, added: ask };
 }
 

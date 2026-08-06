@@ -40,6 +40,10 @@ export interface DigestStore {
 
 export interface PipelineOpts {
   nextIndex: number;
+  /** Author-scoped id mint for new changes (merge-proof across users). */
+  mintNodeId?: (n: number) => string;
+  /** Member scopes of a multirepo project open in this workspace. */
+  scopes?: { id: string; dir: string; label?: string }[];
   decisions?: string[];
   digest?: string;
   digestStore?: DigestStore;
@@ -254,7 +258,7 @@ export async function runDerivationPipeline(
   const grounded = await runGrounding(
     { ...deps, log },
     ask,
-    { digest, nextIndex: opts.nextIndex, decisions: opts.decisions },
+    { digest, nextIndex: opts.nextIndex, decisions: opts.decisions, mintId: opts.mintNodeId, scopes: opts.scopes },
     round,
   );
   let changes = grounded.changes;
@@ -274,6 +278,7 @@ export async function runDerivationPipeline(
       ask.id,
       stamp,
       opts.nextIndex + changes.length,
+      opts.mintNodeId,
     );
     changes = [...changes, ...added];
     log(`${label}: ${added.length} change(s) added`);

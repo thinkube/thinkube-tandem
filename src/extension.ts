@@ -264,6 +264,7 @@ async function ensureSession(
     // The store is keyed by minted identity, per-user append-scoped
     // (§7ter / multi-user provision) — never by a folder spelling.
     storeDir: path.join(storeRoot, "spaces", project.card.id, author),
+    projectDir: path.join(storeRoot, "spaces", project.card.id),
     storageDir: context.globalStorageUri.fsPath,
     now: () => new Date().toISOString(),
     author,

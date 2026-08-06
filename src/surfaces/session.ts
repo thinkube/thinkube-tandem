@@ -18,6 +18,7 @@ import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { Forge } from "../dispatch/forge";
 import { tepSlices } from "../dispatch/adapter";
+import { planScopes, qualifyProbes, qualifySpace } from "../dispatch/scopes";
 import { dispatchTep, DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import {
@@ -32,6 +33,7 @@ import { WorkerModelConfig } from "../engine/workerModel";
 import { scanForSecrets } from "../engine/store/frontmatter";
 import { runReadRound } from "../derive/round";
 import { buildAnswerPrompt, classifyUtterance } from "../derive/classify";
+import { appendRecord, loadFolded } from "../core/records";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
 export const SESSION_ACTIONS: string[] = [
@@ -78,6 +80,15 @@ export interface SessionDeps {
    *  (round.repoRoot); git operations run at the enclosing repo root with
    *  every path qualified by the prefix. Absent = whole-repo project. */
   scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
+  /** Resolve a member scope id to its open repository (§7quater); absent
+   *  or returning undefined means the scope is not open in this editor. */
+  resolveScope?: (
+    scopeId: string,
+  ) => Promise<{ gitRoot: string; prefix: string; forge?: Forge } | undefined>;
+  /** The project dir (spaces/<id>) holding EVERY user's subtree — the fold
+   *  reads all of them; this session appends only under storeDir (its own
+   *  user). Absent = single-user fold over storeDir alone. */
+  projectDir?: string;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
 }
@@ -122,6 +133,10 @@ export class TandemSession {
       : { approved: false, reason: status.reason };
   }
 
+  private get author(): string {
+    return this.deps.author ?? "user";
+  }
+
   /** The project label this space is bound to — a label, never resolved. */
   get repoName(): string {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
@@ -160,40 +175,32 @@ export class TandemSession {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = await classify(this.deps.round, text);
     if (kind === "question") {
+      const lastAsk = this.space.asks[this.space.asks.length - 1];
       const answer = await (this.deps.answerRound ?? runReadRound)(
         this.deps.round,
         buildAnswerPrompt({
           text,
           asks: this.space.asks,
           decisions: this.decisionsInForce(),
-          digest: this.space.asks.length
-            ? this.digestStore().load(this.space.asks[this.space.asks.length - 1].id)
-            : undefined,
+          digest: lastAsk ? this.digestStore().load(lastAsk.id) : undefined,
           repoRoot: this.deps.round.repoRoot,
         }),
       );
-      this.deps.onChanged?.(
-        answer?.trim() || "I could not answer that from the space or the code.",
-      );
+      this.deps.onChanged?.(answer?.trim() || "I could not answer that from the space or the code.");
       return { ok: true };
     }
     if (kind === "statement") {
-      this.space = {
-        ...this.space,
-        questions: [
-          ...this.space.questions,
-          {
-            id: `q-${this.space.questions.length + 1}`,
-            askId: "",
-            text,
-            decided: { text, at: this.deps.now() },
-          },
-        ],
-      };
+      const q = { id: `q-${this.author}-${this.space.questions.length + 1}`, askId: "", text, decided: { text, at: this.deps.now() } };
+      this.space = { ...this.space, questions: [...this.space.questions, q] };
       this.changed("Recorded as a decision in force — every later derivation builds under it.");
       return { ok: true };
     }
-    const r = addAsk(this.space, text, this.deps.now());
+    const r = addAsk(
+      this.space,
+      text,
+      this.deps.now(),
+      `ask-${this.author}-${this.space.asks.length + 1}`,
+    );
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
     const ground = this.deps.ground ?? runDerivationPipeline;
@@ -201,10 +208,11 @@ export class TandemSession {
       nextIndex: this.space.nodes.length + 1,
       decisions: this.decisionsInForce(),
       digestStore: this.digestStore(),
+      mintNodeId: (n) => `node-${this.author}-${n}`,
     });
     const questions = grounded.questions.map((q, i) => ({
       ...q,
-      id: `q-${this.space.questions.length + i + 1}`,
+      id: `q-${this.author}-${this.space.questions.length + i + 1}`,
     }));
     this.space = {
       ...this.space,
@@ -240,6 +248,7 @@ export class TandemSession {
         nextIndex: this.space.nodes.length + 1,
         decisions: this.decisionsInForce(),
         digestStore: this.digestStore(),
+        mintNodeId: (n) => `node-${this.author}-${n}`,
       });
       this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
     }
@@ -307,6 +316,7 @@ export class TandemSession {
         nextIndex: this.space.nodes.length + 1,
         decisions: this.decisionsInForce(),
         digestStore: this.digestStore(),
+        mintNodeId: (n) => `node-${this.author}-${n}`,
       });
       this.space = { ...this.space, nodes: [...keep, ...fresh.changes] };
       this.recluster();
@@ -355,10 +365,10 @@ export class TandemSession {
   /** Gate 1. On success the run starts — nothing between the gates is human. */
   signCut(): { ok: boolean; reason?: string } {
     const cut = {
-      id: `cut-${this.space.cuts.length + 1}`,
+      id: `cut-${this.author}-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
     };
-    const r = signCut(this.space, cut, this.deps.now(), this.deps.author ?? "user");
+    const r = signCut(this.space, cut, this.deps.now(), this.author);
     if (!r.ok) return r;
     this.space = { ...this.space, cuts: [...this.space.cuts, r.cut] };
     // The human's click IS the mint (this message only arrives from the
@@ -375,6 +385,12 @@ export class TandemSession {
   }
 
   /** The run between the gates, driven by the imported engine. */
+  /**
+   * The run — one dispatch PER SCOPE, ordered by cross-scope needs
+   * (§7quater): a TEP produces one branch + delivery in each repository it
+   * touches; the TEP closes when all are accepted. A change never mixes
+   * scopes; a cycle between scopes refuses with the cycle named.
+   */
   async execute(cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = this.space.cuts.find((c) => c.id === cutId);
     if (!cut || this.running) return undefined;
@@ -391,85 +407,82 @@ export class TandemSession {
     this.runState = new RunState(() => this.deps.onChanged?.());
     this.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
-      // Monorepo scope: every grounded path is subtree-relative; qualify
-      // with the scope prefix so the engine works repo-root-relative.
-      const prefix = this.deps.scope?.prefix ?? "";
-      const qualified = prefix
-        ? {
-            ...this.space,
-            nodes: this.space.nodes.map((n) =>
-              n.grounding
-                ? {
-                    ...n,
-                    grounding: {
-                      ...n.grounding,
-                      touchpoints: n.grounding.touchpoints.map((t) => ({
-                        ...t,
-                        path: `${prefix}/${t.path}`,
-                      })),
-                    },
-                  }
-                : n,
-            ),
-          }
-        : this.space;
-      let slices;
-      try {
-        slices = tepSlices({
-          space: qualified,
-          cut,
-          spaceName: this.deps.scope?.projectId ?? path.basename(this.deps.storeDir),
-        });
-        if (prefix)
-          for (const sl of slices)
-            for (const u of sl.workUnits)
-              if (u.role === "test")
-                u.footprint = u.footprint.map((f) => `${prefix}/${f}`);
-      } catch (err) {
+      const plan = planScopes(this.space, cut);
+      if (!plan.ok) {
         this.running = false;
-        this.changed(
-          `Dispatch refused: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        this.changed(`Dispatch refused: ${plan.reason}.`);
         return undefined;
       }
+      const { groups, order: ordered } = plan;
       const dispatch = this.deps.dispatch ?? dispatchTep;
-      const outcome = await dispatch(
-        {
-          repoRoot: this.deps.scope?.gitRoot ?? this.deps.round.repoRoot,
-          projectId: this.deps.scope?.projectId,
-          model: this.deps.round.model,
-          workerModel: this.deps.workerModel,
-          concurrency: this.deps.maxConcurrent,
-          suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
-          forge: this.deps.forge,
-          state: this.runState,
-          spaceName: path.basename(this.deps.storeDir),
-          storeDir: this.deps.storeDir,
-          supervisorRound: runReadRound,
-        },
-        this.space,
-        cut,
-        slices,
-      );
-      if (outcome.delivery) {
-        this.space = {
-          ...this.space,
-          deliveries: [
-            ...this.space.deliveries,
-            {
-              ...outcome.delivery,
-              ...(outcome.url ? { url: outcome.url } : {}),
-              ...(outcome.undelivered.length
-                ? { undelivered: outcome.undelivered }
-                : {}),
-            },
-          ],
-        };
-        this.changed(`Delivery ready on ${outcome.delivery.branch}.`);
-      } else {
-        this.changed(`The run refused: ${outcome.refusals.join("; ")}`);
+      let last: DispatchOutcome | undefined;
+      for (const sc of ordered) {
+        const target =
+          sc === ""
+            ? {
+                gitRoot: this.deps.scope?.gitRoot ?? this.deps.round.repoRoot,
+                prefix: this.deps.scope?.prefix ?? "",
+                forge: this.deps.forge,
+              }
+            : await this.deps.resolveScope?.(sc);
+        if (!target) {
+          this.changed(
+            `Dispatch stopped: scope "${sc}" is not open in this workspace — open its repository and re-sign.`,
+          );
+          break;
+        }
+        const prefix = target.prefix ?? "";
+        const scopedCut = { ...cut, changeIds: groups.get(sc)! };
+        let slices;
+        try {
+          slices = tepSlices({
+            space: qualifySpace(this.space, prefix),
+            cut: scopedCut,
+            spaceName: this.deps.scope?.projectId ?? path.basename(this.deps.storeDir),
+            handlePrefix: sc ? `${sc}.` : "",
+          });
+          qualifyProbes(slices, prefix);
+        } catch (err) {
+          this.changed(`Dispatch refused: ${err instanceof Error ? err.message : String(err)}`);
+          break;
+        }
+        const outcome = await dispatch(
+          {
+            repoRoot: target.gitRoot,
+            projectId: this.deps.scope?.projectId,
+            model: this.deps.round.model,
+            workerModel: this.deps.workerModel,
+            concurrency: this.deps.maxConcurrent,
+            suiteCommand: this.deps.suiteCommand ?? ["npm", "test"],
+            forge: target.forge ?? this.deps.forge,
+            state: this.runState,
+            spaceName: path.basename(this.deps.storeDir),
+            storeDir: this.deps.storeDir,
+            supervisorRound: runReadRound,
+          },
+          this.space,
+          scopedCut,
+          slices,
+        );
+        last = outcome;
+        if (outcome.delivery) {
+          const delivery = {
+            ...outcome.delivery,
+            id: sc ? `${outcome.delivery.id}-${sc}` : outcome.delivery.id,
+            ...(outcome.url ? { url: outcome.url } : {}),
+            ...(outcome.undelivered.length ? { undelivered: outcome.undelivered } : {}),
+          };
+          this.space = { ...this.space, deliveries: [...this.space.deliveries, delivery] };
+          this.changed(
+            `Delivery ready on ${delivery.branch}${sc ? ` (scope ${sc})` : ""}.` +
+              (ordered.length > 1 ? ` ${ordered.indexOf(sc) + 1}/${ordered.length} scopes.` : ""),
+          );
+        } else {
+          this.changed(`The run refused: ${outcome.refusals.join("; ")}`);
+          break;
+        }
       }
-      return outcome;
+      return last;
     } finally {
       this.running = false;
     }
@@ -533,15 +546,15 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Both faces on disk: the data, and the abstracts rendered from it.
-   *  Every store write runs the secret scan — a hit refuses the write
-   *  (the state stays live in memory; the message names the leak). */
+  private _lastWritten = "";
+
+  /** Append-only store: every change appends ONE immutable record file in
+   *  this user's own subtree — never an edit, conflict-free by construction.
+   *  Every write runs the secret scan; a hit refuses the write (the state
+   *  stays live in memory; the message names the leak). */
   persist(): void {
-    const body = JSON.stringify(
-      { space: this.space, cut: [...this.cutNodeIds] },
-      null,
-      2,
-    );
+    const body = JSON.stringify({ space: this.space, cut: [...this.cutNodeIds] });
+    if (body === this._lastWritten) return;
     const secrets = scanForSecrets(body);
     if (secrets.length) {
       this.deps.onChanged?.(
@@ -551,17 +564,28 @@ export class TandemSession {
       );
       return;
     }
-    fs.mkdirSync(this.deps.storeDir, { recursive: true });
-    fs.writeFileSync(path.join(this.deps.storeDir, "space.json"), body);
+    appendRecord(this.deps.storeDir, {
+      at: this.deps.now(),
+      author: this.author,
+      kind: "snapshot",
+      space: this.space,
+      cut: [...this.cutNodeIds],
+    });
+    this._lastWritten = body;
   }
 
+  /** The space is a FOLD over every user's latest record (deterministic,
+   *  total; contradictory decisions surface as a question). */
   load(): void {
     try {
-      const raw = JSON.parse(
-        fs.readFileSync(path.join(this.deps.storeDir, "space.json"), "utf8"),
-      ) as { space: Space; cut: string[] };
-      this.space = raw.space;
-      this.cutNodeIds = new Set(raw.cut);
+      const folded = loadFolded(
+        this.deps.projectDir ?? this.deps.storeDir,
+        this.deps.storeDir,
+        this.author,
+        this.deps.now,
+      );
+      this.space = folded.space;
+      this.cutNodeIds = new Set(folded.cut);
       this.recluster();
       void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {

@@ -23,9 +23,12 @@ export interface TepSlicesArgs {
   /** The thinking space's name — probe identity carries it (numbers repeat
    *  across spaces; the collision lesson). */
   spaceName: string;
+  /** Scope qualifier for slice handles — a multi-scope TEP dispatches one
+   *  batch per repo and their unit ids must never collide. */
+  handlePrefix?: string;
 }
 
-export function tepSlices({ space, cut, spaceName }: TepSlicesArgs): SliceForDag[] {
+export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs): SliceForDag[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const members = cut.changeIds
     .map((id) => byId.get(id))
@@ -60,7 +63,7 @@ export function tepSlices({ space, cut, spaceName }: TepSlicesArgs): SliceForDag
 
   return units.map((unit, idx) => {
     const no = idx + 1;
-    const handle = `SL-${no}`;
+    const handle = `${handlePrefix ?? ""}SL-${no}`;
     const changes = unit.changeIds.map((id) => byId.get(id)!);
     const files = [
       ...new Set(

@@ -26,6 +26,9 @@ export interface Anchor {
   /** The file does not exist yet — grounding against planned structure.
    *  Planned anchors are exempt from stamp acceptance until the file is born. */
   planned?: boolean;
+  /** Project scope id (§7quater) — absent means the anchor scope. A slice
+   *  never crosses scopes; a change never mixes them. */
+  scope?: string;
 }
 
 /** Refuses anchors that smuggle in positions (line/column suffixes). */

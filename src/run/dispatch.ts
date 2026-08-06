@@ -43,7 +43,7 @@ import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { copyRel, defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
-import { foldBlastRadius } from "./plan";
+import { claimRunLock, foldBlastRadius } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
@@ -125,6 +125,11 @@ export async function dispatchTep(
   const blast = await foldBlastRadius(slices, deps.repoRoot, exec, log);
   if (blast) return { refusals: [blast], undelivered: [] };
 
+  const lock = await claimRunLock(wtRoot, wtName, runName, slices);
+  if (lock.refusal) return { refusals: [lock.refusal], undelivered: [] };
+  const unlock = lock.unlock;
+
+  try {
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
@@ -576,4 +581,7 @@ export async function dispatchTep(
       ...(undelivered.length ? { undelivered } : {}),
     },
   };
+  } finally {
+    await unlock();
+  }
 }

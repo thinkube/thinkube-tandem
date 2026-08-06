@@ -35,6 +35,8 @@ export function buildGroundingPrompt(args: {
   digest?: string;
   /** Decisions in force — accepted answers the round derives under. */
   decisions?: string[];
+  /** Member scopes of a multirepo project open in this workspace. */
+  scopes?: { id: string; dir: string; label?: string }[];
 }): string {
   return (
     `You are grounding ONE ask into the intended changes it implies.\n\n` +
@@ -44,6 +46,11 @@ export function buildGroundingPrompt(args: {
       ? `WHAT THE CODE LOOKS LIKE (established reading — build on it, read only what it lacks):\n${args.digest}\n\n`
       : "") +
     `THE REPOSITORY is at ${args.repoRoot} — read what the grounding needs (Grep first, Read the spans that matter).\n\n` +
+    (args.scopes?.length
+      ? `THE PROJECT SPANS MORE THAN ONE REPOSITORY. Member scopes open in this workspace:\n${args.scopes
+          .map((sc) => `- scope "${sc.id}"${sc.label ? ` (${sc.label})` : ""} at ${sc.dir}`)
+          .join("\n")}\nA change landing in a member scope carries {"scope":"<scope id>"} on each of its touchpoints, with paths relative to THAT scope's root. A change never mixes scopes. Touchpoints without "scope" land in the main repository above.\n\n`
+      : "") +
     `Return the intended CHANGES as nodes. For each node:\n` +
     `- "sentence": one plain sentence a person decides on — what this change is, in the ask's own register.\n` +
     `- "touchpoints": WHERE it lands: [{"path":"src/…","symbol":"functionOrSection"}]. ` +
@@ -71,6 +78,7 @@ export function parseGroundedNodes(
   raw: string,
   repoRoot: string,
   fileExists: (abs: string) => boolean = fs.existsSync,
+  scopeDir?: (scope: string) => string | undefined,
 ): DerivedNode[] {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
@@ -98,9 +106,13 @@ export function parseGroundedNodes(
         ...(typeof a.symbol === "string" && a.symbol.trim()
           ? { symbol: a.symbol.trim() }
           : {}),
+        ...(typeof a.scope === "string" && a.scope.trim() && scopeDir?.(a.scope.trim())
+          ? { scope: a.scope.trim() }
+          : {}),
       };
       if (validateAnchor(anchor)) continue;
-      if (!fileExists(path.join(repoRoot, anchor.path))) anchor.planned = true;
+      const root = anchor.scope ? (scopeDir?.(anchor.scope) ?? repoRoot) : repoRoot;
+      if (!fileExists(path.join(root, anchor.path))) anchor.planned = true;
       touchpoints.push(anchor);
     }
     const needsIndices = (Array.isArray(rec.needs) ? rec.needs : [])
@@ -153,7 +165,13 @@ export interface GroundingResult {
 export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
-  opts: { digest?: string; nextIndex: number; decisions?: string[] },
+  opts: {
+    digest?: string;
+    nextIndex: number;
+    decisions?: string[];
+    mintId?: (n: number) => string;
+    scopes?: { id: string; dir: string; label?: string }[];
+  },
   round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
 ): Promise<GroundingResult> {
   const text = await round(
@@ -163,10 +181,16 @@ export async function runGrounding(
       repoRoot: deps.repoRoot,
       digest: opts.digest,
       decisions: opts.decisions,
+      scopes: opts.scopes,
     }),
   );
   if (text === null) return { changes: [], questions: [] };
-  const derived = parseGroundedNodes(text, deps.repoRoot);
+  const derived = parseGroundedNodes(
+    text,
+    deps.repoRoot,
+    undefined,
+    (sc) => opts.scopes?.find((x) => x.id === sc)?.dir,
+  );
   const questions = parseGroundedQuestions(text).map((q) => ({
     askId: ask.id,
     text: q.text,
@@ -175,7 +199,7 @@ export async function runGrounding(
   if (derived.length === 0) return { changes: [], questions };
   const stamp = [await readStamp(deps.repoRoot)];
   return {
-    changes: resolveDerived(derived, ask.id, stamp, opts.nextIndex),
+    changes: resolveDerived(derived, ask.id, stamp, opts.nextIndex, opts.mintId),
     questions,
   };
 }
@@ -189,8 +213,9 @@ export function resolveDerived(
   askId: string,
   stamp: SourceStamp[],
   nextIndex: number,
+  mintId?: (n: number) => string,
 ): Change[] {
-  const ids = derived.map((_, i) => `node-${nextIndex + i}`);
+  const ids = derived.map((_, i) => (mintId ? mintId(nextIndex + i) : `node-${nextIndex + i}`));
   return derived.map((d, i) => ({
     id: ids[i],
     sentence: d.sentence,
