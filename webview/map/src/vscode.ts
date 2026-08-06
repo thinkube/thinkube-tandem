@@ -36,6 +36,7 @@ export interface SpacePush {
   running: boolean;
   asks: { id: string; text: string }[];
   signedTeps: number;
+  repoName?: string;
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
@@ -58,7 +59,8 @@ export type WebToHost =
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
-  | { action: "panic" };
+  | { action: "panic" }
+  | { action: "switch-repo" };
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;

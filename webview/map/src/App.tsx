@@ -41,32 +41,47 @@ export function App(): JSX.Element {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           gap: 8,
           padding: "8px 12px",
           borderBottom: "1px solid var(--vscode-panel-border, #333)",
           alignItems: "center",
         }}
       >
-        <input
+        <textarea
           data-capture
           value={draft}
-          placeholder="Say what you want — your words are kept verbatim"
+          rows={Math.min(6, Math.max(2, draft.split("\n").length))}
+          placeholder="Say what you want — your words are kept verbatim. Enter sends, Shift+Enter is a new line."
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && draft.trim()) {
+            if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+              e.preventDefault();
               post({ action: "capture", text: draft });
               setDraft("");
             }
           }}
           style={{
-            flex: 1,
+            flexBasis: "100%",
+            minWidth: 0,
+            resize: "vertical",
             padding: "6px 10px",
+            fontFamily: "inherit",
+            fontSize: 13,
             background: "var(--vscode-input-background, #222)",
             color: "var(--vscode-input-foreground, #ddd)",
             border: "1px solid var(--vscode-input-border, #444)",
             borderRadius: 6,
           }}
         />
+        <button
+          data-switch-repo
+          title="Switch the project / repository this space works on"
+          style={{ fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "2px 8px" }}
+          onClick={() => post({ action: "switch-repo" })}
+        >
+          {push.repoName ?? "choose repo"} ▾
+        </button>
         <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
           {push.units.length} unit(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
         </span>

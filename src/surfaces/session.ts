@@ -118,6 +118,11 @@ export class TandemSession {
       : { approved: false, reason: status.reason };
   }
 
+  /** The repository this space is bound to — shown on the surface. */
+  get repoName(): string {
+    return path.basename(this.deps.round.repoRoot);
+  }
+
   private changed(message?: string): void {
     this.persist();
     this.deps.onChanged?.(message);

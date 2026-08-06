@@ -16,6 +16,11 @@ function vs(): typeof vscodeTypes {
   return req("vscode") as typeof vscodeTypes;
 }
 
+export interface PanelHostHooks {
+  /** Host-side gesture: the QuickPick that rebinds the space to a repo. */
+  onSwitchRepo?: () => Promise<void>;
+}
+
 interface InboundAction {
   action: string;
   text?: string;
@@ -36,6 +41,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
   return {
     kind: "space",
     running: session.running,
+    repoName: session.repoName,
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
@@ -86,7 +92,12 @@ async function handleInbound(
   session: TandemSession,
   msg: InboundAction,
   push: (message?: string) => void,
+  hooks?: PanelHostHooks,
 ): Promise<void> {
+  if (msg.action === "switch-repo") {
+    await hooks?.onSwitchRepo?.();
+    return;
+  }
   let note: string | undefined;
   if (msg.action === "capture" && msg.text) {
     push("Grounding your ask…");
@@ -124,10 +135,13 @@ export class SpacePanel implements vscodeTypes.Disposable {
   private _panel: vscodeTypes.WebviewPanel | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
 
-  async show(
-    extensionUri: vscodeTypes.Uri,
-    session: TandemSession,
-  ): Promise<void> {
+  constructor(
+    private readonly getSession: () => TandemSession,
+    private readonly hooks?: PanelHostHooks,
+  ) {}
+
+  async show(extensionUri: vscodeTypes.Uri): Promise<void> {
+    const session = this.getSession();
     if (this._panel) {
       this._panel.reveal();
       this._push(session);
@@ -149,7 +163,12 @@ export class SpacePanel implements vscodeTypes.Disposable {
     );
     this._disposables.push(
       this._panel.webview.onDidReceiveMessage((raw) =>
-        handleInbound(session, raw as InboundAction, (m) => this._push(session, m)),
+        handleInbound(
+          this.getSession(),
+          raw as InboundAction,
+          (m) => this._push(this.getSession(), m),
+          this.hooks,
+        ),
       ),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
@@ -186,6 +205,7 @@ export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscodeTypes.Uri,
     private readonly ensureSession: () => Promise<TandemSession>,
+    private readonly hooks?: PanelHostHooks,
   ) {}
 
   async resolveWebviewView(view: vscodeTypes.WebviewView): Promise<void> {
@@ -196,9 +216,10 @@ export class SpaceViewProvider implements vscodeTypes.WebviewViewProvider {
     };
     view.webview.html = await renderBundleHtml(this.extensionUri, view.webview);
     const session = await this.ensureSession();
-    view.webview.onDidReceiveMessage((raw) =>
-      handleInbound(session, raw as InboundAction, (m) => this.pushFrom(session, m)),
-    );
+    view.webview.onDidReceiveMessage(async (raw) => {
+      const live = await this.ensureSession();
+      await handleInbound(live, raw as InboundAction, (m) => this.pushFrom(live, m), this.hooks);
+    });
     view.onDidDispose(() => {
       this._view = undefined;
     });

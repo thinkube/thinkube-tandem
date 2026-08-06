@@ -35,6 +35,11 @@
           "type": "webview",
           "id": "thinkubeTandemSpaceView",
           "name": "Space"
+        },
+        {
+          "id": "claudeConfigTree",
+          "name": "Configuration",
+          "contextualTitle": "Claude Code Configuration"
         }
       ]
     },
@@ -42,6 +47,113 @@
       {
         "command": "thinkube-tandem.openSpace",
         "title": "Tandem: Open the Space"
+      },
+      {
+        "command": "thinkube-tandem.switchProject",
+        "title": "Tandem: Switch Project / Repository"
+      },
+      {
+        "command": "thinkube.refreshConfig",
+        "title": "Refresh Configuration",
+        "category": "Thinkube Tandem",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.addHook",
+        "title": "Add Hook",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.deleteHook",
+        "title": "Delete Hook",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addCommand",
+        "title": "Add Command",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openCommand",
+        "title": "Open Command",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteCommand",
+        "title": "Delete Command",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addSkill",
+        "title": "Add Skill",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openSkill",
+        "title": "Open Skill",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteSkill",
+        "title": "Delete Skill",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addAgent",
+        "title": "Add Agent",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openAgent",
+        "title": "Open Agent",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteAgent",
+        "title": "Delete Agent",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addMcpServer",
+        "title": "Add MCP Server",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.deleteMcpServer",
+        "title": "Remove MCP Server",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.editPermissions",
+        "title": "Edit Permissions",
+        "category": "Thinkube Tandem",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "thinkube.initializeConfig",
+        "title": "Initialize Claude Config",
+        "category": "Thinkube Tandem",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "thinkube.switchProject",
+        "title": "Set Active Project",
+        "category": "Thinkube Tandem",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "thinkube-tandem.showDefects",
+        "title": "Tandem: Show Defects"
       }
     ],
     "configuration": {
@@ -93,6 +205,77 @@
           "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default \u2014 advisory let undocumented work reach Done."
         }
       }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "thinkube.refreshConfig",
+          "when": "view == claudeConfigTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube.switchProject",
+          "when": "view == claudeConfigTree",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "thinkube.addHook",
+          "when": "view == claudeConfigTree && viewItem == hooks-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteHook",
+          "when": "view == claudeConfigTree && viewItem == hook",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addCommand",
+          "when": "view == claudeConfigTree && viewItem == commands-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteCommand",
+          "when": "view == claudeConfigTree && viewItem == command",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addSkill",
+          "when": "view == claudeConfigTree && viewItem == skills-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteSkill",
+          "when": "view == claudeConfigTree && viewItem == skill",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addAgent",
+          "when": "view == claudeConfigTree && viewItem == agents-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteAgent",
+          "when": "view == claudeConfigTree && viewItem == agent",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addMcpServer",
+          "when": "view == claudeConfigTree && viewItem == mcp-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteMcpServer",
+          "when": "view == claudeConfigTree && viewItem == mcp-server",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.editPermissions",
+          "when": "view == claudeConfigTree && viewItem == permissions-section",
+          "group": "inline"
+        }
+      ]
     }
   },
   "scripts": {
