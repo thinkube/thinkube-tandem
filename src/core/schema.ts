@@ -118,7 +118,7 @@ type ProofVerdict = "green" | "red" | "pending";
 
 /** Evidence on a delivery: probe runs, suite verdicts, CI verdicts. */
 export interface Proof {
-  kind: "probe" | "suite" | "ci";
+  kind: "probe" | "suite" | "ci" | "assessment";
   label: string;
   verdict: ProofVerdict;
   /** Where the machine face of this evidence lives (log, run URL). */

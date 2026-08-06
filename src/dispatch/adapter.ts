@@ -120,8 +120,12 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       ),
     ];
 
+    // Assessment checks get NO probe order — no runnable test fits them
+    // by definition; the closing gate grades them with a fresh assessor.
     const criteria = changes.flatMap((c) =>
-      c.acceptance.map((a) => ({ change: c, text: a.text })),
+      c.acceptance
+        .filter((a) => a.kind !== "assessment")
+        .map((a) => ({ change: c, text: a.text })),
     );
     const codeUnit: WorkUnit & { note?: string } = {
       footprint: files,

@@ -41,6 +41,7 @@ import { buildVerificationTrace } from "../engine/core/trace";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
+import { gradeAssessments, logRedChecks } from "./assess";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { copyRel, defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { claimRunLock, foldBlastRadius } from "./plan";
@@ -82,8 +83,6 @@ export interface DispatchOutcome {
   undelivered: string[];
   url?: string;
 }
-
-
 export async function dispatchTep(
   deps: DispatchDeps,
   space: Space,
@@ -122,8 +121,6 @@ export async function dispatchTep(
     if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, ...entry });
   };
 
-  // A refusal is itself a find-time defect observation: one journal line,
-  // then the refusal surfaces as before.
   const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
     defect({ activity: "preflight", trigger, ...(type ? { type } : {}), impact: "run refused", detail: refusal.slice(0, 500) });
     return { refusals: [refusal], undelivered: [] };
@@ -169,8 +166,7 @@ export async function dispatchTep(
   const inDag = new Set(dag.map((u) => u.id));
   const pending = new Set(dag.map((u) => u.id));
 
-  // Per-slice bookkeeping: probe files + runnable checks for the oracle, and
-  // the countdown that triggers the slice commit when its last unit lands.
+  // Per-slice bookkeeping for the oracle + the slice-commit countdown.
   const sliceProbes = new Map<string, string[]>();
   const sliceVerifs = new Map<string, AcVerification[]>();
   const sliceFiles = new Map<string, string[]>();
@@ -455,25 +451,30 @@ export async function dispatchTep(
           verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
   const gateExec: AcExec = (run, cwd) => boundedExec(run, cwd);
   const acResults = await runAcVerifications(verifs, worktree, gateExec);
-  const proofs: Proof[] = acResults.map((r) => ({
-    kind: "probe",
-    label: `AC-${r.ac}`,
-    verdict: r.pass ? "green" : "red",
-    ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
-  }));
-  for (const r of acResults)
-    if (!r.pass) {
-      const infra = /12[67]/.test(String((r as { code?: number }).code ?? ""));
+  // Assessments: a FRESH reviewer in the tester snapshot, fail-soft red.
+  const assessed = await gradeAssessments({
+    space,
+    cut,
+    testerWt,
+    model: deps.workerModel?.workerModel ?? "sonnet",
+    ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
+    log,
+    onRed: (label, ref) =>
       defect({
         activity: "closing gate",
-        trigger: infra ? "gate-infra" : "gate-ac",
-        type: infra ? "gate" : "code",
-        impact: infra ? "verification unavailable" : "acceptance check red",
-        detail: infra
-          ? `AC-${r.ac} runner exited 126/127 — a gate defect, not a code verdict`
-          : `AC-${r.ac} failed${r.evidence ? ` — ${r.evidence.slice(0, 300)}` : ""}`,
-      });
-    }
+        trigger: "assessment",
+        type: "code",
+        impact: "assessment check red",
+        detail: `${label} — ${ref}`.slice(0, 400),
+      }),
+  });
+  const proofs: Proof[] = assessed.concat(acResults.map((r) => ({
+    kind: "probe",
+    label: `AC-${r.ac}`,
+    verdict: r.pass ? ("green" as const) : ("red" as const),
+    ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
+  })));
+  logRedChecks(acResults, defect);
 
   // The honesty scan over the delivered code: a self-declared deferral in a
   // shipped file is UNDELIVERED on the delivery's face, never a footnote.

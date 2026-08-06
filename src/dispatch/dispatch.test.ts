@@ -142,3 +142,29 @@ test("A5: an anchorless (project) plan refuses unscoped promises by name", async
   assert.ok(r!.includes("a promise with no repository") && r!.includes("never built into the store".replace("never ", "")));
   assert.equal(refuseAnchorless({ ok: true, groups: new Map([["repo-a", ["n1"]]]), order: ["repo-a"] }, space), undefined);
 });
+
+test("A3: assessment checks are graded by a fresh reviewer, fail-soft red, never probed", async () => {
+  const { gradeAssessments } = await import("../run/assess");
+  const { emptySpace } = await import("../core/schema");
+  const space = {
+    ...emptySpace(),
+    asks: [{ id: "a1", text: "the page must feel calm", at: "t" }],
+    nodes: [{
+      id: "n1", sentence: "a calm landing page", serves: ["a1"], needs: [],
+      acceptance: [
+        { id: "c1", text: "the landing page reads calmly", kind: "assessment" as const },
+        { id: "c2", text: "a runnable one", kind: "probe" as const },
+      ],
+    }],
+  };
+  const cut = { id: "cut-1", changeIds: ["n1"] };
+  const green = await gradeAssessments({
+    space, cut, testerWt: "/tmp", model: "sonnet",
+    round: async () => "GREEN — it reads calmly.",
+  });
+  assert.deepEqual(green.map((p) => [p.kind, p.verdict]), [["assessment", "green"]], "only the assessment check, graded");
+  const dead = await gradeAssessments({
+    space, cut, testerWt: "/tmp", model: "sonnet", round: async () => null,
+  });
+  assert.equal(dead[0].verdict, "red", "an unreachable reviewer grades red, never assumed");
+});
