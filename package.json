@@ -172,7 +172,7 @@
       },
       {
         "command": "thinkube-tandem.newProject",
-        "title": "New Repository",
+        "title": "New here…",
         "icon": "$(new-folder)",
         "category": "Tandem"
       },
@@ -204,6 +204,16 @@
         "command": "thinkube-tandem.deleteThinkingSpace",
         "title": "Delete Thinking Space",
         "icon": "$(trash)",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.toggleProjectDone",
+        "title": "Mark Done / Reopen",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.setContextScope",
+        "title": "Choose Repositories to Read…",
         "category": "Tandem"
       }
     ],
@@ -348,8 +358,18 @@
         },
         {
           "command": "thinkube-tandem.deleteThinkingSpace",
-          "when": "view == tandemProjects && viewItem == tandem-thinking-space",
+          "when": "view == tandemProjects && viewItem =~ /tandem-thinking-space/",
           "group": "inline"
+        },
+        {
+          "command": "thinkube-tandem.toggleProjectDone",
+          "when": "view == tandemProjects && viewItem =~ /tandem-work-project/",
+          "group": "1_edit"
+        },
+        {
+          "command": "thinkube-tandem.setContextScope",
+          "when": "view == tandemProjects && viewItem == tandem-thinking-space-project",
+          "group": "1_edit"
         }
       ],
       "explorer/context": [

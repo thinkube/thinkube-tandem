@@ -16,8 +16,6 @@ import {
   discoverProjects,
   EnabledProject,
   listProducts,
-  mintCard,
-  scopesNotOpen,
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
@@ -27,7 +25,9 @@ import {
   configuredStoreRoot,
   registerSpaceCommands,
 } from "./hostui/spaceOps";
-import { newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
+import { chooseProject, newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
+import { editContextScope, ensureWorkSession, findWorkProject } from "./hostui/workSession";
+import { createWorkProject, listWorkProjects, setWorkProjectState } from "./core/workProjects";
 import { ClaudeConfigService } from "./engine/host/ClaudeConfigService";
 import { LauncherService } from "./engine/host/LauncherService";
 import { SessionLinkService } from "./engine/host/SessionLinkService";
@@ -109,15 +109,16 @@ async function resolveForge(
  */
 const sessions = new Map<string, TandemSession>();
 
-/** The session of the remembered (repository, thinking space) pair. */
+/** The session of the remembered (owner, thinking space) pair — the owner
+ *  is a repository card or a project ("wp:<id>"). */
 function activeSession(
   context: vscode.ExtensionContext,
   project?: EnabledProject,
 ): TandemSession | undefined {
-  const p = project ?? rememberedProject(context);
-  if (!p) return undefined;
-  const slug = context.workspaceState.get<string>(`tandem.space.${p.card.id}`);
-  return slug ? sessions.get(`${p.card.id}/${slug}`) : undefined;
+  const ownerKey = project?.card.id ?? activeOwnerKey(context);
+  if (!ownerKey) return undefined;
+  const slug = context.workspaceState.get<string>(`tandem.space.${ownerKey}`);
+  return slug ? sessions.get(`${ownerKey}/${slug}`) : undefined;
 }
 let statusBar: vscode.StatusBarItem | undefined;
 
@@ -130,9 +131,17 @@ function openProjects(): EnabledProject[] {
   return [...seen.values()];
 }
 
+/** The active owner: a repository card id, or "wp:<id>" for a project. */
+function activeOwnerKey(context: vscode.ExtensionContext): string | undefined {
+  const saved = context.workspaceState.get<string>("tandem.activeProject");
+  if (saved?.startsWith("wp:")) return saved;
+  return rememberedProject(context)?.card.id;
+}
+
 function rememberedProject(context: vscode.ExtensionContext): EnabledProject | undefined {
   const open = openProjects();
   const saved = context.workspaceState.get<string>("tandem.activeProject");
+  if (saved?.startsWith("wp:")) return undefined;
   const hit = saved ? open.find((p) => p.card.id === saved) : undefined;
   if (hit) return hit;
   if (open.length === 1) return open[0];
@@ -140,81 +149,6 @@ function rememberedProject(context: vscode.ExtensionContext): EnabledProject | u
 }
 
 
-async function chooseProject(context: vscode.ExtensionContext): Promise<EnabledProject | undefined> {
-  const open = openProjects();
-  const folders = vscode.workspace.workspaceFolders ?? [];
-  type Item = vscode.QuickPickItem & { project?: EnabledProject; enableDir?: string };
-  const items: Item[] = [];
-  const byProduct = new Map<string, EnabledProject[]>();
-  for (const p of open) {
-    const k = p.card.product ?? "";
-    if (!byProduct.has(k)) byProduct.set(k, []);
-    byProduct.get(k)!.push(p);
-  }
-  for (const [product, ps] of [...byProduct.entries()].sort()) {
-    if (product)
-      items.push({ label: product, kind: vscode.QuickPickItemKind.Separator });
-    for (const p of ps) {
-      const missing = scopesNotOpen(p, open);
-      items.push({
-        label: p.card.label,
-        description: p.prefix ? `${path.basename(p.gitRoot)}/${p.prefix}` : path.basename(p.gitRoot),
-        detail: missing.length
-          ? `⚠ scope(s) not open in this workspace: ${missing.map((s) => s.label ?? s.id ?? s.remote ?? "?").join(", ")}`
-          : undefined,
-        project: p,
-      });
-    }
-  }
-  const carded = new Set(open.map((p) => path.resolve(p.anchorDir)));
-  const enableable = folders.filter((f) => !carded.has(path.resolve(f.uri.fsPath)));
-  if (enableable.length) {
-    items.push({ label: "Enable as a project", kind: vscode.QuickPickItemKind.Separator });
-    for (const f of enableable)
-      items.push({
-        label: `$(add) Enable ${f.name}…`,
-        description: f.uri.fsPath,
-        enableDir: f.uri.fsPath,
-      });
-  }
-  const pick = await vscode.window.showQuickPick(items, {
-    title: "Tandem — which project are you working on?",
-  });
-  if (!pick) return undefined;
-  if (pick.enableDir) {
-    const label = await vscode.window.showInputBox({
-      title: "Project label (a name, never an identity)",
-      value: path.basename(pick.enableDir),
-    });
-    if (!label) return undefined;
-    const product = await vscode.window.showInputBox({
-      title: "Product grouping label (optional — e.g. KubeXlat, Platform)",
-      value: "",
-    });
-    const remote = await new Promise<string | undefined>((resolve) =>
-      execFile(
-        "git",
-        ["-C", pick.enableDir!, "remote", "get-url", "origin"],
-        { encoding: "utf8" },
-        (err, out) => resolve(err ? undefined : out.trim()),
-      ),
-    );
-    const minted = mintCard(pick.enableDir, {
-      label,
-      ...(product ? { product } : {}),
-      ...(remote ? { remote } : {}),
-    });
-    if (!minted.ok) {
-      void vscode.window.showErrorMessage(`Tandem: ${minted.reason}`);
-      return undefined;
-    }
-    const enabled = openProjects().find((p) => p.card.id === minted.card.id);
-    if (enabled) await context.workspaceState.update("tandem.activeProject", enabled.card.id);
-    return enabled;
-  }
-  await context.workspaceState.update("tandem.activeProject", pick.project!.card.id);
-  return pick.project;
-}
 
 function updateStatusBar(project: EnabledProject | undefined): void {
   if (!statusBar) return;
@@ -282,8 +216,27 @@ async function ensureSession(
   context: vscode.ExtensionContext,
   interactive = true,
 ): Promise<TandemSession | undefined> {
+  const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
+  if (savedOwner.startsWith("wp:"))
+    return ensureWorkSession({
+      context,
+      ownerKey: savedOwner,
+      interactive,
+      storeRoot: configuredStoreRoot(),
+      sessions,
+      chooseSpace: (k, i) => chooseThinkingSpace(context, k, i),
+      gitAuthor,
+      resolveForge: (root) =>
+        resolveForge(
+          root,
+          vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
+        ),
+      openRepos: openProjects,
+      onChanged: (message) => pushActive(context, message),
+      storageDir: context.globalStorageUri.fsPath,
+    });
   let project = rememberedProject(context);
-  if (!project && interactive) project = await chooseProject(context);
+  if (!project && interactive) project = await chooseProject(context, openProjects);
   if (!project) return undefined;
   updateStatusBar(project);
   const spaceSlug = await chooseThinkingSpace(context, project.card.id, interactive);
@@ -373,9 +326,10 @@ export function activate(context: vscode.ExtensionContext): void {
   projectsTree = new ProjectsTreeProvider(
     () => listProducts(storeRootOf(), openProjects()),
     openProjects,
-    () => rememberedProject(context)?.card.id,
-    (ownerId) => listThinkingSpaces(configuredStoreRoot(), ownerId),
-    (ownerId) => context.workspaceState.get<string>(`tandem.space.${ownerId}`),
+    () => activeOwnerKey(context),
+    (ownerId, kind) => listThinkingSpaces(configuredStoreRoot(), ownerId, kind),
+    (ownerKey) => context.workspaceState.get<string>(`tandem.space.${ownerKey}`),
+    () => listWorkProjects(configuredStoreRoot()),
   );
   context.subscriptions.push(
     vscode.window.createTreeView("tandemProjects", {
@@ -484,7 +438,53 @@ export function activate(context: vscode.ExtensionContext): void {
           });
           if (!product) return;
         }
-        await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+        const kind = await vscode.window.showQuickPick(
+          [
+            { label: "Enable a repository", description: "an existing folder in the open workspace", k: "repo" },
+            { label: "New project", description: "work that may touch several repositories — no code of its own", k: "work" },
+          ],
+          { title: `New under ${product}` },
+        );
+        if (!kind) return;
+        if (kind.k === "repo") {
+          await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+          return;
+        }
+        const name = await vscode.window.showInputBox({
+          title: `Name the project under ${product}`,
+          placeHolder: "e.g. plugin delivery — a bounded piece of work, open until done",
+        });
+        if (!name?.trim()) return;
+        const made = createWorkProject(configuredStoreRoot(), product, name);
+        if (!made.ok) {
+          void vscode.window.showErrorMessage(`Tandem: ${made.reason}`);
+          return;
+        }
+        projectsTree?.refresh();
+        await openSpaceFor(`wp:${made.project.id}`);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "thinkube-tandem.toggleProjectDone",
+      (node?: { wp?: { id: string; state: string } }) => {
+        if (!node?.wp) return;
+        const r = setWorkProjectState(
+          configuredStoreRoot(),
+          node.wp.id,
+          node.wp.state === "done" ? "open" : "done",
+        );
+        if (!r.ok) void vscode.window.showWarningMessage(`Tandem — ${r.reason}`);
+        projectsTree?.refresh();
+      },
+    ),
+    vscode.commands.registerCommand(
+      "thinkube-tandem.setContextScope",
+      async (node?: { id?: string }) => {
+        const [ownerKey, slug] = (node?.id ?? "").split("/");
+        if (!ownerKey?.startsWith("wp:") || !slug) return;
+        const wp = findWorkProject(configuredStoreRoot(), ownerKey.slice(3));
+        if (!wp) return;
+        await editContextScope(configuredStoreRoot(), wp, slug, openProjects());
       },
     ),
     vscode.commands.registerCommand(
@@ -513,7 +513,7 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     ),
     vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
-      const picked = await chooseProject(context);
+      const picked = await chooseProject(context, openProjects);
       if (!picked) return;
       await openSpaceFor(picked.card.id);
     }),

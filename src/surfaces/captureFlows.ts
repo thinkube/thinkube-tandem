@@ -101,11 +101,13 @@ export async function rederiveAskFlow(args: {
       decisions: string[];
       digestStore: DigestStore;
       mintNodeId: (n: number) => string;
+      scopes?: { id: string; dir: string; label?: string }[];
     },
   ) => Promise<{ changes: Space["nodes"] }>;
   decisions: string[];
   digests: DigestStore;
   mintNodeId: (n: number) => string;
+  scopes?: { id: string; dir: string; label?: string }[];
 }): Promise<Space> {
   const old = new Set(
     args.space.nodes.filter((n) => n.serves.includes(args.ask.id)).map((n) => n.id),
@@ -115,6 +117,7 @@ export async function rederiveAskFlow(args: {
     decisions: args.decisions,
     digestStore: args.digests,
     mintNodeId: args.mintNodeId,
+    ...(args.scopes ? { scopes: args.scopes } : {}),
   });
   return {
     ...args.space,

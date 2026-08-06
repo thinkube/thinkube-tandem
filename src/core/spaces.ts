@@ -20,9 +20,12 @@ export function slugifySpaceName(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** The directory holding one owner's spaces (owner = repository or project id). */
-function spacesHome(storeRoot: string, ownerId: string): string {
-  return path.join(storeRoot, "spaces", ownerId);
+/** The directory holding one owner's spaces. A repository's spaces live
+ *  under spaces/<id>/; a work-project's live in its own projects/<id>/ dir
+ *  (Amendment 1 layout). */
+export type SpaceOwnerKind = "repository" | "project";
+function spacesHome(storeRoot: string, ownerId: string, kind: SpaceOwnerKind): string {
+  return path.join(storeRoot, kind === "project" ? "projects" : "spaces", ownerId);
 }
 
 export interface SpaceRef {
@@ -33,8 +36,8 @@ export interface SpaceRef {
 }
 
 /** Every thinking space under an owner, oldest directory first. */
-export function listThinkingSpaces(storeRoot: string, ownerId: string): SpaceRef[] {
-  const home = spacesHome(storeRoot, ownerId);
+export function listThinkingSpaces(storeRoot: string, ownerId: string, kind: SpaceOwnerKind = "repository"): SpaceRef[] {
+  const home = spacesHome(storeRoot, ownerId, kind);
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(home, { withFileTypes: true });
@@ -60,10 +63,11 @@ export function createThinkingSpace(
   storeRoot: string,
   ownerId: string,
   name: string,
+  kind: SpaceOwnerKind = "repository",
 ): { ok: true; slug: string } | { ok: false; reason: string } {
   const slug = slugifySpaceName(name);
   if (!slug) return { ok: false, reason: "a thinking space needs a name" };
-  const dir = path.join(spacesHome(storeRoot, ownerId), slug);
+  const dir = path.join(spacesHome(storeRoot, ownerId, kind), slug);
   if (fs.existsSync(dir))
     return { ok: false, reason: `a thinking space named "${slug}" already exists here` };
   fs.mkdirSync(dir, { recursive: true });
@@ -77,8 +81,9 @@ export function thinkingSpaceDirs(
   ownerId: string,
   slug: string,
   author: string,
+  kind: SpaceOwnerKind = "repository",
 ): { storeDir: string; foldDir: string } {
-  const foldDir = path.join(spacesHome(storeRoot, ownerId), slug);
+  const foldDir = path.join(spacesHome(storeRoot, ownerId, kind), slug);
   return { storeDir: path.join(foldDir, author), foldDir };
 }
 
@@ -91,8 +96,9 @@ export function deleteThinkingSpace(
   ownerId: string,
   slug: string,
   now: () => string,
+  kind: SpaceOwnerKind = "repository",
 ): { ok: boolean; reason?: string } {
-  const dir = path.join(spacesHome(storeRoot, ownerId), slug);
+  const dir = path.join(spacesHome(storeRoot, ownerId, kind), slug);
   if (!fs.existsSync(dir)) return { ok: false, reason: "no such thinking space" };
   const { space } = loadFolded(dir, path.join(dir, "_probe"), "_probe", now);
   if (space.cuts.some((c) => c.signature))

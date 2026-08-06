@@ -7,7 +7,8 @@
  */
 import * as vscode from "vscode";
 import { EnabledProject } from "../core/identity";
-import { SpaceRef } from "../core/spaces";
+import { SpaceOwnerKind, SpaceRef } from "../core/spaces";
+import { WorkProject } from "../core/workProjects";
 
 class RepositoryItem extends vscode.TreeItem {
   constructor(
@@ -34,34 +35,47 @@ class RepositoryItem extends vscode.TreeItem {
 }
 
 class ThinkingSpaceItem extends vscode.TreeItem {
-  constructor(ownerId: string, space: SpaceRef, active: boolean) {
+  constructor(ownerKey: string, kind: SpaceOwnerKind, space: SpaceRef, active: boolean) {
     super(space.label, vscode.TreeItemCollapsibleState.None);
-    this.id = `${ownerId}/${space.slug}`;
-    this.contextValue = "tandem-thinking-space";
+    this.id = `${ownerKey}/${space.slug}`;
+    this.contextValue = kind === "project" ? "tandem-thinking-space-project" : "tandem-thinking-space";
     this.iconPath = new vscode.ThemeIcon("notebook");
     if (active) this.description = "●";
     this.tooltip = `Thinking space "${space.label}" — click to open its map.`;
     this.command = {
       command: "thinkube-tandem.openThinkingSpace",
       title: "Open this thinking space",
-      arguments: [ownerId, space.slug],
+      arguments: [ownerKey, space.slug, kind],
     };
   }
 }
 
 /** The permanent creation row — v1's gesture, verbatim. */
 class NewSpaceItem extends vscode.TreeItem {
-  constructor(ownerId: string) {
+  constructor(ownerKey: string, kind: SpaceOwnerKind) {
     super("New thinking space…", vscode.TreeItemCollapsibleState.None);
-    this.id = `${ownerId}/…new`;
+    this.id = `${ownerKey}/…new`;
     this.contextValue = "tandem-new-space";
     this.iconPath = new vscode.ThemeIcon("add");
     this.tooltip = "Start a new, independent stream of thinking here.";
     this.command = {
       command: "thinkube-tandem.newThinkingSpace",
       title: "New thinking space",
-      arguments: [ownerId],
+      arguments: [ownerKey, kind],
     };
+  }
+}
+
+/** A project in the v1 sense: bounded WORK across repositories, open or
+ *  done — never code. Its thinking spaces hang beneath it. */
+class WorkProjectItem extends vscode.TreeItem {
+  constructor(public readonly wp: WorkProject, active: boolean) {
+    super(wp.name, vscode.TreeItemCollapsibleState.Expanded);
+    this.id = `wp:${wp.id}`;
+    this.contextValue = wp.state === "done" ? "tandem-work-project-done" : "tandem-work-project";
+    this.iconPath = new vscode.ThemeIcon(wp.state === "done" ? "pass-filled" : "milestone");
+    this.description = (wp.state === "done" ? "✓ done" : "open") + (active ? "  ●" : "");
+    this.tooltip = `Project "${wp.name}" — work that may touch several repositories.`;
   }
 }
 
@@ -77,7 +91,7 @@ export class ProductItem extends vscode.TreeItem {
   }
 }
 
-type Node = ProductItem | RepositoryItem | ThinkingSpaceItem | NewSpaceItem;
+type Node = ProductItem | RepositoryItem | WorkProjectItem | ThinkingSpaceItem | NewSpaceItem;
 
 export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
   private _emitter = new vscode.EventEmitter<void>();
@@ -87,8 +101,9 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
     private readonly listProductNames: () => string[],
     private readonly listRepositories: () => EnabledProject[],
     private readonly activeId: () => string | undefined,
-    private readonly listSpaces: (ownerId: string) => SpaceRef[],
-    private readonly activeSpace: (ownerId: string) => string | undefined,
+    private readonly listSpaces: (ownerKey: string, kind: SpaceOwnerKind) => SpaceRef[],
+    private readonly activeSpace: (ownerKey: string) => string | undefined,
+    private readonly listProjects: () => WorkProject[],
   ) {}
 
   refresh(): void {
@@ -117,19 +132,33 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
         );
     }
     if (el instanceof ProductItem)
-      return repos
-        .filter((p) => (p.card.product ?? "(unassigned)") === el.product)
-        .sort((a, b) => a.card.label.localeCompare(b.card.label))
-        .map((p) => new RepositoryItem(p, p.card.id === this.activeId()));
-    if (el instanceof RepositoryItem) {
-      const ownerId = el.project.card.id;
-      const activeSlug =
-        ownerId === this.activeId() ? this.activeSpace(ownerId) : undefined;
       return [
-        ...this.listSpaces(ownerId).map(
-          (s) => new ThinkingSpaceItem(ownerId, s, s.slug === activeSlug),
+        ...repos
+          .filter((p) => (p.card.product ?? "(unassigned)") === el.product)
+          .sort((a, b) => a.card.label.localeCompare(b.card.label))
+          .map((p) => new RepositoryItem(p, p.card.id === this.activeId())),
+        ...this.listProjects()
+          .filter((w) => w.product === el.product)
+          .map((w) => new WorkProjectItem(w, `wp:${w.id}` === this.activeId())),
+      ];
+    if (el instanceof RepositoryItem) {
+      const ownerKey = el.project.card.id;
+      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
+      return [
+        ...this.listSpaces(ownerKey, "repository").map(
+          (s) => new ThinkingSpaceItem(ownerKey, "repository", s, s.slug === activeSlug),
         ),
-        new NewSpaceItem(ownerId),
+        new NewSpaceItem(ownerKey, "repository"),
+      ];
+    }
+    if (el instanceof WorkProjectItem) {
+      const ownerKey = `wp:${el.wp.id}`;
+      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
+      return [
+        ...this.listSpaces(el.wp.id, "project").map(
+          (s) => new ThinkingSpaceItem(ownerKey, "project", s, s.slug === activeSlug),
+        ),
+        new NewSpaceItem(ownerKey, "project"),
       ];
     }
     return [];

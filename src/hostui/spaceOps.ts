@@ -7,7 +7,14 @@
 import type * as vscodeTypes from "vscode";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { createThinkingSpace, listThinkingSpaces } from "../core/spaces";
+import { createThinkingSpace, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
+
+/** Owner keys: a repository card id, or "wp:<project-id>" for a project. */
+function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
+  return ownerKey.startsWith("wp:")
+    ? { id: ownerKey.slice(3), kind: "project" }
+    : { id: ownerKey, kind: "repository" };
+}
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -35,6 +42,7 @@ export function registerSpaceCommands(
       ownerId: string,
       slug: string,
       now: () => string,
+      kind?: SpaceOwnerKind,
     ) => { ok: boolean; reason?: string };
   },
 ): vscodeTypes.Disposable[] {
@@ -42,26 +50,27 @@ export function registerSpaceCommands(
   return [
     vsc.commands.registerCommand(
       "thinkube-tandem.openThinkingSpace",
-      async (ownerId: string, slug: string) => {
-        await context.workspaceState.update(`tandem.space.${ownerId}`, slug);
-        await deps.openSpaceFor(ownerId);
+      async (ownerKey: string, slug: string) => {
+        await context.workspaceState.update(`tandem.space.${ownerKey}`, slug);
+        await deps.openSpaceFor(ownerKey);
       },
     ),
-    vsc.commands.registerCommand("thinkube-tandem.newThinkingSpace", async (ownerId: string) => {
+    vsc.commands.registerCommand("thinkube-tandem.newThinkingSpace", async (ownerKey: string) => {
       const name = await vsc.window.showInputBox({
         title: "Name the new thinking space",
         prompt: "One stream of thinking — independent of the others.",
         placeHolder: "e.g. plugin delivery, rebrand",
       });
       if (!name) return;
-      const made = createThinkingSpace(configuredStoreRoot(), ownerId, name);
+      const owner = parseOwner(ownerKey);
+      const made = createThinkingSpace(configuredStoreRoot(), owner.id, name, owner.kind);
       if (!made.ok) {
         void vsc.window.showWarningMessage(`Tandem — ${made.reason}`);
         return;
       }
       deps.refreshTree();
-      await context.workspaceState.update(`tandem.space.${ownerId}`, made.slug);
-      await deps.openSpaceFor(ownerId);
+      await context.workspaceState.update(`tandem.space.${ownerKey}`, made.slug);
+      await deps.openSpaceFor(ownerKey);
     }),
     vsc.commands.registerCommand(
       "thinkube-tandem.deleteThinkingSpace",
@@ -74,8 +83,9 @@ export function registerSpaceCommands(
           "Delete",
         );
         if (sure !== "Delete") return;
-        const r = deps.deleteSpace(configuredStoreRoot(), ownerId, slug, () =>
-          new Date().toISOString(),
+        const owner = parseOwner(ownerId);
+        const r = deps.deleteSpace(configuredStoreRoot(), owner.id, slug, () =>
+          new Date().toISOString(), owner.kind,
         );
         if (!r.ok) {
           void vsc.window.showWarningMessage(`Tandem — ${r.reason}`);
@@ -93,12 +103,13 @@ export function registerSpaceCommands(
 /** Undefined = the human dismissed the prompt. */
 export async function chooseThinkingSpace(
   context: vscodeTypes.ExtensionContext,
-  ownerId: string,
+  ownerKey: string,
   interactive: boolean,
 ): Promise<string | undefined> {
   const storeRoot = configuredStoreRoot();
-  const spacesNow = listThinkingSpaces(storeRoot, ownerId);
-  const savedKey = `tandem.space.${ownerId}`;
+  const owner = parseOwner(ownerKey);
+  const spacesNow = listThinkingSpaces(storeRoot, owner.id, owner.kind);
+  const savedKey = `tandem.space.${ownerKey}`;
   const saved = context.workspaceState.get<string>(savedKey);
   if (saved && spacesNow.some((s) => s.slug === saved)) return saved;
   if (spacesNow.length === 1) {
@@ -113,7 +124,7 @@ export async function chooseThinkingSpace(
       placeHolder: "e.g. main, plugin delivery, rebrand",
     });
     if (!name) return undefined;
-    const made = createThinkingSpace(storeRoot, ownerId, name);
+    const made = createThinkingSpace(storeRoot, owner.id, name, owner.kind);
     if (!made.ok) {
       void vs().window.showWarningMessage(`Tandem — ${made.reason}`);
       return undefined;

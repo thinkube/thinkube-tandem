@@ -12,7 +12,7 @@ import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggest
 import { readStamp, SourceStamp } from "../core/stamp";
 import { staleChangeIds } from "../core/stale";
 import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
-import { RoundDeps } from "../derive/round";
+import { RoundDeps, runReadRound } from "../derive/round";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { Forge } from "../dispatch/forge";
@@ -25,13 +25,10 @@ import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { acceptOrder } from "../engine/acceptOrder";
 import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { WorkerModelConfig } from "../engine/workerModel";
-import { runReadRound } from "../derive/round";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
-import {
-  answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow,
-} from "./captureFlows";
+import { answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 
 /** Every action name the session accepts — the reachability test's ground truth. */
@@ -81,6 +78,7 @@ export interface SessionDeps {
   answerRound?: typeof runReadRound;
   /** Injectable naming round (unit titles + abstracts) for tests. */
   name?: typeof nameUnits;
+  scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live
   /** The project scope (§7quater): grounding reads the anchor dir
    *  (round.repoRoot); git operations run at the enclosing repo root with
    *  every path qualified by the prefix. Absent = whole-repo project. */
@@ -209,6 +207,7 @@ export class TandemSession {
         decisions: this.decisionsInForce(),
         digestStore: this.digestStore(),
         mintNodeId: (n) => `node-${this.author}-${n}`,
+        ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
         onStage: (label, current, total) => {
           this.activity = { label, current, total, askId: r.added.id };
           this.deps.onChanged?.();
@@ -258,6 +257,7 @@ export class TandemSession {
         decisions: this.decisionsInForce(),
         digests: this.digestStore(),
         mintNodeId: (n) => `node-${this.author}-${n}`,
+        ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
       });
     }
     this.recluster();
@@ -344,6 +344,7 @@ export class TandemSession {
       decisions: this.decisionsInForce(),
       digests: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${n}`,
+      ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
     });
     this.recluster();
     await this.refreshStaleness();
