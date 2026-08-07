@@ -25,6 +25,7 @@ import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
 import { proposeCheckGesture } from "./checkGesture";
+import { captureManyFlow } from "./captureMany";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
@@ -75,7 +76,6 @@ export class TandemSession {
     return makeDigestStore(this.deps.storeDir);
   }
 
-  /** Classify a DRAFT — records nothing; a pasted list previews items. */
   async classifyDraft(text: string): Promise<{ kind: UtteranceKind; items?: string[] }> {
     const items = splitList(text);
     if (items) return { kind: "ask", items };
@@ -83,31 +83,14 @@ export class TandemSession {
     return { kind: await classify(this.deps.round, text) };
   }
 
-  /** The human pressed Cancel. */
   cancelCapture(): void {
     this._captureAbort?.abort();
   }
 
-  /** List-paste: every ask lands at once, then grounds five in parallel. */
-  async captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
-    const added: { id: string; text: string; at: string }[] = [];
-    for (const t of texts) {
-      const r = addAsk(this.space, t, this.deps.now(), `ask-${this.author}-${this.space.asks.length + 1}`);
-      if (!r.ok) return { ok: false, reason: r.reason };
-      this.space = r.space;
-      added.push(r.added);
-    }
-    this.changed(`${added.length} asks recorded — thinking about all of them now.`);
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      while (next < added.length) await this.groundAsk(added[next], `p${++next}`);
-    };
-    await Promise.all(Array.from({ length: Math.min(5, added.length) }, worker));
-    await this.renderAbstracts();
-    return { ok: true };
+  captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
+    return captureManyFlow(this, texts);
   }
 
-  /** Capture with the CONFIRMED kind. */
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = confirmedKind ?? (await classify(this.deps.round, text));
@@ -142,16 +125,17 @@ export class TandemSession {
     return { ok: true };
   }
 
-  private _grounding = new Map<string, { label: string; current: number; total: number }>();
+  _grounding = new Map<string, { label: string; current: number; total: number }>();
 
   groundingView(): { askId: string; label: string; current: number; total: number }[] {
     return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
   }
 
-  private async groundAsk(
+  async groundAsk(
     ask: { id: string; text: string; at: string },
     mintPrefix: string,
-  ): Promise<void> {
+    quiet = false,
+  ): Promise<{ promises: number; questions: number }> {
     const ground = this.deps.ground ?? runDerivationPipeline;
     this._captureAbort ??= new AbortController();
     this._grounding.set(ask.id, { label: "starting", current: 0, total: 7 });
@@ -159,7 +143,6 @@ export class TandemSession {
       nextIndex: 1,
       decisions: this.decisionsInForce(),
       digestStore: this.digestStore(),
-      // Prefix keeps ids unique across parallel groundings.
       mintNodeId: (n) => `node-${this.author}-${mintPrefix}${ask.id.split("-").pop()}-${n}`,
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
       onStage: (label, current, total) => {
@@ -192,8 +175,11 @@ export class TandemSession {
     await this.refreshStaleness();
     const qNote = questions.length ? ` ${questions.length} question(s) need you.` : "";
     this.changed(
-      `${grounded.changes.length ? `Derived ${grounded.changes.length} promise(s)` : "No promises derived"} for "${ask.text.slice(0, 32)}…".${qNote}`,
+      quiet
+        ? undefined
+        : `${grounded.changes.length ? `Derived ${grounded.changes.length} promise(s)` : "No promises derived"} for "${ask.text.slice(0, 32)}…".${qNote}`,
     );
+    return { promises: grounded.changes.length, questions: questions.length };
   }
 
   /** Re-derive every stale ask; fresh grounding replaces old. */

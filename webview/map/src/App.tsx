@@ -58,7 +58,7 @@ export function App(): JSX.Element {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {spinStyle}
-      {push.activity ? (
+      {push.activity && !push.grounding?.length ? (
         <div
           data-thinking
           style={{
@@ -277,6 +277,10 @@ export function App(): JSX.Element {
                 {(() => {
                   const g = push.grounding?.find((x) => x.askId === a.id);
                   if (!g) return null;
+                  if (g.label === "waiting")
+                    return (
+                      <span data-ask-progress={a.id} style={{ marginLeft: 6, opacity: 0.55 }}>waiting…</span>
+                    );
                   return (
                     <span data-ask-progress={a.id} style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
                       <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span> {g.label}… ({g.current}/{g.total})
