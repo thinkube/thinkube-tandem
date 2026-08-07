@@ -16,6 +16,8 @@ export interface RunUnitView {
   /** Epoch ms when the unit started running — the surface renders elapsed. */
   startedAt?: number;
   question?: string;
+  /** Why this unit failed, in the words the worker or the gate reported. */
+  note?: string;
 }
 
 export class RunState {
@@ -38,6 +40,15 @@ export class RunState {
     if (state === "running" && u.state !== "parked") u.startedAt = Date.now();
     u.state = state;
     u.question = state === "parked" ? question : undefined;
+    this.onChange();
+  }
+
+  /** A failure that cannot say why is a failure the human cannot act on. */
+  fail(id: string, why: string): void {
+    const u = this.units.get(id);
+    if (!u) return;
+    u.state = "failed";
+    u.note = why;
     this.onChange();
   }
 

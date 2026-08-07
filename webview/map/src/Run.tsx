@@ -67,9 +67,11 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
         id: u.id,
         title: `${u.role === "test" ? "Tests for" : "Build"} ${u.sliceTitle ?? u.slice}`,
         titleFull: `worker ${u.id}`,
-        abs: u.requires.length
-          ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
-          : undefined,
+        abs:
+          u.note ??
+          (u.requires.length
+            ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
+            : undefined),
         chips: [chipFor(u, now)],
       })),
     [run.units, now],
@@ -110,6 +112,7 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
   const done = run.units.filter((u) => u.state === "done").length;
   const total = run.units.length || 1;
   const running = run.units.find((u) => u.state === "running");
+  const failed = run.units.filter((u) => u.state === "failed");
   const anchor = running && drawn.nodes.get(running.id);
 
   return (
@@ -235,6 +238,27 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
           ) : null}
         </div>
       </div>
+      {!running && run.logs.length ? (
+        <div
+          data-run-log
+          style={{
+            borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)",
+            padding: "6px 12px",
+            font: "11px/1.5 monospace",
+            whiteSpace: "pre-wrap",
+            maxHeight: 160,
+            overflowY: "auto",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ fontFamily: "system-ui", fontSize: 12, marginBottom: 3, opacity: 0.8 }}>
+            {failed.length
+              ? `The run stopped with ${failed.length} unit${failed.length === 1 ? "" : "s"} failed — what it reported:`
+              : "What the run reported:"}
+          </div>
+          {run.logs.slice(-14).join("\n")}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -45,6 +45,8 @@ interface RunView {
     requires: string[];
     startedAt?: number;
     question?: string;
+    /** Why it failed, in the words the worker or the gate reported. */
+    note?: string;
   }[];
   logs: string[];
   parked: { unitId: string; question: string }[];

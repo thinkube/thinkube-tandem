@@ -230,6 +230,11 @@ export async function dispatchTep(
     log(`✓ ${slice}: committed on ${branch}`);
   };
 
+  /** A failure lands where the human looks AND in the undelivered list. */
+  const failWith = (id: string, ...why: string[]): void => {
+    st.fail(id, why.join("; "));
+    undelivered.push(...why.map((u) => `${id}: ${u}`));
+  };
   const finishUnit = async (id: string, slice: string, ok: boolean): Promise<void> => {
     if (ok) {
       done.add(id);
@@ -330,6 +335,7 @@ export async function dispatchTep(
       );
       if (outcome.containment) {
         log(`⛔ ${next.id}: footprint violation — run halted`);
+        st.fail(next.id, "wrote outside its footprint — the changes were reverted and the run halted");
         defect({
           slice: next.slice,
           unit: next.id,
@@ -343,12 +349,10 @@ export async function dispatchTep(
       }
       if (!oracle) {
         ok = outcome.ok;
-        if (!ok)
-          undelivered.push(
-            ...(outcome.undelivered ?? [`${next.id}: failed`]).map((u) => `${next.id}: ${u}`),
-          );
+        if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
         break;
       }
+
       // MANDATORY-GREEN: the oracle's verdict on the current state decides,
       // not the worker's self-report.
       const confirm = await oracle.confirmGreen();
@@ -360,9 +364,7 @@ export async function dispatchTep(
       }
       const r = confirm.result;
       if (r.kind === "stalled" || r.kind === "exhausted") {
-        undelivered.push(
-          `${next.id}: verify oracle ${r.kind} — the checks are not green`,
-        );
+        failWith(next.id, `verify oracle ${r.kind} — the checks are not green`);
         break;
       }
       if (attempt < attempts) {
@@ -373,8 +375,9 @@ export async function dispatchTep(
           disclosure +
           `\n\nREWORK ${attempt + 1}/${attempts} — a previous attempt left the checks NOT GREEN. The oracle's last verdict:\n${formatVerifyReply(r)}`;
       } else {
-        undelivered.push(
-          `${next.id}: checks not green after ${attempts} attempts — ${formatVerifyReply(r).split("\n")[0]}`,
+        failWith(
+          next.id,
+          `checks not green after ${attempts} attempts — ${formatVerifyReply(r).split("\n")[0]}`,
         );
         defect({
           slice: next.slice,
@@ -398,8 +401,9 @@ export async function dispatchTep(
           // A durable done-flag with no persisted probe is the lie the store
           // exists to remove — the unit fails instead.
           ok = false;
-          undelivered.push(
-            `${next.id}: declared probe missing at persist (${err instanceof Error ? err.message : String(err)})`,
+          failWith(
+            next.id,
+            `declared probe missing at persist (${err instanceof Error ? err.message : String(err)})`,
           );
         }
       }
@@ -430,10 +434,7 @@ export async function dispatchTep(
     await Promise.race([...inflight.values()]);
   }
   await Promise.all([...inflight.values()]);
-  for (const id of pending) {
-    st.set(id, "failed");
-    undelivered.push(`${id}: not dispatched (halted or blocked by a failed dependency)`);
-  }
+  for (const id of pending) failWith(id, "not dispatched — the run halted, or a unit it waits on failed");
 
   log(`${tep}: closing gate`);
   // Probes ride the branch: any not yet copied by a slice commit (failed or
