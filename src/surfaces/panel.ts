@@ -197,6 +197,9 @@ async function handleInbound(
   } else if (msg.action === "dismiss-impact" && msg.impactId) {
     const r = await session.decideImpact(msg.impactId, false);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "apply-all-impacts") {
+    const r = await session.applyAllImpacts();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "panic") {
     const r = session.panic();
     note = r.ok ? undefined : r.reason;

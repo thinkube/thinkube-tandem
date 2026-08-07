@@ -96,6 +96,7 @@ export type WebToHost =
   | { action: "reject-merge"; proposalId: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }
+  | { action: "apply-all-impacts" }
   | { action: "panic" }
   | { action: "switch-repo" };
 

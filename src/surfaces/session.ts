@@ -318,6 +318,55 @@ export class TandemSession {
     return { ok: true };
   }
 
+  /** One press for every staged implication: each affected ask re-derives
+   *  ONCE under all decisions in force, five at a time, progress on each
+   *  ask's own row — never one pipeline per implication. */
+  async applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
+    const impacts = this.space.impacts ?? [];
+    if (!impacts.length) return { ok: false, reason: "no implications are staged" };
+    const asks = [...new Set(impacts.map((im) => im.askId))]
+      .map((id) => this.space.asks.find((a) => a.id === id))
+      .filter((a): a is { id: string; text: string; at: string } => !!a);
+    this.space = { ...this.space, impacts: [] };
+    const decisions = this.decisionsInForce();
+    for (const a of asks) this._grounding.set(a.id, { label: "waiting", current: 0, total: 4 });
+    const pool = Math.min(5, asks.length);
+    this.changed(
+      `${impacts.length} implication(s) apply — ${asks.length} ask(s) re-think once each` +
+        (asks.length > pool ? `; ${pool} now, the other ${asks.length - pool} wait their turn` : "") +
+        ".",
+    );
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < asks.length) {
+        const a = asks[next++];
+        const r = await rederiveAskFlow({
+          space: this.space,
+          ask: a,
+          round: this.deps.round,
+          ground: this.deps.ground ?? runDerivationPipeline,
+          decisions,
+          digests: this.digestStore(),
+          mintNodeId: (n) => `node-${this.author}-r${a.id.split("-").pop()}-${n}`,
+          ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
+          onStage: this.stageFor(a.id),
+        });
+        this.space = applyRederive(this.space, r);
+        this._grounding.delete(a.id);
+        this.deps.onChanged?.();
+      }
+    };
+    await Promise.all(Array.from({ length: pool }, worker));
+    if (this._grounding.size === 0) this.activity = undefined;
+    this.recluster();
+    await this.refreshStaleness();
+    this.changed(
+      `Re-derived ${asks.length} ask(s) once each under ${decisions.length} decision(s) in force. Merges and pins on the OLD promises no longer apply.`,
+    );
+    await this.renderAbstracts();
+    return { ok: true };
+  }
+
   /** A human pin — outranks the computed coupling. */
   pin(kind: "together" | "apart", a: string, b: string): void {
     this.space = {

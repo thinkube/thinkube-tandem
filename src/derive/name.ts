@@ -5,7 +5,7 @@
  * result. Fail-soft: a broken round names nothing — the surface falls back
  * to the first member sentence ("fallback title always").
  */
-import { RoundDeps, runReadRound } from "./round";
+import { RoundDeps, runReadRound, volumeDeps } from "./round";
 
 export const TITLE_MAX = 70;
 
@@ -81,9 +81,6 @@ export async function nameUnits(
   units: UnitToName[],
 ): Promise<NamedAbstract[]> {
   if (units.length === 0) return [];
-  const raw = await runReadRound(
-    { ...deps, maxTurns: 4 },
-    buildNamingPrompt(units),
-  );
+  const raw = await runReadRound(volumeDeps(deps), buildNamingPrompt(units));
   return parseAbstracts(raw, new Set(units.map((u) => u.id)));
 }

@@ -230,6 +230,11 @@
           "default": "opus",
           "description": "Model for the grounding round (judgment stage)."
         },
+        "thinkubeTandem.volumeModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Cheaper model for volume rounds (classification, naming, coverage/criteria/decisions tail, answers, check proposals, repository digest)."
+        },
         "thinkubeTandem.suiteCommand": {
           "type": "string",
           "default": "npm test",

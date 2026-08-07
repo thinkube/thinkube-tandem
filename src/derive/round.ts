@@ -7,12 +7,30 @@
 
 export interface RoundDeps {
   model: string;
+  /** Cheaper model for volume work (classification, naming, text-only
+   *  analysis). Judgment stays on `model`; absent → `model` everywhere. */
+  volumeModel?: string;
   repoRoot: string;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   maxTurns?: number;
+  /** "none": a single completion, no tools — for rounds whose entire input
+   *  is already in the prompt. Default: read-only repo tools. */
+  tools?: "read" | "none";
   log?: (line: string) => void;
   /** Cancels the round mid-flight (the human pressed Cancel). */
   abort?: AbortController;
+}
+
+/** The volume variant of a round's deps: cheap model, one turn, no tools,
+ *  medium effort — for text-in/JSON-out work where agency buys nothing. */
+export function volumeDeps(deps: RoundDeps): RoundDeps {
+  return {
+    ...deps,
+    model: deps.volumeModel ?? deps.model,
+    tools: "none",
+    maxTurns: 1,
+    effort: "medium",
+  };
 }
 
 type SdkQuery = (args: {
@@ -46,8 +64,8 @@ export async function runReadRound(
         permissionMode: "bypassPermissions",
         thinking: { type: "adaptive" },
         effort: deps.effort ?? "high",
-        maxTurns: deps.maxTurns ?? 40,
-        allowedTools: ["Read", "Grep", "Glob"],
+        maxTurns: deps.tools === "none" ? 1 : (deps.maxTurns ?? 40),
+        allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
         disallowedTools: [
           "Write",
           "Edit",

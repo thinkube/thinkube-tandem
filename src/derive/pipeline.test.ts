@@ -1,10 +1,10 @@
 /**
- * The derivation pipeline over a scripted round runner: contextualize
- * establishes and persists a digest that grounding builds on; gap-close and
- * impact add real changes; intent coverage and the challenger raise
- * questions with recommendations; the assessment round sharpens vague
- * criteria in place. Fail-soft is pinned: a dead round skips its
- * enrichment, never the pipeline.
+ * The consolidated pipeline over a scripted round runner: ONE repository
+ * digest (stamp-cached, shared across asks and single-flighted across
+ * parallel pipelines) feeds grounding; the completeness round adds gaps
+ * and affected code in one pass; the tail answers coverage, criteria and
+ * challenger in one tool-less volume call. Fail-soft is pinned: a dead
+ * round skips its enrichment, never the pipeline.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,13 +19,16 @@ import { Ask } from "../core/schema";
 
 const ask: Ask = { id: "ask-1", text: "the toolbar gains a capture box and a clear button", at: "t" };
 
+/** Non-git temp dirs stamp to an empty head — the shared digest key. */
+const REPO_KEY = "repo@no-git";
+
 function memStore(): DigestStore & { saved: Record<string, string> } {
   const saved: Record<string, string> = {};
   return {
     saved,
-    load: (id) => saved[id],
-    save: (id, text) => {
-      saved[id] = text;
+    load: (key) => saved[key],
+    save: (key, text) => {
+      saved[key] = text;
     },
   };
 }
@@ -33,40 +36,44 @@ function memStore(): DigestStore & { saved: Record<string, string> } {
 const NODE = (sentence: string, file: string) =>
   `{"sentence":"${sentence}","touchpoints":[{"path":"${file}"}],"needs":[],"acceptance":[{"text":"${sentence} is visible"}]}`;
 
-function scriptedRounds(script: { match: RegExp; reply: string | null }[], calls: string[]) {
-  return async (_deps: RoundDeps, prompt: string): Promise<string | null> => {
+function scriptedRounds(
+  script: { match: RegExp; reply: string | null }[],
+  calls: string[],
+  seenDeps?: RoundDeps[],
+) {
+  return async (deps: RoundDeps, prompt: string): Promise<string | null> => {
     calls.push(prompt);
+    seenDeps?.push(deps);
     const hit = script.find((s) => s.match.test(prompt));
     assert.ok(hit, `no scripted reply for prompt starting: ${prompt.slice(0, 60)}`);
     return hit!.reply;
   };
 }
 
-test("the pipeline runs all rounds in order: digest → ground → gap-close → impact → coverage → assessment → challenger", async () => {
+test("the pipeline runs its four rounds in order: repo digest → ground → completeness → tail", async () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-pipe-"));
-  const deps: RoundDeps = { model: "opus", repoRoot };
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
   const store = memStore();
   const calls: string[] = [];
+  const seenDeps: RoundDeps[] = [];
   const round = scriptedRounds(
     [
-      { match: /CONTEXT DIGEST/, reply: "WHAT EXISTS: the toolbar renders in src/toolbar.ts" },
+      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: the toolbar renders in src/toolbar.ts" },
       { match: /grounding ONE ask/, reply: `{"nodes":[${NODE("the capture box", "src/toolbar.ts")}],"questions":[]}` },
-      { match: /GAP-CLOSE judge/, reply: `{"complete":false,"nodes":[${NODE("the clear button", "src/toolbar.ts")}]}` },
-      { match: /IMPACT pass/, reply: `{"nodes":[${NODE("the toolbar test updates", "src/toolbar.test.ts")}]}` },
       {
-        match: /INTENT-COVERAGE/,
-        reply: `{"uncovered":[{"clause":"a clear button","question":{"text":"should clear also reset history?","recommendation":"no — clear empties the box only"}}]}`,
+        match: /COMPLETENESS round/,
+        reply: `{"nodes":[${NODE("the clear button", "src/toolbar.ts")},${NODE("the toolbar test updates", "src/toolbar.test.ts")}]}`,
       },
       {
-        match: /ACCEPTANCE ASSESSMENT/,
-        reply: `{"rewrites":[{"node":0,"criterion":0,"verdict":"vague","text":"typing in the box and pressing Enter adds an ask"}]}`,
-      },
-      {
-        match: /CHALLENGER/,
-        reply: `{"questions":[{"text":"the capture box contradicts the decision to keep the toolbar read-only","recommendation":"drop the read-only decision"}]}`,
+        match: /THREE checks/,
+        reply:
+          `{"uncovered":[{"clause":"a clear button","question":{"text":"should clear also reset history?","recommendation":"no — clear empties the box only"}}],` +
+          `"rewrites":[{"node":0,"criterion":0,"verdict":"vague","text":"typing in the box and pressing Enter adds an ask"}],` +
+          `"questions":[{"text":"the capture box contradicts the decision to keep the toolbar read-only","recommendation":"drop the read-only decision"}]}`,
       },
     ],
     calls,
+    seenDeps,
   );
 
   const r = await runDerivationPipeline(deps, ask, {
@@ -76,11 +83,19 @@ test("the pipeline runs all rounds in order: digest → ground → gap-close →
     round,
   });
 
-  assert.equal(calls.length, 7, "all seven rounds ran");
+  assert.equal(calls.length, 4, "four rounds — never seven");
+  assert.ok(calls[0].includes("REUSED by many later derivations"), "the digest reads the repo, not one ask");
+  assert.ok(!calls[0].includes(ask.text), "no ask leaks into the shared digest");
   assert.ok(calls[1].includes("the toolbar renders in src/toolbar.ts"), "grounding builds on the digest");
-  assert.equal(store.saved["ask-1"], "WHAT EXISTS: the toolbar renders in src/toolbar.ts", "digest persisted per ask");
+  assert.ok(calls[2].includes("the toolbar renders in src/toolbar.ts"), "completeness starts warm on the digest");
+  assert.equal(store.saved[REPO_KEY], "LAYOUT: the toolbar renders in src/toolbar.ts", "digest cached under the repo stamp");
 
-  assert.equal(r.changes.length, 3, "ground + gap-close + impact changes all landed");
+  assert.equal(seenDeps[3].tools, "none", "the tail runs without tools");
+  assert.equal(seenDeps[3].maxTurns, 1, "the tail is a single completion");
+  assert.equal(seenDeps[3].model, "sonnet", "the tail rides the volume model");
+  assert.equal(seenDeps[1].model, "opus", "grounding keeps the judgment model");
+
+  assert.equal(r.changes.length, 3, "ground + completeness changes all landed");
   assert.deepEqual(
     r.changes.map((c) => c.id),
     ["node-1", "node-2", "node-3"],
@@ -96,28 +111,50 @@ test("the pipeline runs all rounds in order: digest → ground → gap-close →
   assert.ok(r.questions.every((q) => q.recommendation), "every question carries a recommendation");
 });
 
-test("a stored digest is reused — contextualize does not run again", async () => {
+test("a cached repository digest is shared: the second ask never re-reads the repo", async () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-pipe-"));
   const deps: RoundDeps = { model: "opus", repoRoot };
   const store = memStore();
-  store.saved["ask-1"] = "WHAT EXISTS: established reading";
+  store.saved[REPO_KEY] = "LAYOUT: established reading";
   const calls: string[] = [];
   const round = scriptedRounds(
     [
       { match: /grounding ONE ask/, reply: `{"nodes":[${NODE("the capture box", "src/toolbar.ts")}],"questions":[]}` },
-      { match: /GAP-CLOSE judge/, reply: `{"complete":true,"nodes":[]}` },
-      { match: /IMPACT pass/, reply: `{"nodes":[]}` },
-      { match: /INTENT-COVERAGE/, reply: `{"uncovered":[]}` },
-      { match: /ACCEPTANCE ASSESSMENT/, reply: `{"rewrites":[]}` },
+      { match: /COMPLETENESS round/, reply: `{"nodes":[]}` },
+      { match: /THREE checks/, reply: `{"uncovered":[],"rewrites":[],"questions":[]}` },
     ],
     calls,
   );
-  const r = await runDerivationPipeline(deps, ask, { nextIndex: 1, digestStore: store, round });
-  assert.ok(!calls.some((c) => c.includes("CONTEXT DIGEST")), "no contextualize round");
-  assert.ok(calls[0].includes("established reading"), "the stored digest rides grounding");
+  const other: Ask = { id: "ask-2", text: "a persisted retrievable log", at: "t" };
+  const r = await runDerivationPipeline(deps, other, { nextIndex: 1, digestStore: store, round });
+  assert.ok(!calls.some((c) => c.includes("producing a REPOSITORY DIGEST")), "no contextualize round");
+  assert.ok(calls[0].includes("established reading"), "the shared digest rides grounding");
   assert.equal(r.changes.length, 1);
   assert.equal(r.questions.length, 0);
-  assert.ok(!calls.some((c) => c.includes("CHALLENGER")), "no decisions → no challenger round");
+});
+
+test("parallel pipelines that miss the cache share ONE contextualize round (single-flight)", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-pipe-"));
+  const deps: RoundDeps = { model: "opus", repoRoot };
+  const store = memStore();
+  let digestRounds = 0;
+  const round = async (_d: RoundDeps, prompt: string): Promise<string | null> => {
+    if (/producing a REPOSITORY DIGEST/.test(prompt)) {
+      digestRounds++;
+      await new Promise((r) => setTimeout(r, 20));
+      return "LAYOUT: one shared reading";
+    }
+    if (/grounding ONE ask/.test(prompt))
+      return `{"nodes":[${NODE("a thing", "src/a.ts")}],"questions":[]}`;
+    if (/COMPLETENESS round/.test(prompt)) return `{"nodes":[]}`;
+    return `{"uncovered":[],"rewrites":[],"questions":[]}`;
+  };
+  const asks: Ask[] = [1, 2, 3].map((i) => ({ id: `ask-${i}`, text: `thing ${i}`, at: "t" }));
+  await Promise.all(
+    asks.map((a) => runDerivationPipeline(deps, a, { nextIndex: 1, digestStore: store, round })),
+  );
+  assert.equal(digestRounds, 1, "three parallel asks, one repository reading");
+  assert.equal(store.saved[REPO_KEY], "LAYOUT: one shared reading");
 });
 
 test("fail-soft: dead rounds after grounding skip their enrichment, never the pipeline", async () => {
@@ -126,12 +163,10 @@ test("fail-soft: dead rounds after grounding skip their enrichment, never the pi
   const calls: string[] = [];
   const round = scriptedRounds(
     [
-      { match: /CONTEXT DIGEST/, reply: null },
+      { match: /producing a REPOSITORY DIGEST/, reply: null },
       { match: /grounding ONE ask/, reply: `{"nodes":[${NODE("the capture box", "src/toolbar.ts")}],"questions":[]}` },
-      { match: /GAP-CLOSE judge/, reply: null },
-      { match: /IMPACT pass/, reply: null },
-      { match: /INTENT-COVERAGE/, reply: null },
-      { match: /ACCEPTANCE ASSESSMENT/, reply: null },
+      { match: /COMPLETENESS round/, reply: null },
+      { match: /THREE checks/, reply: null },
     ],
     calls,
   );
@@ -140,14 +175,13 @@ test("fail-soft: dead rounds after grounding skip their enrichment, never the pi
   assert.equal(r.questions.length, 0);
 });
 
-test("contextualize bounds the digest and refuses emptiness", async () => {
-  const repoRoot = "/repo";
+test("contextualize bounds the digest, refuses emptiness, and asks for the whole repository", async () => {
   const long = "x".repeat(DIGEST_CHAR_BUDGET + 500);
-  const digest = await runContextualize({ model: "opus", repoRoot }, ask, async () => long);
+  const digest = await runContextualize({ model: "opus", repoRoot: "/repo" }, async () => long);
   assert.equal(digest!.length, DIGEST_CHAR_BUDGET, "over-budget digests are clipped");
-  const empty = await runContextualize({ model: "opus", repoRoot }, ask, async () => "   ");
+  const empty = await runContextualize({ model: "opus", repoRoot: "/repo" }, async () => "   ");
   assert.equal(empty, null, "an empty reading is no reading");
-  const prompt = buildContextualizePrompt(ask, repoRoot);
-  assert.ok(prompt.includes(ask.text), "the ask rides the prompt verbatim");
+  const prompt = buildContextualizePrompt("/repo");
+  assert.ok(prompt.includes("whole repository"), "the digest reads the repository, not an ask");
   assert.ok(prompt.includes("citing its source path"), "citations are demanded");
 });

@@ -100,6 +100,10 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "decisions panel", gesture: "press Dismiss — the definitions stay as they are" },
   },
+  "apply-all-impacts": {
+    kind: "human",
+    affordance: { surface: "decisions panel", gesture: "press Apply all — each affected ask re-thinks once, five at a time" },
+  },
   panic: {
     kind: "human",
     affordance: {

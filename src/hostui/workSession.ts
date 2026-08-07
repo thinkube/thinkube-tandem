@@ -112,7 +112,11 @@ export async function ensureWorkSession(args: {
   const s = new TandemSession({
     // Rounds get a neutral working directory; the checked repositories
     // arrive as member scopes and every touchpoint names its repository.
-    round: { model: config.get<string>("groundingModel", "opus"), repoRoot: args.storeRoot },
+    round: {
+      model: config.get<string>("groundingModel", "opus"),
+      volumeModel: config.get<string>("volumeModel", "sonnet"),
+      repoRoot: args.storeRoot,
+    },
     storeDir: dirs.storeDir,
     projectDir: dirs.foldDir,
     storageDir: args.storageDir,

@@ -1,17 +1,19 @@
 /**
  * The derivation pipeline — the rounds between an ask and a decidable set
- * of changes, in v1's order re-hosted on the v2 grammar:
+ * of changes, consolidated so knowledge is read once and reused:
  *
- *   contextualize → ground → gap-close → impact → intent coverage →
- *   criteria assessment → challenger
+ *   repository digest (shared, stamp-cached) → ground → completeness
+ *   (gap-close + impact, one round) → tail (coverage + criteria +
+ *   challenger, one tool-less call)
  *
- * Ground decomposes; gap-close judges completeness (two outcomes: complete,
- * or concrete additions); impact finds the adjacent code that must move
- * too; intent coverage maps every clause of the ask to a change and turns
- * uncovered clauses into questions WITH recommendations; the assessment
- * round rewrites vague acceptance criteria into observable ones (closed
- * verdicts); the challenger confronts the result with the decisions in
- * force and raises contradictions as questions — it never applies anything.
+ * The digest is one reading of the WHOLE repository, cached under its git
+ * stamp and shared by every ask, batch and session until the code moves.
+ * Ground decomposes under it; the completeness round both judges the set
+ * complete and finds the adjacent code that must move too; the tail maps
+ * every clause of the ask to a change (uncovered clauses become questions
+ * WITH recommendations), rewrites vague acceptance criteria into
+ * observable ones, and confronts the result with the decisions in force —
+ * all in a single volume-model call whose entire input is the prompt.
  *
  * Every round is fail-soft: a null round skips its enrichment and the
  * pipeline still returns what the earlier rounds established. The whole
@@ -20,7 +22,7 @@
  */
 import { Ask, Change, Question } from "../core/schema";
 import { readStamp } from "../core/stamp";
-import { RoundDeps, runReadRound } from "./round";
+import { RoundDeps, runReadRound, volumeDeps } from "./round";
 import { runContextualize } from "./contextualize";
 import {
   GroundingResult,
@@ -32,10 +34,29 @@ import {
 
 type Round = (deps: RoundDeps, prompt: string) => Promise<string | null>;
 
-/** Per-ask digest persistence, provided by the host (file-backed there). */
+/** Digest persistence, provided by the host (file-backed there). Keys are
+ *  repository stamps — one shared digest per repo state, not per ask. */
 export interface DigestStore {
-  load: (askId: string) => string | undefined;
-  save: (askId: string, text: string) => void;
+  load: (key: string) => string | undefined;
+  save: (key: string, text: string) => void;
+}
+
+/** One in-flight reading per repo state: five parallel asks that all miss
+ *  the cache share a single contextualize round, never five. */
+const inflightDigests = new Map<string, Promise<string | null>>();
+
+async function sharedRepoDigest(
+  key: string,
+  deps: RoundDeps,
+  round: Round,
+): Promise<string | null> {
+  const mapKey = `${deps.repoRoot}|${key}`;
+  let p = inflightDigests.get(mapKey);
+  if (!p) {
+    p = runContextualize(deps, round).finally(() => inflightDigests.delete(mapKey));
+    inflightDigests.set(mapKey, p);
+  }
+  return p;
 }
 
 export interface PipelineOpts {
@@ -66,81 +87,48 @@ const describeChanges = (changes: Change[]): string =>
     )
     .join("\n");
 
-/** Build the gap-close judge prompt. */
-function buildGapClosePrompt(args: {
+/** Build the completeness prompt — one round that both judges the set
+ *  complete and finds the adjacent code that must move too. */
+function buildCompletenessPrompt(args: {
   ask: Ask;
   changes: Change[];
   repoRoot: string;
+  digest?: string;
 }): string {
   return (
-    `You are the GAP-CLOSE judge: given ONE ask and the changes derived from ` +
-    `it, decide with exactly TWO possible outcomes whether the set is ` +
-    `COMPLETE — everything the ask requires is covered by some change — or ` +
-    `INCOMPLETE, in which case you return the MISSING changes, concrete and ` +
-    `grounded. Read the repository at ${args.repoRoot} where needed.\n\n` +
+    `You are the COMPLETENESS round: given ONE ask and the changes derived ` +
+    `from it, return every change the set still MISSES — in both senses:\n` +
+    `1. GAPS: something the ask requires that no change covers.\n` +
+    `2. AFFECTED CODE: other places in the repository at ${args.repoRoot} ` +
+    `that must move too — callers of touched symbols, configuration that ` +
+    `names touched files, documentation that states the old behavior.\n` +
+    `Grep for the touched symbols and paths; read what the hits demand.\n\n` +
+    (args.digest
+      ? `REPOSITORY DIGEST (an established reading — build on it, verify ` +
+        `only what you must):\n${args.digest}\n\n`
+      : "") +
     `THE ASK:\n${args.ask.text}\n\n` +
     `THE DERIVED CHANGES:\n${describeChanges(args.changes)}\n\n` +
     `Respond with ONE JSON object and nothing else:\n` +
-    `{"complete": true, "nodes": []} — the set covers the ask; OR\n` +
-    `{"complete": false, "nodes": [{"sentence":"…","touchpoints":[{"path":"…"}],` +
-    `"needs":[],"acceptance":[{"text":"…"}]}]} — each node one MISSING change ` +
-    `in the same shape grounding uses (needs indices refer to THIS list only). ` +
-    `Never restate an existing change; only genuine gaps.`
-  );
-}
-
-/** Build the impact-pass prompt. */
-function buildImpactPrompt(args: {
-  ask: Ask;
-  changes: Change[];
-  repoRoot: string;
-}): string {
-  return (
-    `You are the IMPACT pass: for the changes below, find the OTHER places ` +
-    `in the repository at ${args.repoRoot} that must move too — callers of ` +
-    `touched symbols, configuration that names touched files, documentation ` +
-    `that states the old behavior. Grep for the touched symbols and paths; ` +
-    `read what the hits demand.\n\n` +
-    `THE ASK:\n${args.ask.text}\n\n` +
-    `THE CHANGES:\n${describeChanges(args.changes)}\n\n` +
-    `Respond with ONE JSON object and nothing else:\n` +
-    `{"nodes":[…]} — each node one ADDITIONAL change (same shape grounding ` +
-    `uses: sentence, touchpoints, needs, acceptance) for an affected place ` +
-    `the current set misses. No affected places → {"nodes":[]}. Never ` +
-    `restate an existing change.`
+    `{"nodes":[{"sentence":"…","touchpoints":[{"path":"…"}],"needs":[],` +
+    `"acceptance":[{"text":"…"}]}]} — each node one MISSING or AFFECTED ` +
+    `change in the same shape grounding uses (needs indices refer to THIS ` +
+    `list only). Complete and nothing affected → {"nodes":[]}. Never ` +
+    `restate an existing change; only genuine gaps and real ripples.`
   );
 }
 
 /** Build the intent-coverage prompt. */
-function buildIntentCoveragePrompt(args: {
+/** Closed verdicts for acceptance criteria — the assessment vocabulary. */
+const CRITERION_VERDICTS = ["observable", "vague", "untestable"] as const;
+
+/** Build the tail prompt — coverage, criteria and challenger in ONE
+ *  tool-less call: its entire input is below; nothing needs the repo. */
+function buildTailPrompt(args: {
   ask: Ask;
   changes: Change[];
   decisions?: string[];
 }): string {
-  return (
-    `You are the INTENT-COVERAGE check: split the ask into its distinct ` +
-    `requirement clauses, then verify every clause is served by at least one ` +
-    `derived change. This is a mapping exercise — do not invent requirements ` +
-    `the ask does not state.\n\n` +
-    (args.decisions?.length
-      ? `DECISIONS IN FORCE (a clause these settle is COVERED — never ` +
-        `re-open a settled decision as a question):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
-      : "") +
-    `THE ASK:\n${args.ask.text}\n\n` +
-    `THE CHANGES:\n${describeChanges(args.changes)}\n\n` +
-    `Respond with ONE JSON object and nothing else:\n` +
-    `{"uncovered":[{"clause":"the ask's words for the unserved requirement",` +
-    `"question":{"text":"the decision this opens, as the author would ask it",` +
-    `"recommendation":"your concrete recommended answer"}}]} — one entry per ` +
-    `clause NO change serves. Full coverage → {"uncovered":[]}.`
-  );
-}
-
-/** Closed verdicts for acceptance criteria — the assessment vocabulary. */
-const CRITERION_VERDICTS = ["observable", "vague", "untestable"] as const;
-
-/** Build the criteria-assessment prompt. */
-function buildCriteriaPrompt(args: { changes: Change[] }): string {
   const listed = args.changes
     .map(
       (c, i) =>
@@ -150,37 +138,38 @@ function buildCriteriaPrompt(args: { changes: Change[] }): string {
     )
     .join("\n");
   return (
-    `You are the ACCEPTANCE ASSESSMENT: judge every criterion below with ` +
-    `exactly one verdict from the closed vocabulary ` +
-    `${JSON.stringify(CRITERION_VERDICTS)}. "observable": a person or a ` +
-    `probe can check it as stated. "vague": directionally right but not ` +
-    `checkable as written. "untestable": no observation could settle it.\n\n` +
-    `THE CRITERIA (numbered change.criterion):\n${listed}\n\n` +
-    `Respond with ONE JSON object and nothing else:\n` +
-    `{"rewrites":[{"node":0,"criterion":1,"verdict":"vague",` +
-    `"text":"the criterion rewritten as an observable statement"}]} — one ` +
-    `entry per NON-observable criterion, keeping its meaning, making it ` +
-    `checkable. All observable → {"rewrites":[]}.`
-  );
-}
-
-/** Build the challenger prompt. */
-function buildChallengerPrompt(args: {
-  ask: Ask;
-  changes: Change[];
-  decisions: string[];
-}): string {
-  return (
-    `You are the CHALLENGER: confront the derived changes with the decisions ` +
-    `the human has already made. You NEVER change anything — you only raise ` +
-    `contradictions as questions, each with a recommended resolution.\n\n` +
+    `You run THREE checks over one ask and its derived changes, and answer ` +
+    `all three in one JSON object. Everything you need is below — do not ` +
+    `assume access to anything else.\n\n` +
+    `CHECK 1 — INTENT COVERAGE: split the ask into its distinct requirement ` +
+    `clauses, then verify every clause is served by at least one change. A ` +
+    `mapping exercise — do not invent requirements the ask does not state.\n` +
+    `CHECK 2 — ACCEPTANCE ASSESSMENT: judge every numbered criterion with ` +
+    `exactly one verdict from ${JSON.stringify(CRITERION_VERDICTS)}. ` +
+    `"observable": a person or a probe can check it as stated. "vague": ` +
+    `directionally right but not checkable as written. "untestable": no ` +
+    `observation could settle it.\n` +
+    `CHECK 3 — CHALLENGER: confront the changes with the decisions in ` +
+    `force. You NEVER change anything — you only raise REAL contradictions ` +
+    `as questions, each with a recommended resolution.\n\n` +
+    (args.decisions?.length
+      ? `DECISIONS IN FORCE (a clause these settle is COVERED — never ` +
+        `re-open a settled decision as a question):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
+      : `DECISIONS IN FORCE: none — check 3 returns [].\n\n`) +
     `THE ASK:\n${args.ask.text}\n\n` +
-    `DECISIONS IN FORCE:\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n` +
-    `THE CHANGES:\n${describeChanges(args.changes)}\n\n` +
+    `THE CHANGES (numbered change.criterion):\n${listed}\n\n` +
     `Respond with ONE JSON object and nothing else:\n` +
-    `{"questions":[{"text":"the contradiction, named plainly (which change, ` +
-    `which decision)","recommendation":"your recommended resolution"}]} — ` +
-    `one entry per REAL contradiction. None → {"questions":[]}.`
+    `{"uncovered":[{"clause":"the ask's words for the unserved requirement",` +
+    `"question":{"text":"the decision this opens, as the author would ask it",` +
+    `"recommendation":"your concrete recommended answer"}}],` +
+    `"rewrites":[{"node":0,"criterion":1,"verdict":"vague",` +
+    `"text":"the criterion rewritten as an observable statement"}],` +
+    `"questions":[{"text":"the contradiction, named plainly (which change, ` +
+    `which decision)","recommendation":"your recommended resolution"}]}\n` +
+    `— "uncovered": one entry per clause NO change serves (full coverage → []);` +
+    ` "rewrites": one entry per NON-observable criterion, keeping its meaning,` +
+    ` making it checkable (all observable → []); "questions": one entry per` +
+    ` REAL contradiction (none → []).`
   );
 }
 
@@ -250,22 +239,29 @@ export async function runDerivationPipeline(
 ): Promise<GroundingResult> {
   const round = opts.round ?? runReadRound;
   const log = deps.log ?? (() => {});
-  const TOTAL_STAGES = 7;
+  const TOTAL_STAGES = 4;
   let stageNo = 0;
   const stage = (label: string): void => {
     stageNo++;
     opts.onStage?.(label, stageNo, TOTAL_STAGES);
   };
 
-  // 1. Contextualize (reuse a stored digest; otherwise one bounded reading).
+  // 1. Repository digest — ONE shared reading per repo state, cached under
+  //    the git stamp and reused across asks, batches and sessions.
   stage("reading your code");
-  let digest = opts.digest ?? opts.digestStore?.load(ask.id);
+  const stamp = [await readStamp(deps.repoRoot)];
+  const digestKey = `repo@${stamp[0]?.head || "no-git"}`;
+  let digest = opts.digest ?? opts.digestStore?.load(digestKey);
   if (!digest) {
-    const fresh = await runContextualize(deps, ask, round);
+    const fresh = await sharedRepoDigest(
+      digestKey,
+      { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 15 },
+      round,
+    );
     if (fresh) {
       digest = fresh;
-      opts.digestStore?.save(ask.id, fresh);
-      log(`contextualize: digest established for ${ask.id}`);
+      opts.digestStore?.save(digestKey, fresh);
+      log(`contextualize: repository digest established (${digestKey})`);
     } else log(`contextualize: no digest — grounding reads cold`);
   }
 
@@ -281,7 +277,6 @@ export async function runDerivationPipeline(
   const questions: Omit<Question, "id">[] = [...grounded.questions];
   if (changes.length === 0) return { changes, questions };
 
-  const stamp = [await readStamp(deps.repoRoot)];
   const addFrom = async (raw: string | null, label: string): Promise<void> => {
     if (raw === null) {
       log(`${label}: round unavailable — skipped`);
@@ -300,39 +295,31 @@ export async function runDerivationPipeline(
     log(`${label}: ${added.length} change(s) added`);
   };
 
-  // 3. Gap-close judge (two outcomes: complete, or concrete additions).
-  stage("judging completeness");
+  // 3. Completeness — gaps AND affected code, one digest-warm round.
+  stage("judging completeness and affected code");
   await addFrom(
-    await round(deps, buildGapClosePrompt({ ask, changes, repoRoot: deps.repoRoot })),
-    "gap-close",
+    await round(
+      deps,
+      buildCompletenessPrompt({ ask, changes, repoRoot: deps.repoRoot, digest }),
+    ),
+    "completeness",
   );
 
-  // 4. Impact pass (the adjacent code that must move too).
-  stage("finding affected code");
-  await addFrom(
-    await round(deps, buildImpactPrompt({ ask, changes, repoRoot: deps.repoRoot })),
-    "impact",
+  // 4. The tail — coverage, criteria and challenger in ONE tool-less
+  //    volume-model call; its entire input is the prompt.
+  stage("weighing coverage, criteria and decisions");
+  const tail = await round(
+    volumeDeps(deps),
+    buildTailPrompt({ ask, changes, decisions: opts.decisions }),
   );
-
-  // 5. Intent coverage — uncovered clauses become questions, never silence.
-  stage("checking every clause of your ask is covered");
-  const coverage = await round(
-    deps,
-    buildIntentCoveragePrompt({ ask, changes, decisions: opts.decisions }),
-  );
-  if (coverage !== null)
-    for (const u of parseUncovered(coverage))
+  if (tail !== null) {
+    for (const u of parseUncovered(tail))
       questions.push({
         askId: ask.id,
         text: `Uncovered: "${u.clause}" — ${u.text}`,
         recommendation: u.recommendation,
       });
-
-  // 6. Criteria assessment — vague criteria come back observable.
-  stage("sharpening the acceptance criteria");
-  const assessed = await round(deps, buildCriteriaPrompt({ changes }));
-  if (assessed !== null) {
-    const rewrites = parseCriteriaRewrites(assessed, changes);
+    const rewrites = parseCriteriaRewrites(tail, changes);
     if (rewrites.length) {
       changes = changes.map((c, i) => {
         const mine = rewrites.filter((r) => r.node === i);
@@ -347,17 +334,8 @@ export async function runDerivationPipeline(
       });
       log(`assessment: ${rewrites.length} criterion(a) sharpened`);
     }
-  }
-
-  // 7. Challenger — contradictions with decisions in force become questions.
-  stage("checking against your decisions");
-  if (opts.decisions?.length) {
-    const challenged = await round(
-      deps,
-      buildChallengerPrompt({ ask, changes, decisions: opts.decisions }),
-    );
-    if (challenged !== null)
-      for (const q of parseGroundedQuestions(challenged))
+    if (opts.decisions?.length)
+      for (const q of parseGroundedQuestions(tail))
         questions.push({ askId: ask.id, ...q });
   }
 

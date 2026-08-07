@@ -18,7 +18,7 @@ export async function answerQuestionFlow(args: {
 }): Promise<{ question: string; answer: string }> {
   const lastAsk = args.space.asks[args.space.asks.length - 1];
   const answer = await (args.answerRound ?? runReadRound)(
-    args.round,
+    { ...args.round, model: args.round.volumeModel ?? args.round.model, maxTurns: 12 },
     buildAnswerPrompt({
       text: args.text,
       asks: args.space.asks,

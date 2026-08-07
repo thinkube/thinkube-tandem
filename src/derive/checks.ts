@@ -52,6 +52,9 @@ export async function proposeCheck(
   askText: string,
 ): Promise<ProposedCheck | undefined> {
   return parseProposedCheck(
-    await runReadRound({ ...deps, maxTurns: 6 }, buildCheckPrompt(promise, askText)),
+    await runReadRound(
+      { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 6 },
+      buildCheckPrompt(promise, askText),
+    ),
   );
 }

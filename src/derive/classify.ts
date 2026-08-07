@@ -9,7 +9,7 @@
  * utterance is an ask, never a refusal.
  */
 import { Ask } from "../core/schema";
-import { RoundDeps, runReadRound } from "./round";
+import { RoundDeps, runReadRound, volumeDeps } from "./round";
 
 export type UtteranceKind = "ask" | "question" | "statement" | "operation";
 
@@ -64,7 +64,7 @@ export async function classifyUtterance(
   text: string,
   round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
 ): Promise<UtteranceKind> {
-  return parseKind(await round({ ...deps, maxTurns: 1 }, buildClassifyPrompt(text)));
+  return parseKind(await round(volumeDeps(deps), buildClassifyPrompt(text)));
 }
 
 export function buildAnswerPrompt(args: {

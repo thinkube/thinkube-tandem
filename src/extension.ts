@@ -246,6 +246,7 @@ async function ensureSession(
   const s = new TandemSession({
     round: {
       model: config.get<string>("groundingModel", "opus"),
+      volumeModel: config.get<string>("volumeModel", "sonnet"),
       // Grounding reads the ANCHOR scope — the subtree for a monorepo
       // sub-project, the repo root otherwise.
       repoRoot: project.anchorDir,

@@ -128,6 +128,17 @@ export function Rail(props: {
       {push.impacts.length ? (
         <section data-impacts style={{ marginBottom: 14 }}>
           <strong style={{ fontSize: 12 }}>Your decisions imply changes</strong>
+          {push.impacts.length > 1 ? (
+            <div style={{ margin: "4px 0" }}>
+              <button
+                data-impacts-apply-all
+                title="Apply every implication at once — each affected ask re-thinks ONCE under all your decisions, five at a time."
+                onClick={() => post({ action: "apply-all-impacts" })}
+              >
+                Apply all {push.impacts.length} — each ask re-thinks once
+              </button>
+            </div>
+          ) : null}
           {push.impacts.map((im) => (
             <div key={im.id} data-impact={im.id} style={{ padding: "4px 0" }}>
               <div style={{ opacity: 0.85 }}>
