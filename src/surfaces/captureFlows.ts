@@ -110,7 +110,7 @@ export async function rederiveAskFlow(args: {
   mintNodeId: (n: number) => string;
   scopes?: { id: string; dir: string; label?: string }[];
   onStage?: (label: string, current: number, total: number) => void;
-}): Promise<Space> {
+}): Promise<{ old: Set<string>; changes: Space["nodes"] }> {
   const signed = new Set(
     args.space.cuts.filter((cu) => cu.signature).flatMap((cu) => cu.changeIds),
   );
@@ -128,11 +128,21 @@ export async function rederiveAskFlow(args: {
     ...(args.scopes ? { scopes: args.scopes } : {}),
     ...(args.onStage ? { onStage: args.onStage } : {}),
   });
+  // Applied by the CALLER to its current space — a long round must never
+  // hand back a copy of its past.
+  return { old, changes: fresh.changes };
+}
+
+/** Apply a re-derivation to the PRESENT space in one synchronous step. */
+export function applyRederive(
+  space: Space,
+  r: { old: Set<string>; changes: Space["nodes"] },
+): Space {
   return {
-    ...args.space,
-    nodes: [...args.space.nodes.filter((n) => !old.has(n.id)), ...fresh.changes],
-    units: args.space.units
-      .map((u) => ({ ...u, changeIds: u.changeIds.filter((id) => !old.has(id)) }))
+    ...space,
+    nodes: [...space.nodes.filter((n) => !r.old.has(n.id)), ...r.changes],
+    units: space.units
+      .map((u) => ({ ...u, changeIds: u.changeIds.filter((id) => !r.old.has(id)) }))
       .filter((u) => u.changeIds.length > 0),
   };
 }

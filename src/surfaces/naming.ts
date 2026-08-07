@@ -21,11 +21,13 @@ export interface NamingPassDeps {
   ) => void;
 }
 
-/** One pass; resolves the renamed space, or undefined when nothing was due
- *  or the round named nothing. */
+/** One pass; resolves the named abstracts keyed by unit id (with the
+ *  member set each describes), or undefined when nothing was due or the
+ *  round named nothing. The CALLER merges into its current space — a
+ *  long round must never replace state with a copy of its past. */
 export async function renderUnitAbstracts(
   deps: NamingPassDeps,
-): Promise<Space | undefined> {
+): Promise<Map<string, { title: string; text?: string; stamp: SourceStamp[]; of: string[] }> | undefined> {
   const { space } = deps;
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const key = (ids: readonly string[]) => [...ids].sort().join(",");
@@ -49,25 +51,12 @@ export async function renderUnitAbstracts(
   deps.onActivity(undefined);
   if (named.length === 0) return undefined;
   const stamp = await deps.readStamps().catch(() => [] as SourceStamp[]);
-  const byUnit = new Map(named.map((n) => [n.unitId, n]));
-  return {
-    ...space,
-    units: space.units.map((u) => {
-      const n = byUnit.get(u.id);
-      const of = describedSet.get(u.id);
-      return n && of
-        ? {
-            ...u,
-            abstract: {
-              title: n.title,
-              ...(n.text ? { text: n.text } : {}),
-              stamp,
-              of,
-            },
-          }
-        : u;
-    }),
-  };
+  const out = new Map<string, { title: string; text?: string; stamp: SourceStamp[]; of: string[] }>();
+  for (const nm of named) {
+    const of = describedSet.get(nm.unitId);
+    if (of) out.set(nm.unitId, { title: nm.title, ...(nm.text ? { text: nm.text } : {}), stamp, of });
+  }
+  return out;
 }
 
 /** SPEC: re-name units whose question was since decided — drop the render

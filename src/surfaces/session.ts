@@ -1,9 +1,8 @@
 /**
- * The v2 session: owns one space, accepts exactly the registered actions,
- * and persists every change to the store as both faces. Between the two
- * gates it runs the machinery itself: signing a cut starts the run
- * (worktree, blind probes, builders, proofs, forge delivery) and accepting
- * a delivery merges it. The panel is a thin shell around postMessage.
+ * The v2 session: one space, exactly the registered actions, every change
+ * persisted to the store. Signing starts the run; accepting merges the
+ * delivery. Long rounds MERGE results into the present space — they
+ * never replace it with a copy of their past.
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
@@ -29,7 +28,7 @@ import { proposeCheckGesture } from "./checkGesture";
 import { captureManyFlow } from "./captureMany";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
-import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
+import { addCheckFlow, answerQuestionFlow, applyRederive, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
@@ -47,8 +46,9 @@ export class TandemSession {
   runState: RunState | undefined;
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
   lastAnswer: { question: string; answer: string } | undefined;
-  runNote: string | undefined; // why the last build did not start — shown ON the flow tab
+  runNote: string | undefined; // why the last build did not start
   private _captureAbort: AbortController | undefined;
+  _grounding = new Map<string, { label: string; current: number; total: number }>();
 
   constructor(readonly deps: SessionDeps) {
     this._approvals = createApprovalStore(deps.storageDir);
@@ -126,8 +126,6 @@ export class TandemSession {
     return { ok: true };
   }
 
-  _grounding = new Map<string, { label: string; current: number; total: number }>();
-
   groundingView(): { askId: string; label: string; current: number; total: number }[] {
     return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
   }
@@ -183,7 +181,6 @@ export class TandemSession {
     return { promises: grounded.changes.length, questions: questions.length };
   }
 
-  /** Re-derive every stale ask; fresh grounding replaces old. */
   async reground(): Promise<void> {
     await this.refreshStaleness();
     const staleAsks = new Set(
@@ -195,7 +192,7 @@ export class TandemSession {
     for (const askId of staleAsks) {
       const ask = this.space.asks.find((a) => a.id === askId);
       if (!ask) continue;
-      this.space = await rederiveAskFlow({
+      this.space = applyRederive(this.space, await rederiveAskFlow({
         space: this.space,
         ask,
         round: this.deps.round,
@@ -208,7 +205,7 @@ export class TandemSession {
           this.activity = { label, current, total };
           this.deps.onChanged?.();
         },
-      });
+      }));
     }
     this.activity = undefined;
     this.recluster();
@@ -284,7 +281,7 @@ export class TandemSession {
     }
     const ask = this.space.asks.find((a) => a.id === im.askId);
     if (!ask) return { ok: false, reason: "the ask no longer exists" };
-    this.space = await rederiveAskFlow({
+    this.space = applyRederive(this.space, await rederiveAskFlow({
       space: this.space,
       ask,
       round: this.deps.round,
@@ -293,16 +290,16 @@ export class TandemSession {
       digests: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${n}`,
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-        onStage: (label, current, total) => {
-          this.activity = { label, current, total };
-          this.deps.onChanged?.();
-        },
-    });
+      onStage: (label, current, total) => {
+        this.activity = { label, current, total };
+        this.deps.onChanged?.();
+      },
+    }));
     this.activity = undefined;
     this.recluster();
     await this.refreshStaleness();
     this.changed(
-      `Re-derived under the decision: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Your merges and pins on the OLD promises no longer apply — the machine may suggest merging again.`,
+      `Re-derived under the decision: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Merges and pins on the OLD promises no longer apply.`,
     );
     await this.renderAbstracts();
     return { ok: true };
@@ -319,11 +316,9 @@ export class TandemSession {
     void this.renderAbstracts();
   }
 
-  /** Out of date at the honest grain: only when a file the promise
-   *  actually lands in changed — never because the repository moved. */
+  /** Out of date only when a file the promise lands in changed. */
   async refreshStaleness(): Promise<void> {
-    if (this.deps.readCurrentStamp) {
-      // Test seam: injected stamps keep the whole-repo comparison.
+    if (this.deps.readCurrentStamp) { // test seam: whole-repo comparison
       this.stale = staleChangeIds(this.space, await this.deps.readCurrentStamp());
       return;
     }
@@ -369,7 +364,14 @@ export class TandemSession {
         },
       });
       if (next) {
-        this.space = next;
+        // Merge into the PRESENT space; unchanged units keep their names.
+        this.space = {
+          ...this.space,
+          units: this.space.units.map((u) => {
+            const a = next.get(u.id);
+            return a && a.of.join(",") === [...u.changeIds].join(",") ? { ...u, abstract: a } : u;
+          }),
+        };
         this.units = this.space.units;
         this.changed();
       }
