@@ -96,3 +96,85 @@ test("an accepted merge applies exactly once; pins stay sovereign over machine s
   });
   assert.equal(pinApart.units.length, 2, "the human's apart pin splits the merged unit");
 });
+
+test("suggestions around one unit are ONE decision: all fold in, or all are vetoed", async () => {
+  const { mergeFamilyVerdict } = await import("./suggestions");
+  const { emptySpace } = await import("./schema");
+  const nodes = ["big1", "big2", "x", "y", "z"].map((id) => change(id, `src/${id}.ts`));
+  const space = {
+    ...emptySpace(),
+    nodes,
+    units: [
+      { id: "u-big", changeIds: ["big1", "big2"] },
+      { id: "u-x", changeIds: ["x"] },
+      { id: "u-y", changeIds: ["y"] },
+      { id: "u-z", changeIds: ["z"] },
+    ],
+    // The machine proposes three separate pairs — all naming the same unit.
+    proposals: [
+      { id: "p1", a: "u-big", b: "u-x" },
+      { id: "p2", a: "u-big", b: "u-y" },
+      { id: "p3", a: "u-z", b: "u-big" },
+    ],
+  };
+
+  const yes = mergeFamilyVerdict(space, "u-big", true);
+  assert.ok(!("reason" in yes));
+  if ("reason" in yes) return;
+  assert.equal(yes.count, 3, "one press answered all three suggestions");
+  assert.equal(yes.space.units.length, 1, "everything folded into the one unit");
+  assert.deepEqual(
+    yes.space.units[0].changeIds.sort(),
+    ["big1", "big2", "x", "y", "z"],
+    "the anchor keeps its promises and gains every joiner's",
+  );
+  assert.equal(yes.space.proposals!.length, 0, "no sibling suggestion is left dangling");
+
+  const no = mergeFamilyVerdict(space, "u-big", false);
+  assert.ok(!("reason" in no));
+  if ("reason" in no) return;
+  assert.equal(no.space.units.length, 4, "rejecting merges nothing");
+  assert.equal(no.space.vetoes!.length, 3, "every pair in the family is vetoed forever");
+  assert.ok(no.space.vetoes!.includes(pairKey("u-z", "u-big")), "a family member listed second is vetoed too");
+});
+
+test("suggestions around one unit are ONE decision: all fold in, or all are vetoed", async () => {
+  const { mergeFamilyVerdict } = await import("./suggestions");
+  const { emptySpace } = await import("./schema");
+  const nodes = ["big1", "big2", "x", "y", "z"].map((id) => change(id, `src/${id}.ts`));
+  const space = {
+    ...emptySpace(),
+    nodes,
+    units: [
+      { id: "u-big", changeIds: ["big1", "big2"] },
+      { id: "u-x", changeIds: ["x"] },
+      { id: "u-y", changeIds: ["y"] },
+      { id: "u-z", changeIds: ["z"] },
+    ],
+    // The machine proposes three separate pairs — all naming the same unit.
+    proposals: [
+      { id: "p1", a: "u-big", b: "u-x" },
+      { id: "p2", a: "u-big", b: "u-y" },
+      { id: "p3", a: "u-z", b: "u-big" },
+    ],
+  };
+
+  const yes = mergeFamilyVerdict(space, "u-big", true);
+  assert.ok(!("reason" in yes));
+  if ("reason" in yes) return;
+  assert.equal(yes.count, 3, "one press answered all three suggestions");
+  assert.equal(yes.space.units.length, 1, "everything folded into the one unit");
+  assert.deepEqual(
+    yes.space.units[0].changeIds.sort(),
+    ["big1", "big2", "x", "y", "z"],
+    "the anchor keeps its promises and gains every joiner's",
+  );
+  assert.equal(yes.space.proposals!.length, 0, "no sibling suggestion is left dangling");
+
+  const no = mergeFamilyVerdict(space, "u-big", false);
+  assert.ok(!("reason" in no));
+  if ("reason" in no) return;
+  assert.equal(no.space.units.length, 4, "rejecting merges nothing");
+  assert.equal(no.space.vetoes!.length, 3, "every pair in the family is vetoed forever");
+  assert.ok(no.space.vetoes!.includes(pairKey("u-z", "u-big")), "a family member listed second is vetoed too");
+});

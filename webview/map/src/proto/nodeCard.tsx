@@ -17,6 +17,8 @@ export interface Chip {
 export interface CardData {
   id: string;
   title: string;
+  /** The whole sentence behind a clipped title — shown on hover. */
+  titleFull?: string;
   abs?: string;
   chips: Chip[];
   decision?: string;
@@ -90,7 +92,10 @@ export function NodeCard(props: {
         ...props.style,
       }}
     >
-      <h3 style={{ margin: "0 0 4px", fontSize: far ? 15 : 13, fontWeight: 600, overflowWrap: "anywhere" }}>
+      <h3
+        title={card.titleFull ?? undefined}
+        style={{ margin: "0 0 4px", fontSize: far ? 15 : 13, fontWeight: 600, overflowWrap: "anywhere" }}
+      >
         {card.title}
       </h3>
       {!far && card.abs ? (

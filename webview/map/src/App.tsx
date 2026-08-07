@@ -99,7 +99,7 @@ export function App(): JSX.Element {
         <span style={{ opacity: 0.5 }}>— its code is read; its repository receives the delivery</span>
         <button
           data-switch-repo
-          title="Switch the project this space works on"
+          title="Switch the repository this space works on."
           style={{ marginLeft: "auto", fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "1px 8px" }}
           onClick={() => post({ action: "switch-repo" })}
         >
@@ -184,7 +184,7 @@ export function App(): JSX.Element {
               return (
                 <button
                   data-tag-lines
-                  title="Your paste has several lines — record each line as its own ask."
+                  title="Record each line as its own ask."
                   style={{ cursor: "pointer", borderRadius: 10, padding: "2px 10px", border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-input-background, #222)", color: "inherit" }}
                   onClick={() => {
                     post({ action: "capture-many", items: lines });
@@ -383,6 +383,7 @@ export function App(): JSX.Element {
         <Rail
           push={push}
           selected={selected}
+          onSelect={setSelected}
           flipped={flipped}
           onFlip={(id) =>
             setFlipped((prev) => {

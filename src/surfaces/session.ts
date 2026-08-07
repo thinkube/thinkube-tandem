@@ -7,7 +7,7 @@
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
-import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggestions";
+import { advanceSpaceMembership, mergeFamilyVerdict, unitEdges } from "../core/suggestions";
 import { readStamp } from "../core/stamp";
 import { runReadRound } from "../derive/round";
 import { staleByTouchpoints, staleChangeIds } from "../core/stale";
@@ -472,9 +472,10 @@ export class TandemSession {
     }
   }
 
-  /** Accept applies the staged merge; reject vetoes the pair FOREVER. */
-  decideMerge(proposalId: string, accept: boolean): { ok: boolean; reason?: string } {
-    const r = mergeVerdict(this.space, proposalId, accept);
+  /** One verdict for every suggestion around a unit: accept folds them all
+   *  in; reject keeps them apart and they are never proposed again. */
+  decideMerge(unitId: string, accept: boolean): { ok: boolean; reason?: string } {
+    const r = mergeFamilyVerdict(this.space, unitId, accept);
     if ("reason" in r) return { ok: false, reason: r.reason };
     this.space = r.space;
     this.units = this.space.units;

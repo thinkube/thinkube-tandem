@@ -12,6 +12,8 @@ export interface UnitVM {
   abs?: string;
   id: string;
   title: string;
+  /** The unclipped first promise, when the title is a fallback. */
+  fullTitle?: string;
   count: number;
   changeIds: string[];
   island: number;
@@ -56,9 +58,20 @@ export interface SpacePush {
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
-  questions: { id: string; text: string; recommendation?: string }[];
+  questions: {
+    id: string;
+    text: string;
+    recommendation?: string;
+    askLabel?: string;
+    cards: { id: string; title: string }[];
+  }[];
   decisions: string[];
-  proposals: { id: string; a: { title: string; count: number; members: string[] }; b: { title: string; count: number; members: string[] } }[];
+  proposals: {
+    id: string;
+    anchor: { title: string; count: number; members: string[] };
+    joiners: { title: string; count: number; members: string[] }[];
+    resultCount: number;
+  }[];
   impacts: { id: string; decision: string; askText: string; affected: number }[];
   units: UnitVM[];
   edges: { from: string; to: string }[];
@@ -92,8 +105,8 @@ export type WebToHost =
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
-  | { action: "accept-merge"; proposalId: string }
-  | { action: "reject-merge"; proposalId: string }
+  | { action: "accept-merge"; unitId: string }
+  | { action: "reject-merge"; unitId: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }
   | { action: "apply-all-impacts" }

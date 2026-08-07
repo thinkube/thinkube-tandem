@@ -36,6 +36,46 @@ interface InboundAction {
   impactId?: string;
 }
 
+/**
+ * Group the machine's pairwise suggestions into families: the unit each
+ * suggestion wants to grow, and everything it wants folded into it. A unit
+ * named by several suggestions is ONE decision, not one per pair.
+ */
+function mergeFamilies(
+  session: TandemSession,
+): { anchorId: string; joinerIds: string[] }[] {
+  const proposals = session.space.proposals ?? [];
+  const size = (id: string) =>
+    session.units.find((u) => u.id === id)?.changeIds.length ?? 0;
+  const families = new Map<string, string[]>();
+  const taken = new Set<string>();
+  // Biggest unit first: the one the machine wants to grow anchors its family.
+  const anchors = [...new Set(proposals.flatMap((p) => [p.a, p.b]))].sort(
+    (x, y) => size(y) - size(x),
+  );
+  for (const anchor of anchors) {
+    const joiners = proposals
+      .filter((p) => p.a === anchor || p.b === anchor)
+      .map((p) => (p.a === anchor ? p.b : p.a))
+      .filter((id) => !taken.has(id) && id !== anchor);
+    if (!joiners.length || taken.has(anchor)) continue;
+    taken.add(anchor);
+    for (const j of joiners) taken.add(j);
+    families.set(anchor, joiners);
+  }
+  return [...families.entries()].map(([anchorId, joinerIds]) => ({ anchorId, joinerIds }));
+}
+
+/** A card head is one line: a long sentence is clipped, never a paragraph. */
+const TITLE_CLIP = 64;
+function shorten(text: string): string {
+  return text.length > TITLE_CLIP ? `${text.slice(0, TITLE_CLIP - 1).trimEnd()}…` : text;
+}
+function shortenWords(text: string, words: number): string {
+  const parts = text.split(/\s+/);
+  return parts.slice(0, words).join(" ") + (parts.length > words ? "…" : "");
+}
+
 function spacePush(session: TandemSession, message?: string): unknown {
   const island = islandsOf(
     session.units.map((u) => u.id),
@@ -54,13 +94,36 @@ function spacePush(session: TandemSession, message?: string): unknown {
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
+    // A question belongs to an ask, and the ask has cards on the map: both
+    // ride along so a recommendation is never a floating sentence.
     questions: session.space.questions
       .filter((q) => !q.decided)
-      .map((q) => ({ id: q.id, text: q.text, recommendation: q.recommendation })),
+      .map((q) => {
+        const idx = session.space.asks.findIndex((a) => a.id === q.askId);
+        const ask = idx >= 0 ? session.space.asks[idx] : undefined;
+        const serving = new Set(
+          session.space.nodes.filter((n) => n.serves.includes(q.askId)).map((n) => n.id),
+        );
+        return {
+          id: q.id,
+          text: q.text,
+          recommendation: q.recommendation,
+          ...(ask ? { askLabel: `ask ${idx + 1} — ${shortenWords(ask.text, 7)}` } : {}),
+          cards: session.units
+            .filter((u) => u.changeIds.some((id) => serving.has(id)))
+            .map((u) => ({
+              id: u.id,
+              title: u.abstract?.title ?? shorten(byId.get(u.changeIds[0])?.sentence ?? u.id),
+            })),
+        };
+      }),
     decisions: session.space.questions
       .filter((q) => !!q.decided)
       .map((q) => q.decided!.text),
-    proposals: (session.space.proposals ?? []).map((p) => {
+    // The machine proposes PAIRS, but a unit it wants to grow is ONE
+    // decision: every suggestion touching a unit is shown as its family,
+    // with the size the merged slice would reach.
+    proposals: mergeFamilies(session).map((fam) => {
       const describe = (id: string) => {
         const u = session.units.find((x) => x.id === id);
         const members = (u?.changeIds ?? [])
@@ -72,7 +135,14 @@ function spacePush(session: TandemSession, message?: string): unknown {
           members,
         };
       };
-      return { id: p.id, a: describe(p.a), b: describe(p.b) };
+      const anchor = describe(fam.anchorId);
+      const joiners = fam.joinerIds.map(describe);
+      return {
+        id: fam.anchorId,
+        anchor,
+        joiners,
+        resultCount: anchor.count + joiners.reduce((n, j) => n + j.count, 0),
+      };
     }),
     impacts: (session.space.impacts ?? []).map((im) => ({
       id: im.id,
@@ -94,14 +164,15 @@ function spacePush(session: TandemSession, message?: string): unknown {
       return {
         id: u.id,
         askLabel: firstAsk
-          ? `ask ${firstAskIdx + 1} — ${firstAsk.text.split(/\s+/).slice(0, 7).join(" ")}${firstAsk.text.split(/\s+/).length > 7 ? "…" : ""}`
+          ? `ask ${firstAskIdx + 1} — ${shortenWords(firstAsk.text, 7)}`
           : "unassigned",
         // Two faces, one source: the card shows the naming round's rendered
         // title + decision-sized abstract; the machine face (touchpoints,
         // proofs) stays one gesture away behind the flip. Fallback title
         // always: an unnamed unit shows its first member sentence, no body.
         ...(u.abstract?.text ? { abs: u.abstract.text } : {}),
-        title: u.abstract?.title ?? first,
+        title: u.abstract?.title ?? shorten(first),
+        ...(u.abstract ? {} : { fullTitle: first }),
         count: nodes.length,
         changeIds: u.changeIds,
         island: island.get(u.id) ?? 0,
@@ -184,11 +255,11 @@ async function handleInbound(
     session.answerWorker(msg.unitId, msg.text);
   } else if (msg.action === "stop-run") {
     session.stopRun();
-  } else if (msg.action === "accept-merge" && msg.proposalId) {
-    const r = session.decideMerge(msg.proposalId, true);
+  } else if (msg.action === "accept-merge" && msg.unitId) {
+    const r = session.decideMerge(msg.unitId, true);
     note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "reject-merge" && msg.proposalId) {
-    const r = session.decideMerge(msg.proposalId, false);
+  } else if (msg.action === "reject-merge" && msg.unitId) {
+    const r = session.decideMerge(msg.unitId, false);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-impact" && msg.impactId) {
     push("Re-deriving under the decision…");

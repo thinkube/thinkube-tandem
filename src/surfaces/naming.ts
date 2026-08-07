@@ -21,6 +21,10 @@ export interface NamingPassDeps {
   ) => void;
 }
 
+/** How many units one naming round carries — small enough that the reply
+ *  names every one of them. */
+export const NAMING_BATCH = 8;
+
 /** One pass; resolves the named abstracts keyed by unit id (with the
  *  member set each describes), or undefined when nothing was due or the
  *  round named nothing. The CALLER merges into its current space — a
@@ -38,16 +42,34 @@ export async function renderUnitAbstracts(
   // Membership may move while the round runs; the render is OF this
   // snapshot, so a mid-round move leaves it stale and due again.
   const describedSet = new Map(due.map((u) => [u.id, [...u.changeIds]]));
-  deps.onActivity({ label: "naming the units of work", current: 1, total: 1 });
-  const named = await deps
-    .name(
-      deps.round,
-      due.map((u) => ({
-        id: u.id,
-        sentences: u.changeIds.map((id) => byId.get(id)?.sentence ?? id),
-      })),
+  // One prompt carrying every unit loses some in the reply; naming runs in
+  // small batches instead, so a big space comes back fully named.
+  const asked = due.map((u) => ({
+    id: u.id,
+    sentences: u.changeIds.map((id) => byId.get(id)?.sentence ?? id),
+  }));
+  const batches: (typeof asked)[] = [];
+  for (let i = 0; i < asked.length; i += NAMING_BATCH)
+    batches.push(asked.slice(i, i + NAMING_BATCH));
+  let done = 0;
+  deps.onActivity({ label: "naming the units of work", current: 0, total: batches.length });
+  const named = (
+    await Promise.all(
+      batches.map((b) =>
+        deps
+          .name(deps.round, b)
+          .catch(() => [])
+          .then((r) => {
+            deps.onActivity({
+              label: "naming the units of work",
+              current: ++done,
+              total: batches.length,
+            });
+            return r;
+          }),
+      ),
     )
-    .catch(() => []);
+  ).flat();
   deps.onActivity(undefined);
   if (named.length === 0) return undefined;
   const stamp = await deps.readStamps().catch(() => [] as SourceStamp[]);

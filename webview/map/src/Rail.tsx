@@ -27,7 +27,7 @@ const chip = (color: string): React.CSSProperties => ({
   color,
 });
 
-function Questions(props: { push: SpacePush }): JSX.Element {
+function Questions(props: { push: SpacePush; onSelect: (id: string) => void }): JSX.Element {
   const { push } = props;
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   return (
@@ -35,7 +35,28 @@ function Questions(props: { push: SpacePush }): JSX.Element {
       <strong style={{ fontSize: 12 }}>Questions for you ({push.questions.length})</strong>
       {push.questions.map((q) => (
         <div key={q.id} data-question={q.id} style={{ margin: "6px 0", padding: 6, border: "1px solid #e5c07b", borderRadius: 6 }}>
+          {q.askLabel ? (
+            <div style={{ fontSize: 11, opacity: 0.7 }}>{q.askLabel}</div>
+          ) : null}
           <div style={{ fontSize: 12 }}>{q.text}</div>
+          {q.cards.length ? (
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 3 }}>
+              On {q.cards.length === 1 ? "this card" : "these cards"}:{" "}
+              {q.cards.map((c, i) => (
+                <span key={c.id}>
+                  {i ? ", " : ""}
+                  <a
+                    data-question-card={c.id}
+                    title="Select this card on the map."
+                    style={{ cursor: "pointer", textDecoration: "underline" }}
+                    onClick={() => props.onSelect(c.id)}
+                  >
+                    {c.title}
+                  </a>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <textarea
             data-question-text={q.id}
             disabled={push.running}
@@ -46,7 +67,7 @@ function Questions(props: { push: SpacePush }): JSX.Element {
           <button
             data-accept-question={q.id}
             disabled={push.running}
-            title="Accept — this becomes a binding decision; its implications are staged for you"
+            title="Record this answer as a decision in force — its implications are staged for you."
             onClick={() =>
               post({ action: "accept-question", questionId: q.id, text: (drafts[q.id] ?? q.recommendation ?? "").trim() })
             }
@@ -64,6 +85,7 @@ export function Rail(props: {
   selected: string | null;
   flipped: Set<string>;
   onFlip: (id: string) => void;
+  onSelect: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
   const unit = push.units.find((u) => u.id === props.selected);
@@ -96,28 +118,45 @@ export function Rail(props: {
         ))
       )}
 
-      {push.questions.length ? <Questions push={push} /> : null}
+      {push.questions.length ? <Questions push={push} onSelect={props.onSelect} /> : null}
 
       {push.proposals.length ? (
         <section data-proposals style={{ marginBottom: 14 }}>
           <strong style={{ fontSize: 12 }}>The machine suggests merging</strong>
+          <div style={{ fontSize: 11, opacity: 0.7, margin: "2px 0 4px" }}>
+            Units it found strongly coupled. Merged units are built together as one slice.
+          </div>
           {push.proposals.map((p) => (
             <div key={p.id} data-proposal={p.id} style={{ padding: "4px 0" }}>
-              <div
-                style={{ opacity: 0.85 }}
-                title={`Would merge into ONE unit:\n— ${p.a.members.join("\n— ")}\n— ${p.b.members.join("\n— ")}`}
-              >
-                Merge “{p.a.title}” ({p.a.count} promise{p.a.count === 1 ? "" : "s"}) with “{p.b.title}” ({p.b.count} promise{p.b.count === 1 ? "" : "s"})?
-                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
-                  They would be built together as one slice. Hover to see every promise involved.
-                </div>
+              <div style={{ opacity: 0.85 }}>
+                Fold {p.joiners.length === 1 ? "this" : `these ${p.joiners.length}`} into “{p.anchor.title}”
+                {" "}({p.anchor.count} promise{p.anchor.count === 1 ? "" : "s"})?
+              </div>
+              <ul style={{ margin: "3px 0 0 0", paddingLeft: 18, fontSize: 11, opacity: 0.8 }}>
+                {p.joiners.map((j, i) => (
+                  <li key={i} title={j.members.join("\n")}>
+                    {j.title} ({j.count} promise{j.count === 1 ? "" : "s"})
+                  </li>
+                ))}
+              </ul>
+              <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
+                One slice of {p.resultCount} promises.
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
-                <button data-merge-accept={p.id} title="Merge the two units into one — they will be built as one slice." onClick={() => post({ action: "accept-merge", proposalId: p.id })}>
-                  Merge
+                <button
+                  data-merge-accept={p.id}
+                  title="Fold every listed unit into this one — they will be built as one slice."
+                  onClick={() => post({ action: "accept-merge", unitId: p.id })}
+                >
+                  Merge {p.joiners.length === 1 ? "" : `all ${p.joiners.length} `}into one
                 </button>
-                <button data-merge-reject={p.id} title="Keep them separate — this pair is never suggested again." style={{ opacity: 0.75 }} onClick={() => post({ action: "reject-merge", proposalId: p.id })}>
-                  Reject
+                <button
+                  data-merge-reject={p.id}
+                  title="Keep them separate — these pairs are never suggested again."
+                  style={{ opacity: 0.75 }}
+                  onClick={() => post({ action: "reject-merge", unitId: p.id })}
+                >
+                  Keep separate
                 </button>
               </div>
             </div>
@@ -166,7 +205,7 @@ export function Rail(props: {
           <button
             data-cut-ready
             style={{ ...btn, marginBottom: 10 }}
-            title="Every promise checked, no open questions, not out of date — add them all to the cut in one press."
+            title="Add every ready unit to the cut — those with all checks written, no open questions, and not out of date."
             onClick={() => post({ action: "toggle-cut", changeIds: ready.flatMap((u) => u.changeIds) })}
           >
             Add everything that is ready ({ready.length} unit{ready.length === 1 ? "" : "s"})
@@ -179,12 +218,12 @@ export function Rail(props: {
           <div style={{ display: "flex", gap: 6 }}>
             <button
               data-review-cut
-              title="Read the whole cut before signing: every promise, where it lands, and the exact checks."
+              title="Open the cut review — every promise, where it lands, and the exact checks."
               onClick={() => post({ action: "open-cut-review" })}
             >
               Read it first
             </button>
-            <button data-sign style={btn} title="Signing approves exactly what the review shows and starts the build." onClick={() => post({ action: "sign-cut" })}>
+            <button data-sign style={btn} title="Sign this cut — approves exactly what the review shows and starts the build." onClick={() => post({ action: "sign-cut" })}>
               Sign
             </button>
           </div>
@@ -203,7 +242,7 @@ export function Rail(props: {
               return cutUnits.length >= 2 && unit.inCut ? (
                 <button
                   data-pin-together
-                  title="These units are one thing — pin them into one slice; the pin outranks the computed grouping"
+                  title="Pin these units into one slice — your pin outranks the machine's grouping."
                   onClick={() => {
                     for (let i = 1; i < cutUnits.length; i++)
                       post({ action: "pin", pinKind: "together", changeIds: [cutUnits[0].changeIds[0], cutUnits[i].changeIds[0]] });
@@ -217,26 +256,23 @@ export function Rail(props: {
               {unit.inCut ? "Remove from cut" : "Add to cut"}
             </button>
           </div>
+          <div style={{ fontSize: 11, opacity: 0.7, margin: "8px 0 2px" }}>
+            Promises in this unit ({unit.nodes.length}) — each is one provable
+            thing to build, with the check that will prove it.
+          </div>
           {unit.nodes.map((n) => (
-            <div key={n.id} style={{ padding: "3px 0" }}>
+            <div
+              key={n.id}
+              style={{
+                padding: "5px 0",
+                borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)",
+              }}
+            >
               <div>
-                • {n.sentence}{" "}
-                {unit.changeIds.length > 1 ? (
-                  <button
-                    data-pin-apart={n.id}
-                    title="This change is not part of this unit — split it out"
-                    style={{ fontSize: 10, marginRight: 4 }}
-                    onClick={() => {
-                      const other = unit.changeIds.find((id) => id !== n.id);
-                      if (other) post({ action: "pin", pinKind: "apart", changeIds: [n.id, other] });
-                    }}
-                  >
-                    Split out
-                  </button>
-                ) : null}{" "}
+                {n.sentence}{" "}
                 <span
                   data-flip={n.id}
-                  title="Open the machine face"
+                  title="Show where this promise lands in the code."
                   style={{ cursor: "pointer", opacity: 0.6 }}
                   onClick={() => props.onFlip(n.id)}
                 >
@@ -245,20 +281,46 @@ export function Rail(props: {
               </div>
               {props.flipped.has(n.id) ? (
                 <pre data-machine-face style={{ fontSize: 11, opacity: 0.85, margin: "3px 0 3px 12px", whiteSpace: "pre-wrap" }}>
-                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}\nchecked by: ${n.acceptance.join("; ") || "(no check yet)"}`}
+                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}`}
                 </pre>
               ) : null}
-              {n.acceptance.length === 0 && push.pendingCheck?.changeId !== n.id ? (
-                <button
-                  data-write-check={n.id}
-                  disabled={!!push.activity}
-                  style={{ fontSize: 11, marginLeft: 12 }}
-                  title="The machine writes one check for this promise (takes a moment); you then accept or reword it — your wording wins."
-                  onClick={() => post({ action: "propose-check", changeIds: [n.id] })}
-                >
-                  {push.activity?.label.includes("check") ? "⟳ writing the check…" : "Write a check"}
-                </button>
-              ) : null}
+              {n.acceptance.length ? (
+                <div style={{ fontSize: 11, marginTop: 2, marginLeft: 12, color: "var(--ok, #89d185)" }}>
+                  {n.acceptance.map((a, i) => (
+                    <div key={i}>✓ proved by: {a}</div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, marginTop: 2, marginLeft: 12, opacity: 0.75 }}>
+                  no check yet — nothing would prove this promise
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6, marginTop: 3, marginLeft: 12 }}>
+                {n.acceptance.length === 0 && push.pendingCheck?.changeId !== n.id ? (
+                  <button
+                    data-write-check={n.id}
+                    disabled={!!push.activity}
+                    style={{ fontSize: 11 }}
+                    title="Write a check for this promise — you accept or reword it; your wording wins."
+                    onClick={() => post({ action: "propose-check", changeIds: [n.id] })}
+                  >
+                    {push.activity?.label.includes("check") ? "⟳ writing the check…" : "Write a check"}
+                  </button>
+                ) : null}
+                {unit.changeIds.length > 1 ? (
+                  <button
+                    data-pin-apart={n.id}
+                    title="Move this promise into a unit of its own."
+                    style={{ fontSize: 11, opacity: 0.75 }}
+                    onClick={() => {
+                      const other = unit.changeIds.find((id) => id !== n.id);
+                      if (other) post({ action: "pin", pinKind: "apart", changeIds: [n.id, other] });
+                    }}
+                  >
+                    Move out of this unit
+                  </button>
+                ) : null}
+              </div>
               {push.pendingCheck?.changeId === n.id ? (
                 <PendingCheck changeId={n.id} text={push.pendingCheck.text} kind={push.pendingCheck.kind} />
               ) : null}

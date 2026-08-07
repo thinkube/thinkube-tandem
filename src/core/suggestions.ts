@@ -26,22 +26,38 @@ export function advanceSpaceMembership(space: Space, author: string): Space {
   return { ...space, units: r.units, proposals: [...kept, ...minted] };
 }
 
-export function mergeVerdict(
+/**
+ * One verdict for every suggestion around ONE unit. The machine proposes
+ * pairs, but a unit the machine wants to grow is a single decision for the
+ * human: everything it wants folded in folds in together, or all of it
+ * stays separate and is never proposed again.
+ */
+export function mergeFamilyVerdict(
   space: Space,
-  proposalId: string,
+  unitId: string,
   accept: boolean,
-): { space: Space; message: string } | { reason: string } {
-  const p = (space.proposals ?? []).find((x) => x.id === proposalId);
-  if (!p) return { reason: `no proposal '${proposalId}'` };
-  const rest = (space.proposals ?? []).filter((x) => x.id !== proposalId);
-  if (accept)
-    return {
-      space: { ...space, units: applyMerge(space.units, p.a, p.b), proposals: rest },
-      message: "Merged.",
-    };
+): { space: Space; message: string; count: number } | { reason: string } {
+  const family = (space.proposals ?? []).filter((p) => p.a === unitId || p.b === unitId);
+  if (!family.length) return { reason: `no suggestions touch '${unitId}'` };
+  let units = space.units;
+  const vetoes = [...(space.vetoes ?? [])];
+  for (const p of family) {
+    const other = p.a === unitId ? p.b : p.a;
+    if (accept) units = applyMerge(units, unitId, other);
+    else vetoes.push(pairKey(p.a, p.b));
+  }
+  const ids = new Set(family.map((p) => p.id));
   return {
-    space: { ...space, proposals: rest, vetoes: [...(space.vetoes ?? []), pairKey(p.a, p.b)] },
-    message: "Rejected — that pair will never be re-proposed.",
+    space: {
+      ...space,
+      units,
+      vetoes,
+      proposals: (space.proposals ?? []).filter((p) => !ids.has(p.id)),
+    },
+    message: accept
+      ? `Merged ${family.length} suggestion(s) into one unit.`
+      : `Kept separate — those ${family.length} pair(s) are never re-proposed.`,
+    count: family.length,
   };
 }
 

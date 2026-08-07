@@ -70,3 +70,29 @@ test("list-paste folds wrapped bullet lines into their item", async () => {
   assert.ok(items![0].endsWith("one line per promise."));
   assert.equal(splitList("just one paragraph\nwritten across lines"), null, "no markers, one ask");
 });
+
+test("naming runs in small batches — a big space comes back fully named, none dropped", async () => {
+  const { renderUnitAbstracts, NAMING_BATCH } = await import("../surfaces/naming");
+  const units = Array.from({ length: NAMING_BATCH * 2 + 3 }, (_, i) => ({
+    id: `u-${i}`,
+    changeIds: [`n-${i}`],
+  }));
+  const space = {
+    units,
+    nodes: units.map((u) => ({ id: u.changeIds[0], sentence: `promise ${u.id}` })),
+  };
+  const sizes: number[] = [];
+  const out = await renderUnitAbstracts({
+    space: space as never,
+    round: { model: "opus", repoRoot: "/repo" },
+    name: async (_d: unknown, batch: { id: string }[]) => {
+      sizes.push(batch.length);
+      return batch.map((b) => ({ unitId: b.id, title: `T ${b.id}`, text: "" }));
+    },
+    readStamps: async () => [],
+    onActivity: () => {},
+  } as never);
+  assert.ok(sizes.every((n) => n <= NAMING_BATCH), `no round carries more than ${NAMING_BATCH} units`);
+  assert.equal(sizes.reduce((a, b) => a + b, 0), units.length, "every unit was asked about");
+  assert.equal(out!.size, units.length, "every unit came back named");
+});

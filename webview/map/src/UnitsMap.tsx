@@ -48,7 +48,7 @@ function chipsFor(u: UnitVM): Chip[] {
     chips.push({
       text: "out of date — click to re-check",
       kind: "stale",
-      why: "The code changed underneath this unit since the machine read it. Clicking re-reads the code.",
+      why: "Re-read the code for this unit's promises — it changed since the machine last read it.",
     });
   return chips;
 }
@@ -121,6 +121,7 @@ export function UnitsMap(props: {
       push.units.map((u) => ({
         id: u.id,
         title: u.title,
+        ...(u.fullTitle ? { titleFull: u.fullTitle } : {}),
         abs: u.abs,
         chips: chipsFor(u),
         inCut: u.inCut,
