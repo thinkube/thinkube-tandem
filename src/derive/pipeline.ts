@@ -147,7 +147,6 @@ function buildCompletenessPrompt(args: {
   );
 }
 
-/** Build the intent-coverage prompt. */
 /** Closed verdicts for acceptance criteria — the assessment vocabulary. */
 const CRITERION_VERDICTS = ["observable", "vague", "untestable"] as const;
 
@@ -277,10 +276,10 @@ export async function runDerivationPipeline(
 
   // 1. Repository digest — ONE shared reading per repo state, cached under
   //    the git stamp and reused across asks, batches and sessions.
-  stage("reading your code");
   const stamp = [await readStamp(deps.repoRoot)];
   const digestKey = await digestKeyFor(deps.repoRoot);
   let digest = opts.digest ?? opts.digestStore?.load(digestKey);
+  stage(digest ? "using what I read of your code" : "reading your code");
   if (!digest) {
     const fresh = await sharedRepoDigest(digestKey, digestDeps(deps), round);
     if (fresh) {

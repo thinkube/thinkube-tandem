@@ -53,6 +53,18 @@ function chipsFor(u: UnitVM): Chip[] {
   return chips;
 }
 
+/** A plain vertical stack — the layout every island can always have:
+ *  no engine, no waiting, and cards that can never overlap. */
+function stackLayout(nodes: { id: string; w: number; h: number }[]): LaidOut {
+  const placed = new Map<string, { x: number; y: number; w: number; h: number }>();
+  let y = 0;
+  for (const n of nodes) {
+    placed.set(n.id, { x: 0, y, w: n.w, h: n.h });
+    y += n.h + 18;
+  }
+  return { nodes: placed, edges: [], width: NODE_W, height: Math.max(y - 18, 0) };
+}
+
 interface Island {
   label: string;
   units: UnitVM[];
@@ -129,12 +141,30 @@ export function UnitsMap(props: {
     [islands, heights],
   );
 
+  // Every unit is drawn, always: an island the engine has not reached yet
+  // shows as a plain vertical stack until its real layout lands.
+  const drawn = useMemo(() => {
+    const out = new Map<string, LaidOut>();
+    for (const isl of islands) {
+      const done = layouts.get(isl.label);
+      const complete = done && isl.units.every((u) => done.nodes.has(u.id));
+      out.set(
+        isl.label,
+        complete
+          ? done
+          : stackLayout(isl.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 90 }))),
+      );
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [islands, layouts, heights]);
+
   // A reflow never moves the card you are touching: the card's position is
   // recorded before the layout recomputes, and the viewport shifts by the
   // delta after — the neighbors move, the anchor stays pixel-fixed.
   const anchor = useRef<{ id: string; x: number; y: number } | null>(null);
   const handleToggle = (id: string): void => {
-    const p = positionsOf(islands, layouts).get(id);
+    const p = positionsOf(islands, drawn).get(id);
     if (p) anchor.current = { id, ...p };
     props.onToggle(id);
   };
@@ -151,7 +181,7 @@ export function UnitsMap(props: {
     const cy = (r.height / 2 - world.ty) / world.k;
     let best: { id: string; x: number; y: number } | null = null;
     let bd = Infinity;
-    for (const [id, p] of positionsOf(islands, layouts)) {
+    for (const [id, p] of positionsOf(islands, drawn)) {
       const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
       if (d < bd) {
         bd = d;
@@ -165,39 +195,35 @@ export function UnitsMap(props: {
     const a = anchor.current;
     if (!a) return;
     anchor.current = null;
-    const p = positionsOf(islands, layouts).get(a.id);
+    const p = positionsOf(islands, drawn).get(a.id);
     if (p) world.shiftBy((a.x - p.x) * world.k, (a.y - p.y) * world.k);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layouts]);
 
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      const next = new Map<string, LaidOut>();
-      for (const isl of islands) {
+    // Islands lay out CONCURRENTLY and commit ONE BY ONE: a result that
+    // arrives while the machine is still thinking keeps every island that
+    // already finished, so a busy space never waits for the whole map.
+    void Promise.all(
+      islands.map(async (isl) => {
         const nodes = isl.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 90 }));
+        let laid: LaidOut;
         try {
-          next.set(isl.label, await layoutLayered({ nodes, edges: isl.edges, direction: "DOWN" }));
+          laid = await layoutLayered({ nodes, edges: isl.edges, direction: "DOWN" });
         } catch (err) {
-          // The layout engine refused this island — stack vertically so
-          // cards can NEVER overlap, and say so instead of freezing.
           console.error("tandem: layout failed for island", isl.label, err);
-          let y = 0;
-          const stacked = new Map<string, { x: number; y: number; w: number; h: number }>();
-          for (const n of nodes) {
-            stacked.set(n.id, { x: 0, y, w: n.w, h: n.h });
-            y += n.h + 18;
-          }
-          next.set(isl.label, { nodes: stacked, edges: [], width: NODE_W, height: y });
+          laid = stackLayout(nodes);
         }
-      }
-      if (alive) setLayouts(next);
-    })();
+        if (alive) setLayouts((prev) => new Map(prev).set(isl.label, laid));
+      }),
+    );
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
+
 
   if (push.units.length === 0)
     return (
@@ -210,7 +236,7 @@ export function UnitsMap(props: {
   // Islands side by side, exactly like the prototype's renderUnits().
   let ox = 0;
   const placed = islands.map((isl) => {
-    const g = layouts.get(isl.label);
+    const g = drawn.get(isl.label);
     const w = (g?.width ?? NODE_W) + 2 * PAD;
     const h = (g?.height ?? 120) + 2 * PAD;
     const at = { isl, g, ox, w, h };
@@ -295,9 +321,6 @@ export function UnitsMap(props: {
           isl.units.map((u) => {
             const c = g?.nodes.get(u.id);
             const card = cards.find((k) => k.id === u.id)!;
-            // A card with no coordinates yet stays unrendered — never a
-            // pile at the island origin while the layout computes.
-            if (!c) return null;
             return (
               <NodeCard
                 key={u.id}
