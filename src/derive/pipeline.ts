@@ -115,12 +115,17 @@ function buildImpactPrompt(args: {
 function buildIntentCoveragePrompt(args: {
   ask: Ask;
   changes: Change[];
+  decisions?: string[];
 }): string {
   return (
     `You are the INTENT-COVERAGE check: split the ask into its distinct ` +
     `requirement clauses, then verify every clause is served by at least one ` +
     `derived change. This is a mapping exercise — do not invent requirements ` +
     `the ask does not state.\n\n` +
+    (args.decisions?.length
+      ? `DECISIONS IN FORCE (a clause these settle is COVERED — never ` +
+        `re-open a settled decision as a question):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
+      : "") +
     `THE ASK:\n${args.ask.text}\n\n` +
     `THE CHANGES:\n${describeChanges(args.changes)}\n\n` +
     `Respond with ONE JSON object and nothing else:\n` +
@@ -311,7 +316,10 @@ export async function runDerivationPipeline(
 
   // 5. Intent coverage — uncovered clauses become questions, never silence.
   stage("checking every clause of your ask is covered");
-  const coverage = await round(deps, buildIntentCoveragePrompt({ ask, changes }));
+  const coverage = await round(
+    deps,
+    buildIntentCoveragePrompt({ ask, changes, decisions: opts.decisions }),
+  );
   if (coverage !== null)
     for (const u of parseUncovered(coverage))
       questions.push({
