@@ -72,14 +72,11 @@ function gitRemote(repoRoot: string): Promise<string | undefined> {
   });
 }
 
-async function resolveForge(
-  repoRoot: string,
-  giteaToken: string,
-): Promise<Forge | undefined> {
+async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge | undefined> {
   let remote = await gitRemote(repoRoot);
   if (!remote) return undefined;
-  // Remotes may carry their credential (https://user:token@host/…): strip
-  // it for parsing; it doubles as the forge token when none is configured.
+  // A credentialed remote (https://user:token@host/…) is stripped for
+  // parsing; the token doubles as the forge token when none is set.
   const creds = /^https?:\/\/([^/@:]+):([^/@]+)@/.exec(remote);
   if (creds) remote = remote.replace(`${creds[1]}:${creds[2]}@`, "");
   try {
@@ -105,7 +102,6 @@ async function resolveForge(
 
 const sessions = new Map<string, TandemSession>();
 
-/** The active (owner, thinking space) session; owner = card id or wp:<id>. */
 function activeSession(
   context: vscode.ExtensionContext,
   project?: EnabledProject,
@@ -146,13 +142,12 @@ function updateStatusBar(project: EnabledProject | undefined): void {
   if (!statusBar) return;
   statusBar.text = project
     ? `$(repo) Tandem: ${project.card.product ? `${project.card.product} / ` : ""}${project.card.label}`
-    : "$(repo) Tandem: choose project";
+    : "$(repo) Tandem: choose a repository";
   statusBar.show();
 }
 
 const storeRootOf = configuredStoreRoot;
 
-/** The heartbeat: building progress, LOUD when a worker waits. */
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
@@ -167,6 +162,14 @@ function heartbeat(context: vscode.ExtensionContext): void {
       statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
       statusBar.backgroundColor = undefined;
     }
+    statusBar.show();
+    return;
+  }
+  const grounding = s?.groundingView() ?? [];
+  if (grounding.length) {
+    const running = grounding.filter((g) => g.label !== "waiting").length;
+    statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${grounding.length} asks`;
+    statusBar.backgroundColor = undefined;
     statusBar.show();
     return;
   }

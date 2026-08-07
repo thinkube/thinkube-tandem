@@ -148,9 +148,9 @@ export class TandemSession {
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
       onStage: (label, current, total) => {
         this._grounding.set(ask.id, { label, current, total });
-        const k = this._grounding.size;
+        const running = [...this._grounding.values()].filter((v) => v.label !== "waiting").length;
         this.activity = {
-          label: k > 1 ? `${label} (${k} asks in parallel)` : label,
+          label: running > 1 ? `${label} (${running} asks in parallel)` : label,
           current,
           total,
           askId: ask.id,

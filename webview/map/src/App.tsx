@@ -178,6 +178,24 @@ export function App(): JSX.Element {
                 {tag.guessed === t.k ? "✓ " : ""}{t.label}
               </button>
             ))}
+            {(() => {
+              const lines = tag.text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+              if (lines.length < 2) return null;
+              return (
+                <button
+                  data-tag-lines
+                  title="Your paste has several lines — record each line as its own ask."
+                  style={{ cursor: "pointer", borderRadius: 10, padding: "2px 10px", border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-input-background, #222)", color: "inherit" }}
+                  onClick={() => {
+                    post({ action: "capture-many", items: lines });
+                    setTag(null);
+                    setDraft("");
+                  }}
+                >
+                  {lines.length} asks — one per line
+                </button>
+              );
+            })()}
             <span style={{ opacity: 0.55 }}>nothing is saved until you press one</span>
           </div>
         ) : null}
