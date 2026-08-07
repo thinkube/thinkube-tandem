@@ -12,19 +12,16 @@ import { readStamp } from "../core/stamp";
 import { staleByTouchpoints, staleChangeIds } from "../core/stale";
 import { filesChangedSince } from "../core/staleFiles";
 import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
-import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
-import { planScopes, refuseAnchorless } from "../dispatch/scopes";
-import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
-import { acceptOrder } from "../engine/acceptOrder";
-import { tepApprovalOf, tepContentHash } from "../gates/approval";
+import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
 import { proposeCheckGesture } from "./checkGesture";
+import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
 import { captureManyFlow } from "./captureMany";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
@@ -62,6 +59,11 @@ export class TandemSession {
 
   tepApproval(tepId: string): { approved: boolean; reason?: string } {
     return tepApprovalOf(this.space, this._approvals, this._secret, tepId);
+  }
+
+  /** The human's click IS the mint: a content-bound token, edit-re-armed. */
+  mintTepApproval(tepId: string, contentHash: string): void {
+    this._approvals.put(`tep:${tepId}`, mintApproval(`tep:${tepId}`, contentHash, Date.now(), this._secret));
   }
 
   get repoName(): string {
@@ -425,84 +427,11 @@ export class TandemSession {
 
   /** Gate 1. On success the run starts — nothing between the gates is human. */
   signCut(): { ok: boolean; reason?: string } {
-    const cut = {
-      id: `cut-${this.author}-${this.space.cuts.length + 1}`,
-      changeIds: [...this.cutNodeIds],
-    };
-    const r = signCut(this.space, cut, this.deps.now(), this.author, this.deps.nextTepNumber?.());
-    if (!r.ok) return r;
-    this.space = { ...this.space, cuts: [...this.space.cuts, r.cut] };
-    // The human's click IS the mint (this message only arrives from the
-    // panel): a content-bound token in the machine-local store — the same
-    // no-expiry, edit-re-arms discipline the engine's gates verify.
-    this._approvals.put(
-      `tep:${r.cut.tepId}`,
-      mintApproval(`tep:${r.cut.tepId}`, tepContentHash(this.space, r.cut), Date.now(), this._secret),
-    );
-    this.cutNodeIds.clear();
-    this.changed(`${r.cut.tepId} minted — the run is starting.`);
-    void this.execute(r.cut.id);
-    return { ok: true };
+    return signCutGesture(this);
   }
 
-  async execute(cutId: string): Promise<DispatchOutcome | undefined> {
-    const cut = this.space.cuts.find((c) => c.id === cutId);
-    if (!cut || this.running) return undefined;
-    const approval = cut.tepId ? this.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
-    if (!approval.approved) {
-      this.runNote = `The build could not start: ${approval.reason} — re-sign the cut.`;
-      this.changed(this.runNote);
-      return undefined;
-    }
-    // A project space resolves a forge PER REPOSITORY BATCH; only a
-    // plain repository session needs the anchor forge.
-    if (!this.deps.forge && !this.deps.resolveScope) {
-      this.runNote =
-        "The build could not start: no forge is reachable for this repository — set thinkubeTandem.giteaToken (or use a repository whose remote carries its credential). The cut stays signed, undelivered.";
-      this.changed(this.runNote);
-      return undefined;
-    }
-    this.runNote = undefined;
-    this.running = true;
-    this.runState = new RunState(() => this.deps.onChanged?.());
-    this.changed(`Building ${cut.tepId ?? cutId}…`);
-    try {
-      const plan = planScopes(this.space, cut);
-      if (!plan.ok) {
-        this.running = false;
-        this.runNote = `The build could not start: ${plan.reason}.`;
-        this.changed(this.runNote);
-        return undefined;
-      }
-      const anchorRefusal = this.deps.anchorless ? refuseAnchorless(plan, this.space) : undefined;
-      if (anchorRefusal) {
-        this.running = false;
-        this.runNote = anchorRefusal;
-        this.changed(anchorRefusal);
-        return undefined;
-      }
-      let last;
-      last = await dispatchScopePlan({
-        plan,
-        cut,
-        space: () => this.space,
-        deps: this.deps,
-        runState: this.runState!,
-        spaceName: path.basename(this.deps.storeDir),
-        onDelivery: (delivery, note) => {
-          this.space = { ...this.space, deliveries: [...this.space.deliveries, delivery] };
-          this.changed(note);
-        },
-        changed: (m) => this.changed(m),
-      });
-      if (last?.refusals.length && !last.delivery) {
-        this.runNote = `The build stopped: ${last.refusals.join(" · ")}`;
-        this.changed(this.runNote);
-      } else if (last?.delivery) this.runNote = undefined;
-      return last;
-    } finally {
-      this.running = false;
-    }
+  execute(cutId: string): Promise<DispatchOutcome | undefined> {
+    return executeRun(this, cutId);
   }
 
   /** Answer a parked worker — the oracle's door on the run view. */
@@ -526,41 +455,8 @@ export class TandemSession {
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
    *  retire (best-effort) — refused without green proof BEFORE the merge. */
-  async acceptDelivery(
-    deliveryId: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
-    const d = this.space.deliveries.find((x) => x.id === deliveryId);
-    if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
-    const r = acceptDelivery(d, this.deps.now(), this.deps.docsGateMode ?? "blocking");
-    if (!r.ok) return r;
-    const cut = this.space.cuts.find((c) => c.id === d.cutId);
-    const tepId = cut?.tepId;
-    try {
-      await acceptOrder({
-        merge: async () => {
-          if (this.deps.forge && d.url) await this.deps.forge.merge(d.url);
-          return { merged: !!(this.deps.forge && d.url) };
-        },
-        stamp: async () => {
-          this.space = {
-            ...this.space,
-            deliveries: this.space.deliveries.map((x) =>
-              x.id === deliveryId ? r.delivery : x,
-            ),
-          };
-        },
-        retire: async () => {
-          if (tepId && this.deps.retire) await this.deps.retire(tepId);
-        },
-      });
-    } catch (err) {
-      return {
-        ok: false,
-        reason: `the forge refused the merge: ${err instanceof Error ? err.message : String(err)}`,
-      };
-    }
-    this.changed("Accepted and merged.");
-    return { ok: true };
+  acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
+    return acceptDeliveryGesture(this, deliveryId);
   }
 
   private _lastWritten = "";
