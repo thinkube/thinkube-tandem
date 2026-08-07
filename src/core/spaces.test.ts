@@ -90,3 +90,29 @@ test("TEP numbers are unique per owner ACROSS thinking spaces (the branch-collis
   assert.equal(nextTepNumber(root, "repo-2", "alice"), 1, "owners count separately");
   assert.equal(nextTepNumber(root, "wp-1", "alice", "project"), 1, "projects have their own home");
 });
+
+test("staleness has the honest grain: only touched files stale a promise", async () => {
+  const { staleByTouchpoints } = await import("./stale");
+  const { emptySpace } = await import("./schema");
+  const stamp = [{ root: "/r", head: "h1", dirty: "" }];
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      { id: "hit", sentence: "touched", serves: [], needs: [], acceptance: [],
+        grounding: { touchpoints: [{ path: "src/a.ts" }], stamp } },
+      { id: "miss", sentence: "untouched", serves: [], needs: [], acceptance: [],
+        grounding: { touchpoints: [{ path: "src/b.ts" }], stamp } },
+      { id: "planned", sentence: "unborn", serves: [], needs: [], acceptance: [],
+        grounding: { touchpoints: [{ path: "src/new.ts", planned: true }], stamp } },
+    ],
+  };
+  const stale = await staleByTouchpoints(
+    space,
+    async () => new Set(["src/a.ts", "README.md"]),
+    () => "/r",
+  );
+  assert.deepEqual([...stale], ["hit"], "only the promise whose file moved");
+  const unknown = await staleByTouchpoints(space, async () => undefined, () => "/r");
+  assert.ok(unknown.has("hit") && unknown.has("miss"), "unknown head = honestly stale");
+  assert.ok(!unknown.has("planned"), "planned-only promises make no currency claim");
+});

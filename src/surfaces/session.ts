@@ -10,7 +10,8 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggestions";
 import { readStamp } from "../core/stamp";
-import { staleChangeIds } from "../core/stale";
+import { staleByTouchpoints, staleChangeIds } from "../core/stale";
+import { filesChangedSince } from "../core/staleFiles";
 import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
 import { signCut, acceptDelivery } from "../gates/sign";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
@@ -318,11 +319,22 @@ export class TandemSession {
     void this.renderAbstracts();
   }
 
+  /** Out of date at the honest grain: only when a file the promise
+   *  actually lands in changed — never because the repository moved. */
   async refreshStaleness(): Promise<void> {
-    const read =
-      this.deps.readCurrentStamp ??
-      (async () => [await readStamp(this.deps.round.repoRoot)]);
-    this.stale = staleChangeIds(this.space, await read());
+    if (this.deps.readCurrentStamp) {
+      // Test seam: injected stamps keep the whole-repo comparison.
+      this.stale = staleChangeIds(this.space, await this.deps.readCurrentStamp());
+      return;
+    }
+    this.stale = await staleByTouchpoints(
+      this.space,
+      (root, head) => filesChangedSince(root, head),
+      (scope) =>
+        scope
+          ? this.deps.scopes?.().find((x) => x.id === scope)?.dir
+          : this.deps.round.repoRoot,
+    );
   }
 
   /** Append-only membership (TEP-22) — see core/membership.ts. */
