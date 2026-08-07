@@ -93,7 +93,19 @@ function spacePush(session: TandemSession, message?: string): unknown {
     grounding: session.groundingView(),
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
-    run: session.runState?.view(),
+    // The chart names each worker by the slice it builds, in the words the
+    // human named it — the worker id stays available underneath.
+    run: (() => {
+      const v = session.runState?.view();
+      if (!v) return undefined;
+      return {
+        ...v,
+        units: v.units.map((u) => {
+          const title = session.units.find((x) => x.id === u.slice)?.abstract?.title;
+          return title ? { ...u, sliceTitle: title } : u;
+        }),
+      };
+    })(),
     // A question belongs to an ask, and the ask has cards on the map: both
     // ride along so a recommendation is never a floating sentence.
     questions: session.space.questions

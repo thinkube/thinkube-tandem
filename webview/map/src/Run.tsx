@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { post, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
-import { edgePath, layoutLayered, LaidOut } from "./proto/elkRun";
+import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -65,8 +65,11 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
     () =>
       run.units.map((u) => ({
         id: u.id,
-        title: u.id,
-        abs: `${u.role} unit of ${u.slice}`,
+        title: `${u.role === "test" ? "Tests for" : "Build"} ${u.sliceTitle ?? u.slice}`,
+        titleFull: `worker ${u.id}`,
+        abs: u.requires.length
+          ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
+          : undefined,
         chips: [chipFor(u, now)],
       })),
     [run.units, now],
@@ -77,24 +80,37 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
   );
   const { heights, probe } = useMeasuredHeights(cards, "", world.far);
   const [layout, setLayout] = useState<LaidOut | null>(null);
+  const shape = run.units
+    .map((u) => `${u.id}>${u.requires.join("+")}@${heights.get(u.id) ?? 0}`)
+    .join("|");
   useEffect(() => {
     let alive = true;
     void layoutLayered({
       nodes: run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 })),
       edges,
       direction: "RIGHT",
-    }).then((l) => {
-      if (alive) setLayout(l);
-    });
+    })
+      .catch(() => stackLayout(run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 }))))
+      .then((l) => {
+        if (alive) setLayout(l);
+      });
     return () => {
       alive = false;
     };
-  }, [run.units, edges, heights]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shape]);
+
+  // Every worker is drawn, always — never a pile in the corner while the
+  // engine works.
+  const drawn =
+    layout && run.units.every((u) => layout.nodes.has(u.id))
+      ? layout
+      : stackLayout(run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 })));
 
   const done = run.units.filter((u) => u.state === "done").length;
   const total = run.units.length || 1;
   const running = run.units.find((u) => u.state === "running");
-  const anchor = running && layout?.nodes.get(running.id);
+  const anchor = running && drawn.nodes.get(running.id);
 
   return (
     <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -116,7 +132,7 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
         </span>
         <button
           data-stop-run
-          title="Stop the run — aborts every live worker; the run drains and reports"
+          title="Stop the run — aborts every live worker; the run drains and reports."
           style={{ background: "var(--vscode-statusBarItem-errorBackground, #c72e2e)", color: "#fff", border: "none", borderRadius: 4, padding: "2px 10px", cursor: "pointer" }}
           onClick={() => post({ action: "stop-run" })}
         >
@@ -143,7 +159,7 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
                 <path d="M0,0L6,3L0,6" fill="none" stroke="#9d9d9d" />
               </marker>
             </defs>
-            {(layout?.edges ?? []).map((e, i) => (
+            {drawn.edges.map((e, i) => (
               <path
                 key={i}
                 d={edgePath(e.points, 0, 0)}
@@ -155,7 +171,7 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
             ))}
           </svg>
           {run.units.map((u) => {
-            const c = layout?.nodes.get(u.id);
+            const c = drawn.nodes.get(u.id);
             const card = cards.find((k) => k.id === u.id)!;
             const parked = run.parked.find((p) => p.unitId === u.id);
             return (

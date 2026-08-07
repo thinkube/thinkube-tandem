@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush, UnitVM } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
-import { edgePath, layoutLayered, LaidOut } from "./proto/elkRun";
+import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 
 const PAD = 22;
 const GAP = 46;
@@ -51,18 +51,6 @@ function chipsFor(u: UnitVM): Chip[] {
       why: "Re-read the code for this unit's promises — it changed since the machine last read it.",
     });
   return chips;
-}
-
-/** A plain vertical stack — the layout every island can always have:
- *  no engine, no waiting, and cards that can never overlap. */
-function stackLayout(nodes: { id: string; w: number; h: number }[]): LaidOut {
-  const placed = new Map<string, { x: number; y: number; w: number; h: number }>();
-  let y = 0;
-  for (const n of nodes) {
-    placed.set(n.id, { x: 0, y, w: n.w, h: n.h });
-    y += n.h + 18;
-  }
-  return { nodes: placed, edges: [], width: NODE_W, height: Math.max(y - 18, 0) };
 }
 
 interface Island {

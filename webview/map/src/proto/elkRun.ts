@@ -53,3 +53,15 @@ export async function layoutLayered(args: {
 export function edgePath(points: { x: number; y: number }[], ox: number, oy: number): string {
   return "M " + points.map((p) => `${ox + p.x},${oy + p.y}`).join(" L ");
 }
+
+/** A plain vertical stack — the layout any graph can always have: no
+ *  engine, no waiting, and cards that can never overlap. */
+export function stackLayout(nodes: { id: string; w: number; h: number }[]): LaidOut {
+  const placed = new Map<string, { x: number; y: number; w: number; h: number }>();
+  let y = 0;
+  for (const n of nodes) {
+    placed.set(n.id, { x: 0, y, w: n.w, h: n.h });
+    y += n.h + 18;
+  }
+  return { nodes: placed, edges: [], width: nodes[0]?.w ?? 0, height: Math.max(y - 18, 0) };
+}

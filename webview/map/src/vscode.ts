@@ -35,7 +35,17 @@ interface DeliveryVM {
 }
 
 interface RunView {
-  units: { id: string; slice: string; role: "code" | "test"; state: string; requires: string[]; startedAt?: number; question?: string }[];
+  units: {
+    id: string;
+    slice: string;
+    /** The slice in the human's words, when the space still knows it. */
+    sliceTitle?: string;
+    role: "code" | "test";
+    state: string;
+    requires: string[];
+    startedAt?: number;
+    question?: string;
+  }[];
   logs: string[];
   parked: { unitId: string; question: string }[];
 }
