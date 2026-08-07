@@ -45,6 +45,35 @@ export interface DigestStore {
  *  the cache share a single contextualize round, never five. */
 const inflightDigests = new Map<string, Promise<string | null>>();
 
+/** The cache key for a repository's current state. */
+async function digestKeyFor(repoRoot: string): Promise<string> {
+  const stamp = await readStamp(repoRoot);
+  return `repo@${stamp.head || "no-git"}`;
+}
+
+/** The digest deps: the cheap model, a bounded reading. */
+const digestDeps = (deps: RoundDeps): RoundDeps => ({
+  ...deps,
+  model: deps.volumeModel ?? deps.model,
+  maxTurns: 15,
+});
+
+/**
+ * Establish the shared repository digest when the cache misses. Callers
+ * that fan out call this BEFORE the fan-out: every branch then grounds
+ * warm, and no branch spends its turn re-reading the same code.
+ */
+export async function ensureRepoDigest(
+  deps: RoundDeps,
+  store: DigestStore,
+  round: Round = runReadRound,
+): Promise<void> {
+  const key = await digestKeyFor(deps.repoRoot);
+  if (store.load(key)) return;
+  const fresh = await sharedRepoDigest(key, digestDeps(deps), round);
+  if (fresh) store.save(key, fresh);
+}
+
 async function sharedRepoDigest(
   key: string,
   deps: RoundDeps,
@@ -250,14 +279,10 @@ export async function runDerivationPipeline(
   //    the git stamp and reused across asks, batches and sessions.
   stage("reading your code");
   const stamp = [await readStamp(deps.repoRoot)];
-  const digestKey = `repo@${stamp[0]?.head || "no-git"}`;
+  const digestKey = await digestKeyFor(deps.repoRoot);
   let digest = opts.digest ?? opts.digestStore?.load(digestKey);
   if (!digest) {
-    const fresh = await sharedRepoDigest(
-      digestKey,
-      { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 15 },
-      round,
-    );
+    const fresh = await sharedRepoDigest(digestKey, digestDeps(deps), round);
     if (fresh) {
       digest = fresh;
       opts.digestStore?.save(digestKey, fresh);

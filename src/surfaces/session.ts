@@ -9,9 +9,10 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { advanceSpaceMembership, mergeVerdict, unitEdges } from "../core/suggestions";
 import { readStamp } from "../core/stamp";
+import { runReadRound } from "../derive/round";
 import { staleByTouchpoints, staleChangeIds } from "../core/stale";
 import { filesChangedSince } from "../core/staleFiles";
-import { DigestStore, runDerivationPipeline } from "../derive/pipeline";
+import { DigestStore, ensureRepoDigest, runDerivationPipeline } from "../derive/pipeline";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
@@ -128,6 +129,23 @@ export class TandemSession {
     return { ok: true };
   }
 
+  /** One reading of the repository BEFORE a batch fans out: every ask then
+   *  grounds warm, and no worker spends its turn re-reading the same code.
+   *  An injected pipeline owns its own reading — nothing runs here. */
+  async warmRepoDigest(): Promise<void> {
+    const round = this.deps.contextRound ?? (this.deps.ground ? undefined : runReadRound);
+    if (!round) return;
+    this.activity = {
+      label: "reading your code once — every ask will reuse it",
+      current: 1,
+      total: 1,
+    };
+    this.deps.onChanged?.();
+    await ensureRepoDigest(this.deps.round, this.digestStore(), round).catch(() => {});
+    this.activity = undefined;
+    this.deps.onChanged?.();
+  }
+
   groundingView(): { askId: string; label: string; current: number; total: number }[] {
     return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
   }
@@ -155,7 +173,7 @@ export class TandemSession {
   ): Promise<{ promises: number; questions: number }> {
     const ground = this.deps.ground ?? runDerivationPipeline;
     this._captureAbort ??= new AbortController();
-    this._grounding.set(ask.id, { label: "starting", current: 0, total: 7 });
+    this._grounding.set(ask.id, { label: "starting", current: 0, total: 4 });
     const grounded = await ground({ ...this.deps.round, abort: this._captureAbort }, ask, {
       nextIndex: 1,
       decisions: this.decisionsInForce(),
@@ -329,13 +347,15 @@ export class TandemSession {
       .filter((a): a is { id: string; text: string; at: string } => !!a);
     this.space = { ...this.space, impacts: [] };
     const decisions = this.decisionsInForce();
-    for (const a of asks) this._grounding.set(a.id, { label: "waiting", current: 0, total: 4 });
     const pool = Math.min(5, asks.length);
     this.changed(
       `${impacts.length} implication(s) apply — ${asks.length} ask(s) re-think once each` +
         (asks.length > pool ? `; ${pool} now, the other ${asks.length - pool} wait their turn` : "") +
         ".",
     );
+    await this.warmRepoDigest();
+    for (const a of asks) this._grounding.set(a.id, { label: "waiting", current: 0, total: 4 });
+    this.deps.onChanged?.();
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < asks.length) {

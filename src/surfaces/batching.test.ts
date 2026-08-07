@@ -152,3 +152,54 @@ test("apply-all: every staged implication lands in one press — one re-derivati
   const ids = session.space.nodes.map((n) => n.id);
   assert.equal(new Set(ids).size, ids.length, "parallel re-derives never collide on node ids");
 });
+
+test("a batch reads the repository ONCE before it fans out — no worker re-reads", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const order: string[] = [];
+  let contextRounds = 0;
+  const deps = {
+    round: { model: "opus", volumeModel: "sonnet", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    name: async () => [],
+    now: () => "2026-08-07T13:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => {
+      contextRounds++;
+      order.push("read the repository");
+      await new Promise((r) => setTimeout(r, 10));
+      return "LAYOUT: one shared reading of src/";
+    },
+    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number; digestStore?: { load: (k: string) => string | undefined } }) => {
+      order.push(`ground ${ask.id}`);
+      // Every worker finds the reading already established.
+      assert.ok(
+        opts.digestStore?.load("repo@no-git"),
+        "the shared reading is on disk before any ask grounds",
+      );
+      return {
+        changes: [
+          {
+            id: `node-${ask.id}-${opts.nextIndex}`,
+            sentence: `serves ${ask.id}`,
+            serves: [ask.id],
+            needs: [],
+            acceptance: [],
+            grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+          },
+        ],
+        questions: [],
+      };
+    },
+  };
+  const session = new TandemSession(deps as never);
+  await session.captureMany(["one", "two", "three", "four", "five", "six"]);
+  assert.equal(contextRounds, 1, "six asks, one reading of the repository");
+  assert.equal(order[0], "read the repository", "the reading comes first");
+  assert.ok(
+    order.slice(1).every((o) => o.startsWith("ground ")),
+    "nothing reads the repository again once the fan-out starts",
+  );
+  assert.equal(order.length, 7, "one reading + six groundings");
+});

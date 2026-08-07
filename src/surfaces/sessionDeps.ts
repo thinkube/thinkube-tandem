@@ -34,6 +34,8 @@ export interface SessionDeps {
   docsGateMode?: "blocking" | "advisory";
   classify?: typeof classifyUtterance;
   answerRound?: typeof runReadRound;
+  /** The round that reads the repository for the shared digest. */
+  contextRound?: typeof runReadRound;
   /** Injectable naming round (unit titles + abstracts) for tests. */
   name?: typeof nameUnits;
   proposeCheck?: typeof proposeCheckRound;
