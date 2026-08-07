@@ -38,21 +38,25 @@ function parseKind(raw: string | null): UtteranceKind {
  * the text is a single utterance.
  */
 export function splitList(text: string): string[] | null {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length < 2) return null;
-  const stripped = lines.map((l) =>
-    l.replace(/^\d+[.)]\s+/, "").replace(/^[-*•]\s+/, "").trim(),
-  );
-  const marked = lines.filter((l) => /^(\d+[.)]|[-*•])\s+/.test(l)).length;
-  // Two or more marked lines is a list; unmarked multi-line stays one ask
-  // (people write paragraphs) unless EVERY line is short and marker-free
-  // lists are exactly what list-paste is for — be conservative: require
-  // markers on at least two lines.
-  if (marked < 2) return null;
-  return stripped.filter(Boolean);
+  const items: string[] = [];
+  let markers = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    if (/^(\d+[.)]|[-*•])\s+/.test(t)) {
+      markers++;
+      items.push(t.replace(/^\d+[.)]\s+/, "").replace(/^[-*•]\s+/, "").trim());
+    } else if (items.length) {
+      // A wrapped continuation of the item above it — fold, never split.
+      items[items.length - 1] += " " + t;
+    } else {
+      items.push(t);
+    }
+  }
+  // Two or more MARKED items is a list; unmarked multi-line stays one ask
+  // (people write paragraphs).
+  if (markers < 2 || items.length < 2) return null;
+  return items.filter(Boolean);
 }
 
 export async function classifyUtterance(

@@ -56,3 +56,17 @@ test("parse: null, non-JSON and non-array name nothing", () => {
   assert.deepEqual(parseAbstracts('{"unitId":"u-1"}', valid), []);
   assert.deepEqual(parseAbstracts("[not json]", valid), []);
 });
+
+test("list-paste folds wrapped bullet lines into their item", async () => {
+  const { splitList } = await import("./classify");
+  const pasted = [
+    "- When a delivery is ready, the page must show me",
+    "  how to experience it: one line per promise.",
+    "- Documentation must be required by default for",
+    "  every cut, with a recorded reason to skip.",
+  ].join("\n");
+  const items = splitList(pasted);
+  assert.equal(items!.length, 2, "two asks, not four fragments");
+  assert.ok(items![0].endsWith("one line per promise."));
+  assert.equal(splitList("just one paragraph\nwritten across lines"), null, "no markers, one ask");
+});
