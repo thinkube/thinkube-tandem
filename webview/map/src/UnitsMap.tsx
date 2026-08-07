@@ -175,14 +175,21 @@ export function UnitsMap(props: {
     void (async () => {
       const next = new Map<string, LaidOut>();
       for (const isl of islands) {
-        next.set(
-          isl.label,
-          await layoutLayered({
-            nodes: isl.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 90 })),
-            edges: isl.edges,
-            direction: "DOWN",
-          }),
-        );
+        const nodes = isl.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 90 }));
+        try {
+          next.set(isl.label, await layoutLayered({ nodes, edges: isl.edges, direction: "DOWN" }));
+        } catch (err) {
+          // The layout engine refused this island — stack vertically so
+          // cards can NEVER overlap, and say so instead of freezing.
+          console.error("tandem: layout failed for island", isl.label, err);
+          let y = 0;
+          const stacked = new Map<string, { x: number; y: number; w: number; h: number }>();
+          for (const n of nodes) {
+            stacked.set(n.id, { x: 0, y, w: n.w, h: n.h });
+            y += n.h + 18;
+          }
+          next.set(isl.label, { nodes: stacked, edges: [], width: NODE_W, height: y });
+        }
       }
       if (alive) setLayouts(next);
     })();

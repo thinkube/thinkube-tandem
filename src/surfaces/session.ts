@@ -348,35 +348,45 @@ export class TandemSession {
   }
 
   private _naming = false;
+  private _nameAgain = false;
 
+  /** Naming coalesces: a request during a running pass marks it dirty and
+   *  the pass runs once more at the end — N quick accepts cost one or two
+   *  rounds, never N, and no request is silently dropped. */
   async renderAbstracts(): Promise<void> {
-    if (this._naming) return;
+    if (this._naming) {
+      this._nameAgain = true;
+      return;
+    }
     this._naming = true;
     try {
-      const next = await renderUnitAbstracts({
-        space: this.space,
-        round: this.deps.round,
-        name: this.deps.name ?? nameUnits,
-        readStamps:
-          this.deps.readCurrentStamp ??
-          (async () => [await readStamp(this.deps.round.repoRoot)]),
-        onActivity: (a) => {
-          this.activity = a;
-          this.deps.onChanged?.();
-        },
-      });
-      if (next) {
-        // Merge into the PRESENT space; unchanged units keep their names.
-        this.space = {
-          ...this.space,
-          units: this.space.units.map((u) => {
-            const a = next.get(u.id);
-            return a && a.of.join(",") === [...u.changeIds].join(",") ? { ...u, abstract: a } : u;
-          }),
-        };
-        this.units = this.space.units;
-        this.changed();
-      }
+      do {
+        this._nameAgain = false;
+        const next = await renderUnitAbstracts({
+          space: this.space,
+          round: this.deps.round,
+          name: this.deps.name ?? nameUnits,
+          readStamps:
+            this.deps.readCurrentStamp ??
+            (async () => [await readStamp(this.deps.round.repoRoot)]),
+          onActivity: (a) => {
+            this.activity = a;
+            this.deps.onChanged?.();
+          },
+        });
+        if (next) {
+          // Merge into the PRESENT space; unchanged units keep their names.
+          this.space = {
+            ...this.space,
+            units: this.space.units.map((u) => {
+              const a = next.get(u.id);
+              return a && a.of.join(",") === [...u.changeIds].join(",") ? { ...u, abstract: a } : u;
+            }),
+          };
+          this.units = this.space.units;
+          this.changed();
+        }
+      } while (this._nameAgain);
     } finally {
       this._naming = false;
     }

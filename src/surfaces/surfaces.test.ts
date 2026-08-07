@@ -478,3 +478,41 @@ test("naming round: units get stamped titles + abstracts; a decided question re-
   await reloaded.renderAbstracts();
   assert.equal(calls.length, 2, "a fresh render set names nothing");
 });
+
+test("naming coalesces: many quick requests cost two passes — none dropped, never one per request", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  let namingCalls = 0;
+  const deps = {
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
+    // Slow and fruitless: the unit stays due, so every PASS calls this once.
+    name: async () => {
+      namingCalls++;
+      await new Promise((r) => setTimeout(r, 20));
+      return [];
+    },
+    now: () => "2026-08-07T10:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
+      changes: [
+        {
+          id: `node-${opts.nextIndex}`,
+          sentence: "a thing to name",
+          serves: [ask.id],
+          needs: [],
+          acceptance: [],
+          grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+        },
+      ],
+      questions: [],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.capture("something nameable");
+  namingCalls = 0;
+  // Five accepts land while the first pass is still running.
+  await Promise.all([1, 2, 3, 4, 5].map(() => session.renderAbstracts()));
+  assert.equal(namingCalls, 2, "one running pass + one trailing pass — not five, and not a silent drop to one");
+});
