@@ -50,6 +50,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
     lastAnswer: session.lastAnswer,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
+    grounding: session.groundingView(),
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     run: session.runState?.view(),
@@ -60,12 +61,18 @@ function spacePush(session: TandemSession, message?: string): unknown {
       .filter((q) => !!q.decided)
       .map((q) => q.decided!.text),
     proposals: (session.space.proposals ?? []).map((p) => {
-      const title = (id: string) => {
+      const describe = (id: string) => {
         const u = session.units.find((x) => x.id === id);
-        const first = u && session.space.nodes.find((n) => n.id === u.changeIds[0]);
-        return first?.sentence ?? id;
+        const members = (u?.changeIds ?? [])
+          .map((cid) => byId.get(cid)?.sentence)
+          .filter((x): x is string => !!x);
+        return {
+          title: u?.abstract?.title ?? members[0] ?? id,
+          count: members.length,
+          members,
+        };
       };
-      return { id: p.id, aTitle: title(p.a), bTitle: title(p.b) };
+      return { id: p.id, a: describe(p.a), b: describe(p.b) };
     }),
     impacts: (session.space.impacts ?? []).map((im) => ({
       id: im.id,

@@ -53,10 +53,12 @@ export interface SpacePush {
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   /** Why the last build did not start — rendered on the flow tab. */
   runNote?: string;
+  /** One live progress row per ask being grounded right now. */
+  grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
   questions: { id: string; text: string; recommendation?: string }[];
   decisions: string[];
-  proposals: { id: string; aTitle: string; bTitle: string }[];
+  proposals: { id: string; a: { title: string; count: number; members: string[] }; b: { title: string; count: number; members: string[] } }[];
   impacts: { id: string; decision: string; askText: string; affected: number }[];
   units: UnitVM[];
   edges: { from: string; to: string }[];

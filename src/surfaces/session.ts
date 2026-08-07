@@ -24,7 +24,7 @@ import { acceptOrder } from "../engine/acceptOrder";
 import { tepApprovalOf, tepContentHash } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { nameUnits } from "../derive/name";
-import { proposeCheck as proposeCheckRound } from "../derive/checks";
+import { proposeCheckGesture } from "./checkGesture";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
@@ -32,9 +32,6 @@ import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
 export { SESSION_ACTIONS } from "./affordances";
-
-/** Every action name the session accepts — the reachability test's ground truth. */
-
 
 export class TandemSession {
   space: Space = emptySpace();
@@ -46,24 +43,21 @@ export class TandemSession {
   stale = new Set<string>();
   running = false;
   runState: RunState | undefined;
-  /** Liveness: what is being worked on right now. */
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
-  /** The latest in-board answer to a question. */
   lastAnswer: { question: string; answer: string } | undefined;
   runNote: string | undefined; // why the last build did not start — shown ON the flow tab
   private _captureAbort: AbortController | undefined;
 
-  constructor(private deps: SessionDeps) {
+  constructor(readonly deps: SessionDeps) {
     this._approvals = createApprovalStore(deps.storageDir);
     this._secret = loadOrCreateApprovalSecret(deps.storageDir);
     this.load();
   }
 
-  private get author(): string {
+  get author(): string {
     return this.deps.author ?? "user";
   }
 
-  /** Token verdict for a minted TEP. */
   tepApproval(tepId: string): { approved: boolean; reason?: string } {
     return tepApprovalOf(this.space, this._approvals, this._secret, tepId);
   }
@@ -72,12 +66,11 @@ export class TandemSession {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
 
-  private changed(message?: string): void {
+  changed(message?: string): void {
     this.persist();
     this.deps.onChanged?.(message);
   }
 
-  /** Per-ask digests, file-backed beside the space. */
   private digestStore(): DigestStore {
     return makeDigestStore(this.deps.storeDir);
   }
@@ -95,17 +88,26 @@ export class TandemSession {
     this._captureAbort?.abort();
   }
 
-  /** The confirmed list-paste: several asks in order. */
+  /** List-paste: every ask lands at once, then grounds five in parallel. */
   async captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
+    const added: { id: string; text: string; at: string }[] = [];
     for (const t of texts) {
-      const r = await this.capture(t, "ask");
-      if (!r.ok) return r;
+      const r = addAsk(this.space, t, this.deps.now(), `ask-${this.author}-${this.space.asks.length + 1}`);
+      if (!r.ok) return { ok: false, reason: r.reason };
+      this.space = r.space;
+      added.push(r.added);
     }
+    this.changed(`${added.length} asks recorded — thinking about all of them now.`);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < added.length) await this.groundAsk(added[next], `p${++next}`);
+    };
+    await Promise.all(Array.from({ length: Math.min(5, added.length) }, worker));
+    await this.renderAbstracts();
     return { ok: true };
   }
 
-  /** Capture with the CONFIRMED kind: an ask grounds, a question is
-   *  answered and recorded nowhere, a rule becomes a decision. */
+  /** Capture with the CONFIRMED kind. */
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
     const classify = this.deps.classify ?? classifyUtterance;
     const kind = confirmedKind ?? (await classify(this.deps.round, text));
@@ -134,26 +136,49 @@ export class TandemSession {
     );
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
-    this.changed(); // the ask is visibly on the list BEFORE any thinking starts
+    this.changed(); // visible on the list BEFORE thinking starts
+    await this.groundAsk(r.added, "s");
+    await this.renderAbstracts();
+    return { ok: true };
+  }
+
+  private _grounding = new Map<string, { label: string; current: number; total: number }>();
+
+  groundingView(): { askId: string; label: string; current: number; total: number }[] {
+    return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
+  }
+
+  private async groundAsk(
+    ask: { id: string; text: string; at: string },
+    mintPrefix: string,
+  ): Promise<void> {
     const ground = this.deps.ground ?? runDerivationPipeline;
-    this._captureAbort = new AbortController();
-    const grounded = await ground(
-      { ...this.deps.round, abort: this._captureAbort },
-      r.added,
-      {
-        nextIndex: this.space.nodes.length + 1,
-        decisions: this.decisionsInForce(),
-        digestStore: this.digestStore(),
-        mintNodeId: (n) => `node-${this.author}-${n}`,
-        ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-        onStage: (label, current, total) => {
-          this.activity = { label, current, total, askId: r.added.id };
-          this.deps.onChanged?.();
-        },
+    this._captureAbort ??= new AbortController();
+    this._grounding.set(ask.id, { label: "starting", current: 0, total: 7 });
+    const grounded = await ground({ ...this.deps.round, abort: this._captureAbort }, ask, {
+      nextIndex: 1,
+      decisions: this.decisionsInForce(),
+      digestStore: this.digestStore(),
+      // Prefix keeps ids unique across parallel groundings.
+      mintNodeId: (n) => `node-${this.author}-${mintPrefix}${ask.id.split("-").pop()}-${n}`,
+      ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
+      onStage: (label, current, total) => {
+        this._grounding.set(ask.id, { label, current, total });
+        const k = this._grounding.size;
+        this.activity = {
+          label: k > 1 ? `${label} (${k} asks in parallel)` : label,
+          current,
+          total,
+          askId: ask.id,
+        };
+        this.deps.onChanged?.();
       },
-    );
-    this.activity = undefined;
-    this._captureAbort = undefined;
+    });
+    this._grounding.delete(ask.id);
+    if (this._grounding.size === 0) {
+      this.activity = undefined;
+      this._captureAbort = undefined;
+    }
     const questions = grounded.questions.map((q, i) => ({
       ...q,
       id: `q-${this.author}-${this.space.questions.length + i + 1}`,
@@ -167,12 +192,8 @@ export class TandemSession {
     await this.refreshStaleness();
     const qNote = questions.length ? ` ${questions.length} question(s) need you.` : "";
     this.changed(
-      grounded.changes.length
-        ? `Read the code and derived ${grounded.changes.length} promise(s).${qNote}`
-        : `The round returned no changes — the ask is captured; re-ground any time.${qNote}`,
+      `${grounded.changes.length ? `Derived ${grounded.changes.length} promise(s)` : "No promises derived"} for "${ask.text.slice(0, 32)}…".${qNote}`,
     );
-    await this.renderAbstracts();
-    return { ok: true };
   }
 
   /** Re-derive every stale ask; fresh grounding replaces old. */
@@ -373,19 +394,8 @@ export class TandemSession {
 
   pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
 
-  /** The machine proposes a check; the human's wording wins. */
-  async proposeCheckFor(changeId: string): Promise<{ ok: boolean; reason?: string }> {
-    if (this.activity) return { ok: false, reason: "the machine is busy — wait for the current step to finish" };
-    const n = this.space.nodes.find((x) => x.id === changeId);
-    if (!n) return { ok: false, reason: `no promise '${changeId}'` };
-    const ask = this.space.asks.find((a) => n.serves.includes(a.id));
-    this.activity = { label: "writing a check for the promise", current: 1, total: 1 };
-    this.deps.onChanged?.();
-    const p = await (this.deps.proposeCheck ?? proposeCheckRound)(this.deps.round, n, ask?.text ?? "").catch(() => undefined);
-    this.activity = undefined;
-    if (p) this.pendingCheck = { changeId, ...p };
-    this.deps.onChanged?.(p ? undefined : "The round could not write a check — try again or reword the promise.");
-    return p ? { ok: true } : { ok: false, reason: "no check produced" };
+  proposeCheckFor(changeId: string): Promise<{ ok: boolean; reason?: string }> {
+    return proposeCheckGesture(this, changeId);
   }
 
   acceptCheck(changeId: string, text: string, kind: "probe" | "assessment"): { ok: boolean; reason?: string } {

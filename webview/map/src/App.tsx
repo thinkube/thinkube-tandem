@@ -274,11 +274,18 @@ export function App(): JSX.Element {
             {push.asks.map((a) => (
               <li key={a.id} data-ask={a.id} style={{ fontSize: 12, opacity: 0.85 }}>
                 {a.text}
-                {push.activity?.askId === a.id ? (
-                  <span style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
-                    ⟳ {push.activity.label}… ({push.activity.current}/{push.activity.total})
-                  </span>
-                ) : null}
+                {(() => {
+                  const g = push.grounding?.find((x) => x.askId === a.id);
+                  if (!g) return null;
+                  return (
+                    <span data-ask-progress={a.id} style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
+                      <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span> {g.label}… ({g.current}/{g.total})
+                      <span style={{ display: "inline-block", width: 60, height: 4, background: "#3c3c3c", borderRadius: 2, marginLeft: 6, verticalAlign: "middle" }}>
+                        <span style={{ display: "block", width: `${Math.round((g.current / Math.max(1, g.total)) * 100)}%`, height: 4, background: "var(--vscode-progressBar-background, #3794ff)", borderRadius: 2 }} />
+                      </span>
+                    </span>
+                  );
+                })()}
               </li>
             ))}
           </ol>

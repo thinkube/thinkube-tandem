@@ -103,8 +103,14 @@ export function Rail(props: {
           <strong style={{ fontSize: 12 }}>The machine suggests merging</strong>
           {push.proposals.map((p) => (
             <div key={p.id} data-proposal={p.id} style={{ padding: "4px 0" }}>
-              <div style={{ opacity: 0.85 }}>
-                “{p.aTitle}” + “{p.bTitle}” look like one slice
+              <div
+                style={{ opacity: 0.85 }}
+                title={`Would merge into ONE unit:\n— ${p.a.members.join("\n— ")}\n— ${p.b.members.join("\n— ")}`}
+              >
+                Merge “{p.a.title}” ({p.a.count} promise{p.a.count === 1 ? "" : "s"}) with “{p.b.title}” ({p.b.count} promise{p.b.count === 1 ? "" : "s"})?
+                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
+                  They would be built together as one slice. Hover to see every promise involved.
+                </div>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
                 <button data-merge-accept={p.id} title="Merge the two units into one — they will be built as one slice." onClick={() => post({ action: "accept-merge", proposalId: p.id })}>
