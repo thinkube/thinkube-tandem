@@ -132,6 +132,22 @@ export class TandemSession {
     return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
   }
 
+  /** Progress lives ON the ask's own row; the aggregate counts only what
+   *  actually runs. Shared by grounding and every re-derivation. */
+  private stageFor(askId: string): (label: string, current: number, total: number) => void {
+    return (label, current, total) => {
+      this._grounding.set(askId, { label, current, total });
+      const running = [...this._grounding.values()].filter((v) => v.label !== "waiting").length;
+      this.activity = {
+        label: running > 1 ? `${label} (${running} asks in parallel)` : label,
+        current,
+        total,
+        askId,
+      };
+      this.deps.onChanged?.();
+    };
+  }
+
   async groundAsk(
     ask: { id: string; text: string; at: string },
     mintPrefix: string,
@@ -146,17 +162,7 @@ export class TandemSession {
       digestStore: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${mintPrefix}${ask.id.split("-").pop()}-${n}`,
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-      onStage: (label, current, total) => {
-        this._grounding.set(ask.id, { label, current, total });
-        const running = [...this._grounding.values()].filter((v) => v.label !== "waiting").length;
-        this.activity = {
-          label: running > 1 ? `${label} (${running} asks in parallel)` : label,
-          current,
-          total,
-          askId: ask.id,
-        };
-        this.deps.onChanged?.();
-      },
+      onStage: this.stageFor(ask.id),
     });
     this._grounding.delete(ask.id);
     if (this._grounding.size === 0) {
@@ -203,13 +209,11 @@ export class TandemSession {
         digests: this.digestStore(),
         mintNodeId: (n) => `node-${this.author}-${n}`,
         ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-        onStage: (label, current, total) => {
-          this.activity = { label, current, total };
-          this.deps.onChanged?.();
-        },
+        onStage: this.stageFor(askId),
       }));
+      this._grounding.delete(askId);
     }
-    this.activity = undefined;
+    if (this._grounding.size === 0) this.activity = undefined;
     this.recluster();
     await this.refreshStaleness();
     this.changed("Re-read the code and refreshed the out-of-date promises.");
@@ -266,42 +270,49 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Accept = re-derive under the decisions; dismiss touches nothing. */
+  /** Accept = ONE re-derivation of the ask under ALL decisions in force —
+   *  every other staged implication on the same ask is covered by that
+   *  pass and consumed with it. Dismiss touches nothing. */
   async decideImpact(
     impactId: string,
     accept: boolean,
   ): Promise<{ ok: boolean; reason?: string }> {
     const im = (this.space.impacts ?? []).find((x) => x.id === impactId);
     if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
-    this.space = {
-      ...this.space,
-      impacts: (this.space.impacts ?? []).filter((x) => x.id !== impactId),
-    };
     if (!accept) {
+      this.space = {
+        ...this.space,
+        impacts: (this.space.impacts ?? []).filter((x) => x.id !== impactId),
+      };
       this.changed("Dismissed — the definitions stay as they are.");
       return { ok: true };
     }
+    const covered = (this.space.impacts ?? []).filter((x) => x.askId === im.askId).length;
+    this.space = {
+      ...this.space,
+      impacts: (this.space.impacts ?? []).filter((x) => x.askId !== im.askId),
+    };
     const ask = this.space.asks.find((a) => a.id === im.askId);
     if (!ask) return { ok: false, reason: "the ask no longer exists" };
+    const decisions = this.decisionsInForce();
     this.space = applyRederive(this.space, await rederiveAskFlow({
       space: this.space,
       ask,
       round: this.deps.round,
       ground: this.deps.ground ?? runDerivationPipeline,
-      decisions: this.decisionsInForce(),
+      decisions,
       digests: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${n}`,
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-      onStage: (label, current, total) => {
-        this.activity = { label, current, total };
-        this.deps.onChanged?.();
-      },
+      onStage: this.stageFor(ask.id),
     }));
-    this.activity = undefined;
+    this._grounding.delete(ask.id);
+    if (this._grounding.size === 0) this.activity = undefined;
     this.recluster();
     await this.refreshStaleness();
+    const under = `under ${decisions.length === 1 ? "the decision" : `all ${decisions.length} decisions`} in force`;
     this.changed(
-      `Re-derived under the decision: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Merges and pins on the OLD promises no longer apply.`,
+      `Re-derived once ${under}${covered > 1 ? ` — this one pass covered ${covered} accepted implications on this ask` : ""}: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Merges and pins on the OLD promises no longer apply.`,
     );
     await this.renderAbstracts();
     return { ok: true };
