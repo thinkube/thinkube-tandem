@@ -196,8 +196,13 @@ export class TandemSession {
         digests: this.digestStore(),
         mintNodeId: (n) => `node-${this.author}-${n}`,
         ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
+        onStage: (label, current, total) => {
+          this.activity = { label, current, total };
+          this.deps.onChanged?.();
+        },
       });
     }
+    this.activity = undefined;
     this.recluster();
     await this.refreshStaleness();
     this.changed("Re-read the code and refreshed the out-of-date promises.");
@@ -280,10 +285,17 @@ export class TandemSession {
       digests: this.digestStore(),
       mintNodeId: (n) => `node-${this.author}-${n}`,
       ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
+        onStage: (label, current, total) => {
+          this.activity = { label, current, total };
+          this.deps.onChanged?.();
+        },
     });
+    this.activity = undefined;
     this.recluster();
     await this.refreshStaleness();
-    this.changed("Re-derived the promises under the decision.");
+    this.changed(
+      `Re-derived under the decision: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Your merges and pins on the OLD promises no longer apply — the machine may suggest merging again.`,
+    );
     await this.renderAbstracts();
     return { ok: true };
   }
@@ -309,6 +321,12 @@ export class TandemSession {
   /** Append-only membership (TEP-22) — see core/membership.ts. */
   recluster(): void {
     this.space = advanceSpaceMembership(this.space, this.author);
+    // Suggestions pointing at units that no longer exist are noise — drop.
+    const live = new Set(this.space.units.map((u) => u.id));
+    this.space = {
+      ...this.space,
+      proposals: (this.space.proposals ?? []).filter((p) => live.has(p.a) && live.has(p.b)),
+    };
     this.units = this.space.units;
     this.edges = unitEdges(this.space.nodes, this.units);
   }

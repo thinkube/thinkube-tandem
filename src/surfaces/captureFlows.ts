@@ -102,12 +102,14 @@ export async function rederiveAskFlow(args: {
       digestStore: DigestStore;
       mintNodeId: (n: number) => string;
       scopes?: { id: string; dir: string; label?: string }[];
+      onStage?: (label: string, current: number, total: number) => void;
     },
   ) => Promise<{ changes: Space["nodes"] }>;
   decisions: string[];
   digests: DigestStore;
   mintNodeId: (n: number) => string;
   scopes?: { id: string; dir: string; label?: string }[];
+  onStage?: (label: string, current: number, total: number) => void;
 }): Promise<Space> {
   const signed = new Set(
     args.space.cuts.filter((cu) => cu.signature).flatMap((cu) => cu.changeIds),
@@ -124,6 +126,7 @@ export async function rederiveAskFlow(args: {
     digestStore: args.digests,
     mintNodeId: args.mintNodeId,
     ...(args.scopes ? { scopes: args.scopes } : {}),
+    ...(args.onStage ? { onStage: args.onStage } : {}),
   });
   return {
     ...args.space,
