@@ -100,6 +100,8 @@ export interface SpacePush {
   rules: { id: string; text: string; scope: string; governs: number; fromAsk: string }[];
   /** Promises attached to no claim — scope creep, named on the map. */
   orphans: { id: string; text: string }[];
+  /** A reading that failed: nothing derived, and why. */
+  modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */
   pendingModel?: {
     subjects: { name: string; claims: { text: string; why?: string }[] }[];
@@ -132,6 +134,14 @@ export type WebToHost =
   | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "accept-model" }
+  | { action: "retry-model" }
+  | { action: "rename-subject"; unitId: string; text: string }
+  | { action: "merge-subject"; unitId: string; into: string }
+  | { action: "split-claim"; unitId: string }
+  | { action: "move-claim"; unitId: string; into: string }
+  | { action: "promote-claim"; unitId: string; text?: string }
+  | { action: "dismiss-promise"; unitId: string; text?: string }
+  | { action: "retire-rule"; unitId: string }
   | { action: "revise-model"; kind: "drop-subject" | "drop-rule" | "to-rule"; page: number }
   | { action: "read-log"; stepId?: string; page?: number }
   | { action: "stop-run" }

@@ -35,6 +35,7 @@ interface InboundAction {
   impactId?: string;
   stepId?: string;
   page?: number;
+  into?: string;
 }
 
 /** A card head is one line: a long sentence is clipped, never a paragraph. */
@@ -158,6 +159,9 @@ function spacePush(session: TandemSession, message?: string): unknown {
     orphans: session.space.nodes
       .filter((n) => !n.servesClaim)
       .map((n) => ({ id: n.id, text: n.sentence })),
+    modelFailure: session.modelFailure
+      ? { reason: session.modelFailure.reason, sentences: session.modelFailure.texts.length }
+      : undefined,
     pendingModel: session.pendingModel
       ? {
           subjects: session.pendingModel.model.subjects.map((s) => ({
@@ -230,6 +234,26 @@ async function handleInbound(
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "revise-model" && msg.kind && msg.page !== undefined) {
     session.reviseModel({ kind: msg.kind as never, index: msg.page });
+  } else if (
+    msg.action === "rename-subject" ||
+    msg.action === "merge-subject" ||
+    msg.action === "split-claim" ||
+    msg.action === "move-claim" ||
+    msg.action === "promote-claim" ||
+    msg.action === "dismiss-promise" ||
+    msg.action === "retire-rule"
+  ) {
+    const r = session.editModel({
+      kind: msg.action as never,
+      id: msg.unitId ?? "",
+      ...(msg.into ? { into: msg.into } : {}),
+      ...(msg.text ? { text: msg.text } : {}),
+    });
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "retry-model") {
+    push("Reading your list again…");
+    const r = await session.retryModel();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "read-log") {
     session.readLog(msg.stepId ?? null, msg.page);
   } else if (msg.action === "stop-run") {

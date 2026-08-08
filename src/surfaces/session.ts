@@ -20,7 +20,7 @@ import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, inheritRules, PendingModel, proposeModelFlow } from "./modelFlow";
+import { applyModel, inheritRules, ModelFailure, PendingModel, proposeModelFlow, retryModel } from "./modelFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
@@ -45,6 +45,8 @@ export class TandemSession {
   openLog: { step: string; page: number } | undefined; // the log being read
   /** The model the round proposed, waiting for the human to accept it. */
   pendingModel: PendingModel | undefined;
+  /** A reading that failed: nothing was derived, and it says why. */
+  modelFailure: ModelFailure | undefined;
   private _captureAbort: AbortController | undefined;
   _grounding = new Map<string, { label: string; current: number; total: number }>();
 
@@ -124,6 +126,108 @@ export class TandemSession {
     );
     await groundSubjectFlow(this, (this.space.subjects ?? []).map((s) => s.id));
     return { ok: true };
+  }
+
+  /** Read the recorded sentences again after a failure. */
+  retryModel(): Promise<{ ok: boolean; reason?: string }> {
+    return retryModel(this);
+  }
+
+  /** Corrections to the recorded model. Each one changes something real:
+   *  the shape of what will be derived, or what governs it. */
+  editModel(edit: {
+    kind: "rename-subject" | "merge-subject" | "split-claim" | "move-claim" | "promote-claim" | "dismiss-promise" | "retire-rule";
+    id: string;
+    into?: string;
+    text?: string;
+  }): { ok: boolean; reason?: string } {
+    const sp = this.space;
+    const subjects = sp.subjects ?? [];
+    const claims = sp.claims ?? [];
+    const rules = sp.rules ?? [];
+    switch (edit.kind) {
+      case "rename-subject": {
+        if (!edit.text?.trim()) return { ok: false, reason: "a subject needs a name" };
+        this.space = {
+          ...sp,
+          subjects: subjects.map((x) => (x.id === edit.id ? { ...x, name: edit.text!.trim() } : x)),
+        };
+        this.changed("Renamed — your word for it.");
+        return { ok: true };
+      }
+      case "merge-subject": {
+        const into = subjects.find((x) => x.id === edit.into);
+        const gone = subjects.find((x) => x.id === edit.id);
+        if (!into || !gone) return { ok: false, reason: "no such subject" };
+        this.space = {
+          ...sp,
+          subjects: subjects
+            .filter((x) => x.id !== gone.id)
+            .map((x) => (x.id === into.id ? { ...x, from: [...x.from, ...gone.from] } : x)),
+          claims: claims.map((c) => (c.subjectId === gone.id ? { ...c, subjectId: into.id } : c)),
+          rules: rules.map((r) => ({
+            ...r,
+            governs: [...new Set(r.governs.map((g) => (g === gone.id ? into.id : g)))],
+          })),
+        };
+        this.changed(`“${gone.name}” and “${into.name}” were one thing — now they are.`);
+        return { ok: true };
+      }
+      case "split-claim": {
+        const claim = claims.find((c) => c.id === edit.id);
+        if (!claim) return { ok: false, reason: "no such claim" };
+        const id = `subject-${this.author}-${subjects.length + 1}`;
+        this.space = {
+          ...sp,
+          subjects: [...subjects, { id, name: edit.text?.trim() || claim.text.slice(0, 48), from: [claim.fromAsk] }],
+          claims: claims.map((c) => (c.id === claim.id ? { ...c, subjectId: id } : c)),
+        };
+        this.changed("Split into its own subject — it derives on its own now.");
+        return { ok: true };
+      }
+      case "move-claim": {
+        if (!subjects.some((x) => x.id === edit.into)) return { ok: false, reason: "no such subject" };
+        this.space = {
+          ...sp,
+          claims: claims.map((c) => (c.id === edit.id ? { ...c, subjectId: edit.into! } : c)),
+        };
+        this.changed("Moved — it derives with its new subject.");
+        return { ok: true };
+      }
+      case "promote-claim": {
+        const claim = claims.find((c) => c.id === edit.id);
+        if (!claim) return { ok: false, reason: "no such claim" };
+        this.space = {
+          ...sp,
+          claims: claims.filter((c) => c.id !== claim.id),
+          rules: [
+            ...rules,
+            {
+              id: `rule-${this.author}-${rules.length + 1}`,
+              text: claim.text,
+              scope: edit.text?.trim() || "every subject",
+              fromAsk: claim.fromAsk,
+              governs: subjects.map((x) => x.id),
+            },
+          ],
+        };
+        this.changed("Promoted to a rule — it governs every subject, and any new one that matches.");
+        return { ok: true };
+      }
+      case "dismiss-promise": {
+        if (signedIds(sp.cuts).has(edit.id))
+          return { ok: false, reason: "that promise is signed — it is a record now" };
+        this.cutNodeIds.delete(edit.id);
+        this.space = { ...sp, nodes: sp.nodes.filter((n) => n.id !== edit.id) };
+        this.changed(edit.text?.trim() ? `Dismissed: ${edit.text.trim()}` : "Dismissed.");
+        return { ok: true };
+      }
+      case "retire-rule": {
+        this.space = { ...sp, rules: rules.filter((r) => r.id !== edit.id) };
+        this.changed("Retired — it governs nothing from now on.");
+        return { ok: true };
+      }
+    }
   }
 
   /** Corrections to the proposal, before it is recorded. */

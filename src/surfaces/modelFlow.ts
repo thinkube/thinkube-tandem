@@ -18,6 +18,13 @@ export interface PendingModel {
   missing: number[];
 }
 
+/** Why a reading failed, kept so the human can see it and try again. */
+export interface ModelFailure {
+  reason: string;
+  texts: string[];
+  askIds: string[];
+}
+
 /** Record the sentences as asks, then ask the round what they are about. */
 export async function proposeModelFlow(
   s: TandemSession,
@@ -31,32 +38,53 @@ export async function proposeModelFlow(
     added.push(r.added.id);
   }
   s.changed(`${added.length} recorded — reading them as one description…`);
+  return readModel(s, texts, added);
+}
 
+/** Read again, over the sentences already recorded. */
+export async function retryModel(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
+  const f = s.modelFailure;
+  if (!f) return { ok: false, reason: "nothing to read again" };
+  s.modelFailure = undefined;
+  return readModel(s, f.texts, f.askIds);
+}
+
+/**
+ * The reading itself. It either produces a model the human can check, or it
+ * FAILS — and says so. There is no fallback: a reading that quietly becomes
+ * one subject per sentence looks exactly like a working model and is the
+ * old shape wearing new words.
+ */
+async function readModel(
+  s: TandemSession,
+  texts: string[],
+  askIds: string[],
+): Promise<{ ok: boolean; reason?: string }> {
   s.activity = { label: "reading your list as one description", current: 1, total: 1 };
   s.deps.onChanged?.();
-  const model = await (s.deps.solveModel ?? solveModel)(s.deps.round, texts);
+  // The round's own failure lines are the diagnosis; without them a failed
+  // reading is a mystery.
+  const said: string[] = [];
+  const model = await (s.deps.solveModel ?? solveModel)(
+    { ...s.deps.round, log: (line) => said.push(line) },
+    texts,
+  ).catch((err: unknown) => {
+    said.push(err instanceof Error ? err.message : String(err));
+    return undefined;
+  });
   s.activity = undefined;
 
   if (!model) {
-    // Fail-soft: one subject per sentence keeps the space usable, and the
-    // human can merge them by hand.
-    s.pendingModel = {
-      askIds: added,
-      missing: [],
-      model: {
-        subjects: texts.map((t, i) => ({
-          name: t.split(/[.:;—]/)[0].slice(0, 60),
-          from: [i + 1],
-          claims: [{ text: t, from: i + 1 }],
-        })),
-        rules: [],
-      },
+    s.modelFailure = {
+      reason: said.join("\n").trim() || "the round returned nothing I could read as subjects and claims",
+      texts,
+      askIds,
     };
-    s.changed("I could not read the list as one description — here is one subject per sentence to correct.");
-    return { ok: true };
+    s.changed("I could not read your list. Nothing was derived — your sentences are recorded and waiting.");
+    return { ok: false, reason: s.modelFailure.reason };
   }
 
-  s.pendingModel = { askIds: added, model, missing: unaccountedFor(model, texts.length) };
+  s.pendingModel = { askIds, model, missing: unaccountedFor(model, texts.length) };
   s.changed(
     `${model.subjects.length} subject(s) and ${model.rules.length} rule(s) — check them before I think about the code.`,
   );

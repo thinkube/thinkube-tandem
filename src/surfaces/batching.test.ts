@@ -333,3 +333,56 @@ test("a rule in force reaches a subject captured later, and a no is remembered",
     "only the new subject is asked about — every judged pair stays judged",
   );
 });
+
+test("a failed reading derives nothing, says why, and can be read again", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  let attempt = 0;
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
+    now: () => "2026-08-08T20:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    solveModel: async (d: { log?: (l: string) => void }) => {
+      attempt++;
+      if (attempt === 1) {
+        d.log?.("round errored: usage limit reached");
+        return undefined;
+      }
+      return {
+        subjects: [{ name: "the delivery page", from: [1], claims: [{ text: "shows a walkthrough", from: 1 }] }],
+        rules: [],
+      };
+    },
+    ground: async (_d: unknown, ask: { id: string }, opts: { claims?: { id: string }[] }) => ({
+      changes: (opts.claims ?? []).map((c, i) => ({
+        id: `node-${i}`,
+        sentence: `promise for ${c.id}`,
+        serves: [ask.id],
+        servesClaim: c.id,
+        needs: [],
+        acceptance: [],
+        grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+      })),
+      questions: [],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+
+  const first = await session.captureMany(["the delivery page shows a walkthrough"]);
+  assert.equal(first.ok, false, "a failed reading is a failure, not a quiet success");
+  assert.equal(session.pendingModel, undefined, "nothing is proposed");
+  assert.equal(session.space.subjects?.length ?? 0, 0, "NO subject is invented from a failed reading");
+  assert.equal(session.space.nodes.length, 0, "and nothing is derived");
+  assert.match(session.modelFailure!.reason, /usage limit reached/, "the round's own words are kept");
+  assert.equal(session.space.asks.length, 1, "the human's sentence is still recorded");
+
+  const again = await session.retryModel();
+  assert.ok(again.ok, "reading again works on the sentences already recorded");
+  assert.equal(session.modelFailure, undefined, "the failure clears");
+  assert.equal(session.space.asks.length, 1, "and the sentence is not recorded twice");
+  await session.acceptModel();
+  assert.equal(session.space.subjects!.length, 1, "the second reading lands");
+});

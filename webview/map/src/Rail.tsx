@@ -138,6 +138,119 @@ function StepLog(props: { log: NonNullable<SpacePush["runLog"]> }): JSX.Element 
   );
 }
 
+
+/** What is selected, and everything you can change about it. Every button
+ *  here alters what will be derived, or what governs it. */
+function Selected(props: { push: SpacePush; id: string }): JSX.Element | null {
+  const { push, id } = props;
+  const subject = push.subjects.find((s) => s.id === id);
+  const claim = push.subjects.flatMap((s) => s.claims).find((c) => c.id === id);
+  const promise = push.subjects
+    .flatMap((s) => s.claims.flatMap((c) => c.promises))
+    .find((p) => p.id === id);
+  const rule = push.rules.find((x) => x.id === id);
+  if (!subject && !claim && !promise && !rule) return null;
+
+  const others = push.subjects.filter((s) => s.id !== (subject?.id ?? ""));
+  const owner = claim
+    ? push.subjects.find((s) => s.claims.some((c) => c.id === claim.id))
+    : undefined;
+
+  return (
+    <section data-selected style={{ marginBottom: 14, borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)", paddingTop: 8 }}>
+      <div style={{ fontSize: 11, textTransform: "uppercase", color: "var(--vscode-descriptionForeground, #9d9d9d)" }}>
+        {subject ? "subject" : claim ? `claim · on ${owner?.name ?? ""}` : promise ? "promise" : "rule"}
+      </div>
+      <div style={{ fontSize: 13, margin: "2px 0 6px" }}>
+        {subject?.name ?? claim?.text ?? promise?.text ?? rule?.text}
+      </div>
+
+      {subject ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <button
+            data-rename-subject={subject.id}
+            title="Rename this subject — your word for it."
+            onClick={() => {
+              const name = prompt("Your name for this subject:", subject.name);
+              if (name) post({ action: "rename-subject", unitId: subject.id, text: name });
+            }}
+          >
+            Rename
+          </button>
+          {others.map((o) => (
+            <button
+              key={o.id}
+              data-merge-subject={subject.id}
+              title={`These are one thing — fold this subject into “${o.name}”.`}
+              onClick={() => post({ action: "merge-subject", unitId: subject.id, into: o.id })}
+            >
+              Merge into “{o.name}”
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {claim ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <button
+            data-split-claim={claim.id}
+            title="This is its own thing — split it into a subject of its own."
+            onClick={() => post({ action: "split-claim", unitId: claim.id })}
+          >
+            Split out as its own subject
+          </button>
+          {others.map((o) => (
+            <button
+              key={o.id}
+              data-move-claim={claim.id}
+              title={`This belongs to “${o.name}” — move it there.`}
+              onClick={() => post({ action: "move-claim", unitId: claim.id, into: o.id })}
+            >
+              Move to “{o.name}”
+            </button>
+          ))}
+          <button
+            data-promote-claim={claim.id}
+            title="This governs more than one subject — make it a rule."
+            onClick={() => {
+              const scope = prompt("What does this rule govern?", "every subject");
+              if (scope) post({ action: "promote-claim", unitId: claim.id, text: scope });
+            }}
+          >
+            Make a rule
+          </button>
+        </div>
+      ) : null}
+
+      {promise ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ fontSize: 11, opacity: 0.7 }}>{promise.file || "(not grounded)"}</div>
+          <button
+            data-dismiss-promise={promise.id}
+            title="This should not exist — dismiss it, with a reason."
+            onClick={() => {
+              const why = prompt("Why should this not exist?", "");
+              if (why !== null) post({ action: "dismiss-promise", unitId: promise.id, text: why });
+            }}
+          >
+            Dismiss — with a reason
+          </button>
+        </div>
+      ) : null}
+
+      {rule ? (
+        <button
+          data-retire-rule={rule.id}
+          title="Retire this rule — it governs nothing from now on."
+          onClick={() => post({ action: "retire-rule", unitId: rule.id })}
+        >
+          Retire
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 export function Rail(props: {
   push: SpacePush;
   selected: string | null;
@@ -213,6 +326,8 @@ export function Rail(props: {
           ))}
         </section>
       ) : null}
+
+      {props.selected ? <Selected push={push} id={props.selected} /> : null}
 
       {push.runLog ? <StepLog log={push.runLog} /> : null}
 

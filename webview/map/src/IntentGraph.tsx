@@ -100,6 +100,47 @@ export function IntentGraph(props: {
   onOpenWork: (subjectId: string) => void;
 }): JSX.Element {
   const { push } = props;
+  // A failed reading is a state of its own: nothing was derived, and the
+  // surface says so instead of showing a shape that looks like success.
+  if (push.modelFailure)
+    return (
+      <section
+        data-model-failed
+        style={{ margin: 12, padding: 12, border: "1px solid #f14c4c", borderRadius: 6 }}
+      >
+        <strong style={{ fontSize: 13, color: "#f14c4c" }}>
+          I could not read your list — nothing was derived
+        </strong>
+        <div style={{ fontSize: 12, margin: "6px 0" }}>
+          Your {push.modelFailure.sentences} sentence
+          {push.modelFailure.sentences === 1 ? " is" : "s are"} recorded and waiting. Nothing was
+          guessed at, and no promises were derived from a reading that failed.
+        </div>
+        <pre
+          style={{
+            fontSize: 11,
+            whiteSpace: "pre-wrap",
+            background: "var(--vscode-textCodeBlock-background, #1e1e1e)",
+            border: "1px solid var(--vscode-panel-border, #3c3c3c)",
+            borderRadius: 4,
+            padding: "6px 8px",
+            margin: "6px 0",
+            maxHeight: 160,
+            overflowY: "auto",
+          }}
+        >
+          {push.modelFailure.reason}
+        </pre>
+        <button
+          data-retry-model
+          style={{ fontWeight: 600 }}
+          title="Read the sentences you already recorded again."
+          onClick={() => post({ action: "retry-model" })}
+        >
+          Read it again
+        </button>
+      </section>
+    );
   if (push.pendingModel) return <Proposal push={push} />;
   if (!push.subjects.length)
     return (
@@ -119,7 +160,13 @@ export function IntentGraph(props: {
             Rules — they govern every subject, now and later
           </div>
           {push.rules.map((r) => (
-            <div key={r.id} data-rule={r.id} style={{ fontSize: 12 }} title={`Governs ${r.scope}. From: ${r.fromAsk}`}>
+            <div
+              key={r.id}
+              data-rule={r.id}
+              onClick={() => props.onSelect(r.id)}
+              style={{ fontSize: 12, cursor: "pointer" }}
+              title={`Select this rule. Governs ${r.scope}. From: ${r.fromAsk}`}
+            >
               {r.text}{" "}
               <span style={{ opacity: 0.65, fontSize: 11 }}>
                 — governs {r.scope} · in force on {r.governs} subject
@@ -179,8 +226,9 @@ export function IntentGraph(props: {
                 <div
                   key={c.id}
                   data-claim={c.id}
-                  onClick={() => props.onOpenWork(s.id)}
-                  title="Open this claim's promises in the work graph."
+                  onClick={() => props.onSelect(c.id)}
+                  onDoubleClick={() => props.onOpenWork(s.id)}
+                  title="Select this claim — double-click to open its promises in the work graph."
                   style={{ padding: "6px 9px", cursor: "pointer", borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)" }}
                 >
                   <div style={{ fontSize: 12 }}>{c.text}</div>

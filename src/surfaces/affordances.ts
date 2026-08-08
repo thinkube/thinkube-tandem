@@ -74,6 +74,38 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "the model the round proposed", gesture: "drop a subject or a rule, or turn a subject's claims into rules, before accepting" },
   },
+  "rename-subject": {
+    kind: "human",
+    affordance: { surface: "the intent graph's panel", gesture: "press Rename on the selected subject and type your word for it" },
+  },
+  "merge-subject": {
+    kind: "human",
+    affordance: { surface: "the intent graph's panel", gesture: "press 'Merge into…' and pick the subject it is really the same as" },
+  },
+  "split-claim": {
+    kind: "human",
+    affordance: { surface: "the intent graph's panel", gesture: "press 'Split out' on a claim — it becomes its own subject" },
+  },
+  "move-claim": {
+    kind: "human",
+    affordance: { surface: "the intent graph's panel", gesture: "press 'Move to…' on a claim and pick the subject it belongs to" },
+  },
+  "promote-claim": {
+    kind: "human",
+    affordance: { surface: "the intent graph's panel", gesture: "press 'Make a rule' on a claim that governs more than its subject" },
+  },
+  "dismiss-promise": {
+    kind: "human",
+    affordance: { surface: "the work graph's panel", gesture: "press Dismiss on a promise that should not exist, with a reason" },
+  },
+  "retire-rule": {
+    kind: "human",
+    affordance: { surface: "the rules band", gesture: "press Retire on a rule — it governs nothing from then on" },
+  },
+  "retry-model": {
+    kind: "human",
+    affordance: { surface: "the intent graph, after a failed reading", gesture: "press 'Read it again' — your sentences are already recorded" },
+  },
   "read-log": {
     kind: "human",
     affordance: { surface: "orchestration graph", gesture: "click a step to read its own log, and page through it" },
