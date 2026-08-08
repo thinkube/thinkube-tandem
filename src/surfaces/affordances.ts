@@ -80,6 +80,10 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "type into a parked worker's answer box and press Send",
     },
   },
+  "read-log": {
+    kind: "human",
+    affordance: { surface: "orchestration graph", gesture: "click a step to read its own log, and page through it" },
+  },
   "stop-run": {
     kind: "human",
     affordance: { surface: "run view", gesture: "press Stop" },

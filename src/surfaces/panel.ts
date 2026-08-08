@@ -34,6 +34,8 @@ interface InboundAction {
   deliveryId?: string;
   proposalId?: string;
   impactId?: string;
+  stepId?: string;
+  page?: number;
 }
 
 /**
@@ -93,6 +95,7 @@ function spacePush(session: TandemSession, message?: string): unknown {
     grounding: session.groundingView(),
     asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
+    runLog: session.logView(),
     // The chart names each worker by the slice it builds, in the words the
     // human named it — the worker id stays available underneath.
     run: (() => {
@@ -265,6 +268,8 @@ async function handleInbound(
     session.pin(msg.pinKind as "together" | "apart", msg.changeIds[0], msg.changeIds[1]);
   } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
     session.answerWorker(msg.unitId, msg.text);
+  } else if (msg.action === "read-log") {
+    session.readLog(msg.stepId ?? null, msg.page);
   } else if (msg.action === "stop-run") {
     session.stopRun();
   } else if (msg.action === "accept-merge" && msg.unitId) {

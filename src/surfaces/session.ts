@@ -45,6 +45,7 @@ export class TandemSession {
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
   lastAnswer: { question: string; answer: string } | undefined;
   runNote: string | undefined; // why the last build did not start
+  openLog: { step: string; page: number } | undefined; // the log being read
   private _captureAbort: AbortController | undefined;
   _grounding = new Map<string, { label: string; current: number; total: number }>();
 
@@ -144,6 +145,18 @@ export class TandemSession {
     await ensureRepoDigest(this.deps.round, this.digestStore(), round).catch(() => {});
     this.activity = undefined;
     this.deps.onChanged?.();
+  }
+
+  readLog(step: string | null, page?: number): void {
+    // page -1 means the newest, which is what a reader wants first.
+    this.openLog = step ? { step, page: page ?? -1 } : undefined;
+    this.deps.onChanged?.();
+  }
+
+  logView() {
+    if (!this.openLog || !this.runState) return undefined;
+    const { step, page } = this.openLog;
+    return { step, ...this.runState.logPage(step, page < 0 ? undefined : page) };
   }
 
   groundingView(): { askId: string; label: string; current: number; total: number }[] {

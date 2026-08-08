@@ -43,6 +43,14 @@ function chipFor(u: RunUnits[number], now: number): Chip {
   }
 }
 
+/** The step's own log, advertised on its card — a door, not a secret. */
+function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
+  const n = run.logCounts?.[id] ?? 0;
+  return n
+    ? { text: `${n} log lines`, kind: "plain", why: "Click this card to read this step's own log in the panel." }
+    : { text: "no log yet", kind: "plain", why: "This step has not written anything yet." };
+}
+
 export function RunNote(props: { note: string }): JSX.Element {
   return (
     <div data-run-note style={{ margin: 20, padding: 12, border: "1px solid var(--err, #f14c4c)", borderRadius: 6, maxWidth: 560 }}>
@@ -52,7 +60,12 @@ export function RunNote(props: { note: string }): JSX.Element {
   );
 }
 
-export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: World }): JSX.Element {
+export function RunSection(props: {
+  run: NonNullable<SpacePush["run"]>;
+  world: World;
+  /** The step whose log is open, so its card reads as selected. */
+  openLog?: string;
+}): JSX.Element {
   const { run, world } = props;
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [now, setNow] = useState(Date.now());
@@ -61,9 +74,20 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
     return () => clearInterval(t);
   }, []);
 
+  // The slices this run builds, each with an auditor that grades it — the
+  // steps the engine really runs, not only the ones that write code.
+  const slices = useMemo(
+    () => [...new Set(run.units.filter((u) => u.role === "code").map((u) => u.slice))],
+    [run.units],
+  );
+  const graded = (slice: string): boolean =>
+    run.units.filter((u) => u.slice === slice && u.role === "code").every((u) => u.state === "done");
+  const anyFailed = run.units.some((u) => u.state === "failed");
+  const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");
+
   const cards: CardData[] = useMemo(
-    () =>
-      run.units.map((u) => ({
+    () => [
+      ...run.units.map((u) => ({
         id: u.id,
         title: `${u.role === "test" ? "Tests for" : "Build"} ${u.sliceTitle ?? u.slice}`,
         titleFull: `worker ${u.id}`,
@@ -72,27 +96,58 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
           (u.requires.length
             ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
             : undefined),
-        chips: [chipFor(u, now)],
+        chips: [chipFor(u, now), logChip(u.id, run)],
       })),
-    [run.units, now],
+      ...slices.map((slice) => ({
+        id: `audit:${slice}`,
+        title: `Auditor for ${slice}`,
+        abs: "grades the checks against the real state",
+        chips: [
+          graded(slice)
+            ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
+            : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
+        ],
+      })),
+      {
+        id: "gate",
+        title: "The closing gate",
+        abs: "runs every check on the real state and grades each promise",
+        chips: [
+          allDone
+            ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
+            : anyFailed
+              ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
+              : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
+        ],
+        ...(run.logCounts?.run ? { children: undefined } : {}),
+      },
+    ],
+    [run.units, now, slices],
   );
   const edges = useMemo(
-    () => run.units.flatMap((u) => u.requires.map((r) => ({ from: r, to: u.id }))),
-    [run.units],
+    () => [
+      ...run.units.flatMap((u) => u.requires.map((r) => ({ from: r, to: u.id }))),
+      // Every code unit reports to its slice's auditor; auditors to the gate.
+      ...run.units
+        .filter((u) => u.role === "code")
+        .map((u) => ({ from: u.id, to: `audit:${u.slice}` })),
+      ...slices.map((slice) => ({ from: `audit:${slice}`, to: "gate" })),
+    ],
+    [run.units, slices],
   );
   const { heights, probe } = useMeasuredHeights(cards, "", world.far);
   const [layout, setLayout] = useState<LaidOut | null>(null);
-  const shape = run.units
-    .map((u) => `${u.id}>${u.requires.join("+")}@${heights.get(u.id) ?? 0}`)
-    .join("|");
+  const shape = cards
+    .map((c) => `${c.id}@${heights.get(c.id) ?? 0}`)
+    .join("|") + "#" + edges.map((e) => `${e.from}>${e.to}`).join(",");
   useEffect(() => {
     let alive = true;
     void layoutLayered({
-      nodes: run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 })),
+      nodes: cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 })),
       edges,
       direction: "RIGHT",
     })
-      .catch(() => stackLayout(run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 }))))
+      .catch(() => stackLayout(cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 }))))
       .then((l) => {
         if (alive) setLayout(l);
       });
@@ -105,9 +160,9 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
   // Every worker is drawn, always — never a pile in the corner while the
   // engine works.
   const drawn =
-    layout && run.units.every((u) => layout.nodes.has(u.id))
+    layout && cards.every((c) => layout.nodes.has(c.id))
       ? layout
-      : stackLayout(run.units.map((u) => ({ id: u.id, w: NODE_W, h: heights.get(u.id) ?? 70 })));
+      : stackLayout(cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 })));
 
   const done = run.units.filter((u) => u.state === "done").length;
   const total = run.units.length || 1;
@@ -173,16 +228,18 @@ export function RunSection(props: { run: NonNullable<SpacePush["run"]>; world: W
               />
             ))}
           </svg>
-          {run.units.map((u) => {
-            const c = drawn.nodes.get(u.id);
-            const card = cards.find((k) => k.id === u.id)!;
-            const parked = run.parked.find((p) => p.unitId === u.id);
+          {cards.map((card) => {
+            const u = run.units.find((x) => x.id === card.id);
+            const c = drawn.nodes.get(card.id);
+            const parked = u && run.parked.find((p) => p.unitId === u.id);
             return (
               <NodeCard
-                key={u.id}
+                key={card.id}
                 card={card}
                 far={world.far}
                 expanded={false}
+                selected={props.openLog === card.id}
+                onClick={(id) => post({ action: "read-log", stepId: id })}
                 style={{ left: c?.x ?? 0, top: c?.y ?? 0 }}
               >
                 {parked && !world.far ? (

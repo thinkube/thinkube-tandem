@@ -80,6 +80,65 @@ function Questions(props: { push: SpacePush; onSelect: (id: string) => void }): 
   );
 }
 
+/** One step's own log, paged. The evidence a step failed lives with that
+ *  step, not in a shared ring that has already dropped it. */
+function StepLog(props: { log: NonNullable<SpacePush["runLog"]> }): JSX.Element {
+  const { log } = props;
+  const from = log.page * log.pageSize;
+  return (
+    <section data-step-log style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <strong style={{ fontSize: 12 }}>{log.step} — its own log</strong>
+        <button
+          data-close-log
+          title="Close this log."
+          style={{ fontSize: 11, opacity: 0.7 }}
+          onClick={() => post({ action: "read-log" })}
+        >
+          ✕
+        </button>
+      </div>
+      <pre
+        data-log-lines
+        style={{
+          font: "11px/1.6 var(--vscode-editor-font-family, monospace)",
+          background: "var(--vscode-textCodeBlock-background, #1e1e1e)",
+          border: "1px solid var(--vscode-panel-border, #3c3c3c)",
+          borderRadius: 4,
+          padding: "6px 8px",
+          margin: "4px 0",
+          maxHeight: 260,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {log.lines.join("\n") || "(nothing yet)"}
+      </pre>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, opacity: 0.75 }}>
+        <button
+          data-log-older
+          disabled={log.page === 0}
+          title="Show the lines before these."
+          onClick={() => post({ action: "read-log", stepId: log.step, page: log.page - 1 })}
+        >
+          ← older
+        </button>
+        <span>
+          {log.total ? `${from + 1}–${Math.min(from + log.pageSize, log.total)} of ${log.total}` : "no lines"}
+        </span>
+        <button
+          data-log-newer
+          disabled={log.page >= log.pages - 1}
+          title="Show the lines after these."
+          onClick={() => post({ action: "read-log", stepId: log.step, page: log.page + 1 })}
+        >
+          newer →
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function Rail(props: {
   push: SpacePush;
   selected: string | null;
@@ -117,6 +176,8 @@ export function Rail(props: {
           </div>
         ))
       )}
+
+      {push.runLog ? <StepLog log={push.runLog} /> : null}
 
       {push.questions.length ? <Questions push={push} onSelect={props.onSelect} /> : null}
 

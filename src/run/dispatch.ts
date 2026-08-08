@@ -103,7 +103,7 @@ export async function dispatchTep(
   const worktree = path.join(wtRoot, wtName);
   const testerWt = path.join(wtRoot, `${wtName}-tester`);
   const storeDir = path.join(wtRoot, "oracle-store", wtName);
-  const log = (l: string) => st.log(l);
+  const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
   const boundedExec = (cmd: string, cwd: string) =>
     runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env });
@@ -252,7 +252,7 @@ export async function dispatchTep(
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
     const role = (next.role ?? "code") as "code" | "test";
     st.set(next.id, "running");
-    log(`▸ ${next.id} (${role})`);
+    log(`▸ ${next.id} (${role})`, next.id);
     const tree = role === "test" ? testerWt : worktree;
     if (role === "test") {
       // Re-snapshot only when no other test author is mid-flight — a reset
@@ -277,7 +277,7 @@ export async function dispatchTep(
     if (oracle) {
       const pre = await oracle.confirmGreen();
       if (pre.green) {
-        log(`✓ ${next.id}: grade-first — the checks are already green, no worker spent`);
+        log(`✓ ${next.id}: grade-first — the checks are already green, no worker spent`, next.id);
         st.aborts.delete(next.id);
         liveFootprints.delete(next.id);
         await finishUnit(next.id, next.slice, true);
@@ -321,7 +321,7 @@ export async function dispatchTep(
           baseline,
           abort,
           onPark: (q, answer) => st.park(next.id, q, answer),
-          log,
+          log: (line: string) => log(line, next.id),
           ...(oracle
             ? {
                 verifyTool: async () => {
@@ -334,7 +334,7 @@ export async function dispatchTep(
         brief,
       );
       if (outcome.containment) {
-        log(`⛔ ${next.id}: footprint violation — run halted`);
+        log(`⛔ ${next.id}: footprint violation — run halted`, next.id);
         st.fail(next.id, "wrote outside its footprint — the changes were reverted and the run halted");
         defect({
           slice: next.slice,
@@ -368,7 +368,7 @@ export async function dispatchTep(
         break;
       }
       if (attempt < attempts) {
-        log(`↻ ${next.id}: checks not green — rework ${attempt + 1}/${attempts}`);
+        log(`↻ ${next.id}: checks not green — rework ${attempt + 1}/${attempts}`, next.id);
         brief =
           baseBrief +
           oracleStanza +

@@ -372,7 +372,7 @@ export function App(): JSX.Element {
         ) : push.run || push.runNote ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             {push.runNote ? <RunNote note={push.runNote} /> : null}
-            {push.run ? <RunSection run={push.run} world={flowWorld} /> : null}
+            {push.run ? <RunSection run={push.run} world={flowWorld} openLog={push.runLog?.step} /> : null}
           </div>
         ) : (
           <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>

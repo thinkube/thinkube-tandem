@@ -50,6 +50,8 @@ interface RunView {
   }[];
   logs: string[];
   parked: { unitId: string; question: string }[];
+  /** How many lines each step holds — the surface pages them on demand. */
+  logCounts: Record<string, number>;
 }
 
 export interface SpacePush {
@@ -70,6 +72,15 @@ export interface SpacePush {
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
+  /** The step whose own log is open, one page of it. */
+  runLog?: {
+    step: string;
+    lines: string[];
+    page: number;
+    pages: number;
+    total: number;
+    pageSize: number;
+  };
   questions: {
     id: string;
     text: string;
@@ -110,6 +121,7 @@ export type WebToHost =
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }
+  | { action: "read-log"; stepId?: string; page?: number }
   | { action: "stop-run" }
   | { action: "accept-question"; questionId: string; text?: string }
   | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }
