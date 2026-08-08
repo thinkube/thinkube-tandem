@@ -1,10 +1,9 @@
 /**
  * The right rail — the approved prototype's "Space-wide (governs every
  * unit)" panel, extended with every waiting-on-you surface in one place:
- * decisions in force, open questions (accept = decide), staged merge
- * suggestions, staged decision implications, the cut screen with Sign,
- * the selected unit's detail (cut / pins / machine-face flip), and
- * deliveries with Accept.
+ * decisions in force, open questions (accept = decide), a proposed check
+ * awaiting your wording, staged decision implications, the cut screen with
+ * Sign, a step's own log while a build runs, and deliveries with Accept.
  */
 import { useState } from "react";
 import { post, SpacePush } from "./vscode";
@@ -142,8 +141,6 @@ function StepLog(props: { log: NonNullable<SpacePush["runLog"]> }): JSX.Element 
 export function Rail(props: {
   push: SpacePush;
   selected: string | null;
-  flipped: Set<string>;
-  onFlip: (id: string) => void;
   onSelect: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
@@ -175,6 +172,47 @@ export function Rail(props: {
           </div>
         ))
       )}
+
+      {push.pendingCheck ? (
+        <section data-pending-check style={{ marginBottom: 14 }}>
+          <strong style={{ fontSize: 12 }}>A check is proposed — your wording wins</strong>
+          <PendingCheck
+            changeId={push.pendingCheck.changeId}
+            text={push.pendingCheck.text}
+            kind={push.pendingCheck.kind}
+          />
+        </section>
+      ) : null}
+
+      {push.deliveries.length ? (
+        <section data-deliveries style={{ marginBottom: 14 }}>
+          <strong style={{ fontSize: 12 }}>Delivered</strong>
+          {push.deliveries.map((d) => (
+            <div key={d.id} data-delivery={d.id} style={{ margin: "6px 0", padding: 6, border: "1px solid var(--vscode-panel-border, #3c3c3c)", borderRadius: 6 }}>
+              <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 220, overflowY: "auto" }}>
+                {d.page}
+              </pre>
+              {d.undelivered?.length ? (
+                <div style={{ fontSize: 11, color: "#f14c4c", marginTop: 4 }}>
+                  {d.undelivered.length} undelivered: {d.undelivered.join(" · ")}
+                </div>
+              ) : null}
+              {d.accepted ? (
+                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>accepted</div>
+              ) : (
+                <button
+                  data-accept-delivery={d.id}
+                  style={{ ...btn, marginTop: 6 }}
+                  title="Try the walkthrough above, then accept this delivery — it merges on the forge."
+                  onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
+                >
+                  Accept
+                </button>
+              )}
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       {push.runLog ? <StepLog log={push.runLog} /> : null}
 

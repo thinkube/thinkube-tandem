@@ -52,13 +52,6 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "read the page, try the gestures, press Accept",
     },
   },
-  "flip-face": {
-    kind: "human",
-    affordance: {
-      surface: "every abstract",
-      gesture: "press the ⌄ chevron to open the machine face",
-    },
-  },
   "accept-question": {
     kind: "human",
     affordance: {
@@ -111,15 +104,15 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   "propose-check": {
     kind: "human",
     affordance: {
-      surface: "selected unit detail",
+      surface: "the work graph",
       gesture: "press 'Write a check' on a promise that has none",
     },
   },
   "accept-check": {
     kind: "human",
     affordance: {
-      surface: "selected unit detail",
-      gesture: "accept (or reword) the proposed check — your wording wins",
+      surface: "the panel, when a check is proposed",
+      gesture: "accept the proposed check, or reword it first — your wording wins",
     },
   },
   reground: {

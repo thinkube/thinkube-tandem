@@ -97,6 +97,17 @@ export function renderDeliveryPage(
     lines.push(`You asked: ${ask.text.trim()}`);
     for (const s of sentences) lines.push(`  ✓ ${s}`);
   }
+  // See it for yourself, ABOVE the proofs: every line names a door the
+  // machine verified renders. A promise whose door is missing gets no line
+  // — it is undelivered instead of pointing at a way in that is not there.
+  const walk = members.flatMap((n) => {
+    const seen = experience.get(n.id);
+    return seen ? [`  see it: ${seen}`] : [];
+  });
+  if (walk.length) {
+    lines.push("See it for yourself:");
+    lines.push(...walk);
+  }
   for (const p of delivery.proofs)
     lines.push(
       `  check: ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,

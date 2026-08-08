@@ -11,6 +11,7 @@ import { staleByTouchpoints, staleChangeIds } from "../core/stale";
 import { filesChangedSince } from "../core/staleFiles";
 import { DigestStore, ensureRepoDigest } from "../derive/pipeline";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
+import { verifiedDoors } from "../gates/doors";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
@@ -424,7 +425,15 @@ export class TandemSession {
 
   deliveryPage(deliveryId: string): string | undefined {
     const d = this.space.deliveries.find((x) => x.id === deliveryId);
-    return d ? renderDeliveryPage(this.space, d) : undefined;
+    if (!d) return undefined;
+    // Every walkthrough line names a door the machine verified renders.
+    const doors = verifiedDoors();
+    const experience = new Map<string, string>();
+    for (const n of this.space.nodes) {
+      const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
+      if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
+    }
+    return renderDeliveryPage(this.space, d, experience);
   }
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →

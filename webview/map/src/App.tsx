@@ -15,7 +15,6 @@ import { useWorld, ZoomControls } from "./proto/world";
 export function App(): JSX.Element {
   const [push, setPush] = useState<SpacePush | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [flipped, setFlipped] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState("");
   const [classifying, setClassifying] = useState(false);
   const [tag, setTag] = useState<DraftPush | null>(null);
@@ -406,15 +405,6 @@ export function App(): JSX.Element {
           push={push}
           selected={selected}
           onSelect={setSelected}
-          flipped={flipped}
-          onFlip={(id) =>
-            setFlipped((prev) => {
-              const next = new Set(prev);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            })
-          }
         />
       </div>
     </div>
