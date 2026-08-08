@@ -1,0 +1,54 @@
+/**
+ * The model round's pure parts: the prompt carries every sentence numbered
+ * and demands the writer's own nouns; the parse is strict — a claim without
+ * a sentence number drops, a subject without claims drops, junk yields
+ * nothing; and any sentence the round failed to place is reported rather
+ * than silently lost.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { buildModelPrompt, parseModel, unaccountedFor } from "./model";
+
+const SENTENCES = [
+  "the delivery page must show me how to experience it",
+  "documentation must be required for every cut",
+  "proof labels must name the check in my own words",
+];
+
+test("the prompt numbers every sentence and asks for the writer's own nouns", () => {
+  const p = buildModelPrompt(SENTENCES);
+  SENTENCES.forEach((s, i) => assert.ok(p.includes(`${i + 1}. ${s}`), `sentence ${i + 1} rides the prompt`));
+  for (const demand of ["SUBJECT", "CLAIM", "RULE", "writer's own words", "Never drop a sentence"])
+    assert.ok(p.includes(demand), `the prompt demands: ${demand}`);
+});
+
+test("parse: valid subjects and rules land; junk and out-of-range numbers drop", () => {
+  const raw =
+    'here you go:\n{"subjects":[' +
+    '{"name":"the delivery page","from":[1],"claims":[{"text":"shows how to experience it","why":"so I accept by experiencing","from":1}]},' +
+    '{"name":"a ghost","from":[9],"claims":[{"text":"nothing","from":9}]},' +
+    '{"name":"no claims","from":[2],"claims":[]}],' +
+    '"rules":[{"text":"labels in my words","scope":"every page","from":3},{"text":"","scope":"x","from":1}]}';
+  const m = parseModel(raw, SENTENCES.length)!;
+  assert.equal(m.subjects.length, 1, "the ghost (sentence 9 of 3) and the claimless subject drop");
+  assert.equal(m.subjects[0].claims[0].why, "so I accept by experiencing", "the purpose survives");
+  assert.equal(m.rules.length, 1, "an empty rule drops");
+  assert.equal(m.rules[0].scope, "every page");
+});
+
+test("parse: nothing usable yields undefined rather than an empty model", () => {
+  assert.equal(parseModel(null, 3), undefined);
+  assert.equal(parseModel("no json here", 3), undefined);
+  assert.equal(parseModel('{"subjects":[]}', 3), undefined);
+});
+
+test("a sentence the round placed nowhere is reported, never lost", () => {
+  const m = parseModel(
+    '{"subjects":[{"name":"the delivery page","from":[1],"claims":[{"text":"x","from":1}]}],' +
+      '"rules":[{"text":"labels in my words","scope":"every page","from":3}]}',
+    3,
+  )!;
+  assert.deepEqual(unaccountedFor(m, 3), [2], "sentence 2 became neither a claim nor a rule");
+  assert.deepEqual(unaccountedFor(m, 1), [], "nothing missing when every sentence landed");
+});

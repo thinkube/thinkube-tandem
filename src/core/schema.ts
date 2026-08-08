@@ -65,6 +65,9 @@ export interface Change {
   sentence: string;
   /** Ask ids this node serves. Empty = orphan, flagged as scope creep. */
   serves: string[];
+  /** The claim or rule this promise makes true. Exactly one; a promise
+   *  serving nothing is scope creep and is flagged as such. */
+  servesClaim?: string;
   /** Node ids this node needs built first. */
   needs: string[];
   grounding?: Grounding;
@@ -198,6 +201,54 @@ export interface Space {
   settled?: string[];
   /** Staged decision impacts awaiting the human. */
   impacts?: ImpactSuggestionShape[];
+  /** The model the capture round solved: what the asks are about. */
+  subjects?: Subject[];
+  /** What must become true of each subject. */
+  claims?: Claim[];
+  /** What holds across subjects — the decisions in force, with a scope. */
+  rules?: Rule[];
+}
+
+/**
+ * A SUBJECT is the thing the work is about — the human's noun, taken from
+ * their own sentence. Claims hang off it; nothing else does.
+ */
+export interface Subject {
+  id: string;
+  /** The human's name for it. */
+  name: string;
+  /** Ask ids that named or described it — its provenance. */
+  from: string[];
+}
+
+/**
+ * A CLAIM is what must become true of one subject, in the human's words,
+ * carrying the purpose they gave it and citing the sentence it came from.
+ */
+export interface Claim {
+  id: string;
+  subjectId: string;
+  /** What must become true. */
+  text: string;
+  /** The "so that…" — why it must, in the human's words. */
+  why?: string;
+  /** The ask this claim was read from; its words are never replaced. */
+  fromAsk: string;
+}
+
+/**
+ * A RULE is what must hold across subjects — the decisions in force, with a
+ * scope in the human's words so a subject captured later inherits it.
+ */
+export interface Rule {
+  id: string;
+  text: string;
+  /** What it governs, in the human's words ("every page you read"). */
+  scope: string;
+  /** The ask or decision it came from. */
+  fromAsk?: string;
+  /** Subjects it has been judged to govern; a new subject is tested once. */
+  governs: string[];
 }
 
 export function emptySpace(): Space {

@@ -8,7 +8,6 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { TandemSession } from "./session";
-import { islandsOf } from "./graphCore/islands";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -38,36 +37,6 @@ interface InboundAction {
   page?: number;
 }
 
-/**
- * Group the machine's pairwise suggestions into families: the unit each
- * suggestion wants to grow, and everything it wants folded into it. A unit
- * named by several suggestions is ONE decision, not one per pair.
- */
-function mergeFamilies(
-  session: TandemSession,
-): { anchorId: string; joinerIds: string[] }[] {
-  const proposals = session.space.proposals ?? [];
-  const size = (id: string) =>
-    session.units.find((u) => u.id === id)?.changeIds.length ?? 0;
-  const families = new Map<string, string[]>();
-  const taken = new Set<string>();
-  // Biggest unit first: the one the machine wants to grow anchors its family.
-  const anchors = [...new Set(proposals.flatMap((p) => [p.a, p.b]))].sort(
-    (x, y) => size(y) - size(x),
-  );
-  for (const anchor of anchors) {
-    const joiners = proposals
-      .filter((p) => p.a === anchor || p.b === anchor)
-      .map((p) => (p.a === anchor ? p.b : p.a))
-      .filter((id) => !taken.has(id) && id !== anchor);
-    if (!joiners.length || taken.has(anchor)) continue;
-    taken.add(anchor);
-    for (const j of joiners) taken.add(j);
-    families.set(anchor, joiners);
-  }
-  return [...families.entries()].map(([anchorId, joinerIds]) => ({ anchorId, joinerIds }));
-}
-
 /** A card head is one line: a long sentence is clipped, never a paragraph. */
 const TITLE_CLIP = 64;
 function shorten(text: string): string {
@@ -79,14 +48,16 @@ function shortenWords(text: string, words: number): string {
 }
 
 function spacePush(session: TandemSession, message?: string): unknown {
-  const island = islandsOf(
-    session.units.map((u) => u.id),
-    session.edges,
-  );
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
   return {
     kind: "space",
     running: session.running,
+    // A space derived before the model existed cannot be read as subjects
+    // and claims. It stays readable; new work starts in a new space.
+    legacy:
+      session.space.nodes.length > 0 && !(session.space.subjects ?? []).length
+        ? "This space was thought through before subjects and claims existed. Its promises are kept and readable, but new work starts in a new thinking space — paste your asks there."
+        : undefined,
     repoName: session.repoName,
     activity: session.activity,
     lastAnswer: session.lastAnswer,
@@ -135,83 +106,70 @@ function spacePush(session: TandemSession, message?: string): unknown {
     decisions: session.space.questions
       .filter((q) => !!q.decided)
       .map((q) => q.decided!.text),
-    // The machine proposes PAIRS, but a unit it wants to grow is ONE
-    // decision: every suggestion touching a unit is shown as its family,
-    // with the size the merged slice would reach.
-    proposals: mergeFamilies(session).map((fam) => {
-      const describe = (id: string) => {
-        const u = session.units.find((x) => x.id === id);
-        const members = (u?.changeIds ?? [])
-          .map((cid) => byId.get(cid)?.sentence)
-          .filter((x): x is string => !!x);
-        return {
-          title: u?.abstract?.title ?? members[0] ?? id,
-          count: members.length,
-          members,
-        };
-      };
-      const anchor = describe(fam.anchorId);
-      const joiners = fam.joinerIds.map(describe);
-      return {
-        id: fam.anchorId,
-        anchor,
-        joiners,
-        resultCount: anchor.count + joiners.reduce((n, j) => n + j.count, 0),
-      };
-    }),
     impacts: (session.space.impacts ?? []).map((im) => ({
       id: im.id,
       decision: im.decision,
       askText: session.space.asks.find((a) => a.id === im.askId)?.text ?? im.askId,
       affected: session.space.nodes.filter((n) => n.serves.includes(im.askId)).length,
     })),
-    units: session.units.map((u) => {
-      const signedIn = session.space.cuts.find(
-        (c) => c.signature && u.changeIds.some((id) => c.changeIds.includes(id)),
-      );
-      const nodes = u.changeIds
-        .map((id) => byId.get(id))
-        .filter((n): n is NonNullable<typeof n> => !!n);
-      const first = nodes[0]?.sentence ?? u.id;
-      const askIds = new Set(nodes.flatMap((n) => n.serves));
-      const firstAskIdx = session.space.asks.findIndex((a) => askIds.has(a.id));
-      const firstAsk = firstAskIdx >= 0 ? session.space.asks[firstAskIdx] : undefined;
+    // Graph 1 — the model, in the human's words. Graph 2 — the promises,
+    // each under the claim it makes true.
+    subjects: (session.space.subjects ?? []).map((s) => {
+      const claims = (session.space.claims ?? []).filter((c) => c.subjectId === s.id);
+      const rules = (session.space.rules ?? []).filter((r) => r.governs.includes(s.id));
       return {
-        id: u.id,
-        askLabel: firstAsk
-          ? `ask ${firstAskIdx + 1} — ${shortenWords(firstAsk.text, 7)}`
-          : "unassigned",
-        // Two faces, one source: the card shows the naming round's rendered
-        // title + decision-sized abstract; the machine face (touchpoints,
-        // proofs) stays one gesture away behind the flip. Fallback title
-        // always: an unnamed unit shows its first member sentence, no body.
-        ...(u.abstract?.text ? { abs: u.abstract.text } : {}),
-        title: u.abstract?.title ?? shorten(first),
-        ...(u.abstract ? {} : { fullTitle: first }),
-        count: nodes.length,
-        changeIds: u.changeIds,
-        island: island.get(u.id) ?? 0,
-        inCut: u.changeIds.every((id) => session.cutNodeIds.has(id)) && u.changeIds.length > 0,
-        ...(signedIn?.tepId ? { tep: signedIn.tepId } : {}),
-        stale: u.changeIds.some((id) => session.stale.has(id)),
-        coverage: {
-          covered: nodes.filter((n) => n.acceptance.length > 0).length,
-          total: nodes.length,
-        },
-        openQuestions: session.space.questions.filter(
-          (q) => !q.decided && askIds.has(q.askId),
-        ).length,
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          sentence: n.sentence,
-          touchpoints: (n.grounding?.touchpoints ?? []).map(
-            (t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new)" : ""),
-          ),
-          acceptance: n.acceptance.map((c) => (c.kind === "assessment" ? `${c.text} (by review)` : c.text)),
-        })),
+        id: s.id,
+        name: s.name,
+        rules: rules.map((r) => ({ id: r.id, text: r.text })),
+        thinking: session.groundingView().find((g) => g.askId === s.id),
+        claims: claims.map((c) => {
+          const promises = session.space.nodes.filter((n) => n.servesClaim === c.id);
+          return {
+            id: c.id,
+            text: c.text,
+            why: c.why,
+            fromAsk: session.space.asks.find((a) => a.id === c.fromAsk)?.text ?? "",
+            promises: promises.map((n) => ({
+              id: n.id,
+              text: n.sentence,
+              file: (n.grounding?.touchpoints ?? []).map((t) => t.path).join(", "),
+              checks: n.acceptance.map((a) =>
+                a.kind === "assessment" ? `${a.text} (by review)` : a.text,
+              ),
+              needs: n.needs,
+              inCut: session.cutNodeIds.has(n.id),
+              stale: session.stale.has(n.id),
+              tep: session.space.cuts.find(
+                (cu) => cu.signature && cu.changeIds.includes(n.id),
+              )?.tepId,
+            })),
+          };
+        }),
       };
     }),
-    edges: session.edges,
+    rules: (session.space.rules ?? []).map((r) => ({
+      id: r.id,
+      text: r.text,
+      scope: r.scope,
+      governs: r.governs.length,
+      fromAsk: session.space.asks.find((a) => a.id === r.fromAsk)?.text ?? "",
+    })),
+    // A promise attached to no claim is scope creep — named, never hidden.
+    orphans: session.space.nodes
+      .filter((n) => !n.servesClaim)
+      .map((n) => ({ id: n.id, text: n.sentence })),
+    pendingModel: session.pendingModel
+      ? {
+          subjects: session.pendingModel.model.subjects.map((s) => ({
+            name: s.name,
+            claims: s.claims.map((c) => ({ text: c.text, why: c.why })),
+          })),
+          rules: session.pendingModel.model.rules.map((r) => ({ text: r.text, scope: r.scope })),
+          missing: session.pendingModel.missing.map(
+            (n) => session.pendingModel!.askIds[n - 1] ?? `sentence ${n}`,
+          ),
+        }
+      : undefined,
     cutScreen: session.cutScreen(),
     cutCount: session.cutNodeIds.size,
     deliveries: session.space.deliveries.map((d) => ({
@@ -264,20 +222,18 @@ async function handleInbound(
     push("Recording the decision…");
     const r = await session.acceptQuestion(msg.questionId, msg.text);
     note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "pin" && msg.pinKind && msg.changeIds?.length === 2) {
-    session.pin(msg.pinKind as "together" | "apart", msg.changeIds[0], msg.changeIds[1]);
   } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
     session.answerWorker(msg.unitId, msg.text);
+  } else if (msg.action === "accept-model") {
+    push("Recording the model…");
+    const r = await session.acceptModel();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "revise-model" && msg.kind && msg.page !== undefined) {
+    session.reviseModel({ kind: msg.kind as never, index: msg.page });
   } else if (msg.action === "read-log") {
     session.readLog(msg.stepId ?? null, msg.page);
   } else if (msg.action === "stop-run") {
     session.stopRun();
-  } else if (msg.action === "accept-merge" && msg.unitId) {
-    const r = session.decideMerge(msg.unitId, true);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "reject-merge" && msg.unitId) {
-    const r = session.decideMerge(msg.unitId, false);
-    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-impact" && msg.impactId) {
     push("Re-deriving under the decision…");
     const r = await session.decideImpact(msg.impactId, true);

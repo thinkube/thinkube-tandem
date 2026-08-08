@@ -4,9 +4,10 @@
  * pushes; every abstract flips to its machine face with one gesture.
  */
 import { useEffect, useMemo, useState } from "react";
-import { DraftPush, onDraft, onSpace, post, SpacePush, UnitVM } from "./vscode";
+import { DraftPush, onDraft, onSpace, post, SpacePush} from "./vscode";
 import { RunNote, RunSection } from "./Run";
-import { UnitsMap } from "./UnitsMap";
+import { IntentGraph } from "./IntentGraph";
+import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
 import { useWorld, ZoomControls } from "./proto/world";
 
@@ -20,7 +21,8 @@ export function App(): JSX.Element {
   const [tag, setTag] = useState<DraftPush | null>(null);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  const [tab, setTab] = useState<"units" | "flow">("units");
+  const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
+  const [workSubject, setWorkSubject] = useState<string | null>(null);
   const unitsWorld = useWorld();
   const flowWorld = useWorld();
   useEffect(() => {
@@ -255,9 +257,9 @@ export function App(): JSX.Element {
           </div>
         ) : null}
                 <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
-          {push.units.length} unit(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
+          {push.subjects.length} subject(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
         </span>
-        {!push.running && push.signedTeps === 0 && (push.units.length > 0 || push.questions.length > 0) ? (
+        {!push.running && push.signedTeps === 0 && (push.subjects.length > 0 || push.questions.length > 0) ? (
           panicArmed ? (
             <button
               data-panic-confirm
@@ -319,54 +321,74 @@ export function App(): JSX.Element {
           <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
         </section>
       ) : null}
+      {push.legacy ? (
+        <div
+          data-legacy
+          style={{
+            margin: "8px 10px 0",
+            padding: "8px 10px",
+            border: "1px solid #e5c07b",
+            borderRadius: 5,
+            fontSize: 12,
+          }}
+        >
+          {push.legacy}
+        </div>
+      ) : null}
       <div data-tabs style={{ display: "flex", gap: 6, padding: "8px 10px 0", alignItems: "center" }}>
-        <button
-          data-tab-units
-          onClick={() => setTab("units")}
-          style={{
-            background: "var(--vscode-editorWidget-background, #252526)",
-            color: tab === "units" ? "var(--vscode-textLink-foreground, #3794ff)" : "inherit",
-            border: `1px solid ${tab === "units" ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
-            padding: "5px 12px",
-            borderRadius: 4,
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
-          Units map
-        </button>
-        <button
-          data-tab-flow
-          onClick={() => setTab("flow")}
-          style={{
-            background: "var(--vscode-editorWidget-background, #252526)",
-            color: tab === "flow" ? "var(--vscode-textLink-foreground, #3794ff)" : "inherit",
-            border: `1px solid ${tab === "flow" ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
-            padding: "5px 12px",
-            borderRadius: 4,
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
-          Orchestration flow{push.running ? " ●" : ""}
-        </button>
+        {([
+          ["intent", "1 · Intent", "what you want"],
+          ["work", "2 · Work", "what gets built, and what proves it"],
+          ["flow", "3 · Build", "how it runs and is judged"],
+        ] as const).map(([id, label, why]) => (
+          <button
+            key={id}
+            data-tab={id}
+            title={`Show ${why}.`}
+            onClick={() => setTab(id)}
+            style={{
+              background: "var(--vscode-editorWidget-background, #252526)",
+              color: tab === id ? "var(--vscode-textLink-foreground, #3794ff)" : "inherit",
+              border: `1px solid ${tab === id ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
+              padding: "5px 12px",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            {label}
+            {id === "flow" && push.running ? " ●" : ""}
+          </button>
+        ))}
         <span style={{ marginLeft: "auto", color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12 }}>
-          drag to move · scroll to zoom · cards always show everything · zoomed far out, only titles
+          your words above, the work below, the build on the right
         </span>
       </div>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
-        {tab === "units" ? (
-          <UnitsMap
+        {tab === "intent" ? (
+          <IntentGraph
+            push={push}
+            selected={selected}
+            onSelect={setSelected}
+            onOpenWork={(id) => {
+              setWorkSubject(id);
+              setTab("work");
+            }}
+          />
+        ) : tab === "work" ? (
+          <WorkGraph
             push={push}
             world={unitsWorld}
-            expandedIds={expandedIds}
-            onToggle={(id) =>
-              setExpandedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
-            }
+            subjectId={workSubject}
+            onSubject={setWorkSubject}
             selected={selected}
             onSelect={(id) => {
               setSelected(id);
               post({ action: "select-unit", unitId: id });
+            }}
+            onUp={(id) => {
+              setSelected(id);
+              setTab("intent");
             }}
           />
         ) : push.run || push.runNote ? (
@@ -379,7 +401,7 @@ export function App(): JSX.Element {
             No build yet — sign a cut on the Units map and it appears here.
           </div>
         )}
-        <ZoomControls world={tab === "units" ? unitsWorld : flowWorld} />
+        <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />
         <Rail
           push={push}
           selected={selected}

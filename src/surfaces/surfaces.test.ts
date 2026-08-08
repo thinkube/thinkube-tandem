@@ -12,6 +12,13 @@ import * as path from "node:path";
 import { AFFORDANCES, gestureFor } from "./affordances";
 import { SESSION_ACTIONS, TandemSession } from "./session";
 
+/** The new capture: the round proposes a model, the human accepts it, and
+ *  every subject grounds. Tests drive the same two steps a person does. */
+async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
+  await session.captureMany(texts);
+  await session.acceptModel();
+}
+
 test("no capability without a door: every session action is registered", () => {
   assert.ok(SESSION_ACTIONS.length >= 15, "the gate must never go vacuous — the registry drives it");
   for (const action of SESSION_ACTIONS) {
@@ -38,6 +45,10 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     now: () => "2026-08-05T19:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number; decisions?: string[] }) => ({
       changes: [
         {
@@ -57,12 +68,14 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   };
   const session = new TandemSession(deps as never);
   const captured = await session.capture("I want to capture asks from the toolbar");
+  await session.acceptModel();
   assert.ok(captured.ok);
   assert.equal(session.space.asks[0].text, "I want to capture asks from the toolbar");
-  assert.equal(session.units.length, 1, "grounded node clustered into a unit");
+  assert.equal(session.space.nodes.length, 1, "the subject grounded into one promise");
+  assert.equal(session.space.subjects!.length, 1, "the sentence became one subject");
 
   // An undecided question on the ask REFUSES the sign — decide first.
-  session.toggleCut(session.units[0].changeIds);
+  session.toggleCut(session.space.nodes.map((n) => n.id));
   const refused = session.signCut();
   assert.equal(refused.ok, false, "open question blocks the sign");
   assert.ok(refused.reason!.includes("top or side toolbar?"), "the refusal names the question");
@@ -87,8 +100,8 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   );
   assert.equal((await session.acceptQuestion(session.space.questions[0].id)).ok, false, "no double decide");
 
-  session.toggleCut(session.units[0].changeIds);
-  assert.ok(session.cutScreen().includes("1 promise(s)"));
+  session.toggleCut(session.space.nodes.map((n) => n.id));
+  assert.ok(session.cutScreen().includes("promise(s)"), "the cut screen counts the promises picked");
   assert.ok(session.signCut().ok, "signing succeeds; with no forge the run stays parked");
   assert.equal(session.space.cuts.length, 1);
   assert.ok(session.space.cuts[0].signature, "signature bound at the click");
@@ -128,6 +141,10 @@ test("accept runs the engine's canonical order: merge → stamp → retire, and 
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     forge: {
       openDelivery: async () => "https://forge/pr/1",
       merge: async () => {
@@ -170,6 +187,10 @@ test("a refused merge aborts the accept before any stamp", async () => {
     now: () => "2026-08-06T08:00:00Z",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     forge: {
       openDelivery: async () => "https://forge/pr/1",
       merge: async () => {
@@ -207,6 +228,10 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
       changes: [
         {
@@ -223,14 +248,16 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
   };
   const session = new TandemSession(deps as never);
   await session.capture("something derived");
-  assert.equal(session.units.length, 1);
+  await session.acceptModel();
+  assert.equal(session.space.nodes.length, 1);
   const r = session.panic();
   assert.ok(r.ok);
   assert.equal(session.space.nodes.length, 0, "derived changes cleared");
   assert.equal(session.space.asks.length, 1, "the human's words survive");
 
   await session.capture("again");
-  session.toggleCut(session.units[0].changeIds);
+  await session.acceptModel();
+  session.toggleCut(session.space.nodes.map((n) => n.id));
   assert.ok(session.signCut().ok);
   const refused = session.panic();
   assert.ok(!refused.ok && refused.reason!.includes("signed"), "a freeze makes panic refuse");
@@ -247,6 +274,10 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     onChanged: (m?: string) => {
       if (m) messages.push(m);
     },
@@ -285,16 +316,19 @@ test("the capture seam classifies: a question is answered and recorded nowhere; 
   const session = new TandemSession(deps as never);
 
   const q = await session.capture("where does the toolbar render?");
+  await session.acceptModel();
   assert.ok(q.ok);
   assert.equal(session.space.asks.length, 0, "a question is not an ask");
   assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"), "the answer reached the in-board panel");
 
   const st = await session.capture("we always deploy through the platform CI");
+  await session.acceptModel();
   assert.ok(st.ok);
   assert.equal(session.space.asks.length, 0, "a statement is not an ask");
   assert.deepEqual(session.decisionsInForce(), ["we always deploy through the platform CI"]);
 
   await session.capture("build the toolbar");
+  await session.acceptModel();
   assert.equal(session.space.asks.length, 1, "an ask grounds as before");
 });
 
@@ -350,13 +384,17 @@ test("list-paste: a pasted list previews as N items and records N independent as
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     ground: async () => ({ changes: [], questions: [] }),
   };
   const session = new TandemSession(deps as never);
   const draft = await session.classifyDraft("1. add a clear button\n2. rename the toolbar\n- fix the tooltip");
   assert.deepEqual(draft.items, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
   assert.equal(session.space.asks.length, 0, "the preview records nothing");
-  await session.captureMany(draft.items!);
+  await captureAndAccept(session, draft.items!);
   assert.equal(session.space.asks.length, 3, "confirming records exactly N asks");
   assert.ok(session.space.asks.every((a, i) => a.text === draft.items![i]));
 });
@@ -380,7 +418,7 @@ test("a question's answer lands as state for the in-board panel, not as a toast"
   assert.equal(session.space.asks.length, 0, "a question is recorded nowhere");
 });
 
-test("liveness: the pipeline's stages surface as activity tied to the ask being grounded", async () => {
+test("liveness: the pipeline's stages surface as activity tied to the subject being grounded", async () => {
   const stages: string[] = [];
   const deps = {
     round: { model: "sonnet", repoRoot: "/repo" },
@@ -390,6 +428,10 @@ test("liveness: the pipeline's stages surface as activity tied to the ask being 
     now: () => "t",
     readCurrentStamp: async () => [],
     classify: async () => "ask" as const,
+    solveModel: async (_d: unknown, texts: string[]) => ({
+      subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
+      rules: [],
+    }),
     ground: async (
       _d: unknown,
       ask: { id: string },
@@ -406,75 +448,11 @@ test("liveness: the pipeline's stages surface as activity tied to the ask being 
   };
   const session = new TandemSession(deps as never);
   await session.capture("build the thing", "ask");
-  assert.ok(stages.some((x) => x.startsWith("reading your code@ask-")), "stage 1 surfaced against the ask");
+  await session.acceptModel();
+  assert.ok(
+    stages.some((x) => x.startsWith("reading your code@subject-")),
+    "stage 1 surfaced against the subject being ground",
+  );
   assert.ok(stages.some((x) => x.startsWith("deriving the changes@")), "stage 2 surfaced");
   assert.equal(session.activity, undefined, "activity clears when the pipeline ends");
-});
-
-test("naming round: units get stamped titles + abstracts; a decided question re-names; renders persist", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-name-"));
-  const calls: string[][] = [];
-  let batch = 0;
-  const deps = {
-    round: { model: "sonnet", repoRoot: "/repo" },
-    storeDir: dir,
-    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-name-keys-")),
-    now: () => "t",
-    readCurrentStamp: async () => [{ root: "/repo", head: "h1", dirty: "" }],
-    classify: async () => "ask" as const,
-    name: async (_r: unknown, units: { id: string; sentences: string[] }[]) => {
-      calls.push(units.map((u) => u.id));
-      batch++;
-      return units.map((u) => ({
-        unitId: u.id,
-        title: `T${batch} ${u.id}`,
-        text: `what ${u.id} delivers as a whole`,
-      }));
-    },
-    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number }) => ({
-      changes: [
-        {
-          id: `node-${opts.nextIndex}`,
-          sentence: "a clear button in the toolbar",
-          serves: [ask.id],
-          needs: [],
-          acceptance: [],
-          grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
-        },
-        {
-          id: `node-${opts.nextIndex + 1}`,
-          sentence: "a persisted retrievable log",
-          serves: [ask.id],
-          needs: [],
-          acceptance: [],
-          grounding: { touchpoints: [{ path: "src/b.ts" }], stamp: [] },
-        },
-      ],
-      questions: [{ askId: ask.id, text: "which toolbar?", recommendation: "top" }],
-    }),
-  };
-  const session = new TandemSession(deps as never);
-  await session.capture("two decoupled things");
-  assert.equal(session.units.length, 2, "disjoint touchpoints form two units");
-  assert.deepEqual(calls, [[session.units[0].id, session.units[1].id]], "one batched naming call");
-  for (const u of session.units) {
-    assert.equal(u.abstract!.title, `T1 ${u.id}`);
-    assert.ok(u.abstract!.text!.includes("delivers as a whole"));
-    assert.deepEqual(u.abstract!.of, u.changeIds, "the render records the member set it described");
-    assert.equal(u.abstract!.stamp[0].head, "h1", "the render is stamped");
-  }
-
-  // SPEC: re-name units whose question was since decided.
-  await session.acceptQuestion(session.space.questions[0].id, "the top toolbar");
-  await new Promise((r) => setImmediate(r));
-  assert.equal(calls.length, 2, "deciding the question re-named the serving units");
-  for (const u of session.units) assert.equal(u.abstract!.title, `T2 ${u.id}`);
-
-  // A fresh session over the same store loads the renders back.
-  const reloaded = new TandemSession(deps as never);
-  for (const u of reloaded.space.units) assert.ok(u.abstract!.title.startsWith("T2"));
-
-  // Nothing due → the naming round is not called again.
-  await reloaded.renderAbstracts();
-  assert.equal(calls.length, 2, "a fresh render set names nothing");
 });

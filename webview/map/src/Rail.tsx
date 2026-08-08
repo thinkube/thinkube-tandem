@@ -147,7 +147,6 @@ export function Rail(props: {
   onSelect: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
-  const unit = push.units.find((u) => u.id === props.selected);
   return (
     <div
       data-rail
@@ -180,50 +179,6 @@ export function Rail(props: {
       {push.runLog ? <StepLog log={push.runLog} /> : null}
 
       {push.questions.length ? <Questions push={push} onSelect={props.onSelect} /> : null}
-
-      {push.proposals.length ? (
-        <section data-proposals style={{ marginBottom: 14 }}>
-          <strong style={{ fontSize: 12 }}>The machine suggests merging</strong>
-          <div style={{ fontSize: 11, opacity: 0.7, margin: "2px 0 4px" }}>
-            Units it found strongly coupled. Merged units are built together as one slice.
-          </div>
-          {push.proposals.map((p) => (
-            <div key={p.id} data-proposal={p.id} style={{ padding: "4px 0" }}>
-              <div style={{ opacity: 0.85 }}>
-                Fold {p.joiners.length === 1 ? "this" : `these ${p.joiners.length}`} into “{p.anchor.title}”
-                {" "}({p.anchor.count} promise{p.anchor.count === 1 ? "" : "s"})?
-              </div>
-              <ul style={{ margin: "3px 0 0 0", paddingLeft: 18, fontSize: 11, opacity: 0.8 }}>
-                {p.joiners.map((j, i) => (
-                  <li key={i} title={j.members.join("\n")}>
-                    {j.title} ({j.count} promise{j.count === 1 ? "" : "s"})
-                  </li>
-                ))}
-              </ul>
-              <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
-                One slice of {p.resultCount} promises.
-              </div>
-              <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
-                <button
-                  data-merge-accept={p.id}
-                  title="Fold every listed unit into this one — they will be built as one slice."
-                  onClick={() => post({ action: "accept-merge", unitId: p.id })}
-                >
-                  Merge {p.joiners.length === 1 ? "" : `all ${p.joiners.length} `}into one
-                </button>
-                <button
-                  data-merge-reject={p.id}
-                  title="Keep them separate — these pairs are never suggested again."
-                  style={{ opacity: 0.75 }}
-                  onClick={() => post({ action: "reject-merge", unitId: p.id })}
-                >
-                  Keep separate
-                </button>
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
 
       {push.impacts.length ? (
         <section data-impacts style={{ marginBottom: 14 }}>
@@ -259,17 +214,18 @@ export function Rail(props: {
       ) : null}
 
       {(() => {
-        const ready = push.units.filter(
-          (u) => !u.inCut && !u.tep && !u.stale && u.openQuestions === 0 && u.coverage.covered === u.coverage.total,
-        );
+        // Everything provable and not yet in the cut, in one press.
+        const ready = push.subjects
+          .flatMap((s) => s.claims.flatMap((c) => c.promises))
+          .filter((p) => !p.inCut && !p.tep && !p.stale && p.checks.length > 0);
         return ready.length ? (
           <button
             data-cut-ready
             style={{ ...btn, marginBottom: 10 }}
-            title="Add every ready unit to the cut — those with all checks written, no open questions, and not out of date."
-            onClick={() => post({ action: "toggle-cut", changeIds: ready.flatMap((u) => u.changeIds) })}
+            title="Add every promise that already has its check, is not signed, and is not out of date."
+            onClick={() => post({ action: "toggle-cut", changeIds: ready.map((p) => p.id) })}
           >
-            Add everything that is ready ({ready.length} unit{ready.length === 1 ? "" : "s"})
+            Add everything that is ready ({ready.length} promise{ready.length === 1 ? "" : "s"})
           </button>
         ) : null;
       })()}
@@ -291,136 +247,6 @@ export function Rail(props: {
         </section>
       ) : null}
 
-      {unit ? (
-        <section data-unit-panel style={{ marginBottom: 14 }}>
-          <h4 style={{ margin: "2px 0 8px", fontSize: 12, color: "var(--vscode-descriptionForeground, #9d9d9d)", textTransform: "uppercase" }}>
-            Selected unit
-          </h4>
-          <strong style={{ fontSize: 12 }}>{unit.title}</strong>
-          <div style={{ margin: "6px 0", display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {(() => {
-              const cutUnits = push.units.filter((u) => u.inCut);
-              return cutUnits.length >= 2 && unit.inCut ? (
-                <button
-                  data-pin-together
-                  title="Pin these units into one slice — your pin outranks the machine's grouping."
-                  onClick={() => {
-                    for (let i = 1; i < cutUnits.length; i++)
-                      post({ action: "pin", pinKind: "together", changeIds: [cutUnits[0].changeIds[0], cutUnits[i].changeIds[0]] });
-                  }}
-                >
-                  Merge {cutUnits.length} into one slice
-                </button>
-              ) : null;
-            })()}
-            <button data-toggle-cut style={btn} title="Add or remove this unit's promises from the batch you will sign. Dependencies ride along automatically." onClick={() => post({ action: "toggle-cut", changeIds: unit.changeIds })}>
-              {unit.inCut ? "Remove from cut" : "Add to cut"}
-            </button>
-          </div>
-          <div style={{ fontSize: 11, opacity: 0.7, margin: "8px 0 2px" }}>
-            Promises in this unit ({unit.nodes.length}) — each is one provable
-            thing to build, with the check that will prove it.
-          </div>
-          {unit.nodes.map((n) => (
-            <div
-              key={n.id}
-              style={{
-                padding: "5px 0",
-                borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)",
-              }}
-            >
-              <div>
-                {n.sentence}{" "}
-                <span
-                  data-flip={n.id}
-                  title="Show where this promise lands in the code."
-                  style={{ cursor: "pointer", opacity: 0.6 }}
-                  onClick={() => props.onFlip(n.id)}
-                >
-                  ⌄
-                </span>
-              </div>
-              {props.flipped.has(n.id) ? (
-                <pre data-machine-face style={{ fontSize: 11, opacity: 0.85, margin: "3px 0 3px 12px", whiteSpace: "pre-wrap" }}>
-                  {`lands at: ${n.touchpoints.join(", ") || "(not grounded)"}`}
-                </pre>
-              ) : null}
-              {n.acceptance.length ? (
-                <div style={{ fontSize: 11, marginTop: 2, marginLeft: 12, color: "var(--ok, #89d185)" }}>
-                  {n.acceptance.map((a, i) => (
-                    <div key={i}>✓ proved by: {a}</div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: 11, marginTop: 2, marginLeft: 12, opacity: 0.75 }}>
-                  no check yet — nothing would prove this promise
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 6, marginTop: 3, marginLeft: 12 }}>
-                {n.acceptance.length === 0 && push.pendingCheck?.changeId !== n.id ? (
-                  <button
-                    data-write-check={n.id}
-                    disabled={!!push.activity}
-                    style={{ fontSize: 11 }}
-                    title="Write a check for this promise — you accept or reword it; your wording wins."
-                    onClick={() => post({ action: "propose-check", changeIds: [n.id] })}
-                  >
-                    {push.activity?.label.includes("check") ? "⟳ writing the check…" : "Write a check"}
-                  </button>
-                ) : null}
-                {unit.changeIds.length > 1 ? (
-                  <button
-                    data-pin-apart={n.id}
-                    title="Move this promise into a unit of its own."
-                    style={{ fontSize: 11, opacity: 0.75 }}
-                    onClick={() => {
-                      const other = unit.changeIds.find((id) => id !== n.id);
-                      if (other) post({ action: "pin", pinKind: "apart", changeIds: [n.id, other] });
-                    }}
-                  >
-                    Move out of this unit
-                  </button>
-                ) : null}
-              </div>
-              {push.pendingCheck?.changeId === n.id ? (
-                <PendingCheck changeId={n.id} text={push.pendingCheck.text} kind={push.pendingCheck.kind} />
-              ) : null}
-            </div>
-          ))}
-        </section>
-      ) : (
-        <section data-unit-panel style={{ marginBottom: 14 }}>
-          <h4 style={{ margin: "2px 0 8px", fontSize: 12, color: "var(--vscode-descriptionForeground, #9d9d9d)", textTransform: "uppercase" }}>
-            Selected unit
-          </h4>
-          <div style={{ opacity: 0.55 }}>Click a unit card for its detail.</div>
-        </section>
-      )}
-
-      {push.deliveries.map((d) => (
-        <section key={d.id} data-delivery={d.id} style={{ marginBottom: 14 }}>
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, overflowX: "auto" }}>{d.page}</pre>
-          {d.undelivered?.length ? (
-            <div style={{ color: "#f59e0b", margin: "4px 0" }}>
-              {d.undelivered.map((u, i) => (
-                <div key={i}>UNDELIVERED: {u}</div>
-              ))}
-            </div>
-          ) : null}
-          {d.url ? (
-            <div style={{ margin: "4px 0" }}>
-              <a href={d.url}>{d.url}</a>
-            </div>
-          ) : null}
-          {d.accepted ? (
-            <span style={{ opacity: 0.7 }}>accepted</span>
-          ) : (
-            <button data-accept style={btn} onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}>
-              Accept
-            </button>
-          )}
-        </section>
-      ))}
     </div>
   );
 }

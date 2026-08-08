@@ -98,6 +98,8 @@ export interface PipelineOpts {
    *  total). The surface renders it; silence here was ledger lesson #79. */
   onStage?: (stage: string, index: number, total: number) => void;
   decisions?: string[];
+  /** The claims this subject's grounding serves. */
+  claims?: { id: string; text: string; why?: string }[];
   digest?: string;
   digestStore?: DigestStore;
   /** Injectable round runner for tests; production uses the SDK round. */
@@ -294,7 +296,14 @@ export async function runDerivationPipeline(
   const grounded = await runGrounding(
     { ...deps, log },
     ask,
-    { digest, nextIndex: opts.nextIndex, decisions: opts.decisions, mintId: opts.mintNodeId, scopes: opts.scopes },
+    {
+      digest,
+      nextIndex: opts.nextIndex,
+      decisions: opts.decisions,
+      mintId: opts.mintNodeId,
+      scopes: opts.scopes,
+      ...(opts.claims ? { claims: opts.claims } : {}),
+    },
     round,
   );
   let changes = grounded.changes;

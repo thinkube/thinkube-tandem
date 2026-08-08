@@ -284,7 +284,6 @@ async function ensureSession(
   sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
   // not only after the next act.
-  void s.renderAbstracts();
   if (!storeSync) {
     storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
     storeSync.start();

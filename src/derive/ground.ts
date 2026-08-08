@@ -25,6 +25,9 @@ export interface DerivedNode {
   /** Indices into THIS round's node list (a round derives a closed set). */
   needsIndices: number[];
   acceptance: Omit<AcceptanceCriterion, "id">[];
+  /** 1-based number of the claim this change makes true, when the round
+   *  was given claims to serve. */
+  claim?: number;
 }
 
 /** Build the derivation prompt. Pure; exported for tests. */
@@ -37,6 +40,8 @@ export function buildGroundingPrompt(args: {
   decisions?: string[];
   /** Member scopes of a multirepo project open in this workspace. */
   scopes?: { id: string; dir: string; label?: string }[];
+  /** The claims this grounding serves, numbered — each promise names one. */
+  claims?: { text: string; why?: string }[];
 }): string {
   return (
     `You are grounding ONE ask into the intended changes it implies.\n\n` +
@@ -53,6 +58,14 @@ export function buildGroundingPrompt(args: {
       : "") +
     `Return the intended CHANGES as nodes. For each node:\n` +
     `- "sentence": one plain sentence a person decides on — what this change is, in the ask's own register.\n` +
+    (args.claims?.length
+      ? `- "claim": the NUMBER of the claim this change makes true, from:\n` +
+        args.claims
+          .map((c, i) => `    ${i + 1}. ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
+          .join("\n") +
+        `\n  Every change must name exactly one. A change that serves none of ` +
+        `them does not belong in this derivation.\n`
+      : "") +
     `- "touchpoints": WHERE it lands: [{"path":"src/…","symbol":"functionOrSection"}]. ` +
     `Paths are repo-relative. A file that does not exist yet is a legitimate touchpoint — the change creates it. ` +
     `NEVER put line numbers in a path; anchors are structural.\n` +
@@ -97,6 +110,7 @@ export function parseGroundedNodes(
     const rec = n as Record<string, unknown>;
     const sentence = typeof rec.sentence === "string" ? rec.sentence.trim() : "";
     if (!sentence) continue;
+    const claim = typeof rec.claim === "number" ? rec.claim : undefined;
     const touchpoints: Anchor[] = [];
     for (const t of Array.isArray(rec.touchpoints) ? rec.touchpoints : []) {
       if (typeof t !== "object" || t === null) continue;
@@ -125,7 +139,7 @@ export function parseGroundedNodes(
           : { text: "" },
       )
       .filter((c) => c.text.length > 0);
-    out.push({ sentence, touchpoints, needsIndices, acceptance });
+    out.push({ sentence, touchpoints, needsIndices, acceptance, ...(claim ? { claim } : {}) });
   }
   return out;
 }
@@ -170,6 +184,8 @@ export async function runGrounding(
     nextIndex: number;
     decisions?: string[];
     mintId?: (n: number) => string;
+    /** The claims this grounding serves; each promise names one. */
+    claims?: { id: string; text: string; why?: string }[];
     scopes?: { id: string; dir: string; label?: string }[];
   },
   round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
@@ -177,6 +193,7 @@ export async function runGrounding(
   const text = await round(
     deps,
     buildGroundingPrompt({
+      ...(opts.claims ? { claims: opts.claims } : {}),
       ask,
       repoRoot: deps.repoRoot,
       digest: opts.digest,
@@ -199,7 +216,14 @@ export async function runGrounding(
   if (derived.length === 0) return { changes: [], questions };
   const stamp = [await readStamp(deps.repoRoot)];
   return {
-    changes: resolveDerived(derived, ask.id, stamp, opts.nextIndex, opts.mintId),
+    changes: resolveDerived(
+      derived,
+      ask.id,
+      stamp,
+      opts.nextIndex,
+      opts.mintId,
+      opts.claims?.map((c) => c.id),
+    ),
     questions,
   };
 }
@@ -214,6 +238,8 @@ export function resolveDerived(
   stamp: SourceStamp[],
   nextIndex: number,
   mintId?: (n: number) => string,
+  /** Claim ids in the order the prompt numbered them. */
+  claimIds?: string[],
 ): Change[] {
   const ids = derived.map((_, i) => (mintId ? mintId(nextIndex + i) : `node-${nextIndex + i}`));
   return derived.map((d, i) => ({
@@ -224,6 +250,7 @@ export function resolveDerived(
     ...(d.touchpoints.length
       ? { grounding: { touchpoints: d.touchpoints, stamp } }
       : {}),
+    ...(d.claim && claimIds?.[d.claim - 1] ? { servesClaim: claimIds[d.claim - 1] } : {}),
     acceptance: d.acceptance.map((c, j) => ({ id: `${ids[i]}-check-${j + 1}`, ...c })),
   }));
 }

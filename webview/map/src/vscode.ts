@@ -4,26 +4,32 @@
  * of its own beyond selection.
  */
 
-export interface UnitVM {
-  coverage: { covered: number; total: number };
-  openQuestions: number;
-  askLabel: string;
-  /** Body lines beyond the title: other members, touchpoints, proofs. Absent when the title says it all. */
-  abs?: string;
+interface PromiseVM {
   id: string;
-  title: string;
-  /** The unclipped first promise, when the title is a fallback. */
-  fullTitle?: string;
-  count: number;
-  changeIds: string[];
-  island: number;
+  text: string;
+  file: string;
+  checks: string[];
+  needs: string[];
   inCut: boolean;
-  /** Signed into this TEP — being built or already delivered. */
-  tep?: string;
-  /** Some of this unit's grounding no longer matches the repo. */
   stale: boolean;
-  /** The machine face: the unit's nodes with grounding, for the flip. */
-  nodes: { id: string; sentence: string; touchpoints: string[]; acceptance: string[] }[];
+  tep?: string;
+}
+
+interface ClaimVM {
+  id: string;
+  text: string;
+  why?: string;
+  /** The human's sentence this claim was read from — never replaced. */
+  fromAsk: string;
+  promises: PromiseVM[];
+}
+
+interface SubjectVM {
+  id: string;
+  name: string;
+  rules: { id: string; text: string }[];
+  thinking?: { label: string; current: number; total: number };
+  claims: ClaimVM[];
 }
 
 interface DeliveryVM {
@@ -57,6 +63,8 @@ interface RunView {
 export interface SpacePush {
   kind: "space";
   running: boolean;
+  /** Set when the space predates the model — readable, not writable. */
+  legacy?: string;
   asks: { id: string; text: string }[];
   signedTeps: number;
   repoName?: string;
@@ -89,15 +97,17 @@ export interface SpacePush {
     cards: { id: string; title: string }[];
   }[];
   decisions: string[];
-  proposals: {
-    id: string;
-    anchor: { title: string; count: number; members: string[] };
-    joiners: { title: string; count: number; members: string[] }[];
-    resultCount: number;
-  }[];
+  rules: { id: string; text: string; scope: string; governs: number; fromAsk: string }[];
+  /** Promises attached to no claim — scope creep, named on the map. */
+  orphans: { id: string; text: string }[];
+  /** The model the round proposed, waiting for you. */
+  pendingModel?: {
+    subjects: { name: string; claims: { text: string; why?: string }[] }[];
+    rules: { text: string; scope: string }[];
+    missing: string[];
+  };
   impacts: { id: string; decision: string; askText: string; affected: number }[];
-  units: UnitVM[];
-  edges: { from: string; to: string }[];
+  subjects: SubjectVM[];
   cutScreen: string;
   cutCount: number;
   deliveries: DeliveryVM[];
@@ -121,6 +131,8 @@ export type WebToHost =
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }
+  | { action: "accept-model" }
+  | { action: "revise-model"; kind: "drop-subject" | "drop-rule" | "to-rule"; page: number }
   | { action: "read-log"; stepId?: string; page?: number }
   | { action: "stop-run" }
   | { action: "accept-question"; questionId: string; text?: string }
@@ -129,8 +141,6 @@ export type WebToHost =
   | { action: "toggle-cut"; changeIds: string[] }
   | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
-  | { action: "accept-merge"; unitId: string }
-  | { action: "reject-merge"; unitId: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }
   | { action: "apply-all-impacts" }

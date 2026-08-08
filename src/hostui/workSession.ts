@@ -142,6 +142,5 @@ export async function ensureWorkSession(args: {
     onChanged: args.onChanged,
   });
   args.sessions.set(key, s);
-  void s.renderAbstracts();
   return s;
 }

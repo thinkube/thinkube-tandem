@@ -6,13 +6,10 @@
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
-import { addAsk } from "../core/intent";
-import { advanceSpaceMembership, mergeFamilyVerdict, unitEdges } from "../core/suggestions";
-import { readStamp } from "../core/stamp";
 import { runReadRound } from "../derive/round";
 import { staleByTouchpoints, staleChangeIds } from "../core/stale";
 import { filesChangedSince } from "../core/staleFiles";
-import { DigestStore, ensureRepoDigest, runDerivationPipeline } from "../derive/pipeline";
+import { DigestStore, ensureRepoDigest } from "../derive/pipeline";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
@@ -20,13 +17,12 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
-import { nameUnits } from "../derive/name";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { captureManyFlow } from "./captureMany";
+import { applyModel, PendingModel, proposeModelFlow } from "./modelFlow";
+import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
-import { clearAbstractsServingAsk, renderUnitAbstracts } from "./naming";
-import { addCheckFlow, answerQuestionFlow, applyRederive, decideQuestionFlow, panicFlow, rederiveAskFlow, statementFlow } from "./captureFlows";
+import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
@@ -46,6 +42,8 @@ export class TandemSession {
   lastAnswer: { question: string; answer: string } | undefined;
   runNote: string | undefined; // why the last build did not start
   openLog: { step: string; page: number } | undefined; // the log being read
+  /** The model the round proposed, waiting for the human to accept it. */
+  pendingModel: PendingModel | undefined;
   private _captureAbort: AbortController | undefined;
   _grounding = new Map<string, { label: string; current: number; total: number }>();
 
@@ -77,8 +75,20 @@ export class TandemSession {
     this.deps.onChanged?.(message);
   }
 
-  private digestStore(): DigestStore {
+  digests(): DigestStore {
     return makeDigestStore(this.deps.storeDir);
+  }
+
+  /** Progress rows, keyed by whatever is being thought about. */
+  mark(id: string, label: string, current = 0, total = 4): void {
+    this._grounding.set(id, { label, current, total });
+  }
+  clear(id: string): void {
+    this._grounding.delete(id);
+    if (this._grounding.size === 0) this.activity = undefined;
+  }
+  stageOf(id: string): (label: string, current: number, total: number) => void {
+    return this.stageFor(id);
   }
 
   async classifyDraft(text: string): Promise<{ kind: UtteranceKind; items?: string[] }> {
@@ -93,7 +103,40 @@ export class TandemSession {
   }
 
   captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
-    return captureManyFlow(this, texts);
+    // A list is a description of one world: the model round reads it whole
+    // and proposes what it is about, before any code is read.
+    return proposeModelFlow(this, texts);
+  }
+
+  /** The human accepted the proposed model: it becomes the space, and every
+   *  subject grounds once under the rules in force. */
+  async acceptModel(): Promise<{ ok: boolean; reason?: string }> {
+    const pending = this.pendingModel;
+    if (!pending) return { ok: false, reason: "nothing proposed" };
+    this.space = applyModel(this.space, pending, this.author);
+    this.pendingModel = undefined;
+    this.changed(
+      `${this.space.subjects?.length ?? 0} subject(s) recorded — thinking about them now.`,
+    );
+    await groundSubjectFlow(this, (this.space.subjects ?? []).map((s) => s.id));
+    return { ok: true };
+  }
+
+  /** Corrections to the proposal, before it is recorded. */
+  reviseModel(edit: { kind: "drop-subject" | "drop-rule" | "to-rule"; index: number }): void {
+    const p = this.pendingModel;
+    if (!p) return;
+    if (edit.kind === "drop-subject") p.model.subjects.splice(edit.index, 1);
+    else if (edit.kind === "drop-rule") p.model.rules.splice(edit.index, 1);
+    else if (edit.kind === "to-rule") {
+      const sub = p.model.subjects[edit.index];
+      if (sub) {
+        for (const c of sub.claims)
+          p.model.rules.push({ text: c.text, scope: "every subject", from: c.from });
+        p.model.subjects.splice(edit.index, 1);
+      }
+    }
+    this.deps.onChanged?.();
   }
 
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
@@ -105,7 +148,7 @@ export class TandemSession {
         space: this.space,
         text,
         decisions: this.decisionsInForce(),
-        digests: this.digestStore(),
+        digests: this.digests(),
         answerRound: this.deps.answerRound,
       });
       this.deps.onChanged?.();
@@ -116,18 +159,7 @@ export class TandemSession {
       this.changed("Recorded as a decision in force — every later derivation builds under it.");
       return { ok: true };
     }
-    const r = addAsk(
-      this.space,
-      text,
-      this.deps.now(),
-      `ask-${this.author}-${this.space.asks.length + 1}`,
-    );
-    if (!r.ok) return { ok: false, reason: r.reason };
-    this.space = r.space;
-    this.changed(); // visible on the list BEFORE thinking starts
-    await this.groundAsk(r.added, "s");
-    await this.renderAbstracts();
-    return { ok: true };
+    return proposeModelFlow(this, [text]);
   }
 
   /** One reading of the repository BEFORE a batch fans out: every ask then
@@ -142,7 +174,7 @@ export class TandemSession {
       total: 1,
     };
     this.deps.onChanged?.();
-    await ensureRepoDigest(this.deps.round, this.digestStore(), round).catch(() => {});
+    await ensureRepoDigest(this.deps.round, this.digests(), round).catch(() => {});
     this.activity = undefined;
     this.deps.onChanged?.();
   }
@@ -165,7 +197,7 @@ export class TandemSession {
 
   /** Progress lives ON the ask's own row; the aggregate counts only what
    *  actually runs. Shared by grounding and every re-derivation. */
-  private stageFor(askId: string): (label: string, current: number, total: number) => void {
+  stageFor(askId: string): (label: string, current: number, total: number) => void {
     return (label, current, total) => {
       this._grounding.set(askId, { label, current, total });
       const running = [...this._grounding.values()].filter((v) => v.label !== "waiting").length;
@@ -179,76 +211,19 @@ export class TandemSession {
     };
   }
 
-  async groundAsk(
-    ask: { id: string; text: string; at: string },
-    mintPrefix: string,
-    quiet = false,
-  ): Promise<{ promises: number; questions: number }> {
-    const ground = this.deps.ground ?? runDerivationPipeline;
-    this._captureAbort ??= new AbortController();
-    this._grounding.set(ask.id, { label: "starting", current: 0, total: 4 });
-    const grounded = await ground({ ...this.deps.round, abort: this._captureAbort }, ask, {
-      nextIndex: 1,
-      decisions: this.decisionsInForce(),
-      digestStore: this.digestStore(),
-      mintNodeId: (n) => `node-${this.author}-${mintPrefix}${ask.id.split("-").pop()}-${n}`,
-      ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-      onStage: this.stageFor(ask.id),
-    });
-    this._grounding.delete(ask.id);
-    if (this._grounding.size === 0) {
-      this.activity = undefined;
-      this._captureAbort = undefined;
-    }
-    const questions = grounded.questions.map((q, i) => ({
-      ...q,
-      id: `q-${this.author}-${this.space.questions.length + i + 1}`,
-    }));
-    this.space = {
-      ...this.space,
-      nodes: [...this.space.nodes, ...grounded.changes],
-      questions: [...this.space.questions, ...questions],
-    };
-    this.recluster();
-    await this.refreshStaleness();
-    const qNote = questions.length ? ` ${questions.length} question(s) need you.` : "";
-    this.changed(
-      quiet
-        ? undefined
-        : `${grounded.changes.length ? `Derived ${grounded.changes.length} promise(s)` : "No promises derived"} for "${ask.text.slice(0, 32)}…".${qNote}`,
-    );
-    return { promises: grounded.changes.length, questions: questions.length };
-  }
-
+  /** Out-of-date promises re-derive the subject they belong to. */
   async reground(): Promise<void> {
     await this.refreshStaleness();
-    const staleAsks = new Set(
+    const staleSubjects = new Set(
       this.space.nodes
-        .filter((n) => this.stale.has(n.id))
-        .flatMap((n) => n.serves),
+        .filter((n) => this.stale.has(n.id) && n.servesClaim)
+        .map((n) => (this.space.claims ?? []).find((c) => c.id === n.servesClaim)?.subjectId)
+        .filter((id): id is string => !!id),
     );
-    if (staleAsks.size === 0) return;
-    for (const askId of staleAsks) {
-      const ask = this.space.asks.find((a) => a.id === askId);
-      if (!ask) continue;
-      this.space = applyRederive(this.space, await rederiveAskFlow({
-        space: this.space,
-        ask,
-        round: this.deps.round,
-        ground: this.deps.ground ?? runDerivationPipeline,
-        decisions: this.decisionsInForce(),
-        digests: this.digestStore(),
-        mintNodeId: (n) => `node-${this.author}-${n}`,
-        ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-        onStage: this.stageFor(askId),
-      }));
-      this._grounding.delete(askId);
-    }
-    if (this._grounding.size === 0) this.activity = undefined;
-    this.recluster();
+    if (!staleSubjects.size) return;
+    await this.rederiveSubjects([...staleSubjects]);
     await this.refreshStaleness();
     this.changed("Re-read the code and refreshed the out-of-date promises.");
-    await this.renderAbstracts();
   }
 
   panic(): { ok: boolean; reason?: string } {
@@ -258,7 +233,6 @@ export class TandemSession {
     this.space = r.space;
     this.cutNodeIds = new Set();
     this.stale = new Set();
-    this.recluster();
     this.changed("Cleared the derived thinking — your asks are untouched; re-ground when ready.");
     return { ok: true };
   }
@@ -287,27 +261,53 @@ export class TandemSession {
     });
     if ("reason" in r) return { ok: false, reason: r.reason };
     this.space = r.space;
-    if (r.askId) {
-      // SPEC: re-name units whose question was since decided.
-      this.space = clearAbstractsServingAsk(this.space, r.askId);
-      this.units = this.space.units;
-    }
     this.changed(
       r.staged
         ? "Decision in force — its implication is staged below; accept it to re-derive."
         : "Decision in force.",
     );
-    void this.renderAbstracts();
     return { ok: true };
   }
 
-  /** Accept = ONE re-derivation of the ask under ALL decisions in force —
-   *  every other staged implication on the same ask is covered by that
-   *  pass and consumed with it. Dismiss touches nothing. */
-  async decideImpact(
-    impactId: string,
-    accept: boolean,
-  ): Promise<{ ok: boolean; reason?: string }> {
+  /** What a decision touches. A question raised while grounding names its
+   *  subject; one captured against a sentence names the ask it came from. */
+  private subjectsOfAsk(id: string): string[] {
+    if ((this.space.subjects ?? []).some((s) => s.id === id)) return [id];
+    return [
+      ...new Set(
+        (this.space.claims ?? []).filter((c) => c.fromAsk === id).map((c) => c.subjectId),
+      ),
+    ];
+  }
+
+  /** Drop the unsigned promises of these subjects, then derive them again.
+   *  A promise belongs to a subject either by the claim it serves or by the
+   *  subject it was ground for — both, so nothing survives as a duplicate. */
+  private async rederiveSubjects(ids: string[]): Promise<void> {
+    const subjects = new Set(ids);
+    const claimIds = new Set(
+      (this.space.claims ?? []).filter((c) => subjects.has(c.subjectId)).map((c) => c.id),
+    );
+    const signed = signedIds(this.space.cuts);
+    const goes = new Set(
+      this.space.nodes
+        .filter(
+          (n) =>
+            !signed.has(n.id) &&
+            ((n.servesClaim && claimIds.has(n.servesClaim)) ||
+              n.serves.some((sv) => subjects.has(sv))),
+        )
+        .map((n) => n.id),
+    );
+    this.space = { ...this.space, nodes: this.space.nodes.filter((n) => !goes.has(n.id)) };
+    // A cut cannot hold a promise that no longer exists.
+    for (const id of goes) this.cutNodeIds.delete(id);
+    await groundSubjectFlow(this, ids);
+  }
+
+  /** Accept = ONE re-derivation of each subject the decision touches, under
+   *  every decision in force; the sibling implications go with it. */
+  async decideImpact(impactId: string, accept: boolean): Promise<{ ok: boolean; reason?: string }> {
     const im = (this.space.impacts ?? []).find((x) => x.id === impactId);
     if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
     if (!accept) {
@@ -323,94 +323,32 @@ export class TandemSession {
       ...this.space,
       impacts: (this.space.impacts ?? []).filter((x) => x.askId !== im.askId),
     };
-    const ask = this.space.asks.find((a) => a.id === im.askId);
-    if (!ask) return { ok: false, reason: "the ask no longer exists" };
-    const decisions = this.decisionsInForce();
-    this.space = applyRederive(this.space, await rederiveAskFlow({
-      space: this.space,
-      ask,
-      round: this.deps.round,
-      ground: this.deps.ground ?? runDerivationPipeline,
-      decisions,
-      digests: this.digestStore(),
-      mintNodeId: (n) => `node-${this.author}-${n}`,
-      ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-      onStage: this.stageFor(ask.id),
-    }));
-    this._grounding.delete(ask.id);
-    if (this._grounding.size === 0) this.activity = undefined;
-    this.recluster();
-    await this.refreshStaleness();
-    const under = `under ${decisions.length === 1 ? "the decision" : `all ${decisions.length} decisions`} in force`;
+    const subjects = this.subjectsOfAsk(im.askId);
+    if (!subjects.length) return { ok: false, reason: "that ask is not part of any subject" };
+    await this.rederiveSubjects(subjects);
     this.changed(
-      `Re-derived once ${under}${covered > 1 ? ` — this one pass covered ${covered} accepted implications on this ask` : ""}: ${this.space.nodes.filter((n) => n.serves.includes(ask.id)).length} promise(s) now serve "${ask.text.slice(0, 40)}…". Merges and pins on the OLD promises no longer apply.`,
+      `Re-derived ${subjects.length} subject(s) under every decision in force` +
+        (covered > 1 ? ` — one pass covered ${covered} accepted implications` : "") + ".",
     );
-    await this.renderAbstracts();
     return { ok: true };
   }
 
-  /** One press for every staged implication: each affected ask re-derives
-   *  ONCE under all decisions in force, five at a time, progress on each
-   *  ask's own row — never one pipeline per implication. */
+  /** One press for every staged implication: each affected subject derives
+   *  again once, five at a time, progress on its own row. */
   async applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
     const impacts = this.space.impacts ?? [];
     if (!impacts.length) return { ok: false, reason: "no implications are staged" };
-    const asks = [...new Set(impacts.map((im) => im.askId))]
-      .map((id) => this.space.asks.find((a) => a.id === id))
-      .filter((a): a is { id: string; text: string; at: string } => !!a);
+    const subjects = [...new Set(impacts.flatMap((im) => this.subjectsOfAsk(im.askId)))];
     this.space = { ...this.space, impacts: [] };
-    const decisions = this.decisionsInForce();
-    const pool = Math.min(5, asks.length);
+    if (!subjects.length) return { ok: false, reason: "those asks are not part of any subject" };
+    await this.rederiveSubjects(subjects);
     this.changed(
-      `${impacts.length} implication(s) apply — ${asks.length} ask(s) re-think once each` +
-        (asks.length > pool ? `; ${pool} now, the other ${asks.length - pool} wait their turn` : "") +
-        ".",
+      `Applied ${impacts.length} implication(s): ${subjects.length} subject(s) re-derived once each.`,
     );
-    await this.warmRepoDigest();
-    for (const a of asks) this._grounding.set(a.id, { label: "waiting", current: 0, total: 4 });
-    this.deps.onChanged?.();
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      while (next < asks.length) {
-        const a = asks[next++];
-        const r = await rederiveAskFlow({
-          space: this.space,
-          ask: a,
-          round: this.deps.round,
-          ground: this.deps.ground ?? runDerivationPipeline,
-          decisions,
-          digests: this.digestStore(),
-          mintNodeId: (n) => `node-${this.author}-r${a.id.split("-").pop()}-${n}`,
-          ...(this.deps.scopes ? { scopes: this.deps.scopes() } : {}),
-          onStage: this.stageFor(a.id),
-        });
-        this.space = applyRederive(this.space, r);
-        this._grounding.delete(a.id);
-        this.deps.onChanged?.();
-      }
-    };
-    await Promise.all(Array.from({ length: pool }, worker));
-    if (this._grounding.size === 0) this.activity = undefined;
-    this.recluster();
-    await this.refreshStaleness();
-    this.changed(
-      `Re-derived ${asks.length} ask(s) once each under ${decisions.length} decision(s) in force. Merges and pins on the OLD promises no longer apply.`,
-    );
-    await this.renderAbstracts();
     return { ok: true };
   }
 
   /** A human pin — outranks the computed coupling. */
-  pin(kind: "together" | "apart", a: string, b: string): void {
-    this.space = {
-      ...this.space,
-      pins: [...this.space.pins, { kind, changeIds: [a, b] }],
-    };
-    this.recluster();
-    this.changed(kind === "together" ? "Pinned into one slice." : "Split apart.");
-    void this.renderAbstracts();
-  }
-
   /** Out of date only when a file the promise lands in changed. */
   async refreshStaleness(): Promise<void> {
     if (this.deps.readCurrentStamp) { // test seam: whole-repo comparison
@@ -425,77 +363,6 @@ export class TandemSession {
           ? this.deps.scopes?.().find((x) => x.id === scope)?.dir
           : this.deps.round.repoRoot,
     );
-  }
-
-  /** Append-only membership (TEP-22) — see core/membership.ts. */
-  recluster(): void {
-    this.space = advanceSpaceMembership(this.space, this.author);
-    // Suggestions pointing at units that no longer exist are noise — drop.
-    const live = new Set(this.space.units.map((u) => u.id));
-    this.space = {
-      ...this.space,
-      proposals: (this.space.proposals ?? []).filter((p) => live.has(p.a) && live.has(p.b)),
-    };
-    this.units = this.space.units;
-    this.edges = unitEdges(this.space.nodes, this.units);
-  }
-
-  private _naming = false;
-  private _nameAgain = false;
-
-  /** Naming coalesces: a request during a running pass marks it dirty and
-   *  the pass runs once more at the end — N quick accepts cost one or two
-   *  rounds, never N, and no request is silently dropped. */
-  async renderAbstracts(): Promise<void> {
-    if (this._naming) {
-      this._nameAgain = true;
-      return;
-    }
-    this._naming = true;
-    try {
-      do {
-        this._nameAgain = false;
-        const next = await renderUnitAbstracts({
-          space: this.space,
-          round: this.deps.round,
-          name: this.deps.name ?? nameUnits,
-          readStamps:
-            this.deps.readCurrentStamp ??
-            (async () => [await readStamp(this.deps.round.repoRoot)]),
-          onActivity: (a) => {
-            this.activity = a;
-            this.deps.onChanged?.();
-          },
-        });
-        if (next) {
-          // Merge into the PRESENT space; unchanged units keep their names.
-          this.space = {
-            ...this.space,
-            units: this.space.units.map((u) => {
-              const a = next.get(u.id);
-              return a && a.of.join(",") === [...u.changeIds].join(",") ? { ...u, abstract: a } : u;
-            }),
-          };
-          this.units = this.space.units;
-          this.changed();
-        }
-      } while (this._nameAgain);
-    } finally {
-      this._naming = false;
-    }
-  }
-
-  /** One verdict for every suggestion around a unit: accept folds them all
-   *  in; reject keeps them apart and they are never proposed again. */
-  decideMerge(unitId: string, accept: boolean): { ok: boolean; reason?: string } {
-    const r = mergeFamilyVerdict(this.space, unitId, accept);
-    if ("reason" in r) return { ok: false, reason: r.reason };
-    this.space = r.space;
-    this.units = this.space.units;
-    this.edges = unitEdges(this.space.nodes, this.units);
-    this.changed(r.message);
-    void this.renderAbstracts();
-    return { ok: true };
   }
 
   pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
@@ -589,8 +456,7 @@ export class TandemSession {
       });
       this.space = folded.space;
       this.cutNodeIds = new Set(folded.cut);
-      this.recluster();
-      void this.refreshStaleness().then(() => this.deps.onChanged?.());
+        void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {
       this.space = emptySpace();
     }

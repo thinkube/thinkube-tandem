@@ -86,67 +86,6 @@ export function decideQuestionFlow(args: {
   return { space, staged, ...(q.askId ? { askId: q.askId } : {}) };
 }
 
-/** Accepting a decision's implication: the affected ask re-derives under
- *  the decisions in force; the old serving nodes leave (a HUMAN act —
- *  their units shrink; fresh nodes re-enter membership). */
-export async function rederiveAskFlow(args: {
-  space: Space;
-  ask: { id: string; text: string; at: string };
-  round: RoundDeps;
-  ground: (
-    round: RoundDeps,
-    ask: { id: string; text: string; at: string },
-    opts: {
-      nextIndex: number;
-      decisions: string[];
-      digestStore: DigestStore;
-      mintNodeId: (n: number) => string;
-      scopes?: { id: string; dir: string; label?: string }[];
-      onStage?: (label: string, current: number, total: number) => void;
-    },
-  ) => Promise<{ changes: Space["nodes"] }>;
-  decisions: string[];
-  digests: DigestStore;
-  mintNodeId: (n: number) => string;
-  scopes?: { id: string; dir: string; label?: string }[];
-  onStage?: (label: string, current: number, total: number) => void;
-}): Promise<{ old: Set<string>; changes: Space["nodes"] }> {
-  const signed = new Set(
-    args.space.cuts.filter((cu) => cu.signature).flatMap((cu) => cu.changeIds),
-  );
-  // Signed promises are records: re-derivation replaces only the unsigned.
-  const old = new Set(
-    args.space.nodes
-      .filter((n) => n.serves.includes(args.ask.id) && !signed.has(n.id))
-      .map((n) => n.id),
-  );
-  const fresh = await args.ground(args.round, args.ask, {
-    nextIndex: args.space.nodes.length + 1,
-    decisions: args.decisions,
-    digestStore: args.digests,
-    mintNodeId: args.mintNodeId,
-    ...(args.scopes ? { scopes: args.scopes } : {}),
-    ...(args.onStage ? { onStage: args.onStage } : {}),
-  });
-  // Applied by the CALLER to its current space — a long round must never
-  // hand back a copy of its past.
-  return { old, changes: fresh.changes };
-}
-
-/** Apply a re-derivation to the PRESENT space in one synchronous step. */
-export function applyRederive(
-  space: Space,
-  r: { old: Set<string>; changes: Space["nodes"] },
-): Space {
-  return {
-    ...space,
-    nodes: [...space.nodes.filter((n) => !r.old.has(n.id)), ...r.changes],
-    units: space.units
-      .map((u) => ({ ...u, changeIds: u.changeIds.filter((id) => !r.old.has(id)) }))
-      .filter((u) => u.changeIds.length > 0),
-  };
-}
-
 /** Panic: wipe everything DERIVED — asks and deliveries survive (your
  *  words and history are never machine-deleted), decided questions stay in
  *  force; nodes, open questions, pins and unsigned cuts go. Refused once

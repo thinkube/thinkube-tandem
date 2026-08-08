@@ -29,7 +29,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   },
   "select-unit": {
     kind: "human",
-    affordance: { surface: "units map", gesture: "click a unit card" },
+    affordance: { surface: "the work graph", gesture: "click a promise" },
   },
   "toggle-cut": {
     kind: "human",
@@ -66,19 +66,20 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "press Accept on a question — or edit its recommendation first and accept your wording",
     },
   },
-  pin: {
-    kind: "human",
-    affordance: {
-      surface: "unit panel",
-      gesture: "press 'Merge into one slice' with two or more units in the cut, or 'Split out' on a change",
-    },
-  },
   "answer-worker": {
     kind: "human",
     affordance: {
       surface: "run view",
       gesture: "type into a parked worker's answer box and press Send",
     },
+  },
+  "accept-model": {
+    kind: "human",
+    affordance: { surface: "the model the round proposed", gesture: "press 'Yes — think about these' to record it and start thinking" },
+  },
+  "revise-model": {
+    kind: "human",
+    affordance: { surface: "the model the round proposed", gesture: "drop a subject or a rule, or turn a subject's claims into rules, before accepting" },
   },
   "read-log": {
     kind: "human",
@@ -87,14 +88,6 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   "stop-run": {
     kind: "human",
     affordance: { surface: "run view", gesture: "press Stop" },
-  },
-  "accept-merge": {
-    kind: "human",
-    affordance: { surface: "suggestions panel", gesture: "press Merge on a staged merge suggestion" },
-  },
-  "reject-merge": {
-    kind: "human",
-    affordance: { surface: "suggestions panel", gesture: "press Reject — the pair is never proposed again" },
   },
   "accept-impact": {
     kind: "human",

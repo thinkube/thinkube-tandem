@@ -9,7 +9,7 @@ import { Forge } from "../dispatch/forge";
 import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { classifyUtterance } from "../derive/classify";
-import { nameUnits } from "../derive/name";
+import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 
 export interface SessionDeps {
@@ -36,8 +36,8 @@ export interface SessionDeps {
   answerRound?: typeof runReadRound;
   /** The round that reads the repository for the shared digest. */
   contextRound?: typeof runReadRound;
-  /** Injectable naming round (unit titles + abstracts) for tests. */
-  name?: typeof nameUnits;
+  /** The round that reads a pasted list as one description. */
+  solveModel?: typeof solveModel;
   proposeCheck?: typeof proposeCheckRound;
   nextTepNumber?: () => number; // owner-level, unique across the owner's spaces
   anchorless?: boolean; // a project space: the anchor is the store, never a code home

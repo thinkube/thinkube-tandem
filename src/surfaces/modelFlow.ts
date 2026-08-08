@@ -1,0 +1,101 @@
+/**
+ * Capture through the model: the pasted sentences become asks (the human's
+ * words, kept whole), the model round proposes what they are about, and the
+ * proposal waits for the human. Nothing is ground until they accept it —
+ * a wrong reading costs one cheap round, not seven expensive ones.
+ */
+import { Claim, Rule, Space, Subject } from "../core/schema";
+import { addAsk } from "../core/intent";
+import { ProposedModel, solveModel, unaccountedFor } from "../derive/model";
+import type { TandemSession } from "./session";
+
+export interface PendingModel {
+  /** The asks these sentences became, in order. */
+  askIds: string[];
+  model: ProposedModel;
+  /** Sentence numbers the round accounted for nowhere — shown, never hidden. */
+  missing: number[];
+}
+
+/** Record the sentences as asks, then ask the round what they are about. */
+export async function proposeModelFlow(
+  s: TandemSession,
+  texts: string[],
+): Promise<{ ok: boolean; reason?: string }> {
+  const added: string[] = [];
+  for (const t of texts) {
+    const r = addAsk(s.space, t, s.deps.now(), `ask-${s.author}-${s.space.asks.length + 1}`);
+    if (!r.ok) return { ok: false, reason: r.reason };
+    s.space = r.space;
+    added.push(r.added.id);
+  }
+  s.changed(`${added.length} recorded — reading them as one description…`);
+
+  s.activity = { label: "reading your list as one description", current: 1, total: 1 };
+  s.deps.onChanged?.();
+  const model = await (s.deps.solveModel ?? solveModel)(s.deps.round, texts);
+  s.activity = undefined;
+
+  if (!model) {
+    // Fail-soft: one subject per sentence keeps the space usable, and the
+    // human can merge them by hand.
+    s.pendingModel = {
+      askIds: added,
+      missing: [],
+      model: {
+        subjects: texts.map((t, i) => ({
+          name: t.split(/[.:;—]/)[0].slice(0, 60),
+          from: [i + 1],
+          claims: [{ text: t, from: i + 1 }],
+        })),
+        rules: [],
+      },
+    };
+    s.changed("I could not read the list as one description — here is one subject per sentence to correct.");
+    return { ok: true };
+  }
+
+  s.pendingModel = { askIds: added, model, missing: unaccountedFor(model, texts.length) };
+  s.changed(
+    `${model.subjects.length} subject(s) and ${model.rules.length} rule(s) — check them before I think about the code.`,
+  );
+  return { ok: true };
+}
+
+/** The human accepted: the proposal becomes the space's model. */
+export function applyModel(space: Space, pending: PendingModel, author: string): Space {
+  const subjects: Subject[] = [];
+  const claims: Claim[] = [];
+  const rules: Rule[] = [];
+  const askOf = (n: number): string => pending.askIds[n - 1] ?? pending.askIds[0] ?? "";
+
+  pending.model.subjects.forEach((sub, i) => {
+    const id = `subject-${author}-${(space.subjects?.length ?? 0) + i + 1}`;
+    subjects.push({ id, name: sub.name, from: sub.from.map(askOf) });
+    sub.claims.forEach((c, j) => {
+      claims.push({
+        id: `claim-${author}-${(space.claims?.length ?? 0) + claims.length + j + 1}`,
+        subjectId: id,
+        text: c.text,
+        ...(c.why ? { why: c.why } : {}),
+        fromAsk: askOf(c.from),
+      });
+    });
+  });
+  pending.model.rules.forEach((r, i) => {
+    rules.push({
+      id: `rule-${author}-${(space.rules?.length ?? 0) + i + 1}`,
+      text: r.text,
+      scope: r.scope,
+      fromAsk: askOf(r.from),
+      governs: subjects.map((s) => s.id),
+    });
+  });
+
+  return {
+    ...space,
+    subjects: [...(space.subjects ?? []), ...subjects],
+    claims: [...(space.claims ?? []), ...claims],
+    rules: [...(space.rules ?? []), ...rules],
+  };
+}
