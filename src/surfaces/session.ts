@@ -19,7 +19,7 @@ import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, PendingModel, proposeModelFlow } from "./modelFlow";
+import { applyModel, inheritRules, PendingModel, proposeModelFlow } from "./modelFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
@@ -115,6 +115,9 @@ export class TandemSession {
     if (!pending) return { ok: false, reason: "nothing proposed" };
     this.space = applyModel(this.space, pending, this.author);
     this.pendingModel = undefined;
+    // A rule from an earlier round reaches these subjects before they ground.
+    const inherited = await inheritRules(this);
+    if (inherited) this.changed(`${inherited} rule(s) already in force apply here.`);
     this.changed(
       `${this.space.subjects?.length ?? 0} subject(s) recorded — thinking about them now.`,
     );

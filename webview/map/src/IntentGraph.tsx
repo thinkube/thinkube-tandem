@@ -122,7 +122,8 @@ export function IntentGraph(props: {
             <div key={r.id} data-rule={r.id} style={{ fontSize: 12 }} title={`Governs ${r.scope}. From: ${r.fromAsk}`}>
               {r.text}{" "}
               <span style={{ opacity: 0.65, fontSize: 11 }}>
-                — {r.scope} · in force on {r.governs} subject{r.governs === 1 ? "" : "s"}
+                — governs {r.scope} · in force on {r.governs} subject
+                {r.governs === 1 ? "" : "s"}, and any new one that matches
               </span>
             </div>
           ))}

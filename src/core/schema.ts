@@ -207,6 +207,8 @@ export interface Space {
   claims?: Claim[];
   /** What holds across subjects — the decisions in force, with a scope. */
   rules?: Rule[];
+  /** "<ruleId>|<subjectId>" pairs already judged — a no is remembered too. */
+  judgedScope?: string[];
 }
 
 /**

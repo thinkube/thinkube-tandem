@@ -10,6 +10,7 @@ import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { classifyUtterance } from "../derive/classify";
 import { solveModel } from "../derive/model";
+import { judgeScope } from "../derive/scope";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 
 export interface SessionDeps {
@@ -38,6 +39,8 @@ export interface SessionDeps {
   contextRound?: typeof runReadRound;
   /** The round that reads a pasted list as one description. */
   solveModel?: typeof solveModel;
+  /** The round that decides which rules govern a new subject. */
+  judgeScope?: typeof judgeScope;
   proposeCheck?: typeof proposeCheckRound;
   nextTepNumber?: () => number; // owner-level, unique across the owner's spaces
   anchorless?: boolean; // a project space: the anchor is the store, never a code home

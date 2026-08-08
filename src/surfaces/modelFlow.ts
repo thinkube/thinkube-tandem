@@ -7,6 +7,7 @@
 import { Claim, Rule, Space, Subject } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { ProposedModel, solveModel, unaccountedFor } from "../derive/model";
+import { judgeScope, ScopeQuestion } from "../derive/scope";
 import type { TandemSession } from "./session";
 
 export interface PendingModel {
@@ -98,4 +99,49 @@ export function applyModel(space: Space, pending: PendingModel, author: string):
     claims: [...(space.claims ?? []), ...claims],
     rules: [...(space.rules ?? []), ...rules],
   };
+}
+
+/**
+ * Every rule already in force is tested against every subject that has not
+ * been judged against it — once, when the subject appears. A rule promoted
+ * in round one therefore reaches a subject captured in round three, before
+ * that subject grounds.
+ */
+export async function inheritRules(s: TandemSession): Promise<number> {
+  const rules = s.space.rules ?? [];
+  const subjects = s.space.subjects ?? [];
+  const judged = s.space.judgedScope ?? [];
+  const pairs: ScopeQuestion[] = [];
+  for (const r of rules)
+    for (const sub of subjects) {
+      const key = `${r.id}|${sub.id}`;
+      if (r.governs.includes(sub.id) || judged.includes(key)) continue;
+      pairs.push({
+        ruleId: r.id,
+        ruleText: r.text,
+        scope: r.scope,
+        subjectId: sub.id,
+        subjectName: sub.name,
+      });
+    }
+  if (!pairs.length) return 0;
+
+  const yes = await (s.deps.judgeScope ?? judgeScope)(s.deps.round, pairs);
+  const gained = new Set(yes.map((p) => `${p.ruleId}|${p.subjectId}`));
+  s.space = {
+    ...s.space,
+    // Judged once, remembered: a "no" is a decision too, not a question the
+    // machine re-asks every time the space is opened.
+    judgedScope: [...judged, ...pairs.map((p) => `${p.ruleId}|${p.subjectId}`)],
+    rules: rules.map((r) => ({
+      ...r,
+      governs: [
+        ...r.governs,
+        ...pairs
+          .filter((p) => p.ruleId === r.id && gained.has(`${p.ruleId}|${p.subjectId}`))
+          .map((p) => p.subjectId),
+      ],
+    })),
+  };
+  return gained.size;
 }
