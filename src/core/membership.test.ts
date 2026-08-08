@@ -178,3 +178,42 @@ test("suggestions around one unit are ONE decision: all fold in, or all are veto
   assert.equal(no.space.vetoes!.length, 3, "every pair in the family is vetoed forever");
   assert.ok(no.space.vetoes!.includes(pairKey("u-z", "u-big")), "a family member listed second is vetoed too");
 });
+
+test("a ruled unit is not offered again: merging never breeds the next dozen suggestions", async () => {
+  const { mergeFamilyVerdict, advanceSpaceMembership } = await import("./suggestions");
+  const { emptySpace } = await import("./schema");
+  // Everything touches the same file, so every pair couples strongly — the
+  // shape that made one big unit get proposed against all the rest.
+  const nodes = ["a", "b", "c", "d", "e"].map((id) => change(id, "src/shared.ts"));
+  let space = {
+    ...emptySpace(),
+    nodes,
+    units: [
+      { id: "u-big", changeIds: ["a", "b"] },
+      { id: "u-c", changeIds: ["c"] },
+      { id: "u-d", changeIds: ["d"] },
+      { id: "u-e", changeIds: ["e"] },
+    ],
+  };
+  space = advanceSpaceMembership(space, "me");
+  const offered = (space.proposals ?? []).filter((p) => p.a === "u-big" || p.b === "u-big");
+  assert.ok(offered.length >= 2, "the big unit is offered against the loose ones");
+
+  const yes = mergeFamilyVerdict(space, "u-big", true);
+  assert.ok(!("reason" in yes));
+  if ("reason" in yes) return;
+  space = advanceSpaceMembership(yes.space, "me");
+  assert.equal(
+    (space.proposals ?? []).length,
+    0,
+    "the unit the human ruled on is settled — merging it proposes nothing new",
+  );
+
+  // A promise arriving later changes what the unit holds, so it may be asked about again.
+  space = advanceSpaceMembership(
+    { ...space, nodes: [...space.nodes, change("f", "src/shared.ts")] },
+    "me",
+  );
+  const holder = space.units.find((u) => u.changeIds.includes("f"))!;
+  assert.ok(holder, "the new promise landed somewhere");
+});

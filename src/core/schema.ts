@@ -193,6 +193,9 @@ export interface Space {
   proposals?: MergeProposal[];
   /** Permanent merge vetoes (pair keys) — a rejected pair is never re-proposed. */
   vetoes?: string[];
+  /** Units the human has already ruled on, keyed by the promises they hold:
+   *  merging or keeping apart settles a unit until its promises change. */
+  settled?: string[];
   /** Staged decision impacts awaiting the human. */
   impacts?: ImpactSuggestionShape[];
 }

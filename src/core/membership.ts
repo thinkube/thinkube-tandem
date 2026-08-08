@@ -19,6 +19,10 @@ const MERGE_OVERLAP_THRESHOLD = 2;
 
 export const pairKey = (a: string, b: string): string => [a, b].sort().join("+");
 
+/** A unit's identity by CONTENT, not by its id — ids are minted afresh as
+ *  the space grows, the promises a unit holds are what the human ruled on. */
+export const unitSignature = (unit: Unit): string => [...unit.changeIds].sort().join(",");
+
 /** Does `change` couple into `unit` (any member at or above the bar)? */
 function couplesInto(change: Change, unit: Unit, byId: Map<string, Change>): boolean {
   return unit.changeIds.some((id) => {
@@ -45,6 +49,8 @@ export function advanceMembership(args: {
   units: Unit[];
   pins: Pin[];
   vetoes: string[];
+  /** Signatures of units already ruled on — they are not offered again. */
+  settled?: string[];
   existingProposals: MergeProposal[];
   mintUnitId: (n: number) => string;
 }): MembershipResult {
@@ -91,6 +97,7 @@ export function advanceMembership(args: {
   // Staged merge suggestions for strongly-coupled pairs — vetoed pairs and
   // already-staged pairs never re-propose.
   const vetoed = new Set(args.vetoes);
+  const settled = new Set(args.settled ?? []);
   const staged = new Set(args.existingProposals.map((p) => pairKey(p.a, p.b)));
   const newProposals: Omit<MergeProposal, "id">[] = [];
   for (let i = 0; i < units.length; i++)
@@ -106,6 +113,10 @@ export function advanceMembership(args: {
         0,
       );
       const key = pairKey(units[i].id, units[j].id);
+      // A unit the human already ruled on is not offered again — merging
+      // grows a unit, and a bigger unit couples with more, which is how one
+      // answered suggestion used to breed the next dozen.
+      if (settled.has(unitSignature(units[i])) || settled.has(unitSignature(units[j]))) continue;
       if (cross >= MERGE_OVERLAP_THRESHOLD && !vetoed.has(key) && !staged.has(key))
         newProposals.push({ a: units[i].id, b: units[j].id });
     }

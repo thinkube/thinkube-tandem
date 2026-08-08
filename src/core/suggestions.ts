@@ -4,7 +4,7 @@
  * advancement with proposal minting. The session stays a thin shell.
  */
 import { Space } from "./schema";
-import { advanceMembership, applyMerge, pairKey } from "./membership";
+import { advanceMembership, applyMerge, pairKey, unitSignature } from "./membership";
 import { unitEdges } from "./cluster";
 
 export function advanceSpaceMembership(space: Space, author: string): Space {
@@ -13,6 +13,7 @@ export function advanceSpaceMembership(space: Space, author: string): Space {
     units: space.units,
     pins: space.pins,
     vetoes: space.vetoes ?? [],
+    settled: space.settled ?? [],
     existingProposals: space.proposals ?? [],
     mintUnitId: (n) => `unit-${author}-${n}`,
   });
@@ -47,11 +48,16 @@ export function mergeFamilyVerdict(
     else vetoes.push(pairKey(p.a, p.b));
   }
   const ids = new Set(family.map((p) => p.id));
+  const ruled = units.find((u) => u.id === unitId);
   return {
     space: {
       ...space,
       units,
       vetoes,
+      settled: [
+        ...(space.settled ?? []),
+        ...(ruled ? [unitSignature(ruled)] : []),
+      ],
       proposals: (space.proposals ?? []).filter((p) => !ids.has(p.id)),
     },
     message: accept
