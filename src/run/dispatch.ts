@@ -26,6 +26,7 @@ import * as path from "node:path";
 import { Cut, Delivery, Proof, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { buildUnitDag } from "../engine/core/dag";
+import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import {
   runAcVerifications,
@@ -165,7 +166,6 @@ export async function dispatchTep(
   const undelivered: string[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
-  const inDag = new Set(dag.map((u) => u.id));
   const pending = new Set(dag.map((u) => u.id));
 
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
@@ -194,8 +194,8 @@ export async function dispatchTep(
     defect,
   });
 
-  // Containment across the frontier: a unit is fenced to its own footprint,
-  // but writes by OTHER live units in the same tree are theirs, not strays.
+  // Containment: a unit is fenced to its footprint; writes by other live
+  // units in the same tree are theirs, not strays.
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = (tree: string, selfId: string): (() => string[]) => () =>
     [...liveFootprints.entries()]
@@ -205,8 +205,8 @@ export async function dispatchTep(
   let testInflight = 0;
   const sliceCommitted = new Set<string>();
 
-  /** Copy the slice's probes into the code worktree and commit the slice's
-   *  own paths on the branch — later tester snapshots see committed truth. */
+  /** Probes in, then commit the slice's paths: later tester snapshots see
+   *  committed truth. */
   const commitSlice = async (slice: string): Promise<void> => {
     if (sliceCommitted.has(slice)) return;
     sliceCommitted.add(slice);
@@ -219,7 +219,6 @@ export async function dispatchTep(
     log(`✓ ${slice}: committed on ${branch}`);
   };
 
-  /** A failure lands where the human looks AND in the undelivered list. */
   const failWith = (id: string, ...why: string[]): void => {
     st.fail(id, why.join("; "));
     undelivered.push(...why.map((u) => `${id}: ${u}`));
@@ -255,7 +254,6 @@ export async function dispatchTep(
     const baseline = new Set(await porcelainPaths(tree));
     const abort = new AbortController();
     st.aborts.set(next.id, abort);
-    liveFootprints.set(next.id, { tree, paths: next.footprint });
 
     const oracle = role === "code" ? buildOracle(next.slice) : undefined;
     if (role === "code") await restoreProbes(storeDir, testerWt);
@@ -402,20 +400,29 @@ export async function dispatchTep(
     await finishUnit(next.id, next.slice, ok);
   };
 
-  // The frontier pump: launch every ready unit up to the concurrency cap;
-  // wake on any completion; stop when nothing is ready and nothing is live.
+  // The pump: launch what is ready up to the cap, wake on any completion.
   const concurrency = Math.max(1, deps.concurrency ?? 2);
   const inflight = new Map<string, Promise<void>>();
   while (!st.halted) {
-    const ready = dag.filter(
-      (u) =>
-        pending.has(u.id) &&
-        u.requires.every((r) => !inDag.has(r) || done.has(r)) &&
-        !u.requires.some((r) => failed.has(r)),
-    );
+    // The engine's own frontier, not a second one: it refuses a unit whose
+    // footprint is being written by a running unit. Two coders in one file
+    // is a lost update with no error, and this pump never checked.
+    const ready = frontier(dag, {
+      pending,
+      done,
+      failed,
+      running: [...liveFootprints.values()].flatMap((v) => v.paths),
+    });
     for (const u of ready) {
       if (inflight.size >= concurrency) break;
       pending.delete(u.id);
+      // On the record here, synchronously with the launch: registering it
+      // inside the worker, after a snapshot reset and a porcelain read,
+      // leaves a window where the next frontier cannot see these files.
+      liveFootprints.set(u.id, {
+        tree: (u.role ?? "code") === "test" ? testerWt : worktree,
+        paths: u.footprint,
+      });
       const p = runOne(u).finally(() => {
         inflight.delete(u.id);
       });

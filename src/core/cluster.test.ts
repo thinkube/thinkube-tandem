@@ -72,3 +72,37 @@ test("module overlap ALONE never merges — a directory is not a unit", () => {
   assert.deepEqual(u1, u2, "deterministic");
   assert.equal(u1.length, 3, "one shared module is a neighborhood, not a unit; ungrounded y stands alone");
 });
+
+test("changes that need each other end up in ONE unit — the engine never sees a cycle", () => {
+  // A needs B, B needs A, and they share nothing else. Split across units
+  // their needs become dependencies in both directions, and the engine
+  // refuses the whole plan rather than one unit.
+  const a = node("a", ["src/a.ts"], ["b"]);
+  const b = node("b", ["src/b.ts"], ["a"]);
+  const c = node("c", ["src/c.ts"]);
+  const units = formUnits([a, b, c]);
+  assert.equal(units.length, 2, "the pair is one unit, the loner another");
+  assert.equal(units.find((u) => u.changeIds.includes("a"))!.changeIds.length, 2);
+});
+
+test("a longer ring is dissolved too, not just a mutual pair", () => {
+  // Each pair carries a single needs-edge — below the coupling threshold —
+  // so nothing merges them, and the ring only shows up at the engine.
+  const units = formUnits([
+    node("a", ["src/a.ts"], ["c"]),
+    node("b", ["src/b.ts"], ["a"]),
+    node("c", ["src/c.ts"], ["b"]),
+  ]);
+  assert.equal(units.length, 1, "a ring cannot be ordered, so it is one unit");
+  assert.equal(units[0].changeIds.length, 3);
+});
+
+test("changes touching the same file are one unit, whatever the unit grows to", () => {
+  const units = formUnits([
+    node("a", ["src/x.ts"]),
+    node("b", ["src/x.ts"]),
+    node("c", ["src/y.ts"]),
+  ]);
+  assert.equal(units.length, 2);
+  assert.equal(units.find((u) => u.changeIds.includes("a"))!.changeIds.length, 2);
+});
