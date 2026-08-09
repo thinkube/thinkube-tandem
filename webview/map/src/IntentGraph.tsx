@@ -10,6 +10,52 @@
  */
 import { post, SpacePush } from "./vscode";
 
+/**
+ * Where a shape came from, and the way back. Every subject, claim and rule
+ * is read FROM an ask, so each one shows its number and a pencil that
+ * opens that ask for rewriting — disliking what was read is reason enough,
+ * and it is always available, not only when something was assumed.
+ */
+function FromAsk(props: {
+  n: number;
+  id: string;
+  text: string;
+  onEditAsk: (id: string) => void;
+}): JSX.Element {
+  return (
+    <span style={{ whiteSpace: "nowrap" }}>
+      <span
+        data-from-ask={props.id}
+        title={`Read from your ask #${props.n}: ${props.text}`}
+        style={{ opacity: 0.55, marginRight: 2 }}
+      >
+        #{props.n}
+      </span>
+      <button
+        data-edit-from={props.id}
+        title={`Say ask #${props.n} differently — I will read it again.`}
+        aria-label={`say ask ${props.n} differently`}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "inherit",
+          opacity: 0.6,
+          fontSize: 12,
+          padding: 0,
+          lineHeight: 1,
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          props.onEditAsk(props.id);
+        }}
+      >
+        ✎
+      </button>
+    </span>
+  );
+}
+
 const box: React.CSSProperties = {
   border: "1px solid var(--vscode-panel-border, #3c3c3c)",
   borderRadius: 6,
@@ -73,6 +119,7 @@ function Recorded(props: {
   push: SpacePush;
   selected: string | null;
   onSelect: (id: string) => void;
+  onEditAsk: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
   return (
@@ -104,6 +151,14 @@ function Recorded(props: {
               title={`From what you wrote: ${r.fromAsk}`}
             >
               <span style={{ flex: 1 }}>
+                {r.fromAskN ? (
+                  <FromAsk
+                    n={r.fromAskN}
+                    id={r.fromAskId}
+                    text={r.fromAsk}
+                    onEditAsk={props.onEditAsk}
+                  />
+                ) : null}{" "}
                 {r.text} <span style={{ opacity: 0.65, fontSize: 11 }}>— {r.scope}</span>
               </span>
               <button
@@ -145,27 +200,10 @@ function Recorded(props: {
               </div>
               <strong style={{ fontSize: 13 }}>{s.name}</strong>
               {s.from.length ? (
-                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
-                  read from your ask{s.from.length === 1 ? "" : "s"}{" "}
-                  {s.from.map((f, i) => (
-                    <span key={f.id}>
-                      {i ? " and " : ""}
-                      <span
-                        data-from-ask={f.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          props.onSelect(f.id);
-                        }}
-                        title={f.text}
-                        style={{
-                          textDecoration: "underline",
-                          cursor: "pointer",
-                          color: "var(--vscode-textLink-foreground, #3794ff)",
-                        }}
-                      >
-                        #{f.n}
-                      </span>
-                    </span>
+                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2, display: "flex", gap: 6 }}>
+                  <span>read from your ask{s.from.length === 1 ? "" : "s"}</span>
+                  {s.from.map((f) => (
+                    <FromAsk key={f.id} n={f.n} id={f.id} text={f.text} onEditAsk={props.onEditAsk} />
                   ))}
                 </div>
               ) : null}
@@ -197,7 +235,12 @@ function Recorded(props: {
                 }}
               >
                 <div style={{ fontSize: 12 }}>
-                  <span style={{ opacity: 0.55, marginRight: 4 }}>#{c.fromAskN}</span>
+                  <FromAsk
+                    n={c.fromAskN}
+                    id={c.fromAskId}
+                    text={c.fromAsk}
+                    onEditAsk={props.onEditAsk}
+                  />{" "}
                   {c.text}
                 </div>
                 {c.why ? (
@@ -219,6 +262,7 @@ export function IntentGraph(props: {
   selected: string | null;
   onSelect: (id: string) => void;
   onOpenWork: (subjectId: string) => void;
+  onEditAsk: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
   if (push.modelFailure)
@@ -293,7 +337,12 @@ export function IntentGraph(props: {
         </span>
       </div>
 
-      {push.pendingModel ? <Proposed push={push} /> : <Recorded push={push} selected={props.selected} onSelect={props.onSelect} />}
+      {push.pendingModel ? <Proposed push={push} /> : <Recorded
+          push={push}
+          selected={props.selected}
+          onSelect={props.onSelect}
+          onEditAsk={props.onEditAsk}
+        />}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
         <button

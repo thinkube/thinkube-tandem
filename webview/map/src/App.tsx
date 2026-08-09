@@ -9,6 +9,7 @@ import { RunNote, RunSection } from "./Run";
 import { IntentGraph } from "./IntentGraph";
 import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
+import { Asks } from "./Asks";
 import { useWorld, ZoomControls } from "./proto/world";
 
 
@@ -21,6 +22,10 @@ export function App(): JSX.Element {
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
+  // Which ask has its editor open. It lives here because a subject, a
+  // claim or a rule that reads wrong must be able to open the ask it came
+  // from, and they are drawn on another surface.
+  const [editingAsk, setEditingAsk] = useState<string | null>(null);
   const [workSubject, setWorkSubject] = useState<string | null>(null);
   const unitsWorld = useWorld();
   const flowWorld = useWorld();
@@ -287,33 +292,13 @@ export function App(): JSX.Element {
           <span style={{ fontSize: 12, opacity: 0.75 }}>{push.message}</span>
         ) : null}
       </div>
-      {push.asks.length ? (
-        <section data-asks style={{ margin: "6px 12px 0" }}>
-          <ol style={{ margin: 0, paddingLeft: 18 }}>
-            {push.asks.map((a) => (
-              <li key={a.id} data-ask={a.id} style={{ fontSize: 12, opacity: 0.85 }}>
-                {a.text}
-                {(() => {
-                  const g = push.grounding?.find((x) => x.askId === a.id);
-                  if (!g) return null;
-                  if (g.label === "waiting")
-                    return (
-                      <span data-ask-progress={a.id} style={{ marginLeft: 6, opacity: 0.55 }}>waiting…</span>
-                    );
-                  return (
-                    <span data-ask-progress={a.id} style={{ marginLeft: 6, color: "var(--vscode-progressBar-background, #3794ff)" }}>
-                      <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span> {g.label}… ({g.current}/{g.total})
-                      <span style={{ display: "inline-block", width: 60, height: 4, background: "#3c3c3c", borderRadius: 2, marginLeft: 6, verticalAlign: "middle" }}>
-                        <span style={{ display: "block", width: `${Math.round((g.current / Math.max(1, g.total)) * 100)}%`, height: 4, background: "var(--vscode-progressBar-background, #3794ff)", borderRadius: 2 }} />
-                      </span>
-                    </span>
-                  );
-                })()}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      <Asks
+        push={push}
+        selected={selected}
+        onSelect={setSelected}
+        editing={editingAsk}
+        onEditing={setEditingAsk}
+      />
       {push.lastAnswer ? (
         <section data-answer style={{ margin: "6px 12px 0", padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
           <div style={{ fontSize: 11, opacity: 0.6 }}>You asked: {push.lastAnswer.question}</div>
@@ -379,6 +364,10 @@ export function App(): JSX.Element {
             push={push}
             selected={selected}
             onSelect={setSelected}
+            onEditAsk={(id) => {
+              setSelected(id);
+              setEditingAsk(id);
+            }}
             onOpenWork={(id) => {
               setWorkSubject(id);
               setTab("work");
@@ -411,11 +400,7 @@ export function App(): JSX.Element {
           </div>
         )}
         <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />
-        <Rail
-          push={push}
-          selected={selected}
-          onSelect={setSelected}
-        />
+        <Rail push={push} />
       </div>
     </div>
   );

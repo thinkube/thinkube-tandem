@@ -104,7 +104,16 @@ export interface SpacePush {
     cards: { id: string; title: string }[];
   }[];
   decisions: string[];
-  rules: { id: string; text: string; scope: string; governs: number; fromAsk: string }[];
+  rules: {
+    id: string;
+    text: string;
+    scope: string;
+    governs: number;
+    /** The ask it was read from — a rule comes from your words too. */
+    fromAsk: string;
+    fromAskId: string;
+    fromAskN: number;
+  }[];
   /** Promises attached to no claim. `subject` names the subject the
    *  promise was derived for, when there is one — its absence is what
    *  makes a promise genuine scope creep. `choices` are the claims it

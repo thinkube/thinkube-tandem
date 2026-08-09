@@ -62,6 +62,6 @@ test("every group of shapes is labelled with the word for what it holds", () => 
       new RegExp(`>\\s*\\n?\\s*${word}\\b`).test(intent),
       `the reading page never says "${word}" — an unlabelled shape is a riddle`,
     );
-  const sentences = fs.readFileSync(path.join(surfaceDir, "Sentences.tsx"), "utf8");
+  const sentences = fs.readFileSync(path.join(surfaceDir, "Asks.tsx"), "utf8");
   assert.ok(/>\s*\n?\s*Asks\b/.test(sentences), "your own words are labelled Asks");
 });

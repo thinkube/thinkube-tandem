@@ -190,6 +190,8 @@ function spacePush(session: TandemSession, message?: string): unknown {
       scope: r.scope,
       governs: r.governs.length,
       fromAsk: session.space.asks.find((a) => a.id === r.fromAsk)?.text ?? "",
+      fromAskId: r.fromAsk,
+      fromAskN: session.space.asks.findIndex((a) => a.id === r.fromAsk) + 1,
     })),
     // Your sentences: each with what it decided, what it assumed in your
     // name, whether it is still yours to edit, and what editing costs.

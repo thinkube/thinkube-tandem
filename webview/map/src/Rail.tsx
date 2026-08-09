@@ -1,14 +1,12 @@
 /**
- * The rail beside the graphs: what is in force, what the machine is doing
- * right now, what it has delivered, and the one press that commits.
+ * The rail beside the graphs: what the machine is doing right now, what it
+ * has delivered, and the one press that commits.
  *
- * Nothing here asks for a decision the machine could make itself. What is
- * left is authority (build, accept, answer a stuck worker), a live view of
- * the work, and the sentence panel that leads anything that grates back to
- * the words that caused it.
+ * Nothing here asks for a decision the machine could make itself, and
+ * nothing here repeats what is shown elsewhere — your asks live under the
+ * box you write them in, and the rules live on the reading page.
  */
 import { post, SpacePush } from "./vscode";
-import { Sentences } from "./Sentences";
 
 const btn: React.CSSProperties = {
   fontWeight: 600,
@@ -108,11 +106,7 @@ function Parked(props: { push: SpacePush }): JSX.Element | null {
   );
 }
 
-export function Rail(props: {
-  push: SpacePush;
-  selected: string | null;
-  onSelect: (id: string) => void;
-}): JSX.Element {
+export function Rail(props: { push: SpacePush }): JSX.Element {
   const { push } = props;
   const ready = push.ready;
 
@@ -185,10 +179,6 @@ export function Rail(props: {
             ))}
           </section>
         ) : null}
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)" }}>
-        <Sentences push={push} selected={props.selected} onSelect={props.onSelect} />
       </div>
     </div>
   );

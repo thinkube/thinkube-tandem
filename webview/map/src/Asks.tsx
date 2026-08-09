@@ -1,12 +1,16 @@
 /**
- * Your sentences, and everything decided in their name.
+ * Your asks, under the box you write them in — the one place they appear.
  *
- * When something grates, this is the one place to come: each sentence
- * carries what was assumed under it and which part of it was silent, so
- * the thing to fix is never more than a glance away. A sentence still open
- * is rewritten here, at a price stated before it is paid. A sentence whose
- * work is built cannot be rewritten — changing built software is new work
- * — so it takes an amendment instead.
+ * Everything else on screen is read FROM them, so when something grates
+ * this is where it leads: each ask carries what was assumed in its name
+ * and which part of it was silent. An ask still open is rewritten here, at
+ * a price stated before it is paid. An ask whose work is built cannot be
+ * rewritten — changing built software is new work — so it takes an
+ * amendment instead.
+ *
+ * Editing is a pencil, not a sentence-long button: it is available on
+ * every open ask at all times, because disliking a subject or a claim is
+ * reason enough to say the ask differently.
  */
 import { useState } from "react";
 import { post, SpacePush } from "./vscode";
@@ -59,17 +63,24 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
   );
 }
 
-export function Sentences(props: {
+export function Asks(props: {
   push: SpacePush;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** The ask whose editor is open — set from anywhere that reads FROM an
+   *  ask, so a subject or a claim that reads wrong leads straight here. */
+  editing: string | null;
+  onEditing: (id: string | null) => void;
 }): JSX.Element {
-  const [editing, setEditing] = useState<string | null>(null);
-  if (!props.push.sentences.length)
-    return <div style={{ padding: 12, opacity: 0.7, fontSize: 12 }}>Nothing written yet.</div>;
+  const editing = props.editing;
+  const setEditing = props.onEditing;
+  if (!props.push.sentences.length) return <></>;
   return (
-    <div data-sentences style={{ padding: 12, overflowY: "auto" }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>
+    <div
+      data-sentences
+      style={{ padding: "6px 12px 0", maxHeight: "16rem", overflowY: "auto" }}
+    >
+      <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 4 }}>
         Asks <span style={{ textTransform: "none" }}>— what you wrote, kept word for word</span>
       </div>
       {props.push.sentences.map((s, i) => (
@@ -111,11 +122,24 @@ export function Sentences(props: {
                 title={
                   s.state === "bound"
                     ? "Built work only changes through new work — add an amendment."
-                    : "Say it differently and I will read it again."
+                    : "Say this ask differently and I will read it again."
                 }
-                onClick={() => setEditing(s.id)}
+                aria-label={s.state === "bound" ? "amend this ask" : "say this ask differently"}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "inherit",
+                  fontSize: 13,
+                  padding: "0 3px",
+                  lineHeight: 1,
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(s.id);
+                }}
               >
-                {s.state === "bound" ? "Amend" : "Say it differently"}
+                {s.state === "bound" ? "＋" : "✎"}
               </button>
             )}
           </div>
