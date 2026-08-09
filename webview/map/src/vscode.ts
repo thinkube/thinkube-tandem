@@ -120,7 +120,7 @@ export interface SpacePush {
     alsoReads: string[];
     amends?: string;
     tep?: string;
-    assumptions: { text: string; clause?: string; assumed: boolean }[];
+    assumptions: { question: string; answer: string; clause?: string; assumed: boolean }[];
   }[];
   /** What thinking about what is left will cost. */
   cost: { subjects: number; rounds: number };

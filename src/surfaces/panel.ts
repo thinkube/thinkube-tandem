@@ -57,7 +57,7 @@ function shortenWords(text: string, words: number): string {
 function assumptionsFor(
   session: TandemSession,
   askId: string,
-): { text: string; clause?: string; assumed: boolean }[] {
+): { question: string; answer: string; clause?: string; assumed: boolean }[] {
   const claims = session.space.claims ?? [];
   const mine = new Set(
     claims.filter((c) => c.fromAsk === askId).map((c) => c.subjectId),
@@ -65,7 +65,11 @@ function assumptionsFor(
   return session.space.questions
     .filter((q) => q.askId === askId || mine.has(q.askId))
     .map((q) => ({
-      text: q.decided?.text ?? q.recommendation ?? q.text,
+      // An assumption is an ANSWER, and an answer without its question is
+      // unreadable: "No — the waiver is bound by the signature" says
+      // nothing about what was asked. Both travel together or neither does.
+      question: q.text.replace(/^Uncovered: "[^"]*" — /, ""),
+      answer: q.decided?.text ?? q.recommendation ?? q.text,
       ...(q.clause ? { clause: q.clause } : {}),
       assumed: !q.decided,
     }));

@@ -153,15 +153,18 @@ export function Asks(props: {
                 </span>
               </div>
               {s.assumptions.map((a, i) => (
-                <div key={i} style={{ fontSize: 12, marginTop: 2 }}>
-                  {a.text}
+                <div key={i} style={{ fontSize: 12, marginTop: 5 }}>
+                  <div style={{ opacity: 0.75 }}>{a.question}</div>
+                  <div style={{ paddingLeft: 8, borderLeft: "2px solid #e5c07b" }}>
+                    {a.answer}
+                    {a.assumed ? (
+                      <span style={{ fontSize: 10, opacity: 0.6 }}> — assumed, you did not say this</span>
+                    ) : null}
+                  </div>
                   {a.clause ? (
                     <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>
-                      your sentence did not say: {a.clause}
+                      your ask did not say: {a.clause}
                     </div>
-                  ) : null}
-                  {a.assumed ? (
-                    <span style={{ fontSize: 10, opacity: 0.6 }}> — assumed, you did not say this</span>
                   ) : null}
                 </div>
               ))}

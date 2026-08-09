@@ -280,6 +280,40 @@ function parseCriteriaRewrites(
 }
 
 /**
+ * Only what speaks the human's language reaches them. What is refused
+ * keeps its answer and becomes an assumption the machine states; it is
+ * never silently dropped, and never put to the human as their decision.
+ */
+function speakable(
+  questions: Omit<Question, "id">[],
+  ask: Ask,
+  opts: PipelineOpts,
+  log: (line: string) => void = () => {},
+): Omit<Question, "id">[] {
+  const judged = judgeRaised(
+    questions.map((q) => ({ text: q.text, recommendation: q.recommendation })),
+    {
+      asks: [ask.text],
+      claims: (opts.claims ?? []).map((c) => c.text),
+      rules: opts.decisions ?? [],
+    },
+  );
+  const kept: Omit<Question, "id">[] = [];
+  judged.forEach((j, i) => {
+    if (!j.refused) {
+      kept.push(questions[i]);
+      return;
+    }
+    log(
+      j.refused === "answered"
+        ? `assumption: already settled — "${j.text.slice(0, 60)}"`
+        : `assumption: my words, not yours (${j.foreign!.slice(0, 4).join(", ")}) — "${j.text.slice(0, 50)}"`,
+    );
+  });
+  return kept;
+}
+
+/**
  * ONE completeness pass over everything a cut has derived.
  *
  * Per subject, this round is nine tool-using reads of the same repository
@@ -411,7 +445,11 @@ export async function runDerivationPipeline(
   );
   let changes = grounded.changes;
   const questions: Omit<Question, "id">[] = [...grounded.questions];
-  if (changes.length === 0) return { changes, questions };
+  // A round that derived nothing may still have raised something, and it
+  // used to go straight to the human — around the gate that decides
+  // whether it speaks their language. Nothing leaves without being judged.
+  if (changes.length === 0)
+    return { changes, questions: speakable(questions, ask, opts) };
 
   const addFrom = async (raw: string | null, label: string): Promise<void> => {
     if (raw === null) {
@@ -510,28 +548,5 @@ export async function runDerivationPipeline(
     }
   }
 
-  // Nothing goes to the human in the machine's own words. What is refused
-  // keeps its answer — it becomes an assumption the machine states.
-  const judged = judgeRaised(
-    questions.map((q) => ({ text: q.text, recommendation: q.recommendation })),
-    {
-      asks: [ask.text],
-      claims: (opts.claims ?? []).map((c) => c.text),
-      rules: opts.decisions ?? [],
-    },
-  );
-  const kept: Omit<Question, "id">[] = [];
-  judged.forEach((j, i) => {
-    if (!j.refused) {
-      kept.push(questions[i]);
-      return;
-    }
-    log(
-      j.refused === "answered"
-        ? `assumption: already settled — "${j.text.slice(0, 60)}"`
-        : `assumption: my words, not yours (${j.foreign!.slice(0, 4).join(", ")}) — "${j.text.slice(0, 50)}"`,
-    );
-  });
-
-  return { changes, questions: kept };
+  return { changes, questions: speakable(questions, ask, opts, log) };
 }

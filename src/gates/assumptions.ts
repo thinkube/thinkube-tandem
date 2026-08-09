@@ -77,6 +77,16 @@ const MACHINE_NOUNS = [
   "branch",
   "commit",
   "repo",
+  "hash",
+  "footprint",
+  "probe",
+  "probes",
+  "oracle",
+  "frontier",
+  "porcelain",
+  "consumes",
+  "waiver",
+  "escalation",
 ];
 
 export interface Raised {

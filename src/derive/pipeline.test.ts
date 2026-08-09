@@ -360,3 +360,28 @@ test("the gaps are looked for ONCE over the whole cut, and land under the claim 
     `what it could not place is dropped and said: ${said.join(" | ")}`,
   );
 });
+
+test("a round that derived nothing still cannot speak to the human in my words", () => {
+  // The early return used to hand the human whatever the round raised,
+  // around the gate entirely.
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-empty-"));
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const round = scriptedRounds(
+    [
+      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      {
+        match: /grounding ONE ask/,
+        reply: `{"nodes":[],"questions":[
+          {"text":"Should the digest be re-read on every touchpoint?","recommendation":"no"},
+          {"text":"Should a page with nothing on it still be shown?","recommendation":"yes, and say so"}]}`,
+      },
+    ],
+    calls,
+  );
+  return runDerivationPipeline(deps, ask, { nextIndex: 1, round }).then((out) => {
+    assert.equal(out.changes.length, 0);
+    assert.equal(out.questions.length, 1, "only the one in the human's world survives");
+    assert.match(out.questions[0].text, /nothing on it/);
+  });
+});
