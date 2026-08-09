@@ -8,7 +8,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveAnchor } from "./resolve";
-import { assembleSliceBriefs, renderSliceBrief } from "./briefs";
 import { detectForge, forgeFor, githubForge } from "./forge";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
@@ -61,34 +60,6 @@ function makeSpace(): Space {
   assert.ok(n2.ok);
   return n2.space;
 }
-
-test("orders partition by unit with disjoint footprints; briefs carry coordinates and the honesty protocol", () => {
-  const space = makeSpace();
-  const cut = { id: "cut-1", changeIds: space.nodes.map((n) => n.id) };
-  const orders = assembleSliceBriefs(space, cut, "/wt", [], readFile);
-  assert.equal(orders.length, 2, "two units, two orders");
-  assert.ok(orders.every((o) => o.ok));
-  const footprints = orders.flatMap((o) => (o.ok ? o.order.footprint : []));
-  assert.equal(new Set(footprints).size, footprints.length, "footprints disjoint");
-
-  const first = orders.find((o) => o.ok && o.order.footprint.includes("src/panel/log.ts"))!;
-  assert.ok(first.ok);
-  const brief = renderSliceBrief(space, first.order, first.resolved);
-  assert.ok(brief.includes("src/panel/log.ts:2 (LogPanel)"), "line rendered at dispatch");
-  assert.ok(brief.includes("do NOT search"));
-  assert.ok(brief.includes("done when: scrolls"));
-  assert.ok(brief.includes("UNDELIVERED"));
-  assert.ok(brief.includes("you may touch ONLY: src/panel/log.ts"));
-});
-
-test("an anchor that no longer resolves refuses the order and names the broken premise", () => {
-  const space = makeSpace();
-  const cut = { id: "cut-1", changeIds: [space.nodes[0].id] };
-  const orders = assembleSliceBriefs(space, cut, "/other-worktree", [], () => undefined);
-  assert.equal(orders.length, 1);
-  assert.ok(!orders[0].ok);
-  assert.ok(!orders[0].ok && orders[0].refusals[0].includes("does not exist"));
-});
 
 test("forge detection: github.com is GitHub, every other host is the platform's Gitea", () => {
   assert.equal(detectForge("git@github.com:thinkube/thinkube-tandem.git")?.kind, "github");

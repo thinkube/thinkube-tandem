@@ -27,6 +27,7 @@ function goldenSpace(): { space: Space; ids: string[] } {
   const ids: string[] = [];
   const add = (spec: {
     sentence: string;
+    claim: string;
     tps: { path: string; symbol?: string; planned?: true }[];
     needs?: string[];
     acs: string[];
@@ -34,6 +35,7 @@ function goldenSpace(): { space: Space; ids: string[] } {
     const r = addNode(s, {
       sentence: spec.sentence,
       serves: [a.added.id],
+      servesClaim: spec.claim,
       needs: spec.needs ?? [],
       acceptance: spec.acs.map((text, i) => ({ id: `c${ids.length}-${i}`, text })),
       grounding: { touchpoints: spec.tps, stamp: [] },
@@ -42,21 +44,24 @@ function goldenSpace(): { space: Space; ids: string[] } {
     s = r.space;
     ids.push(r.added.id);
   };
-  // Slice 1 (two coupled changes: same planned module + edge)
+  // Slice 1 — the two promises that make ONE claim true.
   add({
     sentence: "a capture box in the toolbar",
+    claim: "claim-capture",
     tps: [{ path: "src/toolbar/capture.ts", planned: true }],
     acs: ["typing an ask and pressing Enter records it verbatim"],
   });
   add({
     sentence: "the toolbar mounts the capture box",
+    claim: "claim-capture",
     tps: [{ path: "src/toolbar/index.ts" }, { path: "src/toolbar/capture.ts", planned: true }],
     needs: [ids[0]],
     acs: ["the box is visible on load"],
   });
-  // Slice 2 (depends on slice 1's produced file)
+  // Slice 2 — a different claim, depending on the first.
   add({
     sentence: "captured asks render as a list",
+    claim: "claim-list",
     tps: [{ path: "src/list/asks.ts", planned: true }],
     needs: [ids[0]],
     acs: ["a recorded ask appears in the list"],
@@ -68,7 +73,7 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
   const { space, ids } = goldenSpace();
   const slices = tepSlices({ space, cut: { id: "cut-1", changeIds: ids }, spaceName: "toolbar space" });
 
-  assert.equal(slices.length, 2, "coupled pair + dependent = two slices");
+  assert.equal(slices.length, 2, "two claims = two slices");
   const [sl1, sl2] = slices;
   assert.equal(sl1.handle, "SL-1");
   assert.deepEqual(sl1.files.sort(), ["src/toolbar/capture.ts", "src/toolbar/index.ts"]);
@@ -177,4 +182,46 @@ test("repo containment: a touchpoint escaping the repository refuses the plan", 
       }),
     /escape the repository/,
   );
+});
+
+test("a dependency names files its producer owns ALONE, so the edge lands on one worker", () => {
+  // Two claims both touch the shared file; only the second owns a file of
+  // its own. Declaring the shared one would put an edge on both, which is
+  // how a plan acquires dependencies nobody wrote — and how it cycles.
+  let s = emptySpace();
+  const a = addAsk(s, "two claims, one shared file", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const ids: string[] = [];
+  const add = (claim: string, tps: string[], needs: string[] = []) => {
+    const r = addNode(s, {
+      sentence: `${claim} at ${tps.join(",")}`,
+      serves: [a.added.id],
+      servesClaim: claim,
+      needs,
+      acceptance: [{ id: `c${ids.length}`, text: "proved" }],
+      grounding: { touchpoints: tps.map((path) => ({ path })), stamp: [] },
+    });
+    assert.ok(r.ok);
+    s = r.space;
+    ids.push(r.added.id);
+  };
+  add("claim-a", ["src/shared.ts", "src/a.ts"]);
+  add("claim-b", ["src/shared.ts", "src/b.ts"]);
+  add("claim-c", ["src/c.ts"], [ids[0]]);
+
+  const slices = tepSlices({ space: s, cut: { id: "cut-1", changeIds: ids }, spaceName: "x" });
+  const consumer = slices.find((sl) => (sl.contract ?? "").includes("claim-c"))!;
+  const consumes = consumer.workUnits.find((u) => (u.role ?? "code") === "code")!.consumes ?? [];
+
+  assert.ok(consumes.length, "the dependency is expressed");
+  assert.ok(
+    !consumes.includes("src/shared.ts"),
+    `a file two slices touch is never named as a producer: ${consumes.join(", ")}`,
+  );
+  assert.deepEqual(consumes, ["src/a.ts"], "only what its producer owns alone");
+
+  // And the whole plan the engine is handed must be acyclic.
+  const dag = buildUnitDag(slices);
+  assert.equal((validateDag(dag) as { ok: boolean }).ok, true);
 });

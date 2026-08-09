@@ -48,17 +48,37 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
   const sliceOf = new Map<string, number>();
   units.forEach((u, i) => u.changeIds.forEach((id) => sliceOf.set(id, i + 1)));
 
+  // Who owns a file. A dependency is declared as a FILE and the engine
+  // resolves it to EVERY unit whose footprint holds it — so a file two
+  // units touch names them both, and a consumer gains an edge onto work
+  // nobody pointed it at. Those phantom edges can point in circles, and
+  // the engine then refuses the whole plan rather than one unit.
+  const owners = new Map<string, Set<number>>();
+  units.forEach((u, i) =>
+    u.changeIds
+      .flatMap((id) => (byId.get(id)?.grounding?.touchpoints ?? []).map((t) => t.path))
+      .forEach((f) => owners.set(f, (owners.get(f) ?? new Set()).add(i + 1))),
+  );
+  const soleOwned = (p: string, sliceNo: number): boolean =>
+    owners.get(p)?.size === 1 && !!owners.get(p)?.has(sliceNo);
+
+  /** How a slice names itself to whatever depends on it: files it alone
+   *  owns, so the edge lands on it and on nothing else. Unit formation
+   *  guarantees a producer of a cross-unit edge has at least one. */
   const producedBy = (sliceNo: number): string[] => {
     const changes = units[sliceNo - 1].changeIds.map((id) => byId.get(id)!);
-    const planned = changes.flatMap((c) =>
-      (c.grounding?.touchpoints ?? []).filter((t) => t.planned).map((t) => t.path),
-    );
-    if (planned.length) return [...new Set(planned)];
-    return [
+    const touch = (plannedOnly: boolean): string[] => [
       ...new Set(
-        changes.flatMap((c) => (c.grounding?.touchpoints ?? []).map((t) => t.path)),
+        changes.flatMap((c) =>
+          (c.grounding?.touchpoints ?? [])
+            .filter((t) => (plannedOnly ? t.planned : true))
+            .map((t) => t.path)
+            .filter((p) => soleOwned(p, sliceNo)),
+        ),
       ),
     ];
+    const planned = touch(true);
+    return planned.length ? planned : touch(false);
   };
 
   return units.map((unit, idx) => {
