@@ -330,7 +330,7 @@ export function App(): JSX.Element {
             data-tab={id}
             title={
               id === "work" && push.cost.subjects > 0
-                ? `Work out what to build — ${push.cost.subjects} object(s), about ${push.cost.rounds} rounds.`
+                ? `Work out what to build — ${push.cost.subjects} subject(s), about ${push.cost.rounds} rounds.`
                 : `Show ${why}.`
             }
             onClick={() => {

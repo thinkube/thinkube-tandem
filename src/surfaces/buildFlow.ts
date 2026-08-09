@@ -28,19 +28,19 @@ export interface WorkCost {
 
 /**
  * What can be built right now. Nothing is offered while the machine is
- * still deriving: a component whose objects are half thought about would
+ * still deriving: a component whose subjects are half thought about would
  * commit work that does not exist yet, and building is the one act that
  * cannot be undone.
  */
 export function readyToBuild(
   space: Space,
   thinking: boolean,
-): { objects: number; promises: number; thinking: boolean } {
+): { subjects: number; promises: number; thinking: boolean } {
   if (thinking || costOfThinking(space).subjects > 0)
-    return { objects: 0, promises: 0, thinking: true };
+    return { subjects: 0, promises: 0, thinking: true };
   const cs = buildable(space);
   return {
-    objects: cs.reduce((n, c) => n + c.subjectIds.length, 0),
+    subjects: cs.reduce((n, c) => n + c.subjectIds.length, 0),
     promises: cs.reduce((n, c) => n + promisesOf(space, c).length, 0),
     thinking: false,
   };
@@ -73,7 +73,7 @@ export async function buildFlow(
   s: TandemSession,
   excluded: string[] = [],
 ): Promise<{ ok: boolean; reason?: string }> {
-  // Refused while anything is still being derived. A half-thought object
+  // Refused while anything is still being derived. A half-thought subject
   // would commit work that does not exist yet, and this is the one act
   // that cannot be undone — so the guard is here, in the act itself, not
   // in a button the surface can forget to hide.
@@ -109,7 +109,7 @@ export async function buildFlow(
   const ids = included.flatMap((c) => promisesOf(s.space, c));
   s.cutNodeIds = new Set(ids);
   s.changed(
-    `Building ${included.length} object group(s) — ${ids.length} promise(s)` +
+    `Building ${included.length} group(s) of subjects — ${ids.length} promise(s)` +
       (settled ? `, ${settled} assumption(s) now in force` : "") +
       ". The sentences behind them are read-only from now on.",
   );

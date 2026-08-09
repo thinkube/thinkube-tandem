@@ -260,7 +260,7 @@ export function IntentGraph(props: {
 
   const cost = push.cost;
   return (
-    <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+    <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: "12px 12px 56px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
         <strong style={{ fontSize: 13 }}>What I understood of your asks</strong>
         <span style={{ fontSize: 11, opacity: 0.75 }}>
@@ -286,7 +286,7 @@ export function IntentGraph(props: {
         </button>
         <span style={{ fontSize: 11, opacity: 0.75 }}>
           {cost.subjects
-            ? `${cost.subjects} object${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
+            ? `${cost.subjects} subject${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
             : "everything here has been thought about already"}
         </span>
       </div>

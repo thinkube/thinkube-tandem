@@ -136,7 +136,7 @@ test("nothing may be built while the machine is still deriving", async () => {
   await first;
   const mid = readyToBuild(session.space, session.groundingView().length > 0);
   assert.equal(mid.thinking, true, "the machine is still deriving");
-  assert.equal(mid.objects, 0, "so nothing is offered to build — not even the finished object");
+  assert.equal(mid.subjects, 0, "so nothing is offered to build — not even the finished subject");
   const refused = await session.build();
   assert.equal(refused.ok, false, "and building is refused outright");
 
@@ -149,7 +149,7 @@ test("nothing may be built while the machine is still deriving", async () => {
     [],
     "and no object is left marked as still thinking once its own round has finished",
   );
-  assert.equal(done.objects, 2, "both objects, once every one has been thought through");
+  assert.equal(done.subjects, 2, "both subjects, once every one has been thought through");
 });
 
 test("each object's thinking is written as it arrives, not only at the end", async () => {

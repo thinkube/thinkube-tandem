@@ -4,13 +4,22 @@
  * dependency arrows (this promise needs that one). The boxes stay HTML
  * because they carry the cut checkbox and the check gestures.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 
-const PBOX_H = 118;
+/** Only until a card has been measured once. Nothing is laid out on it. */
+const UNMEASURED_H = 120;
+
+/** Every band on a card says what it is — colour is not a vocabulary. */
+const cap: React.CSSProperties = {
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  opacity: 0.6,
+};
 
 export function WorkGraph(props: {
   push: SpacePush;
@@ -31,17 +40,48 @@ export function WorkGraph(props: {
     [subjects],
   );
 
+  // Cards are laid out at their REAL height, read from the page after
+  // they render. A promise's sentence, the files it lands in and the
+  // checks that prove it are all as long as they are — nothing is cut —
+  // and a guessed height put a 390px card where 118px had been reserved,
+  // so everything below it was drawn underneath. Width is fixed, so a
+  // measured height never changes with position: measure once, settle.
+  //
+  // The run view measures a hidden copy instead, because its cards come
+  // from one shared component. These are measured in place: the labelled
+  // bands here are their own shape, and a probe would be a second one.
+  const boxes = useRef(new Map<string, HTMLDivElement>());
+  const [heights, setHeights] = useState<Map<string, number>>(new Map());
+  useLayoutEffect(() => {
+    setHeights((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, el] of boxes.current) {
+        const h = Math.ceil(el.getBoundingClientRect().height);
+        if (h > 0 && next.get(id) !== h) {
+          next.set(id, h);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  });
+  const heightOf = (id: string): number => heights.get(id) ?? UNMEASURED_H;
+
   // One layout per claim: the claim is the frame, its promises the nodes.
   const [layouts, setLayouts] = useState<Map<string, LaidOut>>(new Map());
   const shape = claims
-    .map(({ claim }) => `${claim.id}:${claim.promises.map((p) => p.id).join(",")}`)
+    .map(
+      ({ claim }) =>
+        `${claim.id}:${claim.promises.map((p) => `${p.id}@${heightOf(p.id)}`).join(",")}`,
+    )
     .join("|");
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
     void Promise.all(
       claims.map(async ({ claim }) => {
-        const nodes = claim.promises.map((p) => ({ id: p.id, w: NODE_W, h: PBOX_H }));
+        const nodes = claim.promises.map((p) => ({ id: p.id, w: NODE_W, h: heightOf(p.id) }));
         const ids = new Set(claim.promises.map((p) => p.id));
         const edges = claim.promises.flatMap((p) =>
           p.needs.filter((n) => ids.has(n)).map((n) => ({ from: n, to: p.id })),
@@ -66,7 +106,21 @@ export function WorkGraph(props: {
     );
 
   return (
-    <div data-work-graph style={{ flex: 1, overflow: "auto", padding: 12 }}>
+    <div
+      data-work-graph
+      ref={props.world.ref}
+      style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 300 }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          transformOrigin: "0 0",
+          transform: `translate(${props.world.tx}px, ${props.world.ty}px) scale(${props.world.k})`,
+          // Room at the foot so the zoom controls never sit on top of a
+          // card the reader is trying to read.
+          padding: "0 12px 56px",
+        }}
+      >
       {props.subjectId ? (
         <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 8 }}>
           showing only {push.subjects.find((s) => s.id === props.subjectId)?.name}{" "}
@@ -79,7 +133,7 @@ export function WorkGraph(props: {
       {claims.map(({ subject, claim }) => {
         const laid =
           layouts.get(claim.id) ??
-          stackLayout(claim.promises.map((p) => ({ id: p.id, w: NODE_W, h: PBOX_H })));
+          stackLayout(claim.promises.map((p) => ({ id: p.id, w: NODE_W, h: heightOf(p.id) })));
         return (
           <section
             key={claim.id}
@@ -131,6 +185,10 @@ export function WorkGraph(props: {
                     <div
                       key={p.id}
                       data-promise={p.id}
+                      ref={(el) => {
+                        if (el) boxes.current.set(p.id, el);
+                        else boxes.current.delete(p.id);
+                      }}
                       onClick={() => props.onSelect(p.id)}
                       title="Select this promise."
                       style={{
@@ -139,7 +197,7 @@ export function WorkGraph(props: {
                         top: at?.y ?? 0,
                         width: NODE_W,
                         boxSizing: "border-box",
-                        padding: "6px 8px",
+                        padding: "7px 9px",
                         borderRadius: 5,
                         cursor: "pointer",
                         background: "var(--vscode-editorWidget-background, #252526)",
@@ -150,17 +208,31 @@ export function WorkGraph(props: {
                         }`,
                       }}
                     >
+                      <div style={cap}>Promise</div>
                       <div style={{ fontSize: 12 }}>{p.text}</div>
-                      <div style={{ fontSize: 10, opacity: 0.65, marginTop: 2 }}>{p.file || "(not grounded)"}</div>
-                      {p.checks.length ? (
-                        <div style={{ fontSize: 10, color: "#89d185", marginTop: 2 }}>
-                          proved by: {p.checks.join("; ")}
+                      <div style={{ ...cap, marginTop: 6 }}>
+                        Lands in <span style={{ textTransform: "none" }}>— where the change goes</span>
+                      </div>
+                      <div style={{ fontSize: 11 }}>
+                        {p.file
+                          ? p.file.split(", ").map((f) => <div key={f}>{f}</div>)
+                          : "nowhere yet — this promise is not grounded"}
+                      </div>
+                      <div style={{ ...cap, marginTop: 6, color: p.checks.length ? undefined : "#f14c4c" }}>
+                        {p.checks.length ? (
+                          <>
+                            Checks{" "}
+                            <span style={{ textTransform: "none" }}>— what will prove it</span>
+                          </>
+                        ) : (
+                          "No check — nothing would prove this"
+                        )}
+                      </div>
+                      {p.checks.map((c, i) => (
+                        <div key={i} style={{ fontSize: 11, color: "#89d185" }}>
+                          {c}
                         </div>
-                      ) : (
-                        <div style={{ fontSize: 10, color: "#f14c4c", marginTop: 2 }}>
-                          no check yet — nothing would prove this
-                        </div>
-                      )}
+                      ))}
                       <div style={{ display: "flex", gap: 6, marginTop: 4, fontSize: 11 }}>
                         {p.stale ? (
                           <button
@@ -183,6 +255,7 @@ export function WorkGraph(props: {
           </section>
         );
       })}
+      </div>
     </div>
   );
 }

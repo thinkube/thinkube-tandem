@@ -49,7 +49,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
           {bound
             ? "the sentence above stays exactly as you wrote it"
             : s.promises
-              ? `re-reads ${s.subjects} object${s.subjects === 1 ? "" : "s"} and replaces ${s.promises} promise${s.promises === 1 ? "" : "s"}` +
+              ? `re-reads ${s.subjects} subject${s.subjects === 1 ? "" : "s"} and replaces ${s.promises} promise${s.promises === 1 ? "" : "s"}` +
                 (s.alsoReads.length ? `, including work from ${s.alsoReads.length} other sentence(s)` : "")
               : "nothing has been derived from it yet"}
         </span>

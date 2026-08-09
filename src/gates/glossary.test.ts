@@ -25,6 +25,7 @@ const surfaceDir = path.resolve(__dirname, "..", "..", "webview", "map", "src");
 const SYNONYMS: { bad: RegExp; use: string }[] = [
   { bad: /\bthings? to build\b/i, use: "Promise" },
   { bad: /\bproof labels?\b/i, use: "Check" },
+  { bad: /\bobjects?\b/i, use: "Subject" },
 ];
 
 function surfaces(): { file: string; text: string }[] {

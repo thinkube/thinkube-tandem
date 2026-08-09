@@ -133,10 +133,10 @@ export function Rail(props: {
 
         {!props.canBuild ? null : ready.thinking ? (
           <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 14 }}>
-            Still working out what to build — nothing can be committed until every object is
+            Still working out what to build — nothing can be committed until every subject is
             thought through.
           </div>
-        ) : ready.objects ? (
+        ) : ready.subjects ? (
           <section data-build-section style={{ marginBottom: 14 }}>
             <button
               data-build
@@ -144,7 +144,7 @@ export function Rail(props: {
               title="Build it. Everything assumed becomes a decision on the record, and the asks behind this work become read-only."
               onClick={() => post({ action: "build" })}
             >
-              Build {ready.objects} object{ready.objects === 1 ? "" : "s"}
+              Build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
             </button>
             <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
               {ready.promises} promise{ready.promises === 1 ? "" : "s"} · workers run in parallel ·
