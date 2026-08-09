@@ -4,10 +4,9 @@
  * proposal waits for the human. Nothing is ground until they accept it —
  * a wrong reading costs one cheap round, not seven expensive ones.
  */
-import { Claim, Rule, Space, Subject } from "../core/schema";
+import { Claim, Space, Subject } from "../core/schema";
 import { addAsk } from "../core/intent";
 import { solveModel, unaccountedFor } from "../derive/model";
-import { judgeScope, ScopeQuestion } from "../derive/scope";
 import type { TandemSession } from "./session";
 
 /**
@@ -98,7 +97,7 @@ export async function readModel(
     proposal: { askIds, texts, ...model, missing: unaccountedFor(model, texts.length) },
   };
   s.changed(
-    `${model.subjects.length} subject(s) and ${model.rules.length} rule(s) — check them before I think about the code.`,
+    `${model.subjects.length} subject(s) — check them before I think about the code.`,
   );
   return { ok: true };
 }
@@ -111,7 +110,6 @@ export function applyModel(
 ): Space {
   const subjects: Subject[] = [];
   const claims: Claim[] = [];
-  const rules: Rule[] = [];
   const askOf = (n: number): string => pending.askIds[n - 1] ?? pending.askIds[0] ?? "";
 
   pending.subjects.forEach((sub, i) => {
@@ -129,65 +127,11 @@ export function applyModel(
       });
     });
   });
-  pending.rules.forEach((r, i) => {
-    rules.push({
-      id: `rule-${author}-${(space.rules?.length ?? 0) + i + 1}`,
-      text: r.text,
-      scope: r.scope,
-      fromAsk: askOf(r.from),
-      governs: subjects.map((s) => s.id),
-    });
-  });
 
   return {
     ...space,
     subjects: [...(space.subjects ?? []), ...subjects],
     claims: [...(space.claims ?? []), ...claims],
-    rules: [...(space.rules ?? []), ...rules],
   };
 }
 
-/**
- * Every rule already in force is tested against every subject that has not
- * been judged against it — once, when the subject appears. A rule promoted
- * in round one therefore reaches a subject captured in round three, before
- * that subject grounds.
- */
-export async function inheritRules(s: TandemSession): Promise<number> {
-  const rules = s.space.rules ?? [];
-  const subjects = s.space.subjects ?? [];
-  const judged = s.space.judgedScope ?? [];
-  const pairs: ScopeQuestion[] = [];
-  for (const r of rules)
-    for (const sub of subjects) {
-      const key = `${r.id}|${sub.id}`;
-      if (r.governs.includes(sub.id) || judged.includes(key)) continue;
-      pairs.push({
-        ruleId: r.id,
-        ruleText: r.text,
-        scope: r.scope,
-        subjectId: sub.id,
-        subjectName: sub.name,
-      });
-    }
-  if (!pairs.length) return 0;
-
-  const yes = await (s.deps.judgeScope ?? judgeScope)(s.deps.round, pairs);
-  const gained = new Set(yes.map((p) => `${p.ruleId}|${p.subjectId}`));
-  s.space = {
-    ...s.space,
-    // Judged once, remembered: a "no" is a decision too, not a question the
-    // machine re-asks every time the space is opened.
-    judgedScope: [...judged, ...pairs.map((p) => `${p.ruleId}|${p.subjectId}`)],
-    rules: rules.map((r) => ({
-      ...r,
-      governs: [
-        ...r.governs,
-        ...pairs
-          .filter((p) => p.ruleId === r.id && gained.has(`${p.ruleId}|${p.subjectId}`))
-          .map((p) => p.subjectId),
-      ],
-    })),
-  };
-  return gained.size;
-}

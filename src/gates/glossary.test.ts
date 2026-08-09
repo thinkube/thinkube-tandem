@@ -9,9 +9,10 @@
  *
  * The vocabulary is small and every part of it is the human's: an ASK is
  * what they wrote, a SUBJECT is a thing their asks are about, a CLAIM is
- * what must become true of a subject, a RULE is what holds across every
- * subject, a PROMISE is a change that makes a claim true, and a CHECK is
- * what proves a promise.
+ * what must become true of a subject, a PROMISE is a change that makes a
+ * claim true, and a CHECK is what proves a promise. There is deliberately
+ * no word for "a claim that holds everywhere": every such sentence is
+ * about something, and naming that something is the reading's whole job.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -22,9 +23,6 @@ const surfaceDir = path.resolve(__dirname, "..", "..", "webview", "map", "src");
 
 /** Phrases that name something the glossary already names. */
 const SYNONYMS: { bad: RegExp; use: string }[] = [
-  { bad: /\bin force\b/i, use: "Rule" },
-  { bad: /holds across all/i, use: "Rule" },
-  { bad: /\bgoverns everything\b/i, use: "Rule" },
   { bad: /\bthings? to build\b/i, use: "Promise" },
   { bad: /\bproof labels?\b/i, use: "Check" },
 ];
@@ -57,7 +55,7 @@ test("no surface invents a second name for something the glossary names", () => 
 
 test("every group of shapes is labelled with the word for what it holds", () => {
   const intent = fs.readFileSync(path.join(surfaceDir, "IntentGraph.tsx"), "utf8");
-  for (const word of ["Subject", "Claims", "Rules"])
+  for (const word of ["Subject", "Claims"])
     assert.ok(
       new RegExp(`>\\s*\\n?\\s*${word}\\b`).test(intent),
       `the reading page never says "${word}" — an unlabelled shape is a riddle`,

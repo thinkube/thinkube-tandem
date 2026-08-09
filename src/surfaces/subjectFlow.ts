@@ -16,13 +16,6 @@ function claimsOf(space: Space, subjectId: string): { id: string; text: string; 
     .map((c) => ({ id: c.id, text: c.text, ...(c.why ? { why: c.why } : {}) }));
 }
 
-/** The rules governing a subject, as the sentences a round derives under. */
-function rulesFor(space: Space, subjectId: string): string[] {
-  return (space.rules ?? [])
-    .filter((r) => r.governs.includes(subjectId))
-    .map((r) => r.text);
-}
-
 /** One subject's grounding, appended to the PRESENT space. */
 async function groundSubject(
   s: TandemSession,
@@ -43,7 +36,7 @@ async function groundSubject(
     { id: subjectId, text: askText, at: s.deps.now() },
     {
       nextIndex: 1,
-      decisions: [...s.decisionsInForce(), ...rulesFor(s.space, subjectId)],
+      decisions: s.decisionsInForce(),
       claims,
       digestStore: s.digests(),
       mintNodeId: (n) => `node-${s.author}-${subjectId.split("-").pop()}-${n}`,

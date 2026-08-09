@@ -1,7 +1,7 @@
 /**
  * The reading page: what I understood of what you wrote, before anything
- * costs money. One shape only — the object — with what must become true of
- * it listed inside, and the rules that hold across all of them above.
+ * costs money. One shape only — the SUBJECT — with the claims that must
+ * become true of it listed inside, each carrying the ask it was read from.
  *
  * There is nothing here to accept and nothing to rearrange. If it reads
  * wrong you say the sentence differently, because a wrong reading is a
@@ -11,7 +11,7 @@
 import { post, SpacePush } from "./vscode";
 
 /**
- * Where a shape came from, and the way back. Every subject, claim and rule
+ * Where a shape came from, and the way back. Every subject and claim
  * is read FROM an ask, so each one shows its number and a pencil that
  * opens that ask for rewriting — disliking what was read is reason enough,
  * and it is always available, not only when something was assumed.
@@ -68,21 +68,6 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
   const p = props.push.pendingModel!;
   return (
     <>
-      {p.rules.length ? (
-        <section
-          data-proposed-rules
-          style={{ ...box, borderColor: "#e5c07b", padding: "8px 10px", marginBottom: 10 }}
-        >
-          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
-            Rules <span style={{ textTransform: "none", opacity: 0.75 }}>— what holds across every subject</span>
-          </div>
-          {p.rules.map((r, i) => (
-            <div key={i} style={{ fontSize: 12 }}>
-              {r.text} <em style={{ opacity: 0.7 }}>— {r.scope}</em>
-            </div>
-          ))}
-        </section>
-      ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {p.subjects.map((s, i) => (
           <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
@@ -123,59 +108,6 @@ function Recorded(props: {
 }): JSX.Element {
   const { push } = props;
   return (
-    <>
-      {push.rules.length ? (
-        <section
-          data-rules-band
-          style={{
-            ...box,
-            borderColor: "#e5c07b",
-            padding: "8px 10px",
-            marginBottom: 10,
-            maxHeight: "14rem",
-            overflowY: "auto",
-          }}
-        >
-          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
-            Rules{" "}
-            <span style={{ textTransform: "none", opacity: 0.75 }}>
-              — what holds across every subject, now and for any subject read later
-            </span>
-          </div>
-          {push.rules.map((r) => (
-            <div
-              key={r.id}
-              data-rule={r.id}
-              onClick={() => props.onSelect(r.id)}
-              style={{ fontSize: 12, cursor: "pointer", display: "flex", gap: 6, alignItems: "baseline" }}
-              title={`From what you wrote: ${r.fromAsk}`}
-            >
-              <span style={{ flex: 1 }}>
-                {r.fromAskN ? (
-                  <FromAsk
-                    n={r.fromAskN}
-                    id={r.fromAskId}
-                    text={r.fromAsk}
-                    onEditAsk={props.onEditAsk}
-                  />
-                ) : null}{" "}
-                {r.text} <span style={{ opacity: 0.65, fontSize: 11 }}>— {r.scope}</span>
-              </span>
-              <button
-                data-retire-rule={r.id}
-                style={{ fontSize: 10 }}
-                title="Retire this rule — it governs nothing from then on."
-                onClick={(e) => {
-                  e.stopPropagation();
-                  post({ action: "retire-rule", unitId: r.id });
-                }}
-              >
-                Retire
-              </button>
-            </div>
-          ))}
-        </section>
-      ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {push.subjects.map((s) => (
           <div key={s.id} data-subject={s.id} style={box}>
@@ -253,7 +185,6 @@ function Recorded(props: {
           </div>
         ))}
       </div>
-    </>
   );
 }
 

@@ -219,17 +219,12 @@ export interface Space {
   subjects?: Subject[];
   /** What must become true of each subject. */
   claims?: Claim[];
-  /** What holds across subjects — the decisions in force, with a scope. */
-  rules?: Rule[];
-  /** "<ruleId>|<subjectId>" pairs already judged — a no is remembered too. */
-  judgedScope?: string[];
   /** A reading waiting for the human. Part of the record, so it survives a
    *  reload and a second paste cannot silently replace it. */
   proposal?: {
     askIds: string[];
     texts: string[];
     subjects: { name: string; from: number[]; claims: { text: string; why?: string; from: number }[] }[];
-    rules: { text: string; scope: string; from: number }[];
     missing: number[];
   };
   /** A reading that failed, with the round's own words for why. */
@@ -261,24 +256,6 @@ export interface Claim {
   why?: string;
   /** The ask this claim was read from; its words are never replaced. */
   fromAsk: string;
-}
-
-/**
- * A RULE is what must hold across subjects — the decisions in force, with a
- * scope in the human's words so a subject captured later inherits it.
- */
-export interface Rule {
-  id: string;
-  text: string;
-  /** True when it came from an assumption the human did not object to,
-   *  rather than from a sentence they wrote. Weaker, and marked as such. */
-  assumed?: boolean;
-  /** What it governs, in the human's words ("every page you read"). */
-  scope: string;
-  /** The ask or decision it came from. */
-  fromAsk?: string;
-  /** Subjects it has been judged to govern; a new subject is tested once. */
-  governs: string[];
 }
 
 export function emptySpace(): Space {

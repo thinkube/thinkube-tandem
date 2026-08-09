@@ -149,7 +149,7 @@ export function Asks(props: {
               <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b" }}>
                 Assumed{" "}
                 <span style={{ textTransform: "none" }}>
-                  — decided in this ask&apos;s name; becomes a rule when you build
+                  — decided in this ask&apos;s name; recorded when you build
                 </span>
               </div>
               {s.assumptions.map((a, i) => (

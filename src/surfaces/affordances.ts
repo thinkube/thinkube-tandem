@@ -77,10 +77,6 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "the work graph's panel", gesture: "press Dismiss on a promise that should not exist, with a reason" },
   },
-  "retire-rule": {
-    kind: "human",
-    affordance: { surface: "the rules band", gesture: "press Retire on a rule — it governs nothing from then on" },
-  },
   "retry-model": {
     kind: "human",
     affordance: { surface: "the intent graph, after a failed reading", gesture: "press 'Read it again' — your sentences are already recorded" },

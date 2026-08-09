@@ -4,7 +4,7 @@
  *
  * Nothing here asks for a decision the machine could make itself, and
  * nothing here repeats what is shown elsewhere — your asks live under the
- * box you write them in, and the rules live on the reading page.
+ * box you write them in, and what was read from them on the reading page.
  */
 import { post, SpacePush } from "./vscode";
 
@@ -135,7 +135,7 @@ export function Rail(props: { push: SpacePush }): JSX.Element {
             <button
               data-build
               style={{ ...btn, width: "100%" }}
-              title="Build it. Everything assumed becomes a rule, and the sentences behind this work become read-only."
+              title="Build it. Everything assumed becomes a decision on the record, and the asks behind this work become read-only."
               onClick={() => post({ action: "build" })}
             >
               Build {ready.objects} object{ready.objects === 1 ? "" : "s"}

@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { TandemSession } from "./session";
 import { readyToBuild } from "./buildFlow";
 
-test("building commits whole components: assumptions become marked rules and the sentences lock", async () => {
+test("building commits whole components: assumptions become decisions and the asks lock", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
   const deps = {
     round: { model: "opus", repoRoot: "/repo" },
@@ -69,10 +69,13 @@ test("building commits whole components: assumptions become marked rules and the
   const r = await session.build();
   assert.ok(r.ok, r.reason);
 
-  const rule = (session.space.rules ?? []).find((x) => /no way in yet/.test(x.text));
-  assert.ok(rule, "what nobody objected to is in force now");
-  assert.equal(rule!.assumed, true, "and it is marked as assumed, not as something you wrote");
-  assert.match(rule!.scope, /shows how to see it/, "it carries the clause that was silent");
+  const decided = session.space.questions.find((q) => /no way in yet/.test(q.decided?.text ?? ""));
+  assert.ok(decided, "what nobody objected to is a decision on the record now");
+  assert.equal(decided!.clause, "shows how to see it", "it keeps the clause that was silent");
+  assert.ok(
+    session.decisionsInForce().some((d) => /no way in yet/.test(d)),
+    "and every later derivation in this space runs under it",
+  );
 
   for (const a of session.space.asks)
     assert.equal(

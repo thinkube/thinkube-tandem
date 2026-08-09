@@ -23,7 +23,7 @@ export function App(): JSX.Element {
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
   // Which ask has its editor open. It lives here because a subject, a
-  // claim or a rule that reads wrong must be able to open the ask it came
+  // claim that reads wrong must be able to open the ask it came
   // from, and they are drawn on another surface.
   const [editingAsk, setEditingAsk] = useState<string | null>(null);
   const [workSubject, setWorkSubject] = useState<string | null>(null);

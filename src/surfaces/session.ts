@@ -20,7 +20,7 @@ import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, inheritRules, proposeModelFlow, readModel, retryModel } from "./modelFlow";
+import { applyModel, proposeModelFlow, readModel, retryModel } from "./modelFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { askState } from "../core/component";
@@ -132,16 +132,11 @@ export class TandemSession {
    * reading of it.
    */
   editModel(edit: {
-    kind: "dismiss-promise" | "retire-rule";
+    kind: "dismiss-promise";
     id: string;
     text?: string;
   }): { ok: boolean; reason?: string } {
     const sp = this.space;
-    if (edit.kind === "retire-rule") {
-      this.space = { ...sp, rules: (sp.rules ?? []).filter((r) => r.id !== edit.id) };
-      this.changed("Retired — it governs nothing from now on.");
-      return { ok: true };
-    }
     if (signedIds(sp.cuts).has(edit.id))
       return { ok: false, reason: "that promise is built — it is a record now" };
     this.cutNodeIds.delete(edit.id);
@@ -199,8 +194,6 @@ export class TandemSession {
     const pending = this.space.proposal;
     if (pending) {
       this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
-      const inherited = await inheritRules(this);
-      if (inherited) this.changed(`${inherited} rule(s) already in force apply here.`);
     }
     const ground = new Set(
       this.space.nodes.flatMap((n) => n.serves).filter((x) => x.startsWith("subject-")),
@@ -216,28 +209,9 @@ export class TandemSession {
     return costOfThinking(this.space);
   }
 
-  /** Commit: assumptions become rules, whole components go into one cut. */
+  /** Commit: assumptions become decisions, whole components go into one cut. */
   build(excluded: string[] = []): Promise<{ ok: boolean; reason?: string }> {
     return buildFlow(this, excluded);
-  }
-
-  /** Corrections to the proposal, before it is recorded. */
-  reviseModel(edit: { kind: "drop-subject" | "drop-rule" | "to-rule"; index: number }): void {
-    const p = this.space.proposal;
-    if (!p) return;
-    const subjects = [...p.subjects];
-    const rules = [...p.rules];
-    if (edit.kind === "drop-subject") subjects.splice(edit.index, 1);
-    else if (edit.kind === "drop-rule") rules.splice(edit.index, 1);
-    else if (edit.kind === "to-rule") {
-      const sub = subjects[edit.index];
-      if (sub) {
-        for (const c of sub.claims) rules.push({ text: c.text, scope: "every subject", from: c.from });
-        subjects.splice(edit.index, 1);
-      }
-    }
-    this.space = { ...this.space, proposal: { ...p, subjects, rules } };
-    this.changed();
   }
 
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {

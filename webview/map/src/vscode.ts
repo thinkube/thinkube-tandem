@@ -30,7 +30,6 @@ interface ClaimVM {
 interface SubjectVM {
   id: string;
   name: string;
-  rules: { id: string; text: string }[];
   thinking?: { label: string; current: number; total: number };
   claims: ClaimVM[];
   /** The sentences of yours this object was read from — its provenance,
@@ -104,16 +103,6 @@ export interface SpacePush {
     cards: { id: string; title: string }[];
   }[];
   decisions: string[];
-  rules: {
-    id: string;
-    text: string;
-    scope: string;
-    governs: number;
-    /** The ask it was read from — a rule comes from your words too. */
-    fromAsk: string;
-    fromAskId: string;
-    fromAskN: number;
-  }[];
   /** Promises attached to no claim. `subject` names the subject the
    *  promise was derived for, when there is one — its absence is what
    *  makes a promise genuine scope creep. `choices` are the claims it
@@ -143,7 +132,6 @@ export interface SpacePush {
   /** The model the round proposed, waiting for you. */
   pendingModel?: {
     subjects: { name: string; claims: { text: string; why?: string }[] }[];
-    rules: { text: string; scope: string }[];
     missing: string[];
   };
   impacts: { id: string; decision: string; askText: string; affected: number }[];
@@ -175,7 +163,6 @@ export type WebToHost =
   | { action: "think" }
   | { action: "build"; changeIds?: string[] }
   | { action: "dismiss-promise"; unitId: string; text?: string }
-  | { action: "retire-rule"; unitId: string }
   | { action: "read-log"; stepId?: string; page?: number }
   | { action: "stop-run" }
   | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }

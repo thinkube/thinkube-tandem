@@ -242,7 +242,6 @@ test("capture proposes a model and waits; accepting it grounds every subject onc
   await session.think();
   assert.equal(session.space.subjects!.length, 1, "two sentences, one subject");
   assert.equal(session.space.claims!.length, 2, "each sentence became a claim on it");
-  assert.equal(session.space.rules!.length, 1, "what governs everything became a rule");
   assert.equal(grounded.length, 1, "ONE grounding for the subject, not one per sentence");
   assert.equal(grounded[0].claims, 2, "the round saw both claims at once");
 
@@ -293,81 +292,6 @@ test("two subjects' claims never share an id, so a promise cannot land on anothe
 
   const ids = session.space.claims!.map((c) => c.id);
   assert.equal(new Set(ids).size, 4, `four claims, four ids: ${ids.join(", ")}`);
-});
-
-test("a rule in force reaches a subject captured later, and a no is remembered", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
-  let round = 0;
-  const asked: string[][] = [];
-  const deps = {
-    round: { model: "opus", repoRoot: "/repo" },
-    storeDir: dir,
-    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
-    now: () => "2026-08-08T13:00:00Z",
-    readCurrentStamp: async () => [],
-    classify: async () => "ask" as const,
-    contextRound: async () => "LAYOUT: one reading",
-    solveModel: async () => {
-      round++;
-      const named = ["the delivery page", "the cut review", "the reading list"][round - 1] ?? "another thing";
-      return {
-        subjects: [{ name: named, from: [1], claims: [{ text: `something about ${named}`, from: 1 }] }],
-        rules:
-          round === 1
-            ? [{ text: "labels are in my words", scope: "every page you read", from: 1 }]
-            : [],
-      };
-    },
-    // The scope round is asked only about pairs not yet judged, and says yes
-    // to pages only.
-    judgeScope: async (_d: unknown, pairs: { subjectName: string }[]) => {
-      asked.push(pairs.map((p) => p.subjectName));
-      return pairs.filter((p) => p.subjectName.includes("page"));
-    },
-    ground: async (_d: unknown, ask: { id: string }, opts: { claims?: { id: string }[]; mintNodeId?: (n: number) => string }) => ({
-      changes: (opts.claims ?? []).map((c, i) => ({
-        id: (opts.mintNodeId ?? ((n: number) => `node-${n}`))(i + 1),
-        sentence: `promise for ${c.id}`,
-        serves: [ask.id],
-        servesClaim: c.id,
-        needs: [],
-        acceptance: [],
-        grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
-      })),
-      questions: [],
-    }),
-  };
-  const session = new TandemSession(deps as never);
-
-  await session.captureMany(["the delivery page shows a walkthrough"]);
-  await session.think();
-  const rule = session.space.rules![0];
-  assert.equal(rule.governs.length, 1, "the rule governs the subject it was born with");
-
-  // A later round brings a subject the rule was never asked about.
-  await session.captureMany(["the cut review lists the promises"]);
-  await session.think();
-  assert.deepEqual(asked.at(-1), ["the cut review"], "only the unjudged pair is asked about");
-  assert.equal(
-    session.space.rules![0].governs.includes(session.space.subjects![1].id),
-    false,
-    "a subject the scope does not cover does not inherit",
-  );
-  assert.ok(
-    session.space.judgedScope!.some((k) => k.endsWith(session.space.subjects![1].id)),
-    "the no is remembered, so the question is not asked again",
-  );
-
-  // Nothing new to judge → the round is not called a third time.
-  const before = asked.length;
-  await session.captureMany(["the reading list shows every repository"]);
-  await session.think();
-  assert.ok(asked.length > before, "a fresh subject is judged");
-  assert.deepEqual(
-    asked.at(-1),
-    ["the reading list"],
-    "only the new subject is asked about — every judged pair stays judged",
-  );
 });
 
 test("a failed reading derives nothing, says why, and can be read again", async () => {

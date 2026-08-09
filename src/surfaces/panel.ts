@@ -140,7 +140,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
     // each under the claim it makes true.
     subjects: (session.space.subjects ?? []).map((s) => {
       const claims = (session.space.claims ?? []).filter((c) => c.subjectId === s.id);
-      const rules = (session.space.rules ?? []).filter((r) => r.governs.includes(s.id));
       const numberOf = (id: string): number =>
         session.space.asks.findIndex((a) => a.id === id) + 1;
       return {
@@ -155,7 +154,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
             n: numberOf(id),
             text: session.space.asks.find((a) => a.id === id)!.text,
           })),
-        rules: rules.map((r) => ({ id: r.id, text: r.text })),
         thinking: session.groundingView().find((g) => g.askId === s.id),
         claims: claims.map((c) => {
           const promises = session.space.nodes.filter((n) => n.servesClaim === c.id);
@@ -184,15 +182,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
         }),
       };
     }),
-    rules: (session.space.rules ?? []).map((r) => ({
-      id: r.id,
-      text: r.text,
-      scope: r.scope,
-      governs: r.governs.length,
-      fromAsk: session.space.asks.find((a) => a.id === r.fromAsk)?.text ?? "",
-      fromAskId: r.fromAsk,
-      fromAskN: session.space.asks.findIndex((a) => a.id === r.fromAsk) + 1,
-    })),
     // Your sentences: each with what it decided, what it assumed in your
     // name, whether it is still yours to edit, and what editing costs.
     sentences: session.space.asks.map((a) => {
@@ -238,7 +227,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
             name: s.name,
             claims: s.claims.map((c) => ({ text: c.text, why: c.why })),
           })),
-          rules: session.pendingModel.rules.map((r) => ({ text: r.text, scope: r.scope })),
           // The sentence itself, not its id — a number names nothing.
           missing: session.pendingModel.missing.map(
             (n) => session.pendingModel!.texts[n - 1] ?? `sentence ${n}`,
@@ -315,7 +303,7 @@ async function handleInbound(
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
     session.answerWorker(msg.unitId, msg.text);
-  } else if (msg.action === "dismiss-promise" || msg.action === "retire-rule") {
+  } else if (msg.action === "dismiss-promise") {
     const r = session.editModel({
       kind: msg.action,
       id: msg.unitId ?? "",

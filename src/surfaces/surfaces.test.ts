@@ -20,7 +20,7 @@ async function captureAndAccept(session: TandemSession, texts: string[]): Promis
 }
 
 test("no capability without a door: every session action is registered", () => {
-  assert.ok(SESSION_ACTIONS.length >= 15, "the gate must never go vacuous — the registry drives it");
+  assert.ok(SESSION_ACTIONS.length >= 14, "the gate must never go vacuous — the registry drives it");
   for (const action of SESSION_ACTIONS) {
     const entry = AFFORDANCES[action];
     assert.ok(entry, `action '${action}' has no affordance entry`);
