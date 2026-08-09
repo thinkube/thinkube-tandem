@@ -9,12 +9,18 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { SliceForDag } from "../engine/core/dag";
+import type { AcVerification } from "../engine/orchestratorCore";
 import {
   buildTestImpactRefusal,
   findUncoveredTests,
 } from "../engine/testImpactFootprint";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
+
+/** Held-out evidence this product authors: probes, wherever they sit. */
+function isProbe(p: string): boolean {
+  return /(^|\/)probes\//.test(p.replace(/\\/g, "/").replace(/^\.\//, ""));
+}
 
 export async function foldBlastRadius(
   slices: SliceForDag[],
@@ -43,9 +49,17 @@ export async function foldBlastRadius(
       footprintPaths: allFootprints,
       repoFiles,
     });
-    const heldOut = violations.filter((v) => v.kind === "held-out");
+    // A probe is held-out evidence wherever it lives. The engine calls a
+    // test held-out only under `src/acceptance/`; this product writes its
+    // probes to `probes/`, so without this they are classified as ordinary
+    // unit tests and FOLDED INTO THE CODER'S FOOTPRINT — which opens the
+    // write fence on the proof of an already-accepted delivery.
+    const classified = violations.map((v) =>
+      isProbe(v.test) ? { ...v, kind: "held-out" as const } : v,
+    );
+    const heldOut = classified.filter((v) => v.kind === "held-out");
     if (heldOut.length) return buildTestImpactRefusal(heldOut);
-    const folded = violations.filter((v) => v.kind === "unit").map((v) => v.test);
+    const folded = classified.filter((v) => v.kind === "unit").map((v) => v.test);
     if (folded.length) {
       const codeUnit = s.workUnits.find((u) => (u.role ?? "code") === "code");
       if (codeUnit) codeUnit.footprint.push(...folded);
@@ -103,4 +117,30 @@ export async function claimRunLock(
     /* lock bookkeeping is best-effort; the branch claim is the hard mutex */
   }
   return { unlock };
+}
+
+/**
+ * Per-slice bookkeeping: its probe files, the verification each one stands
+ * for, and the paths its commit will stage. The ordinal a check is known by
+ * downstream is this list's ORDER — the probe filenames carry the same
+ * number, which is what lets a failing check be traced back to its source.
+ */
+export function sliceBookkeeping(slices: SliceForDag[]): {
+  sliceProbes: Map<string, string[]>;
+  sliceVerifs: Map<string, AcVerification[]>;
+  sliceFiles: Map<string, string[]>;
+} {
+  const sliceProbes = new Map<string, string[]>();
+  const sliceVerifs = new Map<string, AcVerification[]>();
+  const sliceFiles = new Map<string, string[]>();
+  for (const s of slices) {
+    const probes = s.workUnits.filter((u) => u.role === "test").flatMap((u) => u.footprint);
+    sliceProbes.set(s.handle, probes);
+    sliceVerifs.set(
+      s.handle,
+      probes.map((p, i) => ({ ac: i + 1, run: `node --test ${p}`, env: "local" })),
+    );
+    sliceFiles.set(s.handle, s.files ?? []);
+  }
+  return { sliceProbes, sliceVerifs, sliceFiles };
 }

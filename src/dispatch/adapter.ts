@@ -140,7 +140,13 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         footprint: [
           `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`,
         ],
-        execution: "fan-out",
+        // SERIAL, not fan-out: the engine gives every fan-out test unit its
+        // own worker and batches serial ones into a single warm session per
+        // slice. Fan-out made the run's size track the number of checks —
+        // 238 checks became 238 Claude Code processes. Serial keeps every
+        // probe file and its AC ordinal exactly as they were, and asks one
+        // worker to write them.
+        execution: "serial",
         role: "test",
         note: `[${crit.change.sentence}] ${crit.text}`,
       }),

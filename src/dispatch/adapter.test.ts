@@ -92,8 +92,20 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
   const sl1code = dag.find((u) => u.slice === "SL-1" && (u.role ?? "code") === "code")!;
   const sl2code = dag.find((u) => u.slice === "SL-2" && (u.role ?? "code") === "code")!;
   // Tests-first: each slice's code unit requires its own test units.
+  // ONE test node per slice: the probe units are serial, so the engine
+  // batches them into a single warm session. Each criterion still keeps its
+  // own probe file — the ordinals downstream are read off these footprints.
   const sl1tests = dag.filter((u) => u.slice === "SL-1" && u.role === "test").map((u) => u.id);
-  assert.equal(sl1tests.length, 2);
+  assert.equal(sl1tests.length, 1, "one tester per slice, not one per check");
+  const testNode = dag.find((u) => u.id === sl1tests[0])!;
+  assert.deepEqual(
+    testNode.footprint,
+    [
+      "probes/toolbar_space__SL-1_AC-1.test.mjs",
+      "probes/toolbar_space__SL-1_AC-2.test.mjs",
+    ],
+    "every check keeps its own probe file and its ordinal",
+  );
   for (const t of sl1tests) assert.ok(sl1code.requires.includes(t), "tests-first edge present");
   // Cross-slice edge: SL-2's coder waits on SL-1's producer.
   assert.ok(

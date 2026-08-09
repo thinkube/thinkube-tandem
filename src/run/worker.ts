@@ -35,7 +35,54 @@ export interface RunWorkerDeps {
   /** In-loop black-box check: runs the slice's acceptance checks against the
    *  current work and returns the oracle's formatted verdict. */
   verifyTool?: () => Promise<string>;
+  /**
+   * Blind the code author. With the oracle in place its only feedback is
+   * `verify` — probe source never reaches it, results do — so a shell and
+   * a way to read the probes are not conveniences it lacks, they are the
+   * improvised feedback the oracle was built to replace. Success measured
+   * against a test the author read is evidence about the test.
+   */
+  blind?: boolean;
   maxTurns?: number;
+}
+
+/** Tools whose use can leave a change on disk. */
+const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
+
+/**
+ * The write fence, as it really runs: read what the tree has become, judge
+ * it against this unit's footprint plus whatever its live peers are
+ * allowed, and REVERT anything else. Extracted from the hook so the wiring
+ * — porcelain, judgement, revert — is testable; only its arithmetic was.
+ *
+ * Returns true when the unit strayed, which the caller turns into a halt.
+ */
+export async function encloseWork(deps: {
+  worktree: string;
+  footprint: string[];
+  alsoAllowed?: () => string[];
+  baseline: Set<string>;
+  log: (line: string) => void;
+}): Promise<boolean> {
+  const dirty = await porcelainPaths(deps.worktree);
+  const bad = containmentViolations(
+    dirty,
+    [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
+    deps.baseline,
+  );
+  if (!bad.length) return false;
+  deps.log(`⛔ containment: ${bad.join(", ")} — reverted, unit failed`);
+  await revertPaths(deps.worktree, bad);
+  return true;
+}
+
+/** Tools that could show an author the evidence it is judged by. */
+const READ_TOOLS = ["Read", "Grep", "Glob", "NotebookRead"];
+
+/** Held-out evidence: a probe, or any test file. */
+export function isHeldOut(target: string): boolean {
+  const t = target.replace(/\\/g, "/");
+  return /(^|[\s/])probes\//.test(t) || /\.(test|spec)\.[cm]?[jt]sx?\b/.test(t) || /acceptance\//.test(t);
 }
 
 const git = (cwd: string, args: string[]): Promise<string> =>
@@ -159,14 +206,38 @@ export async function runUnitWorker(
         abortController: deps.abort,
         ...(mcpServers ? { mcpServers } : {}),
         disallowedTools:
-          deps.role === "test"
+          deps.role === "test" || deps.blind
             ? ["Bash", "WebFetch", "WebSearch", "Task", "AskUserQuestion", "ExitPlanMode"]
             : ["WebFetch", "WebSearch", "Task", "AskUserQuestion", "ExitPlanMode"],
         hooks: {
           PreToolUse: [
             {
               hooks: [
-                async (h: { tool_name?: string; tool_input?: { command?: string } }) => {
+                async (h: {
+                  tool_name?: string;
+                  tool_input?: { command?: string; file_path?: string; path?: string; pattern?: string };
+                }) => {
+                  // A blinded author may not READ the evidence either.
+                  // Editing is already reverted by containment; reading is
+                  // what lets it write to the probe instead of the intent.
+                  if (deps.blind && READ_TOOLS.includes(h.tool_name ?? "")) {
+                    const target = [
+                      h.tool_input?.file_path,
+                      h.tool_input?.path,
+                      h.tool_input?.pattern,
+                    ]
+                      .filter((x): x is string => !!x)
+                      .join(" ");
+                    if (isHeldOut(target))
+                      return {
+                        hookSpecificOutput: {
+                          hookEventName: "PreToolUse",
+                          permissionDecision: "deny",
+                          permissionDecisionReason:
+                            "the checks are held out — ask `verify` how you are doing instead of reading them",
+                        },
+                      };
+                  }
                   if (h.tool_name === "Bash" && h.tool_input?.command) {
                     const rewritten = rtkRewrite(h.tool_input.command);
                     if (rewritten)
@@ -187,17 +258,8 @@ export async function runUnitWorker(
             {
               hooks: [
                 async (h: { tool_name?: string }) => {
-                  if (!["Write", "Edit", "NotebookEdit", "Bash"].includes(h.tool_name ?? ""))
-                    return {};
-                  const dirty = await porcelainPaths(deps.worktree);
-                  const bad = containmentViolations(
-                    dirty,
-                    [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
-                    deps.baseline,
-                  );
-                  if (bad.length) {
-                    deps.log(`⛔ containment: ${bad.join(", ")} — reverted, unit failed`);
-                    await revertPaths(deps.worktree, bad);
+                  if (!WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
+                  if (await encloseWork(deps)) {
                     containment = true;
                     deps.abort.abort();
                   }

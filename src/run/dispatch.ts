@@ -49,6 +49,8 @@ import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
+import { coderStanza } from "./brief";
+import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 
 export interface DispatchDeps {
@@ -167,21 +169,8 @@ export async function dispatchTep(
   const pending = new Set(dag.map((u) => u.id));
 
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const sliceProbes = new Map<string, string[]>();
-  const sliceVerifs = new Map<string, AcVerification[]>();
-  const sliceFiles = new Map<string, string[]>();
+  const { sliceProbes, sliceVerifs, sliceFiles } = sliceBookkeeping(slices);
   const sliceRemaining = new Map<string, number>();
-  for (const s of slices) {
-    const probes = s.workUnits
-      .filter((u) => u.role === "test")
-      .flatMap((u) => u.footprint);
-    sliceProbes.set(s.handle, probes);
-    sliceVerifs.set(
-      s.handle,
-      probes.map((p, i) => ({ ac: i + 1, run: `node --test ${p}`, env: "local" })),
-    );
-    sliceFiles.set(s.handle, s.files ?? []);
-  }
   for (const u of dag)
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
 
@@ -292,10 +281,10 @@ export async function dispatchTep(
       testConvention:
         "node:test ESM modules run directly with `node --test <file>` — name probe files exactly as the footprint states (.test.mjs, no build step)",
     });
-    briefBySlice.set(next.slice, baseBrief);
-    const oracleStanza = oracle
-      ? "\n\nA `verify` tool is available (tandem MCP): it runs this slice's acceptance checks against your CURRENT work in an isolated runner and returns per-criterion PASS/FAIL with evidence. Use it before declaring done — your completion is judged by its green, not by your claim."
-      : "";
+    // Only a coder's brief may be shown as "the coder's brief": every unit
+    // used to overwrite it, so stalls were diagnosed against a tester's.
+    if (role !== "test") briefBySlice.set(next.slice, baseBrief);
+    const oracleStanza = coderStanza(!!oracle);
     // Dispatch-time information audit: the brief's completeness against the
     // checks is static — a missing decidable fact is missing at round zero.
     let disclosure = "";
@@ -316,6 +305,8 @@ export async function dispatchTep(
           ),
           worktree: tree,
           role,
+          // Blind only when the oracle can answer instead.
+          blind: role !== "test" && !!oracle,
           footprint: next.footprint,
           alsoAllowed: unionFor(tree, next.id),
           baseline,
