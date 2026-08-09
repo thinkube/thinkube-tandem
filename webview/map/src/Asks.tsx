@@ -1,5 +1,9 @@
 /**
- * Your asks, under the box you write them in — the one place they appear.
+ * Your asks, under the box you write them in — the one page they appear
+ * on. They are absent from the work and build pages on purpose: editing
+ * an ask re-reads its component and discards the derived work, so a list
+ * there offers nothing but a way to destroy what you came to look at.
+ * The way back from a promise to its ask is a link on the promise.
  *
  * Everything else on screen is read FROM them, so when something grates
  * this is where it leads: each ask carries what was assumed in its name
@@ -81,7 +85,8 @@ export function Asks(props: {
       style={{ padding: "6px 12px 0", maxHeight: "16rem", overflowY: "auto" }}
     >
       <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 4 }}>
-        Asks <span style={{ textTransform: "none" }}>— what you wrote, kept word for word</span>
+        Asks{" "}
+        <span style={{ textTransform: "none" }}>— what you wrote, kept word for word</span>
       </div>
       {props.push.sentences.map((s, i) => (
         <section

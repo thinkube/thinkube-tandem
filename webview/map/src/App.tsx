@@ -113,8 +113,9 @@ export function App(): JSX.Element {
         </button>
       </div>
       <div
+        data-capture
         style={{
-          display: "flex",
+          display: tab === "intent" ? "flex" : "none",
           flexWrap: "wrap",
           gap: 8,
           padding: "8px 12px",
@@ -292,13 +293,15 @@ export function App(): JSX.Element {
           <span style={{ fontSize: 12, opacity: 0.75 }}>{push.message}</span>
         ) : null}
       </div>
-      <Asks
-        push={push}
-        selected={selected}
-        onSelect={setSelected}
-        editing={editingAsk}
-        onEditing={setEditingAsk}
-      />
+      {tab === "intent" ? (
+        <Asks
+          push={push}
+          selected={selected}
+          onSelect={setSelected}
+          editing={editingAsk}
+          onEditing={setEditingAsk}
+        />
+      ) : null}
       {push.lastAnswer ? (
         <section data-answer style={{ margin: "6px 12px 0", padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
           <div style={{ fontSize: 11, opacity: 0.6 }}>You asked: {push.lastAnswer.question}</div>
@@ -364,6 +367,10 @@ export function App(): JSX.Element {
             push={push}
             selected={selected}
             onSelect={setSelected}
+            onWork={() => {
+              setTab("work");
+              if (push.cost.subjects > 0) post({ action: "think" });
+            }}
             onEditAsk={(id) => {
               setSelected(id);
               setEditingAsk(id);
@@ -376,6 +383,11 @@ export function App(): JSX.Element {
         ) : tab === "work" ? (
           <WorkGraph
             push={push}
+            onEditAsk={(id) => {
+              setSelected(id);
+              setEditingAsk(id);
+              setTab("intent");
+            }}
             world={unitsWorld}
             subjectId={workSubject}
             onSubject={setWorkSubject}

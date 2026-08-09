@@ -29,6 +29,9 @@ export function WorkGraph(props: {
   selected: string | null;
   onSelect: (id: string) => void;
   onUp: (subjectId: string) => void;
+  /** The way back: your asks are not on this page, so a claim that reads
+   *  wrong opens the ask it came from where you write them. */
+  onEditAsk: (askId: string) => void;
 }): JSX.Element {
   const { push } = props;
   const subjects = useMemo(
@@ -155,6 +158,23 @@ export function WorkGraph(props: {
                 {subject.name}
               </a>
               <span style={{ fontSize: 12 }}>{claim.text}</span>
+              <button
+                data-edit-from={claim.fromAskId}
+                title={`Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`}
+                aria-label={`say ask ${claim.fromAskN} differently`}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "inherit",
+                  opacity: 0.6,
+                  fontSize: 12,
+                  padding: 0,
+                }}
+                onClick={() => props.onEditAsk(claim.fromAskId)}
+              >
+                #{claim.fromAskN} ✎
+              </button>
             </div>
             {claim.promises.length === 0 ? (
               <div style={{ fontSize: 11, opacity: 0.7 }}>nothing derived for this claim yet</div>

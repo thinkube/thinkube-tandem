@@ -194,6 +194,8 @@ export function IntentGraph(props: {
   onSelect: (id: string) => void;
   onOpenWork: (subjectId: string) => void;
   onEditAsk: (id: string) => void;
+  /** Go and see the work — which is also what starts the thinking. */
+  onWork: () => void;
 }): JSX.Element {
   const { push } = props;
   if (push.modelFailure)
@@ -279,10 +281,10 @@ export function IntentGraph(props: {
         <button
           data-think
           style={{ fontWeight: 600 }}
-          title="Work out what to build. This is what starts spending."
-          onClick={() => post({ action: "think" })}
+          title="Go to the work page. Working out what to build is what starts spending."
+          onClick={props.onWork}
         >
-          Work out what to build
+          See what this will build →
         </button>
         <span style={{ fontSize: 11, opacity: 0.75 }}>
           {cost.subjects

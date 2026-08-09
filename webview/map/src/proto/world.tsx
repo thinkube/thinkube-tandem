@@ -3,8 +3,8 @@
  * (wheel is non-passive so preventDefault works; drag tracks on window so
  * it can never stick), live transform state read through a ref — never a
  * stale or recycled event. Drag = pan (left button, never from an
- * interactive element), wheel = zoom to cursor, +/−/⤢ controls, `far`
- * below the legibility floor.
+ * interactive element), wheel = pan, ctrl/⌘+wheel = zoom to cursor,
+ * +/−/⤢ controls, `far` below the legibility floor.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -40,9 +40,22 @@ export function useWorld(): World {
   useEffect(() => {
     if (!el) return;
     const onWheel = (e: WheelEvent): void => {
+      const cur = live.current;
+      // The wheel scrolls. It is the one gesture a reader uses constantly,
+      // and taking it for zoom makes every attempt to read a long card
+      // change the scale instead. Ctrl (or ⌘) with the wheel zooms, as it
+      // does in the editor around it; shift moves sideways.
+      if (!e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
+        const dy = e.shiftKey ? 0 : -e.deltaY;
+        const next = { tx: cur.tx + dx, ty: cur.ty + dy, k: cur.k };
+        live.current = next;
+        setT(next);
+        return;
+      }
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const cur = live.current;
       const f = e.deltaY < 0 ? 1.12 : 0.89;
       const nk = Math.min(K_MAX, Math.max(K_MIN, cur.k * f));
       if (!Number.isFinite(nk) || nk === cur.k) return;
@@ -119,9 +132,9 @@ export function ZoomControls(props: { world: World }): JSX.Element {
   };
   return (
     <div data-zoom-controls style={{ position: "absolute", left: 10, bottom: 10, display: "flex", gap: 5, zIndex: 3 }}>
-      <button style={btn} title="Zoom in" onClick={props.world.zoomIn}>+</button>
-      <button style={btn} title="Zoom out" onClick={props.world.zoomOut}>−</button>
-      <button style={btn} title="Fit" onClick={props.world.fit}>⤢</button>
+      <button style={btn} title="Zoom in — the wheel scrolls; hold Ctrl (or ⌘) and use the wheel to zoom" onClick={props.world.zoomIn}>+</button>
+      <button style={btn} title="Zoom out — the wheel scrolls; hold Ctrl (or ⌘) and use the wheel to zoom" onClick={props.world.zoomOut}>−</button>
+      <button style={btn} title="Fit everything on screen" onClick={props.world.fit}>⤢</button>
     </div>
   );
 }
