@@ -71,6 +71,18 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
   if (!subjectIds.length) return;
   const pool = Math.min(5, subjectIds.length);
   for (const id of subjectIds) s.mark(id, "waiting");
+  // The one line above the subjects counts subjects finished, because
+  // that is the only progress the whole batch shares — every subject is
+  // at its own stage, and each says so on its own row.
+  const aggregate = (done: number): void => {
+    if (subjectIds.length > 1)
+      s.activity = {
+        label: `thinking about ${subjectIds.length} subjects, each at its own stage`,
+        current: done,
+        total: subjectIds.length,
+      };
+  };
+  aggregate(0);
   s.changed(
     `Thinking about ${pool} subject${pool === 1 ? "" : "s"}` +
       (subjectIds.length > pool ? `; the other ${subjectIds.length - pool} wait their turn` : "") +
@@ -96,10 +108,12 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
       // reload or a crash midway through must not throw away objects that
       // were already paid for.
       done++;
-      s.changed(`${done} of ${subjectIds.length} objects thought through.`);
+      aggregate(done);
+      s.changed(`${done} of ${subjectIds.length} subjects thought through.`);
     }
   };
   await Promise.all(Array.from({ length: pool }, worker));
+  s.activity = undefined;
   s.changed(
     `Derived ${tally.promises} promise(s) across ${subjectIds.length} subject(s).` +
       (tally.questions ? ` ${tally.questions} question(s) need you.` : ""),

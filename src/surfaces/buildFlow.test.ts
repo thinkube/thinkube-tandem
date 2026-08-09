@@ -200,3 +200,74 @@ test("each object's thinking is written as it arrives, not only at the end", asy
   await thinking;
   assert.equal(new TandemSession(deps as never).space.nodes.length, 2);
 });
+
+test("the one line above the subjects never borrows a single subject's stage", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const seen: { label: string; current: number; total: number }[] = [];
+  let session!: TandemSession;
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-a-")),
+    now: () => "2026-08-09T16:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    onChanged: () => {
+      if (session?.activity) seen.push({ ...session.activity });
+    },
+    solveModel: async () => ({
+      subjects: [1, 2, 3].map((n) => ({
+        name: `thing ${n}`,
+        from: [n],
+        claims: [{ text: `it works ${n}`, from: n }],
+      })),
+      rules: [],
+    }),
+    // Each subject reports its own stages, as the real pipeline does.
+    ground: async (
+      _d: unknown,
+      ask: { id: string },
+      opts: { claims?: { id: string }[]; onStage?: (l: string, c: number, t: number) => void },
+    ) => {
+      opts.onStage?.("reading your code", 1, 4);
+      opts.onStage?.("weighing coverage, criteria and decisions", 4, 4);
+      return {
+        changes: (opts.claims ?? []).map((c, i) => ({
+          id: `node-${ask.id}-${i}`,
+          sentence: `promise for ${c.id}`,
+          serves: [ask.id],
+          servesClaim: c.id,
+          needs: [],
+          acceptance: [{ id: `a${i}`, text: "proved" }],
+          grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+        })),
+        questions: [],
+      };
+    },
+  };
+  session = new TandemSession(deps as never);
+  await session.captureMany(["one", "two", "three"]);
+  await session.think();
+
+  // The per-subject stages the pipeline reports — never the shared
+  // reading of the code, which really is one step for everything.
+  const stages = seen.filter(
+    (a) => a.label === "weighing coverage, criteria and decisions" || a.total === 4,
+  );
+  assert.deepEqual(
+    stages,
+    [],
+    `the aggregate quoted a single subject's stage: ${JSON.stringify(stages.slice(0, 2))}`,
+  );
+  assert.ok(
+    seen.some((a) => /3 subjects, each at its own stage/.test(a.label)),
+    `it says what is really true: ${JSON.stringify(seen.slice(0, 3))}`,
+  );
+  const counts = seen.filter((a) => a.total === 3).map((a) => a.current);
+  assert.ok(
+    counts.includes(0) && counts.includes(3),
+    `and counts subjects finished, from none to all: ${JSON.stringify(counts)}`,
+  );
+  assert.equal(session.activity, undefined, "and it stops when the thinking stops");
+});

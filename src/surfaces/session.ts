@@ -270,7 +270,7 @@ export class TandemSession {
     const round = this.deps.contextRound ?? (this.deps.ground ? undefined : runReadRound);
     if (!round) return;
     this.activity = {
-      label: "reading your code once — every ask will reuse it",
+      label: "reading your code once — every subject reuses it",
       current: 1,
       total: 1,
     };
@@ -296,18 +296,22 @@ export class TandemSession {
     return [...this._grounding.entries()].map(([askId, v]) => ({ askId, ...v }));
   }
 
-  /** Progress lives ON the ask's own row; the aggregate counts only what
-   *  actually runs. Shared by grounding and every re-derivation. */
+  /**
+   * Progress lives ON each subject's own row, because each one is at its
+   * own stage. The single line above them may therefore never quote a
+   * stage while several are running: borrowing whichever subject reported
+   * last describes none of them, and its step count belongs to that one
+   * subject alone. With several in flight it counts SUBJECTS; with one, it
+   * is that subject's own stage.
+   */
   stageFor(askId: string): (label: string, current: number, total: number) => void {
     return (label, current, total) => {
       this._grounding.set(askId, { label, current, total });
-      const running = [...this._grounding.values()].filter((v) => v.label !== "waiting").length;
-      this.activity = {
-        label: running > 1 ? `${label} (${running} asks in parallel)` : label,
-        current,
-        total,
-        askId,
-      };
+      const rows = [...this._grounding.values()];
+      // With several subjects in flight the aggregate belongs to whoever
+      // is running the batch — it alone knows how many have finished. This
+      // only speaks when it is the single subject's own stage.
+      if (rows.length === 1) this.activity = { label, current, total, askId };
       this.deps.onChanged?.();
     };
   }

@@ -100,10 +100,23 @@ function Recorded(props: {
               key={r.id}
               data-rule={r.id}
               onClick={() => props.onSelect(r.id)}
-              style={{ fontSize: 12, cursor: "pointer" }}
+              style={{ fontSize: 12, cursor: "pointer", display: "flex", gap: 6, alignItems: "baseline" }}
               title={`From what you wrote: ${r.fromAsk}`}
             >
-              {r.text} <span style={{ opacity: 0.65, fontSize: 11 }}>— {r.scope}</span>
+              <span style={{ flex: 1 }}>
+                {r.text} <span style={{ opacity: 0.65, fontSize: 11 }}>— {r.scope}</span>
+              </span>
+              <button
+                data-retire-rule={r.id}
+                style={{ fontSize: 10 }}
+                title="Retire this rule — it governs nothing from then on."
+                onClick={(e) => {
+                  e.stopPropagation();
+                  post({ action: "retire-rule", unitId: r.id });
+                }}
+              >
+                Retire
+              </button>
             </div>
           ))}
         </section>
