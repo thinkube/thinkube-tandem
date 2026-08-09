@@ -23,6 +23,8 @@
 import { Ask, Change, Question } from "../core/schema";
 import { readStamp } from "../core/stamp";
 import { RoundDeps, runReadRound, volumeDeps } from "./round";
+import { attributePromises } from "./attribute";
+import { judgeRaised } from "../gates/assumptions";
 import { runContextualize } from "./contextualize";
 import {
   GroundingResult,
@@ -390,12 +392,54 @@ export async function runDerivationPipeline(
         questions.push({ askId: ask.id, ...q });
   }
 
-  // A promise that named no claim is NOT quietly attached to one: with a
-  // single claim in play the attachment would look right while hiding a
-  // promise that serves nothing. It is counted here and named in the map.
-  const unattached = changes.filter((c) => !c.servesClaim).length;
-  if (unattached && opts.claims?.length)
-    log(`attribution: ${unattached} change(s) named no claim — they need you`);
+  // A round that forgot to name its claim leaves the human holding the
+  // machine's bookkeeping. It is the machine's failure and the machine
+  // repairs it: one cheap, tool-less reading of the sentences against the
+  // claims. What it still cannot place stays unattached and is named —
+  // never attached because it was the only candidate left.
+  if (opts.claims?.length) {
+    const loose = changes.filter((c) => !c.servesClaim);
+    if (loose.length) {
+      const placed = await attributePromises(
+        deps,
+        ask.text.split("\n")[0],
+        opts.claims,
+        loose.map((c) => ({ id: c.id, sentence: c.sentence })),
+        round,
+      );
+      if (placed.size)
+        changes = changes.map((c) =>
+          placed.has(c.id) ? { ...c, servesClaim: placed.get(c.id)! } : c,
+        );
+      log(
+        `attribution: ${placed.size} of ${loose.length} unattached change(s) placed` +
+          (placed.size < loose.length ? `; ${loose.length - placed.size} still name no claim` : ""),
+      );
+    }
+  }
 
-  return { changes, questions };
+  // Nothing goes to the human in the machine's own words. What is refused
+  // keeps its answer — it becomes an assumption the machine states.
+  const judged = judgeRaised(
+    questions.map((q) => ({ text: q.text, recommendation: q.recommendation })),
+    {
+      asks: [ask.text],
+      claims: (opts.claims ?? []).map((c) => c.text),
+      rules: opts.decisions ?? [],
+    },
+  );
+  const kept: Omit<Question, "id">[] = [];
+  judged.forEach((j, i) => {
+    if (!j.refused) {
+      kept.push(questions[i]);
+      return;
+    }
+    log(
+      j.refused === "answered"
+        ? `assumption: already settled — "${j.text.slice(0, 60)}"`
+        : `assumption: my words, not yours (${j.foreign!.slice(0, 4).join(", ")}) — "${j.text.slice(0, 50)}"`,
+    );
+  });
+
+  return { changes, questions: kept };
 }

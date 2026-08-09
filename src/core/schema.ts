@@ -13,6 +13,12 @@ export interface Ask {
   text: string;
   /** ISO timestamp of capture. */
   at: string;
+  /**
+   * The ask this one supersedes. A sentence whose work is signed can never
+   * be edited — the record depends on it — so a change to what it asked
+   * for arrives as a new sentence pointing back at the old one.
+   */
+  amends?: string;
 }
 
 /**
@@ -147,11 +153,19 @@ export interface Delivery {
  * machine's recommendation. The human's accept turns it into a decision —
  * binding, recorded, and re-grounding whatever it affects.
  */
+/**
+ * Something the human's words did not decide. It is never a blocking ask:
+ * the machine states what it assumed and which clause was silent, and the
+ * assumption becomes a rule when the human commits to building. Silence is
+ * consent, but only at the moment they press — never because time passed.
+ */
 export interface Question {
   id: string;
   askId: string;
   text: string;
   recommendation?: string;
+  /** The part of the human's sentence that decided nothing, quoted. */
+  clause?: string;
   /** The accepted wording; set only by the human's act. */
   decided?: { text: string; at: string };
 }
@@ -256,6 +270,9 @@ export interface Claim {
 export interface Rule {
   id: string;
   text: string;
+  /** True when it came from an assumption the human did not object to,
+   *  rather than from a sentence they wrote. Weaker, and marked as such. */
+  assumed?: boolean;
   /** What it governs, in the human's words ("every page you read"). */
   scope: string;
   /** The ask or decision it came from. */

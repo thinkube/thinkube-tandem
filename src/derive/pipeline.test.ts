@@ -204,6 +204,9 @@ test("every round attributes: the gaps and ripples name a claim, and one that do
         reply: `{"nodes":[{"sentence":"the docs stop saying the old thing","claim":2,"touchpoints":[{"path":"docs/a.md"}],"needs":[],"acceptance":[{"text":"reworded"}]},{"sentence":"a probe watches the brief","touchpoints":[{"path":"src/b.ts"}],"needs":[],"acceptance":[{"text":"probed"}]}]}`,
       },
       { match: /THREE checks/, reply: `{"uncovered":[],"verdicts":[],"rewrites":[]}` },
+      // The machine repairs its own attribution: it places the first
+      // loose promise and admits it cannot place the second.
+      { match: /Say which claim each promise makes true/, reply: `{"attach":[{"promise":1,"claim":1}]}` },
     ],
     calls,
   );
@@ -226,11 +229,63 @@ test("every round attributes: the gaps and ripples name a claim, and one that do
   const loose = out.changes.find((c) => c.sentence.startsWith("a probe"))!;
   assert.equal(
     loose.servesClaim,
-    undefined,
-    "a promise that named no claim is NOT attached to one — not even when there is an obvious candidate",
+    "claim-x-1",
+    "the machine repairs its own attribution rather than handing the human a dropdown",
   );
   assert.ok(
-    said.some((l) => /named no claim/.test(l)),
-    "and the round says so instead of leaving it silent",
+    said.some((l) => /attribution: 1 of 1/.test(l)),
+    `the repair is stated: ${said.join(" | ")}`,
+  );
+});
+
+test("a question in the machine's own words never reaches the human — it becomes a stated assumption", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-voice-"));
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const said: string[] = [];
+  // Verbatim from the round-1 run: both questions the tail actually raised.
+  const tail = JSON.stringify({
+    uncovered: [
+      {
+        clause: "the TEP text appears once",
+        question: {
+          text: "Which heading carries it? Dropping specBody flips the engine's hasCtx branch in src/engine/core/preflight.ts.",
+          recommendation: "Keep the intent heading and drop specBody.",
+        },
+      },
+      {
+        clause: "documentation",
+        question: {
+          text: "Does a cut that changes nothing a person can see still need documentation?",
+          recommendation: "No, when you say so with a reason.",
+        },
+      },
+    ],
+    verdicts: [],
+    rewrites: [],
+  });
+  const round = scriptedRounds(
+    [
+      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      {
+        match: /grounding ONE ask/,
+        reply: `{"nodes":[{"sentence":"the brief carries it once","claim":1,"touchpoints":[{"path":"src/a.ts"}],"needs":[],"acceptance":[{"text":"once"}]}],"questions":[]}`,
+      },
+      { match: /COMPLETENESS round/, reply: `{"nodes":[]}` },
+      { match: /THREE checks/, reply: tail },
+    ],
+    calls,
+  );
+  const out = await runDerivationPipeline({ ...deps, log: (l) => said.push(l) }, ask, {
+    nextIndex: 1,
+    claims: [{ id: "claim-y-1", text: "the brief carries the TEP text exactly once" }],
+    round,
+  });
+
+  assert.equal(out.questions.length, 1, "only the one written in the human's world survives");
+  assert.match(out.questions[0].text, /nothing a person can see/);
+  assert.ok(
+    said.some((l) => /my words, not yours/.test(l) && /preflight|specBody|hasCtx/.test(l)),
+    `the refusal names the machine's own words: ${said.join(" | ")}`,
   );
 });
