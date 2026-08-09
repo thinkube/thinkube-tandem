@@ -106,7 +106,13 @@ function Parked(props: { push: SpacePush }): JSX.Element | null {
   );
 }
 
-export function Rail(props: { push: SpacePush }): JSX.Element {
+export function Rail(props: {
+  push: SpacePush;
+  /** Build lives on the work page and nowhere else: pressing it is the one
+   *  act that cannot be undone, and it must not sit beside a reading the
+   *  human has not been shown the work for. */
+  canBuild: boolean;
+}): JSX.Element {
   const { push } = props;
   const ready = push.ready;
 
@@ -125,7 +131,7 @@ export function Rail(props: { push: SpacePush }): JSX.Element {
         <Parked push={push} />
         {push.runLog ? <StepLog log={push.runLog} /> : null}
 
-        {ready.thinking ? (
+        {!props.canBuild ? null : ready.thinking ? (
           <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 14 }}>
             Still working out what to build — nothing can be committed until every object is
             thought through.

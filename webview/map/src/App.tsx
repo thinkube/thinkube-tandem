@@ -400,7 +400,7 @@ export function App(): JSX.Element {
           </div>
         )}
         <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />
-        <Rail push={push} />
+        <Rail push={push} canBuild={tab === "work"} />
       </div>
     </div>
   );

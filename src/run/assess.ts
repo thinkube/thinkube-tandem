@@ -69,12 +69,23 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
 
 /** One journal line per red runnable check; infra exits stay their own class. */
 export function logRedChecks(
-  results: readonly { ac: number; pass: boolean; code?: number; evidence?: string }[],
+  results: readonly {
+    ac: number;
+    pass: boolean;
+    /** The gate's own verdict: the runner could not run at all (exit
+     *  126/127), so the red says nothing about the code. */
+    unrunnable?: boolean;
+    evidence?: string;
+  }[],
   defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void,
 ): void {
   for (const r of results)
     if (!r.pass) {
-      const infra = /12[67]/.test(String(r.code ?? ""));
+      // The gate already decides this and puts it on the result. Deriving
+      // it again from a `code` field the result does not carry made the
+      // test always false, so every tooling failure was journalled as a
+      // code defect and the ledger blamed the coder for a broken runner.
+      const infra = r.unrunnable === true;
       defect({
         activity: "closing gate",
         trigger: infra ? "gate-infra" : "gate-ac",

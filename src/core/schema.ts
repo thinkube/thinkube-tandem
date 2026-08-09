@@ -170,16 +170,6 @@ export interface Question {
   decided?: { text: string; at: string };
 }
 
-/**
- * A human override on unit formation: pin two nodes together or apart.
- * Pins outrank the computed coupling — the human's read of the structure
- * wins, and it survives re-clustering.
- */
-export interface Pin {
-  kind: "together" | "apart";
-  changeIds: [string, string];
-}
-
 /** A staged machine suggestion — visible, structurally inert until the
  *  human accepts or rejects. A rejected merge is a PERMANENT veto. */
 export interface MergeProposal {
@@ -205,7 +195,6 @@ export interface Space {
   cuts: Cut[];
   deliveries: Delivery[];
   questions: Question[];
-  pins: Pin[];
   /** Staged machine merge suggestions awaiting the human. */
   proposals?: MergeProposal[];
   /** Permanent merge vetoes (pair keys) — a rejected pair is never re-proposed. */
@@ -259,5 +248,5 @@ export interface Claim {
 }
 
 export function emptySpace(): Space {
-  return { asks: [], nodes: [], units: [], cuts: [], deliveries: [], questions: [], pins: [] };
+  return { asks: [], nodes: [], units: [], cuts: [], deliveries: [], questions: [] };
 }

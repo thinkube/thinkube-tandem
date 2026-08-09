@@ -88,7 +88,7 @@ export function decideQuestionFlow(args: {
 
 /** Panic: wipe everything DERIVED — asks and deliveries survive (your
  *  words and history are never machine-deleted), decided questions stay in
- *  force; nodes, open questions, pins and unsigned cuts go. Refused once
+ *  force; nodes, open questions and unsigned cuts go. Refused once
  *  any TEP was signed — a frozen scope is not erasable. */
 export function panicFlow(space: Space): { space: Space } | { reason: string } {
   if (space.cuts.some((c) => c.signature))
@@ -98,7 +98,6 @@ export function panicFlow(space: Space): { space: Space } | { reason: string } {
       ...space,
       nodes: [],
       questions: space.questions.filter((q) => q.decided),
-      pins: [],
       cuts: [],
     },
   };

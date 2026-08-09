@@ -130,7 +130,6 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
     proposals: space.proposals?.map((p) => ({ ...p, a: r(p.a), b: r(p.b) })),
     vetoes: space.vetoes,
     impacts: space.impacts?.map((im) => ({ ...im, askId: r(im.askId), questionId: r(im.questionId) })),
-    pins: space.pins.map((p) => ({ ...p, changeIds: [r(p.changeIds[0]), r(p.changeIds[1])] as [string, string] })),
     cuts: space.cuts.map((c) => ({ ...c, id: r(c.id), changeIds: c.changeIds.map(r) })),
     deliveries: space.deliveries.map((d) => ({ ...d, id: r(d.id), cutId: r(d.cutId) })),
   };
@@ -187,9 +186,6 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
         decides.get(q.id)!.add(q.decided.text);
       }
     }
-    for (const p of space.pins)
-      if (!merged.pins.some((x) => x.kind === p.kind && x.changeIds[0] === p.changeIds[0] && x.changeIds[1] === p.changeIds[1]))
-        merged.pins.push(p);
     for (const c of space.cuts) put(merged.cuts, c);
     for (const u of space.units) put(merged.units, u);
     for (const p of space.proposals ?? []) {
