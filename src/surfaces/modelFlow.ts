@@ -51,7 +51,7 @@ export async function retryModel(s: TandemSession): Promise<{ ok: boolean; reaso
  * one subject per sentence looks exactly like a working model and is the
  * old shape wearing new words.
  */
-async function readModel(
+export async function readModel(
   s: TandemSession,
   texts: string[],
   askIds: string[],

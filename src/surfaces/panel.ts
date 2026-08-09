@@ -48,6 +48,28 @@ function shortenWords(text: string, words: number): string {
   return parts.slice(0, words).join(" ") + (parts.length > words ? "…" : "");
 }
 
+/**
+ * What was assumed in one sentence's name. An assumption belongs under the
+ * sentence it could not be decided from — that is where a person looks for
+ * it when something grates, and it is the sentence they would reframe.
+ */
+function assumptionsFor(
+  session: TandemSession,
+  askId: string,
+): { text: string; clause?: string; assumed: boolean }[] {
+  const claims = session.space.claims ?? [];
+  const mine = new Set(
+    claims.filter((c) => c.fromAsk === askId).map((c) => c.subjectId),
+  );
+  return session.space.questions
+    .filter((q) => q.askId === askId || mine.has(q.askId))
+    .map((q) => ({
+      text: q.decided?.text ?? q.recommendation ?? q.text,
+      ...(q.clause ? { clause: q.clause } : {}),
+      assumed: !q.decided,
+    }));
+}
+
 function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
   return {
@@ -155,25 +177,36 @@ function spacePush(session: TandemSession, message?: string): unknown {
       governs: r.governs.length,
       fromAsk: session.space.asks.find((a) => a.id === r.fromAsk)?.text ?? "",
     })),
-    // A promise attached to no claim is named, never hidden — and it says
-    // WHICH failure it is: a round that did not name the claim (the
-    // subject it was derived for is known) or a promise that belongs to
-    // nothing in the model at all.
+    // Your sentences: each with what it decided, what it assumed in your
+    // name, whether it is still yours to edit, and what editing costs.
+    sentences: session.space.asks.map((a) => {
+      const price = session.priceOf(a.id);
+      return {
+        id: a.id,
+        text: a.text,
+        state: price.state,
+        subjects: price.subjects,
+        promises: price.promises,
+        alsoReads: price.alsoReads,
+        ...(a.amends
+          ? { amends: session.space.asks.find((x) => x.id === a.amends)?.text ?? "" }
+          : {}),
+        ...(price.state === "bound"
+          ? {
+              tep: session.space.cuts.find(
+                (c) => c.signature && c.changeIds.some((id) => session.stale.has(id) || true),
+              )?.tepId,
+            }
+          : {}),
+        assumptions: assumptionsFor(session, a.id),
+      };
+    }),
+    /** What thinking about the rest will cost, before it is spent. */
+    cost: session.thinkingCost(),
+    /** Promises attached to no claim — the machine could not place them. */
     orphans: session.space.nodes
       .filter((n) => !n.servesClaim)
-      .map((n) => {
-        const subject = (session.space.subjects ?? []).find((s) =>
-          n.serves.includes(s.id),
-        );
-        return {
-          id: n.id,
-          text: n.sentence,
-          ...(subject ? { subject: subject.name } : {}),
-          choices: (session.space.claims ?? [])
-            .filter((c) => !subject || c.subjectId === subject.id)
-            .map((c) => ({ id: c.id, text: c.text })),
-        };
-      }),
+      .map((n) => ({ id: n.id, text: n.sentence })),
     modelFailure: session.modelFailure
       ? { reason: session.modelFailure.reason, sentences: session.modelFailure.texts.length }
       : undefined,
@@ -230,11 +263,27 @@ async function handleInbound(
   } else if (msg.action === "cancel-capture") {
     session.cancelCapture();
     note = "Cancelled.";
-  } else if (msg.action === "toggle-cut" && msg.changeIds) {
-    session.toggleCut(msg.changeIds);
-  } else if (msg.action === "sign-cut") {
-    const r = session.signCut();
-    note = r.ok ? "Cut signed." : r.reason;
+  } else if (msg.action === "build") {
+    push("Building…");
+    const r = await session.build(msg.changeIds ?? []);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "think") {
+    const c = session.thinkingCost();
+    push(
+      c.subjects
+        ? `Thinking about ${c.subjects} object(s) — about ${c.rounds} rounds…`
+        : "Thinking…",
+    );
+    const r = await session.think();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "reframe" && msg.unitId && msg.text) {
+    push("Reading it again…");
+    const r = await session.reframe(msg.unitId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "amend" && msg.unitId && msg.text) {
+    push("Recording the amendment…");
+    const r = await session.amend(msg.unitId, msg.text);
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);
     note = r.ok ? undefined : r.reason;
@@ -244,26 +293,10 @@ async function handleInbound(
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
     session.answerWorker(msg.unitId, msg.text);
-  } else if (msg.action === "accept-model") {
-    push("Recording the model…");
-    const r = await session.acceptModel();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "revise-model" && msg.kind && msg.page !== undefined) {
-    session.reviseModel({ kind: msg.kind as never, index: msg.page });
-  } else if (
-    msg.action === "rename-subject" ||
-    msg.action === "merge-subject" ||
-    msg.action === "split-claim" ||
-    msg.action === "move-claim" ||
-    msg.action === "promote-claim" ||
-    msg.action === "attach-promise" ||
-    msg.action === "dismiss-promise" ||
-    msg.action === "retire-rule"
-  ) {
+  } else if (msg.action === "dismiss-promise" || msg.action === "retire-rule") {
     const r = session.editModel({
-      kind: msg.action as never,
+      kind: msg.action,
       id: msg.unitId ?? "",
-      ...(msg.into ? { into: msg.into } : {}),
       ...(msg.text ? { text: msg.text } : {}),
     });
     note = r.ok ? undefined : r.reason;

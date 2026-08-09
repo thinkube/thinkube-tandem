@@ -32,10 +32,10 @@ test("every door the registry declares exists in the built surface", () => {
 
 test("a missing control is caught, not assumed", () => {
   const doors = [
-    { action: "sign-cut", surface: "cut screen", gesture: "press Sign", handle: "data-sign-cut" },
+    { action: "build", surface: "the work page", gesture: "press Build", handle: "data-build" },
     { action: "ghost-act", surface: "nowhere", gesture: "press a button nobody built", handle: "data-ghost-act" },
   ];
-  const bundle = 'someHtml("data-sign-cut") post({ action: "sign-cut" })';
+  const bundle = 'someHtml("data-build") post({ action: "build" })';
   assert.deepEqual(
     missingDoors(bundle, doors).map((d) => d.action),
     ["ghost-act"],
@@ -44,10 +44,10 @@ test("a missing control is caught, not assumed", () => {
 });
 
 test("the walkthrough names only doors that were verified", () => {
-  const present = new Set(["sign-cut"]);
+  const present = new Set(["build"]);
   const lines = walkthroughLines(
     [
-      { id: "p1", sentence: "signing starts the build", action: "sign-cut" },
+      { id: "p1", sentence: "building starts the work", action: "build" },
       { id: "p2", sentence: "a promise with no door", action: "ghost-act" },
       { id: "p3", sentence: "a promise naming no action at all" },
     ],
@@ -56,5 +56,5 @@ test("the walkthrough names only doors that were verified", () => {
   assert.equal(lines.length, 1, "only the verified door yields a line");
   assert.equal(lines[0].id, "p1");
   assert.match(lines[0].line, /^see it: /);
-  assert.ok(declaredDoors().some((d) => d.action === "sign-cut"), "the registry still declares it");
+  assert.ok(declaredDoors().some((d) => d.action === "build"), "the registry still declares it");
 });

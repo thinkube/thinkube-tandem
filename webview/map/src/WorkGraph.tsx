@@ -142,14 +142,12 @@ export function WorkGraph(props: {
                         padding: "6px 8px",
                         borderRadius: 5,
                         cursor: "pointer",
-                        background: p.inCut ? "#cca70014" : "var(--vscode-editorWidget-background, #252526)",
-                        border: p.inCut
-                          ? "2px solid var(--gold, #cca700)"
-                          : `1px solid ${
-                              props.selected === p.id
-                                ? "var(--vscode-focusBorder, #3794ff)"
-                                : "var(--vscode-panel-border, #3c3c3c)"
-                            }`,
+                        background: "var(--vscode-editorWidget-background, #252526)",
+                        border: `1px solid ${
+                          props.selected === p.id
+                            ? "var(--vscode-focusBorder, #3794ff)"
+                            : "var(--vscode-panel-border, #3c3c3c)"
+                        }`,
                       }}
                     >
                       <div style={{ fontSize: 12 }}>{p.text}</div>
@@ -164,29 +162,6 @@ export function WorkGraph(props: {
                         </div>
                       )}
                       <div style={{ display: "flex", gap: 6, marginTop: 4, fontSize: 11 }}>
-                        <button
-                          data-toggle-cut={p.id}
-                          title={p.inCut ? "Take this promise out of the cut." : "Add this promise to the cut you will sign."}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            post({ action: "toggle-cut", changeIds: [p.id] });
-                          }}
-                        >
-                          {p.inCut ? "in the cut" : "add to cut"}
-                        </button>
-                        {p.checks.length ? null : (
-                          <button
-                            data-write-check={p.id}
-                            disabled={!!push.activity}
-                            title="Write a check for this promise — you accept or reword it; your wording wins."
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              post({ action: "propose-check", changeIds: [p.id] });
-                            }}
-                          >
-                            Write a check
-                          </button>
-                        )}
                         {p.stale ? (
                           <button
                             data-reground={p.id}

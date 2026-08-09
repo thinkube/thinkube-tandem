@@ -102,12 +102,23 @@ export interface SpacePush {
    *  promise was derived for, when there is one — its absence is what
    *  makes a promise genuine scope creep. `choices` are the claims it
    *  could be attached to. */
-  orphans: {
+  /** Promises the machine could not attach to any claim. */
+  orphans: { id: string; text: string }[];
+  /** Your sentences: what each decided, what was assumed in its name, and
+   *  whether it is still yours to edit. */
+  sentences: {
     id: string;
     text: string;
-    subject?: string;
-    choices: { id: string; text: string }[];
+    state: "open" | "bound";
+    subjects: number;
+    promises: number;
+    alsoReads: string[];
+    amends?: string;
+    tep?: string;
+    assumptions: { text: string; clause?: string; assumed: boolean }[];
   }[];
+  /** What thinking about what is left will cost. */
+  cost: { subjects: number; rounds: number };
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */
@@ -138,31 +149,19 @@ export type WebToHost =
   | { action: "cancel-capture" }
   | { action: "reground" }
   | { action: "open-cut-review" }
-  | { action: "propose-check"; changeIds: string[] }
-  | { action: "accept-check"; changeIds: string[]; text: string; kind: string }
   | { action: "answer-worker"; unitId: string; text: string }
-  | { action: "accept-model" }
   | { action: "retry-model" }
-  | { action: "rename-subject"; unitId: string; text: string }
-  | { action: "merge-subject"; unitId: string; into: string }
-  | { action: "split-claim"; unitId: string }
-  | { action: "move-claim"; unitId: string; into: string }
-  | { action: "promote-claim"; unitId: string; text?: string }
-  | { action: "attach-promise"; unitId: string; into: string }
+  | { action: "reframe"; unitId: string; text: string }
+  | { action: "amend"; unitId: string; text: string }
+  | { action: "think" }
+  | { action: "build"; changeIds?: string[] }
   | { action: "dismiss-promise"; unitId: string; text?: string }
   | { action: "retire-rule"; unitId: string }
-  | { action: "revise-model"; kind: "drop-subject" | "drop-rule" | "to-rule"; page: number }
   | { action: "read-log"; stepId?: string; page?: number }
   | { action: "stop-run" }
-  | { action: "accept-question"; questionId: string; text?: string }
   | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }
   | { action: "select-unit"; unitId: string }
-  | { action: "toggle-cut"; changeIds: string[] }
-  | { action: "sign-cut" }
   | { action: "accept-delivery"; deliveryId: string }
-  | { action: "accept-impact"; impactId: string }
-  | { action: "dismiss-impact"; impactId: string }
-  | { action: "apply-all-impacts" }
   | { action: "panic" }
   | { action: "switch-repo" };
 

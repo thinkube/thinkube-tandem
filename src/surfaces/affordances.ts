@@ -27,23 +27,37 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "type into the capture box and press Enter",
     },
   },
+  build: {
+    kind: "human",
+    affordance: {
+      surface: "the work page",
+      gesture: "press Build — it says what it costs and which sentences it makes read-only",
+    },
+  },
+  think: {
+    kind: "human",
+    affordance: {
+      surface: "the reading page",
+      gesture: "go to the work page — that is what starts the thinking, and it says what it will cost",
+    },
+  },
+  reframe: {
+    kind: "human",
+    affordance: {
+      surface: "any sentence of yours",
+      gesture: "say it differently — the reading re-forms, at a price shown first",
+    },
+  },
+  amend: {
+    kind: "human",
+    affordance: {
+      surface: "a sentence whose work is built",
+      gesture: "add a new sentence that supersedes it — built work only changes through new work",
+    },
+  },
   "select-unit": {
     kind: "human",
     affordance: { surface: "the work graph", gesture: "click a promise" },
-  },
-  "toggle-cut": {
-    kind: "human",
-    affordance: {
-      surface: "unit detail panel",
-      gesture: "press Add to cut / Remove from cut",
-    },
-  },
-  "sign-cut": {
-    kind: "human",
-    affordance: {
-      surface: "cut screen",
-      gesture: "review the cut screen and press Sign",
-    },
   },
   "accept-delivery": {
     kind: "human",
@@ -52,53 +66,11 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "read the page, try the gestures, press Accept",
     },
   },
-  "accept-question": {
-    kind: "human",
-    affordance: {
-      surface: "questions panel",
-      gesture: "press Accept on a question — or edit its recommendation first and accept your wording",
-    },
-  },
   "answer-worker": {
     kind: "human",
     affordance: {
       surface: "run view",
       gesture: "type into a parked worker's answer box and press Send",
-    },
-  },
-  "accept-model": {
-    kind: "human",
-    affordance: { surface: "the model the round proposed", gesture: "press 'Yes — think about these' to record it and start thinking" },
-  },
-  "revise-model": {
-    kind: "human",
-    affordance: { surface: "the model the round proposed", gesture: "drop a subject or a rule, or turn a subject's claims into rules, before accepting" },
-  },
-  "rename-subject": {
-    kind: "human",
-    affordance: { surface: "the intent graph's panel", gesture: "press Rename on the selected subject and type your word for it" },
-  },
-  "merge-subject": {
-    kind: "human",
-    affordance: { surface: "the intent graph's panel", gesture: "press 'Merge into…' and pick the subject it is really the same as" },
-  },
-  "split-claim": {
-    kind: "human",
-    affordance: { surface: "the intent graph's panel", gesture: "press 'Split out' on a claim — it becomes its own subject" },
-  },
-  "move-claim": {
-    kind: "human",
-    affordance: { surface: "the intent graph's panel", gesture: "press 'Move to…' on a claim and pick the subject it belongs to" },
-  },
-  "promote-claim": {
-    kind: "human",
-    affordance: { surface: "the intent graph's panel", gesture: "press 'Make a rule' on a claim that governs more than its subject" },
-  },
-  "attach-promise": {
-    kind: "human",
-    affordance: {
-      surface: "the intent graph's unattached list",
-      gesture: "pick the claim a promise makes true and press Attach",
     },
   },
   "dismiss-promise": {
@@ -121,37 +93,11 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "run view", gesture: "press Stop" },
   },
-  "accept-impact": {
-    kind: "human",
-    affordance: { surface: "decisions panel", gesture: "press Re-derive on a staged decision implication" },
-  },
-  "dismiss-impact": {
-    kind: "human",
-    affordance: { surface: "decisions panel", gesture: "press Dismiss — the definitions stay as they are" },
-  },
-  "apply-all-impacts": {
-    kind: "human",
-    affordance: { surface: "decisions panel", gesture: "press Apply all — each affected ask re-thinks once, five at a time" },
-  },
   panic: {
     kind: "human",
     affordance: {
       surface: "map toolbar",
       gesture: "press Panic, then confirm — refused after any signed TEP",
-    },
-  },
-  "propose-check": {
-    kind: "human",
-    affordance: {
-      surface: "the work graph",
-      gesture: "press 'Write a check' on a promise that has none",
-    },
-  },
-  "accept-check": {
-    kind: "human",
-    affordance: {
-      surface: "the panel, when a check is proposed",
-      gesture: "accept the proposed check, or reword it first — your wording wins",
     },
   },
   reground: {

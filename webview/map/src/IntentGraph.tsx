@@ -1,8 +1,12 @@
 /**
- * Graph 1 — intent: what you want, in your words. One shape only, the
- * SUBJECT box; claims are rows inside it and promises live in the work
- * graph. Rules sit in a band above, and every subject shows which of them
- * govern it. Nothing here asks you to group anything by file.
+ * The reading page: what I understood of what you wrote, before anything
+ * costs money. One shape only — the object — with what must become true of
+ * it listed inside, and the rules that hold across all of them above.
+ *
+ * There is nothing here to accept and nothing to rearrange. If it reads
+ * wrong you say the sentence differently, because a wrong reading is a
+ * sentence that did not say enough. Going on to the work page is what
+ * starts the thinking, and it says first what that will cost.
  */
 import { post, SpacePush } from "./vscode";
 
@@ -13,103 +17,129 @@ const box: React.CSSProperties = {
   overflow: "hidden",
 };
 
-/** The model the round proposed — shown BEFORE any code is read, so a
- *  wrong reading costs one cheap round instead of seven expensive ones. */
-function Proposal(props: { push: SpacePush }): JSX.Element {
+/** The reading, straight from the proposal — nothing is recorded yet. */
+function Proposed(props: { push: SpacePush }): JSX.Element {
   const p = props.push.pendingModel!;
   return (
-    <section
-      data-proposal
-      style={{
-        ...box,
-        padding: 12,
-        margin: 12,
-        borderColor: "#4ec9b0",
-        maxHeight: "calc(100vh - 12rem)",
-        overflowY: "auto",
-      }}
-    >
-      <strong style={{ fontSize: 13 }}>What I understood — nothing recorded yet</strong>
-      <div style={{ fontSize: 11, opacity: 0.75, margin: "2px 0 8px" }}>
-        {p.subjects.length} subject{p.subjects.length === 1 ? "" : "s"} · {p.rules.length} rule
-        {p.rules.length === 1 ? "" : "s"}. Correct it before I think about your code.
-      </div>
+    <>
       {p.rules.length ? (
-        <div
+        <section
           data-proposed-rules
+          style={{ ...box, borderColor: "#e5c07b", padding: "8px 10px", marginBottom: 10 }}
+        >
+          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
+            holds across all of them
+          </div>
+          {p.rules.map((r, i) => (
+            <div key={i} style={{ fontSize: 12 }}>
+              {r.text} <em style={{ opacity: 0.7 }}>— {r.scope}</em>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
+        {p.subjects.map((s, i) => (
+          <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
+            <strong style={{ fontSize: 13 }}>{s.name}</strong>
+            {s.claims.map((c, j) => (
+              <div
+                key={j}
+                style={{ fontSize: 12, marginTop: 4, paddingLeft: 8, borderLeft: "2px solid #4ec9b0" }}
+              >
+                {c.text}
+                {c.why ? (
+                  <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {p.missing.length ? (
+        <div data-model-missing style={{ fontSize: 11, color: "#f14c4c", marginTop: 8 }}>
+          I could not place {p.missing.length} of your sentences: {p.missing.join(" · ")}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** What was recorded — the same shape, once the reading has been kept. */
+function Recorded(props: { push: SpacePush; onSelect: (id: string) => void }): JSX.Element {
+  const { push } = props;
+  return (
+    <>
+      {push.rules.length ? (
+        <section
+          data-rules-band
           style={{
-            border: "1px solid #e5c07b",
-            borderRadius: 5,
-            padding: 8,
-            marginBottom: 8,
+            ...box,
+            borderColor: "#e5c07b",
+            padding: "8px 10px",
+            marginBottom: 10,
             maxHeight: "14rem",
             overflowY: "auto",
           }}
         >
           <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
-            Rules — these govern every subject
+            holds across all of them, now and later
           </div>
-          {p.rules.map((r, i) => (
-            <div key={i} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "baseline" }}>
-              <span style={{ flex: 1 }}>
-                {r.text} <em style={{ opacity: 0.7 }}>— {r.scope}</em>
-              </span>
-              <button
-                data-drop-rule={i}
-                title="Drop this rule — it is not something that governs everything."
-                onClick={() => post({ action: "revise-model", kind: "drop-rule", page: i })}
-              >
-                Drop
-              </button>
+          {push.rules.map((r) => (
+            <div
+              key={r.id}
+              data-rule={r.id}
+              onClick={() => props.onSelect(r.id)}
+              style={{ fontSize: 12, cursor: "pointer" }}
+              title={`From what you wrote: ${r.fromAsk}`}
+            >
+              {r.text} <span style={{ opacity: 0.65, fontSize: 11 }}>— {r.scope}</span>
             </div>
           ))}
-        </div>
+        </section>
       ) : null}
-      {p.subjects.map((s, i) => (
-        <div key={i} data-proposed-subject={i} style={{ ...box, padding: 8, marginBottom: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <strong style={{ fontSize: 12 }}>{s.name}</strong>
-            <span style={{ display: "flex", gap: 4 }}>
-              <button
-                data-to-rule={i}
-                title="This is not one thing — its claims govern everything. Turn them into rules."
-                onClick={() => post({ action: "revise-model", kind: "to-rule", page: i })}
-              >
-                Make rules
-              </button>
-              <button
-                data-drop-subject={i}
-                title="Drop this subject — I read something that is not there."
-                onClick={() => post({ action: "revise-model", kind: "drop-subject", page: i })}
-              >
-                Drop
-              </button>
-            </span>
-          </div>
-          {s.claims.map((c, j) => (
-            <div key={j} style={{ fontSize: 12, marginTop: 3, paddingLeft: 8, borderLeft: "2px solid #4ec9b0" }}>
-              {c.text}
-              {c.why ? <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div> : null}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
+        {push.subjects.map((s) => (
+          <div key={s.id} data-subject={s.id} style={box}>
+            <div
+              data-subject-head={s.id}
+              onClick={() => props.onSelect(s.id)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "7px 9px",
+                cursor: "pointer",
+                borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
+              }}
+            >
+              <strong style={{ fontSize: 13 }}>{s.name}</strong>
+              {s.thinking ? (
+                <span style={{ fontSize: 11, color: "#4ec9b0" }}>
+                  ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
+                </span>
+              ) : null}
             </div>
-          ))}
-        </div>
-      ))}
-      {p.missing.length ? (
-        <div data-model-missing style={{ fontSize: 11, color: "#f14c4c", margin: "6px 0" }}>
-          {p.missing.length} sentence(s) I could not place — they are recorded and waiting:
-          {" "}
-          {p.missing.join(" · ")}
-        </div>
-      ) : null}
-      <button
-        data-accept-model
-        style={{ marginTop: 8, fontWeight: 600 }}
-        title="Record this model and start thinking about your code, one round per subject."
-        onClick={() => post({ action: "accept-model" })}
-      >
-        Yes — think about these
-      </button>
-    </section>
+            {s.claims.map((c) => (
+              <div
+                key={c.id}
+                data-claim={c.id}
+                onClick={() => props.onSelect(c.id)}
+                style={{
+                  padding: "6px 9px",
+                  cursor: "pointer",
+                  borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
+                }}
+              >
+                <div style={{ fontSize: 12 }}>{c.text}</div>
+                {c.why ? (
+                  <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -120,8 +150,6 @@ export function IntentGraph(props: {
   onOpenWork: (subjectId: string) => void;
 }): JSX.Element {
   const { push } = props;
-  // A failed reading is a state of its own: nothing was derived, and the
-  // surface says so instead of showing a shape that looks like success.
   if (push.modelFailure)
     return (
       <section
@@ -134,232 +162,85 @@ export function IntentGraph(props: {
         <div style={{ fontSize: 12, margin: "6px 0" }}>
           Your {push.modelFailure.sentences} sentence
           {push.modelFailure.sentences === 1 ? " is" : "s are"} recorded and waiting. Nothing was
-          guessed at, and no promises were derived from a reading that failed.
+          guessed at.
         </div>
         <pre
           style={{
             fontSize: 11,
             whiteSpace: "pre-wrap",
             background: "var(--vscode-textCodeBlock-background, #1e1e1e)",
-            border: "1px solid var(--vscode-panel-border, #3c3c3c)",
             borderRadius: 4,
             padding: "6px 8px",
-            margin: "6px 0",
             maxHeight: 160,
             overflowY: "auto",
           }}
         >
           {push.modelFailure.reason}
         </pre>
-        <button
-          data-retry-model
-          style={{ fontWeight: 600 }}
-          title="Read the sentences you already recorded again."
-          onClick={() => post({ action: "retry-model" })}
-        >
+        <button data-retry-model onClick={() => post({ action: "retry-model" })}>
           Read it again
         </button>
       </section>
     );
-  if (push.pendingModel) return <Proposal push={push} />;
-  if (!push.subjects.length)
+
+  const nothing = !push.pendingModel && !push.subjects.length;
+  if (nothing)
     return (
       <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-        Nothing here yet — paste what you want above and I will read it as one description.
+        Nothing here yet — write what you want above and I will read it as one description.
       </div>
     );
 
+  const cost = push.cost;
   return (
     <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-      {push.rules.length ? (
-        <section
-          data-rules-band
-          style={{
-            border: "1px solid #e5c07b",
-            borderRadius: 6,
-            padding: "8px 10px",
-            marginBottom: 12,
-            maxHeight: "16rem",
-            overflowY: "auto",
-          }}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <strong style={{ fontSize: 13 }}>What I understood</strong>
+        <span style={{ fontSize: 11, opacity: 0.75 }}>
+          Say a sentence differently if this reads wrong — nothing here costs anything yet.
+        </span>
+      </div>
+
+      {push.pendingModel ? <Proposed push={push} /> : <Recorded push={push} onSelect={props.onSelect} />}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+        <button
+          data-think
+          style={{ fontWeight: 600 }}
+          title="Work out what to build. This is what starts spending."
+          onClick={() => post({ action: "think" })}
         >
-          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 4 }}>
-            Rules — they govern every subject, now and later
+          Work out what to build
+        </button>
+        <span style={{ fontSize: 11, opacity: 0.75 }}>
+          {cost.subjects
+            ? `${cost.subjects} object${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
+            : "everything here has been thought about already"}
+        </span>
+      </div>
+
+      {push.orphans.length ? (
+        <section
+          data-orphans
+          style={{ marginTop: 12, border: "1px solid #f14c4c", borderRadius: 6, padding: "8px 10px" }}
+        >
+          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#f14c4c", marginBottom: 4 }}>
+            {push.orphans.length} thing(s) I derived that match nothing you asked for
           </div>
-          {push.rules.map((r) => (
-            <div
-              key={r.id}
-              data-rule={r.id}
-              onClick={() => props.onSelect(r.id)}
-              style={{ fontSize: 12, cursor: "pointer" }}
-              title={`Select this rule. Governs ${r.scope}. From: ${r.fromAsk}`}
-            >
-              {r.text}{" "}
-              <span style={{ opacity: 0.65, fontSize: 11 }}>
-                — governs {r.scope} · in force on {r.governs} subject
-                {r.governs === 1 ? "" : "s"}, and any new one that matches
-              </span>
+          {push.orphans.map((o) => (
+            <div key={o.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "baseline" }}>
+              <span style={{ flex: 1 }}>{o.text}</span>
+              <button
+                data-dismiss-promise={o.id}
+                title="Remove it — nothing you wrote asks for this."
+                onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
+              >
+                Remove
+              </button>
             </div>
           ))}
         </section>
       ) : null}
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
-        {push.subjects.map((s) => {
-          const promises = s.claims.reduce((n, c) => n + c.promises.length, 0);
-          const unchecked = s.claims.reduce(
-            (n, c) => n + c.promises.filter((p) => !p.checks.length).length,
-            0,
-          );
-          return (
-            <div
-              key={s.id}
-              data-subject={s.id}
-              style={{
-                ...box,
-                borderColor: props.selected === s.id ? "var(--vscode-focusBorder, #3794ff)" : undefined,
-              }}
-            >
-              <div
-                data-subject-head={s.id}
-                onClick={() => props.onSelect(s.id)}
-                title="Select this subject."
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  padding: "7px 9px",
-                  cursor: "pointer",
-                  borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
-                }}
-              >
-                <strong style={{ fontSize: 13 }}>{s.name}</strong>
-                <span style={{ display: "flex", gap: 5, flexShrink: 0, fontSize: 11 }}>
-                  {s.rules.length ? (
-                    <span style={{ color: "#e5c07b" }} title={s.rules.map((r) => r.text).join("\n")}>
-                      {s.rules.length} rules
-                    </span>
-                  ) : null}
-                  {s.thinking ? (
-                    <span style={{ color: "#4ec9b0" }}>
-                      ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
-                    </span>
-                  ) : (
-                    <span style={{ opacity: 0.7 }}>{promises} promises</span>
-                  )}
-                </span>
-              </div>
-              {s.claims.map((c) => (
-                <div
-                  key={c.id}
-                  data-claim={c.id}
-                  onClick={() => props.onSelect(c.id)}
-                  onDoubleClick={() => props.onOpenWork(s.id)}
-                  title="Select this claim — double-click to open its promises in the work graph."
-                  style={{ padding: "6px 9px", cursor: "pointer", borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)" }}
-                >
-                  <div style={{ fontSize: 12 }}>{c.text}</div>
-                  {c.why ? (
-                    <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div>
-                  ) : null}
-                  <div style={{ fontSize: 11, opacity: 0.75, marginTop: 3 }}>
-                    {c.promises.length} promise{c.promises.length === 1 ? "" : "s"}
-                    {c.promises.length
-                      ? c.promises.every((p) => p.checks.length)
-                        ? " · all proved"
-                        : ` · ${c.promises.filter((p) => !p.checks.length).length} without a check`
-                      : " · nothing derived yet"}
-                  </div>
-                </div>
-              ))}
-              {unchecked ? (
-                <div style={{ fontSize: 11, color: "#f14c4c", padding: "4px 9px" }}>
-                  {unchecked} promise(s) here have no check
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      <Unattached
-        rows={push.orphans.filter((o) => o.subject)}
-        heading="I could not tell which claim these serve — say so, or dismiss them"
-        color="#e5c07b"
-      />
-      <Unattached
-        rows={push.orphans.filter((o) => !o.subject)}
-        heading="Scope creep — these belong to nothing you asked for"
-        color="#f14c4c"
-      />
     </div>
-  );
-}
-
-/** Promises with no claim. The two cases are different failures and are
- *  never merged: one is the machine's, one is the work's. Both get a way
- *  out — attach it to the claim it serves, or dismiss it. */
-function Unattached(props: {
-  rows: SpacePush["orphans"];
-  heading: string;
-  color: string;
-}): JSX.Element | null {
-  if (!props.rows.length) return null;
-  return (
-    <section
-      data-orphans
-      style={{
-        marginTop: 12,
-        border: `1px solid ${props.color}`,
-        borderRadius: 6,
-        padding: "8px 10px",
-        maxHeight: "20rem",
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ fontSize: 11, textTransform: "uppercase", color: props.color, marginBottom: 4 }}>
-        {props.rows.length} promise(s) — {props.heading}
-      </div>
-      {props.rows.map((o) => (
-        <div key={o.id} style={{ fontSize: 12, marginBottom: 6 }}>
-          <div>{o.text}</div>
-          <div style={{ display: "flex", gap: 5, marginTop: 2, alignItems: "center" }}>
-            {o.subject ? (
-              <span style={{ fontSize: 11, opacity: 0.7 }}>{o.subject}</span>
-            ) : null}
-            <select
-              id={`attach-${o.id}`}
-              defaultValue=""
-              style={{ fontSize: 11, maxWidth: "22rem" }}
-              title="The claim this promise makes true."
-            >
-              <option value="">which claim does it serve?</option>
-              {o.choices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.text}
-                </option>
-              ))}
-            </select>
-            <button
-              data-attach-promise={o.id}
-              title="Attach this promise to the claim it makes true."
-              onClick={() => {
-                const el = document.getElementById(`attach-${o.id}`) as HTMLSelectElement | null;
-                if (el?.value) post({ action: "attach-promise", unitId: o.id, into: el.value });
-              }}
-            >
-              Attach
-            </button>
-            <button
-              data-dismiss-promise={o.id}
-              title="This promise should not exist — remove it."
-              onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      ))}
-    </section>
   );
 }

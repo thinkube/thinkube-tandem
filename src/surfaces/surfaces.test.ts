@@ -16,7 +16,7 @@ import { SESSION_ACTIONS, TandemSession } from "./session";
  *  every subject grounds. Tests drive the same two steps a person does. */
 async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
   await session.captureMany(texts);
-  await session.acceptModel();
+  await session.think();
 }
 
 test("no capability without a door: every session action is registered", () => {
@@ -31,7 +31,7 @@ test("no capability without a door: every session action is registered", () => {
       assert.ok(entry.reason.trim(), `machine-only '${action}' must state why`);
     }
   }
-  assert.ok(gestureFor("sign-cut")!.includes("press Sign"));
+  assert.ok(gestureFor("build")!.includes("press Build"));
   assert.ok(gestureFor("reground")!.includes("out-of-date badge"), "re-grounding has a human door");
 });
 
@@ -68,17 +68,16 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
   };
   const session = new TandemSession(deps as never);
   const captured = await session.capture("I want to capture asks from the toolbar");
-  await session.acceptModel();
+  await session.think();
   assert.ok(captured.ok);
   assert.equal(session.space.asks[0].text, "I want to capture asks from the toolbar");
   assert.equal(session.space.nodes.length, 1, "the subject grounded into one promise");
   assert.equal(session.space.subjects!.length, 1, "the sentence became one subject");
 
-  // An undecided question on the ask REFUSES the sign — decide first.
-  session.toggleCut(session.space.nodes.map((n) => n.id));
-  const refused = session.signCut();
-  assert.equal(refused.ok, false, "open question blocks the sign");
-  assert.ok(refused.reason!.includes("top or side toolbar?"), "the refusal names the question");
+  // What the round could not decide from the sentence is an assumption,
+  // never a question that blocks: it is stated, and becomes a rule at the
+  // moment of building.
+  assert.equal(session.space.questions.length, 1, "the round raised one");
 
   // The question the round raised: accept with an edited wording → a
   // decision in force, and the ask re-grounds under it immediately.
@@ -248,7 +247,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
   };
   const session = new TandemSession(deps as never);
   await session.capture("something derived");
-  await session.acceptModel();
+  await session.think();
   assert.equal(session.space.nodes.length, 1);
   const r = session.panic();
   assert.ok(r.ok);
@@ -256,7 +255,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
   assert.equal(session.space.asks.length, 1, "the human's words survive");
 
   await session.capture("again");
-  await session.acceptModel();
+  await session.think();
   session.toggleCut(session.space.nodes.map((n) => n.id));
   assert.ok(session.signCut().ok);
   const refused = session.panic();
@@ -316,19 +315,19 @@ test("the capture seam classifies: a question is answered and recorded nowhere; 
   const session = new TandemSession(deps as never);
 
   const q = await session.capture("where does the toolbar render?");
-  await session.acceptModel();
+  await session.think();
   assert.ok(q.ok);
   assert.equal(session.space.asks.length, 0, "a question is not an ask");
   assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"), "the answer reached the in-board panel");
 
   const st = await session.capture("we always deploy through the platform CI");
-  await session.acceptModel();
+  await session.think();
   assert.ok(st.ok);
   assert.equal(session.space.asks.length, 0, "a statement is not an ask");
   assert.deepEqual(session.decisionsInForce(), ["we always deploy through the platform CI"]);
 
   await session.capture("build the toolbar");
-  await session.acceptModel();
+  await session.think();
   assert.equal(session.space.asks.length, 1, "an ask grounds as before");
 });
 
@@ -448,7 +447,7 @@ test("liveness: the pipeline's stages surface as activity tied to the subject be
   };
   const session = new TandemSession(deps as never);
   await session.capture("build the thing", "ask");
-  await session.acceptModel();
+  await session.think();
   assert.ok(
     stages.some((x) => x.startsWith("reading your code@subject-")),
     "stage 1 surfaced against the subject being ground",

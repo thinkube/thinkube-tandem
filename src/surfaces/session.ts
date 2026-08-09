@@ -20,9 +20,12 @@ import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, inheritRules, proposeModelFlow, retryModel } from "./modelFlow";
+import { applyModel, inheritRules, proposeModelFlow, readModel, retryModel } from "./modelFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
+import { askState } from "../core/component";
+import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
+import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { repairClaimIds } from "../core/repair";
@@ -116,133 +119,106 @@ export class TandemSession {
     return proposeModelFlow(this, texts);
   }
 
-  /** The human accepted the proposed model: it becomes the space, and every
-   *  subject grounds once under the rules in force. */
-  async acceptModel(): Promise<{ ok: boolean; reason?: string }> {
-    const pending = this.space.proposal;
-    if (!pending) return { ok: false, reason: "nothing proposed" };
-    this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
-    // A rule from an earlier round reaches these subjects before they ground.
-    const inherited = await inheritRules(this);
-    if (inherited) this.changed(`${inherited} rule(s) already in force apply here.`);
-    this.changed(
-      `${this.space.subjects?.length ?? 0} subject(s) recorded — thinking about them now.`,
-    );
-    await groundSubjectFlow(this, (this.space.subjects ?? []).map((s) => s.id));
-    return { ok: true };
-  }
-
   /** Read the recorded sentences again after a failure. */
   retryModel(): Promise<{ ok: boolean; reason?: string }> {
     return retryModel(this);
   }
 
-  /** Corrections to the recorded model. Each one changes something real:
-   *  the shape of what will be derived, or what governs it. */
+  /**
+   * Corrections that are still the human's own: remove work that should
+   * not exist, and retire a rule. Everything about SHAPE — what is one
+   * thing, what belongs with what, what holds everywhere — is corrected by
+   * saying the sentence differently, never by editing the machine's
+   * reading of it.
+   */
   editModel(edit: {
-    kind: "rename-subject" | "merge-subject" | "split-claim" | "move-claim" | "promote-claim" | "attach-promise" | "dismiss-promise" | "retire-rule";
+    kind: "dismiss-promise" | "retire-rule";
     id: string;
-    into?: string;
     text?: string;
   }): { ok: boolean; reason?: string } {
     const sp = this.space;
-    const subjects = sp.subjects ?? [];
-    const claims = sp.claims ?? [];
-    const rules = sp.rules ?? [];
-    switch (edit.kind) {
-      case "rename-subject": {
-        if (!edit.text?.trim()) return { ok: false, reason: "a subject needs a name" };
-        this.space = {
-          ...sp,
-          subjects: subjects.map((x) => (x.id === edit.id ? { ...x, name: edit.text!.trim() } : x)),
-        };
-        this.changed("Renamed — your word for it.");
-        return { ok: true };
-      }
-      case "merge-subject": {
-        const into = subjects.find((x) => x.id === edit.into);
-        const gone = subjects.find((x) => x.id === edit.id);
-        if (!into || !gone) return { ok: false, reason: "no such subject" };
-        this.space = {
-          ...sp,
-          subjects: subjects
-            .filter((x) => x.id !== gone.id)
-            .map((x) => (x.id === into.id ? { ...x, from: [...x.from, ...gone.from] } : x)),
-          claims: claims.map((c) => (c.subjectId === gone.id ? { ...c, subjectId: into.id } : c)),
-          rules: rules.map((r) => ({
-            ...r,
-            governs: [...new Set(r.governs.map((g) => (g === gone.id ? into.id : g)))],
-          })),
-        };
-        this.changed(`“${gone.name}” and “${into.name}” were one thing — now they are.`);
-        return { ok: true };
-      }
-      case "split-claim": {
-        const claim = claims.find((c) => c.id === edit.id);
-        if (!claim) return { ok: false, reason: "no such claim" };
-        const id = `subject-${this.author}-${subjects.length + 1}`;
-        this.space = {
-          ...sp,
-          subjects: [...subjects, { id, name: edit.text?.trim() || claim.text.slice(0, 48), from: [claim.fromAsk] }],
-          claims: claims.map((c) => (c.id === claim.id ? { ...c, subjectId: id } : c)),
-        };
-        this.changed("Split into its own subject — it derives on its own now.");
-        return { ok: true };
-      }
-      case "move-claim": {
-        if (!subjects.some((x) => x.id === edit.into)) return { ok: false, reason: "no such subject" };
-        this.space = {
-          ...sp,
-          claims: claims.map((c) => (c.id === edit.id ? { ...c, subjectId: edit.into! } : c)),
-        };
-        this.changed("Moved — it derives with its new subject.");
-        return { ok: true };
-      }
-      case "promote-claim": {
-        const claim = claims.find((c) => c.id === edit.id);
-        if (!claim) return { ok: false, reason: "no such claim" };
-        this.space = {
-          ...sp,
-          claims: claims.filter((c) => c.id !== claim.id),
-          rules: [
-            ...rules,
-            {
-              id: `rule-${this.author}-${rules.length + 1}`,
-              text: claim.text,
-              scope: edit.text?.trim() || "every subject",
-              fromAsk: claim.fromAsk,
-              governs: subjects.map((x) => x.id),
-            },
-          ],
-        };
-        this.changed("Promoted to a rule — it governs every subject, and any new one that matches.");
-        return { ok: true };
-      }
-      case "attach-promise": {
-        // The human says which claim a promise serves when the round did
-        // not; an unknown claim is refused rather than inferred.
-        if (!claims.some((c) => c.id === edit.into))
-          return { ok: false, reason: "pick the claim this promise makes true" };
-        const on = (n: (typeof sp.nodes)[number]): (typeof sp.nodes)[number] =>
-          n.id === edit.id ? { ...n, servesClaim: edit.into } : n;
-        this.space = { ...sp, nodes: sp.nodes.map(on) };
-        this.changed("Attached — it serves that claim now.");
-        return { ok: true };
-      }
-      case "dismiss-promise": {
-        if (signedIds(sp.cuts).has(edit.id))
-          return { ok: false, reason: "that promise is signed — it is a record now" };
-        this.cutNodeIds.delete(edit.id);
-        this.space = { ...sp, nodes: sp.nodes.filter((n) => n.id !== edit.id) };
-        this.changed(edit.text?.trim() ? `Dismissed: ${edit.text.trim()}` : "Dismissed.");
-        return { ok: true };
-      }
-      case "retire-rule": {
-        this.space = { ...sp, rules: rules.filter((r) => r.id !== edit.id) };
-        this.changed("Retired — it governs nothing from now on.");
-        return { ok: true };
-      }
+    if (edit.kind === "retire-rule") {
+      this.space = { ...sp, rules: (sp.rules ?? []).filter((r) => r.id !== edit.id) };
+      this.changed("Retired — it governs nothing from now on.");
+      return { ok: true };
     }
+    if (signedIds(sp.cuts).has(edit.id))
+      return { ok: false, reason: "that promise is built — it is a record now" };
+    this.cutNodeIds.delete(edit.id);
+    this.space = { ...sp, nodes: sp.nodes.filter((n) => n.id !== edit.id) };
+    this.changed(edit.text?.trim() ? `Dismissed: ${edit.text.trim()}` : "Dismissed.");
+    return { ok: true };
+  }
+
+  /** What editing a sentence will disturb, before it is disturbed. */
+  priceOf(askId: string): Price & { state: "open" | "bound" } {
+    return {
+      ...priceOfEditing(this.space, askId),
+      state: askState(this.space, askId, signedIds(this.space.cuts)),
+    };
+  }
+
+  /**
+   * Say a sentence differently. An open sentence is rewritten and its
+   * reading re-formed; a sentence whose work is signed refuses, because
+   * changing what is built is new work — which arrives as an amendment.
+   */
+  async reframe(askId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
+    const r = editAsk(this.space, askId, text, signedIds(this.space.cuts));
+    if (!r.ok) return { ok: false, reason: r.reason };
+    this.space = r.space;
+    this.changed("Read again, in your words.");
+    return readModel(
+      this,
+      this.space.asks.map((a) => a.text),
+      this.space.asks.map((a) => a.id),
+    );
+  }
+
+  /** A new sentence that supersedes a built one. */
+  async amend(askId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
+    const r = amendAsk(
+      this.space,
+      askId,
+      text,
+      this.deps.now(),
+      `ask-${this.author}-${this.space.asks.length + 1}`,
+    );
+    if (!r.ok) return { ok: false, reason: r.reason };
+    this.space = r.space;
+    this.changed("Recorded as an amendment — reading it with the rest.");
+    return readModel(
+      this,
+      this.space.asks.map((a) => a.text),
+      this.space.asks.map((a) => a.id),
+    );
+  }
+
+  /** Going to look at the work is what starts the thinking. */
+  async think(): Promise<{ ok: boolean; reason?: string }> {
+    const pending = this.space.proposal;
+    if (pending) {
+      this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
+      const inherited = await inheritRules(this);
+      if (inherited) this.changed(`${inherited} rule(s) already in force apply here.`);
+    }
+    const ground = new Set(
+      this.space.nodes.flatMap((n) => n.serves).filter((x) => x.startsWith("subject-")),
+    );
+    const todo = (this.space.subjects ?? []).filter((s) => !ground.has(s.id)).map((s) => s.id);
+    if (!todo.length) return { ok: true };
+    await groundSubjectFlow(this, todo);
+    return { ok: true };
+  }
+
+  /** What thinking about the rest will cost, before it is spent. */
+  thinkingCost(): WorkCost {
+    return costOfThinking(this.space);
+  }
+
+  /** Commit: assumptions become rules, whole components go into one cut. */
+  build(excluded: string[] = []): Promise<{ ok: boolean; reason?: string }> {
+    return buildFlow(this, excluded);
   }
 
   /** Corrections to the proposal, before it is recorded. */

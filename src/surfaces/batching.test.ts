@@ -15,7 +15,7 @@ import { TandemSession } from "./session";
  *  every subject grounds. Tests drive the same two steps a person does. */
 async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
   await session.captureMany(texts);
-  await session.acceptModel();
+  await session.think();
 }
 
 test("N implications on one ask cost ONE re-derivation under all decisions — never N pipelines", async () => {
@@ -64,7 +64,7 @@ test("N implications on one ask cost ONE re-derivation under all decisions — n
   };
   const session = new TandemSession(deps as never);
   await session.capture("one ask, many open points");
-  await session.acceptModel();
+  await session.think();
   assert.equal(session.space.questions.length, 4);
   // Accept every recommendation: four decisions, four staged implications.
   for (const q of [...session.space.questions]) await session.acceptQuestion(q.id);
@@ -239,7 +239,7 @@ test("capture proposes a model and waits; accepting it grounds every subject onc
   assert.equal(session.space.asks.length, 2, "the sentences are recorded verbatim first");
   assert.ok(session.pendingModel, "the proposal waits");
 
-  await session.acceptModel();
+  await session.think();
   assert.equal(session.space.subjects!.length, 1, "two sentences, one subject");
   assert.equal(session.space.claims!.length, 2, "each sentence became a claim on it");
   assert.equal(session.space.rules!.length, 1, "what governs everything became a rule");
@@ -289,7 +289,7 @@ test("two subjects' claims never share an id, so a promise cannot land on anothe
   };
   const session = new TandemSession(deps as never);
   await session.captureMany(["the delivery page prints it", "the TEP records it"]);
-  await session.acceptModel();
+  await session.think();
 
   const ids = session.space.claims!.map((c) => c.id);
   assert.equal(new Set(ids).size, 4, `four claims, four ids: ${ids.join(", ")}`);
@@ -340,13 +340,13 @@ test("a rule in force reaches a subject captured later, and a no is remembered",
   const session = new TandemSession(deps as never);
 
   await session.captureMany(["the delivery page shows a walkthrough"]);
-  await session.acceptModel();
+  await session.think();
   const rule = session.space.rules![0];
   assert.equal(rule.governs.length, 1, "the rule governs the subject it was born with");
 
   // A later round brings a subject the rule was never asked about.
   await session.captureMany(["the cut review lists the promises"]);
-  await session.acceptModel();
+  await session.think();
   assert.deepEqual(asked.at(-1), ["the cut review"], "only the unjudged pair is asked about");
   assert.equal(
     session.space.rules![0].governs.includes(session.space.subjects![1].id),
@@ -361,7 +361,7 @@ test("a rule in force reaches a subject captured later, and a no is remembered",
   // Nothing new to judge → the round is not called a third time.
   const before = asked.length;
   await session.captureMany(["the reading list shows every repository"]);
-  await session.acceptModel();
+  await session.think();
   assert.ok(asked.length > before, "a fresh subject is judged");
   assert.deepEqual(
     asked.at(-1),
@@ -419,7 +419,7 @@ test("a failed reading derives nothing, says why, and can be read again", async 
   assert.ok(again.ok, "reading again works on the sentences already recorded");
   assert.equal(session.modelFailure, undefined, "the failure clears");
   assert.equal(session.space.asks.length, 1, "and the sentence is not recorded twice");
-  await session.acceptModel();
+  await session.think();
   assert.equal(session.space.subjects!.length, 1, "the second reading lands");
 });
 
@@ -461,4 +461,77 @@ test("a second paste joins the reading that is waiting, and the reading survives
   const reloaded = new TandemSession(deps as never);
   assert.ok(reloaded.pendingModel, "the reading survives a reload — it is part of the record");
   assert.equal(reloaded.pendingModel!.texts.length, 3);
+});
+
+test("building commits whole components: assumptions become marked rules and the sentences lock", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-b-")),
+    now: () => "2026-08-09T12:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    // One object read from BOTH sentences — the component that must ship
+    // together, so neither sentence can be left half-built.
+    solveModel: async () => ({
+      subjects: [
+        {
+          name: "the delivery page",
+          from: [1, 2],
+          claims: [
+            { text: "shows how to see it", from: 1 },
+            { text: "names the check in my words", from: 2 },
+          ],
+        },
+      ],
+      rules: [],
+    }),
+    ground: async (
+      _d: unknown,
+      ask: { id: string },
+      opts: { claims?: { id: string }[]; mintNodeId?: (n: number) => string },
+    ) => ({
+      changes: (opts.claims ?? []).map((c, i) => ({
+        id: (opts.mintNodeId ?? ((n: number) => `node-${n}`))(i + 1),
+        sentence: `promise for ${c.id}`,
+        serves: [ask.id],
+        servesClaim: c.id,
+        needs: [],
+        acceptance: [{ id: `a${i}`, text: "proved" }],
+        grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+      })),
+      questions: [
+        {
+          askId: ask.id,
+          text: "does a page with no doors still get a walkthrough?",
+          recommendation: "no — it says there is no way in yet",
+          clause: "shows how to see it",
+        },
+      ],
+    }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.captureMany(["the delivery page shows how to see it", "labels in my words"]);
+  await session.think();
+
+  assert.equal(session.priceOf(session.space.asks[0].id).state, "open");
+  const r = await session.build();
+  assert.ok(r.ok, r.reason);
+
+  const rule = (session.space.rules ?? []).find((x) => /no way in yet/.test(x.text));
+  assert.ok(rule, "what nobody objected to is in force now");
+  assert.equal(rule!.assumed, true, "and it is marked as assumed, not as something you wrote");
+  assert.match(rule!.scope, /shows how to see it/, "it carries the clause that was silent");
+
+  for (const a of session.space.asks)
+    assert.equal(
+      session.priceOf(a.id).state,
+      "bound",
+      "both sentences of the component are read-only — neither is half-built",
+    );
+  const refused = await session.reframe(session.space.asks[0].id, "something else");
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason!, /already built/);
 });
