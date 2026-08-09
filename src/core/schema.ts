@@ -209,6 +209,17 @@ export interface Space {
   rules?: Rule[];
   /** "<ruleId>|<subjectId>" pairs already judged — a no is remembered too. */
   judgedScope?: string[];
+  /** A reading waiting for the human. Part of the record, so it survives a
+   *  reload and a second paste cannot silently replace it. */
+  proposal?: {
+    askIds: string[];
+    texts: string[];
+    subjects: { name: string; from: number[]; claims: { text: string; why?: string; from: number }[] }[];
+    rules: { text: string; scope: string; from: number }[];
+    missing: number[];
+  };
+  /** A reading that failed, with the round's own words for why. */
+  readingFailure?: { askIds: string[]; texts: string[]; reason: string };
 }
 
 /**

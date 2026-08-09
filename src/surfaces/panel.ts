@@ -164,13 +164,14 @@ function spacePush(session: TandemSession, message?: string): unknown {
       : undefined,
     pendingModel: session.pendingModel
       ? {
-          subjects: session.pendingModel.model.subjects.map((s) => ({
+          subjects: session.pendingModel.subjects.map((s) => ({
             name: s.name,
             claims: s.claims.map((c) => ({ text: c.text, why: c.why })),
           })),
-          rules: session.pendingModel.model.rules.map((r) => ({ text: r.text, scope: r.scope })),
+          rules: session.pendingModel.rules.map((r) => ({ text: r.text, scope: r.scope })),
+          // The sentence itself, not its id — a number names nothing.
           missing: session.pendingModel.missing.map(
-            (n) => session.pendingModel!.askIds[n - 1] ?? `sentence ${n}`,
+            (n) => session.pendingModel!.texts[n - 1] ?? `sentence ${n}`,
           ),
         }
       : undefined,

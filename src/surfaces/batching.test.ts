@@ -386,3 +386,43 @@ test("a failed reading derives nothing, says why, and can be read again", async 
   await session.acceptModel();
   assert.equal(session.space.subjects!.length, 1, "the second reading lands");
 });
+
+test("a second paste joins the reading that is waiting, and the reading survives a reload", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const seen: number[] = [];
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
+    now: () => "2026-08-09T10:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    solveModel: async (_d: unknown, texts: string[]) => {
+      seen.push(texts.length);
+      return {
+        subjects: [
+          { name: "the delivery page", from: texts.map((_, i) => i + 1), claims: texts.map((t, i) => ({ text: t, from: i + 1 })) },
+        ],
+        rules: [],
+      };
+    },
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+
+  await session.captureMany(["first sentence", "second sentence"]);
+  assert.deepEqual(seen, [2], "the first reading saw both sentences");
+  assert.equal(session.pendingModel!.subjects[0].claims.length, 2);
+
+  // A third sentence arrives while that reading is still waiting.
+  await session.captureMany(["third sentence"]);
+  assert.deepEqual(seen, [2, 3], "the whole set is read again — the waiting reading is not replaced");
+  assert.equal(session.pendingModel!.texts.length, 3, "the reading covers every sentence");
+  assert.equal(session.space.asks.length, 3, "and each sentence is recorded exactly once");
+
+  // A fresh session over the same store still has the reading.
+  const reloaded = new TandemSession(deps as never);
+  assert.ok(reloaded.pendingModel, "the reading survives a reload — it is part of the record");
+  assert.equal(reloaded.pendingModel!.texts.length, 3);
+});

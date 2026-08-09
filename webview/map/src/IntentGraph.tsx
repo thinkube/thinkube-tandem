@@ -18,14 +18,34 @@ const box: React.CSSProperties = {
 function Proposal(props: { push: SpacePush }): JSX.Element {
   const p = props.push.pendingModel!;
   return (
-    <section data-proposal style={{ ...box, padding: 12, marginBottom: 14, borderColor: "#4ec9b0" }}>
+    <section
+      data-proposal
+      style={{
+        ...box,
+        padding: 12,
+        margin: 12,
+        borderColor: "#4ec9b0",
+        maxHeight: "calc(100vh - 12rem)",
+        overflowY: "auto",
+      }}
+    >
       <strong style={{ fontSize: 13 }}>What I understood — nothing recorded yet</strong>
       <div style={{ fontSize: 11, opacity: 0.75, margin: "2px 0 8px" }}>
         {p.subjects.length} subject{p.subjects.length === 1 ? "" : "s"} · {p.rules.length} rule
         {p.rules.length === 1 ? "" : "s"}. Correct it before I think about your code.
       </div>
       {p.rules.length ? (
-        <div data-proposed-rules style={{ border: "1px solid #e5c07b", borderRadius: 5, padding: 8, marginBottom: 8 }}>
+        <div
+          data-proposed-rules
+          style={{
+            border: "1px solid #e5c07b",
+            borderRadius: 5,
+            padding: 8,
+            marginBottom: 8,
+            maxHeight: "14rem",
+            overflowY: "auto",
+          }}
+        >
           <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
             Rules — these govern every subject
           </div>
@@ -154,7 +174,14 @@ export function IntentGraph(props: {
       {push.rules.length ? (
         <section
           data-rules-band
-          style={{ border: "1px solid #e5c07b", borderRadius: 6, padding: "8px 10px", marginBottom: 12 }}
+          style={{
+            border: "1px solid #e5c07b",
+            borderRadius: 6,
+            padding: "8px 10px",
+            marginBottom: 12,
+            maxHeight: "16rem",
+            overflowY: "auto",
+          }}
         >
           <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 4 }}>
             Rules — they govern every subject, now and later

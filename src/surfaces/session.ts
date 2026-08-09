@@ -20,7 +20,7 @@ import { tepApprovalOf } from "../gates/approval";
 import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, inheritRules, ModelFailure, PendingModel, proposeModelFlow, retryModel } from "./modelFlow";
+import { applyModel, inheritRules, proposeModelFlow, retryModel } from "./modelFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
@@ -43,10 +43,14 @@ export class TandemSession {
   lastAnswer: { question: string; answer: string } | undefined;
   runNote: string | undefined; // why the last build did not start
   openLog: { step: string; page: number } | undefined; // the log being read
-  /** The model the round proposed, waiting for the human to accept it. */
-  pendingModel: PendingModel | undefined;
-  /** A reading that failed: nothing was derived, and it says why. */
-  modelFailure: ModelFailure | undefined;
+  /** The reading waiting for the human, and a reading that failed, both
+   *  read from the space so a reload or a second paste cannot lose them. */
+  get pendingModel(): Space["proposal"] {
+    return this.space.proposal;
+  }
+  get modelFailure(): Space["readingFailure"] {
+    return this.space.readingFailure;
+  }
   private _captureAbort: AbortController | undefined;
   _grounding = new Map<string, { label: string; current: number; total: number }>();
 
@@ -114,10 +118,9 @@ export class TandemSession {
   /** The human accepted the proposed model: it becomes the space, and every
    *  subject grounds once under the rules in force. */
   async acceptModel(): Promise<{ ok: boolean; reason?: string }> {
-    const pending = this.pendingModel;
+    const pending = this.space.proposal;
     if (!pending) return { ok: false, reason: "nothing proposed" };
-    this.space = applyModel(this.space, pending, this.author);
-    this.pendingModel = undefined;
+    this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
     // A rule from an earlier round reaches these subjects before they ground.
     const inherited = await inheritRules(this);
     if (inherited) this.changed(`${inherited} rule(s) already in force apply here.`);
@@ -232,19 +235,21 @@ export class TandemSession {
 
   /** Corrections to the proposal, before it is recorded. */
   reviseModel(edit: { kind: "drop-subject" | "drop-rule" | "to-rule"; index: number }): void {
-    const p = this.pendingModel;
+    const p = this.space.proposal;
     if (!p) return;
-    if (edit.kind === "drop-subject") p.model.subjects.splice(edit.index, 1);
-    else if (edit.kind === "drop-rule") p.model.rules.splice(edit.index, 1);
+    const subjects = [...p.subjects];
+    const rules = [...p.rules];
+    if (edit.kind === "drop-subject") subjects.splice(edit.index, 1);
+    else if (edit.kind === "drop-rule") rules.splice(edit.index, 1);
     else if (edit.kind === "to-rule") {
-      const sub = p.model.subjects[edit.index];
+      const sub = subjects[edit.index];
       if (sub) {
-        for (const c of sub.claims)
-          p.model.rules.push({ text: c.text, scope: "every subject", from: c.from });
-        p.model.subjects.splice(edit.index, 1);
+        for (const c of sub.claims) rules.push({ text: c.text, scope: "every subject", from: c.from });
+        subjects.splice(edit.index, 1);
       }
     }
-    this.deps.onChanged?.();
+    this.space = { ...this.space, proposal: { ...p, subjects, rules } };
+    this.changed();
   }
 
   async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {

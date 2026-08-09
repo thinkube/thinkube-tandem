@@ -6,26 +6,16 @@
  */
 import { Claim, Rule, Space, Subject } from "../core/schema";
 import { addAsk } from "../core/intent";
-import { ProposedModel, solveModel, unaccountedFor } from "../derive/model";
+import { solveModel, unaccountedFor } from "../derive/model";
 import { judgeScope, ScopeQuestion } from "../derive/scope";
 import type { TandemSession } from "./session";
 
-export interface PendingModel {
-  /** The asks these sentences became, in order. */
-  askIds: string[];
-  model: ProposedModel;
-  /** Sentence numbers the round accounted for nowhere — shown, never hidden. */
-  missing: number[];
-}
-
-/** Why a reading failed, kept so the human can see it and try again. */
-export interface ModelFailure {
-  reason: string;
-  texts: string[];
-  askIds: string[];
-}
-
-/** Record the sentences as asks, then ask the round what they are about. */
+/**
+ * Record the sentences as asks, then ask the round what they are about. A
+ * reading already waiting is NOT replaced: the new sentences join it and
+ * the whole set is read again, because a list is one description and a
+ * later sentence can change what the earlier ones were about.
+ */
 export async function proposeModelFlow(
   s: TandemSession,
   texts: string[],
@@ -37,15 +27,21 @@ export async function proposeModelFlow(
     s.space = r.space;
     added.push(r.added.id);
   }
-  s.changed(`${added.length} recorded — reading them as one description…`);
-  return readModel(s, texts, added);
+  const waiting = s.space.proposal ?? s.space.readingFailure;
+  const allTexts = [...(waiting?.texts ?? []), ...texts];
+  const allAsks = [...(waiting?.askIds ?? []), ...added];
+  s.changed(
+    waiting
+      ? `${added.length} more recorded — reading all ${allTexts.length} together.`
+      : `${added.length} recorded — reading them as one description…`,
+  );
+  return readModel(s, allTexts, allAsks);
 }
 
 /** Read again, over the sentences already recorded. */
 export async function retryModel(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
-  const f = s.modelFailure;
+  const f = s.space.readingFailure ?? s.space.proposal;
   if (!f) return { ok: false, reason: "nothing to read again" };
-  s.modelFailure = undefined;
   return readModel(s, f.texts, f.askIds);
 }
 
@@ -75,16 +71,22 @@ async function readModel(
   s.activity = undefined;
 
   if (!model) {
-    s.modelFailure = {
-      reason: said.join("\n").trim() || "the round returned nothing I could read as subjects and claims",
-      texts,
-      askIds,
+    const reason =
+      said.join("\n").trim() || "the round returned nothing I could read as subjects and claims";
+    s.space = {
+      ...s.space,
+      proposal: undefined,
+      readingFailure: { reason, texts, askIds },
     };
     s.changed("I could not read your list. Nothing was derived — your sentences are recorded and waiting.");
-    return { ok: false, reason: s.modelFailure.reason };
+    return { ok: false, reason };
   }
 
-  s.pendingModel = { askIds, model, missing: unaccountedFor(model, texts.length) };
+  s.space = {
+    ...s.space,
+    readingFailure: undefined,
+    proposal: { askIds, texts, ...model, missing: unaccountedFor(model, texts.length) },
+  };
   s.changed(
     `${model.subjects.length} subject(s) and ${model.rules.length} rule(s) — check them before I think about the code.`,
   );
@@ -92,13 +94,17 @@ async function readModel(
 }
 
 /** The human accepted: the proposal becomes the space's model. */
-export function applyModel(space: Space, pending: PendingModel, author: string): Space {
+export function applyModel(
+  space: Space,
+  pending: NonNullable<Space["proposal"]>,
+  author: string,
+): Space {
   const subjects: Subject[] = [];
   const claims: Claim[] = [];
   const rules: Rule[] = [];
   const askOf = (n: number): string => pending.askIds[n - 1] ?? pending.askIds[0] ?? "";
 
-  pending.model.subjects.forEach((sub, i) => {
+  pending.subjects.forEach((sub, i) => {
     const id = `subject-${author}-${(space.subjects?.length ?? 0) + i + 1}`;
     subjects.push({ id, name: sub.name, from: sub.from.map(askOf) });
     sub.claims.forEach((c, j) => {
@@ -111,7 +117,7 @@ export function applyModel(space: Space, pending: PendingModel, author: string):
       });
     });
   });
-  pending.model.rules.forEach((r, i) => {
+  pending.rules.forEach((r, i) => {
     rules.push({
       id: `rule-${author}-${(space.rules?.length ?? 0) + i + 1}`,
       text: r.text,
