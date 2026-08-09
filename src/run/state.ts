@@ -40,6 +40,19 @@ export class RunState {
 
   constructor(private onChange: () => void) {}
 
+  /** A finished run, read back from disk: the same state, with nothing
+   *  live in it — no aborts to cancel and nobody left to answer. */
+  static from(
+    record: { units: RunUnitView[]; logs: string[]; stepLogs: Record<string, string[]> },
+    onChange: () => void,
+  ): RunState {
+    const s = new RunState(onChange);
+    for (const u of record.units) s.units.set(u.id, { ...u, question: undefined });
+    s.logs = [...record.logs];
+    s.stepLogs = new Map(Object.entries(record.stepLogs).map(([k, v]) => [k, [...v]]));
+    return s;
+  }
+
   seed(id: string, slice: string, role: "code" | "test", requires: string[] = []): void {
     this.units.set(id, { id, slice, role, state: "ready", requires });
     this.onChange();

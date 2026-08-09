@@ -10,6 +10,7 @@ import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
+import { saveRun } from "../run/record";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
@@ -89,6 +90,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       return last;
     } finally {
       s.running = false;
+      // The run is over, so it becomes history: the page that shows it is
+      // opened long after the process that ran it has gone.
+      if (s.runState) saveRun(s.deps.storeDir, { cutId, tepId: cut.tepId, at: s.deps.now() }, s.runState);
     }
   }
 

@@ -72,7 +72,7 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {p.subjects.map((s, i) => (
           <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
-            <div style={label}>Subject</div>
+            <div style={{ ...label, marginTop: 0 }}>Subject</div>
             <strong style={{ fontSize: 13 }}>{s.name}</strong>
             <div style={{ ...label, marginTop: 6 }}>Claims — what must become true of it</div>
             {s.claims.map((c, j) => (

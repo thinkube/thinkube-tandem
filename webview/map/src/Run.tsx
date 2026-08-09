@@ -63,6 +63,9 @@ export function RunNote(props: { note: string }): JSX.Element {
 
 export function RunSection(props: {
   run: NonNullable<SpacePush["run"]>;
+  /** Live, or read back from disk after the fact — a finished run has
+   *  nothing left to stop. */
+  live: boolean;
   world: World;
   /** The step whose log is open, so its card reads as selected. */
   openLog?: string;
@@ -178,7 +181,7 @@ export function RunSection(props: {
     <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 12px" }}>
         <span data-run-progress-text style={{ fontSize: 12, opacity: 0.8 }}>
-          {done} of {run.units.length} units done
+          {done} of {run.units.length} workers done
         </span>
         <span style={{ flex: 1, height: 5, background: "var(--vscode-input-background, #222)", borderRadius: 3, overflow: "hidden" }}>
           <span
@@ -192,6 +195,7 @@ export function RunSection(props: {
             }}
           />
         </span>
+        {props.live ? (
         <button
           data-stop-run
           title="Stop the run — aborts every live worker; the run drains and reports."
@@ -200,6 +204,11 @@ export function RunSection(props: {
         >
           ■ Stop
         </button>
+        ) : (
+          <span data-run-over style={{ fontSize: 12, opacity: 0.8 }}>
+            {allDone ? "finished" : anyFailed ? "finished, with failures" : "not running"}
+          </span>
+        )}
       </div>
       <div
         data-flow-canvas
