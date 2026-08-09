@@ -11,6 +11,7 @@ import { post, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
+import { ROLES } from "./type";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -89,7 +90,8 @@ export function RunSection(props: {
     () => [
       ...run.units.map((u) => ({
         id: u.id,
-        title: `${u.role === "test" ? "Tests for" : "Build"} ${u.sliceTitle ?? u.slice}`,
+        band: u.role === "test" ? ROLES.test : ROLES.code,
+        title: u.sliceTitle ?? u.slice,
         titleFull: `worker ${u.id}`,
         abs:
           u.note ??
@@ -100,7 +102,8 @@ export function RunSection(props: {
       })),
       ...slices.map((slice) => ({
         id: `audit:${slice}`,
-        title: `Auditor for ${slice}`,
+        band: ROLES.audit,
+        title: slice,
         abs: "grades the checks against the real state",
         chips: [
           graded(slice)
@@ -110,6 +113,7 @@ export function RunSection(props: {
       })),
       {
         id: "gate",
+        band: { ...ROLES.audit, text: "Audit — everything together" },
         title: "The closing gate",
         abs: "runs every check on the real state and grades each promise",
         chips: [

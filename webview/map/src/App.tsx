@@ -326,7 +326,7 @@ export function App(): JSX.Element {
         {([
           ["intent", "1 · Intent", "what you want"],
           ["work", "2 · Work", "what gets built, and what proves it"],
-          ["flow", "3 · Build", "how it runs and is judged"],
+          ["flow", "3 · Orchestration", "the workers, in the order they run, and what they proved"],
         ] as const).map(([id, label, why]) => (
           <button
             key={id}
@@ -408,7 +408,8 @@ export function App(): JSX.Element {
           </div>
         ) : (
           <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-            No build yet — press Build on the right and it appears here.
+            Nothing has been orchestrated yet — press Build on the work page and the workers
+            appear here as they run.
           </div>
         )}
         <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />

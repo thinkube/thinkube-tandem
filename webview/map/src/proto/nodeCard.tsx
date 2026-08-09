@@ -22,8 +22,11 @@ export interface CardData {
   abs?: string;
   chips: Chip[];
   decision?: string;
-  /** In the cut: the whole card wears gold — the state IS the look. */
+  /** In the cut: the whole card wears gold — and says so, because a
+   *  colour on its own is not a word. */
   inCut?: boolean;
+  /** What this card IS, in a word: the band across its top. */
+  band?: { text: string; color: string; why?: string };
 }
 
 const CHIP_COLORS: Record<NonNullable<Chip["kind"]>, { border: string; color: string; bg?: string }> = {
@@ -92,6 +95,24 @@ export function NodeCard(props: {
         ...props.style,
       }}
     >
+      {card.band ? (
+        <div
+          data-band={card.band.text}
+          title={card.band.why}
+          style={{
+            margin: "-8px -10px 6px",
+            padding: "2px 10px",
+            borderRadius: "5px 5px 0 0",
+            borderBottom: `1px solid ${card.band.color}`,
+            background: `${card.band.color}1f`,
+            color: card.band.color,
+            fontSize: far ? 13 : 11,
+            fontWeight: 600,
+          }}
+        >
+          {card.band.text}
+        </div>
+      ) : null}
       <h3
         title={card.titleFull ?? undefined}
         style={{ margin: "0 0 4px", fontSize: far ? 15 : 13, fontWeight: 600, overflowWrap: "anywhere" }}

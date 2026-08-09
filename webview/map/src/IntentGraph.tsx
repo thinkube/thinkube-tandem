@@ -9,6 +9,7 @@
  * starts the thinking, and it says first what that will cost.
  */
 import { post, SpacePush } from "./vscode";
+import { aside, label, labelIn } from "./type";
 
 /**
  * Where a shape came from, and the way back. Every subject and claim
@@ -71,11 +72,9 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {p.subjects.map((s, i) => (
           <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
-            <div style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6 }}>Subject</div>
+            <div style={label}>Subject</div>
             <strong style={{ fontSize: 13 }}>{s.name}</strong>
-            <div style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6, marginTop: 6 }}>
-              Claims <span style={{ textTransform: "none" }}>— what must become true of it</span>
-            </div>
+            <div style={{ ...label, marginTop: 6 }}>Claims — what must become true of it</div>
             {s.claims.map((c, j) => (
               <div
                 key={j}
@@ -83,7 +82,7 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
               >
                 {c.text}
                 {c.why ? (
-                  <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div>
+                  <div style={aside}>so that {c.why}</div>
                 ) : null}
               </div>
             ))}
@@ -121,9 +120,7 @@ function Recorded(props: {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6 }}>
-                  Subject
-                </span>
+                <span style={label}>Subject</span>
                 {s.thinking ? (
                   <span style={{ fontSize: 11, color: "#4ec9b0" }}>
                     ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
@@ -140,15 +137,8 @@ function Recorded(props: {
                 </div>
               ) : null}
             </div>
-            <div
-              style={{
-                fontSize: 10,
-                textTransform: "uppercase",
-                opacity: 0.6,
-                padding: "5px 9px 0",
-              }}
-            >
-              Claims <span style={{ textTransform: "none" }}>— what must become true of it</span>
+            <div style={{ ...label, padding: "5px 9px 0" }}>
+              Claims — what must become true of it
             </div>
             {s.claims.map((c) => (
               <div
@@ -176,9 +166,7 @@ function Recorded(props: {
                   {c.text}
                 </div>
                 {c.why ? (
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>
-                    <em>so that</em> {c.why}
-                  </div>
+                  <div style={aside}>so that {c.why}</div>
                 ) : null}
               </div>
             ))}
@@ -298,7 +286,7 @@ export function IntentGraph(props: {
           data-orphans
           style={{ marginTop: 12, border: "1px solid #f14c4c", borderRadius: 6, padding: "8px 10px" }}
         >
-          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#f14c4c", marginBottom: 4 }}>
+          <div style={{ ...labelIn("#f14c4c"), marginBottom: 4 }}>
             {push.orphans.length} thing(s) I derived that match nothing you asked for
           </div>
           {push.orphans.map((o) => (

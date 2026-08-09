@@ -6,6 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
+import { label } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -14,12 +15,7 @@ import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 const UNMEASURED_H = 120;
 
 /** Every band on a card says what it is — colour is not a vocabulary. */
-const cap: React.CSSProperties = {
-  fontSize: 10,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  opacity: 0.6,
-};
+const cap: React.CSSProperties = label;
 
 export function WorkGraph(props: {
   push: SpacePush;

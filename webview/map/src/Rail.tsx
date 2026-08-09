@@ -7,6 +7,7 @@
  * box you write them in, and what was read from them on the reading page.
  */
 import { post, SpacePush } from "./vscode";
+import { label } from "./type";
 
 const btn: React.CSSProperties = {
   fontWeight: 600,
@@ -155,9 +156,7 @@ export function Rail(props: {
 
         {push.deliveries.length ? (
           <section data-deliveries>
-            <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 4 }}>
-              Delivered
-            </div>
+            <div style={{ ...label, marginBottom: 4 }}>Delivered</div>
             {push.deliveries.map((d) => (
               <div
                 key={d.id}

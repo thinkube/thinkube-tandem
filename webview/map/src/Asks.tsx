@@ -18,6 +18,7 @@
  */
 import { useState } from "react";
 import { post, SpacePush } from "./vscode";
+import { aside, label, labelIn } from "./type";
 
 type Sentence = SpacePush["sentences"][number];
 
@@ -84,9 +85,8 @@ export function Asks(props: {
       data-sentences
       style={{ padding: "6px 12px 0", maxHeight: "16rem", overflowY: "auto" }}
     >
-      <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 4 }}>
-        Asks{" "}
-        <span style={{ textTransform: "none" }}>— what you wrote, kept word for word</span>
+      <div style={{ ...label, marginBottom: 4 }}>
+        Asks — what you wrote, kept word for word
       </div>
       {props.push.sentences.map((s, i) => (
         <section
@@ -107,7 +107,7 @@ export function Asks(props: {
           }}
         >
           {s.amends ? (
-            <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>
+            <div style={aside}>
               supersedes: “{s.amends}”
             </div>
           ) : null}
@@ -151,9 +151,9 @@ export function Asks(props: {
           {editing === s.id ? <Editor s={s} onDone={() => setEditing(null)} /> : null}
           {s.assumptions.length ? (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b" }}>
+              <div style={{ ...labelIn("#e5c07b") }}>
                 Assumed{" "}
-                <span style={{ textTransform: "none" }}>
+                <span>
                   — decided in this ask&apos;s name; recorded when you build
                 </span>
               </div>
@@ -167,7 +167,7 @@ export function Asks(props: {
                     ) : null}
                   </div>
                   {a.clause ? (
-                    <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>
+                    <div style={aside}>
                       your ask did not say: {a.clause}
                     </div>
                   ) : null}
