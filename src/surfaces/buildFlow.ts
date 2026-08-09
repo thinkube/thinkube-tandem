@@ -20,7 +20,9 @@ import type { TandemSession } from "./session";
 export interface WorkCost {
   /** Objects still to be read. */
   subjects: number;
-  /** Rounds it will take — three per object, plus one shared reading. */
+  /** Rounds it will take — two per subject (ground, then the cheap tail),
+   *  plus one shared reading of the code and one whole-cut search for what
+   *  is still missing. */
   rounds: number;
 }
 
@@ -50,7 +52,7 @@ export function costOfThinking(space: Space): WorkCost {
     space.nodes.flatMap((n) => n.serves).filter((s) => s.startsWith("subject-")),
   );
   const subjects = (space.subjects ?? []).filter((s) => !ground.has(s.id)).length;
-  return { subjects, rounds: subjects ? subjects * 3 + 1 : 0 };
+  return { subjects, rounds: subjects ? subjects * 2 + 2 : 0 };
 }
 
 /** Everything ready to build: components with promises and nothing signed. */

@@ -274,3 +274,60 @@ test("the one line above the subjects never borrows a single subject's stage", a
   );
   assert.equal(session.activity, undefined, "and it stops when the thinking stops");
 });
+
+test("nine subjects mean nine groundings and ONE search for what is missing", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const grounded: string[] = [];
+  let completeness = 0;
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-c-")),
+    now: () => "2026-08-09T18:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    solveModel: async () => ({
+      subjects: [1, 2, 3].map((n) => ({
+        name: `thing ${n}`,
+        from: [n],
+        claims: [{ text: `it works ${n}`, from: n }],
+      })),
+      rules: [],
+    }),
+    ground: async (
+      _d: unknown,
+      ask: { id: string },
+      opts: { claims?: { id: string }[]; skipCompleteness?: boolean },
+    ) => {
+      grounded.push(ask.id);
+      assert.equal(
+        opts.skipCompleteness,
+        true,
+        "a subject's own round no longer hunts for ripples",
+      );
+      return {
+        changes: (opts.claims ?? []).map((c, i) => ({
+          id: `node-${ask.id}-${i}`,
+          sentence: `promise for ${c.id}`,
+          serves: [ask.id],
+          servesClaim: c.id,
+          needs: [],
+          acceptance: [{ id: `a${i}`, text: "proved" }],
+          grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+        })),
+        questions: [],
+      };
+    },
+    completeCut: async () => {
+      completeness++;
+      return [];
+    },
+  };
+  const session = new TandemSession(deps as never);
+  await session.captureMany(["one", "two", "three"]);
+  await session.think();
+
+  assert.equal(grounded.length, 3, "one grounding per subject");
+  assert.equal(completeness, 1, "and ONE search over the whole cut, not three");
+});

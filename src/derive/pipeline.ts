@@ -102,6 +102,14 @@ export interface PipelineOpts {
   decisions?: string[];
   /** The claims this subject's grounding serves. */
   claims?: { id: string; text: string; why?: string }[];
+  /**
+   * Leave the gaps and ripples to a single pass over the whole cut. Nine
+   * subjects each running their own completeness round is nine tool-using
+   * reads of one repository, and each one can only attribute what it finds
+   * to its OWN claims — so a ripple that belongs to another subject either
+   * lands unattached or is invented twice.
+   */
+  skipCompleteness?: boolean;
   digest?: string;
   digestStore?: DigestStore;
   /** Injectable round runner for tests; production uses the SDK round. */
@@ -272,6 +280,88 @@ function parseCriteriaRewrites(
 }
 
 /**
+ * ONE completeness pass over everything a cut has derived.
+ *
+ * Per subject, this round is nine tool-using reads of the same repository
+ * that cannot see each other: each finds the same documentation page and
+ * the same callers, attributes them to whichever claims it happens to
+ * hold, and the human is handed the overlap. Run once, it sees every
+ * subject's claims at the same time — so a ripple lands under the claim it
+ * actually serves, and it is derived once.
+ */
+export async function completeCut(
+  deps: RoundDeps,
+  args: {
+    /** Every claim in the cut, with the subject that owns it. */
+    claims: { id: string; subjectId: string; text: string; why?: string }[];
+    /** What the subjects are called, for the round to read them by. */
+    subjects: { id: string; name: string }[];
+    changes: Change[];
+    digest?: string;
+    mintNodeId: (n: number) => string;
+    nextIndex: number;
+  },
+  round: Round = runReadRound,
+): Promise<Change[]> {
+  const log = deps.log ?? (() => {});
+  if (!args.claims.length || !args.changes.length) return [];
+  const nameOf = new Map(args.subjects.map((s) => [s.id, s.name]));
+  const text =
+    `Everything below belongs to one piece of work. What must become ` +
+    `true, by subject:\n` +
+    args.subjects
+      .map(
+        (s) =>
+          `${s.name}:\n` +
+          args.claims
+            .filter((c) => c.subjectId === s.id)
+            .map((c) => `  - ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
+            .join("\n"),
+      )
+      .join("\n");
+  const raw = await round(
+    deps,
+    buildCompletenessPrompt({
+      ask: { id: "cut", text, at: "" },
+      changes: args.changes,
+      repoRoot: deps.repoRoot,
+      digest: args.digest,
+      claims: args.claims.map((c) => ({
+        text: `${nameOf.get(c.subjectId) ?? "?"} — ${c.text}`,
+        ...(c.why ? { why: c.why } : {}),
+      })),
+    }),
+  );
+  if (raw === null) {
+    log("completeness: round unavailable — no gaps or ripples were looked for");
+    return [];
+  }
+  const derived = parseGroundedNodes(raw, deps.repoRoot);
+  const stamp = [await readStamp(deps.repoRoot)];
+  const out: Change[] = [];
+  for (const d of derived) {
+    // A gap serves the claim it names, and lands under THAT claim's
+    // subject — which is the whole reason for running this once.
+    const claim = d.claim ? args.claims[d.claim - 1] : undefined;
+    if (!claim) {
+      log(`completeness: dropped "${d.sentence.slice(0, 60)}" — it named no claim`);
+      continue;
+    }
+    const [made] = resolveDerived(
+      [d],
+      claim.subjectId,
+      stamp,
+      args.nextIndex + out.length,
+      args.mintNodeId,
+      [claim.id],
+    );
+    out.push({ ...made, servesClaim: claim.id });
+  }
+  log(`completeness: ${out.length} gap(s) and ripple(s) across the whole cut`);
+  return out;
+}
+
+/**
  * Run the whole derivation pipeline for one ask. Same signature family as
  * `runGrounding`, so hosts swap a single injectable.
  */
@@ -343,8 +433,10 @@ export async function runDerivationPipeline(
   };
 
   // 3. Completeness — gaps AND affected code, one digest-warm round.
-  stage("judging completeness and affected code");
-  await addFrom(
+  //    Skipped when the caller runs one pass over the whole cut instead.
+  if (opts.skipCompleteness) stage("leaving gaps and ripples to the whole-cut pass");
+  else
+    await addFrom(
     await round(
       deps,
       buildCompletenessPrompt({

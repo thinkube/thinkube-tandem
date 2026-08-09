@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { runDerivationPipeline, DigestStore } from "./pipeline";
+import { completeCut, runDerivationPipeline, DigestStore } from "./pipeline";
 import { buildContextualizePrompt, DIGEST_CHAR_BUDGET, runContextualize } from "./contextualize";
 import { RoundDeps } from "./round";
 import { Ask } from "../core/schema";
@@ -291,5 +291,72 @@ test("a question in the machine's own words never reaches the human — it becom
   assert.ok(
     said.some((l) => /my words, not yours/.test(l) && /preflight|specBody|hasCtx/.test(l)),
     `the refusal names the machine's own words: ${said.join(" | ")}`,
+  );
+});
+
+test("the gaps are looked for ONCE over the whole cut, and land under the claim they serve", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-cut-"));
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const said: string[] = [];
+  const round = scriptedRounds(
+    [
+      {
+        match: /COMPLETENESS round/,
+        // Two ripples: one for each subject, plus one it cannot place.
+        reply: `{"nodes":[
+          {"sentence":"the documentation page stops describing the old badge","claim":2,"touchpoints":[{"path":"docs/the-space.adoc"}],"needs":[],"acceptance":[{"text":"reworded"}]},
+          {"sentence":"the callers of the delivery renderer move","claim":1,"touchpoints":[{"path":"src/panel.ts"}],"needs":[],"acceptance":[{"text":"moved"}]},
+          {"sentence":"something nobody asked for","touchpoints":[{"path":"src/x.ts"}],"needs":[],"acceptance":[{"text":"?"}]}]}`,
+      },
+    ],
+    calls,
+  );
+
+  const gaps = await completeCut(
+    { ...deps, log: (l) => said.push(l) },
+    {
+      claims: [
+        { id: "claim-1", subjectId: "sub-1", text: "shows a see-it line" },
+        { id: "claim-2", subjectId: "sub-2", text: "re-reads only that card" },
+      ],
+      subjects: [
+        { id: "sub-1", name: "the delivery page" },
+        { id: "sub-2", name: "the out-of-date badge" },
+      ],
+      changes: [
+        {
+          id: "n1",
+          sentence: "the page renders a walkthrough",
+          serves: ["sub-1"],
+          needs: [],
+          servesClaim: "claim-1",
+          acceptance: [],
+        },
+      ],
+      mintNodeId: (n) => `node-gap-${n}`,
+      nextIndex: 1,
+    },
+    round,
+  );
+
+  assert.equal(calls.length, 1, "ONE round for the whole cut, not one per subject");
+  const prompt = calls[0];
+  assert.match(prompt, /the delivery page — shows a see-it line/);
+  assert.match(prompt, /the out-of-date badge — re-reads only that card/);
+
+  assert.equal(gaps.length, 2, "what it could place");
+  const doc = gaps.find((g) => g.sentence.startsWith("the documentation"))!;
+  assert.equal(doc.servesClaim, "claim-2");
+  assert.deepEqual(
+    doc.serves,
+    ["sub-2"],
+    "a ripple lands under the subject whose claim it serves — not under whoever happened to derive it",
+  );
+  const caller = gaps.find((g) => g.sentence.startsWith("the callers"))!;
+  assert.deepEqual(caller.serves, ["sub-1"]);
+  assert.ok(
+    said.some((l) => /dropped .* it named no claim/.test(l)),
+    `what it could not place is dropped and said: ${said.join(" | ")}`,
   );
 });

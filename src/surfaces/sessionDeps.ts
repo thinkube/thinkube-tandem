@@ -23,6 +23,8 @@ export interface SessionDeps {
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;
   suiteCommand?: string[];
+  /** Injectable whole-cut completeness pass (tests swap it). */
+  completeCut?: typeof import("../derive/pipeline").completeCut;
   ground?: typeof runDerivationPipeline;
   dispatch?: typeof dispatchTep;
   readCurrentStamp?: () => Promise<SourceStamp[]>;

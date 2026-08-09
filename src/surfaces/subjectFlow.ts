@@ -6,7 +6,7 @@
  * promise serving nothing visible as scope creep.
  */
 import { Change, Space } from "../core/schema";
-import { runDerivationPipeline } from "../derive/pipeline";
+import { completeCut, runDerivationPipeline } from "../derive/pipeline";
 import type { TandemSession } from "./session";
 
 /** The claims of one subject, in the order the prompt will number them. */
@@ -39,6 +39,9 @@ async function groundSubject(
       decisions: s.decisionsInForce(),
       claims,
       digestStore: s.digests(),
+      // The gaps and the ripples are looked for ONCE, over the whole cut,
+      // after every subject has been ground.
+      skipCompleteness: true,
       mintNodeId: (n) => `node-${s.author}-${subjectId.split("-").pop()}-${n}`,
       ...(s.deps.scopes ? { scopes: s.deps.scopes() } : {}),
       onStage: s.stageOf(subjectId),
@@ -106,6 +109,25 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
     }
   };
   await Promise.all(Array.from({ length: pool }, worker));
+
+  // One pass over everything, now that every subject exists: what the set
+  // still misses, and the code around it that must move too.
+  s.activity = { label: "looking for what is still missing", current: 0, total: 1 };
+  s.deps.onChanged?.();
+  const claims = (s.space.claims ?? []).filter((c) =>
+    subjectIds.includes(c.subjectId),
+  );
+  const gaps = await (s.deps.completeCut ?? completeCut)(s.deps.round, {
+    claims,
+    subjects: (s.space.subjects ?? []).filter((x) => subjectIds.includes(x.id)),
+    changes: s.space.nodes.filter((n) => n.servesClaim && claims.some((c) => c.id === n.servesClaim)),
+    mintNodeId: (n) => `node-${s.author}-gap-${n}`,
+    nextIndex: 1,
+  });
+  if (gaps.length) {
+    s.space = { ...s.space, nodes: [...s.space.nodes, ...gaps] };
+    tally.promises += gaps.length;
+  }
   s.activity = undefined;
   s.changed(
     `Derived ${tally.promises} promise(s) across ${subjectIds.length} subject(s).` +
