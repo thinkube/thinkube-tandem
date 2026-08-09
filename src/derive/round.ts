@@ -28,10 +28,17 @@ export function volumeDeps(deps: RoundDeps): RoundDeps {
     ...deps,
     model: deps.volumeModel ?? deps.model,
     tools: "none",
-    maxTurns: 1,
     effort: "medium",
   };
 }
+
+/**
+ * A round with no tools cannot loop on anything, so its turn allowance is
+ * a guard against nothing. One turn is not enough: a round that spends a
+ * turn thinking before it answers hits the cap and the SDK raises, which
+ * killed a reading that had already been written.
+ */
+const TOOLLESS_TURNS = 4;
 
 type SdkQuery = (args: {
   prompt: string;
@@ -54,32 +61,48 @@ export async function runReadRound(
     );
     return null;
   }
+  return collectText(
+    () =>
+      query({
+        prompt,
+        options: {
+          model: deps.model,
+          ...(deps.abort ? { abortController: deps.abort } : {}),
+          permissionMode: "bypassPermissions",
+          thinking: { type: "adaptive" },
+          effort: deps.effort ?? "high",
+          maxTurns: deps.maxTurns ?? (deps.tools === "none" ? TOOLLESS_TURNS : 40),
+          allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
+          disallowedTools: [
+            "Write",
+            "Edit",
+            "NotebookEdit",
+            "Bash",
+            "WebFetch",
+            "WebSearch",
+            "Task",
+            "AskUserQuestion",
+            "ExitPlanMode",
+          ],
+          additionalDirectories: [deps.repoRoot],
+        },
+      }),
+    deps.log,
+  );
+}
+
+/**
+ * Read a round's stream into its text. A round that fails AFTER writing
+ * its answer keeps that answer: the reply arrived, and throwing it away
+ * turns a recoverable round into a failure the human has to repeat.
+ */
+export async function collectText(
+  stream: () => AsyncIterable<unknown>,
+  log?: (line: string) => void,
+): Promise<string | null> {
   let text = "";
   try {
-    for await (const msg of query({
-      prompt,
-      options: {
-        model: deps.model,
-        ...(deps.abort ? { abortController: deps.abort } : {}),
-        permissionMode: "bypassPermissions",
-        thinking: { type: "adaptive" },
-        effort: deps.effort ?? "high",
-        maxTurns: deps.tools === "none" ? 1 : (deps.maxTurns ?? 40),
-        allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
-        disallowedTools: [
-          "Write",
-          "Edit",
-          "NotebookEdit",
-          "Bash",
-          "WebFetch",
-          "WebSearch",
-          "Task",
-          "AskUserQuestion",
-          "ExitPlanMode",
-        ],
-        additionalDirectories: [deps.repoRoot],
-      },
-    })) {
+    for await (const msg of stream()) {
       const rec = msg as Record<string, unknown>;
       if (rec.type === "assistant") {
         const m = rec.message as { content?: unknown } | undefined;
@@ -92,9 +115,12 @@ export async function runReadRound(
       }
     }
   } catch (err) {
-    deps.log?.(
-      `round errored: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const why = err instanceof Error ? err.message : String(err);
+    if (text.trim()) {
+      log?.(`round ended early (${why}) — keeping the ${text.length} characters it wrote`);
+      return text;
+    }
+    log?.(`round errored: ${why}`);
     return null;
   }
   return text;

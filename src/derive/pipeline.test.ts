@@ -91,7 +91,11 @@ test("the pipeline runs its four rounds in order: repo digest → ground → com
   assert.equal(store.saved[REPO_KEY], "LAYOUT: the toolbar renders in src/toolbar.ts", "digest cached under the repo stamp");
 
   assert.equal(seenDeps[3].tools, "none", "the tail runs without tools");
-  assert.equal(seenDeps[3].maxTurns, 1, "the tail is a single completion");
+  assert.equal(
+    seenDeps[3].maxTurns,
+    undefined,
+    "the tail carries no turn cap — with no tools there is nothing to loop on, and one turn killed rounds mid-answer",
+  );
   assert.equal(seenDeps[3].model, "sonnet", "the tail rides the volume model");
   assert.equal(seenDeps[1].model, "opus", "grounding keeps the judgment model");
 
