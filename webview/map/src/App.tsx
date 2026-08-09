@@ -343,8 +343,18 @@ export function App(): JSX.Element {
           <button
             key={id}
             data-tab={id}
-            title={`Show ${why}.`}
-            onClick={() => setTab(id)}
+            title={
+              id === "work" && push.cost.subjects > 0
+                ? `Work out what to build — ${push.cost.subjects} object(s), about ${push.cost.rounds} rounds.`
+                : `Show ${why}.`
+            }
+            onClick={() => {
+              setTab(id);
+              // Going to look at the work is what starts the thinking —
+              // and it is the only thing that starts it. Nothing runs
+              // speculatively behind a reading nobody has read.
+              if (id === "work" && push.cost.subjects > 0) post({ action: "think" });
+            }}
             style={{
               background: "var(--vscode-editorWidget-background, #252526)",
               color: tab === id ? "var(--vscode-textLink-foreground, #3794ff)" : "inherit",
@@ -360,7 +370,7 @@ export function App(): JSX.Element {
           </button>
         ))}
         <span style={{ marginLeft: "auto", color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12 }}>
-          your words above, the work below, the build on the right
+          say it · see what it will build · build it
         </span>
       </div>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
@@ -397,7 +407,7 @@ export function App(): JSX.Element {
           </div>
         ) : (
           <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-            No build yet — sign a cut on the Units map and it appears here.
+            No build yet — press Build on the right and it appears here.
           </div>
         )}
         <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />

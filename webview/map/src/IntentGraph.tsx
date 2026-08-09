@@ -183,11 +183,32 @@ export function IntentGraph(props: {
       </section>
     );
 
-  const nothing = !push.pendingModel && !push.subjects.length;
-  if (nothing)
+  if (!push.pendingModel && !push.subjects.length)
     return (
-      <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
-        Nothing here yet — write what you want above and I will read it as one description.
+      <div style={{ flex: 1, padding: 24 }}>
+        {push.sentences.length ? (
+          <>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>
+              {push.sentences.length} sentence{push.sentences.length === 1 ? "" : "s"} recorded, none
+              read yet.
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+              Reading them is one cheap round and costs nothing else.
+            </div>
+            <button
+              data-retry-model
+              style={{ fontWeight: 600 }}
+              title="Read everything you have written, as one description."
+              onClick={() => post({ action: "retry-model" })}
+            >
+              Read what I wrote
+            </button>
+          </>
+        ) : (
+          <span style={{ opacity: 0.7 }}>
+            Nothing here yet — write what you want above and I will read it as one description.
+          </span>
+        )}
       </div>
     );
 

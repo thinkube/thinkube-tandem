@@ -38,11 +38,21 @@ export async function proposeModelFlow(
   return readModel(s, allTexts, allAsks);
 }
 
-/** Read again, over the sentences already recorded. */
+/**
+ * Read again, over the sentences already recorded. With no reading waiting
+ * — a space whose derived work was cleared, or one opened for the first
+ * time after a reload — it reads everything recorded, which is the same
+ * act: the sentences are the only source there has ever been.
+ */
 export async function retryModel(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
   const f = s.space.readingFailure ?? s.space.proposal;
-  if (!f) return { ok: false, reason: "nothing to read again" };
-  return readModel(s, f.texts, f.askIds);
+  if (f) return readModel(s, f.texts, f.askIds);
+  if (!s.space.asks.length) return { ok: false, reason: "nothing written yet" };
+  return readModel(
+    s,
+    s.space.asks.map((a) => a.text),
+    s.space.asks.map((a) => a.id),
+  );
 }
 
 /**

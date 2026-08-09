@@ -85,28 +85,55 @@ export function renderDeliveryPage(
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`DELIVERY on ${delivery.branch}`);
-  const askLines = new Map<string, string[]>();
-  for (const n of members) {
-    for (const a of asksOf(space, n)) {
-      if (!askLines.has(a.id)) askLines.set(a.id, []);
-      askLines.get(a.id)!.push(n.sentence);
+  // The page is written in objects and what is now true of them, because
+  // that is what a person can go and try. A promise is a step and cannot
+  // be experienced on its own; a claim can. Where a claim is only partly
+  // built the page says so rather than counting it as done.
+  const built = new Set(members.map((n) => n.id));
+  const subjects = space.subjects ?? [];
+  const claims = space.claims ?? [];
+  for (const subject of subjects) {
+    const mine = claims.filter((c) => c.subjectId === subject.id);
+    const touched = mine.filter((c) =>
+      space.nodes.some((n) => n.servesClaim === c.id && built.has(n.id)),
+    );
+    if (!touched.length) continue;
+    const whole = touched.filter((c) =>
+      space.nodes.every((n) => n.servesClaim !== c.id || built.has(n.id)),
+    );
+    lines.push(`${subject.name} — ${whole.length} of ${mine.length} now true`);
+    for (const c of touched) {
+      const all = space.nodes.filter((n) => n.servesClaim === c.id);
+      const here = all.filter((n) => built.has(n.id));
+      const done = here.length === all.length;
+      lines.push(
+        done
+          ? `  ✓ ${c.text}`
+          : `  · ${c.text} — not yet (${here.length} of ${all.length} parts built)`,
+      );
+      // See it for yourself, beside the claim it proves: every line names
+      // a door the machine verified renders. A promise whose door is
+      // missing gets no line — it is undelivered rather than pointing at
+      // a way in that is not there.
+      for (const n of here) {
+        const seen = experience.get(n.id);
+        if (seen) lines.push(`      see it: ${seen}`);
+      }
     }
   }
-  for (const [askId, sentences] of askLines) {
-    const ask = space.asks.find((a) => a.id === askId)!;
-    lines.push(`You asked: ${ask.text.trim()}`);
-    for (const s of sentences) lines.push(`  ✓ ${s}`);
-  }
-  // See it for yourself, ABOVE the proofs: every line names a door the
-  // machine verified renders. A promise whose door is missing gets no line
-  // — it is undelivered instead of pointing at a way in that is not there.
-  const walk = members.flatMap((n) => {
-    const seen = experience.get(n.id);
-    return seen ? [`  see it: ${seen}`] : [];
-  });
-  if (walk.length) {
-    lines.push("See it for yourself:");
-    lines.push(...walk);
+  // Work that belongs to no object is still reported — under the sentence
+  // it came from, which is the only thing that can name it.
+  const loose = members.filter((n) => !n.servesClaim);
+  const byAsk = new Map<string, Change[]>();
+  for (const n of loose)
+    for (const a of asksOf(space, n)) byAsk.set(a.id, [...(byAsk.get(a.id) ?? []), n]);
+  for (const [askId, ns] of byAsk) {
+    lines.push(`You asked: ${space.asks.find((a) => a.id === askId)!.text.trim()}`);
+    for (const n of ns) {
+      lines.push(`  ✓ ${n.sentence}`);
+      const seen = experience.get(n.id);
+      if (seen) lines.push(`      see it: ${seen}`);
+    }
   }
   for (const p of delivery.proofs)
     lines.push(

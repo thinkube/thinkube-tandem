@@ -151,3 +151,36 @@ test("the docs gate blocks an accept by default; advisory is the explicit escape
   assert.ok(!blocked.ok && blocked.reason.includes("docs gate"), "blocking by default");
   assert.ok(acceptDelivery(d, "t", "advisory").ok, "advisory lets it through, on the record");
 });
+
+test("the delivery page counts truth in claims, and never calls a half-built one done", () => {
+  const space: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "the delivery page shows how to see it", at: "t" }],
+    subjects: [{ id: "sub-1", name: "the delivery page", from: ["ask-1"] }],
+    claims: [
+      { id: "c1", subjectId: "sub-1", text: "shows a see-it line per promise", fromAsk: "ask-1" },
+      { id: "c2", subjectId: "sub-1", text: "names the check in my words", fromAsk: "ask-1" },
+      { id: "c3", subjectId: "sub-1", text: "stays inside its line budget", fromAsk: "ask-1" },
+    ],
+    nodes: [
+      { id: "n1", sentence: "walkthrough from verified doors", serves: ["sub-1"], needs: [], servesClaim: "c1", acceptance: [] },
+      { id: "n2", sentence: "labels carry the check's own words", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [] },
+      { id: "n3", sentence: "the page truncates long labels", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [] },
+    ],
+    cuts: [{ id: "cut-1", changeIds: ["n1", "n2"] }],
+  };
+  const page = renderDeliveryPage(
+    space,
+    { id: "d1", cutId: "cut-1", branch: "tandem/x", proofs: [] },
+    new Map([["n1", "the delivery page — read the walkthrough"]]),
+  );
+
+  assert.ok(page.includes("the delivery page — 1 of 3 now true"), page);
+  assert.ok(page.includes("✓ shows a see-it line per promise"), "a whole claim is true");
+  assert.ok(
+    page.includes("· names the check in my words — not yet (1 of 2 parts built)"),
+    "a claim with a part missing is NOT counted as delivered",
+  );
+  assert.ok(!page.includes("stays inside its line budget"), "a claim nothing touched is not listed");
+  assert.ok(page.includes("see it: the delivery page — read the walkthrough"), "beside its claim");
+});
