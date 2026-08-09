@@ -7,6 +7,7 @@
  * +/−/⤢ controls, `far` below the legibility floor.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { C, FS, SP } from "../type";
 
 export interface World {
   tx: number;
@@ -123,19 +124,19 @@ export function ZoomControls(props: { world: World }): JSX.Element {
   const btn: React.CSSProperties = {
     minWidth: 30,
     height: 30,
-    padding: "0 8px",
-    background: "var(--vscode-editorWidget-background, #252526)",
+    padding: `0 ${SP.sm}px`,
+    background: C.raised,
     color: "inherit",
-    border: "1px solid var(--vscode-panel-border, #3c3c3c)",
+    border: `1px solid ${C.border}`,
     borderRadius: 4,
     cursor: "pointer",
-    fontSize: 15,
+    fontSize: FS.heading,
   };
   return (
     <div data-zoom-controls style={{ position: "absolute", left: 10, bottom: 10, display: "flex", gap: 5, zIndex: 3 }}>
       <button style={btn} title="Zoom in — the wheel scrolls; hold Ctrl (or ⌘) and use the wheel to zoom" onClick={props.world.zoomIn}>+</button>
       <button style={btn} title="Zoom out — the wheel scrolls; hold Ctrl (or ⌘) and use the wheel to zoom" onClick={props.world.zoomOut}>−</button>
-      <button style={{ ...btn, fontSize: 12 }} title="Fit everything on screen" onClick={props.world.fit}>
+      <button style={{ ...btn, fontSize: FS.body }} title="Fit everything on screen" onClick={props.world.fit}>
         Fit
       </button>
     </div>

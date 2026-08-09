@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
-import { RENDER_LINE_BUDGET, renderCutScreen, renderDeliveryPage } from "./render";
+import { RENDER_LINE_BUDGET, renderCutScreen, renderDeliveryPage, renderWeight } from "./render";
 import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
 
 function makeSpace(): { space: Space; changeIds: string[] } {
@@ -108,14 +108,19 @@ test("the delivery page speaks in the asks' words with proof and gestures beside
     new Map([[changeIds[1], "the panel header — press Follow"]]),
   );
   assert.ok(page.includes("You asked: make the log panel follow the running step"));
-  assert.ok(page.includes("✓ the log panel scrolls with the active step"));
+  assert.ok(page.includes("- ✓ the log panel scrolls with the active step"));
   assert.ok(
-    page.includes("✗ a change with nothing proving it yet"),
+    page.includes("- ✗ a change with nothing proving it yet"),
     "a promise with no check is never ticked",
   );
-  assert.ok(page.includes("check: suite — green"));
-  assert.ok(page.includes("see it: the panel header — press Follow"));
-  assert.ok(page.split("\n").length <= RENDER_LINE_BUDGET);
+  assert.ok(page.includes("## Checks"), "the checks have a section of their own");
+  assert.ok(page.includes("- ✓ suite — green"));
+  assert.ok(page.includes("- see it: the panel header — press Follow"));
+  assert.ok(page.startsWith("# Delivery — `tandem/cut-1`"), "the page names what it is");
+  assert.ok(
+    renderWeight(page) <= RENDER_LINE_BUDGET,
+    `a decision, not homework: ${renderWeight(page)} lines`,
+  );
 });
 
 test("what did NOT arrive is on the delivery page's face", () => {
@@ -128,7 +133,8 @@ test("what did NOT arrive is on the delivery page's face", () => {
     proofs: [{ kind: "suite", label: "suite", verdict: "green" }],
     undelivered: ["SL-1: docs obligation unmet: declared doc-module path(s) not present in the landed tree: docs/guide.md. The documentation must land with the slice before it can reach Done."],
   });
-  assert.ok(page.includes("⚠ undelivered:"), "the gap is visible on the page");
+  assert.ok(page.includes("## Not delivered"), "the gap has a section of its own");
+  assert.ok(page.includes("- ⚠ SL-1:"), "and the gap is on the page");
   assert.ok(page.includes("docs obligation unmet"), "the docs gate speaks on the page");
 });
 
@@ -198,12 +204,12 @@ test("the delivery page counts truth in claims, and never calls a half-built one
     new Map([["n1", "the delivery page — read the walkthrough"]]),
   );
 
-  assert.ok(page.includes("the delivery page — 1 of 3 now true"), page);
-  assert.ok(page.includes("✓ shows a see-it line per promise"), "proved, so it is true");
+  assert.ok(page.includes("### the delivery page — 1 of 3 now true"), page);
+  assert.ok(page.includes("- ✓ shows a see-it line per promise"), "proved, so it is true");
   assert.ok(
-    page.includes("✗ names the check in my words — NOT true yet (1 of 2 parts in this delivery)"),
+    page.includes("- ✗ names the check in my words — **NOT true yet** (1 of 2 parts in this delivery)"),
     "a claim with a part missing is NOT counted as delivered",
   );
   assert.ok(!page.includes("stays inside its line budget"), "a claim nothing touched is not listed");
-  assert.ok(page.includes("see it: the delivery page — read the walkthrough"), "beside its claim");
+  assert.ok(page.includes("- see it: the delivery page — read the walkthrough"), "beside its claim");
 });

@@ -4,6 +4,7 @@
  * optional decision strip. A card in the cut wears gold all over.
  */
 import { useLayoutEffect, useRef, useState } from "react";
+import { C, FS, SP } from "../type";
 
 export const NODE_W = 230;
 
@@ -30,16 +31,16 @@ export interface CardData {
 }
 
 const CHIP_COLORS: Record<NonNullable<Chip["kind"]>, { border: string; color: string; bg?: string }> = {
-  el: { border: "#4ec9b0", color: "#4ec9b0", bg: "#4ec9b01a" },
-  con: { border: "#ee9b4e", color: "#ee9b4e", bg: "#ee9b4e1a" },
-  ac: { border: "#89d185", color: "#89d185", bg: "#89d1851a" },
-  q: { border: "#e5c07b", color: "#e5c07b", bg: "#e5c07b26" },
-  stale: { border: "var(--warn, #cca700)", color: "var(--warn, #cca700)" },
-  cut: { border: "var(--info, #3794ff)", color: "var(--info, #3794ff)" },
-  na: { border: "var(--err, #f14c4c)", color: "var(--err, #f14c4c)" },
-  run: { border: "var(--info, #3794ff)", color: "var(--info, #3794ff)" },
-  pass: { border: "var(--ok, #4ec9b0)", color: "var(--ok, #4ec9b0)" },
-  plain: { border: "var(--border, #3c3c3c)", color: "inherit" },
+  el: { border: C.ok, color: C.ok, bg: "#4ec9b01a" },
+  con: { border: C.ask, color: C.ask, bg: "#ee9b4e1a" },
+  ac: { border: C.ok, color: C.ok, bg: "#89d1851a" },
+  q: { border: C.ask, color: C.ask, bg: "#e5c07b26" },
+  stale: { border: C.gold, color: C.gold },
+  cut: { border: C.live, color: C.live },
+  na: { border: C.bad, color: C.bad },
+  run: { border: C.live, color: C.live },
+  pass: { border: C.ok, color: C.ok },
+  plain: { border: C.border, color: "inherit" },
 };
 
 function ChipEl(props: { chip: Chip }): JSX.Element {
@@ -48,8 +49,8 @@ function ChipEl(props: { chip: Chip }): JSX.Element {
     <span
       title={props.chip.why}
       style={{
-        fontSize: 11,
-        padding: "1px 7px",
+        fontSize: FS.caption,
+        padding: `${SP.xs}px ${SP.sm}px`,
         borderRadius: 8,
         border: `1px solid ${c.border}`,
         color: c.color,
@@ -82,12 +83,12 @@ export function NodeCard(props: {
       style={{
         position: "absolute",
         width: NODE_W,
-        background: card.inCut ? "#cca70014" : "var(--vscode-editorWidget-background, #252526)",
+        background: card.inCut ? "#cca70014" : C.raised,
         border: card.inCut
           ? "2px solid var(--gold, #cca700)"
-          : `1px solid ${props.selected ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
+          : `1px solid ${props.selected ? C.focus : C.border}`,
         borderRadius: 6,
-        padding: "8px 10px",
+        padding: `${SP.sm}px ${SP.md}px`,
         boxShadow: card.inCut ? "0 0 0 1px #cca70055, 0 2px 6px #0006" : "0 2px 6px #0006",
         boxSizing: "border-box",
         transition: "left .35s, top .35s",
@@ -101,7 +102,7 @@ export function NodeCard(props: {
           title={card.band.why}
           style={{
             margin: "-8px -10px 6px",
-            padding: "2px 10px",
+            padding: `${SP.xs}px ${SP.md}px`,
             borderRadius: "5px 5px 0 0",
             borderBottom: `1px solid ${card.band.color}`,
             background: `${card.band.color}1f`,
@@ -120,7 +121,7 @@ export function NodeCard(props: {
         {card.title}
       </h3>
       {!far && card.abs ? (
-        <div style={{ color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-line" }}>
+        <div style={{ color: C.quiet, fontSize: FS.body, overflowWrap: "anywhere", whiteSpace: "pre-line" }}>
           {card.abs}
         </div>
       ) : null}
@@ -136,8 +137,8 @@ export function NodeCard(props: {
           style={{
             marginTop: 6,
             borderLeft: "3px solid var(--ok, #4ec9b0)",
-            padding: "3px 6px",
-            fontSize: 12,
+            padding: `${SP.xs}px ${SP.sm}px`,
+            fontSize: FS.body,
             background: "#4ec9b01a",
             overflowWrap: "anywhere",
           }}

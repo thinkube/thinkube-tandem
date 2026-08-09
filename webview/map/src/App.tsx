@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { DraftPush, onDraft, onSpace, post, SpacePush} from "./vscode";
 import { RunNote, RunSection } from "./Run";
+import { Delivery } from "./Delivery";
+import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
 import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
@@ -22,6 +24,10 @@ export function App(): JSX.Element {
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
+  // The orchestration page has two things to show and they are wanted at
+  // different moments: the workers while they run, the report once they
+  // have. Neither replaces the other, so the reader keeps the switch.
+  const [shown, setShown] = useState<"workers" | "report" | null>(null);
   // Which ask has its editor open. It lives here because a subject, a
   // claim that reads wrong must be able to open the ask it came
   // from, and they are drawn on another surface.
@@ -32,6 +38,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (push?.running) setTab("flow");
   }, [push?.running]);
+  // Until the reader says otherwise: the workers while they run, and the
+  // report the moment there is one to read.
+  const hasReport = !!push?.deliveries.length;
+  const reportShown = shown === null ? hasReport && !push?.running : shown === "report";
 
   useEffect(() => onSpace(setPush), []);
   useEffect(
@@ -43,22 +53,22 @@ export function App(): JSX.Element {
     [],
   );
 
-  if (!push) return <div style={{ padding: 24, opacity: 0.7 }}>Loading the space…</div>;
+  if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
   const spinStyle = (
     <style>{`@keyframes tandemSpinKf { from { transform: rotate(0) } to { transform: rotate(360deg) } } .tandem-spin { animation: tandemSpinKf 1.1s linear infinite }`}</style>
   );
   if (push.needsRepo)
     return (
       <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
-        <div style={{ opacity: 0.8 }}>Which project are you working on?</div>
+        <div style={{ opacity: O.dim }}>Which project are you working on?</div>
         <button
           data-choose-repo
-          style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-button-background, #0e639c)", color: "var(--vscode-button-foreground, #fff)", cursor: "pointer" }}
+          style={{ padding: `${SP.sm}px ${SP.lg}px`, borderRadius: 6, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-button-background, #0e639c)", color: "var(--vscode-button-foreground, #fff)", cursor: "pointer" }}
           onClick={() => post({ action: "switch-repo" })}
         >
           Choose project…
         </button>
-        {push.message ? <div style={{ fontSize: 12, opacity: 0.7 }}>{push.message}</div> : null}
+        {push.message ? <div style={{ fontSize: FS.body, opacity: O.dim }}>{push.message}</div> : null}
       </div>
     );
   return (
@@ -76,11 +86,11 @@ export function App(): JSX.Element {
             display: "flex",
             gap: 8,
             alignItems: "center",
-            background: "var(--vscode-editorWidget-background, #252526)",
-            border: "1px solid var(--vscode-focusBorder, #3794ff)",
+            background: C.raised,
+            border: `1px solid ${C.focus}`,
             borderRadius: 14,
-            padding: "4px 14px",
-            fontSize: 12,
+            padding: `${SP.xs}px ${SP.lg}px`,
+            fontSize: FS.body,
             boxShadow: "0 2px 8px #0008",
           }}
         >
@@ -96,17 +106,17 @@ export function App(): JSX.Element {
           display: "flex",
           gap: 8,
           alignItems: "baseline",
-          padding: "6px 12px 0",
-          fontSize: 12,
+          padding: `${SP.sm}px ${SP.lg}px 0`,
+          fontSize: FS.body,
         }}
       >
-        <span style={{ opacity: 0.7 }}>Asking in</span>
-        <strong style={{ fontSize: 13 }}>{push.repoName ?? "no project chosen"}</strong>
-        <span style={{ opacity: 0.5 }}>— its code is read; its repository receives the delivery</span>
+        <span style={{ opacity: O.dim }}>Asking in</span>
+        <strong style={{ fontSize: FS.body }}>{push.repoName ?? "no project chosen"}</strong>
+        <span style={{ opacity: O.faint }}>— its code is read; its repository receives the delivery</span>
         <button
           data-switch-repo
           title="Switch the repository this space works on."
-          style={{ marginLeft: "auto", fontSize: 11, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: "1px 8px" }}
+          style={{ marginLeft: "auto", fontSize: FS.caption, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: `1px ${SP.sm}px` }}
           onClick={() => post({ action: "switch-repo" })}
         >
           switch
@@ -118,7 +128,7 @@ export function App(): JSX.Element {
           display: tab === "intent" ? "flex" : "none",
           flexWrap: "wrap",
           gap: 8,
-          padding: "8px 12px",
+          padding: `${SP.sm}px ${SP.lg}px`,
           borderBottom: "1px solid var(--vscode-panel-border, #333)",
           alignItems: "center",
         }}
@@ -144,9 +154,9 @@ export function App(): JSX.Element {
             flexBasis: "100%",
             minWidth: 0,
             resize: "vertical",
-            padding: "6px 10px",
+            padding: `${SP.sm}px ${SP.md}px`,
             fontFamily: "inherit",
-            fontSize: 13,
+            fontSize: FS.body,
             background: "var(--vscode-input-background, #222)",
             color: "var(--vscode-input-foreground, #ddd)",
             border: "1px solid var(--vscode-input-border, #444)",
@@ -154,11 +164,11 @@ export function App(): JSX.Element {
           }}
         />
         {classifying ? (
-          <span data-classifying style={{ fontSize: 12, opacity: 0.75 }}>⟳ reading your words…</span>
+          <span data-classifying style={{ fontSize: FS.body, opacity: O.dim }}>⟳ reading your words…</span>
         ) : null}
         {tag && !tag.items ? (
-          <div data-tag-row style={{ flexBasis: "100%", display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
-            <span style={{ opacity: 0.7 }}>This looks like — press to record:</span>
+          <div data-tag-row style={{ flexBasis: "100%", display: "flex", gap: 6, alignItems: "center", fontSize: FS.body }}>
+            <span style={{ opacity: O.dim }}>This looks like — press to record:</span>
             {[
               { k: "ask", label: "Ask (build it)" },
               { k: "question", label: "Question (just answer)" },
@@ -170,8 +180,8 @@ export function App(): JSX.Element {
                 style={{
                   cursor: "pointer",
                   borderRadius: 10,
-                  padding: "2px 10px",
-                  border: tag.guessed === t.k ? "2px solid var(--vscode-focusBorder, #3794ff)" : "1px solid var(--vscode-input-border, #444)",
+                  padding: `${SP.xs}px ${SP.md}px`,
+                  border: tag.guessed === t.k ? `2px solid ${C.focus}` : "1px solid var(--vscode-input-border, #444)",
                   background: "var(--vscode-input-background, #222)",
                   color: "inherit",
                   fontWeight: tag.guessed === t.k ? 600 : 400,
@@ -192,7 +202,7 @@ export function App(): JSX.Element {
                 <button
                   data-tag-lines
                   title="Record each line as its own ask."
-                  style={{ cursor: "pointer", borderRadius: 10, padding: "2px 10px", border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-input-background, #222)", color: "inherit" }}
+                  style={{ cursor: "pointer", borderRadius: 10, padding: `${SP.xs}px ${SP.md}px`, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-input-background, #222)", color: "inherit" }}
                   onClick={() => {
                     post({ action: "capture-many", items: lines });
                     setTag(null);
@@ -203,22 +213,22 @@ export function App(): JSX.Element {
                 </button>
               );
             })()}
-            <span style={{ opacity: 0.55 }}>nothing is saved until you press one</span>
+            <span style={{ opacity: O.faint }}>nothing is saved until you press one</span>
           </div>
         ) : null}
         {tag?.items ? (
-          <div data-list-preview style={{ flexBasis: "100%", fontSize: 12 }}>
-            <div style={{ opacity: 0.8, marginBottom: 4 }}>
+          <div data-list-preview style={{ flexBasis: "100%", fontSize: FS.body }}>
+            <div style={{ opacity: O.dim, marginBottom: 4 }}>
               That looks like a list — record {tag.items.length} separate asks?
             </div>
             <ol style={{ margin: "0 0 6px 18px", padding: 0 }}>
               {tag.items.map((it, i) => (
-                <li key={i} style={{ opacity: 0.85 }}>{it}</li>
+                <li key={i} style={{ opacity: O.dim }}>{it}</li>
               ))}
             </ol>
             <button
               data-record-list
-              style={{ cursor: "pointer", borderRadius: 4, padding: "2px 10px" }}
+              style={{ cursor: "pointer", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px` }}
               onClick={() => {
                 post({ action: "capture-many", items: tag.items! });
                 setTag(null);
@@ -228,7 +238,7 @@ export function App(): JSX.Element {
               Record {tag.items.length} asks
             </button>
             <button
-              style={{ marginLeft: 8, cursor: "pointer", background: "none", border: "none", color: "inherit", opacity: 0.7 }}
+              style={{ marginLeft: 8, cursor: "pointer", background: "none", border: "none", color: "inherit", opacity: O.dim }}
               onClick={() => setTag(null)}
             >
               keep editing
@@ -236,7 +246,7 @@ export function App(): JSX.Element {
           </div>
         ) : null}
         {push.activity ? (
-          <div data-activity style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+          <div data-activity style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center", fontSize: FS.body }}>
             <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span>
             <span>
               {push.activity.label}… ({push.activity.current}/{push.activity.total})
@@ -247,28 +257,28 @@ export function App(): JSX.Element {
                   display: "block",
                   height: "100%",
                   width: `${Math.round((push.activity.current / push.activity.total) * 100)}%`,
-                  background: "var(--vscode-progressBar-background, #3794ff)",
+                  background: C.live,
                   transition: "width 300ms",
                 }}
               />
             </span>
             <button
               data-cancel-capture
-              style={{ cursor: "pointer", background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, color: "inherit", fontSize: 11 }}
+              style={{ cursor: "pointer", background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, color: "inherit", fontSize: FS.caption }}
               onClick={() => post({ action: "cancel-capture" })}
             >
               Cancel
             </button>
           </div>
         ) : null}
-                <span data-identity style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>
+                <span data-identity style={{ fontSize: FS.caption, opacity: O.dim, whiteSpace: "nowrap" }}>
           {push.subjects.length} subject(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
         </span>
         {!push.running && push.signedTeps === 0 && (push.subjects.length > 0 || push.questions.length > 0) ? (
           panicArmed ? (
             <button
               data-panic-confirm
-              style={{ fontSize: 11, color: "#f85149", background: "none", border: "1px solid #f85149", borderRadius: 4, cursor: "pointer" }}
+              style={{ fontSize: FS.caption, color: C.bad, background: "none", border: "1px solid #f85149", borderRadius: 4, cursor: "pointer" }}
               onClick={() => {
                 setPanicArmed(false);
                 post({ action: "panic" });
@@ -279,7 +289,7 @@ export function App(): JSX.Element {
           ) : (
             <button
               data-panic
-              style={{ fontSize: 11, opacity: 0.6, background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+              style={{ fontSize: FS.caption, opacity: O.dim, background: "none", border: "none", cursor: "pointer", color: "inherit" }}
               onClick={() => setPanicArmed(true)}
             >
               Panic
@@ -287,10 +297,10 @@ export function App(): JSX.Element {
           )
         ) : null}
         {push.running ? (
-          <span style={{ fontSize: 12, color: "#3fb950" }}>● building…</span>
+          <span style={{ fontSize: FS.body, color: C.ok }}>● building…</span>
         ) : null}
         {push.message ? (
-          <span style={{ fontSize: 12, opacity: 0.75 }}>{push.message}</span>
+          <span style={{ fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
         ) : null}
       </div>
       {tab === "intent" ? (
@@ -303,26 +313,26 @@ export function App(): JSX.Element {
         />
       ) : null}
       {push.lastAnswer ? (
-        <section data-answer style={{ margin: "6px 12px 0", padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
-          <div style={{ fontSize: 11, opacity: 0.6 }}>You asked: {push.lastAnswer.question}</div>
-          <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
+        <section data-answer style={{ margin: `${SP.sm}px ${SP.lg}px 0`, padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
+          <div style={{ fontSize: FS.caption, opacity: O.dim }}>You asked: {push.lastAnswer.question}</div>
+          <div style={{ fontSize: FS.body, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
         </section>
       ) : null}
       {push.legacy ? (
         <div
           data-legacy
           style={{
-            margin: "8px 10px 0",
-            padding: "8px 10px",
+            margin: `${SP.sm}px ${SP.md}px 0`,
+            padding: `${SP.sm}px ${SP.md}px`,
             border: "1px solid #e5c07b",
             borderRadius: 5,
-            fontSize: 12,
+            fontSize: FS.body,
           }}
         >
           {push.legacy}
         </div>
       ) : null}
-      <div data-tabs style={{ display: "flex", gap: 6, padding: "8px 10px 0", alignItems: "center" }}>
+      <div data-tabs style={{ display: "flex", gap: 6, padding: `${SP.sm}px ${SP.md}px 0`, alignItems: "center" }}>
         {([
           ["intent", "1 · Intent", "what you want"],
           ["work", "2 · Work", "what gets built, and what proves it"],
@@ -344,20 +354,46 @@ export function App(): JSX.Element {
               if (id === "work" && push.cost.subjects > 0) post({ action: "think" });
             }}
             style={{
-              background: "var(--vscode-editorWidget-background, #252526)",
-              color: tab === id ? "var(--vscode-textLink-foreground, #3794ff)" : "inherit",
-              border: `1px solid ${tab === id ? "var(--vscode-focusBorder, #3794ff)" : "var(--vscode-panel-border, #3c3c3c)"}`,
-              padding: "5px 12px",
+              background: C.raised,
+              color: tab === id ? C.focus : "inherit",
+              border: `1px solid ${tab === id ? C.focus : C.border}`,
+              padding: `${SP.sm}px ${SP.lg}px`,
               borderRadius: 4,
               cursor: "pointer",
-              fontSize: 13,
+              fontSize: FS.body,
             }}
           >
             {label}
             {id === "flow" && push.running ? " ●" : ""}
           </button>
         ))}
-        <span style={{ marginLeft: "auto", color: "var(--vscode-descriptionForeground, #9d9d9d)", fontSize: 12 }}>
+        {tab === "flow" && hasReport ? (
+          <div data-flow-view style={{ display: "flex", gap: 6, marginLeft: SP.lg }}>
+            {([
+              ["workers", "Workers", "The workers this run used, in the order they ran."],
+              ["report", "Delivery report", "What the run made true, and the decision left."],
+            ] as const).map(([id, text, why]) => (
+              <button
+                key={id}
+                data-flow-view={id}
+                title={why}
+                onClick={() => setShown(id)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${(id === "report") === reportShown ? C.focus : "transparent"}`,
+                  color: (id === "report") === reportShown ? "inherit" : C.quiet,
+                  padding: `2px ${SP.xs}px`,
+                  cursor: "pointer",
+                  fontSize: FS.body,
+                }}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
           say it · see what it will build · build it
         </span>
       </div>
@@ -401,6 +437,8 @@ export function App(): JSX.Element {
               setTab("intent");
             }}
           />
+        ) : reportShown ? (
+          <Delivery push={push} />
         ) : push.run || push.runNote ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             {push.runNote ? <RunNote note={push.runNote} /> : null}
@@ -414,7 +452,7 @@ export function App(): JSX.Element {
             ) : null}
           </div>
         ) : (
-          <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
+          <div style={{ flex: 1, padding: 24, opacity: O.dim }}>
             Nothing has been orchestrated yet — press Build on the work page and the workers
             appear here as they run.
           </div>

@@ -9,7 +9,7 @@
  * starts the thinking, and it says first what that will cost.
  */
 import { post, SpacePush } from "./vscode";
-import { aside, label, labelIn } from "./type";
+import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 /**
  * Where a shape came from, and the way back. Every subject and claim
@@ -28,7 +28,7 @@ function FromAsk(props: {
       <span
         data-from-ask={props.id}
         title={`Read from your ask #${props.n}: ${props.text}`}
-        style={{ opacity: 0.55, marginRight: 2 }}
+        style={{ opacity: O.faint, marginRight: 2 }}
       >
         #{props.n}
       </span>
@@ -41,8 +41,8 @@ function FromAsk(props: {
           border: "none",
           cursor: "pointer",
           color: "inherit",
-          opacity: 0.6,
-          fontSize: 12,
+          opacity: O.dim,
+          fontSize: FS.body,
           padding: 0,
           lineHeight: 1,
         }}
@@ -58,9 +58,9 @@ function FromAsk(props: {
 }
 
 const box: React.CSSProperties = {
-  border: "1px solid var(--vscode-panel-border, #3c3c3c)",
+  border: `1px solid ${C.border}`,
   borderRadius: 6,
-  background: "var(--vscode-editorWidget-background, #252526)",
+  background: C.raised,
   overflow: "hidden",
 };
 
@@ -71,14 +71,14 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {p.subjects.map((s, i) => (
-          <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
+          <div key={i} data-proposed-subject={i} style={{ ...box, padding: `${SP.sm}px ${SP.md}px` }}>
             <div style={{ ...label, marginTop: 0 }}>Subject</div>
-            <strong style={{ fontSize: 13 }}>{s.name}</strong>
+            <strong style={{ fontSize: FS.body }}>{s.name}</strong>
             <div style={{ ...label, marginTop: 6 }}>Claims — what must become true of it</div>
             {s.claims.map((c, j) => (
               <div
                 key={j}
-                style={{ fontSize: 12, marginTop: 4, paddingLeft: 8, borderLeft: "2px solid #4ec9b0" }}
+                style={{ fontSize: FS.body, marginTop: 4, paddingLeft: 8, borderLeft: "2px solid #4ec9b0" }}
               >
                 {c.text}
                 {c.why ? (
@@ -90,7 +90,7 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
         ))}
       </div>
       {p.missing.length ? (
-        <div data-model-missing style={{ fontSize: 11, color: "#f14c4c", marginTop: 8 }}>
+        <div data-model-missing style={{ fontSize: FS.caption, color: C.bad, marginTop: 8 }}>
           I could not place {p.missing.length} of your sentences: {p.missing.join(" · ")}
         </div>
       ) : null}
@@ -114,22 +114,22 @@ function Recorded(props: {
               data-subject-head={s.id}
               onClick={() => props.onSelect(s.id)}
               style={{
-                padding: "7px 9px",
+                padding: `${SP.sm}px ${SP.md}px`,
                 cursor: "pointer",
-                borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
+                borderBottom: `1px solid ${C.border}`,
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <span style={label}>Subject</span>
                 {s.thinking ? (
-                  <span style={{ fontSize: 11, color: "#4ec9b0" }}>
+                  <span style={{ fontSize: FS.caption, color: C.ok }}>
                     ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
                   </span>
                 ) : null}
               </div>
-              <strong style={{ fontSize: 13 }}>{s.name}</strong>
+              <strong style={{ fontSize: FS.body }}>{s.name}</strong>
               {s.from.length ? (
-                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2, display: "flex", gap: 6 }}>
+                <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 2, display: "flex", gap: 6 }}>
                   <span>read from your ask{s.from.length === 1 ? "" : "s"}</span>
                   {s.from.map((f) => (
                     <FromAsk key={f.id} n={f.n} id={f.id} text={f.text} onEditAsk={props.onEditAsk} />
@@ -137,7 +137,7 @@ function Recorded(props: {
                 </div>
               ) : null}
             </div>
-            <div style={{ ...label, padding: "5px 9px 0" }}>
+            <div style={{ ...label, padding: `${SP.sm}px ${SP.md}px 0` }}>
               Claims — what must become true of it
             </div>
             {s.claims.map((c) => (
@@ -147,16 +147,16 @@ function Recorded(props: {
                 onClick={() => props.onSelect(c.id)}
                 title={`Read from your ask #${c.fromAskN}: ${c.fromAsk}`}
                 style={{
-                  padding: "6px 9px",
+                  padding: `${SP.sm}px ${SP.md}px`,
                   cursor: "pointer",
-                  borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
+                  borderBottom: `1px solid ${C.border}`,
                   background:
                     props.selected === c.fromAskId || props.selected === c.id
                       ? "var(--vscode-list-inactiveSelectionBackground, #2a2d2e)"
                       : undefined,
                 }}
               >
-                <div style={{ fontSize: 12 }}>
+                <div style={{ fontSize: FS.body }}>
                   <FromAsk
                     n={c.fromAskN}
                     id={c.fromAskId}
@@ -192,21 +192,21 @@ export function IntentGraph(props: {
         data-model-failed
         style={{ margin: 12, padding: 12, border: "1px solid #f14c4c", borderRadius: 6 }}
       >
-        <strong style={{ fontSize: 13, color: "#f14c4c" }}>
+        <strong style={{ fontSize: FS.body, color: C.bad }}>
           I could not read your list — nothing was derived
         </strong>
-        <div style={{ fontSize: 12, margin: "6px 0" }}>
+        <div style={{ fontSize: FS.body, margin: "6px 0" }}>
           Your {push.modelFailure.sentences} sentence
           {push.modelFailure.sentences === 1 ? " is" : "s are"} recorded and waiting. Nothing was
           guessed at.
         </div>
         <pre
           style={{
-            fontSize: 11,
+            fontSize: FS.caption,
             whiteSpace: "pre-wrap",
             background: "var(--vscode-textCodeBlock-background, #1e1e1e)",
             borderRadius: 4,
-            padding: "6px 8px",
+            padding: `${SP.sm}px ${SP.md}px`,
             maxHeight: 160,
             overflowY: "auto",
           }}
@@ -224,11 +224,11 @@ export function IntentGraph(props: {
       <div style={{ flex: 1, padding: 24 }}>
         {push.sentences.length ? (
           <>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>
+            <div style={{ fontSize: FS.body, marginBottom: 4 }}>
               {push.sentences.length} sentence{push.sentences.length === 1 ? "" : "s"} recorded, none
               read yet.
             </div>
-            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+            <div style={{ fontSize: FS.body, opacity: O.dim, marginBottom: 10 }}>
               Reading them is one cheap round and costs nothing else.
             </div>
             <button
@@ -241,7 +241,7 @@ export function IntentGraph(props: {
             </button>
           </>
         ) : (
-          <span style={{ opacity: 0.7 }}>
+          <span style={{ opacity: O.dim }}>
             Nothing here yet — write what you want above and I will read it as one description.
           </span>
         )}
@@ -250,10 +250,10 @@ export function IntentGraph(props: {
 
   const cost = push.cost;
   return (
-    <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: "12px 12px 56px" }}>
+    <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.lg}px 56px` }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-        <strong style={{ fontSize: 13 }}>What I understood of your asks</strong>
-        <span style={{ fontSize: 11, opacity: 0.75 }}>
+        <strong style={{ fontSize: FS.body }}>What I understood of your asks</strong>
+        <span style={{ fontSize: FS.caption, opacity: O.dim }}>
           Say a sentence differently if this reads wrong — nothing here costs anything yet.
         </span>
       </div>
@@ -274,7 +274,7 @@ export function IntentGraph(props: {
         >
           See what this will build →
         </button>
-        <span style={{ fontSize: 11, opacity: 0.75 }}>
+        <span style={{ fontSize: FS.caption, opacity: O.dim }}>
           {cost.subjects
             ? `${cost.subjects} subject${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
             : "everything here has been thought about already"}
@@ -284,13 +284,13 @@ export function IntentGraph(props: {
       {push.orphans.length ? (
         <section
           data-orphans
-          style={{ marginTop: 12, border: "1px solid #f14c4c", borderRadius: 6, padding: "8px 10px" }}
+          style={{ marginTop: 12, border: "1px solid #f14c4c", borderRadius: 6, padding: `${SP.sm}px ${SP.md}px` }}
         >
-          <div style={{ ...labelIn("#f14c4c"), marginBottom: 4 }}>
+          <div style={{ ...labelIn(C.bad), marginBottom: 4 }}>
             {push.orphans.length} thing(s) I derived that match nothing you asked for
           </div>
           {push.orphans.map((o) => (
-            <div key={o.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "baseline" }}>
+            <div key={o.id} style={{ fontSize: FS.body, display: "flex", gap: 6, alignItems: "baseline" }}>
               <span style={{ flex: 1 }}>{o.text}</span>
               <button
                 data-dismiss-promise={o.id}

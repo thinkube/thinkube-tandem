@@ -18,7 +18,7 @@
  */
 import { useState } from "react";
 import { post, SpacePush } from "./vscode";
-import { aside, label, labelIn } from "./type";
+import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 type Sentence = SpacePush["sentences"][number];
 
@@ -33,7 +33,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
         value={text}
         onChange={(e) => setText(e.currentTarget.value)}
         rows={3}
-        style={{ width: "100%", fontSize: 12, fontFamily: "inherit" }}
+        style={{ width: "100%", fontSize: FS.body, fontFamily: "inherit" }}
         placeholder={bound ? "say what you want now — it supersedes the sentence above" : ""}
       />
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
@@ -50,7 +50,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
           {bound ? "Add this as an amendment" : "Say it this way instead"}
         </button>
         <button onClick={props.onDone}>Cancel</button>
-        <span style={{ fontSize: 11, opacity: 0.75 }}>
+        <span style={{ fontSize: FS.caption, opacity: O.dim }}>
           {bound
             ? "the sentence above stays exactly as you wrote it"
             : s.promises
@@ -60,7 +60,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
         </span>
       </div>
       {!bound && s.alsoReads.length ? (
-        <div style={{ fontSize: 11, opacity: 0.7, marginTop: 3 }}>
+        <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 3 }}>
           also re-read: {s.alsoReads.map((t) => `“${t}”`).join(" · ")}
         </div>
       ) : null}
@@ -83,7 +83,7 @@ export function Asks(props: {
   return (
     <div
       data-sentences
-      style={{ padding: "6px 12px 0", maxHeight: "16rem", overflowY: "auto" }}
+      style={{ padding: `${SP.sm}px ${SP.lg}px 0`, maxHeight: "16rem", overflowY: "auto" }}
     >
       <div style={{ ...label, marginBottom: 4 }}>
         Asks — what you wrote, kept word for word
@@ -94,15 +94,15 @@ export function Asks(props: {
           data-sentence={s.id}
           onClick={() => props.onSelect(s.id)}
           style={{
-            border: "1px solid var(--vscode-panel-border, #3c3c3c)",
-            borderLeft: `3px solid ${s.state === "bound" ? "#666" : "#4ec9b0"}`,
+            border: `1px solid ${C.border}`,
+            borderLeft: `3px solid ${s.state === "bound" ? "#666" : C.ok}`,
             background:
               props.selected === s.id
                 ? "var(--vscode-list-inactiveSelectionBackground, #2a2d2e)"
                 : undefined,
             cursor: "pointer",
             borderRadius: 5,
-            padding: "7px 9px",
+            padding: `${SP.sm}px ${SP.md}px`,
             marginBottom: 8,
           }}
         >
@@ -111,12 +111,12 @@ export function Asks(props: {
               supersedes: “{s.amends}”
             </div>
           ) : null}
-          <div style={{ fontSize: 12 }}>
-            <span style={{ opacity: 0.55, marginRight: 4 }}>#{i + 1}</span>
+          <div style={{ fontSize: FS.body }}>
+            <span style={{ opacity: O.faint, marginRight: 4 }}>#{i + 1}</span>
             {s.text}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginTop: 4 }}>
-            <span style={{ fontSize: 11, opacity: 0.7 }}>
+            <span style={{ fontSize: FS.caption, opacity: O.dim }}>
               {s.state === "bound"
                 ? `built${s.tep ? ` as ${s.tep}` : ""} — these words are part of the record now`
                 : `${s.promises} promise${s.promises === 1 ? "" : "s"} read from this ask`}
@@ -135,8 +135,8 @@ export function Asks(props: {
                   border: "none",
                   cursor: "pointer",
                   color: "inherit",
-                  fontSize: 13,
-                  padding: "0 3px",
+                  fontSize: FS.body,
+                  padding: `0 ${SP.xs}px`,
                   lineHeight: 1,
                 }}
                 onClick={(e) => {
@@ -151,19 +151,19 @@ export function Asks(props: {
           {editing === s.id ? <Editor s={s} onDone={() => setEditing(null)} /> : null}
           {s.assumptions.length ? (
             <div style={{ marginTop: 6 }}>
-              <div style={{ ...labelIn("#e5c07b") }}>
+              <div style={{ ...labelIn(C.ask) }}>
                 Assumed{" "}
                 <span>
                   — decided in this ask&apos;s name; recorded when you build
                 </span>
               </div>
               {s.assumptions.map((a, i) => (
-                <div key={i} style={{ fontSize: 12, marginTop: 5 }}>
-                  <div style={{ opacity: 0.75 }}>{a.question}</div>
+                <div key={i} style={{ fontSize: FS.body, marginTop: 5 }}>
+                  <div style={{ opacity: O.dim }}>{a.question}</div>
                   <div style={{ paddingLeft: 8, borderLeft: "2px solid #e5c07b" }}>
                     {a.answer}
                     {a.assumed ? (
-                      <span style={{ fontSize: 10, opacity: 0.6 }}> — assumed, you did not say this</span>
+                      <span style={{ fontSize: FS.caption, opacity: O.dim }}> — assumed, you did not say this</span>
                     ) : null}
                   </div>
                   {a.clause ? (

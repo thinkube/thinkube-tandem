@@ -6,7 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
-import { label } from "./type";
+import { C, FS, O, SP, label } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -99,7 +99,7 @@ export function WorkGraph(props: {
 
   if (!push.subjects.length)
     return (
-      <div style={{ flex: 1, padding: 24, opacity: 0.7 }}>
+      <div style={{ flex: 1, padding: 24, opacity: O.dim }}>
         Nothing derived yet — accept a model on the intent graph and I will think about each subject.
       </div>
     );
@@ -117,11 +117,11 @@ export function WorkGraph(props: {
           transform: `translate(${props.world.tx}px, ${props.world.ty}px) scale(${props.world.k})`,
           // Room at the foot so the zoom controls never sit on top of a
           // card the reader is trying to read.
-          padding: "0 12px 56px",
+          padding: `0 ${SP.lg}px 56px`,
         }}
       >
       {props.subjectId ? (
-        <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 8 }}>
+        <div style={{ fontSize: FS.caption, opacity: O.dim, marginBottom: 8 }}>
           showing only {push.subjects.find((s) => s.id === props.subjectId)?.name}{" "}
           <button data-show-all title="Show every subject's promises." onClick={() => props.onSubject(null)}>
             show every subject
@@ -138,7 +138,7 @@ export function WorkGraph(props: {
             key={claim.id}
             data-claim-frame={claim.id}
             style={{
-              border: "1px dashed var(--vscode-panel-border, #3c3c3c)",
+              border: "1px dashed ${C.border}",
               borderRadius: 6,
               padding: 8,
               marginBottom: 10,
@@ -148,12 +148,12 @@ export function WorkGraph(props: {
               <a
                 data-up-to-subject={subject.id}
                 title="Go up to this subject in the intent graph."
-                style={{ fontSize: 11, textDecoration: "underline", cursor: "pointer" }}
+                style={{ fontSize: FS.caption, textDecoration: "underline", cursor: "pointer" }}
                 onClick={() => props.onUp(subject.id)}
               >
                 {subject.name}
               </a>
-              <span style={{ fontSize: 12 }}>{claim.text}</span>
+              <span style={{ fontSize: FS.body }}>{claim.text}</span>
               <button
                 data-edit-from={claim.fromAskId}
                 title={`Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`}
@@ -163,8 +163,8 @@ export function WorkGraph(props: {
                   border: "none",
                   cursor: "pointer",
                   color: "inherit",
-                  opacity: 0.6,
-                  fontSize: 12,
+                  opacity: O.dim,
+                  fontSize: FS.body,
                   padding: 0,
                 }}
                 onClick={() => props.onEditAsk(claim.fromAskId)}
@@ -173,7 +173,7 @@ export function WorkGraph(props: {
               </button>
             </div>
             {claim.promises.length === 0 ? (
-              <div style={{ fontSize: 11, opacity: 0.7 }}>nothing derived for this claim yet</div>
+              <div style={{ fontSize: FS.caption, opacity: O.dim }}>nothing derived for this claim yet</div>
             ) : (
               <div style={{ position: "relative", height: laid.height, width: laid.width }}>
                 <svg
@@ -181,14 +181,14 @@ export function WorkGraph(props: {
                 >
                   <defs>
                     <marker id="wg-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-                      <path d="M0,0L6,3L0,6" fill="none" stroke="var(--vscode-descriptionForeground, #9d9d9d)" />
+                      <path d="M0,0L6,3L0,6" fill="none" stroke={C.quiet} />
                     </marker>
                   </defs>
                   {laid.edges.map((e, i) => (
                     <path
                       key={i}
                       d={"M " + e.points.map((p) => `${p.x},${p.y}`).join(" L ")}
-                      stroke="var(--vscode-descriptionForeground, #9d9d9d)"
+                      stroke={C.quiet}
                       strokeWidth={1.4}
                       fill="none"
                       markerEnd="url(#wg-arrow)"
@@ -213,28 +213,28 @@ export function WorkGraph(props: {
                         top: at?.y ?? 0,
                         width: NODE_W,
                         boxSizing: "border-box",
-                        padding: "7px 9px",
+                        padding: `${SP.sm}px ${SP.md}px`,
                         borderRadius: 5,
                         cursor: "pointer",
-                        background: "var(--vscode-editorWidget-background, #252526)",
+                        background: C.raised,
                         border: `1px solid ${
                           props.selected === p.id
-                            ? "var(--vscode-focusBorder, #3794ff)"
-                            : "var(--vscode-panel-border, #3c3c3c)"
+                            ? C.focus
+                            : C.border
                         }`,
                       }}
                     >
                       <div style={cap}>Promise</div>
-                      <div style={{ fontSize: 12 }}>{p.text}</div>
+                      <div style={{ fontSize: FS.body }}>{p.text}</div>
                       <div style={{ ...cap, marginTop: 6 }}>
                         Lands in <span style={{ textTransform: "none" }}>— where the change goes</span>
                       </div>
-                      <div style={{ fontSize: 11 }}>
+                      <div style={{ fontSize: FS.caption }}>
                         {p.file
                           ? p.file.split(", ").map((f) => <div key={f}>{f}</div>)
                           : "nowhere yet — this promise is not grounded"}
                       </div>
-                      <div style={{ ...cap, marginTop: 6, color: p.checks.length ? undefined : "#f14c4c" }}>
+                      <div style={{ ...cap, marginTop: 6, color: p.checks.length ? undefined : C.bad }}>
                         {p.checks.length ? (
                           <>
                             Checks{" "}
@@ -245,11 +245,11 @@ export function WorkGraph(props: {
                         )}
                       </div>
                       {p.checks.map((c, i) => (
-                        <div key={i} style={{ fontSize: 11, color: "#89d185" }}>
+                        <div key={i} style={{ fontSize: FS.caption, color: C.ok }}>
                           {c}
                         </div>
                       ))}
-                      <div style={{ display: "flex", gap: 6, marginTop: 4, fontSize: 11 }}>
+                      <div style={{ display: "flex", gap: 6, marginTop: 4, fontSize: FS.caption }}>
                         {p.stale ? (
                           <button
                             data-reground={p.id}

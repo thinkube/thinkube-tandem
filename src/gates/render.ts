@@ -6,8 +6,14 @@
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
 
-/** A render that exceeds this is not a decision — it is homework. */
+/** A render that exceeds this is not a decision — it is homework. Blank
+ *  lines separate the sections of a rendered page and say nothing, so
+ *  what counts is the lines that carry something. */
 export const RENDER_LINE_BUDGET = 30;
+
+/** What a render costs against the budget. */
+export const renderWeight = (page: string): number =>
+  page.split("\n").filter((l) => l.trim()).length;
 
 function nodesOf(space: Space, ids: readonly string[]): Change[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
@@ -75,6 +81,14 @@ export function renderCutScreen(space: Space, cut: Cut): string {
 /**
  * The accept-the-delivery page: what changed in the asks' own words, proof
  * beside each line, and the gesture that lets the human experience it.
+ *
+ * Written as MARKDOWN, because this is the one page read to make a
+ * decision and it has to be read at speed: headed sections tell the eye
+ * where the answer to each question lives — what is true now, what you
+ * asked for, what was checked, what did not arrive — where a flat block
+ * of indented text makes every question cost a search. Sections do not
+ * license length: the budget above still holds, in lines that say
+ * something.
  */
 export function renderDeliveryPage(
   space: Space,
@@ -84,7 +98,7 @@ export function renderDeliveryPage(
   const cut = space.cuts.find((c) => c.id === delivery.cutId);
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
-  lines.push(`DELIVERY on ${delivery.branch}`);
+  lines.push(`# Delivery — \`${delivery.branch}\``);
   // The page is written in subjects and what is now true of them, because
   // that is what a person can go and try. A promise is a step and cannot
   // be experienced on its own; a claim can.
@@ -111,6 +125,7 @@ export function renderDeliveryPage(
   const built = inCut;
   const subjects = space.subjects ?? [];
   const claims = space.claims ?? [];
+  const truth: string[] = [];
   for (const subject of subjects) {
     const mine = claims.filter((c) => c.subjectId === subject.id);
     const touched = mine.filter((c) =>
@@ -122,28 +137,35 @@ export function renderDeliveryPage(
       return all.length > 0 && all.every(kept);
     };
     const whole = touched.filter(proved);
-    lines.push(`${subject.name} — ${whole.length} of ${mine.length} now true`);
+    truth.push("");
+    truth.push(`### ${subject.name} — ${whole.length} of ${mine.length} now true`);
+    truth.push("");
     for (const c of touched) {
       const all = space.nodes.filter((n) => n.servesClaim === c.id);
       const here = all.filter((n) => built.has(n.id));
       const reds = [...new Set(all.flatMap(failing))];
-      lines.push(
+      truth.push(
         proved(c)
-          ? `  ✓ ${c.text}`
-          : `  ✗ ${c.text} — NOT true yet` +
+          ? `- ✓ ${c.text}`
+          : `- ✗ ${c.text} — **NOT true yet**` +
             (here.length < all.length ? ` (${here.length} of ${all.length} parts in this delivery)` : "") +
             (reds.length ? `; ${reds.length} check(s) red` : "; nothing proved it"),
       );
-      for (const r of reds.slice(0, 3)) lines.push(`      red: ${r}`);
+      for (const r of reds.slice(0, 3)) truth.push(`    - red: ${r}`);
       // See it for yourself, beside the claim it proves: every line names
       // a door the machine verified renders. A promise whose door is
       // missing gets no line — it is undelivered rather than pointing at
       // a way in that is not there.
       for (const n of here) {
         const seen = experience.get(n.id);
-        if (seen) lines.push(`      see it: ${seen}`);
+        if (seen) truth.push(`    - see it: ${seen}`);
       }
     }
+  }
+  if (truth.length) {
+    lines.push("");
+    lines.push("## What is now true");
+    lines.push(...truth);
   }
   // Work that belongs to no object is still reported — under the sentence
   // it came from, which is the only thing that can name it.
@@ -151,22 +173,37 @@ export function renderDeliveryPage(
   const byAsk = new Map<string, Change[]>();
   for (const n of loose)
     for (const a of asksOf(space, n)) byAsk.set(a.id, [...(byAsk.get(a.id) ?? []), n]);
+  if (byAsk.size) {
+    lines.push("");
+    lines.push("## Work that belongs to no object");
+  }
   for (const [askId, ns] of byAsk) {
+    lines.push("");
     lines.push(`You asked: ${space.asks.find((a) => a.id === askId)!.text.trim()}`);
+    lines.push("");
     for (const n of ns) {
-      lines.push(`  ${kept(n) ? "✓" : "✗"} ${n.sentence}`);
+      lines.push(`- ${kept(n) ? "✓" : "✗"} ${n.sentence}`);
       const seen = experience.get(n.id);
-      if (seen) lines.push(`      see it: ${seen}`);
+      if (seen) lines.push(`    - see it: ${seen}`);
     }
   }
-  for (const p of delivery.proofs)
-    lines.push(
-      `  check: ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
-    );
+  if (delivery.proofs.length) {
+    lines.push("");
+    lines.push("## Checks");
+    lines.push("");
+    for (const p of delivery.proofs)
+      lines.push(
+        `- ${p.verdict === "green" ? "✓" : "✗"} ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
+      );
+  }
   // What did NOT arrive is part of the decision, on the page's face —
   // including any unmet documentation obligation.
-  for (const u of delivery.undelivered ?? [])
-    lines.push(`  ⚠ undelivered: ${u}`);
+  if ((delivery.undelivered ?? []).length) {
+    lines.push("");
+    lines.push("## Not delivered");
+    lines.push("");
+    for (const u of delivery.undelivered ?? []) lines.push(`- ⚠ ${u}`);
+  }
   // The walkthrough already appears beside the claim each line belongs to.
   // Repeating it here keyed by promise id printed the machine's own
   // identifiers at the foot of the page and said nothing new.

@@ -11,7 +11,7 @@ import { post, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
-import { ROLES } from "./type";
+import { C, FS, O, ROLES, SP } from "./type";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -179,8 +179,8 @@ export function RunSection(props: {
 
   return (
     <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 12px" }}>
-        <span data-run-progress-text style={{ fontSize: 12, opacity: 0.8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: SP.md, padding: `${SP.xs}px ${SP.lg}px` }}>
+        <span data-run-progress-text style={{ fontSize: FS.body, opacity: O.dim }}>
           {done} of {run.units.length} workers done
         </span>
         <span style={{ flex: 1, height: 5, background: "var(--vscode-input-background, #222)", borderRadius: 3, overflow: "hidden" }}>
@@ -190,7 +190,7 @@ export function RunSection(props: {
               display: "block",
               height: "100%",
               width: `${Math.round((done / total) * 100)}%`,
-              background: "var(--vscode-progressBar-background, #3794ff)",
+              background: C.live,
               transition: "width 400ms",
             }}
           />
@@ -199,13 +199,13 @@ export function RunSection(props: {
         <button
           data-stop-run
           title="Stop the run — aborts every live worker; the run drains and reports."
-          style={{ background: "var(--vscode-statusBarItem-errorBackground, #c72e2e)", color: "#fff", border: "none", borderRadius: 4, padding: "2px 10px", cursor: "pointer" }}
+          style={{ background: C.bad, color: "#fff", border: "none", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px`, cursor: "pointer" }}
           onClick={() => post({ action: "stop-run" })}
         >
           ■ Stop
         </button>
         ) : (
-          <span data-run-over style={{ fontSize: 12, opacity: 0.8 }}>
+          <span data-run-over style={{ fontSize: FS.body, opacity: O.dim }}>
             {allDone ? "finished" : anyFailed ? "finished, with failures" : "not running"}
           </span>
         )}
@@ -216,7 +216,7 @@ export function RunSection(props: {
         ref={world.ref}
       >
         {probe}
-        <style>{`@keyframes tandemPulse { 50% { opacity: 0.45 } }`}</style>
+        <style>{`@keyframes tandemPulse { 50% { opacity: O.faint } }`}</style>
         <div
           style={{
             position: "absolute",
@@ -227,14 +227,14 @@ export function RunSection(props: {
           <svg style={{ position: "absolute", inset: 0, overflow: "visible", pointerEvents: "none" }}>
             <defs>
               <marker id="arrflow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-                <path d="M0,0L6,3L0,6" fill="none" stroke="#9d9d9d" />
+                <path d="M0,0L6,3L0,6" fill="none" stroke={C.quiet} />
               </marker>
             </defs>
             {drawn.edges.map((e, i) => (
               <path
                 key={i}
                 d={edgePath(e.points, 0, 0)}
-                stroke="var(--vscode-descriptionForeground, #9d9d9d)"
+                stroke={C.quiet}
                 strokeWidth={1.5}
                 fill="none"
                 markerEnd="url(#arrflow)"
@@ -256,15 +256,15 @@ export function RunSection(props: {
                 style={{ left: c?.x ?? 0, top: c?.y ?? 0 }}
               >
                 {parked && !world.far ? (
-                  <div data-parked={u.id} style={{ marginTop: 6, borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)", paddingTop: 6 }}>
-                    <div style={{ fontSize: 12, marginBottom: 4, color: "#e5c07b" }}>❓ {parked.question}</div>
+                  <div data-parked={u.id} style={{ marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                    <div style={{ fontSize: FS.body, marginBottom: 4, color: C.ask }}>❓ {parked.question}</div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <input
                         data-answer-input={u.id}
                         value={answers[u.id] ?? ""}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setAnswers((a) => ({ ...a, [u.id]: e.target.value }))}
-                        style={{ flex: 1, fontSize: 12, minWidth: 0 }}
+                        style={{ flex: 1, fontSize: FS.body, minWidth: 0 }}
                       />
                       <button
                         data-answer-send={u.id}
@@ -290,17 +290,17 @@ export function RunSection(props: {
                 left: anchor.x,
                 top: anchor.y + anchor.h + 10,
                 width: 300,
-                background: "var(--vscode-editorWidget-background, #252526)",
-                border: "1px solid var(--vscode-focusBorder, #3794ff)",
+                background: C.raised,
+                border: `1px solid ${C.focus}`,
                 borderRadius: 6,
-                padding: "6px 8px",
+                padding: `${SP.sm}px ${SP.md}px`,
                 font: "11px/1.5 monospace",
                 whiteSpace: "pre-wrap",
                 maxHeight: 140,
                 overflowY: "auto",
               }}
             >
-              <div style={{ color: "var(--vscode-textLink-foreground, #3794ff)", fontFamily: "system-ui", fontSize: 12, marginBottom: 2 }}>
+              <div style={{ color: C.focus, fontFamily: "system-ui", fontSize: FS.body, marginBottom: 2 }}>
                 {running!.id} — live log
               </div>
               {run.logs.slice(-8).join("\n")}
@@ -312,8 +312,8 @@ export function RunSection(props: {
         <div
           data-run-log
           style={{
-            borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)",
-            padding: "6px 12px",
+            borderTop: `1px solid ${C.border}`,
+            padding: `${SP.sm}px ${SP.lg}px`,
             font: "11px/1.5 monospace",
             whiteSpace: "pre-wrap",
             maxHeight: 160,
@@ -321,7 +321,7 @@ export function RunSection(props: {
             flexShrink: 0,
           }}
         >
-          <div style={{ fontFamily: "system-ui", fontSize: 12, marginBottom: 3, opacity: 0.8 }}>
+          <div style={{ fontFamily: "system-ui", fontSize: FS.body, marginBottom: 3, opacity: O.dim }}>
             {failed.length
               ? `The run stopped with ${failed.length} unit${failed.length === 1 ? "" : "s"} failed — what it reported:`
               : "What the run reported:"}
