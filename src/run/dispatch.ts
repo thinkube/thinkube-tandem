@@ -30,7 +30,6 @@ import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import {
   runAcVerifications,
-  AcVerification,
   AcExec,
   DEFAULT_AC_TIMEOUT_MS,
   runBounded,
@@ -51,7 +50,7 @@ import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
 import { coderStanza } from "./brief";
-import { sliceBookkeeping } from "./plan";
+import { closingVerifications, sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 
 export interface DispatchDeps {
@@ -169,7 +168,7 @@ export async function dispatchTep(
   const pending = new Set(dag.map((u) => u.id));
 
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles } = sliceBookkeeping(slices);
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
   const sliceRemaining = new Map<string, number>();
   for (const u of dag)
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
@@ -441,13 +440,7 @@ export async function dispatchTep(
   for (const [slice, probes] of sliceProbes)
     if (!sliceCommitted.has(slice))
       for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
-  const verifs: AcVerification[] = [];
-  let ord = 0;
-  for (const s of slices)
-    for (const u of s.workUnits)
-      if (u.role === "test")
-        for (const probe of u.footprint)
-          verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
+  const { verifs, probeOfAc } = closingVerifications(slices);
   const gateExec: AcExec = (run, cwd) => boundedExec(run, cwd);
   const acResults = await runAcVerifications(verifs, worktree, gateExec);
   // Assessments: a FRESH reviewer in the tester snapshot, fail-soft red.
@@ -467,12 +460,18 @@ export async function dispatchTep(
         detail: `${label} — ${ref}`.slice(0, 400),
       }),
   });
-  const proofs: Proof[] = assessed.concat(acResults.map((r) => ({
-    kind: "probe",
-    label: `AC-${r.ac}`,
-    verdict: r.pass ? ("green" as const) : ("red" as const),
-    ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
-  })));
+  // Named by the CHECK it ran — an ordinal names nothing to a reader.
+  const proofs: Proof[] = assessed.concat(
+    acResults.map((r) => {
+      const probe = probeOfAc.get(r.ac);
+      return {
+        kind: "probe" as const,
+        label: (probe && checkOf.get(probe)) || `check ${r.ac}`,
+        verdict: r.pass ? ("green" as const) : ("red" as const),
+        ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
+      };
+    }),
+  );
   logRedChecks(acResults, defect);
 
   // The honesty scan over the delivered code: a self-declared deferral in a

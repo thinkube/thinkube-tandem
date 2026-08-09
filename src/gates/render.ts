@@ -85,11 +85,30 @@ export function renderDeliveryPage(
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`DELIVERY on ${delivery.branch}`);
-  // The page is written in objects and what is now true of them, because
+  // The page is written in subjects and what is now true of them, because
   // that is what a person can go and try. A promise is a step and cannot
-  // be experienced on its own; a claim can. Where a claim is only partly
-  // built the page says so rather than counting it as done.
-  const built = new Set(members.map((n) => n.id));
+  // be experienced on its own; a claim can.
+  //
+  // TRUE MEANS PROVED. Being in the cut says only that the work was asked
+  // for; a claim is true when every promise serving it was built AND every
+  // check on those promises came back green. This page once counted a
+  // claim as true because its promises were in the cut, and said "1 of 1
+  // now true" over a hundred red checks and a run that never dispatched.
+  const inCut = new Set(members.map((n) => n.id));
+  const green = new Set(
+    delivery.proofs.filter((p) => p.verdict === "green").map((p) => p.label.trim()),
+  );
+  const red = new Map(
+    delivery.proofs
+      .filter((p) => p.verdict !== "green")
+      .map((p) => [p.label.trim(), p.verdict] as const),
+  );
+  /** A promise is kept when every check on it is green. */
+  const kept = (n: Change): boolean =>
+    inCut.has(n.id) && n.acceptance.length > 0 && n.acceptance.every((a) => green.has(a.text.trim()));
+  const failing = (n: Change): string[] =>
+    n.acceptance.filter((a) => red.has(a.text.trim())).map((a) => a.text);
+  const built = inCut;
   const subjects = space.subjects ?? [];
   const claims = space.claims ?? [];
   for (const subject of subjects) {
@@ -98,19 +117,24 @@ export function renderDeliveryPage(
       space.nodes.some((n) => n.servesClaim === c.id && built.has(n.id)),
     );
     if (!touched.length) continue;
-    const whole = touched.filter((c) =>
-      space.nodes.every((n) => n.servesClaim !== c.id || built.has(n.id)),
-    );
+    const proved = (c: { id: string }): boolean => {
+      const all = space.nodes.filter((n) => n.servesClaim === c.id);
+      return all.length > 0 && all.every(kept);
+    };
+    const whole = touched.filter(proved);
     lines.push(`${subject.name} — ${whole.length} of ${mine.length} now true`);
     for (const c of touched) {
       const all = space.nodes.filter((n) => n.servesClaim === c.id);
       const here = all.filter((n) => built.has(n.id));
-      const done = here.length === all.length;
+      const reds = [...new Set(all.flatMap(failing))];
       lines.push(
-        done
+        proved(c)
           ? `  ✓ ${c.text}`
-          : `  · ${c.text} — not yet (${here.length} of ${all.length} parts built)`,
+          : `  ✗ ${c.text} — NOT true yet` +
+            (here.length < all.length ? ` (${here.length} of ${all.length} parts in this delivery)` : "") +
+            (reds.length ? `; ${reds.length} check(s) red` : "; nothing proved it"),
       );
+      for (const r of reds.slice(0, 3)) lines.push(`      red: ${r}`);
       // See it for yourself, beside the claim it proves: every line names
       // a door the machine verified renders. A promise whose door is
       // missing gets no line — it is undelivered rather than pointing at
@@ -130,7 +154,7 @@ export function renderDeliveryPage(
   for (const [askId, ns] of byAsk) {
     lines.push(`You asked: ${space.asks.find((a) => a.id === askId)!.text.trim()}`);
     for (const n of ns) {
-      lines.push(`  ✓ ${n.sentence}`);
+      lines.push(`  ${kept(n) ? "✓" : "✗"} ${n.sentence}`);
       const seen = experience.get(n.id);
       if (seen) lines.push(`      see it: ${seen}`);
     }
@@ -143,7 +167,8 @@ export function renderDeliveryPage(
   // including any unmet documentation obligation.
   for (const u of delivery.undelivered ?? [])
     lines.push(`  ⚠ undelivered: ${u}`);
-  for (const [label, gesture] of experience)
-    lines.push(`  see it: ${label} — ${gesture}`);
+  // The walkthrough already appears beside the claim each line belongs to.
+  // Repeating it here keyed by promise id printed the machine's own
+  // identifiers at the foot of the page and said nothing new.
   return lines.join("\n");
 }

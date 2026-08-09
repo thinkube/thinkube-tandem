@@ -91,13 +91,30 @@ test("the delivery page speaks in the asks' words with proof and gestures beside
   const s2: Space = { ...space, cuts: [{ id: "cut-1", changeIds }] };
   const page = renderDeliveryPage(
     s2,
-    { id: "d-1", cutId: "cut-1", branch: "tandem/cut-1", proofs: [{ kind: "suite", label: "suite", verdict: "green" }] },
-    new Map([["the follow toggle", "open the panel and press Follow"]]),
+    {
+      id: "d-1",
+      cutId: "cut-1",
+      branch: "tandem/cut-1",
+      // A tick is earned by a green check naming what it proved — the
+      // page never grants one for being in the cut.
+      proofs: [
+        { kind: "probe", label: "scrolls on advance", verdict: "green" },
+        { kind: "probe", label: "toggle visible and sticky", verdict: "green" },
+        { kind: "suite", label: "suite", verdict: "green" },
+      ],
+    },
+    // Keyed by the promise it belongs to — the way in is shown beside the
+    // work it lets you see, not in a list of its own at the foot.
+    new Map([[changeIds[1], "the panel header — press Follow"]]),
   );
   assert.ok(page.includes("You asked: make the log panel follow the running step"));
   assert.ok(page.includes("✓ the log panel scrolls with the active step"));
+  assert.ok(
+    page.includes("✗ a change with nothing proving it yet"),
+    "a promise with no check is never ticked",
+  );
   assert.ok(page.includes("check: suite — green"));
-  assert.ok(page.includes("see it: the follow toggle — open the panel and press Follow"));
+  assert.ok(page.includes("see it: the panel header — press Follow"));
   assert.ok(page.split("\n").length <= RENDER_LINE_BUDGET);
 });
 
@@ -163,22 +180,28 @@ test("the delivery page counts truth in claims, and never calls a half-built one
       { id: "c3", subjectId: "sub-1", text: "stays inside its line budget", fromAsk: "ask-1" },
     ],
     nodes: [
-      { id: "n1", sentence: "walkthrough from verified doors", serves: ["sub-1"], needs: [], servesClaim: "c1", acceptance: [] },
-      { id: "n2", sentence: "labels carry the check's own words", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [] },
-      { id: "n3", sentence: "the page truncates long labels", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [] },
+      { id: "n1", sentence: "walkthrough from verified doors", serves: ["sub-1"], needs: [], servesClaim: "c1", acceptance: [{ id: "a1", text: "the walkthrough renders" }] },
+      { id: "n2", sentence: "labels carry the check's own words", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [{ id: "a2", text: "labels read as written" }] },
+      { id: "n3", sentence: "the page truncates long labels", serves: ["sub-1"], needs: [], servesClaim: "c2", acceptance: [{ id: "a3", text: "long labels fit" }] },
     ],
     cuts: [{ id: "cut-1", changeIds: ["n1", "n2"] }],
   };
   const page = renderDeliveryPage(
     space,
-    { id: "d1", cutId: "cut-1", branch: "tandem/x", proofs: [] },
+    {
+      id: "d1",
+      cutId: "cut-1",
+      branch: "tandem/x",
+      // n1's own check came back green; n2's did not run at all.
+      proofs: [{ kind: "probe", label: "the walkthrough renders", verdict: "green" }],
+    },
     new Map([["n1", "the delivery page — read the walkthrough"]]),
   );
 
   assert.ok(page.includes("the delivery page — 1 of 3 now true"), page);
-  assert.ok(page.includes("✓ shows a see-it line per promise"), "a whole claim is true");
+  assert.ok(page.includes("✓ shows a see-it line per promise"), "proved, so it is true");
   assert.ok(
-    page.includes("· names the check in my words — not yet (1 of 2 parts built)"),
+    page.includes("✗ names the check in my words — NOT true yet (1 of 2 parts in this delivery)"),
     "a claim with a part missing is NOT counted as delivered",
   );
   assert.ok(!page.includes("stays inside its line budget"), "a claim nothing touched is not listed");

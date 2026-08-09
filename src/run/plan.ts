@@ -129,12 +129,23 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   sliceFiles: Map<string, string[]>;
+  /** What each probe is FOR, in the check's own words — so a result is
+   *  reported as the check the human read on the card. */
+  checkOf: Map<string, string>;
 } {
   const sliceProbes = new Map<string, string[]>();
   const sliceVerifs = new Map<string, AcVerification[]>();
   const sliceFiles = new Map<string, string[]>();
+  const checkOf = new Map<string, string>();
   for (const s of slices) {
-    const probes = s.workUnits.filter((u) => u.role === "test").flatMap((u) => u.footprint);
+    const tests = s.workUnits.filter((u) => u.role === "test");
+    for (const u of tests) {
+      // The note a probe was written from is "[the promise] the check".
+      const said = (u as { note?: string }).note ?? "";
+      const check = said.replace(/^\[[^\]]*\]\s*/, "").trim();
+      for (const f of u.footprint) if (check) checkOf.set(f, check);
+    }
+    const probes = tests.flatMap((u) => u.footprint);
     sliceProbes.set(s.handle, probes);
     sliceVerifs.set(
       s.handle,
@@ -142,5 +153,27 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
-  return { sliceProbes, sliceVerifs, sliceFiles };
+  return { sliceProbes, sliceVerifs, sliceFiles, checkOf };
+}
+
+/**
+ * The closing gate's verification list: every probe the run authored, in
+ * slice order, each with the ordinal the gate knows it by — and the way
+ * back from that ordinal to the probe, so a result can be reported as the
+ * check it ran rather than as its position in a list.
+ */
+export function closingVerifications(slices: SliceForDag[]): {
+  verifs: AcVerification[];
+  probeOfAc: Map<number, string>;
+} {
+  const verifs: AcVerification[] = [];
+  const probeOfAc = new Map<number, string>();
+  let ord = 0;
+  for (const s of slices)
+    for (const u of s.workUnits.filter((x) => x.role === "test"))
+      for (const probe of u.footprint) {
+        verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
+        probeOfAc.set(ord, probe);
+      }
+  return { verifs, probeOfAc };
 }
