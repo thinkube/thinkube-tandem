@@ -114,12 +114,7 @@ export function Rail(props: {
   onSelect: (id: string) => void;
 }): JSX.Element {
   const { push } = props;
-  const ready = push.subjects
-    .flatMap((s) => s.claims.flatMap((c) => c.promises))
-    .filter((p) => !p.tep);
-  const objects = push.subjects.filter((s) =>
-    s.claims.some((c) => c.promises.some((p) => !p.tep)),
-  ).length;
+  const ready = push.ready;
 
   return (
     <div
@@ -133,52 +128,26 @@ export function Rail(props: {
       }}
     >
       <div style={{ padding: 10 }}>
-        {push.rules.length ? (
-          <section style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 4 }}>
-              In force
-            </div>
-            {push.rules.map((r) => (
-              <div
-                key={r.id}
-                data-rule-chip={r.id}
-                style={{
-                  border: "1px solid var(--vscode-panel-border, #3c3c3c)",
-                  borderRadius: 5,
-                  padding: "5px 7px",
-                  marginBottom: 5,
-                }}
-              >
-                {r.text}
-                <span style={chip("#e5c07b")}>{r.scope}</span>
-                <button
-                  data-retire-rule={r.id}
-                  style={{ fontSize: 10, marginLeft: 6 }}
-                  title="Retire it — it governs nothing from now on."
-                  onClick={() => post({ action: "retire-rule", unitId: r.id })}
-                >
-                  Retire
-                </button>
-              </div>
-            ))}
-          </section>
-        ) : null}
-
         <Parked push={push} />
         {push.runLog ? <StepLog log={push.runLog} /> : null}
 
-        {ready.length ? (
-          <section data-build style={{ marginBottom: 14 }}>
+        {ready.thinking ? (
+          <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 14 }}>
+            Still working out what to build — nothing can be committed until every object is
+            thought through.
+          </div>
+        ) : ready.objects ? (
+          <section data-build-section style={{ marginBottom: 14 }}>
             <button
               data-build
               style={{ ...btn, width: "100%" }}
               title="Build it. Everything assumed becomes a rule, and the sentences behind this work become read-only."
               onClick={() => post({ action: "build" })}
             >
-              Build {objects} object{objects === 1 ? "" : "s"}
+              Build {ready.objects} object{ready.objects === 1 ? "" : "s"}
             </button>
             <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-              {ready.length} promise{ready.length === 1 ? "" : "s"} · workers run in parallel ·
+              {ready.promises} promise{ready.promises === 1 ? "" : "s"} · workers run in parallel ·
               the sentences behind them become read-only
             </div>
           </section>
@@ -219,7 +188,7 @@ export function Rail(props: {
       </div>
 
       <div style={{ borderTop: "1px solid var(--vscode-panel-border, #3c3c3c)" }}>
-        <Sentences push={push} />
+        <Sentences push={push} selected={props.selected} onSelect={props.onSelect} />
       </div>
     </div>
   );

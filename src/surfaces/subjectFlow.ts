@@ -79,14 +79,24 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
   await s.warmRepoDigest();
 
   let next = 0;
+  let done = 0;
   const tally = { promises: 0, questions: 0 };
   const worker = async (): Promise<void> => {
-    while (next < subjectIds.length) {
-      const t = await groundSubject(s, subjectIds[next++]);
+    for (;;) {
+      // The index is taken BEFORE the await. Reading the shared counter
+      // afterwards clears whichever subject the pool has moved on to, and
+      // leaves this one marked as still thinking for ever.
+      const i = next++;
+      if (i >= subjectIds.length) return;
+      const t = await groundSubject(s, subjectIds[i]);
       tally.promises += t.promises;
       tally.questions += t.questions;
-      s.clear(subjectIds[next - 1]);
-      s.deps.onChanged?.();
+      s.clear(subjectIds[i]);
+      // Written as it arrives. Thinking is the expensive part, and a
+      // reload or a crash midway through must not throw away objects that
+      // were already paid for.
+      done++;
+      s.changed(`${done} of ${subjectIds.length} objects thought through.`);
     }
   };
   await Promise.all(Array.from({ length: pool }, worker));

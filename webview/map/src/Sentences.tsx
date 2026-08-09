@@ -59,22 +59,32 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
   );
 }
 
-export function Sentences(props: { push: SpacePush }): JSX.Element {
+export function Sentences(props: {
+  push: SpacePush;
+  selected: string | null;
+  onSelect: (id: string) => void;
+}): JSX.Element {
   const [editing, setEditing] = useState<string | null>(null);
   if (!props.push.sentences.length)
     return <div style={{ padding: 12, opacity: 0.7, fontSize: 12 }}>Nothing written yet.</div>;
   return (
     <div data-sentences style={{ padding: 12, overflowY: "auto" }}>
       <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>
-        What you wrote
+        Asks <span style={{ textTransform: "none" }}>— what you wrote, kept word for word</span>
       </div>
-      {props.push.sentences.map((s) => (
+      {props.push.sentences.map((s, i) => (
         <section
           key={s.id}
           data-sentence={s.id}
+          onClick={() => props.onSelect(s.id)}
           style={{
             border: "1px solid var(--vscode-panel-border, #3c3c3c)",
             borderLeft: `3px solid ${s.state === "bound" ? "#666" : "#4ec9b0"}`,
+            background:
+              props.selected === s.id
+                ? "var(--vscode-list-inactiveSelectionBackground, #2a2d2e)"
+                : undefined,
+            cursor: "pointer",
             borderRadius: 5,
             padding: "7px 9px",
             marginBottom: 8,
@@ -85,12 +95,15 @@ export function Sentences(props: { push: SpacePush }): JSX.Element {
               supersedes: “{s.amends}”
             </div>
           ) : null}
-          <div style={{ fontSize: 12 }}>{s.text}</div>
+          <div style={{ fontSize: 12 }}>
+            <span style={{ opacity: 0.55, marginRight: 4 }}>#{i + 1}</span>
+            {s.text}
+          </div>
           <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginTop: 4 }}>
             <span style={{ fontSize: 11, opacity: 0.7 }}>
               {s.state === "bound"
                 ? `built${s.tep ? ` as ${s.tep}` : ""} — these words are part of the record now`
-                : `${s.promises} promise${s.promises === 1 ? "" : "s"} came from this`}
+                : `${s.promises} promise${s.promises === 1 ? "" : "s"} read from this ask`}
             </span>
             {editing === s.id ? null : (
               <button
@@ -110,7 +123,10 @@ export function Sentences(props: { push: SpacePush }): JSX.Element {
           {s.assumptions.length ? (
             <div style={{ marginTop: 6 }}>
               <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b" }}>
-                decided in its name
+                Assumed{" "}
+                <span style={{ textTransform: "none" }}>
+                  — decided in this ask&apos;s name; becomes a rule when you build
+                </span>
               </div>
               {s.assumptions.map((a, i) => (
                 <div key={i} style={{ fontSize: 12, marginTop: 2 }}>

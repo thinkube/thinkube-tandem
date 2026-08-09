@@ -21,6 +21,9 @@ interface ClaimVM {
   why?: string;
   /** The human's sentence this claim was read from — never replaced. */
   fromAsk: string;
+  /** Its id and its number in your list, so the claim can point back. */
+  fromAskId: string;
+  fromAskN: number;
   promises: PromiseVM[];
 }
 
@@ -30,6 +33,10 @@ interface SubjectVM {
   rules: { id: string; text: string }[];
   thinking?: { label: string; current: number; total: number };
   claims: ClaimVM[];
+  /** The sentences of yours this object was read from — its provenance,
+   *  shown so a second listing of your words reads as a link and not as
+   *  repetition. */
+  from: { id: string; n: number; text: string }[];
 }
 
 interface DeliveryVM {
@@ -119,6 +126,9 @@ export interface SpacePush {
   }[];
   /** What thinking about what is left will cost. */
   cost: { subjects: number; rounds: number };
+  /** What can be committed right now. `thinking` means the machine is
+   *  still deriving and nothing may be committed yet. */
+  ready: { objects: number; promises: number; thinking: boolean };
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */

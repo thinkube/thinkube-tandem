@@ -8,6 +8,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { TandemSession } from "./session";
+import { readyToBuild } from "./buildFlow";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -140,9 +141,20 @@ function spacePush(session: TandemSession, message?: string): unknown {
     subjects: (session.space.subjects ?? []).map((s) => {
       const claims = (session.space.claims ?? []).filter((c) => c.subjectId === s.id);
       const rules = (session.space.rules ?? []).filter((r) => r.governs.includes(s.id));
+      const numberOf = (id: string): number =>
+        session.space.asks.findIndex((a) => a.id === id) + 1;
       return {
         id: s.id,
         name: s.name,
+        // Where it came from, in your numbering — the link that makes the
+        // reading readable instead of a second copy of what you wrote.
+        from: [...new Set(s.from)]
+          .filter((id) => session.space.asks.some((a) => a.id === id))
+          .map((id) => ({
+            id,
+            n: numberOf(id),
+            text: session.space.asks.find((a) => a.id === id)!.text,
+          })),
         rules: rules.map((r) => ({ id: r.id, text: r.text })),
         thinking: session.groundingView().find((g) => g.askId === s.id),
         claims: claims.map((c) => {
@@ -152,6 +164,8 @@ function spacePush(session: TandemSession, message?: string): unknown {
             text: c.text,
             why: c.why,
             fromAsk: session.space.asks.find((a) => a.id === c.fromAsk)?.text ?? "",
+            fromAskId: c.fromAsk,
+            fromAskN: session.space.asks.findIndex((a) => a.id === c.fromAsk) + 1,
             promises: promises.map((n) => ({
               id: n.id,
               text: n.sentence,
@@ -203,6 +217,12 @@ function spacePush(session: TandemSession, message?: string): unknown {
     }),
     /** What thinking about the rest will cost, before it is spent. */
     cost: session.thinkingCost(),
+    /** What can be committed right now — whole components only, and
+     *  nothing at all while the machine is still deriving. */
+    ready: readyToBuild(
+      session.space,
+      !!session.activity || session.groundingView().length > 0,
+    ),
     /** Promises attached to no claim — the machine could not place them. */
     orphans: session.space.nodes
       .filter((n) => !n.servesClaim)

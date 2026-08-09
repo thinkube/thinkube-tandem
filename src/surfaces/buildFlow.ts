@@ -24,6 +24,26 @@ export interface WorkCost {
   rounds: number;
 }
 
+/**
+ * What can be built right now. Nothing is offered while the machine is
+ * still deriving: a component whose objects are half thought about would
+ * commit work that does not exist yet, and building is the one act that
+ * cannot be undone.
+ */
+export function readyToBuild(
+  space: Space,
+  thinking: boolean,
+): { objects: number; promises: number; thinking: boolean } {
+  if (thinking || costOfThinking(space).subjects > 0)
+    return { objects: 0, promises: 0, thinking: true };
+  const cs = buildable(space);
+  return {
+    objects: cs.reduce((n, c) => n + c.subjectIds.length, 0),
+    promises: cs.reduce((n, c) => n + promisesOf(space, c).length, 0),
+    thinking: false,
+  };
+}
+
 /** The price of thinking about what has not been ground yet. */
 export function costOfThinking(space: Space): WorkCost {
   const ground = new Set(
@@ -76,6 +96,18 @@ export async function buildFlow(
   s: TandemSession,
   excluded: string[] = [],
 ): Promise<{ ok: boolean; reason?: string }> {
+  // Refused while anything is still being derived. A half-thought object
+  // would commit work that does not exist yet, and this is the one act
+  // that cannot be undone — so the guard is here, in the act itself, not
+  // in a button the surface can forget to hide.
+  const state = readyToBuild(s.space, !!s.activity || s.groundingView().length > 0);
+  if (state.thinking)
+    return {
+      ok: false,
+      reason:
+        "still working out what to build — nothing can be committed until every object is thought through",
+    };
+
   const out = new Set(excluded);
   const included = buildable(s.space).filter(
     (c) => !c.subjectIds.some((id) => out.has(id)) && !c.askIds.some((id) => out.has(id)),

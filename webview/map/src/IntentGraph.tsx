@@ -28,7 +28,7 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
           style={{ ...box, borderColor: "#e5c07b", padding: "8px 10px", marginBottom: 10 }}
         >
           <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
-            holds across all of them
+            Rules <span style={{ textTransform: "none", opacity: 0.75 }}>— what holds across every subject</span>
           </div>
           {p.rules.map((r, i) => (
             <div key={i} style={{ fontSize: 12 }}>
@@ -40,7 +40,11 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
         {p.subjects.map((s, i) => (
           <div key={i} data-proposed-subject={i} style={{ ...box, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6 }}>Subject</div>
             <strong style={{ fontSize: 13 }}>{s.name}</strong>
+            <div style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6, marginTop: 6 }}>
+              Claims <span style={{ textTransform: "none" }}>— what must become true of it</span>
+            </div>
             {s.claims.map((c, j) => (
               <div
                 key={j}
@@ -65,7 +69,11 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
 }
 
 /** What was recorded — the same shape, once the reading has been kept. */
-function Recorded(props: { push: SpacePush; onSelect: (id: string) => void }): JSX.Element {
+function Recorded(props: {
+  push: SpacePush;
+  selected: string | null;
+  onSelect: (id: string) => void;
+}): JSX.Element {
   const { push } = props;
   return (
     <>
@@ -82,7 +90,10 @@ function Recorded(props: { push: SpacePush; onSelect: (id: string) => void }): J
           }}
         >
           <div style={{ fontSize: 11, textTransform: "uppercase", color: "#e5c07b", marginBottom: 3 }}>
-            holds across all of them, now and later
+            Rules{" "}
+            <span style={{ textTransform: "none", opacity: 0.75 }}>
+              — what holds across every subject, now and for any subject read later
+            </span>
           </div>
           {push.rules.map((r) => (
             <div
@@ -104,35 +115,82 @@ function Recorded(props: { push: SpacePush; onSelect: (id: string) => void }): J
               data-subject-head={s.id}
               onClick={() => props.onSelect(s.id)}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
                 padding: "7px 9px",
                 cursor: "pointer",
                 borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
               }}
             >
-              <strong style={{ fontSize: 13 }}>{s.name}</strong>
-              {s.thinking ? (
-                <span style={{ fontSize: 11, color: "#4ec9b0" }}>
-                  ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.6 }}>
+                  Subject
                 </span>
+                {s.thinking ? (
+                  <span style={{ fontSize: 11, color: "#4ec9b0" }}>
+                    ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
+                  </span>
+                ) : null}
+              </div>
+              <strong style={{ fontSize: 13 }}>{s.name}</strong>
+              {s.from.length ? (
+                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+                  read from your ask{s.from.length === 1 ? "" : "s"}{" "}
+                  {s.from.map((f, i) => (
+                    <span key={f.id}>
+                      {i ? " and " : ""}
+                      <span
+                        data-from-ask={f.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onSelect(f.id);
+                        }}
+                        title={f.text}
+                        style={{
+                          textDecoration: "underline",
+                          cursor: "pointer",
+                          color: "var(--vscode-textLink-foreground, #3794ff)",
+                        }}
+                      >
+                        #{f.n}
+                      </span>
+                    </span>
+                  ))}
+                </div>
               ) : null}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                opacity: 0.6,
+                padding: "5px 9px 0",
+              }}
+            >
+              Claims <span style={{ textTransform: "none" }}>— what must become true of it</span>
             </div>
             {s.claims.map((c) => (
               <div
                 key={c.id}
                 data-claim={c.id}
                 onClick={() => props.onSelect(c.id)}
+                title={`Read from your ask #${c.fromAskN}: ${c.fromAsk}`}
                 style={{
                   padding: "6px 9px",
                   cursor: "pointer",
                   borderBottom: "1px solid var(--vscode-panel-border, #3c3c3c)",
+                  background:
+                    props.selected === c.fromAskId || props.selected === c.id
+                      ? "var(--vscode-list-inactiveSelectionBackground, #2a2d2e)"
+                      : undefined,
                 }}
               >
-                <div style={{ fontSize: 12 }}>{c.text}</div>
+                <div style={{ fontSize: 12 }}>
+                  <span style={{ opacity: 0.55, marginRight: 4 }}>#{c.fromAskN}</span>
+                  {c.text}
+                </div>
                 {c.why ? (
-                  <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic" }}>{c.why}</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>
+                    <em>so that</em> {c.why}
+                  </div>
                 ) : null}
               </div>
             ))}
@@ -216,13 +274,13 @@ export function IntentGraph(props: {
   return (
     <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: 12 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-        <strong style={{ fontSize: 13 }}>What I understood</strong>
+        <strong style={{ fontSize: 13 }}>What I understood of your asks</strong>
         <span style={{ fontSize: 11, opacity: 0.75 }}>
           Say a sentence differently if this reads wrong — nothing here costs anything yet.
         </span>
       </div>
 
-      {push.pendingModel ? <Proposed push={push} /> : <Recorded push={push} onSelect={props.onSelect} />}
+      {push.pendingModel ? <Proposed push={push} /> : <Recorded push={push} selected={props.selected} onSelect={props.onSelect} />}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
         <button
