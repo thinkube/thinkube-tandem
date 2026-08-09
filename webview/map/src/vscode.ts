@@ -98,8 +98,16 @@ export interface SpacePush {
   }[];
   decisions: string[];
   rules: { id: string; text: string; scope: string; governs: number; fromAsk: string }[];
-  /** Promises attached to no claim — scope creep, named on the map. */
-  orphans: { id: string; text: string }[];
+  /** Promises attached to no claim. `subject` names the subject the
+   *  promise was derived for, when there is one — its absence is what
+   *  makes a promise genuine scope creep. `choices` are the claims it
+   *  could be attached to. */
+  orphans: {
+    id: string;
+    text: string;
+    subject?: string;
+    choices: { id: string; text: string }[];
+  }[];
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */
@@ -140,6 +148,7 @@ export type WebToHost =
   | { action: "split-claim"; unitId: string }
   | { action: "move-claim"; unitId: string; into: string }
   | { action: "promote-claim"; unitId: string; text?: string }
+  | { action: "attach-promise"; unitId: string; into: string }
   | { action: "dismiss-promise"; unitId: string; text?: string }
   | { action: "retire-rule"; unitId: string }
   | { action: "revise-model"; kind: "drop-subject" | "drop-rule" | "to-rule"; page: number }

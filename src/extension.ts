@@ -41,25 +41,12 @@ import {
   updateConfigContext,
 } from "./engine/host/active";
 import { parseDefectLog } from "./engine/defectStats";
+import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 import * as nodeFs from "node:fs";
 
 let panel: SpacePanel | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
-
-function gitAuthor(repoRoot: string): Promise<string> {
-  return new Promise((resolve) => {
-    execFile(
-      "git",
-      ["-C", repoRoot, "config", "user.email"],
-      { encoding: "utf8" },
-      (err, stdout) => {
-        const local = err ? "" : (stdout.trim().split("@")[0] ?? "");
-        resolve(local.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase() || "user");
-      },
-    );
-  });
-}
 
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -203,6 +190,13 @@ async function ensureSession(
   interactive = true,
 ): Promise<TandemSession | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
+  // No identity, no records: writing under a name every installation
+  // shares would silently overwrite the other person's whole space.
+  const author = currentAuthor();
+  if (!author) {
+    if (interactive) void vscode.window.showErrorMessage(`Tandem — ${AUTHOR_MISSING}`);
+    return undefined;
+  }
   if (savedOwner.startsWith("wp:")) {
     if (!storeSync) {
       storeSync = new StoreSyncService(configuredStoreRoot(), (l) => console.log(l));
@@ -215,7 +209,7 @@ async function ensureSession(
       storeRoot: configuredStoreRoot(),
       sessions,
       chooseSpace: (k, i) => chooseThinkingSpace(context, k, i),
-      gitAuthor,
+      author,
       resolveForge: (root) =>
         resolveForge(
           root,
@@ -241,7 +235,6 @@ async function ensureSession(
     project.gitRoot,
     config.get<string>("giteaToken", ""),
   );
-  const author = await gitAuthor(project.gitRoot);
   const bound = project;
   const s = new TandemSession({
     round: {
@@ -555,7 +548,7 @@ export function activate(context: vscode.ExtensionContext): void {
         config.get<string>("storeRoot", "") ||
         path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
       const project = rememberedProject(context);
-      const author = project ? await gitAuthor(project.gitRoot) : "user";
+      const author = currentAuthor() ?? "";
       const dirs = project
         ? [path.join(storeRoot, "spaces", project.card.id, author, "defects")]
         : [];

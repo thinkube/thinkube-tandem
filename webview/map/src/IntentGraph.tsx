@@ -282,18 +282,84 @@ export function IntentGraph(props: {
         })}
       </div>
 
-      {push.orphans.length ? (
-        <section data-orphans style={{ marginTop: 12, border: "1px solid #f14c4c", borderRadius: 6, padding: "8px 10px" }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", color: "#f14c4c", marginBottom: 4 }}>
-            Scope creep — {push.orphans.length} promise(s) serve no claim or rule
-          </div>
-          {push.orphans.map((o) => (
-            <div key={o.id} style={{ fontSize: 12 }}>
-              {o.text}
-            </div>
-          ))}
-        </section>
-      ) : null}
+      <Unattached
+        rows={push.orphans.filter((o) => o.subject)}
+        heading="I could not tell which claim these serve — say so, or dismiss them"
+        color="#e5c07b"
+      />
+      <Unattached
+        rows={push.orphans.filter((o) => !o.subject)}
+        heading="Scope creep — these belong to nothing you asked for"
+        color="#f14c4c"
+      />
     </div>
+  );
+}
+
+/** Promises with no claim. The two cases are different failures and are
+ *  never merged: one is the machine's, one is the work's. Both get a way
+ *  out — attach it to the claim it serves, or dismiss it. */
+function Unattached(props: {
+  rows: SpacePush["orphans"];
+  heading: string;
+  color: string;
+}): JSX.Element | null {
+  if (!props.rows.length) return null;
+  return (
+    <section
+      data-orphans
+      style={{
+        marginTop: 12,
+        border: `1px solid ${props.color}`,
+        borderRadius: 6,
+        padding: "8px 10px",
+        maxHeight: "20rem",
+        overflowY: "auto",
+      }}
+    >
+      <div style={{ fontSize: 11, textTransform: "uppercase", color: props.color, marginBottom: 4 }}>
+        {props.rows.length} promise(s) — {props.heading}
+      </div>
+      {props.rows.map((o) => (
+        <div key={o.id} style={{ fontSize: 12, marginBottom: 6 }}>
+          <div>{o.text}</div>
+          <div style={{ display: "flex", gap: 5, marginTop: 2, alignItems: "center" }}>
+            {o.subject ? (
+              <span style={{ fontSize: 11, opacity: 0.7 }}>{o.subject}</span>
+            ) : null}
+            <select
+              id={`attach-${o.id}`}
+              defaultValue=""
+              style={{ fontSize: 11, maxWidth: "22rem" }}
+              title="The claim this promise makes true."
+            >
+              <option value="">which claim does it serve?</option>
+              {o.choices.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.text}
+                </option>
+              ))}
+            </select>
+            <button
+              data-attach-promise={o.id}
+              title="Attach this promise to the claim it makes true."
+              onClick={() => {
+                const el = document.getElementById(`attach-${o.id}`) as HTMLSelectElement | null;
+                if (el?.value) post({ action: "attach-promise", unitId: o.id, into: el.value });
+              }}
+            >
+              Attach
+            </button>
+            <button
+              data-dismiss-promise={o.id}
+              title="This promise should not exist — remove it."
+              onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

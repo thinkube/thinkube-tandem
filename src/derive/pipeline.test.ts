@@ -185,3 +185,52 @@ test("contextualize bounds the digest, refuses emptiness, and asks for the whole
   assert.ok(prompt.includes("whole repository"), "the digest reads the repository, not an ask");
   assert.ok(prompt.includes("citing its source path"), "citations are demanded");
 });
+
+test("every round attributes: the gaps and ripples name a claim, and one that does not is named", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-attr-"));
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const said: string[] = [];
+  const round = scriptedRounds(
+    [
+      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      {
+        match: /grounding ONE ask/,
+        reply: `{"nodes":[{"sentence":"the page prints it","claim":1,"touchpoints":[{"path":"src/a.ts"}],"needs":[],"acceptance":[{"text":"printed"}]}],"questions":[]}`,
+      },
+      {
+        // The completeness round finds a ripple AND forgets to attribute one.
+        match: /COMPLETENESS round/,
+        reply: `{"nodes":[{"sentence":"the docs stop saying the old thing","claim":2,"touchpoints":[{"path":"docs/a.md"}],"needs":[],"acceptance":[{"text":"reworded"}]},{"sentence":"a probe watches the brief","touchpoints":[{"path":"src/b.ts"}],"needs":[],"acceptance":[{"text":"probed"}]}]}`,
+      },
+      { match: /THREE checks/, reply: `{"uncovered":[],"verdicts":[],"rewrites":[]}` },
+    ],
+    calls,
+  );
+  const claims = [
+    { id: "claim-x-1", text: "prints the reason" },
+    { id: "claim-x-2", text: "the docs match" },
+  ];
+  const out = await runDerivationPipeline({ ...deps, log: (l) => said.push(l) }, ask, {
+    nextIndex: 1,
+    claims,
+    round,
+  });
+
+  const completeness = calls.find((c) => /COMPLETENESS round/.test(c))!;
+  assert.match(completeness, /1\. prints the reason/, "the gap round is given the claims");
+  assert.match(completeness, /"claim":1/, "and is told to name one on every node");
+
+  const ripple = out.changes.find((c) => c.sentence.startsWith("the docs"))!;
+  assert.equal(ripple.servesClaim, "claim-x-2", "a ripple serves the claim it names");
+  const loose = out.changes.find((c) => c.sentence.startsWith("a probe"))!;
+  assert.equal(
+    loose.servesClaim,
+    undefined,
+    "a promise that named no claim is NOT attached to one — not even when there is an obvious candidate",
+  );
+  assert.ok(
+    said.some((l) => /named no claim/.test(l)),
+    "and the round says so instead of leaving it silent",
+  );
+});

@@ -94,6 +94,13 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: { surface: "the intent graph's panel", gesture: "press 'Make a rule' on a claim that governs more than its subject" },
   },
+  "attach-promise": {
+    kind: "human",
+    affordance: {
+      surface: "the intent graph's unattached list",
+      gesture: "pick the claim a promise makes true and press Attach",
+    },
+  },
   "dismiss-promise": {
     kind: "human",
     affordance: { surface: "the work graph's panel", gesture: "press Dismiss on a promise that should not exist, with a reason" },

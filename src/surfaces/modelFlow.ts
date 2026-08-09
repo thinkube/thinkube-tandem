@@ -107,9 +107,11 @@ export function applyModel(
   pending.subjects.forEach((sub, i) => {
     const id = `subject-${author}-${(space.subjects?.length ?? 0) + i + 1}`;
     subjects.push({ id, name: sub.name, from: sub.from.map(askOf) });
-    sub.claims.forEach((c, j) => {
+    sub.claims.forEach((c) => {
       claims.push({
-        id: `claim-${author}-${(space.claims?.length ?? 0) + claims.length + j + 1}`,
+        // One counter, one id: adding the position within the subject too
+        // mints the same id twice and attaches promises to the wrong claim.
+        id: `claim-${author}-${(space.claims?.length ?? 0) + claims.length + 1}`,
         subjectId: id,
         text: c.text,
         ...(c.why ? { why: c.why } : {}),

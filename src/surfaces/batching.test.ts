@@ -259,6 +259,42 @@ test("capture proposes a model and waits; accepting it grounds every subject onc
   );
 });
 
+test("two subjects' claims never share an id, so a promise cannot land on another subject's claim", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
+  const deps = {
+    round: { model: "opus", repoRoot: "/repo" },
+    storeDir: dir,
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-i-")),
+    now: () => "2026-08-09T10:00:00Z",
+    readCurrentStamp: async () => [],
+    classify: async () => "ask" as const,
+    contextRound: async () => "LAYOUT: one reading",
+    // Two subjects, two claims each — the shape that minted duplicates.
+    solveModel: async () => ({
+      subjects: [
+        {
+          name: "the delivery page",
+          from: [1],
+          claims: [{ text: "prints the reason", from: 1 }, { text: "names the check", from: 1 }],
+        },
+        {
+          name: "the TEP",
+          from: [2],
+          claims: [{ text: "records the reason", from: 2 }, { text: "states the docs", from: 2 }],
+        },
+      ],
+      rules: [],
+    }),
+    ground: async () => ({ changes: [], questions: [] }),
+  };
+  const session = new TandemSession(deps as never);
+  await session.captureMany(["the delivery page prints it", "the TEP records it"]);
+  await session.acceptModel();
+
+  const ids = session.space.claims!.map((c) => c.id);
+  assert.equal(new Set(ids).size, 4, `four claims, four ids: ${ids.join(", ")}`);
+});
+
 test("a rule in force reaches a subject captured later, and a no is remembered", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
   let round = 0;

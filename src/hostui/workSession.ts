@@ -88,7 +88,8 @@ export async function ensureWorkSession(args: {
   storeRoot: string;
   sessions: Map<string, import("../surfaces/session").TandemSession>;
   chooseSpace: (ownerKey: string, interactive: boolean) => Promise<string | undefined>;
-  gitAuthor: (repoRoot: string) => Promise<string>;
+  /** The person at the keyboard — resolved by the host, never a machine setting. */
+  author: string;
   resolveForge: (
     gitRoot: string,
   ) => Promise<import("../dispatch/forge").Forge | undefined>;
@@ -103,7 +104,7 @@ export async function ensureWorkSession(args: {
   const key = `${args.ownerKey}/${slug}`;
   const existing = args.sessions.get(key);
   if (existing) return existing;
-  const author = await args.gitAuthor(args.storeRoot);
+  const author = args.author;
   const dirs = thinkingSpaceDirs(args.storeRoot, wp.id, slug, author, "project");
   if (args.interactive && readContextScope(dirs.foldDir).length === 0)
     await editContextScope(args.storeRoot, wp, slug, args.openRepos());

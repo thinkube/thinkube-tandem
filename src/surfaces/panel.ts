@@ -155,10 +155,25 @@ function spacePush(session: TandemSession, message?: string): unknown {
       governs: r.governs.length,
       fromAsk: session.space.asks.find((a) => a.id === r.fromAsk)?.text ?? "",
     })),
-    // A promise attached to no claim is scope creep — named, never hidden.
+    // A promise attached to no claim is named, never hidden — and it says
+    // WHICH failure it is: a round that did not name the claim (the
+    // subject it was derived for is known) or a promise that belongs to
+    // nothing in the model at all.
     orphans: session.space.nodes
       .filter((n) => !n.servesClaim)
-      .map((n) => ({ id: n.id, text: n.sentence })),
+      .map((n) => {
+        const subject = (session.space.subjects ?? []).find((s) =>
+          n.serves.includes(s.id),
+        );
+        return {
+          id: n.id,
+          text: n.sentence,
+          ...(subject ? { subject: subject.name } : {}),
+          choices: (session.space.claims ?? [])
+            .filter((c) => !subject || c.subjectId === subject.id)
+            .map((c) => ({ id: c.id, text: c.text })),
+        };
+      }),
     modelFailure: session.modelFailure
       ? { reason: session.modelFailure.reason, sentences: session.modelFailure.texts.length }
       : undefined,
@@ -241,6 +256,7 @@ async function handleInbound(
     msg.action === "split-claim" ||
     msg.action === "move-claim" ||
     msg.action === "promote-claim" ||
+    msg.action === "attach-promise" ||
     msg.action === "dismiss-promise" ||
     msg.action === "retire-rule"
   ) {

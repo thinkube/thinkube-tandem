@@ -125,6 +125,7 @@ function buildCompletenessPrompt(args: {
   changes: Change[];
   repoRoot: string;
   digest?: string;
+  claims?: { text: string; why?: string }[];
 }): string {
   return (
     `You are the COMPLETENESS round: given ONE ask and the changes derived ` +
@@ -140,8 +141,18 @@ function buildCompletenessPrompt(args: {
       : "") +
     `THE ASK:\n${args.ask.text}\n\n` +
     `THE DERIVED CHANGES:\n${describeChanges(args.changes)}\n\n` +
+    (args.claims?.length
+      ? `EVERY node you return names the claim it makes true, as "claim": ` +
+        `the NUMBER from this list:\n` +
+        args.claims
+          .map((c, i) => `    ${i + 1}. ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
+          .join("\n") +
+        `\nA gap or ripple that serves none of these is not part of this ` +
+        `work — leave it out rather than returning it unattached.\n\n`
+      : "") +
     `Respond with ONE JSON object and nothing else:\n` +
-    `{"nodes":[{"sentence":"…","touchpoints":[{"path":"…"}],"needs":[],` +
+    `{"nodes":[{"sentence":"…"${args.claims?.length ? `,"claim":1` : ""},` +
+    `"touchpoints":[{"path":"…"}],"needs":[],` +
     `"acceptance":[{"text":"…"}]}]} — each node one MISSING or AFFECTED ` +
     `change in the same shape grounding uses (needs indices refer to THIS ` +
     `list only). Complete and nothing affected → {"nodes":[]}. Never ` +
@@ -323,6 +334,7 @@ export async function runDerivationPipeline(
       stamp,
       opts.nextIndex + changes.length,
       opts.mintNodeId,
+      opts.claims?.map((c) => c.id),
     );
     changes = [...changes, ...added];
     log(`${label}: ${added.length} change(s) added`);
@@ -333,7 +345,13 @@ export async function runDerivationPipeline(
   await addFrom(
     await round(
       deps,
-      buildCompletenessPrompt({ ask, changes, repoRoot: deps.repoRoot, digest }),
+      buildCompletenessPrompt({
+        ask,
+        changes,
+        repoRoot: deps.repoRoot,
+        digest,
+        ...(opts.claims ? { claims: opts.claims } : {}),
+      }),
     ),
     "completeness",
   );
@@ -371,6 +389,13 @@ export async function runDerivationPipeline(
       for (const q of parseGroundedQuestions(tail))
         questions.push({ askId: ask.id, ...q });
   }
+
+  // A promise that named no claim is NOT quietly attached to one: with a
+  // single claim in play the attachment would look right while hiding a
+  // promise that serves nothing. It is counted here and named in the map.
+  const unattached = changes.filter((c) => !c.servesClaim).length;
+  if (unattached && opts.claims?.length)
+    log(`attribution: ${unattached} change(s) named no claim — they need you`);
 
   return { changes, questions };
 }

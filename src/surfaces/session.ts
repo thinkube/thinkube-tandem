@@ -25,6 +25,7 @@ import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
+import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
 export { SESSION_ACTIONS } from "./affordances";
@@ -139,7 +140,7 @@ export class TandemSession {
   /** Corrections to the recorded model. Each one changes something real:
    *  the shape of what will be derived, or what governs it. */
   editModel(edit: {
-    kind: "rename-subject" | "merge-subject" | "split-claim" | "move-claim" | "promote-claim" | "dismiss-promise" | "retire-rule";
+    kind: "rename-subject" | "merge-subject" | "split-claim" | "move-claim" | "promote-claim" | "attach-promise" | "dismiss-promise" | "retire-rule";
     id: string;
     into?: string;
     text?: string;
@@ -215,6 +216,17 @@ export class TandemSession {
           ],
         };
         this.changed("Promoted to a rule — it governs every subject, and any new one that matches.");
+        return { ok: true };
+      }
+      case "attach-promise": {
+        // The human says which claim a promise serves when the round did
+        // not; an unknown claim is refused rather than inferred.
+        if (!claims.some((c) => c.id === edit.into))
+          return { ok: false, reason: "pick the claim this promise makes true" };
+        const on = (n: (typeof sp.nodes)[number]): (typeof sp.nodes)[number] =>
+          n.id === edit.id ? { ...n, servesClaim: edit.into } : n;
+        this.space = { ...sp, nodes: sp.nodes.map(on) };
+        this.changed("Attached — it serves that claim now.");
         return { ok: true };
       }
       case "dismiss-promise": {
@@ -575,7 +587,7 @@ export class TandemSession {
         author: this.author,
         now: this.deps.now,
       });
-      this.space = folded.space;
+      this.space = repairClaimIds(folded.space);
       this.cutNodeIds = new Set(folded.cut);
         void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {
