@@ -11,6 +11,7 @@ import * as path from "node:path";
 
 import { AFFORDANCES, gestureFor } from "./affordances";
 import { SESSION_ACTIONS, TandemSession } from "./session";
+import { asksOfText } from "../derive/asks";
 
 /** The new capture: the round proposes a model, the human accepts it, and
  *  every subject grounds. Tests drive the same two steps a person does. */
@@ -292,7 +293,7 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
   assert.equal(session.space.asks.length, 1, "the in-memory state stays live");
 });
 
-test("list-paste: a pasted list previews as N items and records N independent asks", async () => {
+test("a list records N independent asks, each in the words as written", async () => {
   const deps = {
     round: { model: "sonnet", repoRoot: "/repo" },
     storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
@@ -308,12 +309,17 @@ test("list-paste: a pasted list previews as N items and records N independent as
     ground: async () => ({ changes: [], questions: [] }),
   };
   const session = new TandemSession(deps as never);
-  const draft = await session.capture("1. add a clear button\n2. rename the toolbar\n- fix the tooltip");
-  assert.deepEqual(draft.list, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
-  assert.equal(session.space.asks.length, 0, "the preview records nothing");
-  await captureAndAccept(session, draft.list!);
-  assert.equal(session.space.asks.length, 3, "confirming records exactly N asks");
-  assert.ok(session.space.asks.every((a, i) => a.text === draft.list![i]));
+  // The surface splits what you wrote — one line, one ask — and hands the
+  // host exactly the asks to record. The rule itself is covered in
+  // derive/asks.test.ts; what matters here is that N in means N recorded.
+  const items = asksOfText("1. add a clear button\n2. rename the toolbar\n- fix the tooltip").map(
+    (a) => a.text,
+  );
+  assert.deepEqual(items, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
+  assert.equal(session.space.asks.length, 0, "nothing is recorded before it is pressed");
+  await captureAndAccept(session, items);
+  assert.equal(session.space.asks.length, 3, "recording keeps exactly N asks");
+  assert.ok(session.space.asks.every((a, i) => a.text === items[i]));
 });
 
 test("liveness: the pipeline's stages surface as activity tied to the subject being grounded", async () => {

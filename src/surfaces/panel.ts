@@ -268,7 +268,6 @@ async function handleInbound(
   msg: InboundAction,
   push: (message?: string) => void,
   hooks?: PanelHostHooks,
-  pushDraft: (draft: { items: string[] }, text: string) => void = () => {},
 ): Promise<void> {
   if (msg.action === "switch-repo") {
     await hooks?.onSwitchRepo?.();
@@ -276,13 +275,7 @@ async function handleInbound(
   }
   let note: string | undefined;
   if (msg.action === "capture" && msg.text) {
-    // A marked list is previewed and records nothing until it is pressed;
-    // anything else is an ask, recorded and read on the spot.
     const r = await session.capture(msg.text);
-    if (r.list) {
-      push(undefined);
-      return pushDraft({ items: r.list }, msg.text);
-    }
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "capture-many" && msg.items?.length) {
     const r = await session.captureMany(msg.items);
@@ -440,8 +433,6 @@ export class SpacePanel implements vscodeTypes.Disposable {
             msg,
             (m) => this._push(this.getSession(), m),
             this.hooks,
-            (draft, text) =>
-              void this._panel?.webview.postMessage({ kind: "draft", items: draft.items, text }),
           );
         // Industry-standard liveness: a real progress notification with a
         // working Cancel for anything that thinks longer than a beat.

@@ -17,7 +17,6 @@ import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
-import { splitList } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
 import { applyModel, proposeModelFlow, readModel, retryModel } from "./modelFlow";
@@ -222,9 +221,7 @@ export class TandemSession {
    * A marked list is the one thing still examined, and mechanically: it
    * comes back as a preview and records nothing until you press it.
    */
-  async capture(text: string): Promise<{ ok: boolean; reason?: string; list?: string[] }> {
-    const items = splitList(text);
-    if (items) return { ok: true, list: items };
+  async capture(text: string): Promise<{ ok: boolean; reason?: string }> {
     return proposeModelFlow(this, [text]);
   }
 

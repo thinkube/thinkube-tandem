@@ -146,13 +146,6 @@ export interface SpacePush {
   message?: string;
 }
 
-/** A marked list, seen but not recorded — the human presses to keep it. */
-export interface DraftPush {
-  kind: "draft";
-  text: string;
-  items: string[];
-}
-
 export type WebToHost =
   | { action: "capture"; text: string }
   | { action: "capture-many"; items: string[] }
@@ -195,14 +188,6 @@ export function post(msg: WebToHost): void {
   api.postMessage(msg);
 }
 
-export function onDraft(handler: (d: DraftPush) => void): () => void {
-  const listener = (e: MessageEvent): void => {
-    const data = e.data as DraftPush;
-    if (data && data.kind === "draft") handler(data);
-  };
-  window.addEventListener("message", listener);
-  return () => window.removeEventListener("message", listener);
-}
 
 export function onSpace(handler: (push: SpacePush) => void): () => void {
   const listener = (ev: MessageEvent) => {

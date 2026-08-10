@@ -4,8 +4,9 @@
  * pushes; every abstract flips to its machine face with one gesture.
  */
 import { useEffect, useMemo, useState } from "react";
-import { DraftPush, onDraft, onSpace, post, SpacePush} from "./vscode";
+import { onSpace, post, SpacePush } from "./vscode";
 import { RunNote, RunSection } from "./Run";
+import { Compose } from "./Compose";
 import { Delivery } from "./Delivery";
 import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
@@ -20,7 +21,6 @@ export function App(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [classifying, setClassifying] = useState(false);
-  const [tag, setTag] = useState<DraftPush | null>(null);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
@@ -70,14 +70,6 @@ export function App(): JSX.Element {
     setDraft("");
   }, [askCount]);
   useEffect(() => onSpace(setPush), []);
-  useEffect(
-    () =>
-      onDraft((d) => {
-        setClassifying(false);
-        setTag(d);
-      }),
-    [],
-  );
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
   const spinStyle = (
@@ -159,69 +151,17 @@ export function App(): JSX.Element {
           alignItems: "center",
         }}
       >
-        <textarea
-          data-capture
-          value={draft}
-          rows={Math.min(6, Math.max(2, draft.split("\n").length))}
-          placeholder="Say what you want built — your words are kept verbatim. Enter records it, Shift+Enter is a new line."
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setTag(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && draft.trim() && !classifying) {
-              e.preventDefault();
-              setClassifying(true);
-              post({ action: "capture", text: draft });
-            }
-          }}
-          disabled={!!push.activity}
-          style={{
-            flexBasis: "100%",
-            minWidth: 0,
-            resize: "vertical",
-            padding: `${SP.sm}px ${SP.md}px`,
-            fontFamily: "inherit",
-            fontSize: FS.body,
-            background: "var(--vscode-input-background, #222)",
-            color: "var(--vscode-input-foreground, #ddd)",
-            border: "1px solid var(--vscode-input-border, #444)",
-            borderRadius: 6,
+        <Compose
+          busy={!!push.activity}
+          onRecord={(asks) => {
+            setClassifying(true);
+            post(asks.length === 1 ? { action: "capture", text: asks[0] } : { action: "capture-many", items: asks });
           }}
         />
         {classifying ? (
           <span data-classifying style={{ fontSize: FS.body, opacity: O.dim }}>
             ⟳ recording and reading it…
           </span>
-        ) : null}
-        {tag?.items ? (
-          <div data-list-preview style={{ flexBasis: "100%", fontSize: FS.body }}>
-            <div style={{ opacity: O.dim, marginBottom: 4 }}>
-              That looks like a list — record {tag.items.length} separate asks?
-            </div>
-            <ol style={{ margin: "0 0 6px 18px", padding: 0 }}>
-              {tag.items.map((it, i) => (
-                <li key={i} style={{ opacity: O.dim }}>{it}</li>
-              ))}
-            </ol>
-            <button
-              data-record-list
-              style={{ cursor: "pointer", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px` }}
-              onClick={() => {
-                post({ action: "capture-many", items: tag.items! });
-                setTag(null);
-                setDraft("");
-              }}
-            >
-              Record {tag.items.length} asks
-            </button>
-            <button
-              style={{ marginLeft: 8, cursor: "pointer", background: "none", border: "none", color: "inherit", opacity: O.dim }}
-              onClick={() => setTag(null)}
-            >
-              keep editing
-            </button>
-          </div>
         ) : null}
         {push.activity ? (
           <div data-activity style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center", fontSize: FS.body }}>
