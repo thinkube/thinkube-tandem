@@ -202,13 +202,13 @@ function spacePush(session: TandemSession, message?: string): unknown {
         ...(a.amends
           ? { amends: session.space.asks.find((x) => x.id === a.amends)?.text ?? "" }
           : {}),
-        ...(price.state === "bound"
-          ? {
-              tep: session.space.cuts.find(
-                (c) => c.signature && c.changeIds.some((id) => session.stale.has(id) || true),
-              )?.tepId,
-            }
-          : {}),
+        // What became of this ask, told by what actually happened to it.
+        // Signing is approval, not building: the run can refuse the plan
+        // and deliver nothing, and saying "built" over work that never
+        // dispatched is the machine reporting its own intention as fact.
+        // The cut named is the one holding THIS ask's promises — the
+        // lookup here once matched any signed cut at all.
+        ...(price.state === "bound" ? { bound: boundState(session, a.id) } : {}),
         assumptions: assumptionsFor(session, a.id),
       };
     }),
@@ -373,6 +373,32 @@ async function handleInbound(
     await session.reground();
   }
   push(note);
+}
+
+
+/**
+ * How far this ask's work actually got: approved, delivered, or accepted
+ * into the project. Signing is the first of the three and the only one
+ * the human performs — the other two are things the machine did or did
+ * not manage.
+ */
+function boundState(
+  session: TandemSession,
+  askId: string,
+): { tep?: string; stage: "signed" | "delivered" | "accepted" } {
+  const mine = new Set(
+    session.space.nodes.filter((n) => n.serves.includes(askId)).map((n) => n.id),
+  );
+  const cut = session.space.cuts.find(
+    (c) => c.signature && c.changeIds.some((id) => mine.has(id)),
+  );
+  const delivery = cut
+    ? session.space.deliveries.find((d) => d.cutId === cut.id)
+    : undefined;
+  return {
+    ...(cut?.tepId ? { tep: cut.tepId } : {}),
+    stage: !delivery ? "signed" : delivery.acceptedAt ? "accepted" : "delivered",
+  };
 }
 
 export class SpacePanel implements vscodeTypes.Disposable {

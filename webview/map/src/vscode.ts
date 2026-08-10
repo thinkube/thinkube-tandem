@@ -120,7 +120,9 @@ export interface SpacePush {
     promises: number;
     alsoReads: string[];
     amends?: string;
-    tep?: string;
+    /** What became of this ask's work: approved, delivered, or accepted
+     *  into the project. Absent while the ask is still yours to edit. */
+    bound?: { tep?: string; stage: "signed" | "delivered" | "accepted" };
     assumptions: { question: string; answer: string; clause?: string; assumed: boolean }[];
   }[];
   /** What thinking about what is left will cost. */

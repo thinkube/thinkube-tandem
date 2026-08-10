@@ -22,6 +22,19 @@ import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 type Sentence = SpacePush["sentences"][number];
 
+/**
+ * What happened to an ask, said as what happened. Signing is approval and
+ * nothing more: the run can refuse the plan and build nothing at all, and
+ * a machine that reports its own intention as an accomplished fact is
+ * lying about the one thing the human came to check.
+ */
+function boundWords(b: Sentence["bound"]): string {
+  const as = b?.tep ? ` as ${b.tep}` : "";
+  if (b?.stage === "accepted") return `built and accepted${as} — it is in the project`;
+  if (b?.stage === "delivered") return `built${as} — delivered, waiting for you to accept it`;
+  return `approved${as} — these words are part of the record now; nothing is built from them yet`;
+}
+
 function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
   const { s } = props;
   const [text, setText] = useState(s.state === "bound" ? "" : s.text);
@@ -52,7 +65,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
         <button onClick={props.onDone}>Cancel</button>
         <span style={{ fontSize: FS.caption, opacity: O.dim }}>
           {bound
-            ? "the sentence above stays exactly as you wrote it"
+            ? "the sentence above stays exactly as you wrote it — it is approved work"
             : s.promises
               ? `re-reads ${s.subjects} subject${s.subjects === 1 ? "" : "s"} and replaces ${s.promises} promise${s.promises === 1 ? "" : "s"}` +
                 (s.alsoReads.length ? `, including work from ${s.alsoReads.length} other sentence(s)` : "")
@@ -118,7 +131,7 @@ export function Asks(props: {
           <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginTop: 4 }}>
             <span style={{ fontSize: FS.caption, opacity: O.dim }}>
               {s.state === "bound"
-                ? `built${s.tep ? ` as ${s.tep}` : ""} — these words are part of the record now`
+                ? boundWords(s.bound)
                 : `${s.promises} promise${s.promises === 1 ? "" : "s"} read from this ask`}
             </span>
             {editing === s.id ? null : (
@@ -126,7 +139,7 @@ export function Asks(props: {
                 data-edit-sentence={s.id}
                 title={
                   s.state === "bound"
-                    ? "Built work only changes through new work — add an amendment."
+                    ? "Approved work only changes through new work — add an amendment."
                     : "Say this ask differently and I will read it again."
                 }
                 aria-label={s.state === "bound" ? "amend this ask" : "say this ask differently"}
