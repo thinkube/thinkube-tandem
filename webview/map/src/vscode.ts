@@ -130,7 +130,7 @@ export interface SpacePush {
   outOfDate: { promises: number; subjects: number; rounds: number };
   /** What can be committed right now. `thinking` means the machine is
    *  still deriving and nothing may be committed yet. */
-  ready: { subjects: number; promises: number; thinking: boolean };
+  ready: { subjects: number; promises: number; asks: number; thinking: boolean };
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */

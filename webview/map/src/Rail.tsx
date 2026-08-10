@@ -130,18 +130,34 @@ export function Rail(props: {
           </div>
         ) : ready.subjects ? (
           <section data-build-section style={{ marginBottom: 14 }}>
+            <div style={label}>Pressing this</div>
+            <ul
+              data-build-price
+              style={{ fontSize: FS.caption, margin: 0, paddingLeft: SP.lg, lineHeight: 1.5 }}
+            >
+              <li>signs this work and mints a TEP number for it</li>
+              <li>
+                locks the {ready.asks} sentence{ready.asks === 1 ? "" : "s"} behind it: from then on
+                they are read-only and can only be changed by writing a new one
+              </li>
+              <li>
+                starts the workers on {ready.promises} promise
+                {ready.promises === 1 ? "" : "s"} — this is what spends money
+              </li>
+              <li>pushes a branch, which stays whether or not you accept what comes back</li>
+              <li>
+                nothing is merged until you accept the delivery. Once you do, this thinking space
+                becomes the record of that decision and can no longer be deleted
+              </li>
+            </ul>
             <button
               data-build
-              style={{ ...btn, width: "100%" }}
-              title="Build it. Everything assumed becomes a decision on the record, and the asks behind this work become read-only."
+              style={{ ...btn, width: "100%", marginTop: SP.sm }}
+              title="Sign this work and start the workers."
               onClick={() => post({ action: "build" })}
             >
-              Build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
+              Sign and build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
             </button>
-            <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 4 }}>
-              {ready.promises} promise{ready.promises === 1 ? "" : "s"} · workers run in parallel ·
-              the sentences behind them become read-only
-            </div>
           </section>
         ) : null}
 

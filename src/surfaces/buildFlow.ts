@@ -35,13 +35,16 @@ export interface WorkCost {
 export function readyToBuild(
   space: Space,
   thinking: boolean,
-): { subjects: number; promises: number; thinking: boolean } {
+): { subjects: number; promises: number; asks: number; thinking: boolean } {
   if (thinking || costOfThinking(space).subjects > 0)
-    return { subjects: 0, promises: 0, thinking: true };
+    return { subjects: 0, promises: 0, asks: 0, thinking: true };
   const cs = buildable(space);
   return {
     subjects: cs.reduce((n, c) => n + c.subjectIds.length, 0),
     promises: cs.reduce((n, c) => n + promisesOf(space, c).length, 0),
+    // The sentences this press would lock: the price the human pays that
+    // is not money, so it is named in the same breath as the money.
+    asks: new Set(cs.flatMap((c) => c.askIds)).size,
     thinking: false,
   };
 }

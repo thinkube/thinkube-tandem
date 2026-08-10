@@ -19,7 +19,7 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
-import { deleteThinkingSpace, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
+import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
 import {
   chooseThinkingSpace,
   configuredStoreRoot,
@@ -387,6 +387,7 @@ export function activate(context: vscode.ExtensionContext): void {
       refreshTree: () => projectsTree?.refresh(),
       dropSession: (key) => void sessions.delete(key),
       deleteSpace: deleteThinkingSpace,
+      costOfDeleting: deletionCost,
     }),
     vscode.commands.registerCommand("thinkube-tandem.refreshProjects", () =>
       projectsTree?.refresh(),

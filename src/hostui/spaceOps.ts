@@ -7,7 +7,7 @@
 import type * as vscodeTypes from "vscode";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { createThinkingSpace, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
+import { createThinkingSpace, DeletionCost, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
 
 /** Owner keys: a repository card id, or "wp:<project-id>" for a project. */
 function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
@@ -30,7 +30,7 @@ export function configuredStoreRoot(): string {
 }
 
 /** The three v1 gestures on the tree: open a space, create one from the
- *  permanent row, delete one (refused after any signature). */
+ *  permanent row, delete one (refused only once something was merged). */
 export function registerSpaceCommands(
   context: vscodeTypes.ExtensionContext,
   deps: {
@@ -44,6 +44,13 @@ export function registerSpaceCommands(
       now: () => string,
       kind?: SpaceOwnerKind,
     ) => { ok: boolean; reason?: string };
+    costOfDeleting: (
+      storeRoot: string,
+      ownerId: string,
+      slug: string,
+      now: () => string,
+      kind?: SpaceOwnerKind,
+    ) => DeletionCost;
   },
 ): vscodeTypes.Disposable[] {
   const vsc = vs();
@@ -77,13 +84,30 @@ export function registerSpaceCommands(
       async (node?: { id?: string }) => {
         const [ownerId, slug] = (node?.id ?? "").split("/");
         if (!ownerId || !slug) return;
+        const owner = parseOwner(ownerId);
+        // What it costs is said BEFORE the press, in the same breath as
+        // the question. A refusal afterwards teaches a rule the surface
+        // never taught.
+        const cost = deps.costOfDeleting(configuredStoreRoot(), owner.id, slug, () =>
+          new Date().toISOString(), owner.kind,
+        );
+        const detail = [
+          `${cost.asks} sentence${cost.asks === 1 ? "" : "s"} you wrote, and everything read from them, exist only here and go with it.`,
+          cost.teps.length
+            ? `${cost.teps.join(", ")} stay minted, and the branch${cost.branches.length === 1 ? "" : "es"} ${cost.branches.join(", ")} stay on the forge — deleting this space does not withdraw them.`
+            : "",
+          cost.merged.length
+            ? `${cost.merged.join(", ")} was accepted and merged, so this cannot be deleted.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
         const sure = await vsc.window.showWarningMessage(
-          `Delete the thinking space "${slug}"? Everything unsigned in it is removed.`,
-          { modal: true },
+          `Delete the thinking space "${slug}"?`,
+          { modal: true, detail },
           "Delete",
         );
         if (sure !== "Delete") return;
-        const owner = parseOwner(ownerId);
         const r = deps.deleteSpace(configuredStoreRoot(), owner.id, slug, () =>
           new Date().toISOString(), owner.kind,
         );

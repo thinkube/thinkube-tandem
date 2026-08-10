@@ -12,6 +12,7 @@ import * as path from "node:path";
 import {
   createThinkingSpace,
   deleteThinkingSpace,
+  deletionCost,
   listThinkingSpaces,
   slugifySpaceName,
   thinkingSpaceDirs,
@@ -48,36 +49,72 @@ test("create, list, and address a thinking space; duplicates refuse", () => {
   assert.deepEqual(listThinkingSpaces(root, "other-repo"), [], "owners are isolated");
 });
 
-test("deletion: fine while nothing is signed; refused forever after a signature", () => {
+test("deletion: a signed space still deletes; a merged one never does", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tk-spaces-"));
   const made = createThinkingSpace(root, "repo-1", "scratch");
   assert.ok(made.ok);
   assert.ok(deleteThinkingSpace(root, "repo-1", "scratch", now).ok, "unsigned space deletes");
   assert.deepEqual(listThinkingSpaces(root, "repo-1"), []);
 
+  // Signed but never accepted: a minted number and a pushed branch outlive
+  // the space and do not need it to be explained, so the human may throw
+  // the thinking away.
   const again = createThinkingSpace(root, "repo-1", "kept");
   assert.ok(again.ok);
   const dirs = thinkingSpaceDirs(root, "repo-1", "kept", "alice");
   fs.mkdirSync(dirs.storeDir, { recursive: true });
+  const signedSpace = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "make it legible", at: now() }],
+    cuts: [
+      {
+        id: "cut-1",
+        tepId: "TEP-alice-1",
+        changeIds: [],
+        signature: { at: now(), renderHash: "r", groundingHash: "g" },
+      },
+    ],
+    deliveries: [
+      { id: "d-1", cutId: "cut-1", branch: "tandem/TEP-alice-1", proofs: [] },
+    ],
+  };
   appendRecord(dirs.storeDir, {
     at: now(),
     author: "alice",
     kind: "snapshot",
+    space: signedSpace,
+    cut: [],
+  });
+
+  const cost = deletionCost(root, "repo-1", "kept", now);
+  assert.deepEqual(cost.teps, ["TEP-alice-1"], "the question can name what stays minted");
+  assert.deepEqual(cost.branches, ["tandem/TEP-alice-1"], "and the branch that stays standing");
+  assert.equal(cost.asks, 1, "and what only exists here");
+  assert.deepEqual(cost.merged, [], "nothing was accepted");
+  assert.ok(deleteThinkingSpace(root, "repo-1", "kept", now).ok, "a signature alone does not imprison the space");
+  assert.deepEqual(listThinkingSpaces(root, "repo-1"), []);
+
+  // Accepted: the work is in the project, and this is the record of how it
+  // was decided.
+  const merged = createThinkingSpace(root, "repo-1", "delivered");
+  assert.ok(merged.ok);
+  const d2 = thinkingSpaceDirs(root, "repo-1", "delivered", "alice");
+  fs.mkdirSync(d2.storeDir, { recursive: true });
+  appendRecord(d2.storeDir, {
+    at: now(),
+    author: "alice",
+    kind: "snapshot",
     space: {
-      ...emptySpace(),
-      cuts: [
-        {
-          id: "cut-1",
-          changeIds: [],
-          signature: { at: now(), renderHash: "r", groundingHash: "g" },
-        },
+      ...signedSpace,
+      deliveries: [
+        { id: "d-1", cutId: "cut-1", branch: "tandem/TEP-alice-1", proofs: [], acceptedAt: now() },
       ],
     },
     cut: [],
   });
-  const refused = deleteThinkingSpace(root, "repo-1", "kept", now);
+  const refused = deleteThinkingSpace(root, "repo-1", "delivered", now);
   assert.equal(refused.ok, false);
-  assert.ok(refused.reason!.includes("signed"), "the refusal says why");
+  assert.ok(refused.reason!.includes("TEP-alice-1"), "the refusal names what was merged");
   assert.equal(listThinkingSpaces(root, "repo-1").length, 1, "nothing was removed");
 });
 

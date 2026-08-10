@@ -87,9 +87,56 @@ export function thinkingSpaceDirs(
   return { storeDir: path.join(foldDir, author), foldDir };
 }
 
+/** What deleting a thinking space would destroy, and what it would not. */
+export interface DeletionCost {
+  exists: boolean;
+  /** Sentences the human wrote, which only exist here. */
+  asks: number;
+  /** TEP numbers minted here. Minted is not merged. */
+  teps: string[];
+  /** Branches this space pushed. Deleting the space leaves them standing. */
+  branches: string[];
+  /** Deliveries the human accepted — merged into the project. These are
+   *  the only thing that cannot be taken back, so they are the only thing
+   *  that refuses a deletion. */
+  merged: string[];
+}
+
 /**
- * Delete a thinking space — refused once any signed cut exists in the fold
- * (any user): what was signed is a record, not something erasable.
+ * What it would cost to delete this space, so the question can be asked
+ * before the act rather than answered by a refusal after it.
+ */
+export function deletionCost(
+  storeRoot: string,
+  ownerId: string,
+  slug: string,
+  now: () => string,
+  kind: SpaceOwnerKind = "repository",
+): DeletionCost {
+  const dir = path.join(spacesHome(storeRoot, ownerId, kind), slug);
+  if (!fs.existsSync(dir))
+    return { exists: false, asks: 0, teps: [], branches: [], merged: [] };
+  const { space } = loadFolded(dir, path.join(dir, "_probe"), "_probe", now);
+  const signed = space.cuts.filter((c) => c.signature);
+  return {
+    exists: true,
+    asks: space.asks.length,
+    teps: signed.map((c) => c.tepId).filter((t): t is string => !!t),
+    branches: [...new Set(space.deliveries.map((d) => d.branch))],
+    merged: space.deliveries
+      .filter((d) => d.acceptedAt)
+      .map((d) => space.cuts.find((c) => c.id === d.cutId)?.tepId ?? d.branch),
+  };
+}
+
+/**
+ * Delete a thinking space — refused only once work from it was ACCEPTED,
+ * which merged it into the project. Until then nothing here is a record
+ * of anything the world has seen: a signature mints a number and pushes a
+ * branch, both of which outlive the space and neither of which the space
+ * is needed to explain. Refusing on the signature alone made every space
+ * that was ever built in permanent, which is a punishment for using the
+ * machine rather than a rule protecting anything.
  */
 export function deleteThinkingSpace(
   storeRoot: string,
@@ -100,11 +147,11 @@ export function deleteThinkingSpace(
 ): { ok: boolean; reason?: string } {
   const dir = path.join(spacesHome(storeRoot, ownerId, kind), slug);
   if (!fs.existsSync(dir)) return { ok: false, reason: "no such thinking space" };
-  const { space } = loadFolded(dir, path.join(dir, "_probe"), "_probe", now);
-  if (space.cuts.some((c) => c.signature))
+  const cost = deletionCost(storeRoot, ownerId, slug, now, kind);
+  if (cost.merged.length)
     return {
       ok: false,
-      reason: "something was already signed in this thinking space — it is a record now, not erasable",
+      reason: `${cost.merged.join(", ")} was accepted and merged into the project — a space that delivered something is the record of how it was decided, and cannot be erased`,
     };
   fs.rmSync(dir, { recursive: true, force: true });
   return { ok: true };
