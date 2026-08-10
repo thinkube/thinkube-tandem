@@ -71,7 +71,6 @@ export interface SpacePush {
   running: boolean;
   /** Set when the space predates the model — readable, not writable. */
   legacy?: string;
-  asks: { id: string; text: string }[];
   signedTeps: number;
   repoName?: string;
   /** No repository chosen yet — the view renders the chooser state. */
@@ -140,7 +139,6 @@ export interface SpacePush {
   };
   impacts: { id: string; decision: string; askText: string; affected: number }[];
   subjects: SubjectVM[];
-  cutScreen: string;
   cutCount: number;
   deliveries: DeliveryVM[];
   message?: string;
@@ -173,6 +171,12 @@ export type WebToHost =
   | { action: "select-unit"; unitId: string }
   | { action: "accept-delivery"; deliveryId: string }
   | { action: "panic" }
+  | { action: "accept-question"; questionId: string; text?: string }
+  | { action: "accept-impact"; impactId: string }
+  | { action: "dismiss-impact"; impactId: string }
+  | { action: "apply-all-impacts" }
+  | { action: "propose-check"; changeIds: string[] }
+  | { action: "accept-check"; changeIds: string[]; text: string; kind: "probe" | "assessment" }
   | { action: "switch-repo" };
 
 interface VsCodeApi {

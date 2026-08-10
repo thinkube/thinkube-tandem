@@ -136,6 +136,13 @@ export function Rail(props: {
               style={{ fontSize: FS.caption, margin: 0, paddingLeft: SP.lg, lineHeight: 1.5 }}
             >
               <li>signs this work and mints a TEP number for it</li>
+              {push.questions.length ? (
+                <li>
+                  records the machine's own answer to {push.questions.length} question
+                  {push.questions.length === 1 ? "" : "s"} you have not answered — they are above the
+                  graph, and answering one first replaces its answer with yours
+                </li>
+              ) : null}
               <li>
                 locks the {ready.asks} sentence{ready.asks === 1 ? "" : "s"} behind it: from then on
                 they are read-only and can only be changed by writing a new one
@@ -150,6 +157,14 @@ export function Rail(props: {
                 becomes the record of that decision and can no longer be deleted
               </li>
             </ul>
+            <button
+              data-open-cut-review
+              style={{ width: "100%", marginTop: SP.sm }}
+              title="Open the whole cut as a page you can read: every promise, where it lands, and what will prove it."
+              onClick={() => post({ action: "open-cut-review" })}
+            >
+              Read the cut review first
+            </button>
             <button
               data-build
               style={{ ...btn, width: "100%", marginTop: SP.sm }}

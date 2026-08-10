@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn, raised } from "./type";
+import { Review } from "./Review";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -30,6 +31,9 @@ export function WorkGraph(props: {
   onEditAsk: (askId: string) => void;
 }): JSX.Element {
   const { push } = props;
+  // Which promise asked for a check: the answer comes back on the whole
+  // space, so the card that asked is the card that shows it.
+  const [pendingFor, setPendingFor] = useState<string | null>(null);
   const subjects = useMemo(
     () => push.subjects.filter((s) => !props.subjectId || s.id === props.subjectId),
     [push.subjects, props.subjectId],
@@ -97,28 +101,64 @@ export function WorkGraph(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shape]);
 
+  // Arriving here IS what starts the thinking, so the page a reader lands
+  // on is usually a page whose work has not happened yet. It says so, and
+  // says how far along it is — never a bare emptiness, and never an
+  // instruction to go back and do a thing that is already under way.
+  const inFlight = push.grounding ?? [];
+  const working = !!push.activity || inFlight.length > 0;
   if (!push.subjects.length)
     return (
-      <div style={{ flex: 1, padding: 24, opacity: O.dim }}>
-        Nothing derived yet — accept a model on the intent graph and I will think about each subject.
+      <div data-work-empty style={{ flex: 1, padding: SP.xl }}>
+        {working ? (
+          <>
+            <div style={{ fontSize: FS.title, fontWeight: 600 }}>Working out what to build…</div>
+            <div style={{ fontSize: FS.body, color: C.quiet, marginTop: SP.sm }}>
+              {push.activity
+                ? `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`
+                : `${inFlight.length} subject${inFlight.length === 1 ? "" : "s"} in flight`}
+            </div>
+            {inFlight.map((g) => (
+              <div key={g.askId} style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+                {g.label} — {g.current} of {g.total}
+              </div>
+            ))}
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.md }}>
+              The promises appear here as each subject is worked out.
+            </div>
+          </>
+        ) : push.cost.subjects ? (
+          <>
+            <div style={{ fontSize: FS.title, fontWeight: 600 }}>Nothing worked out yet</div>
+            <div style={{ fontSize: FS.body, color: C.quiet, marginTop: SP.sm }}>
+              {push.cost.subjects} subject{push.cost.subjects === 1 ? "" : "s"} to think about —
+              about {push.cost.rounds} rounds.
+            </div>
+            <button
+              data-think-here
+              style={{ fontWeight: 600, marginTop: SP.md }}
+              title="Work out what to build. This is what starts spending."
+              onClick={() => post({ action: "think" })}
+            >
+              Work it out now
+            </button>
+          </>
+        ) : (
+          <div style={{ fontSize: FS.body, color: C.quiet }}>
+            Nothing to build yet — write what you want on the intent page.
+          </div>
+        )}
       </div>
     );
 
   return (
-    <div
-      data-work-graph
-      ref={props.world.ref}
-      style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 300 }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      {/* Everything that acts on the whole page stands still above it. A
+          bar drawn inside the world pans away with the cards, so the way
+          to answer a question was to go looking for it. */}
       <div
-        style={{
-          position: "absolute",
-          transformOrigin: "0 0",
-          transform: `translate(${props.world.tx}px, ${props.world.ty}px) scale(${props.world.k})`,
-          // Room at the foot so the zoom controls never sit on top of a
-          // card the reader is trying to read.
-          padding: `0 ${SP.lg}px 56px`,
-        }}
+        data-work-header
+        style={{ padding: `${SP.sm}px ${SP.lg}px 0`, flexShrink: 0, maxHeight: "45%", overflowY: "auto" }}
       >
       {push.outOfDate.promises ? (
         <div
@@ -154,7 +194,23 @@ export function WorkGraph(props: {
           </span>
         </div>
       ) : null}
-
+        <Review push={push} />
+      </div>
+    <div
+      data-work-graph
+      ref={props.world.ref}
+      style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minHeight: 200 }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          transformOrigin: "0 0",
+          transform: `translate(${props.world.tx}px, ${props.world.ty}px) scale(${props.world.k})`,
+          // Room at the foot so the zoom controls never sit on top of a
+          // card the reader is trying to read.
+          padding: `0 ${SP.lg}px 56px`,
+        }}
+      >
       {props.subjectId ? (
         <div style={{ fontSize: FS.caption, opacity: O.dim, marginBottom: 8 }}>
           showing only {push.subjects.find((s) => s.id === props.subjectId)?.name}{" "}
@@ -284,6 +340,53 @@ export function WorkGraph(props: {
                           {c}
                         </div>
                       ))}
+                      {/* A promise nothing proves cannot be signed, so the
+                          card that reports it offers the way out of it. */}
+                      {!p.checks.length ? (
+                        pendingFor === p.id && push.pendingCheck ? (
+                          <div data-pending-check={p.id} style={{ marginTop: SP.xs }}>
+                            <div style={{ fontSize: FS.caption }}>{push.pendingCheck.text}</div>
+                            <div style={{ display: "flex", gap: SP.sm, marginTop: SP.xs }}>
+                              <button
+                                data-accept-check={p.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  post({
+                                    action: "accept-check",
+                                    changeIds: [p.id],
+                                    text: push.pendingCheck!.text,
+                                    kind: push.pendingCheck!.kind,
+                                  });
+                                  setPendingFor(null);
+                                }}
+                              >
+                                Use this check
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingFor(null);
+                                }}
+                              >
+                                No
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            data-propose-check={p.id}
+                            style={{ fontSize: FS.caption, marginTop: SP.xs }}
+                            title="Work out a check that would prove this promise, and show it to me before it is kept."
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingFor(p.id);
+                              post({ action: "propose-check", changeIds: [p.id] });
+                            }}
+                          >
+                            Work out a check for this
+                          </button>
+                        )
+                      ) : null}
                       {p.stale ? (
                         <div
                           data-stale={p.id}
@@ -305,6 +408,7 @@ export function WorkGraph(props: {
         );
       })}
       </div>
+    </div>
     </div>
   );
 }

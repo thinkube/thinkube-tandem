@@ -92,7 +92,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
     grounding: session.groundingView(),
-    asks: session.space.asks.map((a) => ({ id: a.id, text: a.text })),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),
     // The chart names each worker by the slice it builds, in the words the
@@ -250,7 +249,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
           ),
         }
       : undefined,
-    cutScreen: session.cutScreen(),
     cutCount: session.cutNodeIds.size,
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,

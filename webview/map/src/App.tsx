@@ -457,7 +457,14 @@ export function App(): JSX.Element {
             appear here as they run.
           </div>
         )}
-        <ZoomControls world={tab === "work" ? unitsWorld : flowWorld} />
+        {/* Only where there is something to zoom. The intent page is a
+            list of cards that scrolls; drawing zoom controls over it gave
+            three buttons that did nothing at all. */}
+        {tab === "work" ? (
+          <ZoomControls world={unitsWorld} />
+        ) : tab === "flow" && push.run && !reportShown ? (
+          <ZoomControls world={flowWorld} />
+        ) : null}
         <Rail push={push} canBuild={tab === "work"} />
       </div>
     </div>

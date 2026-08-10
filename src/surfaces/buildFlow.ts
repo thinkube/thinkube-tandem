@@ -49,12 +49,22 @@ export function readyToBuild(
   };
 }
 
-/** The price of thinking about what has not been ground yet. */
+/**
+ * The price of thinking about what has not been ground yet.
+ *
+ * A reading the human has not kept yet counts too. It is what going on to
+ * the work page will keep and then think about, so leaving it out said
+ * everything here has been thought about already, over a page of subjects
+ * nobody had spent a round on — and the press that was supposed to start
+ * the thinking started nothing at all.
+ */
 export function costOfThinking(space: Space): WorkCost {
   const ground = new Set(
     space.nodes.flatMap((n) => n.serves).filter((s) => s.startsWith("subject-")),
   );
-  const subjects = (space.subjects ?? []).filter((s) => !ground.has(s.id)).length;
+  const subjects =
+    (space.subjects ?? []).filter((s) => !ground.has(s.id)).length +
+    (space.proposal?.subjects.length ?? 0);
   return { subjects, rounds: subjects ? subjects * 2 + 2 : 0 };
 }
 

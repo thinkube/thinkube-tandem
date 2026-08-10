@@ -269,10 +269,14 @@ export function IntentGraph(props: {
         <button
           data-think
           style={{ fontWeight: 600 }}
-          title="Go to the work page. Working out what to build is what starts spending."
+          title={
+            push.pendingModel
+              ? "Keep this reading and work out what to build from it. This is what starts spending."
+              : "Go to the work page. Working out what to build is what starts spending."
+          }
           onClick={props.onWork}
         >
-          See what this will build →
+          {push.pendingModel ? "Keep this reading and see what it will build →" : "See what this will build →"}
         </button>
         <span style={{ fontSize: FS.caption, opacity: O.dim }}>
           {cost.subjects
