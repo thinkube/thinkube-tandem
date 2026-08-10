@@ -212,6 +212,19 @@ function spacePush(session: TandemSession, message?: string): unknown {
     }),
     /** What thinking about the rest will cost, before it is spent. */
     cost: session.thinkingCost(),
+    outOfDate: (() => {
+      const stale = session.space.nodes.filter((n) => session.stale.has(n.id));
+      const subjects = new Set(
+        stale
+          .map((n) => (session.space.claims ?? []).find((c) => c.id === n.servesClaim)?.subjectId)
+          .filter((id): id is string => !!id),
+      );
+      return {
+        promises: stale.length,
+        subjects: subjects.size,
+        rounds: subjects.size ? subjects.size * 2 : 0,
+      };
+    })(),
     /** What can be committed right now — whole components only, and
      *  nothing at all while the machine is still deriving. */
     ready: readyToBuild(

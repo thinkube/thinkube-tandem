@@ -6,7 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
-import { C, FS, O, SP, label } from "./type";
+import { C, FS, O, SP, label, labelIn, raised } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -120,6 +120,41 @@ export function WorkGraph(props: {
           padding: `0 ${SP.lg}px 56px`,
         }}
       >
+      {push.outOfDate.promises ? (
+        <div
+          data-out-of-date
+          style={{
+            ...raised,
+            borderColor: C.ask,
+            padding: `${SP.sm}px ${SP.md}px`,
+            marginBottom: SP.md,
+            maxWidth: "44rem",
+            display: "flex",
+            alignItems: "center",
+            gap: SP.md,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: FS.body }}>
+            The code moved under {push.outOfDate.promises} promise
+            {push.outOfDate.promises === 1 ? "" : "s"}: a file they land in changed since I read
+            it, so where they land and what would prove them may no longer be right.
+          </span>
+          <button
+            data-reground
+            style={{ fontWeight: 600 }}
+            title="Read the code again and work out these subjects from what is there now. Nothing you wrote changes."
+            onClick={() => post({ action: "reground" })}
+          >
+            Read the code again
+          </button>
+          <span style={{ fontSize: FS.caption, color: C.quiet }}>
+            {push.outOfDate.subjects} subject{push.outOfDate.subjects === 1 ? "" : "s"} read again —
+            about {push.outOfDate.rounds} rounds
+          </span>
+        </div>
+      ) : null}
+
       {props.subjectId ? (
         <div style={{ fontSize: FS.caption, opacity: O.dim, marginBottom: 8 }}>
           showing only {push.subjects.find((s) => s.id === props.subjectId)?.name}{" "}
@@ -138,7 +173,7 @@ export function WorkGraph(props: {
             key={claim.id}
             data-claim-frame={claim.id}
             style={{
-              border: "1px dashed ${C.border}",
+              border: `1px dashed ${C.border}`,
               borderRadius: 6,
               padding: 8,
               marginBottom: 10,
@@ -249,20 +284,18 @@ export function WorkGraph(props: {
                           {c}
                         </div>
                       ))}
-                      <div style={{ display: "flex", gap: 6, marginTop: 4, fontSize: FS.caption }}>
-                        {p.stale ? (
-                          <button
-                            data-reground={p.id}
-                            title="Re-read the code for this promise — it changed since the machine last read it."
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              post({ action: "reground" });
-                            }}
-                          >
-                            out of date
-                          </button>
-                        ) : null}
-                      </div>
+                      {p.stale ? (
+                        <div
+                          data-stale={p.id}
+                          title="A file this promise lands in changed since I last read the code, so where it lands and what would prove it may no longer be right."
+                          style={{
+                            ...labelIn(C.ask),
+                            marginTop: SP.sm,
+                          }}
+                        >
+                          Out of date
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

@@ -124,6 +124,10 @@ export interface SpacePush {
   }[];
   /** What thinking about what is left will cost. */
   cost: { subjects: number; rounds: number };
+  /** What the machine read before the code moved under it: how many
+   *  promises say something that may no longer be true, how many objects
+   *  would be read again to settle them, and what that costs. */
+  outOfDate: { promises: number; subjects: number; rounds: number };
   /** What can be committed right now. `thinking` means the machine is
    *  still deriving and nothing may be committed yet. */
   ready: { subjects: number; promises: number; thinking: boolean };
