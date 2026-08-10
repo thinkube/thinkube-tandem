@@ -42,6 +42,21 @@ export async function foldBlastRadius(
       /* unreadable tracked file — outside the blast scan */
     }
   }
+  // A file named as a dependency belongs to the unit that owns it, and to
+  // no other. A dependency is declared as a FILE, and the engine resolves
+  // it to EVERY unit whose footprint holds that file — so folding a
+  // dependency name into a second unit's footprint makes that unit a
+  // producer of it, and every consumer gains an edge onto work nobody
+  // pointed it at. Two units that both changed code covered by the same
+  // test each became a producer of it and each already consumed it, which
+  // is a circle, and the engine refuses a circle by refusing the whole
+  // run. So a covering test that is already somebody's dependency is not
+  // folded: it is not this unit's file to rewrite.
+  const dependencyNames = new Set(
+    slices.flatMap((s) =>
+      s.workUnits.flatMap((u) => (u as { consumes?: string[] }).consumes ?? []),
+    ),
+  );
   for (const s of slices) {
     const allFootprints = s.workUnits.flatMap((u) => u.footprint);
     const violations = findUncoveredTests({
@@ -59,12 +74,18 @@ export async function foldBlastRadius(
     );
     const heldOut = classified.filter((v) => v.kind === "held-out");
     if (heldOut.length) return buildTestImpactRefusal(heldOut);
-    const folded = classified.filter((v) => v.kind === "unit").map((v) => v.test);
+    const uncovered = classified.filter((v) => v.kind === "unit").map((v) => v.test);
+    const folded = uncovered.filter((t) => !dependencyNames.has(t));
+    const owned = uncovered.filter((t) => dependencyNames.has(t));
     if (folded.length) {
       const codeUnit = s.workUnits.find((u) => (u.role ?? "code") === "code");
       if (codeUnit) codeUnit.footprint.push(...folded);
       log(`${s.handle}: blast radius folded ${folded.join(", ")} into the code footprint`);
     }
+    if (owned.length)
+      log(
+        `${s.handle}: ${owned.join(", ")} covers this work but belongs to the unit it depends on — not folded`,
+      );
   }
   return null;
 }

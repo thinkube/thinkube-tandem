@@ -14,7 +14,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { encloseWork, isHeldOut } from "./worker";
 import { foldBlastRadius } from "./plan";
-import type { SliceForDag } from "../engine/core/dag";
+import { buildUnitDag, type SliceForDag } from "../engine/core/dag";
+import { validateDag } from "../engine/methodology/parallelSlices";
 
 function tmpRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-fence-"));
@@ -130,4 +131,61 @@ test("a live peer's files are allowed, so the frontier can share a tree", async 
   });
   assert.equal(strayed, false);
   assert.equal(fs.readFileSync(path.join(repo, "src", "peer.ts"), "utf8"), "export const b = 2;\n");
+});
+
+test("a covering test another unit depends on is not folded — the plan stays acyclic", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  // Two units land in different files; one test covers both, and that test
+  // is the file the second unit names as its dependency on the first.
+  fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "b.ts"), "export const b = 2;\n");
+  fs.writeFileSync(
+    path.join(repo, "src", "both.test.ts"),
+    'import { a } from "./a.ts";\nimport { b } from "./b.ts";\n',
+  );
+  g(["add", "-A"]);
+  g(["commit", "-qm", "two sources under one test"]);
+  const exec = async (cmd: string, args: string[], cwd: string) => ({
+    code: 0,
+    out: execFileSync(cmd, args, { cwd, encoding: "utf8" }),
+  });
+
+  const slices: SliceForDag[] = [
+    {
+      handle: "SL-1",
+      status: "ready",
+      files: ["src/a.ts", "src/both.test.ts"],
+      workUnits: [
+        { footprint: ["src/a.ts", "src/both.test.ts"], execution: "serial", role: "code" },
+      ],
+    },
+    {
+      handle: "SL-2",
+      status: "ready",
+      files: ["src/b.ts"],
+      workUnits: [
+        {
+          footprint: ["src/b.ts"],
+          execution: "serial",
+          role: "code",
+          consumes: ["src/a.ts", "src/both.test.ts"],
+        } as never,
+      ],
+    },
+  ];
+  const refusal = await foldBlastRadius(slices, repo, exec as never, () => {});
+  assert.equal(refusal, null, "nothing here is held-out evidence");
+  assert.deepEqual(
+    slices[1].workUnits[0].footprint,
+    ["src/b.ts"],
+    "the test belongs to the unit SL-2 depends on, so SL-2 does not become a second producer of it",
+  );
+
+  // A dependency is declared as a FILE and resolves to EVERY unit holding
+  // it, so a second producer of a consumed file is an edge in both
+  // directions — and the engine refuses a circle by refusing the whole run.
+  const dag = buildUnitDag(slices);
+  assert.deepEqual(validateDag(dag) as unknown, { ok: true });
 });
