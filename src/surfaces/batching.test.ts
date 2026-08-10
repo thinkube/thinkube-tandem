@@ -14,8 +14,19 @@ import { TandemSession } from "./session";
 /** The new capture: the round proposes a model, the human accepts it, and
  *  every subject grounds. Tests drive the same two steps a person does. */
 async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
-  await session.captureMany(texts);
+  await write(session, texts);
   await session.think();
+}
+
+/** Write a draft, read it, keep it — the three steps before any thinking. */
+async function write(
+  session: TandemSession,
+  texts: string[],
+): Promise<{ ok: boolean; reason?: string }> {
+  session.saveDraft(texts.join("\n"));
+  const read = await session.readDraft();
+  if (!read.ok) return read;
+  return session.keepDraft();
 }
 
 test("N implications on one ask cost ONE re-derivation under all decisions — never N pipelines", async () => {
@@ -63,7 +74,7 @@ test("N implications on one ask cost ONE re-derivation under all decisions — n
     },
   };
   const session = new TandemSession(deps as never);
-  await session.capture("one ask, many open points");
+  await write(session, ["one ask, many open points"]);
   await session.think();
   assert.equal(session.space.questions.length, 4);
   // Accept every recommendation: four decisions, four staged implications.
@@ -234,7 +245,7 @@ test("capture proposes a model and waits; accepting it grounds every subject onc
   };
   const session = new TandemSession(deps as never);
 
-  await session.captureMany(["the delivery page shows how to experience it", "labels in my words"]);
+  await write(session, ["the delivery page shows how to experience it", "labels in my words"]);
   assert.equal(grounded.length, 0, "nothing is ground until the human accepts the reading");
   assert.equal(session.space.asks.length, 2, "the sentences are recorded verbatim first");
   assert.ok(session.pendingModel, "the proposal waits");
@@ -287,7 +298,7 @@ test("two subjects' claims never share an id, so a promise cannot land on anothe
     ground: async () => ({ changes: [], questions: [] }),
   };
   const session = new TandemSession(deps as never);
-  await session.captureMany(["the delivery page prints it", "the TEP records it"]);
+  await write(session, ["the delivery page prints it", "the TEP records it"]);
   await session.think();
 
   const ids = session.space.claims!.map((c) => c.id);
@@ -331,18 +342,24 @@ test("a failed reading derives nothing, says why, and can be read again", async 
   };
   const session = new TandemSession(deps as never);
 
-  const first = await session.captureMany(["the delivery page shows a walkthrough"]);
+  const first = await write(session, ["the delivery page shows a walkthrough"]);
   assert.equal(first.ok, false, "a failed reading is a failure, not a quiet success");
   assert.equal(session.pendingModel, undefined, "nothing is proposed");
   assert.equal(session.space.subjects?.length ?? 0, 0, "NO subject is invented from a failed reading");
   assert.equal(session.space.nodes.length, 0, "and nothing is derived");
   assert.match(session.modelFailure!.reason, /usage limit reached/, "the round's own words are kept");
-  assert.equal(session.space.asks.length, 1, "the human's sentence is still recorded");
+  assert.equal(session.space.asks.length, 0, "a failed reading records no ask");
+  assert.equal(
+    session.space.draft,
+    "the delivery page shows a walkthrough",
+    "the human's words are exactly where they left them",
+  );
 
-  const again = await session.retryModel();
-  assert.ok(again.ok, "reading again works on the sentences already recorded");
+  const again = await session.readDraft();
+  assert.ok(again.ok, "reading again works on the words still in the draft");
   assert.equal(session.modelFailure, undefined, "the failure clears");
-  assert.equal(session.space.asks.length, 1, "and the sentence is not recorded twice");
+  assert.ok(session.keepDraft().ok);
+  assert.equal(session.space.asks.length, 1, "and the sentence is recorded exactly once");
   await session.think();
   assert.equal(session.space.subjects!.length, 1, "the second reading lands");
 });
@@ -371,12 +388,12 @@ test("a second paste joins the reading that is waiting, and the reading survives
   };
   const session = new TandemSession(deps as never);
 
-  await session.captureMany(["first sentence", "second sentence"]);
+  await write(session, ["first sentence", "second sentence"]);
   assert.deepEqual(seen, [2], "the first reading saw both sentences");
   assert.equal(session.pendingModel!.subjects[0].claims.length, 2);
 
   // A third sentence arrives while that reading is still waiting.
-  await session.captureMany(["third sentence"]);
+  await write(session, ["third sentence"]);
   assert.deepEqual(seen, [2, 3], "the whole set is read again — the waiting reading is not replaced");
   assert.equal(session.pendingModel!.texts.length, 3, "the reading covers every sentence");
   assert.equal(session.space.asks.length, 3, "and each sentence is recorded exactly once");

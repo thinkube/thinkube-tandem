@@ -19,9 +19,10 @@ import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
-import { applyModel, proposeModelFlow, readModel, retryModel } from "./modelFlow";
+import { applyModel, readEverything, readModel } from "./modelFlow";
+import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
-import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosure";
+import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
@@ -105,15 +106,9 @@ export class TandemSession {
     this._captureAbort?.abort();
   }
 
-  captureMany(texts: string[]): Promise<{ ok: boolean; reason?: string }> {
-    // A list is a description of one world: the model round reads it whole
-    // and proposes what it is about, before any code is read.
-    return proposeModelFlow(this, texts);
-  }
-
   /** Read the recorded sentences again after a failure. */
   retryModel(): Promise<{ ok: boolean; reason?: string }> {
-    return retryModel(this);
+    return readEverything(this);
   }
 
   /**
@@ -141,7 +136,7 @@ export class TandemSession {
   priceOf(askId: string): Price & { state: "open" | "bound" } {
     return {
       ...priceOfEditing(this.space, askId),
-      state: askState(this.space, askId, signedIds(this.space.cuts)),
+      state: askState(this.space, askId, mergedIds(this.space)),
     };
   }
 
@@ -151,7 +146,8 @@ export class TandemSession {
    * changing what is built is new work — which arrives as an amendment.
    */
   async reframe(askId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
-    const r = editAsk(this.space, askId, text, signedIds(this.space.cuts));
+    if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
+    const r = editAsk(this.space, askId, text, mergedIds(this.space));
     if (!r.ok) return { ok: false, reason: r.reason };
     this.space = r.space;
     this.changed("Read again, in your words.");
@@ -206,23 +202,25 @@ export class TandemSession {
     return buildFlow(this, excluded);
   }
 
-  /**
-   * What you typed becomes an ask. There is nothing else it can become.
-   *
-   * A classifier used to decide between four kinds first. A question is
-   * answered better by the chat in the window around this panel than by a
-   * box that keeps one answer and forgets it on reload; a rule is an ask
-   * whose subject was not named — "what must become true, and OF WHAT" —
-   * and an operation was only ever an ask with another word on it. With
-   * three of the four gone the fourth needs no deciding, so a model call
-   * that reached a foregone conclusion, and the three buttons that asked
-   * you to confirm it, went with them.
-   *
-   * A marked list is the one thing still examined, and mechanically: it
-   * comes back as a preview and records nothing until you press it.
-   */
-  async capture(text: string): Promise<{ ok: boolean; reason?: string }> {
-    return proposeModelFlow(this, [text]);
+  /** What you are writing, before any of it is an ask. */
+  saveDraft(text: string): void {
+    this.space = { ...this.space, draft: text };
+    this.persist();
+  }
+
+  /** Read the draft — one round, as often as you ask for it. */
+  readDraft(): Promise<{ ok: boolean; reason?: string }> {
+    return readDraftFlow(this);
+  }
+
+  /** Keep the reading: the draft's lines become asks. Spends nothing. */
+  keepDraft(): { ok: boolean; reason?: string } {
+    return keepDraftFlow(this);
+  }
+
+  /** The lines of the reading that are still draft. */
+  draftRead(): string[] {
+    return (this.space.proposal?.texts ?? []).slice(this.space.asks.length);
   }
 
   /** One reading of the repository BEFORE a batch fans out: every ask then

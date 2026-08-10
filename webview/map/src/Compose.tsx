@@ -110,30 +110,35 @@ const look = EditorView.theme({
 });
 
 export function Compose(props: {
-  /** Record these asks — one per line, in the words as typed. */
-  onRecord: (asks: string[]) => void;
+  /** What is written, kept as it is written — this is called on every
+   *  change, so closing the window mid-sentence loses nothing. */
+  onChange: (text: string) => void;
+  /** Read these words: what are they about? One round, as often as asked. */
+  onRead: () => void;
+  /** What the space already holds — the words you left last time. */
+  initial: string;
   /** No writing while the machine is working. */
   busy: boolean;
 }): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>();
-  const [count, setCount] = useState(0);
-  // The callback the keymap closes over must always be the latest one.
-  const record = useRef(props.onRecord);
-  record.current = props.onRecord;
+  const [count, setCount] = useState(asksOfText(props.initial).length);
+  // The callbacks the keymap closes over must always be the latest ones.
+  const read = useRef(props.onRead);
+  read.current = props.onRead;
+  const changed = useRef(props.onChange);
+  changed.current = props.onChange;
 
   useEffect(() => {
     if (!host.current || view.current) return;
-    const commit = (v: EditorView): boolean => {
-      const asks = asksOfText(v.state.doc.toString()).map((a) => a.text);
-      if (!asks.length) return false;
-      record.current(asks);
-      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: "" } });
+    const commit = (): boolean => {
+      read.current();
       return true;
     };
     const v = new EditorView({
       parent: host.current,
       state: EditorState.create({
+        doc: props.initial,
         extensions: [
           history(),
           EditorView.lineWrapping,
@@ -147,7 +152,10 @@ export function Compose(props: {
             ...defaultKeymap,
           ]),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) setCount(asksOfText(u.state.doc.toString()).length);
+            if (!u.docChanged) return;
+            const text = u.state.doc.toString();
+            setCount(asksOfText(text).length);
+            changed.current(text);
           }),
         ],
       }),
@@ -168,24 +176,17 @@ export function Compose(props: {
       <div ref={host} data-compose-editor />
       <div style={{ display: "flex", gap: SP.md, alignItems: "center", marginTop: SP.sm }}>
         <button
-          data-record-asks
+          data-read-draft
           disabled={!count || props.busy}
           style={{ fontWeight: 600 }}
-          title="Record these asks, word for word, and read them as one description."
-          onClick={() => {
-            const v = view.current;
-            if (!v) return;
-            const asks = asksOfText(v.state.doc.toString()).map((a) => a.text);
-            if (!asks.length) return;
-            props.onRecord(asks);
-            v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: "" } });
-          }}
+          title="Read these words: what are they about? Nothing is recorded and nothing is built."
+          onClick={() => props.onRead()}
         >
-          {count ? `Record ${count} ask${count === 1 ? "" : "s"}` : "Record"}
+          {count ? `Read ${count} ask${count === 1 ? "" : "s"}` : "Read"}
         </button>
         <span style={{ fontSize: FS.caption, color: C.quiet }}>
-          one line is one ask · Enter starts another · Ctrl+Enter records · nothing is saved until
-          you press it
+          one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by
+          reading
         </span>
       </div>
     </div>

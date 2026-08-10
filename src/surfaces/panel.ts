@@ -239,13 +239,12 @@ function spacePush(session: TandemSession, message?: string): unknown {
     modelFailure: session.modelFailure
       ? { reason: session.modelFailure.reason, sentences: session.modelFailure.texts.length }
       : undefined,
+    draft: session.space.draft ?? "",
     pendingModel: session.pendingModel
       ? {
-          subjects: session.pendingModel.subjects.map((s) => ({
-            name: s.name,
-            claims: s.claims.map((c) => ({ text: c.text, why: c.why })),
-          })),
-          // The sentence itself, not its id — a number names nothing.
+          subjects: session.pendingModel.subjects,
+          texts: session.pendingModel.texts,
+          fresh: session.draftRead(),
           missing: session.pendingModel.missing.map(
             (n) => session.pendingModel!.texts[n - 1] ?? `sentence ${n}`,
           ),
@@ -274,11 +273,17 @@ async function handleInbound(
     return;
   }
   let note: string | undefined;
-  if (msg.action === "capture" && msg.text) {
-    const r = await session.capture(msg.text);
+  if (msg.action === "save-draft") {
+    // Typing costs nothing and interrupts nothing: the words are kept and
+    // the surface is not told anything it does not already know.
+    session.saveDraft(msg.text ?? "");
+    return;
+  } else if (msg.action === "read-draft") {
+    push("Reading what you wrote…");
+    const r = await session.readDraft();
     note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "capture-many" && msg.items?.length) {
-    const r = await session.captureMany(msg.items);
+  } else if (msg.action === "keep-draft") {
+    const r = session.keepDraft();
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "cancel-capture") {
     session.cancelCapture();

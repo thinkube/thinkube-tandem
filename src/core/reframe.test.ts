@@ -51,12 +51,20 @@ test("editing an open sentence replaces its words and discards what was read fro
   assert.deepEqual(r.reread.sort(), ["ask-1", "ask-4"]);
 });
 
-test("a sentence whose work is signed refuses the edit and says what to do instead", () => {
+test("a sentence whose work was ACCEPTED refuses the edit and says what to do instead", () => {
   const r = editAsk(space(), "ask-1", "something else", new Set(["n1"]));
   assert.equal(r.ok, false);
   if (r.ok) return;
-  assert.match(r.reason, /already built/);
+  assert.match(r.reason, /delivered and accepted/);
   assert.match(r.reason, /new sentence/);
+});
+
+test("a signature alone does not freeze a sentence — approval is not delivery", () => {
+  // Signing mints a number and pushes a branch, both of which outlive the
+  // space; nothing is in the project until a delivery is accepted. Until
+  // then the human may still say what they meant differently.
+  const r = editAsk(space(), "ask-1", "something else", new Set());
+  assert.ok(r.ok, "nothing merged, so nothing is frozen");
 });
 
 test("an amendment is a new sentence that names the one it supersedes", () => {

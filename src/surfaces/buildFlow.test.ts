@@ -12,7 +12,18 @@ import * as path from "node:path";
 import { TandemSession } from "./session";
 import { readyToBuild } from "./buildFlow";
 
-test("building commits whole components: assumptions become decisions and the asks lock", async () => {
+/** Write a draft, read it, keep it — the three steps before any thinking. */
+async function write(
+  session: TandemSession,
+  texts: string[],
+): Promise<{ ok: boolean; reason?: string }> {
+  session.saveDraft(texts.join("\n"));
+  const read = await session.readDraft();
+  if (!read.ok) return read;
+  return session.keepDraft();
+}
+
+test("building commits whole components: assumptions become decisions, and the asks stay yours until it is delivered", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
   const deps = {
     round: { model: "opus", repoRoot: "/repo" },
@@ -62,7 +73,7 @@ test("building commits whole components: assumptions become decisions and the as
     }),
   };
   const session = new TandemSession(deps as never);
-  await session.captureMany(["the delivery page shows how to see it", "labels in my words"]);
+  await write(session, ["the delivery page shows how to see it", "labels in my words"]);
   await session.think();
 
   assert.equal(session.priceOf(session.space.asks[0].id).state, "open");
@@ -77,15 +88,18 @@ test("building commits whole components: assumptions become decisions and the as
     "and every later derivation in this space runs under it",
   );
 
+  // Signing is approval, not delivery. It mints a number and pushes a
+  // branch, and neither of those is in the project — so a sentence whose
+  // run has not delivered and been accepted is still the human's to say
+  // differently. Freezing here would punish approving.
   for (const a of session.space.asks)
     assert.equal(
       session.priceOf(a.id).state,
-      "bound",
-      "both sentences of the component are read-only — neither is half-built",
+      "open",
+      "approved is not delivered — the sentence is still the human's",
     );
-  const refused = await session.reframe(session.space.asks[0].id, "something else");
-  assert.equal(refused.ok, false);
-  assert.match(refused.reason!, /already built/);
+  const allowed = await session.reframe(session.space.asks[0].id, "something else");
+  assert.ok(allowed.ok, allowed.reason);
 });
 
 test("nothing may be built while the machine is still deriving", async () => {
@@ -127,7 +141,7 @@ test("nothing may be built while the machine is still deriving", async () => {
     },
   };
   const session = new TandemSession(deps as never);
-  await session.captureMany(["the first thing works", "the second thing works too"]);
+  await write(session, ["the first thing works", "the second thing works too"]);
   const thinking = session.think();
 
   // Mid-derivation: one object has promises, the other does not. Waiting
@@ -190,7 +204,7 @@ test("each object's thinking is written as it arrives, not only at the end", asy
     },
   };
   const session = new TandemSession(deps as never);
-  await session.captureMany(["the first thing works", "the second thing works too"]);
+  await write(session, ["the first thing works", "the second thing works too"]);
   const thinking = session.think();
   await first;
 
@@ -250,7 +264,7 @@ test("the one line above the subjects never borrows a single subject's stage", a
     },
   };
   session = new TandemSession(deps as never);
-  await session.captureMany(["one", "two", "three"]);
+  await write(session, ["one", "two", "three"]);
   await session.think();
 
   // The per-subject stages the pipeline reports — never the shared
@@ -325,7 +339,7 @@ test("nine subjects mean nine groundings and ONE search for what is missing", as
     },
   };
   const session = new TandemSession(deps as never);
-  await session.captureMany(["one", "two", "three"]);
+  await write(session, ["one", "two", "three"]);
   await session.think();
 
   assert.equal(grounded.length, 3, "one grounding per subject");

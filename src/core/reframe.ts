@@ -51,18 +51,22 @@ export function editAsk(
   space: Space,
   askId: string,
   text: string,
-  signed: Set<string>,
+  /** Promises whose work was ACCEPTED, and so is in the project. Not the
+   *  signed ones: an approval that never delivered anything holds nobody
+   *  to anything, and a sentence whose run refused itself must not be
+   *  frozen out of being said better. */
+  merged: Set<string>,
 ): ReframeResult {
   const ask = space.asks.find((a) => a.id === askId);
   if (!ask) return { ok: false, reason: "no such sentence" };
   if (!text.trim()) return { ok: false, reason: "a sentence cannot be empty" };
   const c = componentOf(space, askId);
   const doomed = new Set(c ? promisesOf(space, c) : []);
-  if ([...doomed].some((id) => signed.has(id)))
+  if ([...doomed].some((id) => merged.has(id)))
     return {
       ok: false,
       reason:
-        "that sentence is already built — its words are part of a signed record. Say what you want now as a new sentence and I will treat it as an amendment.",
+        "that sentence is delivered and accepted — its work is in the project. Say what you want now as a new sentence; the later words win.",
     };
 
   const subjects = new Set(c?.subjectIds ?? []);

@@ -208,6 +208,11 @@ export interface Space {
   subjects?: Subject[];
   /** What must become true of each subject. */
   claims?: Claim[];
+  /** The draft: what you are writing, before any of it is an ask.
+   *  Kept with the space so you can close the window mid-sentence and
+   *  find it where you left it. Nothing is derived from it and nothing
+   *  costs anything until you read it. */
+  draft?: string;
   /** A reading waiting for the human. Part of the record, so it survives a
    *  reload and a second paste cannot silently replace it. */
   proposal?: {

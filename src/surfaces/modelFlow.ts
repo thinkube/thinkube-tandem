@@ -5,7 +5,7 @@
  * a wrong reading costs one cheap round, not seven expensive ones.
  */
 import { Claim, Space, Subject } from "../core/schema";
-import { addAsk } from "../core/intent";
+import { asksOfText } from "../derive/asks";
 import { solveModel, unaccountedFor } from "../derive/model";
 import type { TandemSession } from "./session";
 
@@ -15,51 +15,24 @@ import type { TandemSession } from "./session";
  * the whole set is read again, because a list is one description and a
  * later sentence can change what the earlier ones were about.
  */
-export async function proposeModelFlow(
-  s: TandemSession,
-  texts: string[],
-): Promise<{ ok: boolean; reason?: string }> {
-  const added: string[] = [];
-  for (const t of texts) {
-    const r = addAsk(s.space, t, s.deps.now(), `ask-${s.author}-${s.space.asks.length + 1}`);
-    if (!r.ok) return { ok: false, reason: r.reason };
-    s.space = r.space;
-    added.push(r.added.id);
-  }
-  const waiting = s.space.proposal ?? s.space.readingFailure;
-  const allTexts = [...(waiting?.texts ?? []), ...texts];
-  const allAsks = [...(waiting?.askIds ?? []), ...added];
-  s.changed(
-    waiting
-      ? `${added.length} more recorded — reading all ${allTexts.length} together.`
-      : `${added.length} recorded — reading them as one description…`,
-  );
-  return readModel(s, allTexts, allAsks);
-}
-
 /**
- * Read again, over the sentences already recorded. With no reading waiting
- * — a space whose derived work was cleared, or one opened for the first
- * time after a reload — it reads everything recorded, which is the same
- * act: the sentences are the only source there has ever been.
+ * Read everything this space holds: the sentences already recorded, then
+ * whatever is still being written. Always together, never one alone — a
+ * new sentence usually lands on a subject that already exists, and
+ * reading it by itself would invent a second subject for the same thing.
+ *
+ * The draft's lines have no ids yet; their places are held empty until
+ * the human keeps them.
  */
-export async function retryModel(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
-  const f = s.space.readingFailure ?? s.space.proposal;
-  if (f) return readModel(s, f.texts, f.askIds);
-  if (!s.space.asks.length) return { ok: false, reason: "nothing written yet" };
+export function readEverything(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
+  const fresh = asksOfText(s.space.draft ?? "").map((a) => a.text);
   return readModel(
     s,
-    s.space.asks.map((a) => a.text),
-    s.space.asks.map((a) => a.id),
+    [...s.space.asks.map((a) => a.text), ...fresh],
+    [...s.space.asks.map((a) => a.id), ...fresh.map(() => "")],
   );
 }
 
-/**
- * The reading itself. It either produces a model the human can check, or it
- * FAILS — and says so. There is no fallback: a reading that quietly becomes
- * one subject per sentence looks exactly like a working model and is the
- * old shape wearing new words.
- */
 export async function readModel(
   s: TandemSession,
   texts: string[],

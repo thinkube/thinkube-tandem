@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { onSpace, post, SpacePush } from "./vscode";
 import { RunNote, RunSection } from "./Run";
 import { Compose } from "./Compose";
+import { Analysis } from "./Analysis";
+import { asksOfText } from "../../../src/derive/asks";
 import { Delivery } from "./Delivery";
 import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
@@ -19,11 +21,10 @@ import { useWorld, ZoomControls } from "./proto/world";
 export function App(): JSX.Element {
   const [push, setPush] = useState<SpacePush | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [classifying, setClassifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  const [tab, setTab] = useState<"intent" | "work" | "flow">("intent");
+  const [tab, setTab] = useState<"write" | "intent" | "work" | "flow">("write");
   // The orchestration page has two things to show and they are wanted at
   // different moments: the workers while they run, the report once they
   // have. Neither replaces the other, so the reader keeps the switch.
@@ -63,12 +64,18 @@ export function App(): JSX.Element {
   // The box empties when the words are safely recorded, and not before:
   // a send that comes back as a list preview keeps them, so "keep editing"
   // has something to edit.
-  const askCount = push?.sentences.length ?? 0;
+  // The reading is behind the words when it was read from other text.
+  const written = asksOfText(push?.draft ?? "").map((a) => a.text);
+  const read = push?.pendingModel?.fresh ?? [];
+  const behind =
+    !!push?.pendingModel &&
+    (written.length !== read.length || written.some((t, i) => t !== read[i]));
+  // Reading is over when a reading comes back — or a failure does.
+  const readAt =
+    (push?.pendingModel?.texts ?? []).join("\u0000") + (push?.modelFailure?.reason ?? "");
   useEffect(() => {
-    if (!classifying) return;
     setClassifying(false);
-    setDraft("");
-  }, [askCount]);
+  }, [readAt]);
   useEffect(() => onSpace(setPush), []);
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
@@ -143,7 +150,7 @@ export function App(): JSX.Element {
       <div
         data-capture
         style={{
-          display: tab === "intent" ? "flex" : "none",
+          display: tab === "write" ? "flex" : "none",
           flexWrap: "wrap",
           gap: 8,
           padding: `${SP.sm}px ${SP.lg}px`,
@@ -153,14 +160,16 @@ export function App(): JSX.Element {
       >
         <Compose
           busy={!!push.activity}
-          onRecord={(asks) => {
+          initial={push.draft}
+          onChange={(text) => post({ action: "save-draft", text })}
+          onRead={() => {
             setClassifying(true);
-            post(asks.length === 1 ? { action: "capture", text: asks[0] } : { action: "capture-many", items: asks });
+            post({ action: "read-draft" });
           }}
         />
         {classifying ? (
           <span data-classifying style={{ fontSize: FS.body, opacity: O.dim }}>
-            ⟳ recording and reading it…
+            ⟳ reading what you wrote…
           </span>
         ) : null}
         {push.activity ? (
@@ -246,7 +255,8 @@ export function App(): JSX.Element {
       ) : null}
       <div data-tabs style={{ display: "flex", gap: 6, padding: `${SP.sm}px ${SP.md}px 0`, alignItems: "center" }}>
         {([
-          ["intent", "1 · Intent", "what you want"],
+          ["write", "0 · Write", "what you want, in your words"],
+          ["intent", "1 · Intent", "what I understood"],
           ["work", "2 · Work", "what gets built, and what proves it"],
           ["flow", "3 · Orchestration", "the workers, in the order they run, and what they proved"],
         ] as const).map(([id, label, why]) => (
@@ -315,11 +325,33 @@ export function App(): JSX.Element {
           </div>
         ) : null}
         <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
-          say it · see what it will build · build it
+          write it · see what it means · see what it will build · build it
         </span>
       </div>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
-        {tab === "intent" ? (
+        {tab === "write" ? (
+          <div data-write-page style={{ flex: 1, overflowY: "auto", padding: `0 ${SP.lg}px ${SP.xl}px` }}>
+            {push.pendingModel ? (
+              <Analysis
+                model={push.pendingModel}
+                behind={behind}
+                onRead={() => {
+                  setClassifying(true);
+                  post({ action: "read-draft" });
+                }}
+                onKeep={() => {
+                  post({ action: "keep-draft" });
+                  setTab("intent");
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.lg }}>
+                Nothing read yet. Write what you want above — one ask per line — and press Read.
+                It costs one round and records nothing.
+              </div>
+            )}
+          </div>
+        ) : tab === "intent" ? (
           <IntentGraph
             push={push}
             selected={selected}

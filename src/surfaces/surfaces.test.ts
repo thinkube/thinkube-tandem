@@ -13,11 +13,22 @@ import { AFFORDANCES, gestureFor } from "./affordances";
 import { SESSION_ACTIONS, TandemSession } from "./session";
 import { asksOfText } from "../derive/asks";
 
-/** The new capture: the round proposes a model, the human accepts it, and
- *  every subject grounds. Tests drive the same two steps a person does. */
-async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
-  await session.captureMany(texts);
+/** The three steps a person takes: write the draft, read it, keep it —
+ *  then going on to the work is what grounds every subject. */
+export async function captureAndAccept(session: TandemSession, texts: string[]): Promise<void> {
+  await write(session, texts);
   await session.think();
+}
+
+/** Write a draft, read it, keep it — the three steps before any thinking. */
+async function write(
+  session: TandemSession,
+  texts: string[],
+): Promise<{ ok: boolean; reason?: string }> {
+  session.saveDraft(texts.join("\n"));
+  const read = await session.readDraft();
+  if (!read.ok) return read;
+  return session.keepDraft();
 }
 
 test("no capability without a door: every session action is registered", () => {
@@ -68,7 +79,7 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
     }),
   };
   const session = new TandemSession(deps as never);
-  const captured = await session.capture("I want to capture asks from the toolbar");
+  const captured = await write(session, ["I want to capture asks from the toolbar"]);
   await session.think();
   assert.ok(captured.ok);
   assert.equal(session.space.asks[0].text, "I want to capture asks from the toolbar");
@@ -247,7 +258,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
     }),
   };
   const session = new TandemSession(deps as never);
-  await session.capture("something derived");
+  await write(session, ["something derived"]);
   await session.think();
   assert.equal(session.space.nodes.length, 1);
   const r = session.panic();
@@ -255,7 +266,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
   assert.equal(session.space.nodes.length, 0, "derived changes cleared");
   assert.equal(session.space.asks.length, 1, "the human's words survive");
 
-  await session.capture("again");
+  await write(session, ["again"]);
   await session.think();
   session.toggleCut(session.space.nodes.map((n) => n.id));
   assert.ok(session.signCut().ok);
@@ -284,7 +295,7 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
     ground: async () => ({ changes: [], questions: [] }),
   };
   const session = new TandemSession(deps as never);
-  await session.capture("use the key AKIA" + "ABCDEFGHIJKLMNOP to talk to S3");
+  await write(session, ["use the key AKIA" + "ABCDEFGHIJKLMNOP to talk to S3"]);
   assert.ok(
     messages.some((m) => m.includes("REFUSED to write the store") && m.includes("aws-access-key")),
     "the refusal names the leak",
@@ -351,7 +362,7 @@ test("liveness: the pipeline's stages surface as activity tied to the subject be
     },
   };
   const session = new TandemSession(deps as never);
-  await session.capture("build the thing");
+  await write(session, ["build the thing"]);
   await session.think();
   assert.ok(
     stages.some((x) => x.startsWith("reading your code@subject-")),

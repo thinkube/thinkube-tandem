@@ -16,7 +16,26 @@
 import { RoundDeps, runReadRound, volumeDeps } from "./round";
 
 export interface ProposedModel {
-  subjects: { name: string; from: number[]; claims: { text: string; why?: string; from: number }[] }[];
+  subjects: {
+    name: string;
+    from: number[];
+    claims: {
+      text: string;
+      why?: string;
+      from: number;
+      /** The words of the sentence this claim was read from, exactly as
+       *  written — what lets the sentence be shown back marked up. */
+      quote?: string;
+      /** The words that refer to the subject when they are not the
+       *  subject's name: a pronoun, or empty when nothing at all stands
+       *  in for it. Absent when the sentence names the subject outright. */
+      mention?: string;
+      /** An earlier claim of the same subject this one displaces. Two
+       *  claims that cannot both hold are resolved by which sentence was
+       *  written later; this is that decision, said out loud. */
+      replaces?: string;
+    }[];
+  }[];
 }
 
 /** Build the model prompt. Pure; exported for tests. */
@@ -51,11 +70,25 @@ export function buildModelPrompt(sentences: string[]): string {
     `quietly: every one must appear as a claim of some subject. A sentence ` +
     `whose subject you cannot name is left out ENTIRELY — it is reported to ` +
     `the writer as unplaced, which is honest, where a guess is not.\n\n` +
+    `The sentences are in the order they were written, and a later one ` +
+    `wins. When two claims of the same subject cannot both be true — the ` +
+    `same thing said two ways — keep ONLY the later, and name the one it ` +
+    `displaces in "replaces". Different attributes of one thing (bold AND ` +
+    `bracketed) do not conflict; only mutually exclusive ones do.\n\n` +
+    `For every claim also give:\n` +
+    `- "quote": the words of the sentence it was read from, copied EXACTLY ` +
+    `— character for character, no paraphrase. Omit it if you cannot copy ` +
+    `an exact span.\n` +
+    `- "mention": the words in that sentence that stand for the subject ` +
+    `when the sentence does not name it — a pronoun ("it", "they"), or "" ` +
+    `when nothing stands in for it at all. Omit when the sentence names ` +
+    `the subject outright.\n\n` +
     `THE LIST:\n${listed}\n\n` +
     `Respond with ONE JSON object and nothing else:\n` +
     `{"subjects":[{"name":"the delivery page","from":[1,4],"claims":[` +
     `{"text":"shows a see-it line for every promise","why":"so I accept by ` +
-    `experiencing it","from":1}]}]}\n` +
+    `experiencing it","from":1,"quote":"show me how to experience it",` +
+    `"mention":"it"}]}]}\n` +
     `— "from" is the 1-based number of the sentence it came from.`
   );
 }
@@ -91,7 +124,20 @@ export function parseModel(raw: string | null, count: number): ProposedModel | u
       const from = inRange(cr.from);
       if (!text || from === undefined) continue;
       const why = asString(cr.why);
-      claims.push({ text, from, ...(why ? { why } : {}) });
+      const quote = asString(cr.quote);
+      const replaces = asString(cr.replaces);
+      // "" is a real answer for `mention` — the subject is implicit and
+      // nothing at all stands in for it — so absence is what is checked,
+      // not emptiness.
+      const mention = typeof cr.mention === "string" ? cr.mention.trim() : undefined;
+      claims.push({
+        text,
+        from,
+        ...(why ? { why } : {}),
+        ...(quote ? { quote } : {}),
+        ...(mention !== undefined ? { mention } : {}),
+        ...(replaces ? { replaces } : {}),
+      });
     }
     if (!claims.length) continue;
     const from = (Array.isArray(rec.from) ? rec.from : [])

@@ -135,8 +135,32 @@ export interface SpacePush {
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */
+  /** What you are writing, kept with the space so it survives a reload. */
+  draft: string;
+  /** The reading of the draft, and whether it still matches what is
+   *  written: subjects with their claims, each claim carrying the words
+   *  it was read from, the pronoun that stood for the subject, and any
+   *  earlier claim it displaces. */
   pendingModel?: {
-    subjects: { name: string; claims: { text: string; why?: string }[] }[];
+    subjects: {
+      name: string;
+      from: number[];
+      claims: {
+        text: string;
+        why?: string;
+        from: number;
+        quote?: string;
+        mention?: string;
+        replaces?: string;
+      }[];
+    }[];
+    /** The sentences it was read from, in order — what the marks are
+     *  drawn on. Recorded asks first, then what is still written. */
+    texts: string[];
+    /** The tail of `texts` that is still yours to change: what the words
+     *  in the box were read as. Compared with the box to know whether the
+     *  reading is behind. */
+    fresh: string[];
     missing: string[];
   };
   impacts: { id: string; decision: string; askText: string; affected: number }[];
@@ -147,8 +171,9 @@ export interface SpacePush {
 }
 
 export type WebToHost =
-  | { action: "capture"; text: string }
-  | { action: "capture-many"; items: string[] }
+  | { action: "save-draft"; text: string }
+  | { action: "read-draft" }
+  | { action: "keep-draft" }
   | { action: "cancel-capture" }
   | { action: "reground" }
   | { action: "open-cut-review" }

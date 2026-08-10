@@ -95,3 +95,23 @@ export function danglingNeeds(
   }
   return out;
 }
+
+/**
+ * Promises whose work is IN THE PROJECT: their cut was signed, delivered,
+ * and the delivery accepted, which merged it.
+ *
+ * This — not the signature — is what freezes a sentence. Signing is
+ * approval: it mints a number and pushes a branch, both of which outlive
+ * the space and neither of which anyone has agreed to keep. Accepting is
+ * the act that puts the work into the project, and only then is changing
+ * the sentence changing something built.
+ */
+export function mergedIds(space: {
+  cuts: readonly { id: string; changeIds: readonly string[]; signature?: unknown }[];
+  deliveries: readonly { cutId: string; acceptedAt?: string }[];
+}): Set<string> {
+  const merged = new Set(space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
+  return new Set(
+    space.cuts.filter((c) => c.signature && merged.has(c.id)).flatMap((c) => [...c.changeIds]),
+  );
+}

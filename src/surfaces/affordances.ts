@@ -20,11 +20,25 @@ export type AffordanceEntry =
 export const SESSION_ACTIONS: string[] = [];
 
 export const AFFORDANCES: Record<string, AffordanceEntry> = {
-  capture: {
+  "save-draft": {
     kind: "human",
     affordance: {
-      surface: "map toolbar",
-      gesture: "type into the capture box and press Enter",
+      surface: "the writing page",
+      gesture: "type — every line is an ask, and the words are kept as you write them",
+    },
+  },
+  "read-draft": {
+    kind: "human",
+    affordance: {
+      surface: "the writing page",
+      gesture: "press Read — it says what your words are about, and marks them up",
+    },
+  },
+  "keep-draft": {
+    kind: "human",
+    affordance: {
+      surface: "the writing page",
+      gesture: "press Keep — the lines become asks, word for word, and the reading becomes their model",
     },
   },
   build: {
