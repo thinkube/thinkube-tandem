@@ -92,9 +92,13 @@ const look = EditorView.theme({
   },
   "&.cm-focused": { outline: `1px solid ${C.focus}` },
   ".cm-content": { fontFamily: "inherit", padding: `${SP.sm}px 0` },
-  ".cm-line": { padding: `0 ${SP.md}px` },
-  ".tk-ask-odd": { background: "#3794ff14" },
-  ".tk-ask-even": { background: "#4ec9b014" },
+  ".cm-line": { padding: `1px ${SP.md}px` },
+  // Each ask is a band you can see at a glance: a tint across its whole
+  // height and a stripe down its left edge, so the boundary reads even
+  // where a background this quiet would not.
+  ".tk-ask": { borderLeft: "3px solid transparent" },
+  ".tk-ask-odd": { background: "#3794ff26", borderLeftColor: "#3794ff" },
+  ".tk-ask-even": { background: "#4ec9b026", borderLeftColor: "#4ec9b0" },
   ".tk-asks-gutter": {
     color: C.quiet,
     fontSize: `${FS.caption}px`,
