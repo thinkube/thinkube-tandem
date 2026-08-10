@@ -17,6 +17,7 @@
  */
 import { C, FS, label, O, SP, raised } from "./type";
 import { SpacePush } from "./vscode";
+import { markSentence, Piece } from "../../../src/derive/marks";
 
 type Model = NonNullable<SpacePush["pendingModel"]>;
 
@@ -25,91 +26,87 @@ type Model = NonNullable<SpacePush["pendingModel"]>;
 const HUES = ["#3794ff", "#4ec9b0", "#e5c07b", "#c586c0", "#ce9178", "#9cdcfe"];
 const hue = (i: number): string => HUES[i % HUES.length];
 
-interface Mark {
-  at: number;
-  to: number;
-  subject: number;
-  claim: string;
-  mention?: string;
-  replaces?: string;
+/** A word on a mark saying what the mark IS — the colour is the second
+ *  cue, never the first. */
+function Tag(props: { text: string; color: string; title?: string }): JSX.Element {
+  return (
+    <span
+      data-mark-tag={props.text}
+      title={props.title}
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: props.color,
+        border: `1px solid ${props.color}`,
+        borderRadius: 3,
+        padding: "0 3px",
+        marginLeft: 3,
+        whiteSpace: "nowrap",
+        verticalAlign: "2px",
+      }}
+    >
+      {props.text}
+    </span>
+  );
 }
 
-/** Where each claim's words sit in the sentence it was read from. A quote
- *  that is not in the sentence verbatim is not placed at all — a mark in
- *  the wrong place is worse than no mark. */
-function marksFor(model: Model, sentence: number): Mark[] {
-  const text = model.texts[sentence - 1] ?? "";
-  const out: Mark[] = [];
-  model.subjects.forEach((s, si) => {
-    for (const c of s.claims) {
-      if (c.from !== sentence || !c.quote) continue;
-      const at = text.indexOf(c.quote);
-      if (at < 0) continue;
-      out.push({
-        at,
-        to: at + c.quote.length,
-        subject: si,
-        claim: c.text,
-        ...(c.mention !== undefined ? { mention: c.mention } : {}),
-        ...(c.replaces ? { replaces: c.replaces } : {}),
-      });
-    }
-  });
-  // Overlapping marks would nest; the first one wins and the rest are
-  // dropped rather than drawn on top of each other.
-  const kept: Mark[] = [];
-  for (const m of out.sort((a, b) => a.at - b.at || b.to - a.to))
-    if (!kept.some((k) => m.at < k.to && k.at < m.to)) kept.push(m);
-  return kept;
+/** The subject's own name where the sentence says it. */
+function Named(props: { pieces: Piece[]; names: string[]; keyBase: string }): JSX.Element {
+  return (
+    <>
+      {props.pieces.map((p, i) =>
+        p.subject === undefined ? (
+          <span key={`${props.keyBase}-${i}`}>{p.text}</span>
+        ) : (
+          <span
+            key={`${props.keyBase}-${i}`}
+            data-span="subject"
+            title={`Subject: ${props.names[p.subject]}`}
+            style={{
+              background: `${hue(p.subject)}40`,
+              fontWeight: 600,
+              borderRadius: 3,
+              padding: "1px 2px",
+            }}
+          >
+            {p.text}
+            <Tag text="subject" color={hue(p.subject)} title={props.names[p.subject]} />
+          </span>
+        ),
+      )}
+    </>
+  );
 }
 
 function Sentence(props: { model: Model; n: number }): JSX.Element {
   const text = props.model.texts[props.n - 1] ?? "";
-  const marks = marksFor(props.model, props.n);
-  const parts: JSX.Element[] = [];
-  let at = 0;
-  marks.forEach((m, i) => {
-    if (m.at > at)
-      parts.push(
-        <span key={`plain-${i}`} style={{ opacity: O.dim }}>
-          {text.slice(at, m.at)}
-        </span>,
-      );
-    const color = hue(m.subject);
-    parts.push(
-      <span
-        key={`mark-${i}`}
-        data-claim-mark={m.claim}
-        title={`${props.model.subjects[m.subject].name} — ${m.claim}`}
-        style={{
-          background: `${color}26`,
-          borderBottom: `2px solid ${color}`,
-          padding: "1px 0",
-        }}
-      >
-        {text.slice(m.at, m.to)}
-        {m.mention !== undefined ? (
-          <em
-            data-implicit-subject
-            style={{ color, fontStyle: "italic", marginLeft: SP.xs }}
-          >
-            [{props.model.subjects[m.subject].name}]
-          </em>
-        ) : null}
-      </span>,
-    );
-    at = m.to;
-  });
-  if (at < text.length)
-    parts.push(
-      <span key="plain-end" style={{ opacity: O.dim }}>
-        {text.slice(at)}
-      </span>,
-    );
+  const names = props.model.subjects.map((s) => s.name);
+  const marked = markSentence(text, props.model.subjects, props.n);
   return (
-    <div data-sentence-marked={props.n} style={{ fontSize: FS.body, lineHeight: 1.7, marginTop: SP.sm }}>
+    <div data-sentence-marked={props.n} style={{ fontSize: FS.body, lineHeight: 2.2, marginTop: SP.md }}>
       <span style={{ color: C.quiet, marginRight: SP.sm }}>#{props.n}</span>
-      {parts.length ? parts : <span style={{ opacity: O.dim }}>{text}</span>}
+      {marked.parts.map((p, i) =>
+        p.kind === "plain" ? (
+          <Named key={i} pieces={p.pieces} names={names} keyBase={`p${i}`} />
+        ) : (
+          <span
+            key={i}
+            data-span="claim"
+            title={`${names[p.subject]} — ${p.claim}`}
+            style={{ borderBottom: `2px solid ${hue(p.subject)}`, paddingBottom: 1 }}
+          >
+            <Named pieces={p.pieces} names={names} keyBase={`c${i}`} />
+            {p.writeIn ? (
+              <em data-implicit-subject style={{ color: hue(p.subject), marginLeft: SP.xs }}>
+                [{names[p.subject]}]
+              </em>
+            ) : null}
+            <Tag text="claim" color={hue(p.subject)} title={p.claim} />
+          </span>
+        ),
+      )}
     </div>
   );
 }
@@ -152,8 +149,9 @@ export function Analysis(props: {
       </div>
 
       <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.sm }}>
-        Marked words became a claim. Anything unmarked was read as nothing — if that is a
-        mistake, say the sentence differently above.
+        <strong>subject</strong> — the thing a sentence is about · <strong>claim</strong> — what
+        must become true of it · <em>[in brackets]</em> — the subject a sentence never names ·
+        unmarked words were read as nothing.
       </div>
 
       {replaced.length ? (
