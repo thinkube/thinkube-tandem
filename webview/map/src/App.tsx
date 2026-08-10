@@ -33,11 +33,28 @@ export function App(): JSX.Element {
   // from, and they are drawn on another surface.
   const [editingAsk, setEditingAsk] = useState<string | null>(null);
   const [workSubject, setWorkSubject] = useState<string | null>(null);
+  // Set when the reader asked to see the work. The move waits for the
+  // thinking to finish: a page drawn while its promises are still being
+  // worked out is a skeleton of empty frames that looks finished and is
+  // not, and no amount of labelling makes a half-drawn page worth
+  // arriving at.
+  const [goingToWork, setGoingToWork] = useState(false);
   const unitsWorld = useWorld();
   const flowWorld = useWorld();
   useEffect(() => {
     if (push?.running) setTab("flow");
   }, [push?.running]);
+  // Working out what to build, right now: a stage is running or subjects
+  // are in flight. Not the same as having work left to think about, which
+  // is what `cost` counts.
+  const working = !!push?.activity || (push?.grounding?.length ?? 0) > 0;
+  const allWorkedOut = !working && (push?.cost.subjects ?? 0) === 0;
+  useEffect(() => {
+    if (goingToWork && allWorkedOut) {
+      setGoingToWork(false);
+      setTab("work");
+    }
+  }, [goingToWork, allWorkedOut]);
   // Until the reader says otherwise: the workers while they run, and the
   // report the moment there is one to read.
   const hasReport = !!push?.deliveries.length;
@@ -341,17 +358,25 @@ export function App(): JSX.Element {
           <button
             key={id}
             data-tab={id}
+            disabled={id === "work" && working}
             title={
-              id === "work" && push.cost.subjects > 0
-                ? `Work out what to build — ${push.cost.subjects} subject(s), about ${push.cost.rounds} rounds.`
-                : `Show ${why}.`
+              id === "work" && working
+                ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}. This page opens when it is finished.`
+                : id === "work" && push.cost.subjects > 0
+                  ? `Work out what to build — ${push.cost.subjects} subject(s), about ${push.cost.rounds} rounds.`
+                  : `Show ${why}.`
             }
             onClick={() => {
-              setTab(id);
               // Going to look at the work is what starts the thinking —
               // and it is the only thing that starts it. Nothing runs
-              // speculatively behind a reading nobody has read.
-              if (id === "work" && push.cost.subjects > 0) post({ action: "think" });
+              // speculatively behind a reading nobody has read. The move
+              // itself waits until there is a finished page to move to.
+              if (id === "work" && !allWorkedOut) {
+                setGoingToWork(true);
+                post({ action: "think" });
+                return;
+              }
+              setTab(id);
             }}
             style={{
               background: C.raised,
@@ -365,6 +390,7 @@ export function App(): JSX.Element {
           >
             {label}
             {id === "flow" && push.running ? " ●" : ""}
+            {id === "work" && working ? " ⟳" : ""}
           </button>
         ))}
         {tab === "flow" && hasReport ? (
@@ -404,9 +430,14 @@ export function App(): JSX.Element {
             selected={selected}
             onSelect={setSelected}
             onWork={() => {
-              setTab("work");
-              if (push.cost.subjects > 0) post({ action: "think" });
+              if (allWorkedOut) {
+                setTab("work");
+                return;
+              }
+              setGoingToWork(true);
+              post({ action: "think" });
             }}
+            working={working}
             onEditAsk={(id) => {
               setSelected(id);
               setEditingAsk(id);

@@ -184,6 +184,8 @@ export function IntentGraph(props: {
   onEditAsk: (id: string) => void;
   /** Go and see the work — which is also what starts the thinking. */
   onWork: () => void;
+  /** The thinking is running: the work page is not a page yet. */
+  working: boolean;
 }): JSX.Element {
   const { push } = props;
   if (push.modelFailure)
@@ -249,6 +251,8 @@ export function IntentGraph(props: {
     );
 
   const cost = push.cost;
+  const total = push.subjects.length;
+  const done = Math.max(0, total - cost.subjects);
   return (
     <div data-intent-graph style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.lg}px 56px` }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
@@ -265,23 +269,53 @@ export function IntentGraph(props: {
           onEditAsk={props.onEditAsk}
         />}
 
+      {props.working ? (
+        <div
+          data-working
+          style={{
+            marginTop: SP.md,
+            padding: `${SP.sm}px ${SP.md}px`,
+            border: `1px solid ${C.focus}`,
+            borderRadius: 6,
+            maxWidth: "44rem",
+          }}
+        >
+          <div style={{ fontSize: FS.body, fontWeight: 600 }}>
+            Working out what to build — {done} of {total} subject{total === 1 ? "" : "s"} done
+          </div>
+          <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: SP.xs }}>
+            Each subject above says where it is. Nothing is lost if you look elsewhere; the work
+            page opens by itself when the last one finishes.
+          </div>
+        </div>
+      ) : null}
+
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
         <button
           data-think
+          disabled={props.working}
           style={{ fontWeight: 600 }}
           title={
-            push.pendingModel
-              ? "Keep this reading and work out what to build from it. This is what starts spending."
-              : "Go to the work page. Working out what to build is what starts spending."
+            props.working
+              ? "Working out what to build. The work page opens by itself when every subject is done."
+              : push.pendingModel
+                ? "Keep this reading and work out what to build from it. This is what starts spending. You stay here until it is finished."
+                : "Go to the work page. Working out what to build is what starts spending."
           }
           onClick={props.onWork}
         >
-          {push.pendingModel ? "Keep this reading and see what it will build →" : "See what this will build →"}
+          {props.working
+            ? "Working out what to build…"
+            : push.pendingModel
+              ? "Keep this reading and see what it will build →"
+              : "See what this will build →"}
         </button>
         <span style={{ fontSize: FS.caption, opacity: O.dim }}>
-          {cost.subjects
-            ? `${cost.subjects} subject${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
-            : "everything here has been thought about already"}
+          {props.working
+            ? "you stay on this page until every subject is worked out — then it opens by itself"
+            : cost.subjects
+              ? `${cost.subjects} subject${cost.subjects === 1 ? "" : "s"} to think about — about ${cost.rounds} rounds`
+              : "everything here has been thought about already"}
         </span>
       </div>
 
