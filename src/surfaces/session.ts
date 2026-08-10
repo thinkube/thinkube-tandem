@@ -17,7 +17,7 @@ import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
-import { classifyUtterance, splitList, UtteranceKind } from "../derive/classify";
+import { splitList } from "../derive/classify";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
 import { applyModel, proposeModelFlow, readModel, retryModel } from "./modelFlow";
@@ -26,7 +26,7 @@ import { addWithNeeds, removeWithDependents, signedIds } from "../core/cutClosur
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
-import { addCheckFlow, answerQuestionFlow, decideQuestionFlow, panicFlow, statementFlow } from "./captureFlows";
+import { addCheckFlow, decideQuestionFlow, panicFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { loadLastRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
@@ -45,7 +45,6 @@ export class TandemSession {
   running = false;
   runState: RunState | undefined;
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
-  lastAnswer: { question: string; answer: string } | undefined;
   runNote: string | undefined; // why the last build did not start
   openLog: { step: string; page: number } | undefined; // the log being read
   /** The reading waiting for the human, and a reading that failed, both
@@ -101,13 +100,6 @@ export class TandemSession {
   }
   stageOf(id: string): (label: string, current: number, total: number) => void {
     return this.stageFor(id);
-  }
-
-  async classifyDraft(text: string): Promise<{ kind: UtteranceKind; items?: string[] }> {
-    const items = splitList(text);
-    if (items) return { kind: "ask", items };
-    const classify = this.deps.classify ?? classifyUtterance;
-    return { kind: await classify(this.deps.round, text) };
   }
 
   cancelCapture(): void {
@@ -215,26 +207,24 @@ export class TandemSession {
     return buildFlow(this, excluded);
   }
 
-  async capture(text: string, confirmedKind?: UtteranceKind): Promise<{ ok: boolean; reason?: string }> {
-    const classify = this.deps.classify ?? classifyUtterance;
-    const kind = confirmedKind ?? (await classify(this.deps.round, text));
-    if (kind === "question") {
-      this.lastAnswer = await answerQuestionFlow({
-        round: this.deps.round,
-        space: this.space,
-        text,
-        decisions: this.decisionsInForce(),
-        digests: this.digests(),
-        answerRound: this.deps.answerRound,
-      });
-      this.deps.onChanged?.();
-      return { ok: true };
-    }
-    if (kind === "statement") {
-      this.space = statementFlow(this.space, this.author, this.deps.now(), text);
-      this.changed("Recorded as a decision in force — every later derivation builds under it.");
-      return { ok: true };
-    }
+  /**
+   * What you typed becomes an ask. There is nothing else it can become.
+   *
+   * A classifier used to decide between four kinds first. A question is
+   * answered better by the chat in the window around this panel than by a
+   * box that keeps one answer and forgets it on reload; a rule is an ask
+   * whose subject was not named — "what must become true, and OF WHAT" —
+   * and an operation was only ever an ask with another word on it. With
+   * three of the four gone the fourth needs no deciding, so a model call
+   * that reached a foregone conclusion, and the three buttons that asked
+   * you to confirm it, went with them.
+   *
+   * A marked list is the one thing still examined, and mechanically: it
+   * comes back as a preview and records nothing until you press it.
+   */
+  async capture(text: string): Promise<{ ok: boolean; reason?: string; list?: string[] }> {
+    const items = splitList(text);
+    if (items) return { ok: true, list: items };
     return proposeModelFlow(this, [text]);
   }
 

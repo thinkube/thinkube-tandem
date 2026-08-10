@@ -8,7 +8,6 @@ import { RoundDeps, runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
-import { classifyUtterance } from "../derive/classify";
 import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 
@@ -34,8 +33,6 @@ export interface SessionDeps {
   /** Frontier width for the run (v1 default 4). */
   maxConcurrent?: number;
   docsGateMode?: "blocking" | "advisory";
-  classify?: typeof classifyUtterance;
-  answerRound?: typeof runReadRound;
   /** The round that reads the repository for the shared digest. */
   contextRound?: typeof runReadRound;
   /** The round that reads a pasted list as one description. */

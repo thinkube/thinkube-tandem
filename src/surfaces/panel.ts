@@ -88,7 +88,6 @@ function spacePush(session: TandemSession, message?: string): unknown {
         : undefined,
     repoName: session.repoName,
     activity: session.activity,
-    lastAnswer: session.lastAnswer,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
     // Signed work that never delivered: the run can be started again,
@@ -269,21 +268,21 @@ async function handleInbound(
   msg: InboundAction,
   push: (message?: string) => void,
   hooks?: PanelHostHooks,
-  pushDraft: (draft: { kind: string; items?: string[] }, text: string) => void = () => {},
+  pushDraft: (draft: { items: string[] }, text: string) => void = () => {},
 ): Promise<void> {
   if (msg.action === "switch-repo") {
     await hooks?.onSwitchRepo?.();
     return;
   }
   let note: string | undefined;
-  if (msg.action === "classify" && msg.text) {
-    // Draft classification — records NOTHING; the webview renders the tag.
-    const draft = await session.classifyDraft(msg.text);
-    push(undefined);
-    void session; // the draft rides its own message, not the space push
-    return pushDraft(draft, msg.text);
-  } else if (msg.action === "capture" && msg.text) {
-    const r = await session.capture(msg.text, msg.kind as never);
+  if (msg.action === "capture" && msg.text) {
+    // A marked list is previewed and records nothing until it is pressed;
+    // anything else is an ask, recorded and read on the spot.
+    const r = await session.capture(msg.text);
+    if (r.list) {
+      push(undefined);
+      return pushDraft({ items: r.list }, msg.text);
+    }
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "capture-many" && msg.items?.length) {
     const r = await session.captureMany(msg.items);
@@ -442,7 +441,7 @@ export class SpacePanel implements vscodeTypes.Disposable {
             (m) => this._push(this.getSession(), m),
             this.hooks,
             (draft, text) =>
-              void this._panel?.webview.postMessage({ kind: "draft", guessed: draft.kind, items: draft.items, text }),
+              void this._panel?.webview.postMessage({ kind: "draft", items: draft.items, text }),
           );
         // Industry-standard liveness: a real progress notification with a
         // working Cancel for anything that thinks longer than a beat.

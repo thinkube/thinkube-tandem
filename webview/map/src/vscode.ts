@@ -77,8 +77,6 @@ export interface SpacePush {
   needsRepo?: boolean;
   /** Liveness: what the machine is doing right now, and for which ask. */
   activity?: { label: string; current: number; total: number; askId?: string };
-  /** The in-board answer to the latest question-classified input. */
-  lastAnswer?: { question: string; answer: string };
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   /** Why the last build did not start — rendered on the flow tab. */
   runNote?: string;
@@ -148,16 +146,15 @@ export interface SpacePush {
   message?: string;
 }
 
+/** A marked list, seen but not recorded — the human presses to keep it. */
 export interface DraftPush {
   kind: "draft";
   text: string;
-  guessed: string;
-  items?: string[];
+  items: string[];
 }
 
 export type WebToHost =
-  | { action: "classify"; text: string }
-  | { action: "capture"; text: string; kind: string }
+  | { action: "capture"; text: string }
   | { action: "capture-many"; items: string[] }
   | { action: "cancel-capture" }
   | { action: "reground" }

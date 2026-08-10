@@ -7,7 +7,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn, raised } from "./type";
-import { Review } from "./Review";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
 import { layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -194,7 +193,6 @@ export function WorkGraph(props: {
           </span>
         </div>
       ) : null}
-        <Review push={push} />
       </div>
     <div
       data-work-graph

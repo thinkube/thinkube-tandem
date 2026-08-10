@@ -292,88 +292,6 @@ test("a secret-shaped ask refuses the store write and says why; the state stays 
   assert.equal(session.space.asks.length, 1, "the in-memory state stays live");
 });
 
-test("the capture seam classifies: a question is answered and recorded nowhere; a statement becomes a decision in force", async () => {
-  const messages: string[] = [];
-  const deps = {
-    round: { model: "sonnet", repoRoot: "/repo" },
-    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
-    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
-    name: async () => [],
-    now: () => "t",
-    readCurrentStamp: async () => [],
-    classify: async (_d: unknown, text: string) =>
-      text.endsWith("?") ? ("question" as const) : text.startsWith("we always") ? ("statement" as const) : ("ask" as const),
-    answerRound: async (_d: unknown, prompt: string) => {
-      assert.ok(prompt.includes("where does the toolbar render?"), "the question rides the answer prompt verbatim");
-      return "The toolbar renders in src/toolbar.ts.";
-    },
-    onChanged: (m?: string) => {
-      if (m) messages.push(m);
-    },
-    ground: async () => ({ changes: [], questions: [] }),
-  };
-  const session = new TandemSession(deps as never);
-
-  const q = await session.capture("where does the toolbar render?");
-  await session.think();
-  assert.ok(q.ok);
-  assert.equal(session.space.asks.length, 0, "a question is not an ask");
-  assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"), "the answer reached the in-board panel");
-
-  const st = await session.capture("we always deploy through the platform CI");
-  await session.think();
-  assert.ok(st.ok);
-  assert.equal(session.space.asks.length, 0, "a statement is not an ask");
-  assert.deepEqual(session.decisionsInForce(), ["we always deploy through the platform CI"]);
-
-  await session.capture("build the toolbar");
-  await session.think();
-  assert.equal(session.space.asks.length, 1, "an ask grounds as before");
-});
-
-test("the confirmation tag: classifyDraft records NOTHING; capture records only with the confirmed kind", async () => {
-  let classifierCalls = 0;
-  const deps = {
-    round: { model: "sonnet", repoRoot: "/repo" },
-    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
-    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
-    name: async () => [],
-    now: () => "t",
-    readCurrentStamp: async () => [],
-    classify: async () => {
-      classifierCalls++;
-      return "question" as const;
-    },
-    answerRound: async () => "the answer",
-    ground: async (_d: unknown, ask: { id: string }) => ({
-      changes: [
-        {
-          id: `node-x`,
-          sentence: "a change",
-          serves: [ask.id],
-          needs: [],
-          acceptance: [{ id: "c", text: "x" }],
-          grounding: { touchpoints: [{ path: "src/x.ts" }], stamp: [] },
-        },
-      ],
-      questions: [],
-    }),
-  };
-  const session = new TandemSession(deps as never);
-
-  const draft = await session.classifyDraft("where does it render?");
-  assert.equal(draft.kind, "question");
-  assert.equal(session.space.asks.length, 0, "a draft records nothing");
-  assert.equal(session.lastAnswer, undefined, "not even an answer");
-
-  // The human corrected the tag: recorded as an ASK despite the guess —
-  // and the classifier is NOT consulted again (the human's tag wins).
-  classifierCalls = 0;
-  await session.capture("where does it render?", "ask");
-  assert.equal(classifierCalls, 0, "the confirmed kind is authoritative");
-  assert.equal(session.space.asks.length, 1, "recorded as the human said");
-});
-
 test("list-paste: a pasted list previews as N items and records N independent asks", async () => {
   const deps = {
     round: { model: "sonnet", repoRoot: "/repo" },
@@ -390,31 +308,12 @@ test("list-paste: a pasted list previews as N items and records N independent as
     ground: async () => ({ changes: [], questions: [] }),
   };
   const session = new TandemSession(deps as never);
-  const draft = await session.classifyDraft("1. add a clear button\n2. rename the toolbar\n- fix the tooltip");
-  assert.deepEqual(draft.items, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
+  const draft = await session.capture("1. add a clear button\n2. rename the toolbar\n- fix the tooltip");
+  assert.deepEqual(draft.list, ["add a clear button", "rename the toolbar", "fix the tooltip"]);
   assert.equal(session.space.asks.length, 0, "the preview records nothing");
-  await captureAndAccept(session, draft.items!);
+  await captureAndAccept(session, draft.list!);
   assert.equal(session.space.asks.length, 3, "confirming records exactly N asks");
-  assert.ok(session.space.asks.every((a, i) => a.text === draft.items![i]));
-});
-
-test("a question's answer lands as state for the in-board panel, not as a toast", async () => {
-  const deps = {
-    round: { model: "sonnet", repoRoot: "/repo" },
-    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-")),
-    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keys-")),
-    name: async () => [],
-    now: () => "t",
-    readCurrentStamp: async () => [],
-    classify: async () => "question" as const,
-    answerRound: async () => "It renders in src/toolbar.ts.",
-    ground: async () => ({ changes: [], questions: [] }),
-  };
-  const session = new TandemSession(deps as never);
-  await session.capture("where does the toolbar render?", "question");
-  assert.equal(session.lastAnswer?.question, "where does the toolbar render?");
-  assert.ok(session.lastAnswer?.answer.includes("src/toolbar.ts"));
-  assert.equal(session.space.asks.length, 0, "a question is recorded nowhere");
+  assert.ok(session.space.asks.every((a, i) => a.text === draft.list![i]));
 });
 
 test("liveness: the pipeline's stages surface as activity tied to the subject being grounded", async () => {
@@ -446,7 +345,7 @@ test("liveness: the pipeline's stages surface as activity tied to the subject be
     },
   };
   const session = new TandemSession(deps as never);
-  await session.capture("build the thing", "ask");
+  await session.capture("build the thing");
   await session.think();
   assert.ok(
     stages.some((x) => x.startsWith("reading your code@subject-")),

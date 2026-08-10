@@ -60,6 +60,15 @@ export function App(): JSX.Element {
   const hasReport = !!push?.deliveries.length;
   const reportShown = shown === null ? hasReport && !push?.running : shown === "report";
 
+  // The box empties when the words are safely recorded, and not before:
+  // a send that comes back as a list preview keeps them, so "keep editing"
+  // has something to edit.
+  const askCount = push?.sentences.length ?? 0;
+  useEffect(() => {
+    if (!classifying) return;
+    setClassifying(false);
+    setDraft("");
+  }, [askCount]);
   useEffect(() => onSpace(setPush), []);
   useEffect(
     () =>
@@ -154,7 +163,7 @@ export function App(): JSX.Element {
           data-capture
           value={draft}
           rows={Math.min(6, Math.max(2, draft.split("\n").length))}
-          placeholder="Say what you want — your words are kept verbatim. Enter sends, Shift+Enter is a new line."
+          placeholder="Say what you want built — your words are kept verbatim. Enter records it, Shift+Enter is a new line."
           onChange={(e) => {
             setDraft(e.target.value);
             setTag(null);
@@ -163,7 +172,7 @@ export function App(): JSX.Element {
             if (e.key === "Enter" && !e.shiftKey && draft.trim() && !classifying) {
               e.preventDefault();
               setClassifying(true);
-              post({ action: "classify", text: draft });
+              post({ action: "capture", text: draft });
             }
           }}
           disabled={!!push.activity}
@@ -181,57 +190,9 @@ export function App(): JSX.Element {
           }}
         />
         {classifying ? (
-          <span data-classifying style={{ fontSize: FS.body, opacity: O.dim }}>⟳ reading your words…</span>
-        ) : null}
-        {tag && !tag.items ? (
-          <div data-tag-row style={{ flexBasis: "100%", display: "flex", gap: 6, alignItems: "center", fontSize: FS.body }}>
-            <span style={{ opacity: O.dim }}>This looks like — press to record:</span>
-            {[
-              { k: "ask", label: "Ask (build it)" },
-              { k: "question", label: "Question (just answer)" },
-              { k: "statement", label: "Rule (build under it)" },
-            ].map((t) => (
-              <button
-                key={t.k}
-                data-tag={t.k}
-                style={{
-                  cursor: "pointer",
-                  borderRadius: 10,
-                  padding: `${SP.xs}px ${SP.md}px`,
-                  border: tag.guessed === t.k ? `2px solid ${C.focus}` : "1px solid var(--vscode-input-border, #444)",
-                  background: "var(--vscode-input-background, #222)",
-                  color: "inherit",
-                  fontWeight: tag.guessed === t.k ? 600 : 400,
-                }}
-                onClick={() => {
-                  post({ action: "capture", text: tag.text, kind: t.k });
-                  setTag(null);
-                  setDraft("");
-                }}
-              >
-                {tag.guessed === t.k ? "✓ " : ""}{t.label}
-              </button>
-            ))}
-            {(() => {
-              const lines = tag.text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-              if (lines.length < 2) return null;
-              return (
-                <button
-                  data-tag-lines
-                  title="Record each line as its own ask."
-                  style={{ cursor: "pointer", borderRadius: 10, padding: `${SP.xs}px ${SP.md}px`, border: "1px solid var(--vscode-input-border, #444)", background: "var(--vscode-input-background, #222)", color: "inherit" }}
-                  onClick={() => {
-                    post({ action: "capture-many", items: lines });
-                    setTag(null);
-                    setDraft("");
-                  }}
-                >
-                  {lines.length} asks — one per line
-                </button>
-              );
-            })()}
-            <span style={{ opacity: O.faint }}>nothing is saved until you press one</span>
-          </div>
+          <span data-classifying style={{ fontSize: FS.body, opacity: O.dim }}>
+            ⟳ recording and reading it…
+          </span>
         ) : null}
         {tag?.items ? (
           <div data-list-preview style={{ flexBasis: "100%", fontSize: FS.body }}>
@@ -328,12 +289,6 @@ export function App(): JSX.Element {
           editing={editingAsk}
           onEditing={setEditingAsk}
         />
-      ) : null}
-      {push.lastAnswer ? (
-        <section data-answer style={{ margin: `${SP.sm}px ${SP.lg}px 0`, padding: 8, border: "1px solid var(--vscode-panel-border, #333)", borderRadius: 6 }}>
-          <div style={{ fontSize: FS.caption, opacity: O.dim }}>You asked: {push.lastAnswer.question}</div>
-          <div style={{ fontSize: FS.body, whiteSpace: "pre-wrap", marginTop: 4 }}>{push.lastAnswer.answer}</div>
-        </section>
       ) : null}
       {push.legacy ? (
         <div
