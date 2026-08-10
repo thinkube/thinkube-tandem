@@ -82,6 +82,8 @@ export interface SpacePush {
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   /** Why the last build did not start — rendered on the flow tab. */
   runNote?: string;
+  /** Work that was signed and never delivered — it can be run again. */
+  unrun?: { id: string; tepId?: string };
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
@@ -171,6 +173,7 @@ export type WebToHost =
   | { action: "select-unit"; unitId: string }
   | { action: "accept-delivery"; deliveryId: string }
   | { action: "panic" }
+  | { action: "rerun" }
   | { action: "accept-question"; questionId: string; text?: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }

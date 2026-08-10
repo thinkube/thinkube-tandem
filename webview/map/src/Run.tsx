@@ -52,11 +52,29 @@ function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
     : { text: "no log yet", kind: "plain", why: "This step has not written anything yet." };
 }
 
-export function RunNote(props: { note: string }): JSX.Element {
+export function RunNote(props: { note: string; unrun?: { id: string; tepId?: string } }): JSX.Element {
   return (
-    <div data-run-note style={{ margin: 20, padding: 12, border: "1px solid var(--err, #f14c4c)", borderRadius: 6, maxWidth: 560 }}>
+    <div data-run-note style={{ margin: SP.xl, padding: SP.lg, border: `1px solid ${C.bad}`, borderRadius: 6, maxWidth: 560 }}>
       <strong>The build did not start.</strong>
-      <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{props.note}</div>
+      <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{props.note}</div>
+      {/* Signing happens once, so a run that refused itself would leave the
+          work sealed and unreachable — the button that starts it is already
+          spent. This is the way back in. */}
+      {props.unrun ? (
+        <div style={{ marginTop: SP.md, display: "flex", gap: SP.md, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            data-rerun
+            style={{ fontWeight: 600 }}
+            title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+            onClick={() => post({ action: "rerun" })}
+          >
+            Run {props.unrun.tepId ?? "it"} again
+          </button>
+          <span style={{ fontSize: FS.caption, color: C.quiet }}>
+            already signed — this starts the workers, nothing is decided again
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

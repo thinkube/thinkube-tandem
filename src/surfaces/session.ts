@@ -485,6 +485,28 @@ export class TandemSession {
     return executeRun(this, cutId);
   }
 
+  /**
+   * Signed work that never delivered, if there is any: the cut is a
+   * record and cannot be signed twice, so without this a run that
+   * refused itself — a plan the engine would not accept, a forge that
+   * was not reachable — left the work sealed and unreachable, with the
+   * one button that could have started it already spent.
+   */
+  unrunCut(): { id: string; tepId?: string } | undefined {
+    const delivered = new Set(this.space.deliveries.map((d) => d.cutId));
+    const c = [...this.space.cuts].reverse().find((x) => x.signature && !delivered.has(x.id));
+    return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+  }
+
+  /** Start the signed work that never delivered, again. */
+  async rerun(): Promise<{ ok: boolean; reason?: string }> {
+    const c = this.unrunCut();
+    if (!c) return { ok: false, reason: "there is no signed work waiting to run" };
+    if (this.running) return { ok: false, reason: "a run is already in flight" };
+    await executeRun(this, c.id);
+    return { ok: true };
+  }
+
   /** Answer a parked worker — the oracle's door on the run view. */
   answerWorker(unitId: string, text: string): boolean {
     const ok = this.runState?.answer(unitId, text) ?? false;

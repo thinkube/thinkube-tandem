@@ -472,7 +472,7 @@ export function App(): JSX.Element {
           <Delivery push={push} />
         ) : push.run || push.runNote ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            {push.runNote ? <RunNote note={push.runNote} /> : null}
+            {push.runNote ? <RunNote note={push.runNote} unrun={push.unrun} /> : null}
             {push.run ? (
               <RunSection
                 run={push.run}
@@ -483,9 +483,18 @@ export function App(): JSX.Element {
             ) : null}
           </div>
         ) : (
-          <div style={{ flex: 1, padding: 24, opacity: O.dim }}>
-            Nothing has been orchestrated yet — press Build on the work page and the workers
-            appear here as they run.
+          <div style={{ flex: 1, padding: SP.xl }}>
+            {push.unrun ? (
+              <RunNote
+                note="This work is signed and has not run. Nothing was delivered from it."
+                unrun={push.unrun}
+              />
+            ) : (
+              <span style={{ opacity: O.dim }}>
+                Nothing has been orchestrated yet — press Build on the work page and the workers
+                appear here as they run.
+              </span>
+            )}
           </div>
         )}
         {/* Only where there is something to zoom. The intent page is a

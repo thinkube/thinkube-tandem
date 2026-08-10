@@ -91,6 +91,9 @@ function spacePush(session: TandemSession, message?: string): unknown {
     lastAnswer: session.lastAnswer,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
+    // Signed work that never delivered: the run can be started again,
+    // and the surface is the only place that can say so.
+    unrun: session.unrunCut(),
     grounding: session.groundingView(),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),
@@ -361,6 +364,10 @@ async function handleInbound(
       msg.text ?? "",
       msg.kind === "assessment" ? "assessment" : "probe",
     );
+  } else if (msg.action === "rerun") {
+    push("Starting the signed work again…");
+    const r = await session.rerun();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "reground") {
     push("Re-grounding…");
     await session.reground();
