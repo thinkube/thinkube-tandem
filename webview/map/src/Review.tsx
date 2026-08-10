@@ -4,19 +4,21 @@
  *
  * All of this was computed and sent to the surface, and none of it was
  * ever drawn: the questions were answered for you at the moment you
- * pressed Build — "every assumption nobody objected to becomes a
- * decision" — by a silence you were never given the chance to break. A
+ * pressed Build, by a silence you were never given the chance to break. A
  * recommendation nobody can see is not a recommendation; it is the
  * machine deciding and calling it consent.
  *
- * So each question is shown where the work it affects is, with what the
- * machine would answer and which promises hang on it. Answering is one
- * press. Saying it differently is a sentence. Doing neither still means
- * the recommendation stands at Build — that is the rule, said out loud
- * instead of discovered afterwards.
+ * Visible is not the same as demanding. A question the machine can answer
+ * is not a question for the human: it answers it, records that it did,
+ * and folds it away where it can be found and overruled. Putting those in
+ * front of somebody as a stack of cards is the machine handing its work
+ * back, which is the thing this product exists not to do. Only a question
+ * it cannot answer is asked out loud — and there should be very few,
+ * because a question written in the machine's own vocabulary is refused
+ * before it ever reaches here.
  */
 import { useState } from "react";
-import { C, FS, O, SP, aside, label, raised } from "./type";
+import { C, FS, O, SP, aside, label, labelIn, raised } from "./type";
 import { post, SpacePush } from "./vscode";
 
 function Question(props: { q: SpacePush["questions"][number] }): JSX.Element {
@@ -98,16 +100,37 @@ function Question(props: { q: SpacePush["questions"][number] }): JSX.Element {
 export function Review(props: { push: SpacePush }): JSX.Element | null {
   const { push } = props;
   const [showDecided, setShowDecided] = useState(false);
+  const [showAnswered, setShowAnswered] = useState(false);
+  const answered = push.questions.filter((q) => !!q.recommendation);
+  const unanswerable = push.questions.filter((q) => !q.recommendation);
   if (!push.questions.length && !push.impacts.length && !push.decisions.length) return null;
   return (
     <section data-review style={{ marginBottom: SP.md, maxWidth: "52rem" }}>
-      {push.questions.length ? (
+      {/* A question the machine can answer is not a question for the
+          human. It answers it, says that it did, and stays open to being
+          overruled — folded away, because a stack of cards demanding
+          attention is the machine handing its work back. Only a question
+          it cannot answer is put in front of anybody. */}
+      {answered.length ? (
+        <div style={{ marginBottom: SP.sm }}>
+          <button
+            data-show-answered
+            style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, opacity: O.dim, fontSize: FS.caption }}
+            onClick={() => setShowAnswered(!showAnswered)}
+          >
+            {showAnswered ? "▾" : "▸"} {answered.length} thing{answered.length === 1 ? "" : "s"} your
+            words did not settle — answered for you
+          </button>
+          {showAnswered ? answered.map((q) => <Question key={q.id} q={q} />) : null}
+        </div>
+      ) : null}
+
+      {unanswerable.length ? (
         <>
-          <div style={label}>
-            {push.questions.length} question{push.questions.length === 1 ? "" : "s"} your words did
-            not settle
+          <div style={labelIn(C.ask)}>
+            {unanswerable.length} question{unanswerable.length === 1 ? "" : "s"} only you can answer
           </div>
-          {push.questions.map((q) => (
+          {unanswerable.map((q) => (
             <Question key={q.id} q={q} />
           ))}
         </>
