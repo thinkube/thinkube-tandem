@@ -52,7 +52,28 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     }
     s.runNote = undefined;
     s.running = true;
-    s.runState = new RunState(() => s.deps.onChanged?.());
+    // The run is written down AS IT HAPPENS, not only when it is over.
+    // A record kept until the end is a record nobody can read while they
+    // need it — the surface holds the only copy, so a crash takes the
+    // whole account with it, and nothing outside the window can say what
+    // a worker is doing. Throttled: a run reports constantly, and this is
+    // a file.
+    let lastWrite = 0;
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const keep = (): void => {
+      if (!s.runState) return;
+      saveRun(s.deps.storeDir, { cutId, tepId: cut.tepId, at: s.deps.now() }, s.runState);
+      lastWrite = Date.now();
+    };
+    s.runState = new RunState(() => {
+      s.deps.onChanged?.();
+      if (Date.now() - lastWrite >= 2000) keep();
+      else if (!pending)
+        pending = setTimeout(() => {
+          pending = undefined;
+          keep();
+        }, 2000);
+    });
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
       const plan = planScopes(s.space, cut);
@@ -90,9 +111,10 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       return last;
     } finally {
       s.running = false;
-      // The run is over, so it becomes history: the page that shows it is
-      // opened long after the process that ran it has gone.
-      if (s.runState) saveRun(s.deps.storeDir, { cutId, tepId: cut.tepId, at: s.deps.now() }, s.runState);
+      if (pending) clearTimeout(pending);
+      // And once more at the end, so the last thing that happened is in
+      // the record whatever the throttle was doing when it happened.
+      keep();
     }
   }
 

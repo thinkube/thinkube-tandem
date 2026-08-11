@@ -30,9 +30,18 @@ export interface RunRecord {
 
 const dirFor = (storeDir: string): string => path.join(storeDir, "runs");
 
-/** Write what this run was, once it is over. Best effort: the delivery
- *  already carries the verdicts, so a failed write loses the account of
- *  the run, never its result. */
+/**
+ * Write what this run IS, as it happens.
+ *
+ * Not only when it is over: a record kept until the end is a record
+ * nobody can read while they need it. The surface holds the only other
+ * copy, so a window that closes — or crashes — takes the whole account
+ * with it, and nothing outside that window can say what a worker is
+ * doing or why one failed.
+ *
+ * Best effort: the delivery carries the verdicts, so a failed write
+ * loses the account of the run, never its result.
+ */
 export function saveRun(
   storeDir: string,
   record: Omit<RunRecord, "units" | "logs" | "stepLogs">,

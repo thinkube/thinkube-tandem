@@ -58,3 +58,35 @@ test("a run read back from disk has nobody left waiting on an answer", () => {
   assert.equal(back.view().parked.length, 0, "an unanswerable question must not be offered");
   assert.equal(back.view().units[0].question, undefined);
 });
+
+test("a run in flight is on disk before it finishes", () => {
+  // The one that matters while you are waiting: a worker failed twenty
+  // minutes ago and the run is still going. Its account has to be
+  // readable now, not when the last unit finally lands.
+  const dir = tmp();
+  const state = new RunState(() => {});
+  state.seed("u1", "SL-1", "test", [], "writes the checks");
+  state.seed("u2", "SL-1", "code", ["u1"], "writes the code");
+  state.set("u1", "done");
+  state.set("u2", "running");
+  state.log("reading src/gates/sign.ts", "u2");
+  saveRun(dir, { cutId: "cut-1", tepId: "TEP-9", at: "2026-08-11T12:00:00Z" }, state);
+
+  const mid = loadLastRun(dir)!;
+  assert.deepEqual(
+    mid.units.map((u) => [u.id, u.state]),
+    [
+      ["u1", "done"],
+      ["u2", "running"],
+    ],
+    "what has happened so far, while it is still happening",
+  );
+  assert.match(mid.stepLogs["u2"].join(""), /src\/gates\/sign\.ts/, "and what it is doing");
+
+  // The same run, later: the record is replaced, never appended twice.
+  state.fail("u2", "the checks are not green");
+  saveRun(dir, { cutId: "cut-1", tepId: "TEP-9", at: "2026-08-11T12:20:00Z" }, state);
+  const end = loadLastRun(dir)!;
+  assert.equal(end.units.find((u) => u.id === "u2")!.state, "failed");
+  assert.equal(fs.readdirSync(path.join(dir, "runs")).length, 1, "one file per run, kept current");
+});
