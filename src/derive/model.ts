@@ -65,6 +65,17 @@ export function buildModelPrompt(sentences: string[]): string {
     `reason is recorded in the TEP."\n` +
     `   → subject DOCUMENTATION, three claims. The review page and the TEP ` +
     `are places; "I" is the actor; "that reason" exists only here.\n\n` +
+    `A CLAIM IS WHAT MUST BECOME TRUE — never what is wrong today. A ` +
+    `person reporting a fault writes the fault and the fix in one ` +
+    `sentence, and only the fix is a claim:\n` +
+    `   "The brief a worker receives embeds the same TEP text twice under ` +
+    `two headings; it must appear exactly once."\n` +
+    `   → subject THE WORKER BRIEF, ONE claim: the TEP text appears ` +
+    `exactly once. "embeds it twice" is the fault being reported. Read as ` +
+    `a claim it would order the machine to build the bug, and it could ` +
+    `never come true, because the work is what removes it. Leave it out: ` +
+    `the writer's sentence is kept whole, so nothing about the fault is ` +
+    `lost by not claiming it.\n\n` +
     `Never invent a subject the list does not mention, and never invent a ` +
     `catch-all like "the product" or "the system". Never drop a sentence ` +
     `quietly: every one must appear as a claim of some subject. A sentence ` +

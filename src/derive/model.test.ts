@@ -26,6 +26,16 @@ test("the prompt numbers every sentence and asks for the writer's own nouns", ()
     "Never drop a sentence",
     "OF WHAT?",
     "never the place a gesture lives",
+    // A fault reported is not a claim: read as one it would order the
+    // machine to build the bug, and it could never come true.
+    "WHAT MUST BECOME TRUE — never what is wrong today",
+    "the fault being reported",
+    // Two claims that cannot both hold are settled by which was written
+    // later — no supersession to record, only the order already there.
+    "a later one wins",
+    // The words each claim was read from, so the sentence can be shown
+    // back with the reading drawn on it.
+    "copied EXACTLY",
   ])
     assert.ok(p.includes(demand), `the prompt demands: ${demand}`);
 });
