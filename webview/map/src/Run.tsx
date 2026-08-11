@@ -116,29 +116,24 @@ export function RunSection(props: {
 
   const cards: CardData[] = useMemo(
     () => [
+      // A NODE CARRIES ITS TITLE. What it builds and what it did are read
+      // on the right, when it is chosen — a graph whose every node holds a
+      // paragraph is a graph nobody can take in, and this one was drawing
+      // the same slice title on three different nodes, so no card said
+      // which one it was.
       ...run.units.map((u) => ({
         id: u.id,
         band: u.role === "test" ? ROLES.test : ROLES.code,
         title: u.sliceTitle ?? u.slice,
-        titleFull: `worker ${u.id}`,
-        // What it is here to build comes first, and stays there whatever
-        // happens to it; what happened is said under it.
-        abs: [
-          u.what,
-          u.note,
-          !u.what && !u.note && u.requires.length
-            ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n") || undefined,
+        titleFull: `${u.id} — ${u.sliceTitle ?? u.slice}`,
+        abs: u.id,
         chips: [chipFor(u, now), logChip(u.id, run)],
       })),
       ...slices.map((slice) => ({
         id: `audit:${slice}`,
         band: ROLES.audit,
-        title: slice,
-        abs: "grades the checks against the real state",
+        title: run.units.find((u) => u.slice === slice)?.sliceTitle ?? slice,
+        abs: `audit:${slice}`,
         chips: [
           graded(slice)
             ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
@@ -149,7 +144,7 @@ export function RunSection(props: {
         id: "gate",
         band: { ...ROLES.audit, text: "Audit — everything together" },
         title: "The closing gate",
-        abs: "runs every check on the real state and grades each promise",
+        abs: "every check, on the real state",
         chips: [
           allDone
             ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
@@ -218,7 +213,6 @@ export function RunSection(props: {
   const total = run.units.length || 1;
   const running = run.units.find((u) => u.state === "running");
   const failed = run.units.filter((u) => u.state === "failed");
-  const anchor = running && drawn.nodes.get(running.id);
 
   return (
     <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -344,30 +338,6 @@ export function RunSection(props: {
               </NodeCard>
             );
           })}
-          {anchor && !world.far ? (
-            <div
-              data-anchored-log
-              style={{
-                position: "absolute",
-                left: anchor.x,
-                top: anchor.y + anchor.h + 10,
-                width: 300,
-                background: C.raised,
-                border: `1px solid ${C.focus}`,
-                borderRadius: 6,
-                padding: `${SP.sm}px ${SP.md}px`,
-                font: "11px/1.5 monospace",
-                whiteSpace: "pre-wrap",
-                maxHeight: 140,
-                overflowY: "auto",
-              }}
-            >
-              <div style={{ color: C.focus, fontFamily: "system-ui", fontSize: FS.body, marginBottom: 2 }}>
-                {running!.id} — live log
-              </div>
-              {run.logs.slice(-8).join("\n")}
-            </div>
-          ) : null}
         </div>
       </div>
       {!running && run.logs.length ? (

@@ -7,16 +7,27 @@
  * box you write them in, and what was read from them on the reading page.
  */
 import { post, SpacePush } from "./vscode";
-import { C, FS, O, SP, label } from "./type";
+import { C, FS, O, SP, label, labelIn } from "./type";
 
 const btn: React.CSSProperties = {
   fontWeight: 600,
   padding: `${SP.xs}px ${SP.md}px`,
 };
 
-/** One step's own log, paged — the machine's account of what it did. */
-function StepLog(props: { log: NonNullable<SpacePush["runLog"]> }): JSX.Element {
-  const { log } = props;
+/**
+ * The chosen worker, read here: what it is, what it was asked to build,
+ * and its own account of what it did.
+ *
+ * A node on the graph carries its title and nothing more. Everything a
+ * node has to SAY is said here, in one place, for whichever node is
+ * chosen — rather than a paragraph on every card and a floating panel
+ * that only ever followed the one unit that happened to be running.
+ */
+function StepLog(props: {
+  log: NonNullable<SpacePush["runLog"]>;
+  unit?: NonNullable<SpacePush["run"]>["units"][number];
+}): JSX.Element {
+  const { log, unit } = props;
   return (
     <section data-step-log style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -25,6 +36,40 @@ function StepLog(props: { log: NonNullable<SpacePush["runLog"]> }): JSX.Element 
           {log.total} line{log.total === 1 ? "" : "s"}
         </span>
       </div>
+      {unit ? (
+        <>
+          <div style={{ fontSize: FS.caption, color: C.quiet }}>
+            {unit.role === "test" ? "writes the checks" : "writes the code"} for{" "}
+            {unit.sliceTitle ?? unit.slice}
+          </div>
+          {unit.what ? (
+            <>
+              <div style={label}>What it builds</div>
+              <div style={{ fontSize: FS.caption, whiteSpace: "pre-wrap" }}>{unit.what}</div>
+            </>
+          ) : null}
+          {unit.waits?.length ? (
+            <>
+              <div style={label}>Waits for</div>
+              {unit.waits.map((w) => (
+                <div key={w.on} style={{ fontSize: FS.caption, color: C.quiet }}>
+                  {w.on} —{" "}
+                  {w.kind === "probes"
+                    ? "its own probes, written before the code"
+                    : `what it needs${w.what ? `: ${w.what}` : ""}`}
+                </div>
+              ))}
+            </>
+          ) : null}
+          {unit.note ? (
+            <>
+              <div style={labelIn(unit.state === "failed" ? C.bad : C.quiet)}>What happened</div>
+              <div style={{ fontSize: FS.caption, whiteSpace: "pre-wrap" }}>{unit.note}</div>
+            </>
+          ) : null}
+          <div style={label}>Its own account</div>
+        </>
+      ) : null}
       <pre
         style={{
           whiteSpace: "pre-wrap",
@@ -121,7 +166,12 @@ export function Rail(props: {
     >
       <div style={{ padding: 10 }}>
         <Parked push={push} />
-        {push.runLog ? <StepLog log={push.runLog} /> : null}
+        {push.runLog ? (
+          <StepLog
+            log={push.runLog}
+            unit={push.run?.units.find((u) => u.id === push.runLog!.step)}
+          />
+        ) : null}
 
         {!props.canBuild ? null : ready.thinking ? (
           <div style={{ fontSize: FS.caption, opacity: O.dim, marginBottom: 14 }}>
