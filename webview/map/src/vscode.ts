@@ -42,6 +42,8 @@ interface DeliveryVM {
   id: string;
   page: string;
   accepted: boolean;
+  /** Why it cannot be accepted, from the gate that would refuse it. */
+  blocked?: string;
   url?: string;
   undelivered?: string[];
 }

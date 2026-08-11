@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { createRequire } from "node:module";
 import { TandemSession } from "./session";
 import { readyToBuild } from "./buildFlow";
+import { acceptDelivery } from "../gates/sign";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -255,6 +256,14 @@ function spacePush(session: TandemSession, message?: string): unknown {
       id: d.id,
       page: session.deliveryPage(d.id) ?? "",
       accepted: !!d.acceptedAt,
+      // Whether it COULD be accepted, asked of the same gate that would
+      // refuse it. A surface that offers a press the machine will refuse
+      // is telling the human this work is ready to go into the project.
+      ...(() => {
+        if (d.acceptedAt) return {};
+        const r = acceptDelivery(d, session.deps.now(), session.deps.docsGateMode ?? "blocking");
+        return r.ok ? {} : { blocked: r.reason };
+      })(),
       ...(d.url ? { url: d.url } : {}),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
     })),

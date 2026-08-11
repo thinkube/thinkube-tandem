@@ -213,3 +213,30 @@ test("the delivery page counts truth in claims, and never calls a half-built one
   assert.ok(!page.includes("stays inside its line budget"), "a claim nothing touched is not listed");
   assert.ok(page.includes("- see it: the delivery page — read the walkthrough"), "beside its claim");
 });
+
+test("a delivery whose checks are red cannot be accepted, and the page says why", () => {
+  // The run that produced this failed on every unit: 86 red proofs and
+  // twelve workers that never delivered. The gate refuses it — what the
+  // surface must never do is offer the press anyway.
+  const red = {
+    id: "d-1",
+    cutId: "cut-1",
+    branch: "tandem/TEP-5",
+    proofs: [
+      { kind: "probe" as const, label: "the report reads as sections", verdict: "red" as const },
+      { kind: "suite" as const, label: "suite", verdict: "green" as const },
+    ],
+    undelivered: ["SL-2#eu-1: worker errored"],
+  };
+  const r = acceptDelivery(red, "t");
+  assert.equal(r.ok, false);
+  assert.match(r.reason!, /proof outstanding/);
+  assert.match(r.reason!, /the report reads as sections/, "and names the check that is not green");
+});
+
+test("a delivery with no proof at all cannot be accepted either", () => {
+  const bare = { id: "d-2", cutId: "cut-1", branch: "b", proofs: [] };
+  const r = acceptDelivery(bare, "t");
+  assert.equal(r.ok, false);
+  assert.match(r.reason!, /no proof/);
+});

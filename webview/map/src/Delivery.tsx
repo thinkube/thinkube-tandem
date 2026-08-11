@@ -38,6 +38,14 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
               <span data-accepted={d.id} style={{ color: C.ok, fontSize: FS.body, fontWeight: 600 }}>
                 ✓ Accepted
               </span>
+            ) : d.blocked ? (
+              // Not offered, because it would be refused. A button that
+              // cannot work says the work is ready to go into the project,
+              // which over a page of red checks is the machine lying about
+              // the one decision it exists to support.
+              <div data-cannot-accept={d.id} style={{ fontSize: FS.body, color: C.bad }}>
+                <strong>This cannot be accepted.</strong> {d.blocked}
+              </div>
             ) : (
               <>
                 <button
