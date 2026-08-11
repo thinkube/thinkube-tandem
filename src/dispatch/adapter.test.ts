@@ -48,13 +48,16 @@ function goldenSpace(): { space: Space; ids: string[] } {
   add({
     sentence: "a capture box in the toolbar",
     claim: "claim-capture",
-    tps: [{ path: "src/toolbar/capture.ts", planned: true }],
+    tps: [{ path: "src/toolbar/capture.ts", symbol: "CaptureBox", planned: true }],
     acs: ["typing an ask and pressing Enter records it verbatim"],
   });
   add({
     sentence: "the toolbar mounts the capture box",
     claim: "claim-capture",
-    tps: [{ path: "src/toolbar/index.ts" }, { path: "src/toolbar/capture.ts", planned: true }],
+    tps: [
+      { path: "src/toolbar/index.ts", symbol: "Toolbar" },
+      { path: "src/toolbar/capture.ts", symbol: "CaptureBox", planned: true },
+    ],
     needs: [ids[0]],
     acs: ["the box is visible on load"],
   });
@@ -78,7 +81,7 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
   assert.equal(sl1.handle, "SL-1");
   assert.deepEqual(sl1.files.sort(), ["src/toolbar/capture.ts", "src/toolbar/index.ts"]);
   assert.equal(sl1.workUnits[0].role, "code");
-  assert.ok(sl1.workUnits[0].note!.includes("lands at src/toolbar/capture.ts (new file)"));
+  assert.ok(sl1.workUnits[0].note!.includes("lands at src/toolbar/capture.ts › CaptureBox (new file)"));
   assert.ok(sl1.workUnits[0].note!.includes("done when: typing an ask"));
   assert.deepEqual(
     sl1.workUnits.filter((u) => u.role === "test").map((u) => u.footprint[0]),
@@ -117,8 +120,9 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
     sl2code.requires.some((r) => byId.get(r)?.slice === "SL-1"),
     "the consumes edge reached the DAG",
   );
-  // Contract is Spec-shared (union) on every unit.
-  assert.ok(sl2code.contract!.includes("a capture box in the toolbar"));
+  // The contract is Spec-shared (union) on every unit: SL-2's coder is
+  // told, BY NAME, what SL-1 introduces — the whole point of a seam.
+  assert.match(sl2code.contract!, /SL-1 (INTRODUCES|CHANGES)/);
 
   // One coder per slice, per the engine's own batching.
   for (const s of slices) {
@@ -211,7 +215,9 @@ test("a dependency names files its producer owns ALONE, so the edge lands on one
   add("claim-c", ["src/c.ts"], [ids[0]]);
 
   const slices = tepSlices({ space: s, cut: { id: "cut-1", changeIds: ids }, spaceName: "x" });
-  const consumer = slices.find((sl) => (sl.contract ?? "").includes("claim-c"))!;
+  const consumer = slices.find((sl) =>
+    sl.workUnits.some((u) => (u.footprint ?? []).includes("src/c.ts")),
+  )!;
   const consumes = consumer.workUnits.find((u) => (u.role ?? "code") === "code")!.consumes ?? [];
 
   assert.ok(consumes.length, "the dependency is expressed");
@@ -224,4 +230,67 @@ test("a dependency names files its producer owns ALONE, so the edge lands on one
   // And the whole plan the engine is handed must be acyclic.
   const dag = buildUnitDag(slices);
   assert.equal((validateDag(dag) as { ok: boolean }).ok, true);
+});
+
+test("the contract declares the seam by NAME — what a slice introduces, and what it changes", () => {
+  const space: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "several spaces open at once", at: "t" }],
+    subjects: [{ id: "sub-1", name: "the thinking space", from: ["ask-1"] }],
+    claims: [{ id: "c1", subjectId: "sub-1", text: "each opens in its own tab", fromAsk: "ask-1" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "one panel per space",
+        serves: ["sub-1"],
+        servesClaim: "c1",
+        needs: [],
+        acceptance: [{ id: "a1", text: "two spaces, two tabs" }],
+        grounding: {
+          touchpoints: [
+            { path: "src/surfaces/panelRegistry.ts", symbol: "panelFor", planned: true },
+            { path: "src/extension.ts", symbol: "openSpaceFor" },
+          ],
+          stamp: [],
+        },
+      },
+    ],
+    cuts: [{ id: "cut-1", changeIds: ["n1"] }],
+  };
+
+  const [slice] = tepSlices({ space, cut: space.cuts[0], spaceName: "sp" });
+  // A name is something another slice can CALL. A description of what a
+  // slice is doing is something it must guess at — which is how two
+  // slices running in parallel each invent the same missing helper.
+  assert.match(slice.contract!, /INTRODUCES/);
+  assert.match(slice.contract!, /src\/surfaces\/panelRegistry\.ts › panelFor/);
+  assert.match(slice.contract!, /CHANGES \(exists today\)/);
+  assert.match(slice.contract!, /src\/extension\.ts › openSpaceFor/);
+  assert.ok(
+    !slice.contract!.includes("one panel per space"),
+    "the sentence is the brief's job — the contract carries names, not prose",
+  );
+});
+
+test("a promise grounded on files but no symbols declares no seam, rather than a false one", () => {
+  const space: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "the docs say each space opens in its own tab", at: "t" }],
+    subjects: [{ id: "sub-1", name: "the documentation", from: ["ask-1"] }],
+    claims: [{ id: "c1", subjectId: "sub-1", text: "says what the tabs do", fromAsk: "ask-1" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "the page stops describing one panel",
+        serves: ["sub-1"],
+        servesClaim: "c1",
+        needs: [],
+        acceptance: [{ id: "a1", text: "the page says tabs" }],
+        grounding: { touchpoints: [{ path: "docs/the-space.adoc" }], stamp: [] },
+      },
+    ],
+    cuts: [{ id: "cut-1", changeIds: ["n1"] }],
+  };
+  const [slice] = tepSlices({ space, cut: space.cuts[0], spaceName: "sp" });
+  assert.equal(slice.contract, "", "no symbols, no interface — and nothing invented to fill it");
 });

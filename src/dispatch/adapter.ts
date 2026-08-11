@@ -172,17 +172,37 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       }),
     );
 
-    const contract = changes
-      .map(
-        (c) =>
-          `${c.sentence}${
-            c.grounding
-              ? ` — lands at ${(c.grounding.touchpoints ?? [])
-                  .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : ""))
-                  .join(", ")}`
-              : ""
-          }`,
-      )
+    // THE CONTRACT: the seam this slice introduces, by name.
+    //
+    // The engine unions every slice's contract and stamps it on every
+    // unit, so a coder and its held-out tester agree on an interface
+    // without consuming each other — and two slices cannot each invent
+    // the same missing helper under two names, which is what happens
+    // when they run in parallel with disjoint footprints and nothing
+    // shared to build against.
+    //
+    // What makes it a contract is that it carries NAMES. A description of
+    // what a slice is doing, however well written, is something a worker
+    // can read and still has to guess at; a symbol is something it can
+    // call.
+    const seam = (planned: boolean): string[] => [
+      ...new Set(
+        changes.flatMap((c) =>
+          (c.grounding?.touchpoints ?? [])
+            .filter((t) => !!t.symbol && !!t.planned === planned)
+            .map((t) => `  - ${t.path} › ${t.symbol}`),
+        ),
+      ),
+    ];
+    const introduces = seam(true);
+    const changesSymbols = seam(false);
+    const contract = [
+      introduces.length ? `${handle} INTRODUCES (does not exist yet — call it by this name):` : "",
+      ...introduces,
+      changesSymbols.length ? `${handle} CHANGES (exists today):` : "",
+      ...changesSymbols,
+    ]
+      .filter(Boolean)
       .join("\n");
 
     return {
