@@ -6,7 +6,7 @@
  * nothing here repeats what is shown elsewhere — your asks live under the
  * box you write them in, and what was read from them on the reading page.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { post, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
 
@@ -29,23 +29,19 @@ function StepLog(props: {
   unit?: NonNullable<SpacePush["run"]>["units"][number];
 }): JSX.Element {
   const { log, unit } = props;
-  // A live log that does not move looks like a worker that has stopped.
-  // The newest page is recomputed on every push, so the new lines were
-  // arriving — at the bottom of a box that never scrolled, below the
-  // fold, where nobody saw them. It follows while you are on the last
-  // page, and stops the moment you page back to read something.
+  // A log is read the way a terminal is read: it scrolls, and it follows
+  // what is arriving unless you have scrolled back to look at something —
+  // in which case it leaves you where you are.
   const box = useRef<HTMLPreElement>(null);
-  const live = log.page >= log.pages;
+  const [following, setFollowing] = useState(true);
   useEffect(() => {
-    if (live && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [log.lines.length, log.total, live]);
+    if (following && box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [log.lines.length, log.total, following]);
   return (
     <section data-step-log style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <strong style={{ fontSize: FS.body }}>{log.step}</strong>
-        <span style={{ fontSize: FS.caption, opacity: O.dim }}>
-          {log.total} line{log.total === 1 ? "" : "s"}
-        </span>
+
       </div>
       {unit ? (
         <>
@@ -83,6 +79,10 @@ function StepLog(props: {
       ) : null}
       <pre
         ref={box}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
+        }}
         style={{
           whiteSpace: "pre-wrap",
           fontSize: FS.caption,
@@ -97,38 +97,27 @@ function StepLog(props: {
       >
         {log.lines.join("\n") || "(nothing yet)"}
       </pre>
-      {log.pages > 1 || !live ? (
-        <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: FS.caption }}>
+      <div style={{ display: "flex", gap: SP.sm, alignItems: "center", fontSize: FS.caption }}>
+        {following ? (
+          <span data-log-live style={{ color: C.ok }}>following</span>
+        ) : (
           <button
-            data-log-prev
-            disabled={log.page <= 1}
-            onClick={() => post({ action: "read-log", stepId: log.step, page: log.page - 1 })}
+            data-log-newest
+            title="Back to the newest lines, and follow them as they arrive."
+            onClick={() => {
+              setFollowing(true);
+              if (box.current) box.current.scrollTop = box.current.scrollHeight;
+            }}
           >
-            ←
+            follow again
           </button>
-          <span>
-            page {log.page} of {log.pages}
-          </span>
-          {live ? (
-            <span data-log-live style={{ color: C.ok }}>following</span>
-          ) : (
-            <button
-              data-log-newest
-              title="Back to the newest lines, and follow them as they arrive."
-              onClick={() => post({ action: "read-log", stepId: log.step })}
-            >
-              newest
-            </button>
-          )}
-          <button
-            data-log-next
-            disabled={log.page >= log.pages}
-            onClick={() => post({ action: "read-log", stepId: log.step, page: log.page + 1 })}
-          >
-            →
-          </button>
-        </div>
-      ) : null}
+        )}
+        <span style={{ color: C.quiet }}>
+          {log.total > log.shown
+            ? `newest ${log.shown} of ${log.total} lines`
+            : `${log.total} line${log.total === 1 ? "" : "s"}`}
+        </span>
+      </div>
     </section>
   );
 }

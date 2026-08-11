@@ -29,7 +29,7 @@ test("a finished run is still there after the window that ran it has gone", () =
     "every worker, what kind it was and how it ended",
   );
   assert.equal(view.units[1].requires[0], "u1", "the order they ran in survives too");
-  assert.ok(back.logPage("u2").lines.join("").includes("did not pass"), "and what it reported");
+  assert.ok(back.logTail("u2").lines.join("").includes("did not pass"), "and what it reported");
 });
 
 test("nothing is claimed to have run when nothing has", () => {

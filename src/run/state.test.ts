@@ -36,18 +36,15 @@ test("each step keeps its own log, and the surface pages through it", () => {
   st.log("u2 line 1", "u2");
   st.log("something about the whole run");
 
-  const u1 = st.logPage("u1");
+  const u1 = st.logTail("u1");
   assert.equal(u1.total, 40, "the step holds every one of its lines");
-  assert.equal(u1.pages, Math.ceil(40 / u1.pageSize));
-  assert.equal(u1.page, u1.pages - 1, "the newest page opens first");
-  assert.equal(u1.lines[u1.lines.length - 1], "u1 line 40");
+  assert.equal(u1.shown, 40, "and a log this size travels whole");
+  assert.equal(u1.lines[u1.lines.length - 1], "u1 line 40", "the newest line is the last one");
+  assert.equal(u1.lines[0], "u1 line 1", "and the oldest is still there to scroll back to");
 
-  const older = st.logPage("u1", 0);
-  assert.equal(older.lines[0], "u1 line 1", "the oldest line is still reachable");
-
-  assert.equal(st.logPage("u2").total, 1, "a step sees only its own lines");
-  assert.equal(st.logPage("run").total, 1, "what belongs to no step lands on the run");
-  assert.equal(st.logPage("ghost").total, 0, "a step with no lines pages to nothing");
+  assert.equal(st.logTail("u2").total, 1, "a step sees only its own lines");
+  assert.equal(st.logTail("run").total, 1, "what belongs to no step lands on the run");
+  assert.equal(st.logTail("ghost").total, 0, "a step with no lines has nothing to show");
 
   const counts = st.view().logCounts;
   assert.deepEqual(counts, { u1: 40, u2: 1, run: 1 }, "the view advertises where the lines are");

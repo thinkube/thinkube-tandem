@@ -251,16 +251,14 @@ export class TandemSession {
     }
   }
 
-  readLog(step: string | null, page?: number): void {
-    // page -1 means the newest, which is what a reader wants first.
-    this.openLog = step ? { step, page: page ?? -1 } : undefined;
+  readLog(step: string | null): void {
+    this.openLog = step ? { step, page: -1 } : undefined;
     this.deps.onChanged?.();
   }
 
   logView() {
     if (!this.openLog || !this.runState) return undefined;
-    const { step, page } = this.openLog;
-    return { step, ...this.runState.logPage(step, page < 0 ? undefined : page) };
+    return { step: this.openLog.step, ...this.runState.logTail(this.openLog.step) };
   }
 
   groundingView(): { askId: string; label: string; current: number; total: number }[] {

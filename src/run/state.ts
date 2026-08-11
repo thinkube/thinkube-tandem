@@ -40,8 +40,17 @@ export interface RunUnitView {
   note?: string;
 }
 
-/** How many lines one page of a step's log carries. */
-const LOG_PAGE = 18;
+/**
+ * How much of a step's log travels to the surface.
+ *
+ * A log is read the way a terminal is read: it scrolls. It was paged
+ * instead, eighteen lines at a time, for a reason that was never the
+ * reader's — sending two thousand lines on every push, and a run pushes
+ * constantly, is a great deal of data for a channel that carries the
+ * whole space. So the tail travels, deep enough to scroll back through,
+ * and the count says what is not being shown.
+ */
+const LOG_TAIL = 500;
 /** Lines kept per step. Generous: a step's log is the evidence it failed. */
 const STEP_LOG_CAP = 2000;
 
@@ -130,17 +139,11 @@ export class RunState {
   }
 
   /** One page of a step's own log, newest page by default. */
-  logPage(step: string, page?: number): { lines: string[]; page: number; pages: number; total: number; pageSize: number } {
+  /** The tail of a step's log, and how many lines there are in all. */
+  logTail(step: string): { lines: string[]; total: number; shown: number } {
     const all = this.stepLogs.get(step) ?? [];
-    const pages = Math.max(1, Math.ceil(all.length / LOG_PAGE));
-    const at = Math.min(Math.max(page ?? pages - 1, 0), pages - 1);
-    return {
-      lines: all.slice(at * LOG_PAGE, at * LOG_PAGE + LOG_PAGE),
-      page: at,
-      pages,
-      total: all.length,
-      pageSize: LOG_PAGE,
-    };
+    const lines = all.slice(-LOG_TAIL);
+    return { lines, total: all.length, shown: lines.length };
   }
 
   park(id: string, question: string, answer: (a: string) => void): void {

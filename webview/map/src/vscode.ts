@@ -93,14 +93,8 @@ export interface SpacePush {
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
   /** The step whose own log is open, one page of it. */
-  runLog?: {
-    step: string;
-    lines: string[];
-    page: number;
-    pages: number;
-    total: number;
-    pageSize: number;
-  };
+  /** The tail of one step's own log, and how long the whole log is. */
+  runLog?: { step: string; lines: string[]; total: number; shown: number };
   questions: {
     id: string;
     text: string;
@@ -191,7 +185,7 @@ export type WebToHost =
   | { action: "think" }
   | { action: "build"; changeIds?: string[] }
   | { action: "dismiss-promise"; unitId: string; text?: string }
-  | { action: "read-log"; stepId?: string; page?: number }
+  | { action: "read-log"; stepId?: string }
   | { action: "stop-run" }
   | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }
   | { action: "select-unit"; unitId: string }

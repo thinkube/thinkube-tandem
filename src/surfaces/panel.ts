@@ -339,7 +339,7 @@ async function handleInbound(
     const r = await session.retryModel();
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "read-log") {
-    session.readLog(msg.stepId ?? null, msg.page);
+    session.readLog(msg.stepId ?? null);
   } else if (msg.action === "stop-run") {
     session.stopRun();
   } else if (msg.action === "accept-impact" && msg.impactId) {
