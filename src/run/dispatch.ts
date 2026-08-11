@@ -35,6 +35,7 @@ import {
   runBounded,
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
+import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
 import { isStubScannableFile, scanStubMarkers } from "../engine/core/stubScan";
 import { buildVerificationTrace } from "../engine/core/trace";
@@ -193,13 +194,9 @@ export async function dispatchTep(
     defect,
   });
 
-  // Containment: a unit is fenced to its footprint; writes by other live
-  // units in the same tree are theirs, not strays.
+  // Containment: who owns what, per tree — see fence.ts.
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
-  const unionFor = (tree: string, selfId: string): (() => string[]) => () =>
-    [...liveFootprints.entries()]
-      .filter(([id, v]) => id !== selfId && v.tree === tree)
-      .flatMap(([, v]) => v.paths);
+  const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
 
   let testInflight = 0;
   const sliceCommitted = new Set<string>();

@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { encloseWork, isHeldOut } from "./worker";
 import { foldBlastRadius } from "./plan";
+import { ownership } from "./fence";
 import { buildUnitDag, type SliceForDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 
@@ -188,4 +189,73 @@ test("a covering test another unit depends on is not folded — the plan stays a
   // directions — and the engine refuses a circle by refusing the whole run.
   const dag = buildUnitDag(slices);
   assert.deepEqual(validateDag(dag) as unknown, { ok: true });
+});
+
+test("a finished unit's work is not a stray for a unit still running beside it", async () => {
+  // Every test author shares one worktree. The first to finish leaves its
+  // probes written; the ones still running must not be blamed for them,
+  // and above all must not have them reverted underneath.
+  const repo = tmpRepo();
+  fs.mkdirSync(path.join(repo, "probes"), { recursive: true });
+  const mine = "probes/space__SL-1_AC-1.test.mjs";
+  const theirs = "probes/space__SL-3_AC-1.test.mjs";
+  fs.writeFileSync(path.join(repo, mine), "// mine\n");
+  fs.writeFileSync(path.join(repo, theirs), "// written by a tester that has finished\n");
+
+  const lines: string[] = [];
+  const violated = await encloseWork({
+    worktree: repo,
+    footprint: [mine],
+    // What every OTHER unit owns in this tree, whether or not it is still
+    // running — ownership is not liveness.
+    alsoAllowed: () => [theirs],
+    baseline: new Set(),
+    log: (l) => lines.push(l),
+  });
+
+  assert.equal(violated, false, "another unit's file is not this unit's stray");
+  assert.deepEqual(lines, [], "and nothing is reported");
+  assert.ok(fs.existsSync(path.join(repo, theirs)), "above all, it is not reverted");
+});
+
+test("a path nobody owns is still a stray", async () => {
+  const repo = tmpRepo();
+  fs.mkdirSync(path.join(repo, "probes"), { recursive: true });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "probes/space__SL-1_AC-1.test.mjs"), "// mine\n");
+  fs.writeFileSync(path.join(repo, "src/wandered.ts"), "export const x = 1;\n");
+
+  const lines: string[] = [];
+  const violated = await encloseWork({
+    worktree: repo,
+    footprint: ["probes/space__SL-1_AC-1.test.mjs"],
+    alsoAllowed: () => ["probes/space__SL-3_AC-1.test.mjs"],
+    baseline: new Set(),
+    log: (l) => lines.push(l),
+  });
+
+  assert.equal(violated, true, "a file belonging to no unit at all is a stray");
+  assert.match(lines[0], /src\/wandered\.ts/);
+});
+
+test("ownership is not liveness: every unit's footprint is respected, finished or not", () => {
+  const unionFor = ownership(
+    [
+      { id: "SL-1#eu-1", footprint: ["probes/a.test.mjs"], role: "test" },
+      { id: "SL-3#eu-1", footprint: ["probes/b.test.mjs"], role: "test" },
+      { id: "SL-1#eu-0", footprint: ["src/one.ts"], role: "code" },
+    ],
+    (u) => (u.role === "test" ? "/tester" : "/coder"),
+  );
+  assert.deepEqual(
+    unionFor("/tester", "SL-1#eu-1")(),
+    ["probes/b.test.mjs"],
+    "the other tester's probes, whether or not it is still running",
+  );
+  assert.deepEqual(unionFor("/tester", "SL-3#eu-1")(), ["probes/a.test.mjs"]);
+  assert.deepEqual(
+    unionFor("/coder", "SL-1#eu-0")(),
+    [],
+    "and nothing from another tree — a coder never sees the testers' work",
+  );
 });
