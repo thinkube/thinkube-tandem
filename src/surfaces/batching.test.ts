@@ -39,6 +39,15 @@ test("N implications on one ask cost ONE re-derivation under all decisions — n
     name: async () => [],
     now: () => "2026-08-07T11:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     solveModel: async (_d: unknown, texts: string[]) => ({
       subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
@@ -101,6 +110,15 @@ test("apply-all: every staged implication lands in one press — one re-derivati
     name: async () => [],
     now: () => "2026-08-07T12:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     solveModel: async (_d: unknown, texts: string[]) => ({
       subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
@@ -142,7 +160,7 @@ test("apply-all: every staged implication lands in one press — one re-derivati
   assert.equal(new Set(ids).size, ids.length, "parallel re-derives never collide on node ids");
 });
 
-test("a batch reads the repository ONCE before it fans out — no worker re-reads", async () => {
+test("a batch learns the repository ONCE before it fans out — every subject is handed the same knowledge", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-"));
   const order: string[] = [];
   let contextRounds = 0;
@@ -158,19 +176,30 @@ test("a batch reads the repository ONCE before it fans out — no worker re-read
       subjects: texts.map((t, i) => ({ name: t, from: [i + 1], claims: [{ text: t, from: i + 1 }] })),
       rules: [],
     }),
-    contextRound: async () => {
+    knowledge: async () => {
       contextRounds++;
       order.push("read the repository");
       await new Promise((r) => setTimeout(r, 10));
-      return "LAYOUT: one shared reading of src/";
+      return {
+        repoRoot: "/repo",
+        graph: { graphPath: "/g.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+        map: "NODE a.ts [src=src/a.ts loc=L1]",
+        digest: "CONVENTIONS: one shared reading of src/",
+        decisions: [],
+        ask: async () => "",
+        affected: async () => "",
+      };
     },
-    ground: async (_d: unknown, ask: { id: string }, opts: { nextIndex: number; digestStore?: { load: (k: string) => string | undefined } }) => {
+    ground: async (
+      _d: unknown,
+      ask: { id: string },
+      opts: { nextIndex: number; knowledge?: { map: string; digest: string } },
+    ) => {
       order.push(`ground ${ask.id}`);
-      // Every worker finds the reading already established.
-      assert.ok(
-        opts.digestStore?.load("repo@no-git"),
-        "the shared reading is on disk before any ask grounds",
-      );
+      // Every subject is handed what was learned once, before the fan-out:
+      // the map from the code and the reading on top of it.
+      assert.ok(opts.knowledge?.map, "the map reaches the subject");
+      assert.ok(opts.knowledge?.digest, "and so does the reading on top of it");
       return {
         changes: [
           {
@@ -206,6 +235,15 @@ test("capture proposes a model and waits; accepting it grounds every subject onc
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
     now: () => "2026-08-08T12:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     contextRound: async () => "LAYOUT: one reading",
     // Two sentences about one thing, and one rule — the shape the round is for.
@@ -277,6 +315,15 @@ test("two subjects' claims never share an id, so a promise cannot land on anothe
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-i-")),
     now: () => "2026-08-09T10:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     contextRound: async () => "LAYOUT: one reading",
     // Two subjects, two claims each — the shape that minted duplicates.
@@ -314,6 +361,15 @@ test("a failed reading derives nothing, says why, and can be read again", async 
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
     now: () => "2026-08-08T20:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     contextRound: async () => "LAYOUT: one reading",
     solveModel: async (d: { log?: (l: string) => void }) => {
@@ -373,6 +429,15 @@ test("a second paste joins the reading that is waiting, and the reading survives
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
     now: () => "2026-08-09T10:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     classify: async () => "ask" as const,
     contextRound: async () => "LAYOUT: one reading",
     solveModel: async (_d: unknown, texts: string[]) => {

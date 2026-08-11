@@ -1,0 +1,96 @@
+/**
+ * What is known, carried through every step.
+ *
+ * The principle this product is built on is that knowledge is shared and
+ * spread across the whole process — and it was not enforced anywhere.
+ * Each round took its own argument list, so whether a step knew what the
+ * step before it had learned depended on somebody remembering to thread a
+ * parameter. Three of them did not: the reading that decides what your
+ * asks are ABOUT had never seen a line of your code, the completeness
+ * round searched the repository from cold with a reading of it sitting in
+ * the store, and the workers received none of it at all.
+ *
+ * So there is one thing that carries it, built once per derivation and
+ * taken by every step. A step that is not fed does not compile.
+ *
+ * The map is deterministic and comes from the code itself. The digest is
+ * a reading ON TOP of it — what a structural map cannot see: conventions,
+ * and the reasons written in comments. Neither replaces the other, and
+ * neither is optional: without the map the machine would be deriving from
+ * a guess about a repository it never read, and it refuses instead.
+ */
+import { affectedBy, askGraph, askPlan, CodeGraph, ensureCodeGraph, hubs } from "./graph";
+import { runContextualize } from "./contextualize";
+import { RoundDeps, runReadRound } from "./round";
+
+export interface Knowledge {
+  /** The repository this is knowledge OF. */
+  repoRoot: string;
+  /** The deterministic map, and the state of the code it describes. */
+  graph: CodeGraph;
+  /** Structure, from the code: hubs, layout, what hangs off what. */
+  map: string;
+  /** Conventions and rationale, read on top of the map. */
+  digest: string;
+  /** What the human has settled — every derivation runs under these. */
+  decisions: readonly string[];
+  /** A bounded question of the graph: cited nodes, in milliseconds. */
+  ask: (question: string, budget?: number) => Promise<string>;
+  /** What else moves when this moves. */
+  affected: (node: string) => Promise<string>;
+}
+
+/** The questions the structural reading is assembled from. */
+const LAYOUT_QUESTIONS = [
+  "what are the entry points and the top level modules",
+  "where is state held and how does it flow",
+  "how are tests laid out and what do they cover",
+];
+
+/**
+ * Assemble what is known about a repository, once.
+ *
+ * The map costs no tokens and a few seconds; the digest costs one cheap
+ * round and is cached under the same stamp, so a second derivation over
+ * unchanged code pays for neither.
+ */
+export async function knowledgeOf(args: {
+  deps: RoundDeps;
+  cacheRoot: string;
+  decisions: readonly string[];
+  /** Where the digest is kept, keyed by the graph's own stamp. */
+  store?: { load: (key: string) => string | undefined; save: (key: string, text: string) => void };
+  round?: typeof runReadRound;
+}): Promise<Knowledge> {
+  const log = args.deps.log ?? (() => {});
+  const graph = await ensureCodeGraph({
+    repoRoot: args.deps.repoRoot,
+    cacheRoot: args.cacheRoot,
+    log,
+  });
+
+  const map = [
+    await hubs(graph.graphPath).catch(() => ""),
+    await askPlan({ graphPath: graph.graphPath, questions: LAYOUT_QUESTIONS }),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const key = `digest@${graph.stamp.head}${graph.stamp.dirty ? `+${graph.stamp.dirty}` : ""}`;
+  let digest = args.store?.load(key) ?? "";
+  if (!digest) {
+    log("▸ reading what the map cannot show — conventions, and the why");
+    digest = (await runContextualize(args.deps, args.round, map)) ?? "";
+    if (digest) args.store?.save(key, digest);
+  }
+
+  return {
+    repoRoot: args.deps.repoRoot,
+    graph,
+    map,
+    digest,
+    decisions: args.decisions,
+    ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),
+    affected: (node) => affectedBy({ graphPath: graph.graphPath, node }),
+  };
+}

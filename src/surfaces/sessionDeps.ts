@@ -5,6 +5,7 @@
 import { SourceStamp } from "../core/stamp";
 import { runDerivationPipeline } from "../derive/pipeline";
 import { RoundDeps, runReadRound } from "../derive/round";
+import type { Knowledge } from "../derive/knowledge";
 import { Forge } from "../dispatch/forge";
 import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
@@ -35,6 +36,9 @@ export interface SessionDeps {
   docsGateMode?: "blocking" | "advisory";
   /** The round that reads the repository for the shared digest. */
   contextRound?: typeof runReadRound;
+  /** What is known, injected. The only caller that passes this is a test:
+   *  a real session builds it from the code, and refuses without it. */
+  knowledge?: () => Promise<Knowledge>;
   /** The round that reads a pasted list as one description. */
   solveModel?: typeof solveModel;
   proposeCheck?: typeof proposeCheckRound;

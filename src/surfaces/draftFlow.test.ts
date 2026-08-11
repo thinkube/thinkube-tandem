@@ -12,6 +12,15 @@ function session(rounds: { n: number }): TandemSession {
     storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-k-")),
     now: () => "2026-08-10T12:00:00Z",
     readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: tests sit beside the code (src/)",
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
     solveModel: async (_d: unknown, texts: string[]) => {
       rounds.n++;
       return {

@@ -6,10 +6,10 @@
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
-import { runReadRound } from "../derive/round";
 import { staleByTouchpoints, staleChangeIds } from "../core/stale";
 import { filesChangedSince } from "../core/staleFiles";
-import { DigestStore, ensureRepoDigest } from "../derive/pipeline";
+import { DigestStore } from "../derive/pipeline";
+import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { verifiedDoors } from "../gates/doors";
 import { DispatchOutcome } from "../run/dispatch";
@@ -223,21 +223,32 @@ export class TandemSession {
     return (this.space.proposal?.texts ?? []).slice(this.space.asks.length);
   }
 
-  /** One reading of the repository BEFORE a batch fans out: every ask then
-   *  grounds warm, and no worker spends its turn re-reading the same code.
-   *  An injected pipeline owns its own reading — nothing runs here. */
-  async warmRepoDigest(): Promise<void> {
-    const round = this.deps.contextRound ?? (this.deps.ground ? undefined : runReadRound);
-    if (!round) return;
-    this.activity = {
-      label: "reading your code once — every subject reuses it",
-      current: 1,
-      total: 1,
-    };
+  /**
+   * What is known about this repository, built once and carried into
+   * every step of a derivation: the map extracted from the code itself,
+   * the reading of what a map cannot show, and the decisions in force.
+   *
+   * There is no version of this that runs without the map. Deriving from
+   * a guess about a repository nobody read is how a machine produces
+   * confident work about code that does not exist — and from the outside
+   * that looks exactly like work about code that does.
+   */
+  async knowledge(): Promise<Knowledge> {
+    if (this.deps.knowledge) return this.deps.knowledge();
+    this.activity = { label: "mapping your code, once", current: 1, total: 1 };
     this.deps.onChanged?.();
-    await ensureRepoDigest(this.deps.round, this.digests(), round).catch(() => {});
-    this.activity = undefined;
-    this.deps.onChanged?.();
+    try {
+      return await knowledgeOf({
+        deps: this.deps.round,
+        cacheRoot: this.deps.storeDir,
+        decisions: this.decisionsInForce(),
+        store: this.digests(),
+        ...(this.deps.contextRound ? { round: this.deps.contextRound } : {}),
+      });
+    } finally {
+      this.activity = undefined;
+      this.deps.onChanged?.();
+    }
   }
 
   readLog(step: string | null, page?: number): void {

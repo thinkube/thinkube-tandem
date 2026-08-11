@@ -34,6 +34,10 @@ export interface DerivedNode {
 export function buildGroundingPrompt(args: {
   ask: Ask;
   repoRoot: string;
+  /** The structural map, extracted from the code: what is here and what
+   *  hangs off what, with the file and line of every node. Fact — a round
+   *  given this must not go looking for structure. */
+  map?: string;
   /** Established repo reading, when current — spares re-discovery. */
   digest?: string;
   /** Decisions in force — accepted answers the round derives under. */
@@ -47,8 +51,14 @@ export function buildGroundingPrompt(args: {
     `You are grounding ONE ask into the intended changes it implies.\n\n` +
     `THE ASK (the human's words — never rewrite them, only derive from them):\n` +
     `${args.ask.text}\n\n` +
+    (args.map
+      ? `YOUR CODE, AS IT IS (extracted from the code itself — every node ` +
+        `carries its file and line). This is fact: do not re-derive it and ` +
+        `do not search for structure you already have. Ground the promises ` +
+        `on these paths, and read only the spans you must:\n${args.map}\n\n`
+      : "") +
     (args.digest
-      ? `WHAT THE CODE LOOKS LIKE (established reading — build on it, read only what it lacks):\n${args.digest}\n\n`
+      ? `WHAT THE MAP CANNOT SHOW (conventions and the why — build under them):\n${args.digest}\n\n`
       : "") +
     `THE REPOSITORY is at ${args.repoRoot} — read what the grounding needs (Grep first, Read the spans that matter).\n\n` +
     (args.scopes?.length
@@ -180,6 +190,7 @@ export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
   opts: {
+    map?: string;
     digest?: string;
     nextIndex: number;
     decisions?: string[];
@@ -197,6 +208,7 @@ export async function runGrounding(
       ask,
       repoRoot: deps.repoRoot,
       digest: opts.digest,
+      ...(opts.map ? { map: opts.map } : {}),
       decisions: opts.decisions,
       scopes: opts.scopes,
     }),

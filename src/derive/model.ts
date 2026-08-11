@@ -39,9 +39,21 @@ export interface ProposedModel {
 }
 
 /** Build the model prompt. Pure; exported for tests. */
-export function buildModelPrompt(sentences: string[]): string {
+export function buildModelPrompt(sentences: string[], map = ""): string {
   const listed = sentences.map((s, i) => `${i + 1}. ${s}`).join("\n");
   return (
+    // The subject is the thing the writer is TALKING ABOUT, and most of
+    // the time that thing exists in their repository already. Reading
+    // their sentences with no idea what is in the code invents names for
+    // things that are already there, under another name.
+    (map
+      ? `The writer is describing THIS repository. Its structure, extracted ` +
+        `from the code, with the file of every node:\n\n${map}\n\n` +
+        `Where a sentence is about something that exists here, name the ` +
+        `subject as the writer names it — never as the code names it — but ` +
+        `use this to tell whether two sentences are about the SAME thing.` +
+        `\n\n`
+      : "") +
     `You are reading a list one person wrote about ONE product. The list is ` +
     `not a queue of separate jobs — sentences in it usually describe the same ` +
     `things from different angles. Solve for what they are about.\n\n` +
@@ -176,8 +188,9 @@ export async function solveModel(
   deps: RoundDeps,
   sentences: string[],
   round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
+  map = "",
 ): Promise<ProposedModel | undefined> {
   if (!sentences.length) return undefined;
-  const raw = await round(volumeDeps(deps), buildModelPrompt(sentences)).catch(() => null);
+  const raw = await round(volumeDeps(deps), buildModelPrompt(sentences, map)).catch(() => null);
   return parseModel(raw, sentences.length);
 }

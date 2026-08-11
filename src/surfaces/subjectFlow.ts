@@ -7,6 +7,7 @@
  */
 import { Change, Space } from "../core/schema";
 import { completeCut, runDerivationPipeline } from "../derive/pipeline";
+import type { Knowledge } from "../derive/knowledge";
 import type { TandemSession } from "./session";
 
 /** The claims of one subject, in the order the prompt will number them. */
@@ -20,6 +21,7 @@ function claimsOf(space: Space, subjectId: string): { id: string; text: string; 
 async function groundSubject(
   s: TandemSession,
   subjectId: string,
+  k: Knowledge,
 ): Promise<{ promises: number; questions: number }> {
   const subject = (s.space.subjects ?? []).find((x) => x.id === subjectId);
   if (!subject) return { promises: 0, questions: 0 };
@@ -36,6 +38,7 @@ async function groundSubject(
     { id: subjectId, text: askText, at: s.deps.now() },
     {
       nextIndex: 1,
+      knowledge: k,
       decisions: s.decisionsInForce(),
       claims,
       digestStore: s.digests(),
@@ -84,7 +87,11 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
       (subjectIds.length > pool ? `; the other ${subjectIds.length - pool} wait their turn` : "") +
       ".",
   );
-  await s.warmRepoDigest();
+  // What is known, built once and carried into every step below: the
+  // map from the code itself, the reading on top of it, and the decisions
+  // in force. No graph, no derivation — this refuses rather than deriving
+  // from a guess about a repository it never read.
+  const k = await s.knowledge();
 
   let next = 0;
   let done = 0;
@@ -96,7 +103,7 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
       // leaves this one marked as still thinking for ever.
       const i = next++;
       if (i >= subjectIds.length) return;
-      const t = await groundSubject(s, subjectIds[i]);
+      const t = await groundSubject(s, subjectIds[i], k);
       tally.promises += t.promises;
       tally.questions += t.questions;
       s.clear(subjectIds[i]);
@@ -117,7 +124,25 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
   const claims = (s.space.claims ?? []).filter((c) =>
     subjectIds.includes(c.subjectId),
   );
+  // The reading of the repository that grounding already paid for. This
+  // round is the one that SEARCHES — it greps for every touched symbol
+  // and reads what the hits demand — and it was doing it cold, from
+  // nothing, while a whole reading of the same code sat in the store.
+  // What moves when these files move, asked of the graph before the round
+  // rather than grepped for by it. Every promise's touchpoints, deduped.
+  const touched = [
+    ...new Set(
+      s.space.nodes
+        .filter((n) => n.servesClaim && claims.some((c) => c.id === n.servesClaim))
+        .flatMap((n) => (n.grounding?.touchpoints ?? []).map((t) => t.path)),
+    ),
+  ];
+  const affected = (await Promise.all(touched.slice(0, 40).map((p) => k.affected(p))))
+    .filter(Boolean)
+    .join("\n");
   const gaps = await (s.deps.completeCut ?? completeCut)(s.deps.round, {
+    digest: k.digest,
+    ...(affected ? { affected } : {}),
     claims,
     subjects: (s.space.subjects ?? []).filter((x) => subjectIds.includes(x.id)),
     changes: s.space.nodes.filter((n) => n.servesClaim && claims.some((c) => c.id === n.servesClaim)),

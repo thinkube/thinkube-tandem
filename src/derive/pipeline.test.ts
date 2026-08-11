@@ -50,7 +50,7 @@ function scriptedRounds(
   };
 }
 
-test("the pipeline runs its four rounds in order: repo digest → ground → completeness → tail", async () => {
+test("the pipeline runs its four rounds in order: the reading → ground → completeness → tail", async () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-pipe-"));
   const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
   const store = memStore();
@@ -58,7 +58,7 @@ test("the pipeline runs its four rounds in order: repo digest → ground → com
   const seenDeps: RoundDeps[] = [];
   const round = scriptedRounds(
     [
-      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: the toolbar renders in src/toolbar.ts" },
+      { match: /STRUCTURAL MAP/, reply: "CONVENTIONS: tests sit beside the code" },
       { match: /grounding ONE ask/, reply: `{"nodes":[${NODE("the capture box", "src/toolbar.ts")}],"questions":[]}` },
       {
         match: /COMPLETENESS round/,
@@ -84,11 +84,21 @@ test("the pipeline runs its four rounds in order: repo digest → ground → com
   });
 
   assert.equal(calls.length, 4, "four rounds — never seven");
-  assert.ok(calls[0].includes("REUSED by many later derivations"), "the digest reads the repo, not one ask");
+  assert.ok(
+    calls[0].includes("STRUCTURAL MAP") && calls[0].includes("Do not re-derive it"),
+    "the reading builds on the map instead of searching for structure",
+  );
   assert.ok(!calls[0].includes(ask.text), "no ask leaks into the shared digest");
-  assert.ok(calls[1].includes("the toolbar renders in src/toolbar.ts"), "grounding builds on the digest");
-  assert.ok(calls[2].includes("the toolbar renders in src/toolbar.ts"), "completeness starts warm on the digest");
-  assert.equal(store.saved[REPO_KEY], "LAYOUT: the toolbar renders in src/toolbar.ts", "digest cached under the repo stamp");
+  assert.ok(
+    calls[1].includes("CONVENTIONS: tests sit beside the code"),
+    "grounding builds on the reading",
+  );
+  assert.ok(calls[2].includes("CONVENTIONS: tests sit beside the code"), "completeness starts warm on the reading");
+  assert.equal(
+    store.saved[REPO_KEY],
+    "CONVENTIONS: tests sit beside the code",
+    "the reading is cached under the repo stamp",
+  );
 
   assert.equal(seenDeps[3].tools, "none", "the tail runs without tools");
   assert.equal(
@@ -131,19 +141,19 @@ test("a cached repository digest is shared: the second ask never re-reads the re
   );
   const other: Ask = { id: "ask-2", text: "a persisted retrievable log", at: "t" };
   const r = await runDerivationPipeline(deps, other, { nextIndex: 1, digestStore: store, round });
-  assert.ok(!calls.some((c) => c.includes("producing a REPOSITORY DIGEST")), "no contextualize round");
+  assert.ok(!calls.some((c) => c.includes("STRUCTURAL MAP")), "no reading round");
   assert.ok(calls[0].includes("established reading"), "the shared digest rides grounding");
   assert.equal(r.changes.length, 1);
   assert.equal(r.questions.length, 0);
 });
 
-test("parallel pipelines that miss the cache share ONE contextualize round (single-flight)", async () => {
+test("parallel pipelines that miss the cache share ONE reading round (single-flight)", async () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-pipe-"));
   const deps: RoundDeps = { model: "opus", repoRoot };
   const store = memStore();
   let digestRounds = 0;
   const round = async (_d: RoundDeps, prompt: string): Promise<string | null> => {
-    if (/producing a REPOSITORY DIGEST/.test(prompt)) {
+    if (/STRUCTURAL MAP/.test(prompt)) {
       digestRounds++;
       await new Promise((r) => setTimeout(r, 20));
       return "LAYOUT: one shared reading";
@@ -167,7 +177,7 @@ test("fail-soft: dead rounds after grounding skip their enrichment, never the pi
   const calls: string[] = [];
   const round = scriptedRounds(
     [
-      { match: /producing a REPOSITORY DIGEST/, reply: null },
+      { match: /STRUCTURAL MAP/, reply: null },
       { match: /grounding ONE ask/, reply: `{"nodes":[${NODE("the capture box", "src/toolbar.ts")}],"questions":[]}` },
       { match: /COMPLETENESS round/, reply: null },
       { match: /THREE checks/, reply: null },
@@ -179,15 +189,18 @@ test("fail-soft: dead rounds after grounding skip their enrichment, never the pi
   assert.equal(r.questions.length, 0);
 });
 
-test("contextualize bounds the digest, refuses emptiness, and asks for the whole repository", async () => {
+test("the reading on top of the map is bounded, refuses emptiness, and never re-derives structure", async () => {
   const long = "x".repeat(DIGEST_CHAR_BUDGET + 500);
   const digest = await runContextualize({ model: "opus", repoRoot: "/repo" }, async () => long);
   assert.equal(digest!.length, DIGEST_CHAR_BUDGET, "over-budget digests are clipped");
   const empty = await runContextualize({ model: "opus", repoRoot: "/repo" }, async () => "   ");
   assert.equal(empty, null, "an empty reading is no reading");
-  const prompt = buildContextualizePrompt("/repo");
-  assert.ok(prompt.includes("whole repository"), "the digest reads the repository, not an ask");
-  assert.ok(prompt.includes("citing its source path"), "citations are demanded");
+  const prompt = buildContextualizePrompt("/repo", "NODE dispatchTep() [src=src/run/dispatch.ts loc=L166]");
+  assert.ok(prompt.includes("dispatchTep()"), "the map it must build on rides the prompt");
+  assert.ok(prompt.includes("Do not re-derive it"), "structure is fact, not something to search for");
+  assert.ok(prompt.includes("CONVENTIONS"), "it is asked for what the map cannot hold");
+  assert.ok(prompt.includes("WHY"), "including the reasons only comments carry");
+  assert.ok(prompt.includes("repo-relative path"), "citations are demanded");
 });
 
 test("every round attributes: the gaps and ripples name a claim, and one that does not is named", async () => {
@@ -197,7 +210,7 @@ test("every round attributes: the gaps and ripples name a claim, and one that do
   const said: string[] = [];
   const round = scriptedRounds(
     [
-      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      { match: /STRUCTURAL MAP/, reply: "CONVENTIONS: tests sit beside the code" },
       {
         match: /grounding ONE ask/,
         reply: `{"nodes":[{"sentence":"the page prints it","claim":1,"touchpoints":[{"path":"src/a.ts"}],"needs":[],"acceptance":[{"text":"printed"}]}],"questions":[]}`,
@@ -270,7 +283,7 @@ test("a question in the machine's own words never reaches the human — it becom
   });
   const round = scriptedRounds(
     [
-      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      { match: /STRUCTURAL MAP/, reply: "CONVENTIONS: tests sit beside the code" },
       {
         match: /grounding ONE ask/,
         reply: `{"nodes":[{"sentence":"the brief carries it once","claim":1,"touchpoints":[{"path":"src/a.ts"}],"needs":[],"acceptance":[{"text":"once"}]}],"questions":[]}`,
@@ -369,7 +382,7 @@ test("a round that derived nothing still cannot speak to the human in my words",
   const calls: string[] = [];
   const round = scriptedRounds(
     [
-      { match: /producing a REPOSITORY DIGEST/, reply: "LAYOUT: one reading" },
+      { match: /STRUCTURAL MAP/, reply: "CONVENTIONS: tests sit beside the code" },
       {
         match: /grounding ONE ask/,
         reply: `{"nodes":[],"questions":[

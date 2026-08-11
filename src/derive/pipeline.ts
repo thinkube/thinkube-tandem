@@ -25,6 +25,7 @@ import { readStamp } from "../core/stamp";
 import { RoundDeps, runReadRound, volumeDeps } from "./round";
 import { attributePromises } from "./attribute";
 import { judgeRaised } from "../gates/assumptions";
+import type { Knowledge } from "./knowledge";
 import { runContextualize } from "./contextualize";
 import {
   GroundingResult,
@@ -59,22 +60,6 @@ const digestDeps = (deps: RoundDeps): RoundDeps => ({
   model: deps.volumeModel ?? deps.model,
   maxTurns: 15,
 });
-
-/**
- * Establish the shared repository digest when the cache misses. Callers
- * that fan out call this BEFORE the fan-out: every branch then grounds
- * warm, and no branch spends its turn re-reading the same code.
- */
-export async function ensureRepoDigest(
-  deps: RoundDeps,
-  store: DigestStore,
-  round: Round = runReadRound,
-): Promise<void> {
-  const key = await digestKeyFor(deps.repoRoot);
-  if (store.load(key)) return;
-  const fresh = await sharedRepoDigest(key, digestDeps(deps), round);
-  if (fresh) store.save(key, fresh);
-}
 
 async function sharedRepoDigest(
   key: string,
@@ -112,6 +97,10 @@ export interface PipelineOpts {
   skipCompleteness?: boolean;
   digest?: string;
   digestStore?: DigestStore;
+  /** What is known: the map from the code, the reading on top of it, and
+   *  the questions the graph can answer. Built once for the whole
+   *  derivation and carried into every step. */
+  knowledge?: Knowledge;
   /** Injectable round runner for tests; production uses the SDK round. */
   round?: Round;
 }
@@ -136,6 +125,9 @@ function buildCompletenessPrompt(args: {
   repoRoot: string;
   digest?: string;
   claims?: { text: string; why?: string }[];
+  /** What the graph says moves when these files move — computed, cited,
+   *  and handed over. This round used to go looking for it. */
+  affected?: string;
 }): string {
   return (
     `You are the COMPLETENESS round: given ONE ask and the changes derived ` +
@@ -144,7 +136,13 @@ function buildCompletenessPrompt(args: {
     `2. AFFECTED CODE: other places in the repository at ${args.repoRoot} ` +
     `that must move too — callers of touched symbols, configuration that ` +
     `names touched files, documentation that states the old behavior.\n` +
-    `Grep for the touched symbols and paths; read what the hits demand.\n\n` +
+    (args.affected
+      ? `\nWHAT MOVES WITH THIS, from the code graph — every caller, ` +
+        `importer and referencer of what these changes touch, with its file ` +
+        `and line. This is extracted, not guessed: do not go looking for it ` +
+        `again, JUDGE it. Which of these really must move, and what does ` +
+        `each one need?\n\n${args.affected}\n\n`
+      : `Grep for the touched symbols and paths; read what the hits demand.\n\n`) +
     (args.digest
       ? `REPOSITORY DIGEST (an established reading — build on it, verify ` +
         `only what you must):\n${args.digest}\n\n`
@@ -332,6 +330,9 @@ export async function completeCut(
     subjects: { id: string; name: string }[];
     changes: Change[];
     digest?: string;
+    /** What the graph says moves with these files — computed before the
+     *  round, so it judges rather than searches. */
+    affected?: string;
     mintNodeId: (n: number) => string;
     nextIndex: number;
   },
@@ -360,6 +361,7 @@ export async function completeCut(
       changes: args.changes,
       repoRoot: deps.repoRoot,
       digest: args.digest,
+      ...(args.affected ? { affected: args.affected } : {}),
       claims: args.claims.map((c) => ({
         text: `${nameOf.get(c.subjectId) ?? "?"} — ${c.text}`,
         ...(c.why ? { why: c.why } : {}),
@@ -413,19 +415,24 @@ export async function runDerivationPipeline(
     opts.onStage?.(label, stageNo, TOTAL_STAGES);
   };
 
-  // 1. Repository digest — ONE shared reading per repo state, cached under
-  //    the git stamp and reused across asks, batches and sessions.
+  // 1. What is known — built once for the derivation and handed in. The
+  //    map comes from the code itself and costs no tokens; the reading on
+  //    top of it is cached under the same stamp. Only a caller with no
+  //    knowledge (an old test, a bare pipeline) pays for a reading here.
   const stamp = [await readStamp(deps.repoRoot)];
-  const digestKey = await digestKeyFor(deps.repoRoot);
-  let digest = opts.digest ?? opts.digestStore?.load(digestKey);
+  let digest = opts.knowledge?.digest ?? opts.digest;
+  const map = opts.knowledge?.map ?? "";
   stage(digest ? "using what I read of your code" : "reading your code");
   if (!digest) {
-    const fresh = await sharedRepoDigest(digestKey, digestDeps(deps), round);
-    if (fresh) {
-      digest = fresh;
-      opts.digestStore?.save(digestKey, fresh);
-      log(`contextualize: repository digest established (${digestKey})`);
-    } else log(`contextualize: no digest — grounding reads cold`);
+    const digestKey = await digestKeyFor(deps.repoRoot);
+    digest = opts.digestStore?.load(digestKey);
+    if (!digest) {
+      const fresh = await sharedRepoDigest(digestKey, digestDeps(deps), round);
+      if (fresh) {
+        digest = fresh;
+        opts.digestStore?.save(digestKey, fresh);
+      }
+    }
   }
 
   // 2. Ground.
@@ -435,6 +442,7 @@ export async function runDerivationPipeline(
     ask,
     {
       digest,
+      ...(map ? { map } : {}),
       nextIndex: opts.nextIndex,
       decisions: opts.decisions,
       mintId: opts.mintNodeId,
