@@ -6,6 +6,7 @@
  * nothing here repeats what is shown elsewhere — your asks live under the
  * box you write them in, and what was read from them on the reading page.
  */
+import { useEffect, useRef } from "react";
 import { post, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
 
@@ -28,6 +29,16 @@ function StepLog(props: {
   unit?: NonNullable<SpacePush["run"]>["units"][number];
 }): JSX.Element {
   const { log, unit } = props;
+  // A live log that does not move looks like a worker that has stopped.
+  // The newest page is recomputed on every push, so the new lines were
+  // arriving — at the bottom of a box that never scrolled, below the
+  // fold, where nobody saw them. It follows while you are on the last
+  // page, and stops the moment you page back to read something.
+  const box = useRef<HTMLPreElement>(null);
+  const live = log.page >= log.pages;
+  useEffect(() => {
+    if (live && box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [log.lines.length, log.total, live]);
   return (
     <section data-step-log style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -71,6 +82,7 @@ function StepLog(props: {
         </>
       ) : null}
       <pre
+        ref={box}
         style={{
           whiteSpace: "pre-wrap",
           fontSize: FS.caption,
@@ -79,13 +91,13 @@ function StepLog(props: {
           borderRadius: 4,
           padding: `${SP.sm}px ${SP.md}px`,
           margin: "4px 0",
-          maxHeight: "22rem",
+          maxHeight: "26rem",
           overflowY: "auto",
         }}
       >
         {log.lines.join("\n") || "(nothing yet)"}
       </pre>
-      {log.pages > 1 ? (
+      {log.pages > 1 || !live ? (
         <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: FS.caption }}>
           <button
             data-log-prev
@@ -97,6 +109,17 @@ function StepLog(props: {
           <span>
             page {log.page} of {log.pages}
           </span>
+          {live ? (
+            <span data-log-live style={{ color: C.ok }}>following</span>
+          ) : (
+            <button
+              data-log-newest
+              title="Back to the newest lines, and follow them as they arrive."
+              onClick={() => post({ action: "read-log", stepId: log.step })}
+            >
+              newest
+            </button>
+          )}
           <button
             data-log-next
             disabled={log.page >= log.pages}

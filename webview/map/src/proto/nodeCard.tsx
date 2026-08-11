@@ -89,7 +89,11 @@ export function NodeCard(props: {
           : `1px solid ${props.selected ? C.focus : C.border}`,
         borderRadius: 6,
         padding: `${SP.sm}px ${SP.md}px`,
-        boxShadow: card.inCut ? "0 0 0 1px #cca70055, 0 2px 6px #0006" : "0 2px 6px #0006",
+        boxShadow: props.selected
+          ? "0 0 0 3px #3794ff44, 0 2px 6px #0006"
+          : card.inCut
+            ? "0 0 0 1px #cca70055, 0 2px 6px #0006"
+            : "0 2px 6px #0006",
         boxSizing: "border-box",
         transition: "left .35s, top .35s",
         cursor: props.onClick ? "pointer" : undefined,
