@@ -27,6 +27,12 @@ export interface RunUnitView {
   state: UnitState;
   /** Unit ids this unit waits on — the run graph's edges. */
   requires: string[];
+  /** WHY it waits, per edge. Two very different things end up in
+   *  `requires`: a cross-slice dependency on work another slice alone
+   *  produces, and the same-slice rule that a coder starts only once its
+   *  probes exist. Drawn as one arrow they read the same, and only one of
+   *  them is a coupling worth questioning. */
+  waits?: { on: string; kind: "needs" | "probes"; what?: string }[];
   /** Epoch ms when the unit started running — the surface renders elapsed. */
   startedAt?: number;
   question?: string;
@@ -71,8 +77,17 @@ export class RunState {
     /** What this unit is here to build, in the words the reading used —
      *  a card that names only itself tells a reader nothing. */
     what?: string,
+    waits: { on: string; kind: "needs" | "probes"; what?: string }[] = [],
   ): void {
-    this.units.set(id, { id, slice, role, state: "ready", requires, ...(what ? { what } : {}) });
+    this.units.set(id, {
+      id,
+      slice,
+      role,
+      state: "ready",
+      requires,
+      ...(what ? { what } : {}),
+      ...(waits.length ? { waits } : {}),
+    });
     this.onChange();
   }
 

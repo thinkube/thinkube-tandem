@@ -162,9 +162,21 @@ export function RunSection(props: {
     ],
     [run.units, now, slices],
   );
+  // Why each arrow is there, looked up when it is drawn. An arrow that
+  // says only THAT a unit waits leaves the reader unable to tell a
+  // coupling between slices — worth questioning — from the method
+  // working: a coder waiting for its own probes.
+  const why = useMemo(() => {
+    const m = new Map<string, { kind: "needs" | "probes"; what?: string }>();
+    for (const u of run.units)
+      for (const w of u.waits ?? []) m.set(`${w.on}>${u.id}`, { kind: w.kind, ...(w.what ? { what: w.what } : {}) });
+    return m;
+  }, [run.units]);
   const edges = useMemo(
     () => [
-      ...run.units.flatMap((u) => u.requires.map((r) => ({ from: r, to: u.id }))),
+      ...run.units.flatMap((u) =>
+        u.requires.map((r) => ({ from: r, to: u.id, label: `${r}>${u.id}` })),
+      ),
       // Every code unit reports to its slice's auditor; auditors to the gate.
       ...run.units
         .filter((u) => u.role === "code")
@@ -211,6 +223,10 @@ export function RunSection(props: {
   return (
     <section data-run-view style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: SP.md, padding: `${SP.xs}px ${SP.lg}px` }}>
+        <span data-edge-key style={{ fontSize: FS.caption, color: C.quiet }}>
+          <span style={{ color: C.live }}>──</span> needs what it produces ·{" "}
+          <span style={{ color: C.quiet }}>╌╌</span> waits for its own probes
+        </span>
         <span data-run-progress-text style={{ fontSize: FS.body, opacity: O.dim }}>
           {done} of {run.units.length} workers done
           {blocked ? ` · ${blocked} never ran` : ""}
@@ -262,16 +278,30 @@ export function RunSection(props: {
                 <path d="M0,0L6,3L0,6" fill="none" stroke={C.quiet} />
               </marker>
             </defs>
-            {drawn.edges.map((e, i) => (
-              <path
-                key={i}
-                d={edgePath(e.points, 0, 0)}
-                stroke={C.quiet}
-                strokeWidth={1.5}
-                fill="none"
-                markerEnd="url(#arrflow)"
-              />
-            ))}
+            {drawn.edges.map((e, i) => {
+              const w = e.label ? why.get(e.label) : undefined;
+              const needs = w?.kind === "needs";
+              return (
+                <path
+                  key={i}
+                  data-edge={w?.kind ?? "flow"}
+                  d={edgePath(e.points, 0, 0)}
+                  stroke={needs ? C.live : C.quiet}
+                  strokeWidth={needs ? 2 : 1.5}
+                  strokeDasharray={w?.kind === "probes" ? "4 3" : undefined}
+                  fill="none"
+                  markerEnd="url(#arrflow)"
+                >
+                  <title>
+                    {needs
+                      ? `waits for what it needs${w?.what ? `: ${w.what}` : ""}`
+                      : w?.kind === "probes"
+                        ? "waits for its own probes — the checks are written before the code"
+                        : "waits"}
+                  </title>
+                </path>
+              );
+            })}
           </svg>
           {cards.map((card) => {
             const u = run.units.find((x) => x.id === card.id);

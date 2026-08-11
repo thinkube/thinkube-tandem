@@ -35,7 +35,7 @@ import {
   runBounded,
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
-import { ownership } from "./fence";
+import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
 import { isStubScannableFile, scanStubMarkers } from "../engine/core/stubScan";
 import { buildVerificationTrace } from "../engine/core/trace";
@@ -141,14 +141,12 @@ export async function dispatchTep(
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return refuse("plan-validation", `the engine refused the plan: ${JSON.stringify(verdict)}`);
-  for (const u of dag)
-    st.seed(
-      u.id,
-      u.slice,
-      (u.role ?? "code") as "code" | "test",
-      u.requires.filter((r) => dag.some((x) => x.id === r)),
-      u.note,
-    );
+  const whyWait = waitReasons(dag, slices);
+  for (const u of dag) {
+    const requires = u.requires.filter((r) => dag.some((x) => x.id === r));
+    const why = requires.map((r) => whyWait(u, r));
+    st.seed(u.id, u.slice, (u.role ?? "code") as "code" | "test", requires, u.note, why);
+  }
 
   log(`${tep}: worktree on ${branch}`);
   for (const stale of [worktree, testerWt])
@@ -195,7 +193,6 @@ export async function dispatchTep(
     defect,
   });
 
-  // Containment: who owns what, per tree — see fence.ts.
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
 

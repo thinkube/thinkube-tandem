@@ -59,6 +59,9 @@ interface RunView {
     what?: string;
     state: string;
     requires: string[];
+    /** Why it waits, per edge: a cross-slice dependency, or the probes
+     *  that must exist before a coder starts. */
+    waits?: { on: string; kind: "needs" | "probes"; what?: string }[];
     startedAt?: number;
     question?: string;
     /** Why it failed, in the words the worker or the gate reported. */

@@ -25,3 +25,37 @@ export function ownership<U extends { id: string; footprint: string[] }>(
       .filter(([id]) => id !== selfId)
       .flatMap(([, paths]) => paths);
 }
+
+/**
+ * WHY a unit waits, per edge.
+ *
+ * The engine puts two different things in `requires`: a cross-slice
+ * dependency on what another slice alone produces, and the same-slice
+ * rule that a coder starts only once its probes exist. Drawn as one
+ * arrow they read alike — and only the first is a coupling worth
+ * questioning; the second is the method working.
+ */
+export function waitReasons(
+  units: readonly { id: string; slice: string; role?: string; footprint: string[] }[],
+  slices: readonly { handle: string; workUnits: { consumes?: string[] }[] }[],
+): (unit: { id: string; slice: string }, on: string) => {
+  on: string;
+  kind: "needs" | "probes";
+  what?: string;
+} {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const consumedBy = new Map(
+    slices.map((sl) => [
+      sl.handle,
+      new Set(sl.workUnits.flatMap((w) => w.consumes ?? [])),
+    ]),
+  );
+  return (unit, on) => {
+    const producer = byId.get(on);
+    if (producer && producer.slice === unit.slice && (producer.role ?? "code") === "test")
+      return { on, kind: "probes" };
+    const wanted = consumedBy.get(unit.slice) ?? new Set<string>();
+    const file = (producer?.footprint ?? []).find((f) => wanted.has(f));
+    return { on, kind: "needs", ...(file ? { what: file } : {}) };
+  };
+}

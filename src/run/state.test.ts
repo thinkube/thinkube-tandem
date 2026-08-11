@@ -74,3 +74,31 @@ test("blocking never overwrites a unit that already finished", () => {
   s.block("u1", "never ran");
   assert.equal(s.view().units[0].state, "done", "a finished unit is not un-finished by a halt");
 });
+
+test("an edge says WHY a unit waits — a coupling reads differently from the method working", () => {
+  const s = new RunState(() => {});
+  s.seed("SL-1#eu-0", "SL-1", "code", [], "what it builds");
+  s.seed("SL-2#eu-1", "SL-2", "test", []);
+  s.seed(
+    "SL-2#eu-0",
+    "SL-2",
+    "code",
+    ["SL-1#eu-0", "SL-2#eu-1"],
+    "what it builds",
+    [
+      { on: "SL-1#eu-0", kind: "needs", what: "src/core/spaces.ts" },
+      { on: "SL-2#eu-1", kind: "probes" },
+    ],
+  );
+
+  const u = s.view().units.find((x) => x.id === "SL-2#eu-0")!;
+  assert.deepEqual(u.requires, ["SL-1#eu-0", "SL-2#eu-1"], "both are still edges of the graph");
+  assert.deepEqual(
+    u.waits,
+    [
+      { on: "SL-1#eu-0", kind: "needs", what: "src/core/spaces.ts" },
+      { on: "SL-2#eu-1", kind: "probes" },
+    ],
+    "and each one carries why, and the file that caused it",
+  );
+});
