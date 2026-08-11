@@ -38,6 +38,10 @@ export function buildGroundingPrompt(args: {
    *  hangs off what, with the file and line of every node. Fact — a round
    *  given this must not go looking for structure. */
   map?: string;
+  /** The graph queried WITH THE ASK'S OWN WORDS — the structure nearest
+   *  to what this ask names, where the generic map is about the repo at
+   *  large. Keyword-matched: a lead to verify, not a verdict. */
+  graphed?: string;
   /** Established repo reading, when current — spares re-discovery. */
   digest?: string;
   /** Decisions in force — accepted answers the round derives under. */
@@ -56,6 +60,11 @@ export function buildGroundingPrompt(args: {
         `carries its file and line). This is fact: do not re-derive it and ` +
         `do not search for structure you already have. Ground the promises ` +
         `on these paths, and read only the spans you must:\n${args.map}\n\n`
+      : "") +
+    (args.graphed
+      ? `WHERE THE GRAPH LANDS THIS ASK (queried with the ask's own words — ` +
+        `keyword-matched, so it is a lead to verify, not a verdict; every ` +
+        `node carries its file and line):\n${args.graphed}\n\n`
       : "") +
     (args.digest
       ? `WHAT THE MAP CANNOT SHOW (conventions and the why — build under them):\n${args.digest}\n\n`
@@ -76,8 +85,11 @@ export function buildGroundingPrompt(args: {
         `\n  Every change must name exactly one. A change that serves none of ` +
         `them does not belong in this derivation.\n`
       : "") +
-    `- "touchpoints": WHERE it lands: [{"path":"src/…","symbol":"functionOrSection"}]. ` +
-    `Paths are repo-relative. A file that does not exist yet is a legitimate touchpoint — the change creates it. ` +
+    `- "touchpoints": WHERE it lands: [{"path":"src/…","symbol":"functionOrSection",` +
+    `"evidence":"one short sentence: what is at this place now, and why the change lands here"}]. ` +
+    `Paths are repo-relative. A file that does not exist yet is a legitimate touchpoint — the change creates it, ` +
+    `and its evidence says why THIS location. You have the file open while you decide — ` +
+    `the evidence is that reading, written down so nobody re-reads the file to reconstruct it. ` +
     `NEVER put line numbers in a path; anchors are structural.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
     `- "acceptance": what proves this node done, as observable statements: [{"text":"…"}]. At least one per node.\n\n` +
@@ -129,6 +141,9 @@ export function parseGroundedNodes(
         path: typeof a.path === "string" ? a.path.trim() : "",
         ...(typeof a.symbol === "string" && a.symbol.trim()
           ? { symbol: a.symbol.trim() }
+          : {}),
+        ...(typeof a.evidence === "string" && a.evidence.trim()
+          ? { evidence: a.evidence.trim().slice(0, 240) }
           : {}),
         ...(typeof a.scope === "string" && a.scope.trim() && scopeDir?.(a.scope.trim())
           ? { scope: a.scope.trim() }
@@ -191,6 +206,7 @@ export async function runGrounding(
   ask: Ask,
   opts: {
     map?: string;
+    graphed?: string;
     digest?: string;
     nextIndex: number;
     decisions?: string[];
@@ -209,6 +225,7 @@ export async function runGrounding(
       repoRoot: deps.repoRoot,
       digest: opts.digest,
       ...(opts.map ? { map: opts.map } : {}),
+      ...(opts.graphed ? { graphed: opts.graphed } : {}),
       decisions: opts.decisions,
       scopes: opts.scopes,
     }),

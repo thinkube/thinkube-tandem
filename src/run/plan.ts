@@ -198,3 +198,44 @@ export function closingVerifications(slices: SliceForDag[]): {
       }
   return { verifs, probeOfAc };
 }
+
+/**
+ * The honesty scan over the delivered code: every file the run created or
+ * changed, read for self-declared deferrals. A confession in a shipped
+ * file is UNDELIVERED on the delivery's face, never a footnote.
+ */
+export async function confessedDeferrals(args: {
+  worktree: string;
+  baseSha: string;
+  exec: Exec;
+  extraPaths: string[];
+  onHit: (file: string, line: number, text: string) => void;
+}): Promise<string[]> {
+  const { isStubScannableFile, scanStubMarkers } = await import("../engine/core/stubScan");
+  const out: string[] = [];
+  const delivered = (
+    await args.exec(
+      "git",
+      ["-C", args.worktree, "diff", "--name-only", "--diff-filter=d", `${args.baseSha}..HEAD`],
+      args.worktree,
+    )
+  ).out
+    .split("\n")
+    .concat(args.extraPaths)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  for (const rel of [...new Set(delivered)]) {
+    if (!isStubScannableFile(rel)) continue;
+    let content = "";
+    try {
+      content = await fs.readFile(path.join(args.worktree, rel), "utf8");
+    } catch {
+      continue;
+    }
+    for (const h of scanStubMarkers(rel, content).filter((x) => !x.weak)) {
+      out.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
+      args.onHit(h.file, h.line, h.text);
+    }
+  }
+  return out;
+}

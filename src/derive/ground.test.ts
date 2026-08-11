@@ -20,8 +20,44 @@ test("the prompt carries the ask byte for byte and demands structural anchors", 
   assert.ok(prompt.includes(ASK.text), "ask verbatim, whitespace included");
   assert.ok(prompt.includes("NEVER put line numbers"));
   assert.ok(prompt.includes("does not exist yet is a legitimate touchpoint"));
+  assert.ok(
+    prompt.includes('"evidence"'),
+    "each anchor is asked for the reading behind it — what is there, why the change lands here",
+  );
   const withDigest = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo", digest: "the reading" });
   assert.ok(withDigest.includes("the reading"));
+});
+
+test("the graph's answer to the ask's own words rides the prompt as a lead, not a verdict", () => {
+  const graphed = "NODE LogPanel [src=src/panel/log.ts loc=L12]";
+  const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo", graphed });
+  assert.ok(prompt.includes(graphed));
+  assert.ok(prompt.includes("a lead to verify, not a verdict"));
+  assert.ok(
+    !buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" }).includes("WHERE THE GRAPH LANDS"),
+    "no block when the graph had nothing to say",
+  );
+});
+
+test("an anchor's evidence survives parsing, trimmed and bounded", () => {
+  const raw = JSON.stringify({
+    nodes: [
+      {
+        sentence: "follow the running step",
+        touchpoints: [
+          { path: "src/panel/log.ts", symbol: "LogPanel", evidence: "  renders the tail today; follow lands here  " },
+          { path: "src/panel/other.ts", evidence: "x".repeat(400) },
+          { path: "src/panel/none.ts", evidence: "   " },
+        ],
+        needs: [],
+        acceptance: [{ text: "scrolls" }],
+      },
+    ],
+  });
+  const nodes = parseGroundedNodes(raw, "/repo", () => true);
+  assert.equal(nodes[0].touchpoints[0].evidence, "renders the tail today; follow lands here");
+  assert.equal(nodes[0].touchpoints[1].evidence!.length, 240, "evidence is a sentence, not a document");
+  assert.equal(nodes[0].touchpoints[2].evidence, undefined, "blank evidence is no evidence");
 });
 
 test("parser: positions refused, planned files marked, indices bounded, empty dropped", () => {

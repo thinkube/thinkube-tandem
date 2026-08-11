@@ -374,6 +374,101 @@ test("the gaps are looked for ONCE over the whole cut, and land under the claim 
   );
 });
 
+test("completeness receives what earlier steps learned, consumably: evidence, quoted anchors, decisions", async () => {
+  // The fixture repo is Python on purpose: quoting is line slicing and
+  // literal symbol match, never an idea of what a declaration looks like.
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-consume-"));
+  fs.mkdirSync(path.join(repoRoot, "app"));
+  fs.writeFileSync(
+    path.join(repoRoot, "app", "billing.py"),
+    "def charge(order):\n    return order.total\n",
+  );
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const round = scriptedRounds([{ match: /COMPLETENESS round/, reply: `{"nodes":[]}` }], calls);
+
+  await completeCut(
+    deps,
+    {
+      claims: [{ id: "claim-1", subjectId: "sub-1", text: "refunds are possible" }],
+      subjects: [{ id: "sub-1", name: "billing" }],
+      changes: [
+        {
+          id: "n1",
+          sentence: "charge learns to refund",
+          serves: ["sub-1"],
+          needs: [],
+          servesClaim: "claim-1",
+          grounding: {
+            touchpoints: [
+              { path: "app/billing.py", symbol: "charge" },
+              { path: "app/refunds.py", symbol: "refund", planned: true, evidence: "new module; the ask names refunds as their own surface" },
+            ],
+            stamp: [],
+          },
+          acceptance: [{ id: "a1", text: "a refund lands" }],
+        },
+      ],
+      decisions: ["refunds never touch the ledger directly"],
+      affected: "- checkout() [calls] app/billing.py:L1\n    > def charge(order):",
+      mintNodeId: (n) => `node-gap-${n}`,
+      nextIndex: 1,
+    },
+    round,
+  );
+
+  const prompt = calls[0];
+  assert.ok(
+    prompt.includes("app/billing.py › charge — now reads: def charge(order):"),
+    "an anchor without evidence gains its literal source line, host-quoted",
+  );
+  assert.ok(
+    prompt.includes("the ask names refunds as their own surface"),
+    "the grounding round's own reading survives into the next step",
+  );
+  assert.ok(prompt.includes("DECISIONS IN FORCE"), "settled answers bound what counts as a gap");
+  assert.ok(prompt.includes("refunds never touch the ledger directly"));
+  assert.ok(
+    prompt.includes("> def charge(order):") && prompt.includes("the quote is the evidence"),
+    "the affected list is judged from its quoted lines, not re-read",
+  );
+});
+
+test("the graph is asked with the ask's own words, and its answer reaches grounding", async () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ask-"));
+  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
+  const calls: string[] = [];
+  const asked: string[] = [];
+  const round = scriptedRounds(
+    [
+      { match: /grounding ONE ask/, reply: `{"nodes":[],"questions":[]}` },
+    ],
+    calls,
+  );
+  await runDerivationPipeline(deps, ask, {
+    nextIndex: 1,
+    round,
+    knowledge: {
+      repoRoot,
+      graph: { graphPath: "/nowhere/graph.json", stamp: { root: repoRoot, head: "h", dirty: "" } },
+      map: "NODE toolbar [src=src/toolbar.ts loc=L1]",
+      digest: "CONVENTIONS: none",
+      decisions: [],
+      ask: async (q) => {
+        asked.push(q);
+        return "NODE captureBox() [src=src/toolbar.ts loc=L40]";
+      },
+      affected: async () => "",
+    },
+  });
+  assert.deepEqual(asked, [ask.text], "the query IS the ask's words — nothing paraphrased");
+  assert.ok(
+    calls[0].includes("WHERE THE GRAPH LANDS THIS ASK") &&
+      calls[0].includes("NODE captureBox() [src=src/toolbar.ts loc=L40]"),
+    "the graph's answer rides the grounding prompt",
+  );
+});
+
 test("a round that derived nothing still cannot speak to the human in my words", () => {
   // The early return used to hand the human whatever the round raised,
   // around the gate entirely.

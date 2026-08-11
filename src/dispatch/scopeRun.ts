@@ -20,6 +20,9 @@ export async function dispatchScopePlan(args: {
   deps: SessionDeps;
   runState: RunState;
   spaceName: string;
+  /** The anchor repository's reading — briefs in member scopes never get
+   *  it; a digest of one repository is not knowledge of another. */
+  digest?: string;
   onDelivery: (delivery: Delivery, note: string) => void;
   changed: (message: string) => void;
 }): Promise<DispatchOutcome | undefined> {
@@ -70,6 +73,7 @@ export async function dispatchScopePlan(args: {
         spaceName: args.spaceName,
         storeDir: deps.storeDir,
         supervisorRound: runReadRound,
+        ...(sc === "" && args.digest ? { digest: args.digest } : {}),
       },
       args.space(),
       scopedCut,

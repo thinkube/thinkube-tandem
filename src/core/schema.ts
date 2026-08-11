@@ -35,6 +35,11 @@ export interface Anchor {
   /** Project scope id (§7quater) — absent means the anchor scope. A slice
    *  never crosses scopes; a change never mixes them. */
   scope?: string;
+  /** What the grounding round SAW here — one sentence: what is at this
+   *  anchor and why the change lands on it. The round had the file open;
+   *  without this field its reading dies with its transcript and every
+   *  later consumer re-reads the same code to reconstruct it. */
+  evidence?: string;
 }
 
 /** Refuses anchors that smuggle in positions (line/column suffixes). */

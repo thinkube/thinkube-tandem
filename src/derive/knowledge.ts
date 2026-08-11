@@ -20,6 +20,7 @@
  * a guess about a repository it never read, and it refuses instead.
  */
 import { affectedBy, askGraph, askPlan, CodeGraph, ensureCodeGraph, hubs } from "./graph";
+import { enrichAffected } from "./spans";
 import { runContextualize } from "./contextualize";
 import { RoundDeps, runReadRound } from "./round";
 
@@ -36,7 +37,9 @@ export interface Knowledge {
   decisions: readonly string[];
   /** A bounded question of the graph: cited nodes, in milliseconds. */
   ask: (question: string, budget?: number) => Promise<string>;
-  /** What else moves when this moves. */
+  /** What else moves when this moves — each entry carrying the source
+   *  line it names, quoted, so the receiver judges instead of re-reading.
+   *  A pointer without its line is homework, not knowledge. */
   affected: (node: string) => Promise<string>;
 }
 
@@ -91,6 +94,9 @@ export async function knowledgeOf(args: {
     digest,
     decisions: args.decisions,
     ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),
-    affected: (node) => affectedBy({ graphPath: graph.graphPath, node }),
+    affected: (node) =>
+      affectedBy({ graphPath: graph.graphPath, node }).then((t) =>
+        enrichAffected(args.deps.repoRoot, t),
+      ),
   };
 }

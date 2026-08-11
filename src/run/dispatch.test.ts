@@ -79,6 +79,7 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
       state,
       supervisorRound: async () => null,
       spaceName: "greet space",
+      digest: "CONVENTIONS: greetings are lowercase; tests sit beside the code",
       worker: async (w, brief) => {
         briefs.push({ role: w.role, text: brief });
         trees[w.role] = w.worktree;
@@ -105,6 +106,10 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
   assert.ok(briefs[1].text.includes("SERIAL unit"), "engine brief for the coder");
   assert.ok(briefs[1].text.includes("THE INTENT"), "the TEP body rides the brief as the north star");
   assert.ok(briefs[1].text.includes("verify"), "the coder is told about the in-loop verify tool");
+  assert.ok(
+    briefs.every((b) => b.text.includes("greetings are lowercase")),
+    "the repository's reading reaches every worker — the only actors that MAKE changes",
+  );
 
   assert.notEqual(trees.test, trees.code, "tester and coder work in different trees");
   assert.equal(probeVisibleToCoder, false, "blinding is structural: no probe in the coder's tree");

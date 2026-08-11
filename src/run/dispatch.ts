@@ -37,7 +37,6 @@ import {
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
-import { isStubScannableFile, scanStubMarkers } from "../engine/core/stubScan";
 import { buildVerificationTrace } from "../engine/core/trace";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
@@ -45,7 +44,7 @@ import { appendDefect } from "../engine/defectLog";
 import { gradeAssessments, logRedChecks } from "./assess";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { copyRel, defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
-import { claimRunLock, foldBlastRadius } from "./plan";
+import { claimRunLock, confessedDeferrals, foldBlastRadius } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
@@ -68,6 +67,14 @@ export interface DispatchDeps {
   projectId?: string;
   /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
   storeDir?: string;
+  /** The repository reading (conventions and the why) — every worker gets
+   *  it in its brief. Workers are the only actors that MAKE changes, and
+   *  they were the only step that never saw what a change must respect. */
+  digest?: string;
+  /** How this repository's probes are written and run. A convention is a
+   *  fact about the target repository, not about this extension — the
+   *  default fits the node harness the oracle ships with. */
+  testConvention?: string;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
   /** Injectable for tests: replaces the SDK worker. */
@@ -266,13 +273,18 @@ export async function dispatchTep(
       }
     }
 
-    const baseBrief = buildWorkerPrompt(next, tep, {
-      specBody,
-      tepBody: specBody,
-      cwd: tree,
-      testConvention:
-        "node:test ESM modules run directly with `node --test <file>` — name probe files exactly as the footprint states (.test.mjs, no build step)",
-    });
+    const baseBrief =
+      buildWorkerPrompt(next, tep, {
+        specBody,
+        tepBody: specBody,
+        cwd: tree,
+        testConvention:
+          deps.testConvention ??
+          "node:test ESM modules run directly with `node --test <file>` — name probe files exactly as the footprint states (.test.mjs, no build step)",
+      }) +
+      (deps.digest
+        ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
+        : "");
     // Only a coder's brief may be shown as "the coder's brief": every unit
     // used to overwrite it, so stalls were diagnosed against a tester's.
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
@@ -472,41 +484,22 @@ export async function dispatchTep(
   );
   logRedChecks(acResults, defect);
 
-  // The honesty scan over the delivered code: a self-declared deferral in a
-  // shipped file is UNDELIVERED on the delivery's face, never a footnote.
-  {
-    const delivered = (
-      await exec(
-        "git",
-        ["-C", worktree, "diff", "--name-only", "--diff-filter=d", `${baseSha}..HEAD`],
-        worktree,
-      )
-    ).out
-      .split("\n")
-      .concat(await porcelainPaths(worktree))
-      .map((p) => p.trim())
-      .filter(Boolean);
-    for (const rel of [...new Set(delivered)]) {
-      if (!isStubScannableFile(rel)) continue;
-      let content = "";
-      try {
-        content = await fs.readFile(path.join(worktree, rel), "utf8");
-      } catch {
-        continue;
-      }
-      const confessions = scanStubMarkers(rel, content).filter((h) => !h.weak);
-      for (const h of confessions) {
-        undelivered.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
+  undelivered.push(
+    ...(await confessedDeferrals({
+      worktree,
+      baseSha,
+      exec,
+      extraPaths: await porcelainPaths(worktree),
+      onHit: (file, line, text) =>
         defect({
           activity: "closing gate",
           trigger: "stub-scan",
           qualifier: "missing",
           impact: "undelivered surfaced",
-          detail: `${h.file}:${h.line} ${h.text}`,
-        });
-      }
-    }
-  }
+          detail: `${file}:${line} ${text}`,
+        }),
+    })),
+  );
   const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
 

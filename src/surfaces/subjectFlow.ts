@@ -143,6 +143,7 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
   const gaps = await (s.deps.completeCut ?? completeCut)(s.deps.round, {
     digest: k.digest,
     ...(affected ? { affected } : {}),
+    decisions: s.decisionsInForce(),
     claims,
     subjects: (s.space.subjects ?? []).filter((x) => subjectIds.includes(x.id)),
     changes: s.space.nodes.filter((n) => n.servesClaim && claims.some((c) => c.id === n.servesClaim)),

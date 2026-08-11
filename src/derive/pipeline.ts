@@ -27,6 +27,9 @@ import { attributePromises } from "./attribute";
 import { judgeRaised } from "../gates/assumptions";
 import type { Knowledge } from "./knowledge";
 import { runContextualize } from "./contextualize";
+import { buildCompletenessPrompt, withAnchorQuotes } from "./complete";
+
+export { completeCut } from "./complete";
 import {
   GroundingResult,
   parseGroundedNodes,
@@ -103,69 +106,6 @@ export interface PipelineOpts {
   knowledge?: Knowledge;
   /** Injectable round runner for tests; production uses the SDK round. */
   round?: Round;
-}
-
-const describeChanges = (changes: Change[]): string =>
-  changes
-    .map(
-      (c, i) =>
-        `${i}. ${c.sentence}\n   lands at: ${(c.grounding?.touchpoints ?? [])
-          .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : ""))
-          .join(", ") || "(ungrounded)"}\n   done when: ${c.acceptance
-          .map((a) => a.text)
-          .join("; ")}`,
-    )
-    .join("\n");
-
-/** Build the completeness prompt — one round that both judges the set
- *  complete and finds the adjacent code that must move too. */
-function buildCompletenessPrompt(args: {
-  ask: Ask;
-  changes: Change[];
-  repoRoot: string;
-  digest?: string;
-  claims?: { text: string; why?: string }[];
-  /** What the graph says moves when these files move — computed, cited,
-   *  and handed over. This round used to go looking for it. */
-  affected?: string;
-}): string {
-  return (
-    `You are the COMPLETENESS round: given ONE ask and the changes derived ` +
-    `from it, return every change the set still MISSES — in both senses:\n` +
-    `1. GAPS: something the ask requires that no change covers.\n` +
-    `2. AFFECTED CODE: other places in the repository at ${args.repoRoot} ` +
-    `that must move too — callers of touched symbols, configuration that ` +
-    `names touched files, documentation that states the old behavior.\n` +
-    (args.affected
-      ? `\nWHAT MOVES WITH THIS, from the code graph — every caller, ` +
-        `importer and referencer of what these changes touch, with its file ` +
-        `and line. This is extracted, not guessed: do not go looking for it ` +
-        `again, JUDGE it. Which of these really must move, and what does ` +
-        `each one need?\n\n${args.affected}\n\n`
-      : `Grep for the touched symbols and paths; read what the hits demand.\n\n`) +
-    (args.digest
-      ? `REPOSITORY DIGEST (an established reading — build on it, verify ` +
-        `only what you must):\n${args.digest}\n\n`
-      : "") +
-    `THE ASK:\n${args.ask.text}\n\n` +
-    `THE DERIVED CHANGES:\n${describeChanges(args.changes)}\n\n` +
-    (args.claims?.length
-      ? `EVERY node you return names the claim it makes true, as "claim": ` +
-        `the NUMBER from this list:\n` +
-        args.claims
-          .map((c, i) => `    ${i + 1}. ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
-          .join("\n") +
-        `\nA gap or ripple that serves none of these is not part of this ` +
-        `work — leave it out rather than returning it unattached.\n\n`
-      : "") +
-    `Respond with ONE JSON object and nothing else:\n` +
-    `{"nodes":[{"sentence":"…"${args.claims?.length ? `,"claim":1` : ""},` +
-    `"touchpoints":[{"path":"…"}],"needs":[],` +
-    `"acceptance":[{"text":"…"}]}]} — each node one MISSING or AFFECTED ` +
-    `change in the same shape grounding uses (needs indices refer to THIS ` +
-    `list only). Complete and nothing affected → {"nodes":[]}. Never ` +
-    `restate an existing change; only genuine gaps and real ripples.`
-  );
 }
 
 /** Closed verdicts for acceptance criteria — the assessment vocabulary. */
@@ -312,92 +252,6 @@ function speakable(
 }
 
 /**
- * ONE completeness pass over everything a cut has derived.
- *
- * Per subject, this round is nine tool-using reads of the same repository
- * that cannot see each other: each finds the same documentation page and
- * the same callers, attributes them to whichever claims it happens to
- * hold, and the human is handed the overlap. Run once, it sees every
- * subject's claims at the same time — so a ripple lands under the claim it
- * actually serves, and it is derived once.
- */
-export async function completeCut(
-  deps: RoundDeps,
-  args: {
-    /** Every claim in the cut, with the subject that owns it. */
-    claims: { id: string; subjectId: string; text: string; why?: string }[];
-    /** What the subjects are called, for the round to read them by. */
-    subjects: { id: string; name: string }[];
-    changes: Change[];
-    digest?: string;
-    /** What the graph says moves with these files — computed before the
-     *  round, so it judges rather than searches. */
-    affected?: string;
-    mintNodeId: (n: number) => string;
-    nextIndex: number;
-  },
-  round: Round = runReadRound,
-): Promise<Change[]> {
-  const log = deps.log ?? (() => {});
-  if (!args.claims.length || !args.changes.length) return [];
-  const nameOf = new Map(args.subjects.map((s) => [s.id, s.name]));
-  const text =
-    `Everything below belongs to one piece of work. What must become ` +
-    `true, by subject:\n` +
-    args.subjects
-      .map(
-        (s) =>
-          `${s.name}:\n` +
-          args.claims
-            .filter((c) => c.subjectId === s.id)
-            .map((c) => `  - ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
-            .join("\n"),
-      )
-      .join("\n");
-  const raw = await round(
-    deps,
-    buildCompletenessPrompt({
-      ask: { id: "cut", text, at: "" },
-      changes: args.changes,
-      repoRoot: deps.repoRoot,
-      digest: args.digest,
-      ...(args.affected ? { affected: args.affected } : {}),
-      claims: args.claims.map((c) => ({
-        text: `${nameOf.get(c.subjectId) ?? "?"} — ${c.text}`,
-        ...(c.why ? { why: c.why } : {}),
-      })),
-    }),
-  );
-  if (raw === null) {
-    log("completeness: round unavailable — no gaps or ripples were looked for");
-    return [];
-  }
-  const derived = parseGroundedNodes(raw, deps.repoRoot);
-  const stamp = [await readStamp(deps.repoRoot)];
-  const out: Change[] = [];
-  for (const d of derived) {
-    // A gap serves the claim it names, and lands under THAT claim's
-    // subject — which is the whole reason for running this once.
-    const claim = d.claim ? args.claims[d.claim - 1] : undefined;
-    if (!claim) {
-      log(`completeness: dropped "${d.sentence.slice(0, 60)}" — it named no claim`);
-      continue;
-    }
-    const [made] = resolveDerived(
-      [d],
-      claim.subjectId,
-      stamp,
-      args.nextIndex + out.length,
-      args.mintNodeId,
-      [claim.id],
-    );
-    out.push({ ...made, servesClaim: claim.id });
-  }
-  log(`completeness: ${out.length} gap(s) and ripple(s) across the whole cut`);
-  return out;
-}
-
-/**
  * Run the whole derivation pipeline for one ask. Same signature family as
  * `runGrounding`, so hosts swap a single injectable.
  */
@@ -435,14 +289,21 @@ export async function runDerivationPipeline(
     }
   }
 
-  // 2. Ground.
+  // 2. Ground. The graph is asked with the ask's own words first — the
+  //    map is about the repository at large; this is the structure nearest
+  //    to what THIS ask names, cited, for milliseconds. The capability
+  //    existed on Knowledge and nothing consumed it.
   stage("deriving the changes");
+  const graphed = opts.knowledge
+    ? await opts.knowledge.ask(ask.text.slice(0, 400)).catch(() => "")
+    : "";
   const grounded = await runGrounding(
     { ...deps, log },
     ask,
     {
       digest,
       ...(map ? { map } : {}),
+      ...(graphed ? { graphed } : {}),
       nextIndex: opts.nextIndex,
       decisions: opts.decisions,
       mintId: opts.mintNodeId,
@@ -487,10 +348,11 @@ export async function runDerivationPipeline(
       deps,
       buildCompletenessPrompt({
         ask,
-        changes,
+        changes: withAnchorQuotes(deps.repoRoot, changes),
         repoRoot: deps.repoRoot,
         digest,
         ...(opts.claims ? { claims: opts.claims } : {}),
+        ...(opts.decisions?.length ? { decisions: opts.decisions } : {}),
       }),
     ),
     "completeness",
