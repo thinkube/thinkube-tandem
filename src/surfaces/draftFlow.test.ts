@@ -115,3 +115,43 @@ test("nothing written is nothing to read", async () => {
   assert.equal(r.ok, false);
   assert.match(r.reason!, /nothing written/);
 });
+
+test("an ask already recorded is refused, not recorded twice", async () => {
+  const s = session({ n: 0 });
+  s.saveDraft("the delivery page shows how to see it");
+  await s.readDraft();
+  assert.ok(s.keepDraft().ok);
+
+  // Coming back to an empty page, the natural move is to paste it again.
+  s.saveDraft("the delivery page shows how to see it");
+  await s.readDraft();
+  const again = s.keepDraft();
+  assert.equal(again.ok, false);
+  assert.match(again.reason!, /already recorded/);
+  assert.equal(s.space.asks.length, 1, "one ask, not two");
+});
+
+test("a repeat is refused whatever its spacing or case", async () => {
+  const s = session({ n: 0 });
+  s.saveDraft("Keep the report legible");
+  await s.readDraft();
+  s.keepDraft();
+  s.saveDraft("  keep the report legible  ");
+  await s.readDraft();
+  assert.equal(s.keepDraft().ok, false, "the same sentence is the same sentence");
+  assert.equal(s.space.asks.length, 1);
+});
+
+test("a new ask beside a repeat is not lost — the whole draft is refused, and says which line", async () => {
+  const s = session({ n: 0 });
+  s.saveDraft("first thing");
+  await s.readDraft();
+  s.keepDraft();
+  s.saveDraft("first thing\nsomething genuinely new");
+  await s.readDraft();
+  const r = s.keepDraft();
+  assert.equal(r.ok, false);
+  assert.match(r.reason!, /first thing/, "it names the line to remove");
+  assert.equal(s.space.asks.length, 1, "and records nothing until the human decides");
+  assert.equal(s.space.draft, "first thing\nsomething genuinely new", "their words are untouched");
+});

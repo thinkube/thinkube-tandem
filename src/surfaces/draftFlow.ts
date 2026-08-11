@@ -36,6 +36,19 @@ export function keepDraftFlow(s: TandemSession): { ok: boolean; reason?: string 
   if (!written.length) return { ok: false, reason: "there is nothing written yet" };
   if (written.length !== read.length || written.some((t, i) => t !== read[i]))
     return { ok: false, reason: "what is written has changed since it was read — read it again" };
+  // A sentence already recorded is not recorded twice. The writing page
+  // is empty after keeping, so the natural move on coming back is to
+  // paste the same list again — and two copies of one ask is two of
+  // everything read from it.
+  const already = new Map(s.space.asks.map((a) => [a.text.trim().toLowerCase(), a]));
+  const repeats = written.filter((t) => already.has(t.trim().toLowerCase()));
+  if (repeats.length)
+    return {
+      ok: false,
+      reason:
+        `already recorded, word for word: ${repeats.map((t) => `“${t.slice(0, 60)}”`).join(" · ")}` +
+        ` — they are on the intent page; say something different, or remove the line`,
+    };
   const ids: string[] = [];
   for (const t of written) {
     const r = addAsk(s.space, t, s.deps.now(), `ask-${s.author}-${s.space.asks.length + 1}`);
