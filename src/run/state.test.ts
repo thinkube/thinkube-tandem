@@ -52,3 +52,25 @@ test("each step keeps its own log, and the surface pages through it", () => {
   const counts = st.view().logCounts;
   assert.deepEqual(counts, { u1: 40, u2: 1, run: 1 }, "the view advertises where the lines are");
 });
+
+test("a unit that never ran is blocked, not failed", () => {
+  const s = new RunState(() => {});
+  s.seed("u1", "SL-1", "code", [], "what it builds");
+  s.seed("u2", "SL-2", "code", ["u1"]);
+  s.fail("u1", "the checks are not green");
+  s.block("u2", "never ran — the run stopped, or something it waits on failed");
+
+  const [a, b] = s.view().units;
+  assert.equal(a.state, "failed", "the one that was tried and did badly");
+  assert.equal(b.state, "blocked", "and the one that was never dispatched");
+  assert.match(b.note!, /never ran/);
+  assert.equal(a.what, "what it builds", "what a unit builds survives what happened to it");
+});
+
+test("blocking never overwrites a unit that already finished", () => {
+  const s = new RunState(() => {});
+  s.seed("u1", "SL-1", "code");
+  s.set("u1", "done");
+  s.block("u1", "never ran");
+  assert.equal(s.view().units[0].state, "done", "a finished unit is not un-finished by a halt");
+});

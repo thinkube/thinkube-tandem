@@ -8,9 +8,19 @@
  * that has already dropped the line that mattered.
  */
 
-export type UnitState = "ready" | "running" | "parked" | "done" | "failed";
+/**
+ * Where a unit got to. `blocked` is not a failure: it is a unit that
+ * never ran, because the run stopped or something it waits on failed.
+ * Calling that failed says the worker was tried and did badly, which is
+ * the opposite of what happened, and it buries the one unit that really
+ * did fail among a dozen that never started.
+ */
+export type UnitState = "ready" | "running" | "parked" | "done" | "failed" | "blocked";
 
 export interface RunUnitView {
+  /** What this unit builds — the sentences, where they land, what proves
+   *  them. Set when the run is planned, never changed by what happens. */
+  what?: string;
   id: string;
   slice: string;
   role: "code" | "test";
@@ -53,8 +63,25 @@ export class RunState {
     return s;
   }
 
-  seed(id: string, slice: string, role: "code" | "test", requires: string[] = []): void {
-    this.units.set(id, { id, slice, role, state: "ready", requires });
+  seed(
+    id: string,
+    slice: string,
+    role: "code" | "test",
+    requires: string[] = [],
+    /** What this unit is here to build, in the words the reading used —
+     *  a card that names only itself tells a reader nothing. */
+    what?: string,
+  ): void {
+    this.units.set(id, { id, slice, role, state: "ready", requires, ...(what ? { what } : {}) });
+    this.onChange();
+  }
+
+  /** Never ran: the run stopped, or something it waits on failed. */
+  block(id: string, why: string): void {
+    const u = this.units.get(id);
+    if (!u || u.state === "done" || u.state === "failed") return;
+    u.state = "blocked";
+    u.note = why;
     this.onChange();
   }
 

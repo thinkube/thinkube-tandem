@@ -76,6 +76,21 @@ export async function encloseWork(deps: {
   return true;
 }
 
+/**
+ * One line for what a worker just did: the tool and the thing it did it
+ * to. A log of bare tool names says a worker was busy; a log naming the
+ * file says what it built.
+ */
+function describeTool(b: Record<string, unknown>): string {
+  const name = typeof b.name === "string" ? b.name : "tool";
+  const input = (b.input ?? {}) as Record<string, unknown>;
+  const of =
+    ["file_path", "path", "pattern", "command", "notebook_path"]
+      .map((k) => (typeof input[k] === "string" ? (input[k] as string) : ""))
+      .find(Boolean) ?? "";
+  return of ? `${name} ${of.length > 120 ? `${of.slice(0, 120)}…` : of}` : name;
+}
+
 /** Tools that could show an author the evidence it is judged by. */
 const READ_TOOLS = ["Read", "Grep", "Glob", "NotebookRead"];
 
@@ -275,8 +290,17 @@ export async function runUnitWorker(
       const rec = msg as Record<string, unknown>;
       if (rec.type === "assistant") {
         const m = rec.message as { content?: unknown } | undefined;
-        for (const b of (Array.isArray(m?.content) ? m!.content : []) as Array<Record<string, unknown>>)
-          if (b.type === "text" && typeof b.text === "string") text += b.text;
+        for (const b of (Array.isArray(m?.content) ? m!.content : []) as Array<Record<string, unknown>>) {
+          if (b.type === "text" && typeof b.text === "string") {
+            text += b.text;
+            // What the worker is saying as it says it. A log holding only
+            // the line that says the unit started tells a reader nothing
+            // about what it did, which is the whole reason to open it.
+            for (const line of b.text.split("\n").map((l) => l.trim()).filter(Boolean))
+              deps.log(line);
+          }
+          if (b.type === "tool_use") deps.log(`⚙ ${describeTool(b)}`);
+        }
       } else if (rec.type === "result") {
         const turn = typeof rec.result === "string" ? rec.result : text;
         const q = extractNeedsInput(turn);

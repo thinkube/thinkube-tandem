@@ -147,6 +147,7 @@ export async function dispatchTep(
       u.slice,
       (u.role ?? "code") as "code" | "test",
       u.requires.filter((r) => dag.some((x) => x.id === r)),
+      u.note,
     );
 
   log(`${tep}: worktree on ${branch}`);
@@ -428,7 +429,10 @@ export async function dispatchTep(
     await Promise.race([...inflight.values()]);
   }
   await Promise.all([...inflight.values()]);
-  for (const id of pending) failWith(id, "not dispatched — the run halted, or a unit it waits on failed");
+  // Never ran is not failed. A unit the run never reached says so, and
+  // the one unit that really failed stays findable among them.
+  for (const id of pending)
+    st.block(id, "never ran — the run stopped, or something it waits on failed");
 
   log(`${tep}: closing gate`);
   // Probes ride the branch: any not yet copied by a slice commit (failed or

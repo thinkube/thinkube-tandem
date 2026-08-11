@@ -53,6 +53,8 @@ interface RunView {
     /** The slice in the human's words, when the space still knows it. */
     sliceTitle?: string;
     role: "code" | "test";
+    /** What this unit builds, in the reading's own words. */
+    what?: string;
     state: string;
     requires: string[];
     startedAt?: number;

@@ -39,6 +39,12 @@ function chipFor(u: RunUnits[number], now: number): Chip {
       return { text: "passed", kind: "pass" };
     case "failed":
       return { text: "failed", kind: "na" };
+    case "blocked":
+      return {
+        text: "never ran",
+        kind: "plain",
+        why: "The run stopped, or something this waits on failed, so this was never dispatched. It is not a failure.",
+      };
     default:
       return { text: "pending", kind: "plain" };
   }
@@ -105,6 +111,7 @@ export function RunSection(props: {
   const graded = (slice: string): boolean =>
     run.units.filter((u) => u.slice === slice && u.role === "code").every((u) => u.state === "done");
   const anyFailed = run.units.some((u) => u.state === "failed");
+  const blocked = run.units.filter((u) => u.state === "blocked").length;
   const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");
 
   const cards: CardData[] = useMemo(
@@ -114,11 +121,17 @@ export function RunSection(props: {
         band: u.role === "test" ? ROLES.test : ROLES.code,
         title: u.sliceTitle ?? u.slice,
         titleFull: `worker ${u.id}`,
-        abs:
-          u.note ??
-          (u.requires.length
+        // What it is here to build comes first, and stays there whatever
+        // happens to it; what happened is said under it.
+        abs: [
+          u.what,
+          u.note,
+          !u.what && !u.note && u.requires.length
             ? `waits for ${u.requires.length} other unit${u.requires.length === 1 ? "" : "s"}`
-            : undefined),
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n") || undefined,
         chips: [chipFor(u, now), logChip(u.id, run)],
       })),
       ...slices.map((slice) => ({
@@ -200,6 +213,7 @@ export function RunSection(props: {
       <div style={{ display: "flex", alignItems: "center", gap: SP.md, padding: `${SP.xs}px ${SP.lg}px` }}>
         <span data-run-progress-text style={{ fontSize: FS.body, opacity: O.dim }}>
           {done} of {run.units.length} workers done
+          {blocked ? ` · ${blocked} never ran` : ""}
         </span>
         <span style={{ flex: 1, height: 5, background: "var(--vscode-input-background, #222)", borderRadius: 3, overflow: "hidden" }}>
           <span
