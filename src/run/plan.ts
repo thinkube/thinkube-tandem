@@ -10,6 +10,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { SliceForDag } from "../engine/core/dag";
 import type { AcVerification } from "../engine/orchestratorCore";
+import { buildVerificationTrace } from "../engine/core/trace";
+import { unmetDocsObligation } from "../engine/core/redispatch";
+import { accessSync } from "node:fs";
+import type { Proof } from "../core/schema";
 import {
   buildTestImpactRefusal,
   findUncoveredTests,
@@ -271,6 +275,81 @@ export async function confessedDeferrals(args: {
       out.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
       args.onHit(h.file, h.line, h.text);
     }
+  }
+  return out;
+}
+
+
+/**
+ * The delivery's MACHINE FACE persists beside the space: the engine's
+ * structured verification trace plus the run facts — the delivery page is
+ * a render, this file is the evidence record. Best-effort: the run's
+ * verdicts already live on the delivery.
+ */
+export async function writeDeliveryRecord(
+  storeDir: string,
+  record: {
+    tep: string;
+    branch: string;
+    baseSha: string;
+    proofs: Proof[];
+    undelivered: string[];
+    verifs: AcVerification[];
+    acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
+  },
+): Promise<void> {
+  try {
+    const trace = buildVerificationTrace({
+      round: 1,
+      declared: record.verifs,
+      acResults: record.acResults,
+    });
+    const dir = path.join(storeDir, "deliveries");
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, `${record.tep}.json`),
+      JSON.stringify(
+        {
+          tep: record.tep,
+          branch: record.branch,
+          baseSha: record.baseSha,
+          proofs: record.proofs,
+          undelivered: record.undelivered,
+          trace,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    /* best-effort */
+  }
+}
+
+
+/** Docs gate: a slice that declares documentation (a docs/ touchpoint)
+ *  must have LANDED it — the engine's obligation check runs against the
+ *  real tree, and an unmet obligation is UNDELIVERED on the page's face. */
+export function docsObligations(slices: SliceForDag[], worktree: string): string[] {
+  const out: string[] = [];
+  for (const s of slices) {
+    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
+    const note = unmetDocsObligation(
+      {
+        docs: declaresDocs ? "required" : undefined,
+        files: s.files,
+        work_units: s.workUnits,
+      },
+      (rel) => {
+        try {
+          accessSync(path.join(worktree, rel));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    );
+    if (note) out.push(`${s.handle}: ${note}`);
   }
   return out;
 }

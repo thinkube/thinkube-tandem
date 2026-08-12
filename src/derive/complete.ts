@@ -92,7 +92,9 @@ export function buildCompletenessPrompt(args: {
     `and vocabulary.\n` +
     `b. EXISTING TESTS — every test that exercises a gate, default or rule ` +
     `this work tightens: each must be brought under the new rule, or the ` +
-    `suite goes red the moment the work lands.\n` +
+    `suite goes red the moment the work lands. Bringing under INCLUDES ` +
+    `RETIRING — a test whose pinned behavior no longer exists is deleted, ` +
+    `not appeased.\n` +
     `c. DERIVED COPIES — every place that re-derives, re-renders, hashes, ` +
     `persists or merges an object this work extends: a new field must ride ` +
     `ALL of them, or it silently falls out somewhere.\n` +

@@ -28,7 +28,15 @@ export interface TepSlicesArgs {
   handlePrefix?: string;
 }
 
-export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs): SliceForDag[] {
+/** The engine's slice, plus the space's own bookkeeping the engine never
+ *  reads: which criterion each check ordinal stands for. The event side
+ *  keeps the mapping; nothing delivery-shaped enters the test files. */
+export type TandemSlice = SliceForDag & {
+  /** Criterion id per check ordinal (index k ↔ AC-(k+1)). */
+  criterionIds: string[];
+};
+
+export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs): TandemSlice[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const members = cut.changeIds
     .map((id) => byId.get(id))
@@ -145,7 +153,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     const criteria = changes.flatMap((c) =>
       c.acceptance
         .filter((a) => a.kind !== "assessment")
-        .map((a) => ({ change: c, text: a.text })),
+        .map((a) => ({ change: c, id: a.id, text: a.text })),
     );
     const codeUnit: WorkUnit & { note?: string } = {
       footprint: files,
@@ -211,6 +219,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       files,
       workUnits: [codeUnit, ...testUnits],
       satisfies: criteria.map((_, k) => k + 1),
+      criterionIds: criteria.map((c) => c.id),
       contract,
     };
   });

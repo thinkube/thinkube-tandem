@@ -20,6 +20,12 @@ export function coderStanza(oracleAvailable: boolean): string {
     "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
     "or probe file, and never run a build, a test command or a package " +
     "manager — you have no shell. Work from the intent and the contract, and " +
-    "ask `verify` how you are doing."
+    "ask `verify` how you are doing." +
+    "\n\nIf a check is IMPOSSIBLE for any correct implementation, or plainly " +
+    "misreads its criterion, do not grind against it: call `challenge` with " +
+    "the check number and your argument in intent terms. An independent " +
+    "judge rules — granted, the check is re-authored from its criterion and " +
+    "the ruling is recorded on the delivery; denied, meet it as it stands. " +
+    "Two challenges per slice; a challenge is never a way to see the check."
   );
 }

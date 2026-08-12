@@ -18,6 +18,7 @@ import {
 } from "../engine/verifyOracle";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
+import { runAuthoringRound } from "./author";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -111,6 +112,118 @@ export interface OracleFactoryArgs {
     impact: string;
     detail: string;
   }) => void;
+  /** The check behind an ordinal, from the space — never from the probe. */
+  criterionOf?: (slice: string, ac: number) => { id: string; text: string } | undefined;
+  /** Every ruling lands here, granted or not — the delivery carries them. */
+  onRuling?: (r: {
+    slice: string;
+    criterionId: string;
+    granted: boolean;
+    reason: string;
+  }) => void;
+  /** A granted ruling's rewritten probe must outlive the tester snapshot. */
+  persistProbe?: (rel: string) => Promise<void>;
+  /** Injectable for tests: the probe re-author. */
+  author?: typeof runAuthoringRound;
+}
+
+/** Challenges a slice may spend — a valve, never a grinding strategy. */
+const CHALLENGE_BUDGET = 2;
+
+/**
+ * The coder's challenge, adjudicated. The coder never sees the probe; the
+ * judge sees everything and answers one narrow question: does the probe
+ * faithfully render the criterion the human signed? Granted → a fresh
+ * authoring round rewrites the probe FROM THE CRITERION (the coder's
+ * argument is not the spec), the ruling rides the delivery's face, and
+ * the coder is told to verify again. Denied → the check stands, with the
+ * reason. The criterion itself is never touched by this channel — a
+ * coder disputing the criterion is disputing the human, and that parks.
+ */
+export function makeChallenge(
+  a: OracleFactoryArgs,
+): (slice: string) => (ac: number, argument: string) => Promise<string> {
+  const spent = new Map<string, number>();
+  return (slice: string) =>
+    async (ac: number, argument: string): Promise<string> => {
+      const used = spent.get(slice) ?? 0;
+      if (used >= CHALLENGE_BUDGET)
+        return `challenge budget spent (${CHALLENGE_BUDGET} per slice) — meet the checks as they stand, or report UNDELIVERED with your evidence.`;
+      const criterion = a.criterionOf?.(slice, ac);
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+      if (!criterion || !rel) return `no check ${ac} exists on this slice.`;
+      spent.set(slice, used + 1);
+      let probeSrc = "";
+      try {
+        probeSrc = (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 12000);
+      } catch {
+        return `check ${ac} has no probe yet — nothing to challenge; run verify first.`;
+      }
+      const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
+      const reply = await (a.supervisorRound ?? runReadRound)(
+        { model: judge, repoRoot: a.testerWt, log: a.log },
+        [
+          "You are the ORACLE ruling on a coder's CHALLENGE to one check. You see",
+          "everything; the coder saw only its own failures. Judge ONE question:",
+          "does the probe faithfully render the criterion? A probe that asserts",
+          "implementation details the criterion never demands, contradicts a",
+          "stated rule of the run, or cannot be satisfied by ANY correct",
+          "implementation is DEFECTIVE. A probe the coder merely finds hard is",
+          "FAITHFUL. The criterion itself is not on trial.",
+          "Your FIRST line must be exactly DEFECTIVE or FAITHFUL, then one plain",
+          "sentence of reason.",
+          "",
+          `THE CRITERION (signed by the human): ${criterion.text}`,
+          "",
+          "──── THE PROBE'S SOURCE ────",
+          probeSrc,
+          "",
+          "──── THE CODER'S ARGUMENT ────",
+          argument.slice(0, 4000),
+        ].join("\n"),
+      );
+      const granted = !!reply?.trimStart().toUpperCase().startsWith("DEFECTIVE");
+      const reason = (reply ?? "the judge was unreachable — the check stands")
+        .split("\n")
+        .slice(0, 2)
+        .join(" ")
+        .slice(0, 300);
+      a.onRuling?.({ slice, criterionId: criterion.id, granted, reason });
+      a.defect({
+        slice,
+        activity: "challenge",
+        trigger: "oracle-ruling",
+        type: granted ? "test" : "code",
+        impact: granted ? "check re-authored" : "challenge denied",
+        detail: reason,
+      });
+      if (!granted) return `DENIED — ${reason}\nMeet the check as it stands.`;
+      const rewritten = await (a.author ?? runAuthoringRound)(
+        {
+          cwd: a.testerWt,
+          model: judge,
+          allowWrite: [rel],
+          log: a.log,
+          maxTurns: 30,
+        },
+        [
+          `Rewrite the probe at ${rel} FROM ITS CRITERION alone. An earlier`,
+          `rendering was ruled defective: ${reason}`,
+          "",
+          `THE CRITERION it must prove, exactly: ${criterion.text}`,
+          "",
+          "Write a complete, runnable probe file proving only that criterion,",
+          "against the repository as this tree shows it. Do not weaken the",
+          "criterion and do not test implementation details it never names.",
+          "Overwrite the file in place.",
+        ].join("\n"),
+      );
+      if (rewritten === null)
+        return `GRANTED — ${reason}\nBut the re-author failed; the old check stands for now. Run verify.`;
+      await a.persistProbe?.(rel).catch(() => {});
+      a.log(`⚖ ${slice}: check ${ac} re-authored at the oracle's ruling — ${reason}`);
+      return `GRANTED — ${reason}\nThe check was re-authored from its criterion. Run verify.`;
+    };
 }
 
 /** One oracle per slice, memoized; undefined when the slice has no probes. */

@@ -110,6 +110,34 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
           s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
           s.changed(note);
         },
+        // The check's forwarding address: each criterion records where its
+        // standing proof now lives in the repository's own suite.
+        onAnchors: (anchors) => {
+          const byId = new Map(anchors.map((a) => [a.criterionId, a]));
+          s.space = {
+            ...s.space,
+            nodes: s.space.nodes.map((n) =>
+              n.acceptance.some((a) => byId.has(a.id))
+                ? {
+                    ...n,
+                    acceptance: n.acceptance.map((a) => {
+                      const hit = byId.get(a.id);
+                      return hit
+                        ? {
+                            ...a,
+                            proof: {
+                              path: hit.path,
+                              ...(hit.test ? { test: hit.test } : {}),
+                              stamp: hit.stamp,
+                            },
+                          }
+                        : a;
+                    }),
+                  }
+                : n,
+            ),
+          };
+        },
         changed: (m) => s.changed(m),
       });
       if (last?.refusals.length && !last.delivery) {

@@ -20,10 +20,8 @@
  * Every failure lands as an artifact — UNDELIVERED, containment, red
  * proofs — never as silence.
  */
-import { accessSync } from "node:fs";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Cut, Delivery, Proof, Space } from "../core/schema";
+import { Cut, Delivery, Proof, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
@@ -36,15 +34,14 @@ import {
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
-import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
-import { buildVerificationTrace } from "../engine/core/trace";
+import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { gradeAssessments, logRedChecks } from "./assess";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
-import { claimRunLock, confessedDeferrals, foldBlastRadius } from "./plan";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { claimRunLock, confessedDeferrals, docsObligations, foldBlastRadius, writeDeliveryRecord } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
@@ -52,6 +49,7 @@ import { RunState } from "./state";
 import { coderStanza } from "./brief";
 import { closingVerifications, sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
+import { criterionLookup, criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -84,6 +82,8 @@ export interface DispatchDeps {
   ) => Promise<WorkerOutcome>;
   /** Injectable for tests: replaces the supervisor's SDK round. */
   supervisorRound?: typeof runReadRound;
+  /** Injectable for tests: replaces the re-homing authoring round. */
+  rehome?: typeof rehomeProbes;
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
 }
 
@@ -92,6 +92,9 @@ export interface DispatchOutcome {
   refusals: string[];
   undelivered: string[];
   url?: string;
+  /** Where each criterion's standing check went on living — the space
+   *  binds these onto its acceptance criteria. */
+  proofAnchors?: (ProofAnchor & { criterionId: string })[];
 }
 export async function dispatchTep(
   deps: DispatchDeps,
@@ -181,7 +184,11 @@ export async function dispatchTep(
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
 
   const briefBySlice = new Map<string, string>();
-  const buildOracle = sliceOracleFactory({
+  // The check behind an ordinal, from the space — the adapter carried the
+  // ids; the probe never carries delivery bookkeeping.
+  const criterionOf = criterionLookup(slices, space);
+  const rulings: Ruling[] = [];
+  const oracleArgs = {
     repoRoot: deps.repoRoot,
     branch,
     wtRoot,
@@ -198,7 +205,13 @@ export async function dispatchTep(
     boundedExec,
     log,
     defect,
-  });
+    criterionOf,
+    onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
+      rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
+    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel]),
+  };
+  const buildOracle = sliceOracleFactory(oracleArgs);
+  const challengeFor = makeChallenge(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -323,6 +336,7 @@ export async function dispatchTep(
                   const r = await oracle.verify();
                   return formatVerifyReply(r);
                 },
+                challengeTool: challengeFor(next.slice),
               }
             : {}),
         },
@@ -471,14 +485,17 @@ export async function dispatchTep(
       }),
   });
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
+  const criterionByProbe = criterionMapOf(slices);
   const proofs: Proof[] = assessed.concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
+      const criterionId = probe ? criterionByProbe.get(probe) : undefined;
       return {
         kind: "probe" as const,
         label: (probe && checkOf.get(probe)) || `check ${r.ac}`,
         verdict: r.pass ? ("green" as const) : ("red" as const),
         ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
+        ...(criterionId ? { criterionId } : {}),
       };
     }),
   );
@@ -503,53 +520,43 @@ export async function dispatchTep(
   const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
 
-  // The delivery's MACHINE FACE persists beside the space: the engine's
-  // structured verification trace plus the run facts — the delivery page is
-  // a render, this file is the evidence record.
-  if (deps.storeDir) {
-    try {
-      const trace = buildVerificationTrace({ round: 1, declared: verifs, acResults });
-      const dir = path.join(deps.storeDir, "deliveries");
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(
-        path.join(dir, `${tep}.json`),
-        JSON.stringify(
-          { tep, branch, baseSha, proofs, undelivered, trace },
-          null,
-          2,
-        ),
-      );
-    } catch {
-      /* the record is best-effort; the run's verdicts already live on the delivery */
-    }
-  }
+  // Re-home the delivery's standing checks: probes leave their delivery
+  // coordinates and join the repository's own suite at each promise's
+  // module test home, the criterion recording where its proof went on
+  // living. Only over a green suite — a delivery that is already red
+  // keeps its evidence exactly where the gate graded it.
+  const rehomedAnchors =
+    suite.code === 0
+      ? await rehomeAtGate({
+          worktree,
+          space,
+          criterionByProbe,
+          model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, "code"),
+          ...(deps.digest ? { digest: deps.digest } : {}),
+          ...(deps.testConvention ? { testConvention: deps.testConvention } : {}),
+          suite: async () =>
+            (await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree)).code === 0,
+          exec,
+          log,
+          rehome: deps.rehome ?? rehomeProbes,
+        })
+      : [];
 
-  // Docs gate: a slice that declares documentation (a docs/ touchpoint)
-  // must have LANDED it — the engine's obligation check runs against the
-  // real tree, and an unmet obligation is UNDELIVERED on the page's face.
-  for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
-    const note = unmetDocsObligation(
-      {
-        docs: declaresDocs ? "required" : undefined,
-        files: s.files,
-        work_units: s.workUnits,
-      },
-      (rel) => {
-        try {
-          accessSync(path.join(worktree, rel));
-          return true;
-        } catch {
-          return false;
-        }
-      },
-    );
-    if (note) undelivered.push(`${s.handle}: ${note}`);
-  }
+  if (deps.storeDir)
+    await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha, proofs, undelivered, verifs, acResults });
+
+  undelivered.push(...docsObligations(slices, worktree));
 
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);
   await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
+  const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
+  const proofAnchors = rehomedAnchors.map((a) => ({
+    criterionId: a.criterionId,
+    path: a.path,
+    ...(a.test ? { test: a.test } : {}),
+    stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
+  }));
   const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
   let url: string | undefined;
   if (pushed.code === 0 && deps.forge) {
@@ -572,6 +579,7 @@ export async function dispatchTep(
     refusals: [],
     undelivered,
     url,
+    ...(proofAnchors.length ? { proofAnchors } : {}),
     delivery: {
       id: `delivery-${tep}`,
       cutId: cut.id,
@@ -579,6 +587,7 @@ export async function dispatchTep(
       proofs,
       ...(url ? { url } : {}),
       ...(undelivered.length ? { undelivered } : {}),
+      ...(rulings.length ? { rulings } : {}),
     },
   };
   } finally {

@@ -24,6 +24,9 @@ export async function dispatchScopePlan(args: {
    *  it; a digest of one repository is not knowledge of another. */
   digest?: string;
   onDelivery: (delivery: Delivery, note: string) => void;
+  /** Where each criterion's standing check now lives — bound per scope,
+   *  as each delivery lands. */
+  onAnchors?: (anchors: NonNullable<DispatchOutcome["proofAnchors"]>) => void;
   changed: (message: string) => void;
 }): Promise<DispatchOutcome | undefined> {
   const { groups, order } = args.plan;
@@ -80,6 +83,7 @@ export async function dispatchScopePlan(args: {
       slices,
     );
     last = outcome;
+    if (outcome.proofAnchors?.length) args.onAnchors?.(outcome.proofAnchors);
     if (outcome.delivery) {
       const delivery = {
         ...outcome.delivery,

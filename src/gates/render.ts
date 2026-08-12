@@ -196,6 +196,22 @@ export function renderDeliveryPage(
         `- ${p.verdict === "green" ? "✓" : "✗"} ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
       );
   }
+  // An exam amended mid-run is part of the decision: every challenge the
+  // oracle ruled on, granted or denied, on the page's face — the human
+  // accepts knowing the checks changed, which one, and why.
+  if ((delivery.rulings ?? []).length) {
+    lines.push("");
+    lines.push("## Rulings — checks challenged during the run");
+    lines.push("");
+    for (const r of delivery.rulings ?? []) {
+      const check = space.nodes
+        .flatMap((n) => n.acceptance)
+        .find((a) => a.id === r.criterionId);
+      lines.push(
+        `- ${r.granted ? "⚖ re-authored" : "· upheld"} (${r.unit}) "${check?.text ?? r.criterionId}" — ${r.reason}`,
+      );
+    }
+  }
   // What did NOT arrive is part of the decision, on the page's face —
   // including any unmet documentation obligation.
   if ((delivery.undelivered ?? []).length) {

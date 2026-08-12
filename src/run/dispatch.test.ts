@@ -78,6 +78,7 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       digest: "CONVENTIONS: greetings are lowercase; tests sit beside the code",
       worker: async (w, brief) => {
@@ -136,6 +137,53 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
   assert.ok(shipped.includes("src/greet.mjs"), "the implementation is committed on the delivery branch");
 });
 
+test("standing checks re-home: the outcome carries each criterion's forwarding address, stamped", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-9" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let rehomeSaw: { criterionId: string; check: string; lands: string[] } | undefined;
+
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async (args) => {
+        const c = args.checks[0];
+        rehomeSaw = { criterionId: c.criterionId, check: c.check, lands: c.lands };
+        return {
+          anchors: [{ criterionId: c.criterionId, path: "src/greet.test.mjs", test: "greet returns the greeting" }],
+          notes: [],
+        };
+      },
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+        else writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+
+  assert.equal(rehomeSaw?.criterionId, "c1", "the check's identity reaches the re-homer from the space");
+  assert.equal(rehomeSaw?.check, "greet() returns 'hello'", "with the criterion's words");
+  assert.deepEqual(rehomeSaw?.lands, ["src/greet.mjs"], "and where its promise lands");
+  const anchor = outcome.proofAnchors![0];
+  assert.equal(anchor.criterionId, "c1");
+  assert.equal(anchor.path, "src/greet.test.mjs");
+  const head = execFileSync("git", ["-C", repo, "rev-parse", "tandem/TEP-t-9"], { encoding: "utf8" }).trim();
+  assert.equal(anchor.stamp[0].head, head, "the binding is stamped at the delivered head — drift is detectable");
+  const probeProof = outcome.delivery!.proofs.find((p) => p.kind === "probe")!;
+  assert.equal(probeProof.criterionId, "c1", "every gate proof names the check it answers");
+});
+
 test("MANDATORY-GREEN: a wrong implementation is not done — the oracle's evidence routes a rework that fixes it", async () => {
   const repo = tmpRepo();
   const { space, ids } = spaceWithOneChange();
@@ -152,6 +200,7 @@ test("MANDATORY-GREEN: a wrong implementation is not done — the oracle's evide
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w, brief) => {
         if (w.role === "test") {
@@ -199,6 +248,7 @@ test("the in-loop verify tool grades the coder's current work against the real p
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -235,6 +285,7 @@ test("a red probe is a red proof — the delivery exists and says so", async () 
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -294,6 +345,7 @@ test("independent slices run on the parallel frontier — two probe authors in f
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "pair space",
       concurrency: 2,
       worker: async (w) => {
@@ -345,6 +397,7 @@ test("parked worker: the question surfaces, the answer resumes, UNDELIVERED is h
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") {
@@ -396,6 +449,7 @@ test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELI
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "docs space",
       worker: async (w) => {
         // The probe passes trivially; the coder never writes the guide.
@@ -437,6 +491,7 @@ test("grade-first: when the committed state already satisfies the checks, no cod
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w) => {
         rolesDispatched.push(w.role);
@@ -466,6 +521,7 @@ test("the honesty scan: a delivered confession marker is UNDELIVERED on the deli
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w) => {
         if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);

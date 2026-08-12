@@ -55,14 +55,30 @@ interface Grounding {
   stamp: SourceStamp[];
 }
 
+/** Where a check's standing proof lives, once the delivery that minted it
+ *  is over: a test in the repository's own suite, at the module's test
+ *  home, addressed by file and test name. The event side points into
+ *  subject space — never the reverse — so the suite carries no delivery
+ *  bookkeeping and a withdrawn claim can enumerate its tests to retire. */
+export interface ProofAnchor {
+  path: string;
+  /** The test's name inside that file, as the harness reports it. */
+  test?: string;
+  /** The repo state the binding was made against — a moved or renamed
+   *  test surfaces as drift, not as silence. */
+  stamp: SourceStamp[];
+}
+
 /** What proves a promise kept. `probePath` binds the executable form;
  *  kind "assessment" marks a check no runnable test fits — graded at the
- *  closing gate by a fresh, independent assessor, never the builder. */
+ *  closing gate by a fresh, independent assessor, never the builder.
+ *  `proof` is where the check went on living after its delivery. */
 export interface AcceptanceCriterion {
   id: string;
   text: string;
   probePath?: string;
   kind?: "probe" | "assessment";
+  proof?: ProofAnchor;
 }
 
 /**
@@ -137,6 +153,21 @@ export interface Proof {
   verdict: ProofVerdict;
   /** Where the machine face of this evidence lives (log, run URL). */
   ref?: string;
+  /** The check this proof answers — the claim card reads verification
+   *  state through this, not by matching label prose. */
+  criterionId?: string;
+}
+
+/** An exam amended mid-run, on the record: the oracle's ruling on a
+ *  coder's challenge to a check. Granted rulings ride the delivery's
+ *  face — the human accepts knowing the exam changed, by whom and why. */
+export interface Ruling {
+  /** The check challenged, by criterion id. */
+  criterionId: string;
+  unit: string;
+  granted: boolean;
+  /** Why the probe misread the criterion — or why it stands. */
+  reason: string;
 }
 
 export interface Delivery {
@@ -148,6 +179,8 @@ export interface Delivery {
   url?: string;
   /** Declared gaps from the run's workers — honest, never hidden. */
   undelivered?: string[];
+  /** Challenges ruled on during the run — every one, granted or not. */
+  rulings?: Ruling[];
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
 }

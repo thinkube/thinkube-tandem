@@ -110,6 +110,7 @@ test("multirepo TEP: one branch and one delivery PER REPO, producer scope first,
         {
           ...(deps as object),
           supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
           worker: async (w: Parameters<NonNullable<Parameters<typeof dispatchTep>[0]["worker"]>>[0]) => {
             if (w.role === "test") {
               const isMember = w.worktree.includes(path.basename(memberRepo));
@@ -176,6 +177,7 @@ test("dispatch refuses when footprints collide with an in-flight run on the same
       suiteCommand: ["node", "-e", "process.exit(0)"],
       state,
       supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async () => ({ ok: true, finalText: "done" }),
     },

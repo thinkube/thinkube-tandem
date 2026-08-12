@@ -57,6 +57,7 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
       if (!green) a.onRed?.(`review-${ord}`, (reply ?? "unreachable").slice(0, 300));
       proofs.push({
         kind: "assessment",
+        criterionId: c.id,
         label: `review-${ord}: ${c.text.slice(0, 60)}`,
         verdict: green ? "green" : "red",
         ...(reply ? { ref: reply.slice(0, 300) } : { ref: "the reviewer could not be reached — graded red, never assumed" }),

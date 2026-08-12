@@ -35,6 +35,10 @@ export interface RunWorkerDeps {
   /** In-loop black-box check: runs the slice's acceptance checks against the
    *  current work and returns the oracle's formatted verdict. */
   verifyTool?: () => Promise<string>;
+  /** The valve on the blinding wall: challenge a check the worker believes
+   *  misreads its criterion. The oracle rules; the ruling is recorded and
+   *  rides the delivery. Never a way to see or edit the probe. */
+  challengeTool?: (check: number, argument: string) => Promise<string>;
   /**
    * Blind the code author. With the oracle in place its only feedback is
    * `verify` — probe source never reaches it, results do — so a shell and
@@ -141,8 +145,11 @@ export function containmentViolations(
 type SdkTool = (
   name: string,
   description: string,
-  schema: Record<string, never>,
-  handler: () => Promise<{ content: { type: "text"; text: string }[] }>,
+  schema: Record<string, unknown>,
+  handler: (
+    args: Record<string, unknown>,
+    extra?: unknown,
+  ) => Promise<{ content: { type: "text"; text: string }[] }>,
 ) => unknown;
 type SdkCreateServer = (cfg: {
   name: string;
@@ -170,6 +177,8 @@ export async function runUnitWorker(
     query = mod.query;
     if (deps.verifyTool && mod.tool && mod.createSdkMcpServer) {
       const verify = deps.verifyTool;
+      const challenge = deps.challengeTool;
+      const { z } = (await import("zod")) as { z: typeof import("zod").z };
       mcpServers = {
         tandem: mod.createSdkMcpServer({
           name: "tandem",
@@ -183,6 +192,26 @@ export async function runUnitWorker(
                 content: [{ type: "text" as const, text: await verify() }],
               }),
             ),
+            ...(challenge
+              ? [
+                  mod.tool(
+                    "challenge",
+                    "Challenge ONE check you believe misreads its criterion or cannot be satisfied by any correct implementation. Argue in intent terms with your verify evidence — you will never see the check's source. An independent judge rules; granted, the check is re-authored from its criterion and the ruling is recorded on the delivery; denied, meet it. Do not grind a red check when you believe it is wrong — file this instead. Budget: 2 per slice.",
+                    { check: z.number(), argument: z.string() },
+                    async (args: Record<string, unknown>) => ({
+                      content: [
+                        {
+                          type: "text" as const,
+                          text: await challenge(
+                            Number(args.check),
+                            typeof args.argument === "string" ? args.argument : "",
+                          ),
+                        },
+                      ],
+                    }),
+                  ),
+                ]
+              : []),
           ],
         }),
       };
