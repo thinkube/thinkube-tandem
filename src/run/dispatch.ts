@@ -23,7 +23,7 @@
 import { accessSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Cut, Delivery, Proof, Space } from "../core/schema";
+import { Cut, Delivery, docsObligation, Proof, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
@@ -36,7 +36,7 @@ import {
 } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
-import { MAX_REWORK_ATTEMPTS, unmetDocsObligation } from "../engine/core/redispatch";
+import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { buildVerificationTrace } from "../engine/core/trace";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
@@ -524,27 +524,31 @@ export async function dispatchTep(
     }
   }
 
-  // Docs gate: a slice that declares documentation (a docs/ touchpoint)
-  // must have LANDED it — the engine's obligation check runs against the
-  // real tree, and an unmet obligation is UNDELIVERED on the page's face.
-  for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
-    const note = unmetDocsObligation(
-      {
-        docs: declaresDocs ? "required" : undefined,
-        files: s.files,
-        work_units: s.workUnits,
-      },
-      (rel) => {
-        try {
-          accessSync(path.join(worktree, rel));
-          return true;
-        } catch {
-          return false;
-        }
-      },
-    );
-    if (note) undelivered.push(`${s.handle}: ${note}`);
+  // Docs gate: the CUT owes documentation, not just the slices that named a
+  // docs/ file — every cut is asked, and only a validly-waived cut (a
+  // recorded reason) is exempt, whatever its slices touch.
+  const obligation = docsObligation(cut);
+  if (obligation.required) {
+    const exists = (rel: string): boolean => {
+      try {
+        accessSync(path.join(worktree, rel));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const declared = [
+      ...new Set(
+        slices.flatMap((s) => (s.files ?? []).filter((f) => f.startsWith("docs/"))),
+      ),
+    ];
+    const missing = declared.length === 0 ? true : declared.some((p) => !exists(p));
+    if (missing)
+      undelivered.push(
+        declared.length === 0
+          ? `${tep}: docs obligation unmet — the cut is not waived and lands no docs/ path`
+          : `${tep}: docs obligation unmet — declared doc path(s) not present in the landed tree: ${declared.filter((p) => !exists(p)).join(", ")}`,
+      );
   }
 
   log(`${tep}: committing and opening the delivery`);

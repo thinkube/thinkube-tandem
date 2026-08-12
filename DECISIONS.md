@@ -44,9 +44,14 @@ of them there — nothing has users.
 ## Parity batch (2026-08-06, post-audit)
 - Sign refuses unprovable/ungrounded changes and undecided questions on the
   cut's asks — the freeze-gate refusals moved from warnings into the gate.
-- The docs obligation derives from grounding: a slice declaring a docs/
-  touchpoint must land it; blocking at accept by default (advisory setting
-  is the recorded escape hatch).
+- ~~The docs obligation derives from grounding: a slice declaring a docs/
+  touchpoint must land it~~ — superseded by the per-cut default: documentation
+  is required of every cut, whether or not any slice names a docs/ file. A
+  cut is relieved of the obligation only by an explicit, written waiver
+  carrying a non-empty reason: a waiver without a reason is refused at
+  signing, and that the reason is recorded in the TEP. Blocking at accept
+  by default remains in force (`thinkubeTandem.docsGateMode: advisory` is
+  the recorded escape hatch).
 - The retired-symbol importer gate stays unwired until grounding grows a
   `retires` declaration for symbol-deleting changes — it arms the day that
   field exists; the module is imported and tested.

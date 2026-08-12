@@ -38,14 +38,18 @@ asks still have open questions.
 
 Add units to the cut. If the grouping is wrong, pin: *Merge into one
 slice* or *Split out*. The cut screen shows what ships, what it needs
-first, and refuses to sign anything unprovable or ungrounded. *Sign*
-mints your TEP with a content-bound approval token — edit anything under
-the signature and the token stops matching until you sign again.
+first, and refuses to sign anything unprovable or ungrounded. It also
+shows the cut's documentation decision — required by default, or *not
+needed* with the reason you gave it. Declaring documentation not needed
+asks for that reason on the spot; signing a waiver with no reason is
+refused. *Sign* mints your TEP with a content-bound approval token — edit
+anything under the signature and the token stops matching until you sign
+again.
 
 == Watch it build, then accept
 
 The run starts on its own; see xref:the-run.adoc[]. When the delivery
 arrives, its page lists every proof (green or red, with evidence) and
 every UNDELIVERED item. *Accept* merges it on your forge; a delivery
-with a red proof, or with an unmet documentation obligation, refuses to
-be accepted.
+with a red proof, or with a cut's documentation obligation unmet, refuses
+to be accepted.

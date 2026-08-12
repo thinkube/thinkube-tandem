@@ -101,12 +101,29 @@ export interface Cut {
   changeIds: string[];
   /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
   tepId?: string;
+  /** The cut's documentation decision. Absent = undecided = required. A
+   *  waiver with no (or whitespace-only) reason is invalid and never
+   *  relieves the obligation. */
+  docs?: { waived: boolean; reason: string };
   /** Set when the human signs; binds the render AND the grounded members. */
   signature?: {
     at: string;
     renderHash: string;
     groundingHash: string;
   };
+}
+
+/**
+ * Every cut owes documentation unless it is explicitly, validly waived: a
+ * waiver with an empty or whitespace-only reason never relieves the
+ * obligation. When waived, the human's reason rides back byte for byte —
+ * the validity trim never touches the returned value.
+ */
+export function docsObligation(cut: Cut): { required: boolean; reason?: string } {
+  const docs = cut.docs;
+  if (docs && docs.waived && docs.reason.trim().length > 0)
+    return { required: false, reason: docs.reason };
+  return { required: true };
 }
 
 /**

@@ -21,7 +21,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { emptySpace, Space } from "./schema";
+import { docsObligation, emptySpace, Space } from "./schema";
 
 export interface SnapshotRecord {
   at: string;
@@ -176,6 +176,11 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
     if (!list.some((x) => x.id === item.id)) list.push(item);
   };
   const decides = new Map<string, Set<string>>();
+  // Every author's documentation decision on every cut id, in fold order —
+  // a waiver another author recorded must survive a first-writer-wins put
+  // on the base cut object, and two DIFFERENT waiver reasons for the same
+  // cut are a collision, never picked by merge order.
+  const cutDocs = new Map<string, { waived: boolean; reason: string }[]>();
   for (const { space } of spaces) {
     for (const a of space.asks) put(merged.asks, a);
     for (const n of space.nodes) put(merged.nodes, n);
@@ -186,7 +191,13 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
         decides.get(q.id)!.add(q.decided.text);
       }
     }
-    for (const c of space.cuts) put(merged.cuts, c);
+    for (const c of space.cuts) {
+      put(merged.cuts, c);
+      if (c.docs) {
+        if (!cutDocs.has(c.id)) cutDocs.set(c.id, []);
+        cutDocs.get(c.id)!.push(c.docs);
+      }
+    }
     for (const u of space.units) put(merged.units, u);
     for (const p of space.proposals ?? []) {
       if (!merged.proposals) merged.proposals = [];
@@ -231,6 +242,32 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
         text: `Conflicting decisions on "${merged.questions.find((q) => q.id === qid)?.text ?? qid}": ${[...answers].sort().join(" — versus — ")}`,
         recommendation: [...answers].sort()[0],
       });
+
+  // Documentation decisions carry across authors: a waiver another author
+  // recorded is neither dropped by the base cut's first-writer-wins put nor
+  // silently unified with a differing one — reasons for the SAME cut that
+  // disagree surface exactly as a contradictory decision does.
+  merged.cuts = merged.cuts.map((c) => {
+    const all = cutDocs.get(c.id);
+    if (!all || all.length === 0) return c;
+    const valid = all.filter((d) => docsObligation({ ...c, docs: d }).required === false);
+    const reasons = new Set(valid.map((d) => d.reason));
+    if (reasons.size > 1) {
+      // Ambiguous, never resolved by merge order: the conflict surfaces as
+      // its own question and the cut's own waiver stays whatever the base
+      // writer already held — never one of the colliding reasons picked
+      // silently.
+      merged.questions.push({
+        id: `conflict-docs-${c.id}`,
+        askId: "",
+        text: `Conflicting documentation waivers on "${c.id}": ${[...reasons].sort().join(" — versus — ")}`,
+        recommendation: [...reasons].sort()[0],
+      });
+      return c;
+    }
+    if (reasons.size === 1 && !c.docs) return { ...c, docs: valid[0] };
+    return c;
+  });
 
   return merged;
 }

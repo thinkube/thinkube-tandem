@@ -8,7 +8,7 @@
  * only inside fields the engine already threads; engine code is never
  * edited to fit (the engine-hash gate enforces that).
  */
-import { Change, Cut, Space } from "../core/schema";
+import { Change, Cut, docsObligation, Space } from "../core/schema";
 import { formUnits } from "../core/cluster";
 import type { SliceForDag } from "../engine/core/dag";
 import type { WorkUnit } from "../engine/orchestratorCore";
@@ -44,6 +44,14 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     throw new Error(
       `touchpoint(s) escape the repository: ${[...new Set(escaping)].join(", ")} — re-ground with repo-relative paths`,
     );
+  // The cut's documentation decision — asked once, carried down to every
+  // slice's note so a waived cut's reason travels with the work, not just
+  // the ones that happened to name a docs/ file.
+  const docs = docsObligation(cut);
+  const docsLine = docs.required
+    ? "Documentation: required for this cut."
+    : `Documentation: waived for this cut — reason: ${docs.reason}`;
+
   const units = formUnits(members);
   const sliceOf = new Map<string, number>();
   units.forEach((u, i) => u.changeIds.forEach((id) => sliceOf.set(id, i + 1)));
@@ -93,15 +101,17 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
 
     // The sharpest text the pipeline produced — sentences, where each
     // change lands, and what proves it (precision is monotone).
-    const note = changes
-      .map((c) => {
-        const at = (c.grounding?.touchpoints ?? [])
-          .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new file)" : ""))
-          .join(", ");
-        const proofs = c.acceptance.map((a) => a.text).join("; ");
-        return `${c.sentence}${at ? ` — lands at ${at}` : ""}${proofs ? ` — done when: ${proofs}` : ""}`;
-      })
-      .join("\n");
+    const note =
+      changes
+        .map((c) => {
+          const at = (c.grounding?.touchpoints ?? [])
+            .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new file)" : ""))
+            .join(", ");
+          const proofs = c.acceptance.map((a) => a.text).join("; ");
+          return `${c.sentence}${at ? ` — lands at ${at}` : ""}${proofs ? ` — done when: ${proofs}` : ""}`;
+        })
+        .join("\n") +
+      `\n${docsLine}`;
 
     // Cross-slice needs → the engine's only edge language: consumes over
     // the producing slice's footprint (planned outputs first).

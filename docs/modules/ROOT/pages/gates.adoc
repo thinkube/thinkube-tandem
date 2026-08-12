@@ -23,9 +23,11 @@ A delivery page lists every proof: one per acceptance criterion, executed
 by the real closing gate, plus the repository's own test suite. Accepting:
 
 * is refused while any proof is not green;
-* is refused while a declared documentation obligation is unmet (the
-  docs gate blocks by default; `thinkubeTandem.docsGateMode: advisory`
-  is the recorded escape hatch);
+* is refused while a cut's documentation obligation is unmet — documentation
+  is required of every cut by default; declaring it not needed on the cut
+  review asks for a reason on the spot, and only a waiver carrying that
+  reason relieves the obligation (the docs gate blocks by default;
+  `thinkubeTandem.docsGateMode: advisory` is the recorded escape hatch);
 * runs in the canonical order merge → stamp → retire: a refused merge
   aborts before anything is stamped; worktree cleanup is best-effort and
   never fails a landed accept.

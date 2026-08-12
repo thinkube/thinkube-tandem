@@ -44,8 +44,9 @@ ready frontier.
 |`thinkubeTandem.suiteCommand` |`npm test` |The project's test suite;
 its verdict is a delivery proof.
 
-|`thinkubeTandem.docsGateMode` |`blocking` |Whether an unmet
-documentation obligation blocks accepting.
+|`thinkubeTandem.docsGateMode` |`blocking` |Whether a cut's unmet
+documentation obligation (required by default; waivable on the cut
+review only with a reason) blocks accepting.
 
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
 (github.com remotes use the `gh` CLI instead).
