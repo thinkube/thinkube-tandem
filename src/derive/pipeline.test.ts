@@ -477,6 +477,10 @@ test("completeness sweeps the miss families one by one — an empty family is an
     prompt.includes("An empty family is an answer"),
     "a family may come back empty, but never unswept",
   );
+  assert.ok(
+    prompt.includes('"assessment"') && prompt.includes("never kept as a test"),
+    "a ripple's check carries its lifetime — transition proofs are judged once, not kept",
+  );
 });
 
 test("the graph is asked with the ask's own words, and its answer reaches grounding", async () => {

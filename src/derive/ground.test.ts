@@ -39,6 +39,33 @@ test("the graph's answer to the ask's own words rides the prompt as a lead, not 
   );
 });
 
+test("a check carries its lifetime: transitions are assessments, standing behavior a probe", () => {
+  const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" });
+  assert.ok(prompt.includes('"assessment"'), "the transition kind is offered");
+  assert.ok(
+    prompt.includes("documentation-wording check is ALWAYS"),
+    "prose-pinning checks are never permanent tests",
+  );
+  const raw = JSON.stringify({
+    nodes: [
+      {
+        sentence: "the old badge is gone",
+        touchpoints: [{ path: "src/panel/log.ts" }],
+        needs: [],
+        acceptance: [
+          { text: "the docs page states the new behavior", kind: "assessment" },
+          { text: "opening the panel renders the live badge", kind: "probe" },
+          { text: "a check with a made-up lifetime", kind: "forever" },
+        ],
+      },
+    ],
+  });
+  const [node] = parseGroundedNodes(raw, "/repo", () => true);
+  assert.equal(node.acceptance[0].kind, "assessment", "judged once at delivery, never kept");
+  assert.equal(node.acceptance[1].kind, undefined, "standing behavior is the default probe");
+  assert.equal(node.acceptance[2].kind, undefined, "an unknown kind must not invent a lifetime");
+});
+
 test("an anchor's evidence survives parsing, trimmed and bounded", () => {
   const raw = JSON.stringify({
     nodes: [

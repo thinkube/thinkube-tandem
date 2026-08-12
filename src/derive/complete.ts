@@ -133,9 +133,16 @@ export function buildCompletenessPrompt(args: {
     `Respond with ONE JSON object and nothing else:\n` +
     `{"nodes":[{"sentence":"…"${args.claims?.length ? `,"claim":1` : ""},` +
     `"touchpoints":[{"path":"…"}],"needs":[],` +
-    `"acceptance":[{"text":"…"}]}]} — each node one MISSING or AFFECTED ` +
+    `"acceptance":[{"text":"…","kind":"probe"}]}]} — each node one MISSING or AFFECTED ` +
     `change in the same shape grounding uses (needs indices refer to THIS ` +
-    `list only). Complete and nothing affected → {"nodes":[]}. Never ` +
+    `list only). Each acceptance carries its LIFETIME as "kind": "probe" for ` +
+    `STANDING BEHAVIOR a machine should still check in five years (a permanent ` +
+    `regression test), "assessment" for proof of THIS TRANSITION — something ` +
+    `removed, renamed or reworded, documentation now saying something — judged ` +
+    `once at delivery by an independent reviewer and never kept as a test. A ` +
+    `documentation-wording check is ALWAYS "assessment"; most ripples from the ` +
+    `DOCUMENTATION family are.\n` +
+    `Complete and nothing affected → {"nodes":[]}. Never ` +
     `restate an existing change; only genuine gaps and real ripples.`
   );
 }

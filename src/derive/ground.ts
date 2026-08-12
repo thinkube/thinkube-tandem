@@ -92,7 +92,13 @@ export function buildGroundingPrompt(args: {
     `the evidence is that reading, written down so nobody re-reads the file to reconstruct it. ` +
     `NEVER put line numbers in a path; anchors are structural.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
-    `- "acceptance": what proves this node done, as observable statements: [{"text":"…"}]. At least one per node.\n\n` +
+    `- "acceptance": what proves this node done, as observable statements — at least one per node, ` +
+    `each carrying its LIFETIME as "kind": [{"text":"…","kind":"probe"}].\n` +
+    `    "probe" — STANDING BEHAVIOR: true today and still worth a machine checking in five years. Becomes a permanent regression test.\n` +
+    `    "assessment" — proof of THIS TRANSITION: something is removed, renamed or reworded, documentation now says something. ` +
+    `Judged once by an independent reviewer when the work is delivered, recorded on the delivery, and never kept as a test — ` +
+    `a permanent test pinning prose or an absence fails every later change that legitimately moves on. ` +
+    `A documentation-wording check is ALWAYS "assessment".\n` +
     (args.decisions?.length
       ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
       : "") +
@@ -158,11 +164,16 @@ export function parseGroundedNodes(
       .filter((i): i is number => Number.isInteger(i) && (i as number) >= 0)
       .filter((i) => i < rawNodes.length);
     const acceptance = (Array.isArray(rec.acceptance) ? rec.acceptance : [])
-      .map((c) =>
-        typeof c === "object" && c !== null && typeof (c as Record<string, unknown>).text === "string"
-          ? { text: ((c as Record<string, unknown>).text as string).trim() }
-          : { text: "" },
-      )
+      .map((c) => {
+        if (typeof c !== "object" || c === null) return { text: "" };
+        const a = c as Record<string, unknown>;
+        return {
+          text: typeof a.text === "string" ? a.text.trim() : "",
+          // Only the transition kind is recorded; standing behavior is the
+          // default and an unknown kind must not invent a lifetime.
+          ...(a.kind === "assessment" ? { kind: "assessment" as const } : {}),
+        };
+      })
       .filter((c) => c.text.length > 0);
     out.push({ sentence, touchpoints, needsIndices, acceptance, ...(claim ? { claim } : {}) });
   }
