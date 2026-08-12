@@ -431,7 +431,18 @@ export function App(): JSX.Element {
           <Delivery push={push} />
         ) : push.run || push.runNote ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            {push.runNote ? <RunNote note={push.runNote} unrun={push.unrun} /> : null}
+            {/* The way back in rides signed-undelivered work itself, not the
+                note from a refusal — the note dies with the window, and a
+                refused run leaves a record whose page would otherwise show
+                an empty graph with the only restart button unreachable. */}
+            {push.runNote ? (
+              <RunNote note={push.runNote} unrun={push.unrun} />
+            ) : push.unrun && !push.running ? (
+              <RunNote
+                note="This work is signed and nothing was delivered from it. Below is what its last run left."
+                unrun={push.unrun}
+              />
+            ) : null}
             {push.run ? (
               <RunSection
                 run={push.run}
