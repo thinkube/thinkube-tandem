@@ -83,9 +83,13 @@ export function buildCompletenessPrompt(args: {
     // families skipped — every doc page, every fixture, every copy of a
     // rule. A family answered even when empty cannot be skipped.
     `Sweep these families ONE BY ONE. An empty family is an answer; a ` +
-    `skipped family is not:\n` +
-    `a. DOCUMENTATION — every page that states behavior this work changes. ` +
-    `Search the documentation for the old behavior's words.\n` +
+    `skipped family is not. What a sweep finds is returned as its own ` +
+    `node with its own acceptance — a defect mentioned inside another ` +
+    `node's evidence has not been returned:\n` +
+    `a. DOCUMENTATION — every page that states behavior this work changes: ` +
+    `the published pages a person reads (search them for the old ` +
+    `behavior's words) AND the repository's own registers of decisions ` +
+    `and vocabulary.\n` +
     `b. EXISTING TESTS — every test that exercises a gate, default or rule ` +
     `this work tightens: each must be brought under the new rule, or the ` +
     `suite goes red the moment the work lands.\n` +
