@@ -140,20 +140,27 @@ export function RunSection(props: {
             : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
         ],
       })),
-      {
-        id: "gate",
-        band: { ...ROLES.audit, text: "Audit — everything together" },
-        title: "The closing gate",
-        abs: "every check, on the real state",
-        chips: [
-          allDone
-            ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
-            : anyFailed
-              ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
-              : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
-        ],
-        ...(run.logCounts?.run ? { children: undefined } : {}),
-      },
+      // No workers, no gate: a run that never seeded a unit (it refused
+      // itself before dispatch) has nothing to grade, and a lone closing
+      // gate card over an empty graph claims a run that never happened.
+      ...(run.units.length
+        ? [
+            {
+              id: "gate",
+              band: { ...ROLES.audit, text: "Audit — everything together" },
+              title: "The closing gate",
+              abs: "every check, on the real state",
+              chips: [
+                allDone
+                  ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
+                  : anyFailed
+                    ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
+                    : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
+              ],
+              ...(run.logCounts?.run ? { children: undefined } : {}),
+            },
+          ]
+        : []),
     ],
     [run.units, now, slices],
   );
