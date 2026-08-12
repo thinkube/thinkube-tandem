@@ -51,6 +51,10 @@ export function registerSpaceCommands(
       now: () => string,
       kind?: SpaceOwnerKind,
     ) => DeletionCost;
+    /** Remove what the space's runs created OUTSIDE its directory —
+     *  worktrees, oracle stores, locks, branches (forge included). Returns
+     *  notes for whatever could not go. */
+    sweepResidue: (ownerKey: string, cost: DeletionCost) => Promise<string[]>;
   },
 ): vscodeTypes.Disposable[] {
   const vsc = vs();
@@ -94,7 +98,7 @@ export function registerSpaceCommands(
         const detail = [
           `${cost.asks} sentence${cost.asks === 1 ? "" : "s"} you wrote, and everything read from them, exist only here and go with it.`,
           cost.teps.length
-            ? `${cost.teps.join(", ")} stay minted, and the branch${cost.branches.length === 1 ? "" : "es"} ${cost.branches.join(", ")} stay on the forge — deleting this space does not withdraw them.`
+            ? `Everything ${cost.teps.join(", ")} created goes too: the worktrees, run records and locks on this machine, and the branch${cost.branches.length === 1 ? "" : "es"} ${cost.branches.join(", ") || "it pushed"} — from this repository and from the forge. Only the TEP number${cost.teps.length === 1 ? "" : "s"} stay${cost.teps.length === 1 ? "s" : ""} spent; numbers are never reused.`
             : "",
           cost.merged.length
             ? `${cost.merged.join(", ")} was accepted and merged, so this cannot be deleted.`
@@ -115,6 +119,14 @@ export function registerSpaceCommands(
           void vsc.window.showWarningMessage(`Tandem — ${r.reason}`);
           return;
         }
+        // What the runs created outside the space goes with it. The cost
+        // was computed BEFORE the directory went — it is the only list of
+        // what to sweep. Notes surface; cleanup never blocks the deletion.
+        const notes = await deps.sweepResidue(ownerId, cost).catch((err) => [
+          `the run residue was not swept: ${err instanceof Error ? err.message : String(err)}`,
+        ]);
+        if (notes.length)
+          void vsc.window.showWarningMessage(`Tandem — ${notes.join(" · ")}`);
         deps.dropSession(`${ownerId}/${slug}`);
         if (context.workspaceState.get<string>(`tandem.space.${ownerId}`) === slug)
           await context.workspaceState.update(`tandem.space.${ownerId}`, undefined);

@@ -96,13 +96,35 @@ export async function foldBlastRadius(
  * an in-flight run's — including a DIFFERENT project's in the same
  * monorepo — refuses with the collision named. Best-effort bookkeeping; the
  * forge branch claim stays the hard mutex.
+ *
+ * A lock is only as alive as the process that wrote it. The unlock runs in
+ * the dispatcher's finally, so a window reload or a crash mid-run leaves
+ * the file behind with nobody to remove it — and "stop that run first" is
+ * an instruction no gesture can follow for a run that no longer exists.
+ * Every lock therefore carries its writer's pid, and a colliding lock
+ * whose process is gone is STALE: removed, said, and stepped over.
  */
 export async function claimRunLock(
   wtRoot: string,
   wtName: string,
   runName: string,
   slices: SliceForDag[],
+  opts?: {
+    log?: (line: string) => void;
+    /** Injectable for tests: is this pid a live process on this machine? */
+    alive?: (pid: number) => boolean;
+  },
 ): Promise<{ refusal?: string; unlock: () => Promise<void> }> {
+  const alive =
+    opts?.alive ??
+    ((pid: number): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
   const locksDir = path.join(wtRoot, "locks");
   const myFootprints = slices.flatMap((s) => [
     ...(s.files ?? []),
@@ -120,20 +142,33 @@ export async function claimRunLock(
         const other = JSON.parse(await fsp.readFile(path.join(locksDir, f), "utf8")) as {
           runName?: string;
           footprints?: string[];
+          pid?: number;
         };
         const overlap = (other.footprints ?? []).filter((p) =>
           myFootprints.some((m) => m === p || m.startsWith(p + "/") || p.startsWith(m + "/")),
         );
-        if (overlap.length)
-          return {
-            refusal: `dispatch refused: footprints collide with in-flight run ${other.runName ?? f} on this repository (${[...new Set(overlap)].slice(0, 5).join(", ")}) — accept or stop that run first`,
-            unlock: async () => {},
-          };
+        if (!overlap.length) continue;
+        // A lock without a pid predates liveness and cannot be verified;
+        // it is treated as stale the same way — the branch claim guards.
+        if (!other.pid || !alive(other.pid)) {
+          await fsp.rm(path.join(locksDir, f), { force: true }).catch(() => {});
+          opts?.log?.(
+            `a lock from ${other.runName ?? f} was left by a process that is gone — cleared, not obeyed`,
+          );
+          continue;
+        }
+        return {
+          refusal: `dispatch refused: footprints collide with in-flight run ${other.runName ?? f} on this repository (${[...new Set(overlap)].slice(0, 5).join(", ")}) — accept or stop that run first`,
+          unlock: async () => {},
+        };
       } catch {
         /* an unreadable lock never blocks — the branch claim still guards */
       }
     }
-    await fsp.writeFile(lockFile, JSON.stringify({ runName, footprints: myFootprints }));
+    await fsp.writeFile(
+      lockFile,
+      JSON.stringify({ runName, footprints: myFootprints, pid: process.pid }),
+    );
   } catch {
     /* lock bookkeeping is best-effort; the branch claim is the hard mutex */
   }

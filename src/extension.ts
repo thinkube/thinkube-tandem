@@ -25,7 +25,7 @@ import {
   configuredStoreRoot,
   registerSpaceCommands,
 } from "./hostui/spaceOps";
-import { chooseProject, newProjectFlow, retireTepWorktrees } from "./hostui/projectOps";
+import { chooseProject, newProjectFlow, retireTepWorktrees, sweepDeletedSpaceRuns } from "./hostui/projectOps";
 import { editContextScope, ensureWorkSession, findWorkProject } from "./hostui/workSession";
 import { createWorkProject, listWorkProjects, setWorkProjectState } from "./core/workProjects";
 import { newAppGesture } from "./hostui/templateFlow";
@@ -388,6 +388,7 @@ export function activate(context: vscode.ExtensionContext): void {
       dropSession: (key) => void sessions.delete(key),
       deleteSpace: deleteThinkingSpace,
       costOfDeleting: deletionCost,
+      sweepResidue: (ownerKey, cost) => sweepDeletedSpaceRuns(openProjects, ownerKey, cost),
     }),
     vscode.commands.registerCommand("thinkube-tandem.refreshProjects", () =>
       projectsTree?.refresh(),

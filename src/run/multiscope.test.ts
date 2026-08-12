@@ -158,9 +158,15 @@ test("dispatch refuses when footprints collide with an in-flight run on the same
   const slices = tepSlices({ space, cut, spaceName: "greet space" });
   const locksDir = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`, "locks");
   fs.mkdirSync(locksDir, { recursive: true });
+  // The lock names a process that is genuinely alive (this test runner) —
+  // a lock whose writer is gone no longer blocks anything.
   fs.writeFileSync(
     path.join(locksDir, "other-run.json"),
-    JSON.stringify({ runName: "otherproj/TEP-x-9", footprints: ["src/greet.mjs"] }),
+    JSON.stringify({
+      runName: "otherproj/TEP-x-9",
+      footprints: ["src/greet.mjs"],
+      pid: process.pid,
+    }),
   );
   const state = new RunState(() => {});
   const outcome = await dispatchTep(

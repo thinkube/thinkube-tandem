@@ -139,7 +139,7 @@ export async function dispatchTep(
   const blast = await foldBlastRadius(slices, deps.repoRoot, exec, log);
   if (blast) return refuse("blast-radius", blast);
 
-  const lock = await claimRunLock(wtRoot, wtName, runName, slices);
+  const lock = await claimRunLock(wtRoot, wtName, runName, slices, { log });
   if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
 

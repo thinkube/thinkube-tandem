@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { EnabledProject, mintCard, scopesNotOpen } from "../core/identity";
+import { sweepSpaceResidue } from "../run/residue";
 
 /** Git repositories nested inside a root — the root itself is never a
  *  candidate; found repos are leaves (no descent into them). */
@@ -113,6 +114,30 @@ export async function retireTepWorktrees(repoRoot: string, tepId: string): Promi
     );
   for (const t of targets) await run(["worktree", "remove", "--force", t]);
   await run(["worktree", "prune"]);
+}
+
+/** Everything a deleted space's runs created outside its directory goes
+ *  with it — resolved to the repository the owner card names, when it is
+ *  open here; otherwise the residue is named, not silently kept. */
+export async function sweepDeletedSpaceRuns(
+  openProjects: () => EnabledProject[],
+  ownerKey: string,
+  cost: { teps: string[]; branches: string[] },
+): Promise<string[]> {
+  const bare = ownerKey.startsWith("wp:") ? ownerKey.slice(3) : ownerKey;
+  const p = openProjects().find((x) => x.card.id === ownerKey || x.card.id === bare);
+  if (!p)
+    return cost.teps.length
+      ? [
+          `the runs of ${cost.teps.join(", ")} were not swept — their repository is not open in this workspace`,
+        ]
+      : [];
+  const r = await sweepSpaceResidue({
+    repoRoot: p.gitRoot,
+    teps: cost.teps,
+    branches: cost.branches,
+  });
+  return r.notes;
 }
 
 export async function chooseProject(
