@@ -4,11 +4,28 @@
  * of its own beyond selection.
  */
 
+/** One check, with its verification state — read on the claim card
+ *  independently of how many iterations produced it. */
+interface CheckVM {
+  text: string;
+  /** "assessment" = judged once at delivery by an independent reviewer;
+   *  absent = a standing probe. */
+  kind?: "assessment";
+  /** The newest verdict any delivery recorded for this check. */
+  verdict?: "green" | "red";
+  tep?: string;
+  accepted?: boolean;
+  /** Where the standing proof lives in the repository's own suite. */
+  proof?: { path: string; test?: string };
+  /** The world moved since this was verified — proved-then, not proved-now. */
+  drifted?: boolean;
+}
+
 interface PromiseVM {
   id: string;
   text: string;
   file: string;
-  checks: string[];
+  checks: CheckVM[];
   needs: string[];
   inCut: boolean;
   stale: boolean;

@@ -76,7 +76,27 @@ function assumptionsFor(
     }));
 }
 
-function spacePush(session: TandemSession, message?: string): unknown {
+/** The newest word on a check, read from the deliveries: its verdict,
+ *  the TEP that produced it, and whether the human accepted that work. */
+function latestVerdictOf(
+  session: TandemSession,
+  criterionId: string,
+): { verdict: "green" | "red"; tep?: string; accepted: boolean } | undefined {
+  const ds = session.space.deliveries;
+  for (let i = ds.length - 1; i >= 0; i--) {
+    const proof = ds[i].proofs.find((p) => p.criterionId === criterionId);
+    if (!proof || proof.verdict === "pending") continue;
+    const tep = session.space.cuts.find((c) => c.id === ds[i].cutId)?.tepId;
+    return {
+      verdict: proof.verdict === "green" ? "green" : "red",
+      ...(tep ? { tep } : {}),
+      accepted: !!ds[i].acceptedAt,
+    };
+  }
+  return undefined;
+}
+
+export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
   return {
     kind: "space",
@@ -174,9 +194,21 @@ function spacePush(session: TandemSession, message?: string): unknown {
               id: n.id,
               text: n.sentence,
               file: (n.grounding?.touchpoints ?? []).map((t) => t.path).join(", "),
-              checks: n.acceptance.map((a) =>
-                a.kind === "assessment" ? `${a.text} (by review)` : a.text,
-              ),
+              // Verification lives on the claim card: what proves the
+              // check, the newest verdict, and whether the world moved
+              // since — independent of how many iterations built it.
+              checks: n.acceptance.map((a) => ({
+                text: a.text,
+                ...(a.kind === "assessment" ? { kind: "assessment" as const } : {}),
+                ...(latestVerdictOf(session, a.id) ?? {}),
+                ...(a.proof
+                  ? { proof: { path: a.proof.path, ...(a.proof.test ? { test: a.proof.test } : {}) } }
+                  : {}),
+                ...(session.proofDrift.has(a.id) ||
+                (a.kind === "assessment" && session.stale.has(n.id))
+                  ? { drifted: true }
+                  : {}),
+              })),
               needs: n.needs,
               inCut: session.cutNodeIds.has(n.id),
               stale: session.stale.has(n.id),

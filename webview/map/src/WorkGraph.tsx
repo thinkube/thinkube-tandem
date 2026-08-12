@@ -334,8 +334,33 @@ export function WorkGraph(props: {
                         )}
                       </div>
                       {p.checks.map((c, i) => (
-                        <div key={i} style={{ fontSize: FS.caption, color: C.ok }}>
-                          {c}
+                        <div key={i} style={{ fontSize: FS.caption }}>
+                          <span
+                            style={{
+                              color: c.drifted ? C.gold : c.verdict === "red" ? C.bad : C.ok,
+                            }}
+                          >
+                            {c.verdict === "green" ? "✓ " : c.verdict === "red" ? "✗ " : ""}
+                            {c.text}
+                            {c.kind === "assessment" ? " (by review)" : ""}
+                          </span>
+                          {/* The check's verification state, in one breath:
+                              what proved it, when, and whether the world
+                              moved since — proved-then is not proved-now. */}
+                          <div style={{ color: C.quiet, marginLeft: 10 }}>
+                            {c.drifted
+                              ? c.kind === "assessment"
+                                ? `changed since${c.tep ? ` ${c.tep}` : ""} — unverified`
+                                : `its test moved since it was bound — re-anchor`
+                              : c.verdict
+                                ? `${c.verdict === "green" ? "verified" : "red"}${c.tep ? ` at ${c.tep}` : ""}${c.accepted ? "" : " (not yet accepted)"}`
+                                : c.proof
+                                  ? ""
+                                  : "not yet verified"}
+                            {c.proof
+                              ? `${c.drifted || c.verdict ? " · " : ""}lives at ${c.proof.path}${c.proof.test ? ` › “${c.proof.test}”` : ""}`
+                              : ""}
+                          </div>
                         </div>
                       ))}
                       {/* A promise nothing proves cannot be signed, so the

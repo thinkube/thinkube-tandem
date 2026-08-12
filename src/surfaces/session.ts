@@ -6,8 +6,7 @@
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
-import { staleByTouchpoints, staleChangeIds } from "../core/stale";
-import { filesChangedSince } from "../core/staleFiles";
+import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
@@ -42,6 +41,9 @@ export class TandemSession {
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
   stale = new Set<string>();
+  /** Criteria whose standing proof moved since it was bound — the test
+   *  file changed after the anchor's stamp, so "proved" is out of date. */
+  proofDrift = new Set<string>();
   running = false;
   runState: RunState | undefined;
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
@@ -425,18 +427,13 @@ export class TandemSession {
   /** A human pin — outranks the computed coupling. */
   /** Out of date only when a file the promise lands in changed. */
   async refreshStaleness(): Promise<void> {
-    if (this.deps.readCurrentStamp) { // test seam: whole-repo comparison
-      this.stale = staleChangeIds(this.space, await this.deps.readCurrentStamp());
-      return;
-    }
-    this.stale = await staleByTouchpoints(
-      this.space,
-      (root, head) => filesChangedSince(root, head),
-      (scope) =>
-        scope
-          ? this.deps.scopes?.().find((x) => x.id === scope)?.dir
-          : this.deps.round.repoRoot,
-    );
+    const r = await assessCurrency(this.space, {
+      repoRoot: this.deps.round.repoRoot,
+      readCurrentStamp: this.deps.readCurrentStamp,
+      scopeDir: (scope) => this.deps.scopes?.().find((x) => x.id === scope)?.dir,
+    });
+    this.stale = r.stale;
+    this.proofDrift = r.proofDrift;
   }
 
   pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
