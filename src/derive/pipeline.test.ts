@@ -429,6 +429,15 @@ test("completeness receives what earlier steps learned, consumably: evidence, qu
   assert.ok(prompt.includes("DECISIONS IN FORCE"), "settled answers bound what counts as a gap");
   assert.ok(prompt.includes("refunds never touch the ledger directly"));
   assert.ok(
+    prompt.includes("Sweep these families ONE BY ONE") &&
+      prompt.includes("DOCUMENTATION") &&
+      prompt.includes("EXISTING TESTS") &&
+      prompt.includes("DERIVED COPIES") &&
+      prompt.includes("ONE RULE, MANY READERS") &&
+      prompt.includes("LIFECYCLE"),
+    "the miss families are swept by name — a skipped family was the recurring failure",
+  );
+  assert.ok(
     prompt.includes("> def charge(order):") && prompt.includes("the quote is the evidence"),
     "the affected list is judged from its quoted lines, not re-read",
   );

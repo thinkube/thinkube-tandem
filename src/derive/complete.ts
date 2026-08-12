@@ -78,7 +78,25 @@ export function buildCompletenessPrompt(args: {
     `1. GAPS: something the ask requires that no change covers.\n` +
     `2. AFFECTED CODE: other places in the repository at ${args.repoRoot} ` +
     `that must move too — callers of touched symbols, configuration that ` +
-    `names touched files, documentation that states the old behavior.\n` +
+    `names touched files, documentation that states the old behavior.\n\n` +
+    // The misses this round produces are not random: they are whole
+    // families skipped — every doc page, every fixture, every copy of a
+    // rule. A family answered even when empty cannot be skipped.
+    `Sweep these families ONE BY ONE. An empty family is an answer; a ` +
+    `skipped family is not:\n` +
+    `a. DOCUMENTATION — every page that states behavior this work changes. ` +
+    `Search the documentation for the old behavior's words.\n` +
+    `b. EXISTING TESTS — every test that exercises a gate, default or rule ` +
+    `this work tightens: each must be brought under the new rule, or the ` +
+    `suite goes red the moment the work lands.\n` +
+    `c. DERIVED COPIES — every place that re-derives, re-renders, hashes, ` +
+    `persists or merges an object this work extends: a new field must ride ` +
+    `ALL of them, or it silently falls out somewhere.\n` +
+    `d. ONE RULE, MANY READERS — when two places spell the same decision ` +
+    `separately today, name the one definition this work must give them, ` +
+    `or they will disagree later.\n` +
+    `e. LIFECYCLE — the create, open, close, delete and shutdown paths of ` +
+    `anything this work multiplies: what held one must now hold many.\n` +
     (args.affected
       ? `\nWHAT MOVES WITH THIS, from the code graph — every caller, ` +
         `importer and referencer of what these changes touch, with its file ` +
