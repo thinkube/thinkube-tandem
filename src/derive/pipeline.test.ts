@@ -438,50 +438,15 @@ test("completeness receives what earlier steps learned, consumably: evidence, qu
     "the miss families are swept by name — a skipped family was the recurring failure",
   );
   assert.ok(
-    prompt.includes("> def charge(order):") && prompt.includes("the quote is the evidence"),
-    "the affected list is judged from its quoted lines, not re-read",
+    prompt.includes("> def charge(order):"),
+    "the affected list carries its quoted lines — judged, not re-read",
+  );
+  assert.ok(
+    prompt.includes('"kind"') && prompt.includes('"assessment"') && prompt.includes('"probe"'),
+    "and the lifetime vocabulary the parser reads is offered for every new check",
   );
 });
 
-test("completeness sweeps the miss families one by one — an empty family is an answer", async () => {
-  // The bench showed the round's misses are not random: whole families
-  // skipped (every doc page, every fixture, every copy of a rule). The
-  // sweep names them so a family cannot be silently skipped.
-  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-sweep-"));
-  const deps: RoundDeps = { model: "opus", volumeModel: "sonnet", repoRoot };
-  const calls: string[] = [];
-  const round = scriptedRounds([{ match: /COMPLETENESS round/, reply: `{"nodes":[]}` }], calls);
-  await completeCut(
-    deps,
-    {
-      claims: [{ id: "claim-1", subjectId: "sub-1", text: "a claim" }],
-      subjects: [{ id: "sub-1", name: "a subject" }],
-      changes: [
-        { id: "n1", sentence: "a change", serves: ["sub-1"], needs: [], servesClaim: "claim-1", acceptance: [] },
-      ],
-      mintNodeId: (n) => `node-gap-${n}`,
-      nextIndex: 1,
-    },
-    round,
-  );
-  const prompt = calls[0];
-  for (const family of [
-    "DOCUMENTATION",
-    "EXISTING TESTS",
-    "DERIVED COPIES",
-    "ONE RULE, MANY READERS",
-    "LIFECYCLE",
-  ])
-    assert.ok(prompt.includes(family), `the ${family} family is swept by name`);
-  assert.ok(
-    prompt.includes("An empty family is an answer"),
-    "a family may come back empty, but never unswept",
-  );
-  assert.ok(
-    prompt.includes('"assessment"') && prompt.includes("never kept as a test"),
-    "a ripple's check carries its lifetime — transition proofs are judged once, not kept",
-  );
-});
 
 test("the graph is asked with the ask's own words, and its answer reaches grounding", async () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ask-"));
@@ -512,8 +477,7 @@ test("the graph is asked with the ask's own words, and its answer reaches ground
   });
   assert.deepEqual(asked, [ask.text], "the query IS the ask's words — nothing paraphrased");
   assert.ok(
-    calls[0].includes("WHERE THE GRAPH LANDS THIS ASK") &&
-      calls[0].includes("NODE captureBox() [src=src/toolbar.ts loc=L40]"),
+    calls[0].includes("NODE captureBox() [src=src/toolbar.ts loc=L40]"),
     "the graph's answer rides the grounding prompt",
   );
 });

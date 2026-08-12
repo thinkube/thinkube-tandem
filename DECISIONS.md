@@ -53,3 +53,16 @@ of them there — nothing has users.
 - Supervisor rounds resolve on the judge role (workerModelByRole raises it);
   ESCALATE falls through to the stalled park, DISCLOSE is ledgered.
 - Frontier concurrency default follows v1 (4), setting thinkubeTandem.maxConcurrent.
+
+## Evidence addressing (2026-08-12)
+- Evidence is filed under the thing it proves, never under the event that
+  produced it: a standing check lives in its module's test home; a doc or
+  transition claim is judged once at the gate and recorded on the delivery.
+- One test file per module; one scenario per promise the module makes.
+  A fix modifies the promise's owning scenario — never appends a new block
+  for the incident. A test firing when the code was right is rewritten to
+  the mechanism or retired in that same commit, never appeased.
+- Assertions pin data flows and behavior, never template prose: a reworded
+  sentence must not fail a test unless a data flow was severed.
+- Probes re-home into the suite at accept (their criterion keeps the
+  address); the probes/ directory holds nothing that outlives its delivery.
