@@ -76,6 +76,7 @@ export async function dispatchScopePlan(args: {
         spaceName: args.spaceName,
         storeDir: deps.storeDir,
         supervisorRound: runReadRound,
+        ...(deps.prepareCommand ? { prepare: deps.prepareCommand } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
       },
       args.space(),

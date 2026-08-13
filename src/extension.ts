@@ -264,6 +264,7 @@ async function ensureSession(
       .get<string>("suiteCommand", "npm test")
       .split(" ")
       .filter(Boolean),
+    prepareCommand: config.get<string>("prepareCommand", ""),
     retire: (tepId) => retireTepWorktrees(bound.gitRoot, tepId),
     workerModel: {
       workerModel: config.get<string>("workerModel", "sonnet"),

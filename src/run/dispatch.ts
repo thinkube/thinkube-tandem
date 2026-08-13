@@ -28,7 +28,6 @@ import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import {
   runAcVerifications,
-  AcExec,
   DEFAULT_AC_TIMEOUT_MS,
   runBounded,
 } from "../engine/core/closingGate";
@@ -40,7 +39,7 @@ import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { gradeAssessments, logRedChecks } from "./assess";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { claimRunLock, confessedDeferrals, docsObligations, foldBlastRadius, writeDeliveryRecord } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -73,6 +72,11 @@ export interface DispatchDeps {
    *  fact about the target repository, not about this extension — the
    *  default fits the node harness the oracle ships with. */
   testConvention?: string;
+  /** Build/typecheck command run in the verify runner and the gate
+   *  worktree before checks — the engine's own prepare seam, which was
+   *  never passed: probes importing compiled output failed everywhere
+   *  with module-not-found while the source was correct. */
+  prepare?: string;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
   /** Injectable for tests: replaces the SDK worker. */
@@ -158,15 +162,9 @@ export async function dispatchTep(
     st.seed(u.id, u.slice, (u.role ?? "code") as "code" | "test", requires, u.note, why);
   }
 
+  const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
+  if (trees) return refuse(trees.trigger, trees.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  for (const stale of [worktree, testerWt])
-    await exec("git", ["-C", deps.repoRoot, "worktree", "remove", "--force", stale], deps.repoRoot);
-  await exec("git", ["-C", deps.repoRoot, "worktree", "prune"], deps.repoRoot);
-  await exec("git", ["-C", deps.repoRoot, "branch", "-D", branch], deps.repoRoot);
-  const wt = await exec("git", ["-C", deps.repoRoot, "worktree", "add", "-b", branch, worktree], deps.repoRoot);
-  if (wt.code !== 0) return refuse("worktree", `worktree failed: ${wt.out.trim().slice(0, 300)}`, "gate");
-  if (!(await ensureSnapshot(deps.repoRoot, branch, testerWt, exec)))
-    return refuse("tester-snapshot", `tester snapshot failed at ${testerWt}`, "gate");
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   await restoreProbes(storeDir, testerWt);
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
@@ -205,6 +203,7 @@ export async function dispatchTep(
     boundedExec,
     log,
     defect,
+    ...(deps.prepare ? { prepare: deps.prepare } : {}),
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
@@ -465,8 +464,12 @@ export async function dispatchTep(
     if (!sliceCommitted.has(slice))
       for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
   const { verifs, probeOfAc } = closingVerifications(slices);
-  const gateExec: AcExec = (run, cwd) => boundedExec(run, cwd);
-  const acResults = await runAcVerifications(verifs, worktree, gateExec);
+  if (deps.prepare) {
+    const prep = await boundedExec(deps.prepare, worktree);
+    if (prep.code !== 0)
+      log(`⚠ the prepare command failed at the gate — checks run against an unbuilt tree: ${prep.output.split("\n").pop()?.slice(0, 160) ?? ""}`);
+  }
+  const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
   // Assessments: a FRESH reviewer in the tester snapshot, fail-soft red.
   const assessed = await gradeAssessments({
     space,

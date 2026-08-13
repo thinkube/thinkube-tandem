@@ -359,10 +359,18 @@ export async function runUnitWorker(
     };
   }
   if (containment) return { ok: false, finalText: text, containment: true };
-  const undelivered = extractUndelivered(text);
+  const undelivered = realUndelivered(text);
   return {
     ok: undelivered.length === 0,
     finalText: text,
     ...(undelivered.length ? { undelivered } : {}),
   };
+}
+
+/** What a worker really left undone. "UNDELIVERED: none." is a report of
+ *  completeness, not a gap — a unit must never fail on its own honesty. */
+export function realUndelivered(text: string): string[] {
+  return extractUndelivered(text).filter(
+    (u) => !/^\s*(none|nothing|nothing undelivered|n\/a|-)\s*[.!]?\s*$/i.test(u),
+  );
 }

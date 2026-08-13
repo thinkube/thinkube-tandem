@@ -23,6 +23,10 @@ export interface SessionDeps {
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;
   suiteCommand?: string[];
+  /** Build/typecheck command run in the isolated check runner and the
+   *  closing-gate worktree BEFORE probes execute. A repo whose tests
+   *  import compiled output cannot run a probe against an unbuilt tree. */
+  prepareCommand?: string;
   /** Injectable whole-cut completeness pass (tests swap it). */
   completeCut?: typeof import("../derive/pipeline").completeCut;
   ground?: typeof runDerivationPipeline;
