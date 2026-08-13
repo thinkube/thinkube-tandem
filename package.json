@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.86",
+  "version": "2.0.87",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -279,6 +279,11 @@
           "type": "string",
           "default": "",
           "description": "API token for thinkube-control. Empty reads the connected MCP server's config."
+        },
+        "thinkubeTandem.prepareCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Build/typecheck command run in the isolated check runner and the closing-gate worktree before probes execute (e.g. 'npx tsc -p tsconfig.test.json' for a TypeScript repo whose tests import compiled output). Empty = no build step."
         }
       }
     },
