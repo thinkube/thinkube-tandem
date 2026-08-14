@@ -49,8 +49,8 @@ test("a lock whose process is gone is stale: cleared, said, and stepped over", a
   });
   assert.equal(claim.refusal, undefined, "a dead run's lock never blocks a dispatch");
   assert.ok(
-    said.some((l) => /left by a process that is gone/.test(l)),
-    "the clearing is spoken, not silent",
+    said.some((l) => l.includes("space/TEP-1")),
+    "the clearing is spoken, naming the dead run",
   );
   assert.ok(
     !fs.existsSync(path.join(root, "locks", "run-a.json")),

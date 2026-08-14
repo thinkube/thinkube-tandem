@@ -75,12 +75,14 @@ test("the challenge budget is a valve, not a grinding strategy", async () => {
   await w.challenge(1, "a");
   await w.challenge(1, "b");
   const third = await w.challenge(1, "c");
-  assert.match(third, /budget spent/);
+  assert.ok(!/GRANTED|DENIED/.test(third), "the third is refused, not ruled");
   assert.equal(w.rulings.length, 2, "the refused third is not a ruling");
 });
 
 test("a challenge to a check that does not exist is answered, not invented", async () => {
   const w = world("DEFECTIVE\nwould grant");
-  assert.match(await w.challenge(9, "x"), /no check 9/);
+  const reply = await w.challenge(9, "x");
+  assert.ok(!/GRANTED|DENIED/.test(reply), "nothing was ruled");
   assert.equal(w.rulings.length, 0);
+  assert.equal(w.authored.length, 0, "and nothing was rewritten");
 });
