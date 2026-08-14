@@ -93,10 +93,11 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       // The repository reading rides into every worker's brief. Cached
       // under the repo stamp, so after a derivation this costs nothing;
       // a run must never refuse over brief enrichment, hence fail-soft.
-      const digest = await s
-        .knowledge()
-        .then((k) => k.digest)
-        .catch(() => undefined);
+      const known = await s.knowledge().catch(() => undefined);
+      const digest = known?.digest;
+      // The check-setup command: the machine's own reading of the repo,
+      // unless the human explicitly overrode it in settings.
+      const prepare = s.deps.prepareCommand || known?.prepare || undefined;
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -106,6 +107,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         runState: s.runState!,
         spaceName: path.basename(s.deps.storeDir),
         ...(digest ? { digest } : {}),
+        ...(prepare ? { prepare } : {}),
         onDelivery: (delivery, note) => {
           s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
           s.changed(note);

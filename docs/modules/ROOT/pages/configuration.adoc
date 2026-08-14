@@ -44,6 +44,12 @@ ready frontier.
 |`thinkubeTandem.suiteCommand` |`npm test` |The project's test suite;
 its verdict is a delivery proof.
 
+|`thinkubeTandem.prepareCommand` |_(machine-derived)_ |The build step a
+single check needs before it can run (for example, compiling TypeScript
+test files). Normally you never set this: the machine reads it from the
+repository's own manifests and caches it with the repository reading.
+Set it only to override what the machine derived.
+
 |`thinkubeTandem.docsGateMode` |`blocking` |Whether an unmet
 documentation obligation blocks accepting.
 

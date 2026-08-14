@@ -22,6 +22,7 @@
 import { affectedBy, askGraph, askPlan, CodeGraph, ensureCodeGraph, hubs } from "./graph";
 import { enrichAffected } from "./spans";
 import { runContextualize } from "./contextualize";
+import { derivePrepare } from "./prepare";
 import { RoundDeps, runReadRound } from "./round";
 
 export interface Knowledge {
@@ -33,6 +34,10 @@ export interface Knowledge {
   map: string;
   /** Conventions and rationale, read on top of the map. */
   digest: string;
+  /** The command a single check needs before it can execute (a compile,
+   *  a codegen) — read from the repository's own manifests, empty when
+   *  tests run straight from source. Nobody types this into a setting. */
+  prepare: string;
   /** What the human has settled — every derivation runs under these. */
   decisions: readonly string[];
   /** A bounded question of the graph: cited nodes, in milliseconds. */
@@ -79,7 +84,8 @@ export async function knowledgeOf(args: {
     .filter(Boolean)
     .join("\n\n");
 
-  const key = `digest@${graph.stamp.head}${graph.stamp.dirty ? `+${graph.stamp.dirty}` : ""}`;
+  const stampKey = `${graph.stamp.head}${graph.stamp.dirty ? `+${graph.stamp.dirty}` : ""}`;
+  const key = `digest@${stampKey}`;
   let digest = args.store?.load(key) ?? "";
   if (!digest) {
     log("▸ reading what the map cannot show — conventions, and the why");
@@ -87,11 +93,23 @@ export async function knowledgeOf(args: {
     if (digest) args.store?.save(key, digest);
   }
 
+  // The check-setup command is a fact about the repository; the machine
+  // reads it once per state. "NONE" is cached too — the common answer
+  // must not be re-asked on every derivation.
+  const prepKey = `prepare@${stampKey}`;
+  let prepare = args.store?.load(prepKey);
+  if (prepare === undefined) {
+    log("▸ asking the repository how a single check runs");
+    prepare = await derivePrepare(args.deps, undefined, map, digest);
+    args.store?.save(prepKey, prepare);
+  }
+
   return {
     repoRoot: args.deps.repoRoot,
     graph,
     map,
     digest,
+    prepare,
     decisions: args.decisions,
     ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),
     affected: (node) =>
