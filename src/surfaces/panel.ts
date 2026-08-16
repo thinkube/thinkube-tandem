@@ -209,6 +209,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
                   ? { drifted: true }
                   : {}),
               })),
+              ...(n.unverified?.length ? { unverified: n.unverified } : {}),
               needs: n.needs,
               inCut: session.cutNodeIds.has(n.id),
               stale: session.stale.has(n.id),

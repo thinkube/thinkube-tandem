@@ -138,6 +138,27 @@ test("what did NOT arrive is on the delivery page's face", () => {
   assert.ok(page.includes("docs obligation unmet"), "the docs gate speaks on the page");
 });
 
+test("what the machine could not verify is on the delivery page, with the reason, apart from the checks", () => {
+  const { space, changeIds } = makeSpace();
+  const withNote: Space = {
+    ...space,
+    nodes: space.nodes.map((n) =>
+      n.id === changeIds[0]
+        ? { ...n, unverified: [{ text: "the cluster shuts down when pressed", why: "acts on the cluster this runs in" }] }
+        : n,
+    ),
+    cuts: [{ id: "cut-1", changeIds }],
+  };
+  const page = renderDeliveryPage(withNote, {
+    id: "d-1",
+    cutId: "cut-1",
+    branch: "tandem/cut-1",
+    proofs: [{ kind: "suite", label: "suite", verdict: "green" }],
+  });
+  assert.ok(page.includes("## Not verified by the machine"), "its own section, not a red mark");
+  assert.ok(page.includes("○ the cluster shuts down when pressed — acts on the cluster this runs in"));
+  assert.ok(!/✗.*cluster shuts down/.test(page), "the note is never shown as a failed check");
+});
 test("the freeze refusals: unprovable, ungrounded, and open questions refuse the sign", () => {
   const { space, changeIds } = makeSpace();
   const unprovable = signCut(space, { id: "c", changeIds }, "t");

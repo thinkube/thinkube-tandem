@@ -149,7 +149,10 @@ export function buildCompletenessPrompt(args: {
     `removed, renamed or reworded, documentation now saying something — judged ` +
     `once at delivery by an independent reviewer and never kept as a test. A ` +
     `documentation-wording check is ALWAYS "assessment"; most ripples from the ` +
-    `DOCUMENTATION family are.\n` +
+    `DOCUMENTATION family are. An effect the machine cannot verify — it needs ` +
+    `the running product, or acts on the world — is NOT a check: it goes in the ` +
+    `node's "unverified" list as {"text":"…","why":"…"}, and the delivery ` +
+    `reports it as not verified with that reason; nobody is assigned a check.\n` +
     `Complete and nothing affected → {"nodes":[]}. Never ` +
     `restate an existing change; only genuine gaps and real ripples.`
   );

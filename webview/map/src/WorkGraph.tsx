@@ -363,6 +363,14 @@ export function WorkGraph(props: {
                           </div>
                         </div>
                       ))}
+                      {/* Effects the machine cannot verify: said on the card
+                          with the reason — never a red mark, never a task. */}
+                      {(p.unverified ?? []).map((u, i) => (
+                        <div key={`u${i}`} data-unverified style={{ fontSize: FS.caption, color: C.quiet }}>
+                          ○ {u.text}
+                          <div style={{ marginLeft: 10 }}>not verified by the machine — {u.why}</div>
+                        </div>
+                      ))}
                       {/* A promise nothing proves cannot be signed, so the
                           card that reports it offers the way out of it. */}
                       {!p.checks.length ? (

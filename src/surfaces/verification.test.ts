@@ -59,6 +59,7 @@ function sessionWithVerifiedWork(): TandemSession {
           },
           { id: "c2", text: "the docs page says the panel follows", kind: "assessment" },
         ],
+        unverified: [{ text: "the panel opens in the running editor", why: "needs the running extension" }],
       },
     ],
     cuts: [
@@ -92,6 +93,7 @@ test("a claim card reads verification from state: verdict, proof address, drift"
     subjects: {
       claims: {
         promises: {
+          unverified?: { text: string; why: string }[];
           checks: {
             text: string;
             kind?: string;
@@ -105,7 +107,13 @@ test("a claim card reads verification from state: verdict, proof address, drift"
       }[];
     }[];
   };
-  const [probe, review] = push.subjects[0].claims[0].promises[0].checks;
+  const promise = push.subjects[0].claims[0].promises[0];
+  const [probe, review] = promise.checks;
+  assert.deepEqual(
+    promise.unverified,
+    [{ text: "the panel opens in the running editor", why: "needs the running extension" }],
+    "an effect the machine cannot verify rides the promise as a note with its reason — not as a check, not as a red mark",
+  );
 
   assert.equal(probe.verdict, "green", "the newest delivery's verdict rides the check");
   assert.equal(probe.tep, "TEP-9", "named by the work that proved it");

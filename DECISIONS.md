@@ -134,7 +134,9 @@ of them there — nothing has users.
     a node, the whole cluster — is never automatic, whatever a criterion
     says.
   A check observes the code at a seam; it never acts on the world. A
-  criterion about the world is judged once by a person, or run only
-  against an environment declared for breaking. The design phase marks
-  such criteria; the runtime wall (no network, no credentials, only the
-  worktree) catches what the design missed.
+  criterion the machine cannot verify — it needs the running product, or
+  acts on the world — is recorded on the delivery as NOT VERIFIED, with
+  the reason why, set when the criteria are written. The machine never
+  assigns the person a check. The design phase marks such criteria; the
+  runtime wall (no network, no credentials, only the worktree) catches
+  what the design missed.

@@ -42,6 +42,6 @@ export function testerStanza(): string {
     "activate, its server, its watchers), it stops it before it ends, so the " +
     "process EXITS on its own. A check that does not exit is a defective check " +
     "and counts as failed. A criterion that IS an effect on the world is not " +
-    "yours to prove — it is judged once by the person."
+    "yours to prove — the delivery reports it as not verified, with its reason."
   );
 }

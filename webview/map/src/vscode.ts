@@ -26,6 +26,8 @@ interface PromiseVM {
   text: string;
   file: string;
   checks: CheckVM[];
+  /** Effects the machine cannot verify, with the reason — notes, not checks. */
+  unverified?: { text: string; why: string }[];
   needs: string[];
   inCut: boolean;
   stale: boolean;

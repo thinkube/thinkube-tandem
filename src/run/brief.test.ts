@@ -24,5 +24,5 @@ test("every tester is told: observe at a seam, stop what you start, never act on
   const t = testerStanza();
   assert.ok(/OBSERVES the code at a seam/.test(t));
   assert.ok(/stops it before it ends/.test(t) && /does not exit is a defective check/.test(t));
-  assert.ok(/NEVER performs the effect/.test(t) && /judged once by the person/.test(t));
+  assert.ok(/NEVER performs the effect/.test(t) && /reports it as not verified/.test(t));
 });

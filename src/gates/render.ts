@@ -196,6 +196,15 @@ export function renderDeliveryPage(
         `- ${p.verdict === "green" ? "✓" : "✗"} ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
       );
   }
+  // Effects the machine could not verify are said, with the reason — never
+  // graded by a reviewer that cannot judge them, never assigned to a person.
+  const unverified = members.flatMap((n) => (n.unverified ?? []).map((u) => ({ promise: n.sentence, ...u })));
+  if (unverified.length) {
+    lines.push("");
+    lines.push("## Not verified by the machine");
+    lines.push("");
+    for (const u of unverified) lines.push(`- ○ ${u.text} — ${u.why} (promise: ${u.promise.slice(0, 80)})`);
+  }
   // An exam amended mid-run is part of the decision: every challenge the
   // oracle ruled on, granted or denied, on the page's face — the human
   // accepts knowing the checks changed, which one, and why.

@@ -44,8 +44,8 @@ test("a check carries its lifetime: transitions are assessments, standing behavi
     "a check observes at a seam and never acts on the world",
   );
   assert.ok(
-    /shutdown request .* fake API/.test(prompt) && /cluster shuts down .* assessment|assessment "the cluster shuts down/.test(prompt),
-    "the world-effect example shows the split: seam probes, effect assessed",
+    /shutdown request .* fake API/.test(prompt) && /unverified \{"text":"the cluster shuts down/.test(prompt),
+    "the world-effect example shows the split: seam probes, the effect a note with its reason",
   );
   const raw = JSON.stringify({
     nodes: [
@@ -58,6 +58,10 @@ test("a check carries its lifetime: transitions are assessments, standing behavi
           { text: "opening the panel renders the live badge", kind: "probe" },
           { text: "a check with a made-up lifetime", kind: "forever" },
         ],
+        unverified: [
+          { text: "the cluster shuts down when pressed", why: "acts on the cluster this runs in" },
+          { text: "an effect with no reason is not a note", why: "" },
+        ],
       },
     ],
   });
@@ -65,6 +69,12 @@ test("a check carries its lifetime: transitions are assessments, standing behavi
   assert.equal(node.acceptance[0].kind, "assessment", "judged once at delivery, never kept");
   assert.equal(node.acceptance[1].kind, undefined, "standing behavior is the default probe");
   assert.equal(node.acceptance[2].kind, undefined, "an unknown kind must not invent a lifetime");
+  assert.deepEqual(
+    node.unverified,
+    [{ text: "the cluster shuts down when pressed", why: "acts on the cluster this runs in" }],
+    "an effect the machine cannot verify is a note on the promise, with its reason — never a check; no reason, no note",
+  );
+  assert.ok(prompt.includes('"unverified"'), "the grounding is asked for the reason");
 });
 
 test("an anchor's evidence survives parsing, trimmed and bounded", () => {

@@ -28,6 +28,8 @@ export interface DerivedNode {
   /** 1-based number of the claim this change makes true, when the round
    *  was given claims to serve. */
   claim?: number;
+  /** Effects the machine cannot verify, with the reason — notes, not checks. */
+  unverified?: { text: string; why: string }[];
 }
 
 /** Build the derivation prompt. Pure; exported for tests. */
@@ -101,11 +103,15 @@ export function buildGroundingPrompt(args: {
     `A documentation-wording check is ALWAYS "assessment".\n` +
     `    A check OBSERVES THE CODE AT A SEAM — a call made, a request built, a state changed inside the program — ` +
     `through a fake where the real thing is the cluster, a service, a process, or anything outside the repository. ` +
-    `A check NEVER PERFORMS the effect on the world. When the criterion IS the effect ("the cluster is down", ` +
-    `"the app answers on its URL"), it is "assessment": judged once by the person, after accepting. ` +
-    `Example — a button that shuts down the cluster: probe "pressing the button sends a shutdown request for the ` +
-    `current cluster to the platform API, and only after a confirmation (seen through a fake API)"; probe "without ` +
-    `confirmation no request is sent"; assessment "the cluster shuts down when the person presses it once".\n` +
+    `A check NEVER PERFORMS the effect on the world. When the effect itself cannot be verified by the machine — it ` +
+    `needs the running product, or acts on the world ("the cluster is down", "the app answers on its URL") — it is NOT ` +
+    `a check: put it in the node's "unverified" list as {"text":"the effect","why":"why the machine cannot verify it"} ` +
+    `and write the checks at the seam. The delivery reports each such effect as not verified, with its reason; nobody is ` +
+    `assigned a check. Example — a button that shuts down the cluster: acceptance probe "pressing the button sends a ` +
+    `shutdown request for the current cluster to the platform API, and only after a confirmation (seen through a fake ` +
+    `API)"; probe "without confirmation no request is sent"; unverified {"text":"the cluster shuts down when the button ` +
+    `is pressed","why":"acts on the cluster this runs in"}.\n` +
+    `- "unverified": optional — the effects of this node the machine cannot verify, each {"text":"…","why":"…"}.\n` +
     (args.decisions?.length
       ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
       : "") +
@@ -182,7 +188,23 @@ export function parseGroundedNodes(
         };
       })
       .filter((c) => c.text.length > 0);
-    out.push({ sentence, touchpoints, needsIndices, acceptance, ...(claim ? { claim } : {}) });
+    // Effects the machine cannot verify are notes on the node, never checks:
+    // each carries the reason, bounded, and an entry with no reason is dropped.
+    const unverified = (Array.isArray(rec.unverified) ? rec.unverified : [])
+      .map((u) => (typeof u === "object" && u !== null ? (u as Record<string, unknown>) : {}))
+      .map((u) => ({
+        text: typeof u.text === "string" ? u.text.trim().slice(0, 300) : "",
+        why: typeof u.why === "string" ? u.why.trim().slice(0, 200) : "",
+      }))
+      .filter((u) => u.text && u.why);
+    out.push({
+      sentence,
+      touchpoints,
+      needsIndices,
+      acceptance,
+      ...(claim ? { claim } : {}),
+      ...(unverified.length ? { unverified } : {}),
+    });
   }
   return out;
 }
@@ -299,5 +321,6 @@ export function resolveDerived(
       : {}),
     ...(d.claim && claimIds?.[d.claim - 1] ? { servesClaim: claimIds[d.claim - 1] } : {}),
     acceptance: d.acceptance.map((c, j) => ({ id: `${ids[i]}-check-${j + 1}`, ...c })),
+    ...(d.unverified?.length ? { unverified: d.unverified } : {}),
   }));
 }

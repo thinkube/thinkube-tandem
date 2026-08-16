@@ -98,7 +98,14 @@ export interface Change {
   /** Node ids this node needs built first. */
   needs: string[];
   grounding?: Grounding;
+  /** Only checks the machine can verify: runnable probes and assessments a
+   *  reviewer can read from the delivered files. */
   acceptance: AcceptanceCriterion[];
+  /** Effects of this promise the machine cannot verify — they need the
+   *  running product, or act on the world — with the reason why. Not
+   *  checks: notes, reported on the delivery as not verified. The machine
+   *  never assigns the person a check. */
+  unverified?: { text: string; why: string }[];
 }
 
 /** Nodes clustered by real coupling: shared touchpoints and edges. */
