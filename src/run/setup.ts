@@ -90,12 +90,17 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
   return second.refusal ? second : { ...second, corrected: again };
 }
 
+/** Seconds since a moment, for a door that must say how long each step took. */
+const since = (t0: number): string => `${((Date.now() - t0) / 1000).toFixed(0)}s`;
+
 async function proveTree(args: SetupArgs): Promise<TreeSetup> {
   const provisioned: string[] = [];
   if (args.provision) {
     const before = await ignoredEntries(args.worktree, args.exec);
     args.log(`provisioning the worktree: ${args.provision}`);
+    const t0 = Date.now();
     const p = await args.boundedExec(args.provision, args.worktree);
+    args.log(`  provisioned in ${since(t0)}`);
     if (p.code !== 0)
       return {
         provisioned,
@@ -105,7 +110,10 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
     for (const e of after) if (!before.has(e)) provisioned.push(e);
   }
   if (args.prepare) {
+    args.log(`building the untouched tree: ${args.prepare}`);
+    const t0 = Date.now();
     const b = await args.boundedExec(args.prepare, args.worktree);
+    args.log(`  built in ${since(t0)}`);
     if (b.code !== 0)
       return {
         provisioned,
@@ -113,7 +121,12 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
       };
   }
   if (args.suite?.length) {
+    args.log(
+      `running the repository's own checks on the untouched tree: ${args.suite.join(" ")} — no unit starts until they are green; this takes as long as the suite does`,
+    );
+    const t0 = Date.now();
     const s = await args.exec(args.suite[0], args.suite.slice(1), args.worktree);
+    args.log(`  the repository's checks ${s.code === 0 ? "are green" : "are RED"} on the untouched tree (${since(t0)})`);
     if (s.code !== 0)
       return {
         provisioned,
