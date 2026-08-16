@@ -116,13 +116,25 @@ of them there — nothing has users.
   be stale when the world moved; a check that never exits is a defective
   check, said so, not a silent failure; a check that reaches outside the
   code is out of bounds. What it does not know, it says.
-- The process knows its ground: it runs inside an IDE, inside a pod,
-  inside a cluster it can reach with the credentials lying in that pod.
-  It senses this at start — from the environment, the process tree, the
-  mounts — never from a setting, and hands it to every actor as a
-  constraint: that cluster, that pod, that IDE and those credentials are
-  its own; it never acts on them. A check observes the code at a seam;
-  it never acts on the world. A criterion about the world is judged once
-  by a person, or run only against an environment declared for breaking.
-  The design phase marks such criteria; the runtime wall (no network, no
-  credentials, only the worktree) catches what the design missed.
+- The process knows its ground, and that the ground and the target share
+  one cluster. It runs inside an IDE, inside a pod, inside a cluster it can
+  reach with the credentials lying in that pod — and that same cluster is
+  where the work it builds is deployed. It senses this at start — the
+  pod's namespace and node from the environment, the app's deployment
+  target from its manifests, the shared platform pieces from the
+  platform's own inventory — never from a setting, and hands the map to
+  every actor:
+  - the GROUND is the IDE's pod, its node, and the platform pieces the IDE
+    depends on to exist (ingress, auth, storage, the control plane): never
+    acted on, not even through the target;
+  - the TARGET is the app's own namespaces and deployments in that
+    cluster: acted on only where an environment is declared for it, and
+    reversibly;
+  - an action on the target that reaches the ground — a shared component,
+    a node, the whole cluster — is never automatic, whatever a criterion
+    says.
+  A check observes the code at a seam; it never acts on the world. A
+  criterion about the world is judged once by a person, or run only
+  against an environment declared for breaking. The design phase marks
+  such criteria; the runtime wall (no network, no credentials, only the
+  worktree) catches what the design missed.
