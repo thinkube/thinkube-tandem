@@ -66,6 +66,19 @@ test("a build step that fails on the untouched tree refuses the run instead of d
   assert.match(r.refusal!, /not the compiler you are looking for/, "the refusal carries the tool's own words");
 });
 
+test("a red suite before the work refuses at the door, naming what failed — not only that something did", async () => {
+  const wt = tree();
+  const r = await setupRunTree({
+    worktree: wt,
+    suite: ["sh", "-c", "printf 'ok 1 - a\\nnot ok 2 - the doors are missing\\n# pass 1\\n# fail 1\\n# cancelled 0\\n# skipped 0\\n# todo 0\\n# duration_ms 5\\n'; exit 1"],
+    exec: defaultExec,
+    boundedExec: sh,
+    log: () => {},
+  });
+  assert.match(r.refusal ?? "", /red before any work/);
+  assert.match(r.refusal ?? "", /not ok 2 - the doors are missing/, "the failing check is named above the summary");
+});
+
 test("a repository needing no setup passes straight through", async () => {
   const wt = tree();
   const r = await setupRunTree({ worktree: wt, exec: defaultExec, boundedExec: sh, log: () => {} });

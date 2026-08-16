@@ -47,7 +47,15 @@ export interface TreeSetup {
   refusal?: string;
 }
 
-const tail = (output: string, n = 400): string => output.trim().split("\n").slice(-6).join("\n").slice(-n);
+/** The end of a tool's output, with the lines that name a failure kept even
+ *  when a summary follows them — a reader must see WHAT failed, not only
+ *  that something did. */
+const tail = (output: string, n = 900): string => {
+  const lines = output.trim().split("\n");
+  const named = lines.filter((l) => /^not ok|\b(FAIL|FAILED|Error|error:)\b/.test(l)).slice(-8);
+  const last = lines.slice(-6);
+  return [...new Set([...named, ...last])].join("\n").slice(-n);
+};
 
 /** Provision the tree, then prove the build step on it before any worker runs. */
 export async function setupRunTree(args: {
