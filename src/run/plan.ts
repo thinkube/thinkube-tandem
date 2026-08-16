@@ -1,10 +1,8 @@
 /**
- * Author-time plan hardening at dispatch: the test-impact blast radius.
- * An existing test that statically imports a changed source file is inside
- * the change — it folds into the slice's TESTER footprint (the tester
- * brings it under; the coder never holds a test); a held-out probe there is
- * a refusal (never an implementer's file). Returns the refusal text, or
- * null when the plan stands (possibly with folded footprints).
+ * The run's plan-side bookkeeping: execution locks, per-slice probe and
+ * test-home maps, the closing gate's verification list, the honesty scan,
+ * the delivery record, documentation obligations, and the roles' invariant
+ * (no coder holds a test-shaped path).
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -14,91 +12,9 @@ import { buildVerificationTrace } from "../engine/core/trace";
 import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync } from "node:fs";
 import type { Proof } from "../core/schema";
-import {
-  buildTestImpactRefusal,
-  findUncoveredTests,
-} from "../engine/testImpactFootprint";
 import { isProbePath, isTestPath, testHomesOf } from "./testHomes";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
-
-/** Held-out evidence this product authors: probes, wherever they sit. */
-function isProbe(p: string): boolean {
-  return /(^|\/)probes\//.test(p.replace(/\\/g, "/").replace(/^\.\//, ""));
-}
-
-export async function foldBlastRadius(
-  slices: SliceForDag[],
-  repoRoot: string,
-  exec: Exec,
-  log: (line: string) => void,
-): Promise<string | null> {
-  const tracked = (await exec("git", ["-C", repoRoot, "ls-files"], repoRoot)).out
-    .split("\n")
-    .filter((p) => /\.(test|spec|host)\.[a-z]+$|(^|\/)probes\/|(^|\/)acceptance\//.test(p));
-  const repoFiles = [];
-  for (const rel of tracked) {
-    try {
-      repoFiles.push({
-        path: rel,
-        content: await fs.readFile(path.join(repoRoot, rel), "utf8"),
-      });
-    } catch {
-      /* unreadable tracked file — outside the blast scan */
-    }
-  }
-  // A file named as a dependency belongs to the unit that owns it, and to
-  // no other. A dependency is declared as a FILE, and the engine resolves
-  // it to EVERY unit whose footprint holds that file — so folding a
-  // dependency name into a second unit's footprint makes that unit a
-  // producer of it, and every consumer gains an edge onto work nobody
-  // pointed it at. Two units that both changed code covered by the same
-  // test each became a producer of it and each already consumed it, which
-  // is a circle, and the engine refuses a circle by refusing the whole
-  // run. So a covering test that is already somebody's dependency is not
-  // folded: it is not this unit's file to rewrite.
-  const dependencyNames = new Set(
-    slices.flatMap((s) =>
-      s.workUnits.flatMap((u) => (u as { consumes?: string[] }).consumes ?? []),
-    ),
-  );
-  for (const s of slices) {
-    const allFootprints = s.workUnits.flatMap((u) => u.footprint);
-    const violations = findUncoveredTests({
-      changedFiles: s.files ?? [],
-      footprintPaths: allFootprints,
-      repoFiles,
-    });
-    // A probe is held-out evidence wherever it lives. The engine calls a
-    // test held-out only under `src/acceptance/`; this product writes its
-    // probes to `probes/`, so without this they are classified as ordinary
-    // unit tests and FOLDED INTO THE CODER'S FOOTPRINT — which opens the
-    // write fence on the proof of an already-accepted delivery.
-    const classified = violations.map((v) =>
-      isProbe(v.test) ? { ...v, kind: "held-out" as const } : v,
-    );
-    const heldOut = classified.filter((v) => v.kind === "held-out");
-    if (heldOut.length) return buildTestImpactRefusal(heldOut);
-    const uncovered = classified.filter((v) => v.kind === "unit").map((v) => v.test);
-    const folded = uncovered.filter((t) => !dependencyNames.has(t));
-    const owned = uncovered.filter((t) => dependencyNames.has(t));
-    // A test the change would break is the tester's to bring under — never
-    // the coder's, who holds no test in its footprint.
-    if (folded.length) {
-      const tester = s.workUnits.find((u) => u.role === "test");
-      if (tester) {
-        tester.footprint.push(...folded);
-        log(`${s.handle}: blast radius folded ${folded.join(", ")} into the tester's footprint`);
-      } else
-        log(`${s.handle}: ${folded.join(", ")} covers this work and no tester owns it — the gate's suite judges`);
-    }
-    if (owned.length)
-      log(
-        `${s.handle}: ${owned.join(", ")} covers this work but belongs to the unit it depends on — not folded`,
-      );
-  }
-  return null;
-}
 
 /**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per

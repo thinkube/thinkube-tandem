@@ -383,42 +383,6 @@ test("containment math: outside-footprint paths are violations; baseline is exem
   assert.deepEqual(bad, ["src/evil.ts"]);
 });
 
-test("grade-first: when the committed state already satisfies the checks, no coder is spent", async () => {
-  const repo = tmpRepo();
-  // The implementation already exists on the base commit.
-  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
-  fs.writeFileSync(path.join(repo, "src/greet.mjs"), `export function greet() { return "hello"; }\n`);
-  execFileSync("git", ["-C", repo, "add", "-A"], { encoding: "utf8" });
-  execFileSync("git", ["-C", repo, "commit", "-qm", "already built"], { encoding: "utf8" });
-  const { space, ids } = spaceWithOneChange();
-  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-8" };
-  const slices = tepSlices({ space, cut, spaceName: "greet space" });
-  const state = new RunState(() => {});
-  const rolesDispatched: string[] = [];
-  const outcome = await dispatchTep(
-    {
-      repoRoot: repo,
-      model: "sonnet",
-      suiteCommand: ["node", "-e", "process.exit(0)"],
-      state,
-      supervisorRound: async () => null,
-      rehome: async () => ({ anchors: [], notes: [] }),
-      spaceName: "greet space",
-      worker: async (w) => {
-        rolesDispatched.push(w.role);
-        if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
-        return { ok: true, finalText: "done" };
-      },
-    },
-    space,
-    cut,
-    slices,
-  );
-  assert.deepEqual(rolesDispatched, ["test"], "only the probe author ran — the coder was graded first");
-  assert.equal(outcome.undelivered.length, 0);
-  assert.ok([...state.units.values()].every((u) => u.state === "done"));
-});
-
 test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISCLOSE is ledgered as a defect", async () => {
   const repo = tmpRepo();
   const ledger = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ledger-"));

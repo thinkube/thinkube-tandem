@@ -132,9 +132,8 @@ export interface OracleFactoryArgs {
   provisioned?: readonly string[];
   /** Lines carry the unit the oracle is acting for, when it is acting for one. */
   log: (line: string, step?: string) => void;
-  /** Whom the oracle acts for right now, and whether the round is a baseline
-   *  read of an unchanged tree (never reviewed — its failures are expected). */
-  acting?: (slice: string) => { unit: string; baseline: boolean } | undefined;
+  /** Whom the oracle acts for right now — its lines carry that unit. */
+  acting?: (slice: string) => { unit: string } | undefined;
   defect: (entry: {
     slice?: string;
     unit?: string;
@@ -265,12 +264,19 @@ export function sliceOracleFactory(
   const oracles = new Map<string, VerifyOracle>();
   const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
 
+  // The engine offers every red round for review. A round is reviewed only
+  // when its failure REPEATS the previous one — a coder that is moving is
+  // left to move; a coder that is stuck gets the supervisor. The pre-flight
+  // audit (its evidence begins with PRE-FLIGHT) is always answered.
+  const lastEvidence = new Map<string, string>();
   const supervise =
     (slice: string) =>
     async (evidence: string, failingAcs: number[]): Promise<string | undefined> => {
-      // A baseline read of an unchanged tree fails by expectation: nothing
-      // to review, and no round to spend on it.
-      if (a.acting?.(slice)?.baseline) return undefined;
+      if (!/^PRE-FLIGHT/.test(evidence)) {
+        const seen = lastEvidence.get(slice);
+        lastEvidence.set(slice, evidence);
+        if (seen !== evidence) return undefined;
+      }
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
       for (const rel of probes) {

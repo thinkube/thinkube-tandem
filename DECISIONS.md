@@ -94,5 +94,14 @@ of them there — nothing has users.
   says what test-shaped means (`isTestPath`), read everywhere.
 - The tester's DECISION lines are contract for the coder and land on the
   delivery. Nothing edits a test after seeing the implementation.
-- The repository's own suite is part of done: red before the work refuses
-  the run; red after the work withholds the delivery, in intent terms.
+- The repository's own suite is part of done: red after the work withholds
+  the delivery, in intent terms. It is judged once, at the gate.
+
+## One answer per problem (2026-08-16)
+- A safeguard is removed the moment a later decision answers the same
+  problem: the test-hunting fold (answered by tester ownership and the
+  red-gate rule), the check before a coder starts (answered by slice
+  commits and the probe store), the review of every red round (answered
+  by the tester's decisions; a repeated failure is still reviewed), the
+  full suite at the run's start (answered at the gate).
+- The build step is proved at the start; the suite is judged at the end.

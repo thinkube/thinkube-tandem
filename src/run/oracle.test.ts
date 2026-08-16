@@ -34,11 +34,11 @@ function trees() {
   return { repoRoot, wtRoot, worktree, testerWt };
 }
 
-test("the oracle's lines land under the unit it acts for, and a baseline read is never reviewed", async () => {
+test("the oracle's lines land under the unit it acts for", async () => {
   const t = trees();
   const said: { line: string; step?: string }[] = [];
   const supervised: string[] = [];
-  let acting: { unit: string; baseline: boolean } | undefined;
+  let acting: { unit: string } | undefined;
   const args = {
     ...t,
     branch: "tandem/run",
@@ -60,14 +60,16 @@ test("the oracle's lines land under the unit it acts for, and a baseline read is
   } as unknown as OracleFactoryArgs;
   const oracle = sliceOracleFactory(args)("SL-1")!;
 
-  acting = { unit: "SL-1#eu-0", baseline: true };
+  acting = { unit: "SL-1#eu-0" };
   const pre = await oracle.confirmGreen();
   assert.equal(pre.green, false);
-  assert.equal(supervised.length, 0, "an unchanged tree failing its checks is expected — nothing to review");
-
-  acting = { unit: "SL-1#eu-0", baseline: false };
+  const before = supervised.filter((p) => !p.includes("PRE-FLIGHT")).length;
   await oracle.verify();
-  assert.equal(supervised.length, 1, "a real red round is reviewed");
+  assert.equal(
+    supervised.filter((p) => !p.includes("PRE-FLIGHT")).length,
+    before + 1,
+    "a failure that repeats the previous round's is reviewed; the first was not",
+  );
 
   const oracleLines = said.filter((s) => s.line.includes("[oracle]"));
   assert.ok(oracleLines.length >= 2, "the oracle spoke");

@@ -14,9 +14,10 @@
  * into every verify runner (a runner is a snapshot of the same branch), so
  * one install serves the whole run.
  *
- * Then the setup is PROVED on the untouched tree: if the build step fails
- * before any worker has changed a line, the fault is the environment's,
- * and the run is refused with the output — never dispatched into a wall.
+ * Then the build step is PROVED on the untouched tree: if it fails before
+ * any worker has changed a line, the fault is the environment's, and the
+ * run is refused with the output — never dispatched into a wall. The
+ * repository's own suite is judged once, at the gate.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -63,9 +64,6 @@ export interface SetupArgs {
   worktree: string;
   provision?: string;
   prepare?: string;
-  /** The repository's own suite: red before any work means no run can tell
-   *  its effect apart from what was already broken. */
-  suite?: string[];
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
@@ -125,19 +123,6 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
       return {
         provisioned,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
-      };
-  }
-  if (args.suite?.length) {
-    args.log(
-      `running the repository's own checks on the untouched tree: ${args.suite.join(" ")} — no unit starts until they are green; this takes as long as the suite does`,
-    );
-    const t0 = Date.now();
-    const s = await args.exec(args.suite[0], args.suite.slice(1), args.worktree);
-    args.log(`  the repository's checks ${s.code === 0 ? "are green" : "are RED"} on the untouched tree (${since(t0)})`);
-    if (s.code !== 0)
-      return {
-        provisioned,
-        refusal: `the repository's own standing checks are red before any work — a run could not tell its effect apart from what is already broken; the repository must be green first:\n${tail(s.out)}`,
       };
   }
   return { provisioned };

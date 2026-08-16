@@ -17,10 +17,9 @@ import { dispatchTep } from "./dispatch";
 import { RunState } from "./state";
 import { tepSlices } from "../dispatch/adapter";
 import { GREEN_PROBE, spaceWithOneChange, tmpRepo as harnessRepo, writeInto } from "./runHarness";
-import { coderTestPaths, foldBlastRadius } from "./plan";
+import { coderTestPaths } from "./plan";
 import { ownership } from "./fence";
-import { buildUnitDag, type SliceForDag } from "../engine/core/dag";
-import { validateDag } from "../engine/methodology/parallelSlices";
+import type { SliceForDag } from "../engine/core/dag";
 
 function tmpRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-fence-"));
@@ -33,43 +32,6 @@ function tmpRepo(): string {
   g(["commit", "-qm", "seed"]);
   return dir;
 }
-
-test("a probe is held-out evidence wherever it lives — never folded into a coder's footprint", async () => {
-  const repo = tmpRepo();
-  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
-  // A probe from an EARLIER delivery that imports a source this cut changes.
-  fs.mkdirSync(path.join(repo, "probes"), { recursive: true });
-  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
-  fs.writeFileSync(
-    path.join(repo, "probes", "old__SL-1_AC-1.test.mjs"),
-    'import { greet } from "../src/greet.ts";\n',
-  );
-  fs.writeFileSync(path.join(repo, "src", "greet.ts"), "export const greet = () => 'hi';\n");
-  g(["add", "-A"]);
-  g(["commit", "-qm", "an earlier delivery's probe"]);
-  const exec = async (cmd: string, args: string[], cwd: string) => ({
-    code: 0,
-    out: execFileSync(cmd, args, { cwd, encoding: "utf8" }),
-  });
-
-  const slices: SliceForDag[] = [
-    {
-      handle: "SL-1",
-      status: "ready",
-      files: ["src/greet.ts"],
-      workUnits: [{ footprint: ["src/greet.ts"], execution: "serial", role: "code" }],
-    },
-  ];
-  const refusal = await foldBlastRadius(slices, repo, exec as never, () => {});
-
-  assert.ok(refusal, "the run is refused rather than the probe being folded in");
-  assert.match(refusal!, /probes\/old__SL-1_AC-1\.test\.mjs/);
-  assert.deepEqual(
-    slices[0].workUnits[0].footprint,
-    ["src/greet.ts"],
-    "and the coder's write fence never opened on it",
-  );
-});
 
 test("a coder's tool use on a test is refused before it runs; a tester's is not", () => {
   const coder = { role: "code" as const, blind: true };
@@ -153,63 +115,6 @@ test("a live peer's files are allowed, so the frontier can share a tree", async 
   assert.equal(fs.readFileSync(path.join(repo, "src", "peer.ts"), "utf8"), "export const b = 2;\n");
 });
 
-test("a covering test another unit depends on is not folded — the plan stays acyclic", async () => {
-  const repo = tmpRepo();
-  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
-  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
-  // Two units land in different files; one test covers both, and that test
-  // is the file the second unit names as its dependency on the first.
-  fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
-  fs.writeFileSync(path.join(repo, "src", "b.ts"), "export const b = 2;\n");
-  fs.writeFileSync(
-    path.join(repo, "src", "both.test.ts"),
-    'import { a } from "./a.ts";\nimport { b } from "./b.ts";\n',
-  );
-  g(["add", "-A"]);
-  g(["commit", "-qm", "two sources under one test"]);
-  const exec = async (cmd: string, args: string[], cwd: string) => ({
-    code: 0,
-    out: execFileSync(cmd, args, { cwd, encoding: "utf8" }),
-  });
-
-  const slices: SliceForDag[] = [
-    {
-      handle: "SL-1",
-      status: "ready",
-      files: ["src/a.ts", "src/both.test.ts"],
-      workUnits: [
-        { footprint: ["src/a.ts", "src/both.test.ts"], execution: "serial", role: "code" },
-      ],
-    },
-    {
-      handle: "SL-2",
-      status: "ready",
-      files: ["src/b.ts"],
-      workUnits: [
-        {
-          footprint: ["src/b.ts"],
-          execution: "serial",
-          role: "code",
-          consumes: ["src/a.ts", "src/both.test.ts"],
-        } as never,
-      ],
-    },
-  ];
-  const refusal = await foldBlastRadius(slices, repo, exec as never, () => {});
-  assert.equal(refusal, null, "nothing here is held-out evidence");
-  assert.deepEqual(
-    slices[1].workUnits[0].footprint,
-    ["src/b.ts"],
-    "the test belongs to the unit SL-2 depends on, so SL-2 does not become a second producer of it",
-  );
-
-  // A dependency is declared as a FILE and resolves to EVERY unit holding
-  // it, so a second producer of a consumed file is an edge in both
-  // directions — and the engine refuses a circle by refusing the whole run.
-  const dag = buildUnitDag(slices);
-  assert.deepEqual(validateDag(dag) as unknown, { ok: true });
-});
-
 test("a finished unit's work is not a stray for a unit still running beside it", async () => {
   // Every test author shares one worktree. The first to finish leaves its
   // probes written; the ones still running must not be blamed for them,
@@ -279,18 +184,7 @@ test("ownership is not liveness: every unit's footprint is respected, finished o
   );
 });
 
-test("a test the change would break folds into the TESTER's footprint — the coder never holds a test", async () => {
-  const repo = tmpRepo();
-  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
-  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
-  fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
-  fs.writeFileSync(path.join(repo, "src", "a.test.ts"), 'import { a } from "./a.ts";\n');
-  g(["add", "-A"]);
-  g(["commit", "-qm", "a source under a test"]);
-  const exec = async (cmd: string, args: string[], cwd: string) => ({
-    code: 0,
-    out: execFileSync(cmd, args, { cwd, encoding: "utf8" }),
-  });
+test("the roles' invariant names a coder that holds a test-shaped path", () => {
   const slices: SliceForDag[] = [
     {
       handle: "SL-1",
@@ -298,24 +192,14 @@ test("a test the change would break folds into the TESTER's footprint — the co
       files: ["src/a.ts"],
       workUnits: [
         { footprint: ["src/a.ts"], execution: "serial", role: "code" },
-        { footprint: ["probes/sp__SL-1_AC-1.test.mjs"], execution: "serial", role: "test" },
+        { footprint: ["probes/sp__SL-1_AC-1.test.mjs", "src/a.test.ts"], execution: "serial", role: "test" },
       ],
     },
   ];
-  const said: string[] = [];
-  const refusal = await foldBlastRadius(slices, repo, exec as never, (l) => said.push(l));
-  assert.equal(refusal, null);
-  assert.deepEqual(slices[0].workUnits[0].footprint, ["src/a.ts"], "the coder's footprint is untouched");
-  assert.deepEqual(
-    slices[0].workUnits[1].footprint,
-    ["probes/sp__SL-1_AC-1.test.mjs", "src/a.test.ts"],
-    "the tester brings the covering test under, beside its probe",
-  );
-  assert.deepEqual(coderTestPaths(slices), [], "the plan keeps the roles' invariant");
+  assert.deepEqual(coderTestPaths(slices), [], "production for the coder, tests for the tester");
   slices[0].workUnits[0].footprint.push("src/a.test.ts");
-  assert.deepEqual(coderTestPaths(slices), ["SL-1#eu-0: src/a.test.ts"], "a coder holding a test is named");
+  assert.deepEqual(coderTestPaths(slices), ["SL-1#eu-0: src/a.test.ts"]);
 });
-
 test("the tester's files riding into the code tree at slice commit are never a live coder's strays", async () => {
   const repo = harnessRepo();
   const { space, ids } = spaceWithOneChange();

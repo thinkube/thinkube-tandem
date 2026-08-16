@@ -63,9 +63,9 @@ export interface GateContext {
 
 /** The reason a red suite withholds the delivery — intent-level, no internals. */
 export const RED_SUITE_REFUSAL =
-  "the work meets its own checks but leaves the repository's standing checks red — " +
-  "the delivery is withheld rather than handed over red; the branch keeps the work " +
-  "and the run record keeps the suite's verdict";
+  "the repository's standing checks are red after the work — the delivery is withheld " +
+  "rather than handed over red; the branch keeps the work and the run record keeps the " +
+  "suite's verdict (if the repository was already red before, it must be green first)";
 
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, testerWt, slices, space, cut, deps, exec, boundedExec, log, defect } = g;

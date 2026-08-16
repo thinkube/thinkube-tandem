@@ -36,7 +36,7 @@ import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeParkAnswerer, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { setupRunTree } from "./setup";
-import { claimRunLock, coderTestPaths, foldBlastRadius } from "./plan";
+import { claimRunLock, coderTestPaths } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
@@ -145,9 +145,6 @@ export async function dispatchTep(
     return { refusals: [refusal], undelivered: [] };
   };
 
-  const blast = await foldBlastRadius(slices, deps.repoRoot, exec, log);
-  if (blast) return refuse("blast-radius", blast);
-
   const lock = await claimRunLock(wtRoot, wtName, runName, slices, { log });
   if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
@@ -171,7 +168,7 @@ export async function dispatchTep(
   const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
   if (trees) return refuse(trees.trigger, trees.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, suite: deps.suiteCommand, resetup: deps.resetup, proven: deps.proveSetup });
+  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, resetup: deps.resetup, proven: deps.proveSetup });
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
   const { provisioned } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
@@ -199,7 +196,7 @@ export async function dispatchTep(
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
 
   const briefBySlice = new Map<string, string>();
-  const acting = new Map<string, { unit: string; baseline: boolean }>();
+  const acting = new Map<string, { unit: string }>();
   // The check behind an ordinal, from the space — the adapter carried the
   // ids; the probe never carries delivery bookkeeping.
   const criterionOf = criterionLookup(slices, space);
@@ -303,20 +300,8 @@ export async function dispatchTep(
     const oracle = role === "code" ? buildOracle(next.slice) : undefined;
     if (role === "code") await restoreTester();
 
-    // Grade-first: when the committed state already satisfies the checks (a
-    // resume, a re-run, an earlier slice's work) no worker is spent.
-    if (oracle) {
-      acting.set(next.slice, { unit: next.id, baseline: true });
-      const pre = await oracle.confirmGreen();
-      acting.set(next.slice, { unit: next.id, baseline: false });
-      if (pre.green) {
-        log(`✓ ${next.id}: grade-first — the checks are already green, no worker spent`, next.id);
-        st.aborts.delete(next.id);
-        liveFootprints.delete(next.id);
-        await finishUnit(next.id, next.slice, true);
-        return;
-      }
-    }
+    // The oracle speaks under the unit it acts for.
+    if (oracle) acting.set(next.slice, { unit: next.id });
 
     const baseBrief =
       buildWorkerPrompt(next, tep, {
