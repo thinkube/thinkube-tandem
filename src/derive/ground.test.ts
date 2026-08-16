@@ -39,6 +39,14 @@ test("the graph's answer to the ask's own words rides the prompt as a lead, not 
 test("a check carries its lifetime: transitions are assessments, standing behavior a probe", () => {
   const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" });
   assert.ok(prompt.includes('"assessment"'), "the transition kind is offered");
+  assert.ok(
+    /OBSERVES THE CODE AT A SEAM/.test(prompt) && /NEVER PERFORMS the effect/.test(prompt),
+    "a check observes at a seam and never acts on the world",
+  );
+  assert.ok(
+    /shutdown request .* fake API/.test(prompt) && /cluster shuts down .* assessment|assessment "the cluster shuts down/.test(prompt),
+    "the world-effect example shows the split: seam probes, effect assessed",
+  );
   const raw = JSON.stringify({
     nodes: [
       {

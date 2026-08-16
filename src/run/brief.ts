@@ -29,3 +29,19 @@ export function coderStanza(oracleAvailable: boolean): string {
     "Two challenges per slice; a challenge is never a way to see the check."
   );
 }
+
+/** What every tester is told, whatever else its brief carries: a check
+ *  observes the code at a seam and exits; it never acts on the world. */
+export function testerStanza(): string {
+  return (
+    "\n\nHOW A CHECK MAY BEHAVE: a check OBSERVES the code at a seam — a call " +
+    "made, a request built, a state changed inside the program — through a fake " +
+    "where the real thing is the cluster this runs in, a service, a process, or " +
+    "anything outside the repository. It NEVER performs the effect. It starts " +
+    "nothing it does not stop: when a check has to start the program (its " +
+    "activate, its server, its watchers), it stops it before it ends, so the " +
+    "process EXITS on its own. A check that does not exit is a defective check " +
+    "and counts as failed. A criterion that IS an effect on the world is not " +
+    "yours to prove — it is judged once by the person."
+  );
+}

@@ -103,6 +103,12 @@ export function buildCompletenessPrompt(args: {
     `or they will disagree later.\n` +
     `e. LIFECYCLE — the create, open, close, delete and shutdown paths of ` +
     `anything this work multiplies: what held one must now hold many.\n` +
+    `f. THE WORLD — every criterion that would ACT on anything outside the ` +
+    `repository to prove itself (the cluster this runs in, a service, a ` +
+    `process, a file outside the worktree): re-mark it — the observable ` +
+    `part at a seam through a fake becomes the "probe", the effect itself ` +
+    `becomes an "assessment" the person judges once. No check acts on the ` +
+    `world.\n` +
     (args.affected
       ? `\nWHAT MOVES WITH THIS, from the code graph — every caller, ` +
         `importer and referencer of what these changes touch, with its file ` +

@@ -434,7 +434,8 @@ test("completeness receives what earlier steps learned, consumably: evidence, qu
       prompt.includes("EXISTING TESTS") &&
       prompt.includes("DERIVED COPIES") &&
       prompt.includes("ONE RULE, MANY READERS") &&
-      prompt.includes("LIFECYCLE"),
+      prompt.includes("LIFECYCLE") &&
+      prompt.includes("THE WORLD"),
     "the miss families are swept by name — a skipped family was the recurring failure",
   );
   assert.ok(

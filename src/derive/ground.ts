@@ -99,6 +99,13 @@ export function buildGroundingPrompt(args: {
     `Judged once by an independent reviewer when the work is delivered, recorded on the delivery, and never kept as a test — ` +
     `a permanent test pinning prose or an absence fails every later change that legitimately moves on. ` +
     `A documentation-wording check is ALWAYS "assessment".\n` +
+    `    A check OBSERVES THE CODE AT A SEAM — a call made, a request built, a state changed inside the program — ` +
+    `through a fake where the real thing is the cluster, a service, a process, or anything outside the repository. ` +
+    `A check NEVER PERFORMS the effect on the world. When the criterion IS the effect ("the cluster is down", ` +
+    `"the app answers on its URL"), it is "assessment": judged once by the person, after accepting. ` +
+    `Example — a button that shuts down the cluster: probe "pressing the button sends a shutdown request for the ` +
+    `current cluster to the platform API, and only after a confirmation (seen through a fake API)"; probe "without ` +
+    `confirmation no request is sent"; assessment "the cluster shuts down when the person presses it once".\n` +
     (args.decisions?.length
       ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
       : "") +

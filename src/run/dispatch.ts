@@ -41,7 +41,7 @@ import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
-import { coderStanza } from "./brief";
+import { coderStanza, testerStanza } from "./brief";
 import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
@@ -321,7 +321,8 @@ export async function dispatchTep(
     // tester's decisions — each role's brief carries what it owns.
     const oracleStanza =
       role === "test"
-        ? testHomesStanza(
+        ? testerStanza() +
+          testHomesStanza(
             testHomesOf(next.footprint),
             (next.units ?? []).flatMap(
               (u) => (u as { testHomeWork?: { path: string; sentence: string; criteria: string[] }[] }).testHomeWork ?? [],
