@@ -230,6 +230,9 @@ export async function dispatchTep(
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
+  // The tester's files ride into the code tree at slice commit — the run's
+  // own copies, never a coder's strays; a coder cannot write them anyway.
+  const testerPaths = [...new Set([...sliceProbes.values(), ...sliceTestHomes.values()].flat())];
 
   let testInflight = 0;
   const sliceCommitted = new Set<string>();
@@ -244,8 +247,9 @@ export async function dispatchTep(
       await copyRel(testerWt, worktree, rel).catch(() => {});
     const paths = [...new Set([...(sliceFiles.get(slice) ?? []), ...probes])];
     if (paths.length) await exec("git", ["add", "--", ...paths], worktree);
-    await exec("git", ["commit", "-m", `tandem: ${tep} ${slice}`], worktree);
-    log(`✓ ${slice}: committed on ${branch}`);
+    const c = await exec("git", ["commit", "-m", `tandem: ${tep} ${slice}`], worktree);
+    if (c.code === 0) log(`✓ ${slice}: committed on ${branch}`);
+    else log(`⚠ ${slice}: nothing to commit — ${c.out.trim().split("\n").pop() ?? ""}`);
   };
 
   const failWith = (id: string, ...why: string[]): void => {
@@ -351,7 +355,7 @@ export async function dispatchTep(
           // Blind only when the oracle can answer instead.
           blind: role !== "test" && !!oracle,
           footprint: next.footprint,
-          alsoAllowed: unionFor(tree, next.id),
+          alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
           baseline,
           abort,
           // A worker's question goes to the machine first; the human sees

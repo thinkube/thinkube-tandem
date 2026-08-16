@@ -104,6 +104,22 @@ export function isHeldOut(target: string): boolean {
   return isTestPath(target);
 }
 
+/** Why a tool use is refused before it runs, or nothing. A coder never
+ *  reads held-out evidence when blinded, and never writes a test-shaped
+ *  path at all — tests are the tester's, whatever the footprint says. */
+export function refusedToolUse(
+  deps: { role: "code" | "test"; blind?: boolean },
+  tool: string,
+  target: string,
+): string | undefined {
+  if (!target) return undefined;
+  if (deps.role === "code" && ["Write", "Edit", "NotebookEdit"].includes(tool) && isHeldOut(target))
+    return "tests are the tester's — a coder never writes a test or probe file; build to the contract and ask `verify`";
+  if (deps.blind && READ_TOOLS.includes(tool) && isHeldOut(target))
+    return "the checks are held out — ask `verify` how you are doing instead of reading them";
+  return undefined;
+}
+
 const git = (cwd: string, args: string[]): Promise<string> =>
   new Promise((resolve) => {
     execFile("git", ["-C", cwd, ...args], { encoding: "utf8" }, (_e, out) =>
@@ -261,27 +277,18 @@ export async function runUnitWorker(
                   tool_name?: string;
                   tool_input?: { command?: string; file_path?: string; path?: string; pattern?: string };
                 }) => {
-                  // A blinded author may not READ the evidence either.
-                  // Editing is already reverted by containment; reading is
-                  // what lets it write to the probe instead of the intent.
-                  if (deps.blind && READ_TOOLS.includes(h.tool_name ?? "")) {
-                    const target = [
-                      h.tool_input?.file_path,
-                      h.tool_input?.path,
-                      h.tool_input?.pattern,
-                    ]
-                      .filter((x): x is string => !!x)
-                      .join(" ");
-                    if (isHeldOut(target))
-                      return {
-                        hookSpecificOutput: {
-                          hookEventName: "PreToolUse",
-                          permissionDecision: "deny",
-                          permissionDecisionReason:
-                            "the checks are held out — ask `verify` how you are doing instead of reading them",
-                        },
-                      };
-                  }
+                  const target = [h.tool_input?.file_path, h.tool_input?.path, h.tool_input?.pattern]
+                    .filter((x): x is string => !!x)
+                    .join(" ");
+                  const refused = refusedToolUse(deps, h.tool_name ?? "", target);
+                  if (refused)
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: "PreToolUse",
+                        permissionDecision: "deny",
+                        permissionDecisionReason: refused,
+                      },
+                    };
                   if (h.tool_name === "Bash" && h.tool_input?.command) {
                     const rewritten = rtkRewrite(h.tool_input.command);
                     if (rewritten)

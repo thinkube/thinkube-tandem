@@ -12,7 +12,11 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { encloseWork, isHeldOut } from "./worker";
+import { encloseWork, isHeldOut, refusedToolUse } from "./worker";
+import { dispatchTep } from "./dispatch";
+import { RunState } from "./state";
+import { tepSlices } from "../dispatch/adapter";
+import { GREEN_PROBE, spaceWithOneChange, tmpRepo as harnessRepo, writeInto } from "./runHarness";
 import { coderTestPaths, foldBlastRadius } from "./plan";
 import { ownership } from "./fence";
 import { buildUnitDag, type SliceForDag } from "../engine/core/dag";
@@ -65,6 +69,21 @@ test("a probe is held-out evidence wherever it lives — never folded into a cod
     ["src/greet.ts"],
     "and the coder's write fence never opened on it",
   );
+});
+
+test("a coder's tool use on a test is refused before it runs; a tester's is not", () => {
+  const coder = { role: "code" as const, blind: true };
+  assert.match(refusedToolUse(coder, "Write", "src/run/dispatch.test.ts") ?? "", /tester's/);
+  assert.match(refusedToolUse(coder, "Edit", "probes/x.test.mjs") ?? "", /tester's/);
+  assert.match(refusedToolUse(coder, "Read", "probes/x.test.mjs") ?? "", /held out/);
+  assert.equal(refusedToolUse(coder, "Edit", "src/run/dispatch.ts"), undefined, "production is the coder's");
+  assert.equal(
+    refusedToolUse({ role: "code", blind: false }, "Write", "src/a.test.ts")?.includes("tester's"),
+    true,
+    "even an unblinded coder never writes a test",
+  );
+  assert.equal(refusedToolUse({ role: "test" }, "Edit", "src/gates/gates.test.ts"), undefined, "the tester's own");
+  assert.equal(refusedToolUse(coder, "Write", ""), undefined, "no target, no refusal");
 });
 
 test("held-out evidence is recognised wherever a coder might reach for it", () => {
@@ -295,4 +314,38 @@ test("a test the change would break folds into the TESTER's footprint — the co
   assert.deepEqual(coderTestPaths(slices), [], "the plan keeps the roles' invariant");
   slices[0].workUnits[0].footprint.push("src/a.test.ts");
   assert.deepEqual(coderTestPaths(slices), ["SL-1#eu-0: src/a.test.ts"], "a coder holding a test is named");
+});
+
+test("the tester's files riding into the code tree at slice commit are never a live coder's strays", async () => {
+  const repo = harnessRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-35" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let allowedForCoder: string[] = [];
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "done" };
+        }
+        allowedForCoder = w.alsoAllowed?.() ?? [];
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  const probe = slices[0].workUnits.find((u) => u.role === "test")!.footprint[0];
+  assert.ok(allowedForCoder.includes(probe), "a probe copied in by the run is not the coder's stray — the commit cannot be reverted under it");
 });
