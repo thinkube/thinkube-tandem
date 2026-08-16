@@ -239,6 +239,7 @@ export async function dispatchTep(
   const testerPaths = [...new Set([...sliceProbes.values(), ...sliceTestHomes.values()].flat())];
 
   let testInflight = 0;
+  let testerReset: Promise<void> = Promise.resolve();
   const sliceCommitted = new Set<string>();
 
   /** Probes in, then commit the slice's paths: later tester snapshots see
@@ -281,12 +282,17 @@ export async function dispatchTep(
     const tree = role === "test" ? testerWt : worktree;
     if (role === "test") {
       // Re-snapshot only when no other test author is mid-flight — a reset
-      // under a live author would wipe its work.
-      if (testInflight === 0) {
-        await ensureSnapshot(deps.repoRoot, branch, testerWt, exec);
-        await restoreTester();
-      }
+      // under a live author would wipe its work. The count rises BEFORE the
+      // reset is awaited and the reset itself is one shared promise, so two
+      // authors launched in the same tick cannot each reset under the other.
+      const first = testInflight === 0;
       testInflight++;
+      if (first)
+        testerReset = (async () => {
+          await ensureSnapshot(deps.repoRoot, branch, testerWt, exec);
+          await restoreTester();
+        })();
+      await testerReset;
     }
     const baseline = new Set(await porcelainPaths(tree));
     const abort = new AbortController();
@@ -480,9 +486,22 @@ export async function dispatchTep(
         tree: (u.role ?? "code") === "test" ? testerWt : worktree,
         paths: u.footprint,
       });
-      const p = runOne(u).finally(() => {
-        inflight.delete(u.id);
-      });
+      // A crash inside one unit is that unit's failure, on the record —
+      // never the end of the run for every other unit.
+      const p = runOne(u)
+        .catch(async (err) => {
+          const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
+          log(`⛔ ${u.id}: crashed — ${why.split("\n")[0]}`, u.id);
+          defect({ slice: u.slice, unit: u.id, activity: "unit execution", trigger: "crash", impact: "unit failed", detail: why.slice(0, 1200) });
+          st.aborts.delete(u.id);
+          liveFootprints.delete(u.id);
+          if (u.role === "test") testInflight = Math.max(0, testInflight - 1);
+          failWith(u.id, `crashed: ${why.split("\n")[0].slice(0, 200)}`);
+          await finishUnit(u.id, u.slice, false);
+        })
+        .finally(() => {
+          inflight.delete(u.id);
+        });
       inflight.set(u.id, p);
     }
     if (inflight.size === 0) break;

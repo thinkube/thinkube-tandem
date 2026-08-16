@@ -11,6 +11,7 @@ import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { saveRun } from "../run/record";
+import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
@@ -151,6 +152,15 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         s.changed(s.runNote);
       } else if (last?.delivery) s.runNote = undefined;
       return last;
+    } catch (err) {
+      // A crash is a stop with a cause — on the run's log, in the ledger,
+      // and on the note the human reads; never a silent "nothing delivered".
+      const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      s.runState?.log(`⛔ the run crashed: ${why.split("\n")[0]}`);
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "crash", impact: "run stopped", detail: why.slice(0, 1500) });
+      s.runNote = `The build stopped unexpectedly: ${why.split("\n")[0].slice(0, 300)}`;
+      s.changed(s.runNote);
+      return undefined;
     } finally {
       s.running = false;
       if (pending) clearTimeout(pending);
