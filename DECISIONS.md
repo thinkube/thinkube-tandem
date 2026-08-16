@@ -105,3 +105,24 @@ of them there — nothing has users.
   by the tester's decisions; a repeated failure is still reviewed), the
   full suite at the run's start (answered at the gate).
 - The build step is proved at the start; the suite is judged at the end.
+
+## Self-awareness — state, limits, ground (2026-08-16)
+- The process knows its own state and reports it: every actor says what
+  it is doing, what it is waiting on, and for how long. A card that says
+  "running" while the worker waits on the checker is a lie. Stop reaches
+  every limb of the run — workers, checker, gate — and the run knows
+  when it has died. A state the process cannot sense it must not claim.
+- The process knows its own limits: a reused answer or a reused check may
+  be stale when the world moved; a check that never exits is a defective
+  check, said so, not a silent failure; a check that reaches outside the
+  code is out of bounds. What it does not know, it says.
+- The process knows its ground: it runs inside an IDE, inside a pod,
+  inside a cluster it can reach with the credentials lying in that pod.
+  It senses this at start — from the environment, the process tree, the
+  mounts — never from a setting, and hands it to every actor as a
+  constraint: that cluster, that pod, that IDE and those credentials are
+  its own; it never acts on them. A check observes the code at a seam;
+  it never acts on the world. A criterion about the world is judged once
+  by a person, or run only against an environment declared for breaking.
+  The design phase marks such criteria; the runtime wall (no network, no
+  credentials, only the worktree) catches what the design missed.
