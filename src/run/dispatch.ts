@@ -74,6 +74,8 @@ export interface DispatchDeps {
   provision?: string;
   /** Re-read provision/prepare from a setup failure's evidence (the door tries the correction once). */
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
+  /** The door proved this setup on the untouched tree — remember it as the answer. */
+  proveSetup?: (s: { provision: string; prepare: string }) => void;
   /** Build/typecheck command run in the verify runner and the gate
    *  worktree before checks — the engine's own prepare seam. */
   prepare?: string;
@@ -169,7 +171,7 @@ export async function dispatchTep(
   const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
   if (trees) return refuse(trees.trigger, trees.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, suite: deps.suiteCommand, resetup: deps.resetup });
+  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, suite: deps.suiteCommand, resetup: deps.resetup, proven: deps.proveSetup });
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
   const { provisioned } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };

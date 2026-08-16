@@ -28,8 +28,8 @@ test("the parser accepts one command per fact or nothing — it never invents a 
     { provision: "pip install -e .[test]", prepare: "" },
     "preamble tolerated, the labeled lines are the answer",
   );
-  assert.deepEqual(parseSetup(null), NO_SETUP);
-  assert.deepEqual(parseSetup("npx tsc -p tsconfig.test.json"), NO_SETUP, "an unlabeled line is not an answer");
+  assert.equal(parseSetup(null), undefined, "no text is no answer — the caller keeps what it had");
+  assert.equal(parseSetup("npx tsc -p tsconfig.test.json"), undefined, "an unlabeled line is not an answer");
   assert.deepEqual(parseSetup("PREPARE: " + "x".repeat(300)), NO_SETUP, "an essay is not a command");
 });
 
@@ -51,5 +51,5 @@ test("a derivation holds to the earlier answer, and a failed answer is corrected
     { failed: { setup: { provision: "npm ci", prepare: "npx tsc -p tsconfig.test.json" }, evidence: "error TS2503: Cannot find namespace 'React'" } },
   );
   assert.ok(prompts[0].includes("TRIED ON A FRESH CHECKOUT AND FAILED") && prompts[0].includes("Cannot find namespace 'React'"), "the failure is the evidence");
-  assert.equal(again.provision, "npm ci && npm ci --prefix webview/map");
+  assert.equal(again?.provision, "npm ci && npm ci --prefix webview/map");
 });

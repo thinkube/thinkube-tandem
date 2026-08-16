@@ -134,3 +134,29 @@ test("a correction that changes nothing, or fails too, ends in the refusal — t
   });
   assert.ok(worse.refusal, "a correction that also fails refuses — once");
 });
+
+test("only an answer the door proved is remembered — a first answer that works, or the correction that did", async () => {
+  const proven: { provision: string; prepare: string }[] = [];
+  const wt = tree();
+  await setupRunTree({
+    worktree: wt,
+    provision: "mkdir -p deps && echo lib > deps/lib.txt",
+    prepare: "test -f deps/lib.txt",
+    proven: (s) => proven.push(s),
+    exec: defaultExec,
+    boundedExec: sh,
+    log: () => {},
+  });
+  assert.deepEqual(proven, [{ provision: "mkdir -p deps && echo lib > deps/lib.txt", prepare: "test -f deps/lib.txt" }]);
+  const wt2 = tree();
+  await setupRunTree({
+    worktree: wt2,
+    prepare: "exit 1",
+    resetup: async () => ({ provision: "", prepare: "exit 1" }),
+    proven: (s) => proven.push(s),
+    exec: defaultExec,
+    boundedExec: sh,
+    log: () => {},
+  });
+  assert.equal(proven.length, 1, "a failing answer is never remembered as proven");
+});

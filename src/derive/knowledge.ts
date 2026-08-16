@@ -44,6 +44,8 @@ export interface Knowledge {
   /** Re-read both facts with the evidence of a setup that failed on a fresh
    *  checkout; the corrected answer is remembered. */
   resetup: (evidence: string) => Promise<{ provision: string; prepare: string }>;
+  /** The door proved this answer on a fresh checkout — remember it as such. */
+  proveSetup: (s: { provision: string; prepare: string }) => void;
   /** What the human has settled — every derivation runs under these. */
   decisions: readonly string[];
   /** A bounded question of the graph: cited nodes, in milliseconds. */
@@ -113,16 +115,18 @@ export async function knowledgeOf(args: {
       return { ...NO_SETUP };
     }
   };
-  const previous = parseSetupJson(args.store?.load("setup@latest"));
-  const remember = (s: Setup): void => {
-    args.store?.save(setupKey, JSON.stringify(s));
-    args.store?.save("setup@latest", JSON.stringify(s));
-  };
+  // "setup@proven" is an answer the door has PROVED on a fresh checkout;
+  // a fresh reading never overwrites it — only the door does, by proving
+  // the next answer. A reading that produced nothing is not an answer.
+  const proven = parseSetupJson(args.store?.load("setup@proven"));
   let setup = parseSetupJson(args.store?.load(setupKey));
   if (!setup) {
     log("▸ asking the repository how a fresh checkout is made ready and how a single check runs");
-    setup = await deriveSetup(args.deps, args.round, map, digest, previous ? { previous } : {});
-    remember(setup);
+    setup =
+      (await deriveSetup(args.deps, args.round, map, digest, proven ? { previous: proven } : {})) ??
+      proven ??
+      { ...NO_SETUP };
+    args.store?.save(setupKey, JSON.stringify(setup));
   }
   const settled: Setup = setup;
 
@@ -139,9 +143,15 @@ export async function knowledgeOf(args: {
       log("▸ the setup failed on a fresh checkout — asking the repository again, with the failure");
       const again = await deriveSetup(args.deps, args.round, map, digest, {
         failed: { setup: settled, evidence },
+        ...(proven ? { previous: proven } : {}),
       });
-      remember(again);
-      return again;
+      // The door decides what to remember: a corrected answer is written
+      // as proven only once it held there.
+      return again ?? proven ?? settled;
+    },
+    proveSetup: (s) => {
+      args.store?.save("setup@proven", JSON.stringify(s));
+      args.store?.save(setupKey, JSON.stringify(s));
     },
     decisions: args.decisions,
     ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),

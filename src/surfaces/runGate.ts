@@ -101,6 +101,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       const prepare = s.deps.prepareCommand || known?.prepare || undefined;
       const provision = known?.provision || undefined;
       const resetup = known?.resetup;
+      const proveSetup = known?.proveSetup;
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -113,6 +114,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         ...(prepare ? { prepare } : {}),
         ...(provision ? { provision } : {}),
         ...(resetup ? { resetup } : {}),
+        ...(proveSetup ? { proveSetup } : {}),
         onDelivery: (delivery, note) => {
           s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
           s.changed(note);

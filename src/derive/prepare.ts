@@ -77,10 +77,12 @@ export function buildPreparePrompt(
   );
 }
 
-/** One command per label or nothing — a parser that never invents a step. */
-export function parseSetup(raw: string | null): Setup {
+/** One command per label or nothing — a parser that never invents a step.
+ *  A round that produced no text is NOT an answer: undefined, so a caller
+ *  keeps what it had rather than forgetting it. */
+export function parseSetup(raw: string | null): Setup | undefined {
+  if (!raw || !/^\s*`*\s*(PROVISION|PREPARE)\s*:/im.test(raw)) return undefined;
   const setup: Setup = { ...NO_SETUP };
-  if (!raw) return setup;
   for (const l of raw.split("\n")) {
     const m = /^\s*`*\s*(PROVISION|PREPARE)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
     if (!m) continue;
@@ -102,7 +104,7 @@ export async function deriveSetup(
   map = "",
   digest = "",
   ctx: SetupContext = {},
-): Promise<Setup> {
+): Promise<Setup | undefined> {
   const raw = await round(
     { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 8 },
     buildPreparePrompt(deps.repoRoot, map, digest, ctx),

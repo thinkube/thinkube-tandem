@@ -69,6 +69,8 @@ export interface SetupArgs {
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
+  /** Told the answer that held on the untouched tree — the only one worth remembering. */
+  proven?: (s: { provision: string; prepare: string }) => void;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -79,7 +81,11 @@ export interface SetupArgs {
  *  as evidence, and the corrected answer is tried before the run refuses. */
 export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
   const first = await proveTree(args);
-  if (!first.refusal || !args.resetup) return first;
+  if (!first.refusal) {
+    args.proven?.({ provision: args.provision ?? "", prepare: args.prepare ?? "" });
+    return first;
+  }
+  if (!args.resetup) return first;
   const again = await args.resetup(first.refusal).catch(() => undefined);
   if (!again || (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")))
     return first;
@@ -87,6 +93,7 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
     `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
   );
   const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare });
+  if (!second.refusal) args.proven?.(again);
   return second.refusal ? second : { ...second, corrected: again };
 }
 

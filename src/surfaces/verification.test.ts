@@ -30,7 +30,7 @@ function sessionWithVerifiedWork(): TandemSession {
       graph: { graphPath: "/g.json", stamp: CURRENT },
       map: "",
       digest: "",
-      provision: "", prepare: "", resetup: async () => ({ provision: "", prepare: "", resetup: async () => ({ provision: "", prepare: "" }) }),
+      provision: "", prepare: "", resetup: async () => ({ provision: "", prepare: "" }), proveSetup: () => {},
       decisions: [],
       ask: async () => "",
       affected: async () => "",
