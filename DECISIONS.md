@@ -66,3 +66,21 @@ of them there — nothing has users.
   sentence must not fail a test unless a data flow was severed.
 - Probes re-home into the suite at accept (their criterion keeps the
   address); the probes/ directory holds nothing that outlives its delivery.
+
+## The human boundary (2026-08-16)
+- The only work the human does is on asks: state them, change them,
+  expand them. Everything below intent — names, files, fixtures, ordering,
+  tool failures, which test broke, whether a probe is faithful — is the
+  run's internals, owned by the machine's own actors (supervisor, judge,
+  tester, coder).
+- The machine may REPORT internals to the human; it may not ASK about
+  them. A question that cannot be phrased at intent level is a defect in
+  the run, and its owner is one of the machine's actors — a worker's park
+  goes to the supervisor first, a dispute to the judge; the human sees the
+  outcome on the record, or an intent question in the human's own words.
+- Contract-completing choices (a tester's decisions, a ruling, a
+  disclosure) flow to the actor that needs them and land on the delivery
+  record — visible, never asked.
+- A delivery the machine cannot make green within its budget is refused
+  with the reason in intent terms, never handed over red for the human to
+  finish.
