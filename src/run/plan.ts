@@ -1,10 +1,10 @@
 /**
  * Author-time plan hardening at dispatch: the test-impact blast radius.
  * An existing test that statically imports a changed source file is inside
- * the change — unit tests fold into the slice's code footprint
- * automatically; a held-out probe there is a refusal (never an
- * implementer's file). Returns the refusal text, or null when the plan
- * stands (possibly with folded footprints).
+ * the change — it folds into the slice's TESTER footprint (the tester
+ * brings it under; the coder never holds a test); a held-out probe there is
+ * a refusal (never an implementer's file). Returns the refusal text, or
+ * null when the plan stands (possibly with folded footprints).
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -18,6 +18,7 @@ import {
   buildTestImpactRefusal,
   findUncoveredTests,
 } from "../engine/testImpactFootprint";
+import { isProbePath, isTestPath, testHomesOf } from "./testHomes";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
@@ -81,10 +82,15 @@ export async function foldBlastRadius(
     const uncovered = classified.filter((v) => v.kind === "unit").map((v) => v.test);
     const folded = uncovered.filter((t) => !dependencyNames.has(t));
     const owned = uncovered.filter((t) => dependencyNames.has(t));
+    // A test the change would break is the tester's to bring under — never
+    // the coder's, who holds no test in its footprint.
     if (folded.length) {
-      const codeUnit = s.workUnits.find((u) => (u.role ?? "code") === "code");
-      if (codeUnit) codeUnit.footprint.push(...folded);
-      log(`${s.handle}: blast radius folded ${folded.join(", ")} into the code footprint`);
+      const tester = s.workUnits.find((u) => u.role === "test");
+      if (tester) {
+        tester.footprint.push(...folded);
+        log(`${s.handle}: blast radius folded ${folded.join(", ")} into the tester's footprint`);
+      } else
+        log(`${s.handle}: ${folded.join(", ")} covers this work and no tester owns it — the gate's suite judges`);
     }
     if (owned.length)
       log(
@@ -187,6 +193,9 @@ export async function claimRunLock(
  */
 export function sliceBookkeeping(slices: SliceForDag[]): {
   sliceProbes: Map<string, string[]>;
+  /** Existing test homes the slice's tester owns — they ride with the
+   *  probes but are never run as checks of their own. */
+  sliceTestHomes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   sliceFiles: Map<string, string[]>;
   /** What each probe is FOR, in the check's own words — so a result is
@@ -194,6 +203,7 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
   checkOf: Map<string, string>;
 } {
   const sliceProbes = new Map<string, string[]>();
+  const sliceTestHomes = new Map<string, string[]>();
   const sliceVerifs = new Map<string, AcVerification[]>();
   const sliceFiles = new Map<string, string[]>();
   const checkOf = new Map<string, string>();
@@ -203,17 +213,19 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
       // The note a probe was written from is "[the promise] the check".
       const said = (u as { note?: string }).note ?? "";
       const check = said.replace(/^\[[^\]]*\]\s*/, "").trim();
-      for (const f of u.footprint) if (check) checkOf.set(f, check);
+      for (const f of u.footprint) if (check && isProbePath(f)) checkOf.set(f, check);
     }
-    const probes = tests.flatMap((u) => u.footprint);
+    const owned = tests.flatMap((u) => u.footprint);
+    const probes = owned.filter(isProbePath);
     sliceProbes.set(s.handle, probes);
+    sliceTestHomes.set(s.handle, testHomesOf(owned));
     sliceVerifs.set(
       s.handle,
       probes.map((p, i) => ({ ac: i + 1, run: `node --test ${p}`, env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
-  return { sliceProbes, sliceVerifs, sliceFiles, checkOf };
+  return { sliceProbes, sliceTestHomes, sliceVerifs, sliceFiles, checkOf };
 }
 
 /**
@@ -231,7 +243,7 @@ export function closingVerifications(slices: SliceForDag[]): {
   let ord = 0;
   for (const s of slices)
     for (const u of s.workUnits.filter((x) => x.role === "test"))
-      for (const probe of u.footprint) {
+      for (const probe of u.footprint.filter(isProbePath)) {
         verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
         probeOfAc.set(ord, probe);
       }
@@ -351,5 +363,20 @@ export function docsObligations(slices: SliceForDag[], worktree: string): string
     );
     if (note) out.push(`${s.handle}: ${note}`);
   }
+  return out;
+}
+
+/** The plan's role invariant: no coder holds a test-shaped path. Returns
+ *  the offending "unit: path" pairs — a plan that breaks the roles is
+ *  refused before any worker starts. */
+export function coderTestPaths(slices: SliceForDag[]): string[] {
+  const out: string[] = [];
+  for (const s of slices)
+    s.workUnits
+      .filter((u) => (u.role ?? "code") === "code")
+      .forEach((u, k) => {
+        for (const p of u.footprint)
+          if (isTestPath(p)) out.push(`${s.handle}#eu-${k}: ${p}`);
+      });
   return out;
 }

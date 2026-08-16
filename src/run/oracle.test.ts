@@ -5,6 +5,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { defaultExec, OracleFactoryArgs, sliceOracleFactory } from "./oracle";
+import { dispatchTep } from "./dispatch";
+import { RunState } from "./state";
+import { tepSlices } from "../dispatch/adapter";
+import { GREEN_PROBE, spaceWithOneChange, tmpRepo, writeInto } from "./runHarness";
 
 const PROBE = "probes/space__SL-1_AC-1.test.mjs";
 
@@ -71,4 +75,54 @@ test("the oracle's lines land under the unit it acts for, and a baseline read is
     oracleLines.every((s) => s.step === "SL-1#eu-0"),
     "every oracle line carries the unit it acted for — the unit's log is not silent while work is done in its name",
   );
+});
+
+test("a worker's question goes to the machine first: the supervisor answers what the run knows, and only an intent question reaches the human", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-31" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const humanSaw: string[] = [];
+  const origPark = state.park.bind(state);
+  state.park = (id, q, answer) => {
+    humanSaw.push(q);
+    origPark(id, q, answer);
+    setImmediate(() => state.answer(id, "the human says: hello"));
+  };
+  const answers: string[] = [];
+  let asked = 0;
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async (_d, prompt) => {
+        if (prompt.includes("THE WORKER'S QUESTION")) asked++;
+        if (prompt.includes("may I add a test")) return "ANSWER: No. You never touch a test file; the tester owns every test. Continue with src/greet.mjs only.";
+        if (prompt.includes("formal or casual")) return "ESCALATE: should the greeting be formal or casual?";
+        return null;
+      },
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          answers.push(await new Promise<string>((resolve) => w.onPark("may I add a test to src/greet.test.mjs?", resolve)));
+          answers.push(await new Promise<string>((resolve) => w.onPark("formal or casual greeting?", resolve)));
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "done" };
+        }
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.equal(asked, 2, "every question went to the supervisor first");
+  assert.match(answers[0], /never touch a test file/, "an internals question is answered by the machine");
+  assert.equal(answers[1], "the human says: hello");
+  assert.deepEqual(humanSaw, ["should the greeting be formal or casual?"], "the human saw one question, in intent terms");
 });

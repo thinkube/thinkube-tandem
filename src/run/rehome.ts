@@ -23,6 +23,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { runAuthoringRound } from "./author";
+import { isProbePath, isTestPath } from "./testHomes";
 import { accessSync } from "node:fs";
 import type { SliceForDag } from "../engine/core/dag";
 import type { Space } from "../core/schema";
@@ -45,11 +46,8 @@ export interface RehomedAnchor {
   test?: string;
 }
 
-/** A test home is any test file that is not held-out evidence. */
-const suiteTestFile = (rel: string): boolean =>
-  /\.(test|spec)[._-]/.test(rel.replace(/\\/g, "/")) &&
-  !/(^|\/)probes\//.test(rel) &&
-  !/(^|\/)acceptance\//.test(rel);
+/** A test home is any test-shaped path that is not held-out evidence. */
+const suiteTestFile = (rel: string): boolean => isTestPath(rel) && !isProbePath(rel);
 
 export async function rehomeProbes(args: {
   worktree: string;

@@ -20,46 +20,7 @@ import { containmentViolations } from "./worker";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
-
-function tmpRepo(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-run-"));
-  const g = (args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-  execFileSync("git", ["init", "-q", dir], { encoding: "utf8" });
-  g(["config", "user.email", "t@t"]);
-  g(["config", "user.name", "t"]);
-  fs.writeFileSync(path.join(dir, "README.md"), "seed\n");
-  g(["add", "-A"]);
-  g(["commit", "-qm", "seed"]);
-  return dir;
-}
-
-function spaceWithOneChange(): { space: Space; ids: string[] } {
-  let s = emptySpace();
-  const a = addAsk(s, "greet the user", "t");
-  assert.ok(a.ok);
-  s = a.space;
-  const n = addNode(s, {
-    sentence: "a greet module returning a greeting",
-    serves: [a.added.id],
-    needs: [],
-    acceptance: [{ id: "c1", text: "greet() returns 'hello'" }],
-    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
-  });
-  assert.ok(n.ok);
-  return { space: n.space, ids: [n.added.id] };
-}
-
-const GREEN_PROBE =
-  `// WHY (INVARIANT): greet() must return the greeting the acceptance criterion names.\n` +
-  `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
-  `import { greet } from "../src/greet.mjs";\n` +
-  `test("greet", () => assert.equal(greet(), "hello"));\n`;
-
-function writeInto(root: string, rel: string, content: string): void {
-  const abs = path.join(root, rel);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, content);
-}
+import { GREEN_PROBE, spaceWithOneChange, tmpRepo, writeInto } from "./runHarness";
 
 test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-confirmed green, honest proofs", async () => {
   const repo = tmpRepo();
@@ -593,4 +554,42 @@ test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISC
   );
   assert.equal(record.tep, "TEP-t-10");
   assert.ok(Array.isArray(record.trace) && record.trace.length > 0, "the engine's verification trace persisted as the machine face");
+});
+
+test("the tester's decisions ride the coder's brief as contract and land on the delivery", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-32" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let coderBrief = "";
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "probes written\nDECISION: greet is exported as a named function `greet` from src/greet.mjs" };
+        }
+        coderBrief = brief;
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.ok(coderBrief.includes("TESTER'S DECISIONS") && coderBrief.includes("named function `greet`"), "the coder builds to the tester's choices");
+  assert.deepEqual(
+    outcome.delivery?.decisions?.map((d) => d.text),
+    ["greet is exported as a named function `greet` from src/greet.mjs"],
+    "recorded on the delivery — visible, never asked",
+  );
 });

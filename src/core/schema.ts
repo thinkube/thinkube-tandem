@@ -181,6 +181,9 @@ export interface Delivery {
   undelivered?: string[];
   /** Challenges ruled on during the run — every one, granted or not. */
   rulings?: Ruling[];
+  /** Contract-completing choices the tester made where the contract was
+   *  silent — a name, a literal, a rule — flowed to the coder and kept here. */
+  decisions?: { unit: string; text: string }[];
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
 }

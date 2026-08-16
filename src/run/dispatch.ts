@@ -21,35 +21,32 @@
  * proofs — never as silence.
  */
 import * as path from "node:path";
-import { Cut, Delivery, Proof, ProofAnchor, Ruling, Space } from "../core/schema";
+import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
-import {
-  runAcVerifications,
-  DEFAULT_AC_TIMEOUT_MS,
-  runBounded,
-} from "../engine/core/closingGate";
+import { DEFAULT_AC_TIMEOUT_MS, runBounded } from "../engine/core/closingGate";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
-import { gradeAssessments, logRedChecks } from "./assess";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
-import { prepareAtGate, setupRunTree } from "./setup";
-import { claimRunLock, confessedDeferrals, docsObligations, foldBlastRadius, writeDeliveryRecord } from "./plan";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeParkAnswerer, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { setupRunTree } from "./setup";
+import { claimRunLock, coderTestPaths, foldBlastRadius } from "./plan";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
 import { coderStanza } from "./brief";
-import { closingVerifications, sliceBookkeeping } from "./plan";
+import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
-import { criterionLookup, criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
+import { criterionLookup, rehomeProbes } from "./rehome";
+import { closeGate } from "./gate";
+import { decisionsStanza, extractDecisions, restoreTestHomes, testHomesOf, testHomesStanza } from "./testHomes";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -156,6 +153,10 @@ export async function dispatchTep(
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return refuse("plan-validation", `the engine refused the plan: ${JSON.stringify(verdict)}`);
+  // The roles' invariant, checked before any worker starts: no coder holds a test.
+  const misowned = coderTestPaths(slices);
+  if (misowned.length)
+    return refuse("plan-roles", `the plan hands a coder test-shaped paths — refused before dispatch: ${misowned.join(", ")}`);
   const whyWait = waitReasons(dag, slices);
   for (const u of dag) {
     const requires = u.requires.filter((r) => dag.some((x) => x.id === r));
@@ -166,10 +167,19 @@ export async function dispatchTep(
   const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
   if (trees) return refuse(trees.trigger, trees.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  const { provisioned, refusal: unready } = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare });
+  const { provisioned, refusal: unready } = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, suite: deps.suiteCommand });
   if (unready) return refuse("setup", unready, "gate");
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
-  await restoreProbes(storeDir, testerWt);
+  // Per-slice bookkeeping for the oracle + the slice-commit countdown.
+  const { sliceProbes, sliceTestHomes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
+  const allTestHomes = [...new Set([...sliceTestHomes.values()].flat())];
+  /** The tester's tree after a reset: probes back from the store, and the
+   *  test homes it edited restored OVER what the branch holds. */
+  const restoreTester = async (): Promise<void> => {
+    await restoreProbes(storeDir, testerWt);
+    await restoreTestHomes(storeDir, testerWt, allTestHomes);
+  };
+  await restoreTester();
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
 
   const specBody = renderTepBody(space, cut);
@@ -178,8 +188,6 @@ export async function dispatchTep(
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
 
-  // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
   const sliceRemaining = new Map<string, number>();
   for (const u of dag)
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
@@ -190,6 +198,7 @@ export async function dispatchTep(
   // ids; the probe never carries delivery bookkeeping.
   const criterionOf = criterionLookup(slices, space);
   const rulings: Ruling[] = [];
+  const decisions: { unit: string; text: string }[] = [];
   const oracleArgs = {
     repoRoot: deps.repoRoot,
     branch,
@@ -217,6 +226,7 @@ export async function dispatchTep(
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
+  const parkFor = makeParkAnswerer(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -229,10 +239,10 @@ export async function dispatchTep(
   const commitSlice = async (slice: string): Promise<void> => {
     if (sliceCommitted.has(slice)) return;
     sliceCommitted.add(slice);
-    const probes = sliceProbes.get(slice) ?? [];
+    const probes = [...(sliceProbes.get(slice) ?? []), ...(sliceTestHomes.get(slice) ?? [])];
     for (const rel of probes)
       await copyRel(testerWt, worktree, rel).catch(() => {});
-    const paths = [...(sliceFiles.get(slice) ?? []), ...probes];
+    const paths = [...new Set([...(sliceFiles.get(slice) ?? []), ...probes])];
     if (paths.length) await exec("git", ["add", "--", ...paths], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} ${slice}`], worktree);
     log(`✓ ${slice}: committed on ${branch}`);
@@ -266,7 +276,7 @@ export async function dispatchTep(
       // under a live author would wipe its work.
       if (testInflight === 0) {
         await ensureSnapshot(deps.repoRoot, branch, testerWt, exec);
-        await restoreProbes(storeDir, testerWt);
+        await restoreTester();
       }
       testInflight++;
     }
@@ -275,7 +285,7 @@ export async function dispatchTep(
     st.aborts.set(next.id, abort);
 
     const oracle = role === "code" ? buildOracle(next.slice) : undefined;
-    if (role === "code") await restoreProbes(storeDir, testerWt);
+    if (role === "code") await restoreTester();
 
     // Grade-first: when the committed state already satisfies the checks (a
     // resume, a re-run, an earlier slice's work) no worker is spent.
@@ -306,7 +316,18 @@ export async function dispatchTep(
         : "");
     // Only a coder's brief is "the coder's brief" — a tester's must not shadow it.
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
-    const oracleStanza = coderStanza(!!oracle);
+    // The tester's existing test homes and the coder's contract from the
+    // tester's decisions — each role's brief carries what it owns.
+    const oracleStanza =
+      role === "test"
+        ? testHomesStanza(
+            testHomesOf(next.footprint),
+            (next.units ?? []).flatMap(
+              (u) => (u as { testHomeWork?: { path: string; sentence: string; criteria: string[] }[] }).testHomeWork ?? [],
+            ),
+          )
+        : coderStanza(!!oracle) +
+          decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
     // Dispatch-time information audit: the brief's completeness against the
     // checks is static — a missing decidable fact is missing at round zero.
     let disclosure = "";
@@ -333,7 +354,10 @@ export async function dispatchTep(
           alsoAllowed: unionFor(tree, next.id),
           baseline,
           abort,
-          onPark: (q, answer) => st.park(next.id, q, answer),
+          // A worker's question goes to the machine first; the human sees
+          // only an intent-level question, in the human's words.
+          onPark: (q, answer) =>
+            void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
           log: (line: string) => log(line, next.id),
           ...(oracle
             ? {
@@ -364,6 +388,8 @@ export async function dispatchTep(
       if (!oracle) {
         ok = outcome.ok;
         if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
+        else if (role === "test")
+          decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
         break;
       }
 
@@ -460,139 +486,11 @@ export async function dispatchTep(
   for (const id of pending)
     st.block(id, "never ran — the run stopped, or something it waits on failed");
 
-  log(`${tep}: closing gate`);
-  // Probes ride the branch: any not yet copied by a slice commit (failed or
-  // halted slices) still land in the code worktree so the gate's verdict is
-  // about the real state, not about a missing file.
-  for (const [slice, probes] of sliceProbes)
-    if (!sliceCommitted.has(slice))
-      for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
-  const { verifs, probeOfAc } = closingVerifications(slices);
-  await prepareAtGate(deps.prepare, worktree, boundedExec, log);
-  const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
-  // Assessments: a FRESH reviewer in the tester snapshot, fail-soft red.
-  const assessed = await gradeAssessments({
-    space,
-    cut,
-    testerWt,
-    model: deps.workerModel?.workerModel ?? "sonnet",
-    ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
-    log,
-    onRed: (label, ref) =>
-      defect({
-        activity: "closing gate",
-        trigger: "assessment",
-        type: "code",
-        impact: "assessment check red",
-        detail: `${label} — ${ref}`.slice(0, 400),
-      }),
+  return await closeGate({
+    tep, branch, baseSha, worktree, testerWt, slices, space, cut, deps,
+    sliceProbes, sliceTestHomes, sliceCommitted, checkOf, undelivered, rulings, decisions,
+    exec, boundedExec, log, defect,
   });
-  // Named by the CHECK it ran — an ordinal names nothing to a reader.
-  const criterionByProbe = criterionMapOf(slices);
-  const proofs: Proof[] = assessed.concat(
-    acResults.map((r) => {
-      const probe = probeOfAc.get(r.ac);
-      const criterionId = probe ? criterionByProbe.get(probe) : undefined;
-      return {
-        kind: "probe" as const,
-        label: (probe && checkOf.get(probe)) || `check ${r.ac}`,
-        verdict: r.pass ? ("green" as const) : ("red" as const),
-        ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
-        ...(criterionId ? { criterionId } : {}),
-      };
-    }),
-  );
-  logRedChecks(acResults, defect);
-
-  undelivered.push(
-    ...(await confessedDeferrals({
-      worktree,
-      baseSha,
-      exec,
-      extraPaths: await porcelainPaths(worktree),
-      onHit: (file, line, text) =>
-        defect({
-          activity: "closing gate",
-          trigger: "stub-scan",
-          qualifier: "missing",
-          impact: "undelivered surfaced",
-          detail: `${file}:${line} ${text}`,
-        }),
-    })),
-  );
-  const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
-  proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
-
-  // Re-home the delivery's standing checks: probes leave their delivery
-  // coordinates and join the repository's own suite at each promise's
-  // module test home, the criterion recording where its proof went on
-  // living. Only over a green suite — a delivery that is already red
-  // keeps its evidence exactly where the gate graded it.
-  const rehomedAnchors =
-    suite.code === 0
-      ? await rehomeAtGate({
-          worktree,
-          space,
-          criterionByProbe,
-          model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, "code"),
-          ...(deps.digest ? { digest: deps.digest } : {}),
-          ...(deps.testConvention ? { testConvention: deps.testConvention } : {}),
-          suite: async () =>
-            (await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree)).code === 0,
-          exec,
-          log,
-          rehome: deps.rehome ?? rehomeProbes,
-        })
-      : [];
-
-  if (deps.storeDir)
-    await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha, proofs, undelivered, verifs, acResults });
-
-  undelivered.push(...docsObligations(slices, worktree));
-
-  log(`${tep}: committing and opening the delivery`);
-  await exec("git", ["add", "-A", "."], worktree);
-  await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
-  const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
-  const proofAnchors = rehomedAnchors.map((a) => ({
-    criterionId: a.criterionId,
-    path: a.path,
-    ...(a.test ? { test: a.test } : {}),
-    stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
-  }));
-  const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
-  let url: string | undefined;
-  if (pushed.code === 0 && deps.forge) {
-    try {
-      url = await deps.forge.openDelivery({
-        branch,
-        title: `Tandem delivery: ${tep}`,
-        body:
-          `Delivered by the tandem run for ${tep}.\n\n` +
-          (undelivered.length ? `UNDELIVERED:\n${undelivered.map((u) => `- ${u}`).join("\n")}\n\n` : "") +
-          `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}`).join("\n")}`,
-      });
-    } catch (err) {
-      log(`forge refused the delivery: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  } else if (pushed.code !== 0) {
-    proofs.push({ kind: "ci", label: "push", verdict: "red" });
-  }
-  return {
-    refusals: [],
-    undelivered,
-    url,
-    ...(proofAnchors.length ? { proofAnchors } : {}),
-    delivery: {
-      id: `delivery-${tep}`,
-      cutId: cut.id,
-      branch,
-      proofs,
-      ...(url ? { url } : {}),
-      ...(undelivered.length ? { undelivered } : {}),
-      ...(rulings.length ? { rulings } : {}),
-    },
-  };
   } finally {
     await unlock();
   }

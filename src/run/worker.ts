@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { extractNeedsInput } from "../engine/core/preflight";
 import { extractUndelivered } from "../engine/core/redispatch";
 import { rtkRewrite } from "../engine/rtkRewrite";
+import { isTestPath } from "./testHomes";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -98,10 +99,9 @@ function describeTool(b: Record<string, unknown>): string {
 /** Tools that could show an author the evidence it is judged by. */
 const READ_TOOLS = ["Read", "Grep", "Glob", "NotebookRead"];
 
-/** Held-out evidence: a probe, or any test file. */
+/** Held-out evidence: a probe, or any test-shaped path — one rule. */
 export function isHeldOut(target: string): boolean {
-  const t = target.replace(/\\/g, "/");
-  return /(^|[\s/])probes\//.test(t) || /\.(test|spec)\.[cm]?[jt]sx?\b/.test(t) || /acceptance\//.test(t);
+  return isTestPath(target);
 }
 
 const git = (cwd: string, args: string[]): Promise<string> =>

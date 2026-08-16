@@ -294,3 +294,62 @@ test("a promise grounded on files but no symbols declares no seam, rather than a
   const [slice] = tepSlices({ space, cut: space.cuts[0], spaceName: "sp" });
   assert.equal(slice.contract, "", "no symbols, no interface — and nothing invented to fill it");
 });
+
+test("roles own paths: the coder's footprint is production-only; test homes ride with the slice's tester", () => {
+  let s = emptySpace();
+  const a = addAsk(s, "documentation is required to sign", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "signing is refused without a documentation touchpoint",
+    serves: [a.added.id],
+    servesClaim: "claim-sign",
+    needs: [],
+    acceptance: [{ id: "c1", text: "signCut refuses a cut with no docs touchpoint" }],
+    grounding: {
+      touchpoints: [
+        { path: "src/gates/sign.ts", symbol: "signCut" },
+        { path: "src/gates/gates.test.ts", symbol: "signing tests" },
+      ],
+      stamp: [],
+    },
+  });
+  assert.ok(n.ok);
+  s = n.space;
+  const [slice] = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  const coder = slice.workUnits.find((u) => u.role === "code")!;
+  const tester = slice.workUnits.find((u) => u.role === "test")!;
+  assert.deepEqual(coder.footprint, ["src/gates/sign.ts"], "the coder holds no test");
+  assert.ok(!(coder as { note?: string }).note?.includes("gates.test.ts"), "and its note names no test landing");
+  assert.equal(tester.footprint[0], "probes/sp__SL-1_AC-1.test.mjs", "the probe stays first — the criterion's address");
+  assert.ok(tester.footprint.includes("src/gates/gates.test.ts"), "the test home is the tester's");
+  const work = (tester as { testHomeWork?: { path: string; sentence: string }[] }).testHomeWork ?? [];
+  assert.equal(work[0]?.path, "src/gates/gates.test.ts");
+  assert.match(work[0]?.sentence ?? "", /signing is refused/);
+  assert.deepEqual(slice.files, ["src/gates/sign.ts", "src/gates/gates.test.ts"], "the slice still commits both");
+});
+
+test("a slice whose every landing is a test home spends no coder — its tester brings the homes under", () => {
+  let s = emptySpace();
+  const a = addAsk(s, "existing tests come under the rule", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "every existing signing test lands a documentation touchpoint",
+    serves: [a.added.id],
+    servesClaim: "claim-under",
+    needs: [],
+    acceptance: [{ id: "c1", text: "no test keeps signing green by weakening the rule", kind: "assessment" }],
+    grounding: {
+      touchpoints: [{ path: "src/gates/gates.test.ts" }, { path: "src/surfaces/surfaces.test.ts" }],
+      stamp: [],
+    },
+  });
+  assert.ok(n.ok);
+  s = n.space;
+  const [slice] = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  assert.equal(slice.workUnits.filter((u) => u.role === "code").length, 0, "no coder");
+  const testers = slice.workUnits.filter((u) => u.role === "test");
+  assert.equal(testers.length, 1);
+  assert.deepEqual(testers[0].footprint, ["src/gates/gates.test.ts", "src/surfaces/surfaces.test.ts"]);
+});

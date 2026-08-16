@@ -14,10 +14,19 @@ every live worker.
   writes an executable check — in a detached snapshot of the branch where
   the implementation-in-progress does not exist. Blinding is structural,
   not a promise in a prompt. Finished probes persist in a durable store.
+* *Roles own paths.* Every test-shaped path a promise lands in — an
+  existing test the change tightens, a test the change would break, a
+  standing check that is itself the deliverable — belongs to the tester,
+  who brings it under the criteria before the code exists, and records
+  every choice the contract forced (a name, a literal, a rule) as a
+  `DECISION`. The coder's footprint holds production paths only; it never
+  reads or writes a test. A plan that hands a coder a test is refused
+  before any worker starts.
 * *The coder builds against the brief*, with your ask verbatim as the
-  north star and your decisions in force attached. It has a real
-  `verify` tool: an isolated runner overlays its current work with the
-  held-out probes and returns per-criterion PASS/FAIL with evidence.
+  north star, your decisions in force attached, and the tester's
+  decisions as contract. It has a real `verify` tool: an isolated runner
+  overlays its current work with the held-out probes and returns
+  per-criterion PASS/FAIL with evidence.
 * *Green is decided by the oracle, not the worker.* A unit completes
   only when the checks are green for its current state
   (MANDATORY-GREEN). Not green routes a bounded rework carrying the
@@ -31,13 +40,21 @@ every live worker.
   the stray paths reverted and the run halts, named.
 * *Parallel frontier.* Ready units run concurrently (the
   `maxConcurrent` setting); slices commit on the branch as they finish.
-* *Parked workers.* A worker that genuinely needs you parks with a
-  question; answer in the run view and it resumes.
+* *A worker's question goes to the machine first.* The supervisor, who
+  sees the brief, the checks and the repository, answers whatever the run
+  itself can decide and the worker resumes. Only a question about intent
+  — a choice among behaviours your asks do not decide — reaches you, in
+  your own words; you are never asked about files, names or tools.
 
 == The delivery
 
 The closing gate re-runs every probe from a clean environment, the
-honesty scan reads the delivered files for self-declared deferrals, and
-the branch becomes a pull request whose description carries the proofs
-and every UNDELIVERED line. The machine face — the structured
-verification trace — persists in the store beside the space.
+honesty scan reads the delivered files for self-declared deferrals, the
+repository's own suite runs, and the branch becomes a pull request whose
+description carries the proofs, the tester's decisions and every
+UNDELIVERED line. A red suite is never delivered: a repository that is
+red before any work refuses the run at the door, and work that leaves the
+suite red is withheld — the branch keeps it, the record keeps the
+verdict — rather than handed over for you to finish. The machine face —
+the structured verification trace — persists in the store beside the
+space.

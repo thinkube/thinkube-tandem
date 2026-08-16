@@ -137,6 +137,7 @@ export interface OracleFactoryArgs {
   acting?: (slice: string) => { unit: string; baseline: boolean } | undefined;
   defect: (entry: {
     slice?: string;
+    unit?: string;
     activity: string;
     trigger: string;
     type?: string;
@@ -375,4 +376,85 @@ export function sliceOracleFactory(
     oracles.set(slice, oracle);
     return oracle;
   };
+}
+
+/**
+ * A worker's question goes to the machine first. The supervisor sees the
+ * brief, the checks and the repository; whatever is decidable from those it
+ * ANSWERS, and the worker continues. Only a question about intent — a choice
+ * among behaviors the asks do not decide — is ESCALATED to the human, in the
+ * human's own words, never in the run's internals.
+ */
+export function makeParkAnswerer(a: OracleFactoryArgs) {
+  return (slice: string, unit: string) =>
+    async (
+      question: string,
+      answer: (text: string) => void,
+      escalate: (intentQuestion: string) => void,
+    ): Promise<void> => {
+      const brief = a.briefBySlice.get(slice) ?? "";
+      const probes = a.sliceProbes.get(slice) ?? [];
+      let probeSrc = "";
+      for (const rel of probes) {
+        try {
+          probeSrc += `\n── ${rel} ──\n` + (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 6000);
+        } catch {
+          /* absent probe — skip */
+        }
+      }
+      const prompt = [
+        "You are the RUN SUPERVISOR. A worker of an autonomous delivery has stopped to ask a question.",
+        "You see what it cannot: its exact brief, the held-out checks' source, and the repository (read-only).",
+        "The human who commissioned this work has NOT seen the run's internals and must never be asked",
+        "about them — files, names, tools, tests, ordering are the run's own business.",
+        "",
+        "Your FIRST line must be EXACTLY one of:",
+        '- "ANSWER: <the answer, complete and concrete, in the worker\'s terms — everything it needs to continue>"',
+        "   whenever the question is decidable from the brief, the checks, the repository or the rules of the run",
+        "   (a rule of the run: the coder never touches a test file; the tester owns every test; the coder's",
+        "   only feedback is `verify`; a check it believes wrong is challenged, never conformed to blindly).",
+        '- "ESCALATE: <the question restated at the level of intent, in the human\'s vocabulary — which',
+        "   behavior the asks want — with no file names, tool names or internals>\" ONLY when the answer",
+        "   is a genuine choice among behaviors that the asks and the checks do not decide.",
+        "",
+        `THE UNIT: ${unit} of ${slice}`,
+        "",
+        "──── THE WORKER'S QUESTION ────",
+        question.slice(0, 4000),
+        "",
+        "──── THE WORKER'S BRIEF ────",
+        brief.slice(0, 20000),
+        "",
+        "──── THE HELD-OUT CHECKS (source; describe what they mean, never paste them) ────",
+        probeSrc.slice(0, 12000),
+      ].join("\n");
+      const reply = await (a.supervisorRound ?? runReadRound)(
+        {
+          model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
+          repoRoot: a.worktree,
+          log: (line) => a.log(line, unit),
+        },
+        prompt,
+      ).catch(() => null);
+      const first = (reply ?? "").trimStart();
+      if (/^ANSWER:/i.test(first)) {
+        const text = first.replace(/^ANSWER:\s*/i, "").trim();
+        a.log(`↩ ${unit}: the supervisor answered the worker's question`, unit);
+        a.defect({
+          slice,
+          unit,
+          activity: "worker question",
+          trigger: "supervisor",
+          type: "contract",
+          impact: "answered from the run's own knowledge — the brief lacked it",
+          detail: `Q: ${question.slice(0, 400)}\nA: ${text.slice(0, 600)}`,
+        });
+        answer(text);
+        return;
+      }
+      const intent = /^ESCALATE:/i.test(first)
+        ? first.replace(/^ESCALATE:\s*/i, "").trim()
+        : question;
+      escalate(intent);
+    };
 }

@@ -84,3 +84,15 @@ of them there — nothing has users.
 - A delivery the machine cannot make green within its budget is refused
   with the reason in intent terms, never handed over red for the human to
   finish.
+
+## Roles own paths (2026-08-16)
+- Every test-shaped path a plan names — a probe, an existing test home a
+  promise lands in, a test the change would break, a standing check that
+  is itself the deliverable — is the tester's, brought under the criteria
+  before the code exists. The coder's footprint is production-only; a
+  plan that hands a coder a test is refused before dispatch. One rule
+  says what test-shaped means (`isTestPath`), read everywhere.
+- The tester's DECISION lines are contract for the coder and land on the
+  delivery. Nothing edits a test after seeing the implementation.
+- The repository's own suite is part of done: red before the work refuses
+  the run; red after the work withholds the delivery, in intent terms.

@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { encloseWork, isHeldOut } from "./worker";
-import { foldBlastRadius } from "./plan";
+import { coderTestPaths, foldBlastRadius } from "./plan";
 import { ownership } from "./fence";
 import { buildUnitDag, type SliceForDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
@@ -258,4 +258,41 @@ test("ownership is not liveness: every unit's footprint is respected, finished o
     [],
     "and nothing from another tree — a coder never sees the testers' work",
   );
+});
+
+test("a test the change would break folds into the TESTER's footprint — the coder never holds a test", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
+  fs.writeFileSync(path.join(repo, "src", "a.test.ts"), 'import { a } from "./a.ts";\n');
+  g(["add", "-A"]);
+  g(["commit", "-qm", "a source under a test"]);
+  const exec = async (cmd: string, args: string[], cwd: string) => ({
+    code: 0,
+    out: execFileSync(cmd, args, { cwd, encoding: "utf8" }),
+  });
+  const slices: SliceForDag[] = [
+    {
+      handle: "SL-1",
+      status: "ready",
+      files: ["src/a.ts"],
+      workUnits: [
+        { footprint: ["src/a.ts"], execution: "serial", role: "code" },
+        { footprint: ["probes/sp__SL-1_AC-1.test.mjs"], execution: "serial", role: "test" },
+      ],
+    },
+  ];
+  const said: string[] = [];
+  const refusal = await foldBlastRadius(slices, repo, exec as never, (l) => said.push(l));
+  assert.equal(refusal, null);
+  assert.deepEqual(slices[0].workUnits[0].footprint, ["src/a.ts"], "the coder's footprint is untouched");
+  assert.deepEqual(
+    slices[0].workUnits[1].footprint,
+    ["probes/sp__SL-1_AC-1.test.mjs", "src/a.test.ts"],
+    "the tester brings the covering test under, beside its probe",
+  );
+  assert.deepEqual(coderTestPaths(slices), [], "the plan keeps the roles' invariant");
+  slices[0].workUnits[0].footprint.push("src/a.test.ts");
+  assert.deepEqual(coderTestPaths(slices), ["SL-1#eu-0: src/a.test.ts"], "a coder holding a test is named");
 });

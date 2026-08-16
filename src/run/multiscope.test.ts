@@ -100,6 +100,7 @@ test("multirepo TEP: one branch and one delivery PER REPO, producer scope first,
     classify: async () => "ask" as const,
     readCurrentStamp: async () => [],
     forge: { openDelivery: async () => "", merge: async () => {} },
+    suiteCommand: ["node", "-e", "process.exit(0)"],
     scope: { gitRoot: anchorRepo, prefix: "", projectId: "proj-1", label: "P" },
     resolveScope: async (id: string) =>
       id === "member-x1" ? { gitRoot: memberRepo, prefix: "" } : undefined,

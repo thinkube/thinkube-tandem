@@ -54,6 +54,9 @@ export async function setupRunTree(args: {
   worktree: string;
   provision?: string;
   prepare?: string;
+  /** The repository's own suite: red before any work means no run can tell
+   *  its effect apart from what was already broken. */
+  suite?: string[];
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -77,6 +80,14 @@ export async function setupRunTree(args: {
       return {
         provisioned,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
+      };
+  }
+  if (args.suite?.length) {
+    const s = await args.exec(args.suite[0], args.suite.slice(1), args.worktree);
+    if (s.code !== 0)
+      return {
+        provisioned,
+        refusal: `the repository's own standing checks are red before any work — a run could not tell its effect apart from what is already broken; the repository must be green first:\n${tail(s.out)}`,
       };
   }
   return { provisioned };

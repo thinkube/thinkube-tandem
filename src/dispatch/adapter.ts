@@ -12,6 +12,7 @@ import { Change, Cut, Space } from "../core/schema";
 import { formUnits } from "../core/cluster";
 import type { SliceForDag } from "../engine/core/dag";
 import type { WorkUnit } from "../engine/orchestratorCore";
+import { isTestPath } from "../run/testHomes";
 
 function sanitize(s: string): string {
   return s.replace(/[^A-Za-z0-9._-]+/g, "_");
@@ -98,18 +99,35 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         changes.flatMap((c) => (c.grounding?.touchpoints ?? []).map((t) => t.path)),
       ),
     ];
+    // Roles own paths: production to the coder, every test-shaped path to
+    // the tester — who brings existing test homes under the criteria before
+    // the code exists. The coder never holds a test in its footprint.
+    const production = files.filter((f) => !isTestPath(f));
+    const testHomes = files.filter((f) => isTestPath(f));
 
     // The sharpest text the pipeline produced — sentences, where each
-    // change lands, and what proves it (precision is monotone).
+    // change lands, and what proves it (precision is monotone). The coder's
+    // note names production landings only; test landings are the tester's.
     const note = changes
       .map((c) => {
         const at = (c.grounding?.touchpoints ?? [])
+          .filter((t) => !isTestPath(t.path))
           .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new file)" : ""))
           .join(", ");
         const proofs = c.acceptance.map((a) => a.text).join("; ");
         return `${c.sentence}${at ? ` — lands at ${at}` : ""}${proofs ? ` — done when: ${proofs}` : ""}`;
       })
       .join("\n");
+    // What each test home is FOR — the tester's brief for bringing it under.
+    const testHomeWork = changes.flatMap((c) =>
+      (c.grounding?.touchpoints ?? [])
+        .filter((t) => isTestPath(t.path))
+        .map((t) => ({
+          path: t.path,
+          sentence: c.sentence + (t.symbol ? ` (${t.symbol})` : ""),
+          criteria: c.acceptance.map((a) => a.text),
+        })),
+    );
 
     // Cross-slice needs → the engine's only edge language: consumes over
     // the producing slice's footprint (planned outputs first).
@@ -156,18 +174,22 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         .map((a) => ({ change: c, id: a.id, text: a.text })),
     );
     const codeUnit: WorkUnit & { note?: string } = {
-      footprint: files,
+      footprint: production,
       execution: "serial",
       role: "code",
       note,
       ...(consumes.length ? { consumes } : {}),
       ...(reads.length ? { reads } : {}),
     };
-    const testUnits: (WorkUnit & { note?: string })[] = criteria.map(
+    // The slice's first tester owns its existing test homes alongside its
+    // probe (the probe stays first — it is the criterion's address).
+    const testUnits: (WorkUnit & { note?: string; testHomeWork?: typeof testHomeWork })[] = criteria.map(
       (crit, k) => ({
         footprint: [
           `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`,
+          ...(k === 0 ? testHomes : []),
         ],
+        ...(k === 0 && testHomes.length ? { testHomeWork } : {}),
         // SERIAL, not fan-out: the engine gives every fan-out test unit its
         // own worker and batches serial ones into a single warm session per
         // slice. Fan-out made the run's size track the number of checks —
@@ -179,6 +201,15 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         note: `[${crit.change.sentence}] ${crit.text}`,
       }),
     );
+    // Test homes with no probe to ride beside still need their tester.
+    if (!criteria.length && testHomes.length)
+      testUnits.push({
+        footprint: testHomes,
+        execution: "serial",
+        role: "test",
+        note: "[bring the existing test homes under this slice's promises]",
+        testHomeWork,
+      });
 
     // THE CONTRACT: the seam this slice introduces, by name.
     //
@@ -217,7 +248,8 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       handle,
       status: "ready",
       files,
-      workUnits: [codeUnit, ...testUnits],
+      // A slice whose every landing is a test home has no coder to spend.
+      workUnits: [...(production.length ? [codeUnit] : []), ...testUnits],
       satisfies: criteria.map((_, k) => k + 1),
       criterionIds: criteria.map((c) => c.id),
       contract,

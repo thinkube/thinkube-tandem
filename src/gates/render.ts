@@ -212,6 +212,14 @@ export function renderDeliveryPage(
       );
     }
   }
+  // What the tester settled where the contract was silent — the coder built
+  // to these; the reader sees them, nobody was asked.
+  if ((delivery.decisions ?? []).length) {
+    lines.push("");
+    lines.push("## Decisions — what the tester settled where the contract was silent");
+    lines.push("");
+    for (const d of delivery.decisions ?? []) lines.push(`- (${d.unit}) ${d.text}`);
+  }
   // What did NOT arrive is part of the decision, on the page's face —
   // including any unmet documentation obligation.
   if ((delivery.undelivered ?? []).length) {
