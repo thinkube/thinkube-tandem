@@ -81,11 +81,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { verifs, probeOfAc } = closingVerifications(slices);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
-  // Assessments: a FRESH reviewer in the tester snapshot, fail-soft red.
+  // Assessments: a FRESH reviewer over the DELIVERED tree, fail-soft red.
   const assessed = await gradeAssessments({
     space,
     cut,
-    testerWt,
+    testerWt: worktree,
     model: deps.workerModel?.workerModel ?? "sonnet",
     ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
     log,

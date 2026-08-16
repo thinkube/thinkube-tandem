@@ -157,6 +157,15 @@ export function probeEvidence(
     .filter((i) => i !== -1);
   const parts: string[] = [];
   if (failIdx.length > 0) {
+    // What the runner said BEFORE the first `not ok` is the reason a file
+    // never ran at all — a module that could not be resolved, a syntax
+    // error, an uncaught throw at import. It is printed as TAP comments and
+    // is the one thing a reader needs when every test "fails" in 50 ms.
+    const preamble = lines
+      .slice(0, failIdx[0])
+      .filter((l) => /^#\s*(\S*Error\b|error:|ERR_[A-Z_]+|Cannot find|SyntaxError|ReferenceError|TypeError|throw )/.test(l) || /^#\s+(code|url|at .*import)/.test(l))
+      .slice(0, 12);
+    if (preamble.length) parts.push("the runner said, before any test ran:", ...preamble.map((l) => `  ${l.replace(/^#\s?/, "")}`));
     // TAP (node:test): name every failing test, then each failing block.
     parts.push(
       "failing tests:",

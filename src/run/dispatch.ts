@@ -34,7 +34,8 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeParkAnswerer, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeEndAnswerer, makeParkAnswerer, makeRepair, OracleFactoryArgs, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { confirmWithRepair, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths } from "./plan";
 import { renderTepBody } from "./briefs";
@@ -46,7 +47,7 @@ import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
-import { decisionsStanza, extractDecisions, restoreTestHomes, testHomesOf, testHomesStanza } from "./testHomes";
+import { decisionsStanza, extractDecisions, restoreTestHomes, storeMatches, testHomesOf, testHomesStanza } from "./testHomes";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -90,6 +91,8 @@ export interface DispatchDeps {
   supervisorRound?: typeof runReadRound;
   /** Injectable for tests: replaces the re-homing authoring round. */
   rehome?: typeof rehomeProbes;
+  /** Injectable for tests: replaces the check re-author (challenge and repair). */
+  author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
 }
 
@@ -124,8 +127,12 @@ export async function dispatchTep(
   const storeDir = path.join(wtRoot, "oracle-store", wtName);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
+  // Stop reaches the checker: once the run is halted no probe, build or
+  // suite is started — the exec answers "stopped" at once.
   const boundedExec = (cmd: string, cwd: string) =>
-    runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env });
+    st.halted
+      ? Promise.resolve({ code: 124, output: "[stopped — the run was halted]" })
+      : runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env });
 
   const defect = (entry: {
     slice?: string;
@@ -170,7 +177,7 @@ export async function dispatchTep(
   log(`${tep}: worktree on ${branch}`);
   const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, resetup: deps.resetup, proven: deps.proveSetup });
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  const { provisioned } = ready;
+  const { provisioned, built } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
@@ -178,9 +185,11 @@ export async function dispatchTep(
   const allTestHomes = [...new Set([...sliceTestHomes.values()].flat())];
   /** The tester's tree after a reset: probes back from the store, and the
    *  test homes it edited restored OVER what the branch holds. */
+  // Reused only for the same base commit: work written against another
+  // state of the repository is out of date, not done.
   const restoreTester = async (): Promise<void> => {
-    await restoreProbes(storeDir, testerWt);
-    await restoreTestHomes(storeDir, testerWt, allTestHomes);
+    await restoreProbes(storeDir, testerWt, baseSha);
+    if (await storeMatches(storeDir, baseSha)) await restoreTestHomes(storeDir, testerWt, allTestHomes);
   };
   await restoreTester();
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
@@ -222,14 +231,18 @@ export async function dispatchTep(
     defect,
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned,
+    built,
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
-    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel]),
+    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], baseSha),
+    ...(deps.author ? { author: deps.author } : {}),
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
   const parkFor = makeParkAnswerer(oracleArgs);
+  const repairFor = makeRepair(oracleArgs);
+  const answerEnd = makeEndAnswerer(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -321,7 +334,7 @@ export async function dispatchTep(
     // tester's decisions — each role's brief carries what it owns.
     const oracleStanza =
       role === "test"
-        ? testerStanza() +
+        ? testerStanza(built) +
           testHomesStanza(
             testHomesOf(next.footprint),
             (next.units ?? []).flatMap(
@@ -334,15 +347,17 @@ export async function dispatchTep(
     // checks is static — a missing decidable fact is missing at round zero.
     let disclosure = "";
     if (oracle?.preflight) {
+      st.doing(next.id, "supervisor pre-flight — reading the brief against the checks");
       const pf = await oracle.preflight();
       if (pf) disclosure = `\n\n──── SUPERVISOR PRE-FLIGHT (information the checks require) ────\n${pf}`;
     }
 
+    st.doing(next.id, "working");
     let ok = false;
     const attempts = oracle ? MAX_REWORK_ATTEMPTS : 1;
     let brief = baseBrief + oracleStanza + disclosure;
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
-      const outcome = await worker(
+      let outcome = await worker(
         {
           model: resolveWorkerModel(
             deps.workerModel ?? { workerModel: deps.model },
@@ -364,8 +379,12 @@ export async function dispatchTep(
           ...(oracle
             ? {
                 verifyTool: async () => {
-                  const r = await oracle.verify();
-                  return formatVerifyReply(r);
+                  st.doing(next.id, `waiting on verify — round ${oracle.invocations() + 1}`);
+                  try {
+                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+                  } finally {
+                    st.doing(next.id, "working");
+                  }
                 },
                 challengeTool: challengeFor(next.slice),
               }
@@ -373,6 +392,12 @@ export async function dispatchTep(
         },
         brief,
       );
+      // A question left in UNDELIVERED is answered by the machine before it
+      // is counted as a gap.
+      if (outcome.undelivered?.length && !outcome.containment) {
+        const kept = await answerEnd(next.slice, next.id, outcome.undelivered);
+        outcome = { ...outcome, undelivered: kept, ok: kept.length === 0 };
+      }
       if (outcome.containment) {
         log(`⛔ ${next.id}: footprint violation — run halted`, next.id);
         st.fail(next.id, "wrote outside its footprint — the changes were reverted and the run halted");
@@ -396,8 +421,14 @@ export async function dispatchTep(
       }
 
       // MANDATORY-GREEN: the oracle's verdict on the current state decides,
-      // not the worker's self-report.
-      const confirm = await oracle.confirmGreen();
+      // not the worker's self-report. A stopped run does not confirm.
+      if (st.halted) {
+        failWith(next.id, "stopped before its checks were confirmed");
+        break;
+      }
+      st.doing(next.id, "confirming green — the oracle grades the final state");
+      const confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+      st.doing(next.id, undefined);
       if (confirm.green) {
         ok = true;
         if (outcome.undelivered?.length)
@@ -438,7 +469,7 @@ export async function dispatchTep(
       testInflight--;
       if (ok) {
         try {
-          await persistProbes(storeDir, testerWt, next.footprint);
+          await persistProbes(storeDir, testerWt, next.footprint, baseSha);
         } catch (err) {
           // A durable done-flag with no persisted probe is the lie the store
           // exists to remove — the unit fails instead.
@@ -465,8 +496,24 @@ export async function dispatchTep(
       failed,
       running: [...liveFootprints.values()].flatMap((v) => v.paths),
     });
+    // A ready unit that is not launched says why: a slot, or a file it
+    // shares with a running unit. The graph draws edges, not overlaps.
+    const runningPaths = new Map<string, string>();
+    for (const [id, v] of liveFootprints) for (const p of v.paths) runningPaths.set(p, id);
+    for (const id of pending) {
+      const u = dag.find((x) => x.id === id);
+      if (!u || ready.some((r) => r.id === id)) continue;
+      const shared = u.footprint.filter((p) => runningPaths.has(p));
+      const unmet = u.requires.filter((r) => !done.has(r));
+      if (shared.length && !unmet.length)
+        st.doing(id, `waiting: shares ${shared.slice(0, 3).join(", ")}${shared.length > 3 ? "…" : ""} with ${[...new Set(shared.map((p) => runningPaths.get(p)))].join(", ")}`);
+    }
     for (const u of ready) {
-      if (inflight.size >= concurrency) break;
+      if (inflight.size >= concurrency) {
+        st.doing(u.id, `waiting for a free slot (${concurrency} running)`);
+        break;
+      }
+      st.doing(u.id, undefined);
       pending.delete(u.id);
       // On the record synchronously with the launch — registering it later,
       // inside the worker, leaves a window the next frontier cannot see.

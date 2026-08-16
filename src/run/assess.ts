@@ -43,7 +43,9 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
         [
           "You are an INDEPENDENT REVIEWER grading one assessment check on a",
           "delivered change. You never built this code. Read the repository",
-          "you are in (it contains the delivery) and judge honestly.",
+          `you are in — it is at ${a.testerWt} and it contains the delivery.`,
+          "Read ONLY under that path; any other copy of this repository on the",
+          "machine is not the delivery. Judge honestly.",
           "",
           `THE ASK (the human's words): ${ask?.text ?? "(unavailable)"}`,
           `THE PROMISE: ${n.sentence}`,

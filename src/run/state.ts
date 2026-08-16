@@ -38,6 +38,9 @@ export interface RunUnitView {
   question?: string;
   /** Why this unit failed, in the words the worker or the gate reported. */
   note?: string;
+  /** What the unit is doing or waiting on right now, and since when — the
+   *  card says "waiting on verify — round 3, 4m" instead of "running". */
+  activity?: { text: string; since: number };
 }
 
 /**
@@ -115,6 +118,17 @@ export class RunState {
     if (state === "running" && u.state !== "parked") u.startedAt = Date.now();
     u.state = state;
     u.question = state === "parked" ? question : undefined;
+    if (state !== "running" && state !== "parked") u.activity = undefined;
+    this.onChange();
+  }
+
+  /** What a unit is doing or waiting on right now; empty clears it. */
+  doing(id: string, text: string | undefined): void {
+    const u = this.units.get(id);
+    if (!u) return;
+    if (text) {
+      if (u.activity?.text !== text) u.activity = { text, since: Date.now() };
+    } else u.activity = undefined;
     this.onChange();
   }
 

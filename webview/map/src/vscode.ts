@@ -85,6 +85,8 @@ interface RunView {
     question?: string;
     /** Why it failed, in the words the worker or the gate reported. */
     note?: string;
+    /** What it is doing or waiting on right now, and since when. */
+    activity?: { text: string; since: number };
   }[];
   logs: string[];
   parked: { unitId: string; question: string }[];

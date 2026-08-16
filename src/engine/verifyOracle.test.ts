@@ -89,6 +89,34 @@ test("probeEvidence: a pass is the exit line only; a failure carries the first f
   assert.match(failed, /expected 'sonnet' got undefined/);
 });
 
+test("probeEvidence: a probe that never ran names its own cause — the runner's words before the first not ok", () => {
+  // node:test output for a file whose import cannot be resolved, as the
+  // runner prints it: the cause is a TAP comment ABOVE the not-ok block.
+  const out = [
+    "TAP version 13",
+    "# node:internal/modules/esm/resolve:283",
+    "#     throw new ERR_MODULE_NOT_FOUND(",
+    "#           ^",
+    "# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/runner/out/core/schema.js' imported from /runner/probes/x.test.mjs",
+    "#     at finalizeResolution (node:internal/modules/esm/resolve:283:11)",
+    "#   code: 'ERR_MODULE_NOT_FOUND',",
+    "#   url: 'file:///runner/out/core/schema.js'",
+    "# }",
+    "# Subtest: /runner/probes/x.test.mjs",
+    "not ok 1 - /runner/probes/x.test.mjs",
+    "  ---",
+    "  duration_ms: 57.2",
+    "  failureType: 'testCodeFailure'",
+    "  exitCode: 1",
+    "  ...",
+  ].join("\n");
+  const e = probeEvidence("node --test probes/x.test.mjs", 1, out);
+  assert.match(e, /before any test ran/);
+  assert.match(e, /Cannot find module '\/runner\/out\/core\/schema\.js'/, "the cause is in the evidence, not only exit 1");
+  assert.match(e, /ERR_MODULE_NOT_FOUND/);
+  assert.match(e, /not ok 1/, "and the failing block still follows");
+});
+
 test("formatVerifyReply: a boundary build fault points at contract conformance without asserting fault, and leaks no probe source", () => {
   const msg = formatVerifyReply({
     kind: "build-failed",

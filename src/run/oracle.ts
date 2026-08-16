@@ -20,6 +20,7 @@ import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import { linkProvisioned } from "./setup";
+import { evidenceKey } from "./owner";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -130,6 +131,8 @@ export interface OracleFactoryArgs {
   /** What provisioning the worktree produced — linked into every runner
    *  so one install serves the run. */
   provisioned?: readonly string[];
+  /** Where the build step emits compiled output — what a probe imports. */
+  built?: readonly string[];
   /** Lines carry the unit the oracle is acting for, when it is acting for one. */
   log: (line: string, step?: string) => void;
   /** Whom the oracle acts for right now — its lines carry that unit. */
@@ -229,32 +232,91 @@ export function makeChallenge(
         detail: reason,
       });
       if (!granted) return `DENIED — ${reason}\nMeet the check as it stands.`;
-      const rewritten = await (a.author ?? runAuthoringRound)(
-        {
-          cwd: a.testerWt,
-          model: judge,
-          allowWrite: [rel],
-          log: a.log,
-          maxTurns: 30,
-        },
-        [
-          `Rewrite the probe at ${rel} FROM ITS CRITERION alone. An earlier`,
-          `rendering was ruled defective: ${reason}`,
-          "",
-          `THE CRITERION it must prove, exactly: ${criterion.text}`,
-          "",
-          "Write a complete, runnable probe file proving only that criterion,",
-          "against the repository as this tree shows it. Do not weaken the",
-          "criterion and do not test implementation details it never names.",
-          "Overwrite the file in place.",
-        ].join("\n"),
-      );
-      if (rewritten === null)
+      const rewritten = await reauthorCheck(a, { rel, criterion: criterion.text, because: `an earlier rendering was ruled defective: ${reason}` });
+      if (!rewritten)
         return `GRANTED — ${reason}\nBut the re-author failed; the old check stands for now. Run verify.`;
-      await a.persistProbe?.(rel).catch(() => {});
       a.log(`⚖ ${slice}: check ${ac} re-authored at the oracle's ruling — ${reason}`);
       return `GRANTED — ${reason}\nThe check was re-authored from its criterion. Run verify.`;
     };
+}
+
+/** Rewrite one probe from its criterion, in the tester's tree, and keep it
+ *  past the next snapshot. Used by a granted challenge and by the repair
+ *  loop alike: the criterion is the spec, the reason is context. */
+async function reauthorCheck(
+  a: OracleFactoryArgs,
+  args: { rel: string; criterion: string; because: string; error?: string },
+): Promise<boolean> {
+  const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
+  const rewritten = await (a.author ?? runAuthoringRound)(
+    { cwd: a.testerWt, model: judge, allowWrite: [args.rel], log: a.log, maxTurns: 30 },
+    [
+      `Rewrite the probe at ${args.rel} FROM ITS CRITERION alone. ${args.because}`,
+      "",
+      `THE CRITERION it must prove, exactly: ${args.criterion}`,
+      ...(args.error
+        ? ["", "WHAT THE RUNNER SAID when the old probe ran (fix the cause; the criterion stays):", args.error.slice(0, 2500)]
+        : []),
+      ...(a.built?.length
+        ? ["", `WHERE THE BUILD EMITS compiled output in this repository: ${a.built.join(", ")} — import compiled modules from there, never from a folder that is not built.`]
+        : []),
+      "",
+      "Write a complete, runnable probe file proving only that criterion,",
+      "against the repository as this tree shows it. Do not weaken the",
+      "criterion and do not test implementation details it never names.",
+      "The probe must exit on its own: stop anything it starts.",
+      "Overwrite the file in place.",
+    ].join("\n"),
+  );
+  if (rewritten === null) return false;
+  await a.persistProbe?.(args.rel).catch(() => {});
+  return true;
+}
+
+const REPAIR_BUDGET = 2;
+
+/**
+ * The repair loop for check-owned failures: a check that could not run —
+ * its import did not resolve, it threw before any test, it never exited —
+ * is re-authored from its criterion with the runner's words in hand. No
+ * challenge is spent; the coder is told what was repaired. Each check is
+ * repaired at most twice per slice.
+ */
+export function makeRepair(
+  a: OracleFactoryArgs,
+): (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]> {
+  const spent = new Map<string, number>();
+  return async (slice, failures) => {
+    const repaired: string[] = [];
+    for (const f of failures) {
+      const key = `${slice}#${f.ac}`;
+      const used = spent.get(key) ?? 0;
+      if (used >= REPAIR_BUDGET) continue;
+      const criterion = a.criterionOf?.(slice, f.ac);
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${f.ac}.`));
+      if (!criterion || !rel) continue;
+      spent.set(key, used + 1);
+      const head = f.evidence.split("\n").find((l) => /Error|Cannot|timed out|did not exit/i.test(l))?.trim().slice(0, 200) ?? "the check could not run";
+      const ok = await reauthorCheck(a, {
+        rel,
+        criterion: criterion.text,
+        because: `The old probe could not run — that is the check's fault, not the code's.`,
+        error: f.evidence,
+      });
+      a.onRuling?.({ slice, criterionId: criterion.id, granted: ok, reason: `the check could not run: ${head}` });
+      a.defect({
+        slice,
+        activity: "check repair",
+        trigger: "check-owner",
+        type: "test",
+        impact: ok ? "check re-authored from its criterion" : "re-author failed — the check stands",
+        detail: head,
+      });
+      a.log(ok ? `🔧 ${slice}: check ${f.ac} could not run (${head}) — re-authored from its criterion` : `⚠ ${slice}: check ${f.ac} could not run and the re-author failed`, a.acting?.(slice)?.unit);
+      if (ok) repaired.push(`check ${f.ac}: ${head}`);
+    }
+    return repaired;
+  };
 }
 
 /** One oracle per slice, memoized; undefined when the slice has no probes. */
@@ -264,18 +326,20 @@ export function sliceOracleFactory(
   const oracles = new Map<string, VerifyOracle>();
   const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
 
-  // The engine offers every red round for review. A round is reviewed only
-  // when its failure REPEATS the previous one — a coder that is moving is
-  // left to move; a coder that is stuck gets the supervisor. The pre-flight
+  // The engine offers every red round for review. A failure is reviewed the
+  // FIRST time it appears — help arrives at once — and not again while it
+  // stays the same failure; a new failure is reviewed anew. The pre-flight
   // audit (its evidence begins with PRE-FLIGHT) is always answered.
-  const lastEvidence = new Map<string, string>();
+  const seenFailures = new Map<string, Set<string>>();
   const supervise =
     (slice: string) =>
     async (evidence: string, failingAcs: number[]): Promise<string | undefined> => {
       if (!/^PRE-FLIGHT/.test(evidence)) {
-        const seen = lastEvidence.get(slice);
-        lastEvidence.set(slice, evidence);
-        if (seen !== evidence) return undefined;
+        const key = `${failingAcs.join(",")}:${evidenceKey(evidence)}`;
+        const seen = seenFailures.get(slice) ?? new Set<string>();
+        if (seen.has(key)) return undefined;
+        seen.add(key);
+        seenFailures.set(slice, seen);
       }
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
@@ -463,4 +527,58 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         : question;
       escalate(intent);
     };
+}
+
+/**
+ * A question a worker left in its UNDELIVERED lines goes to the machine
+ * too — the supervisor decides whether the work is complete as it stands
+ * (the question was a doubt, not a gap), a real gap, or a matter of intent.
+ * Only a real gap stays undelivered.
+ */
+export function makeEndAnswerer(a: OracleFactoryArgs) {
+  return async (slice: string, unit: string, undelivered: readonly string[]): Promise<string[]> => {
+    const kept: string[] = [];
+    for (const item of undelivered) {
+      if (!/question\s*:/i.test(item)) {
+        kept.push(item);
+        continue;
+      }
+      const reply = await (a.supervisorRound ?? runReadRound)(
+        {
+          model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
+          repoRoot: a.testerWt,
+          log: (line) => a.log(line, unit),
+        },
+        [
+          "You are the RUN SUPERVISOR. A worker finished its unit and left this line, which",
+          "carries a question. Decide, from the brief and the rules of the run, whether the",
+          "work is complete as it stands or something is really missing.",
+          "Rules of the run: a check observes the code at a seam through a fake and never",
+          "acts on the world; a tester tests the real classes at their seams — it never has",
+          "to reach private wiring, and does not export or refactor production code; the coder",
+          "never touches tests; a criterion the machine cannot verify is a note, not a check.",
+          "",
+          "Your FIRST line must be exactly one of:",
+          '- "DELIVERED: <why the work is complete as it stands — answer the worker\'s doubt>"',
+          '- "GAP: <what is really missing, in one sentence>"',
+          '- "ESCALATE: <the question at intent level, in the human\'s words>"',
+          "",
+          `THE UNIT: ${unit} of ${slice}`,
+          "──── THE WORKER'S LINE ────",
+          item.slice(0, 3000),
+          "──── THE UNIT'S BRIEF ────",
+          (a.briefBySlice.get(slice) ?? "").slice(0, 16000),
+        ].join("\n"),
+      ).catch(() => null);
+      const first = (reply ?? "").trimStart();
+      if (/^DELIVERED:/i.test(first)) {
+        a.log(`↩ ${unit}: the supervisor answered the closing question — the work stands`, unit);
+        a.defect({ slice, unit, activity: "worker question", trigger: "supervisor", type: "contract", impact: "answered — not a gap", detail: `${item.slice(0, 300)}\n→ ${first.slice(0, 400)}` });
+        continue;
+      }
+      const why = first.replace(/^(GAP|ESCALATE):\s*/i, "").trim();
+      kept.push(why ? `${item} — supervisor: ${why.slice(0, 300)}` : item);
+    }
+    return kept;
+  };
 }

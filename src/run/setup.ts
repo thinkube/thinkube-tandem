@@ -44,6 +44,9 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 export interface TreeSetup {
   /** What provisioning produced — ignored entries to link into runners. */
   provisioned: string[];
+  /** What the build step produced — where compiled output lands, so a
+   *  tester imports from a folder that exists. */
+  built: string[];
   /** Why the run cannot proceed, when the untouched tree fails its own setup. */
   refusal?: string;
   /** The setup that finally held, when a first answer had to be corrected. */
@@ -109,12 +112,15 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
     if (p.code !== 0)
       return {
         provisioned,
+        built: [],
         refusal: `the repository's own provisioning step (${args.provision}) fails on an untouched checkout — no worker can build here until it does:\n${tail(p.output)}`,
       };
     const after = await ignoredEntries(args.worktree, args.exec);
     for (const e of after) if (!before.has(e)) provisioned.push(e);
   }
+  const built: string[] = [];
   if (args.prepare) {
+    const before = await ignoredEntries(args.worktree, args.exec);
     args.log(`building the untouched tree: ${args.prepare}`);
     const t0 = Date.now();
     const b = await args.boundedExec(args.prepare, args.worktree);
@@ -122,10 +128,14 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
     if (b.code !== 0)
       return {
         provisioned,
+        built,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
       };
+    const after = await ignoredEntries(args.worktree, args.exec);
+    for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
+    if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
-  return { provisioned };
+  return { provisioned, built };
 }
 
 /** Make a runner share the worktree's provisioning: each produced entry is

@@ -32,8 +32,12 @@ export function coderStanza(oracleAvailable: boolean): string {
 
 /** What every tester is told, whatever else its brief carries: a check
  *  observes the code at a seam and exits; it never acts on the world. */
-export function testerStanza(): string {
+export function testerStanza(built: readonly string[] = []): string {
   return (
+    (built.length
+      ? `\n\nWHERE THE BUILD EMITS: compiled output of this repository's build step lands in ${built.join(", ")}. ` +
+        "A probe that imports compiled modules imports them from there — never from a folder the build does not write."
+      : "") +
     "\n\nHOW A CHECK MAY BEHAVE: a check OBSERVES the code at a seam — a call " +
     "made, a request built, a state changed inside the program — through a fake " +
     "where the real thing is the cluster this runs in, a service, a process, or " +

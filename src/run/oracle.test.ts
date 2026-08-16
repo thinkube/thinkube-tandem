@@ -63,13 +63,10 @@ test("the oracle's lines land under the unit it acts for", async () => {
   acting = { unit: "SL-1#eu-0" };
   const pre = await oracle.confirmGreen();
   assert.equal(pre.green, false);
-  const before = supervised.filter((p) => !p.includes("PRE-FLIGHT")).length;
+  const reviews = () => supervised.filter((p) => !p.includes("PRE-FLIGHT")).length;
+  assert.equal(reviews(), 1, "a failure is reviewed the first time it appears — help arrives at once");
   await oracle.verify();
-  assert.equal(
-    supervised.filter((p) => !p.includes("PRE-FLIGHT")).length,
-    before + 1,
-    "a failure that repeats the previous round's is reviewed; the first was not",
-  );
+  assert.equal(reviews(), 1, "the same failure again is not reviewed again");
 
   const oracleLines = said.filter((s) => s.line.includes("[oracle]"));
   assert.ok(oracleLines.length >= 2, "the oracle spoke");
@@ -127,4 +124,89 @@ test("a worker's question goes to the machine first: the supervisor answers what
   assert.match(answers[0], /never touch a test file/, "an internals question is answered by the machine");
   assert.equal(answers[1], "the human says: hello");
   assert.deepEqual(humanSaw, ["should the greeting be formal or casual?"], "the human saw one question, in intent terms");
+});
+
+test("a check that cannot run is the check's failure: the tester re-authors it from its criterion with the error, and the coder goes green — no challenge spent", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-41" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const authored: string[] = [];
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      // The tester's re-author, when the run asks for it: writes the probe
+      // that imports from where the module really is.
+      author: async (deps: { allowWrite: string[]; cwd: string }, prompt: string) => {
+        authored.push(prompt);
+        writeInto(deps.cwd, deps.allowWrite[0], GREEN_PROBE);
+        return "rewritten";
+      },
+      worker: async (w: { role: string; worktree: string; footprint: string[]; verifyTool?: () => Promise<string> }) => {
+        if (w.role === "test") {
+          // A probe that imports from a folder nothing builds — SL-1's mistake.
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE.replace("../src/greet.mjs", "../out/greet.js"));
+          return { ok: true, finalText: "done" };
+        }
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        const reply = await w.verifyTool!();
+        assert.match(reply, /Cannot find module .*out\/greet\.js/, "the coder reads the runner's own words");
+        assert.match(reply, /CHECKS REPAIRED/, "and is told the check was repaired, not its code");
+        return { ok: true, finalText: "done" };
+      },
+    } as never,
+    space,
+    cut,
+    slices,
+  );
+  assert.equal(authored.length, 1, "the tester re-authored the broken check once");
+  assert.match(authored[0], /Cannot find module/, "with the runner's error in hand");
+  assert.match(authored[0], /greet\(\) returns 'hello'/, "from the criterion");
+  assert.ok(outcome.delivery, "the run delivers");
+  assert.ok(outcome.delivery!.rulings?.some((r) => r.granted && /could not run/.test(r.reason)), "the repair is on the record as a ruling");
+});
+
+test("a question left in UNDELIVERED is answered by the machine — a doubt is not a gap", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-42" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async (_d, prompt) =>
+        prompt.includes("THE WORKER'S LINE") ? "DELIVERED: testing at the seam is the rule; the probes are complete." : null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return {
+            ok: false,
+            finalText: "UNDELIVERED: the probes do not reach the private wiring — question: should it be exported?",
+            undelivered: ["the probes do not reach the private wiring — question: should it be exported?"],
+          };
+        }
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  const tester = state.view().units.find((u) => u.role === "test")!;
+  assert.equal(tester.state, "done", "the doubt was answered; the unit is done, not red");
+  assert.deepEqual(outcome.undelivered, [], "and nothing is undelivered");
 });

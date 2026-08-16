@@ -30,9 +30,12 @@ function chipFor(u: RunUnits[number], now: number): Chip {
     u.startedAt && (u.state === "running" || u.state === "parked")
       ? ` · ${formatElapsed(now - u.startedAt)}`
       : "";
+  const doing = u.activity ? `${u.activity.text} · ${formatElapsed(now - u.activity.since)}` : "";
   switch (u.state) {
     case "running":
-      return { text: `running${elapsed}`, kind: "run" };
+      return doing
+        ? { text: `${doing}`, kind: "run", why: `running for ${formatElapsed(now - (u.startedAt ?? now))}` }
+        : { text: `running${elapsed}`, kind: "run" };
     case "parked":
       return { text: `needs you${elapsed}`, kind: "q" };
     case "done":
@@ -46,7 +49,7 @@ function chipFor(u: RunUnits[number], now: number): Chip {
         why: "The run stopped, or something this waits on failed, so this was never dispatched. It is not a failure.",
       };
     default:
-      return { text: "pending", kind: "plain" };
+      return doing ? { text: doing, kind: "plain" } : { text: "pending", kind: "plain" };
   }
 }
 

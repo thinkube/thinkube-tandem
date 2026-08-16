@@ -140,3 +140,22 @@ of them there — nothing has users.
   assigns the person a check. The design phase marks such criteria; the
   runtime wall (no network, no credentials, only the worktree) catches
   what the design missed.
+
+## Every failure has an owner (2026-08-16)
+- The checker reports what it saw — including what the runner printed
+  before any test ran — and says WHOSE failure it is: code (the check ran,
+  the assertion failed), check (the check itself could not run: import,
+  throw, never exited), environment (the runner could not build, a tool
+  was missing).
+- Each owner has its repair loop, automatic: code → the coder reworks;
+  check → the tester re-authors it from its criterion with the runner's
+  words in hand, no challenge spent, on the record as a ruling;
+  environment → not the coder's, said so. The supervisor speaks the first
+  time a failure appears, not the second.
+- A question is answered wherever the worker asks it — mid-way as a park,
+  or at the end in UNDELIVERED. A doubt is not a gap.
+- Stop reaches every limb: once halted, no probe, build or suite starts.
+- The tester is told where the build emits; the reviewer reads the
+  delivered tree and nothing else; work kept from an earlier run is reused
+  only for the same base commit; a unit's card says what it is doing and
+  waiting on, and since when.

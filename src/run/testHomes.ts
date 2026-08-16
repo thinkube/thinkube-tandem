@@ -124,3 +124,14 @@ export function testHomesStanza(
     'or rule), each starting exactly with "DECISION: " — the coder builds to these without ever seeing your tests.'
   );
 }
+
+/** Whether the store's kept work was written against this base — the same
+ *  key the probe store uses; work for another base is out of date. */
+export async function storeMatches(storeDir: string, hash: string): Promise<boolean> {
+  try {
+    const meta = JSON.parse(await fs.readFile(path.join(storeDir, "meta.json"), "utf8")) as { acHash?: string | null };
+    return meta.acHash === hash;
+  } catch {
+    return false;
+  }
+}

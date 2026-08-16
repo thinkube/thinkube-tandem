@@ -69,7 +69,7 @@ test("a build step that fails on the untouched tree refuses the run instead of d
 test("a repository needing no setup passes straight through", async () => {
   const wt = tree();
   const r = await setupRunTree({ worktree: wt, exec: defaultExec, boundedExec: sh, log: () => {} });
-  assert.deepEqual(r, { provisioned: [] });
+  assert.deepEqual(r, { provisioned: [], built: [] });
 });
 
 test("a setup answer that fails at the door is re-read from the failure and the correction tried once", async () => {
