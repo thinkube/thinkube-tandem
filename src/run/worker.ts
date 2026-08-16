@@ -367,10 +367,11 @@ export async function runUnitWorker(
   };
 }
 
-/** What a worker really left undone. "UNDELIVERED: none." is a report of
- *  completeness, not a gap — a unit must never fail on its own honesty. */
+/** What a worker really left undone. "UNDELIVERED: none." — with or
+ *  without a trailing remark ("none — all files written") — is a report
+ *  of completeness, not a gap: a unit must never fail on its own honesty. */
 export function realUndelivered(text: string): string[] {
   return extractUndelivered(text).filter(
-    (u) => !/^\s*(none|nothing|nothing undelivered|n\/a|-)\s*[.!]?\s*$/i.test(u),
+    (u) => !/^\s*(none|nothing( undelivered)?|n\/a|-)\s*([.!,;:(—–-]|$)/i.test(u),
   );
 }

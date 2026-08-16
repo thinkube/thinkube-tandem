@@ -19,6 +19,7 @@ import {
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
+import { linkProvisioned } from "./setup";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -126,6 +127,9 @@ export interface OracleFactoryArgs {
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   /** Build/typecheck command the runner needs before probes can run. */
   prepare?: string;
+  /** What provisioning the worktree produced — linked into every runner
+   *  so one install serves the run. */
+  provisioned?: readonly string[];
   log: (line: string) => void;
   defect: (entry: {
     slice?: string;
@@ -360,6 +364,7 @@ export function sliceOracleFactory(
         (await a.exec("git", ["-C", cwd, "status", "--porcelain", "--untracked-files=all"], cwd)).out,
       resetRunner: async () => {
         await ensureSnapshot(a.repoRoot, a.branch, runnerDir, a.exec);
+        if (a.provisioned?.length) await linkProvisioned(runnerDir, a.worktree, a.provisioned);
       },
       copyIn: (fromRoot, rel) => copyRel(fromRoot, runnerDir, rel),
       removeIn: async (rel) => {

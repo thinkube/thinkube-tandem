@@ -95,9 +95,10 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       // a run must never refuse over brief enrichment, hence fail-soft.
       const known = await s.knowledge().catch(() => undefined);
       const digest = known?.digest;
-      // The check-setup command: the machine's own reading of the repo,
-      // unless the human explicitly overrode it in settings.
+      // The check-setup facts: the machine's own reading of the repo,
+      // unless the human explicitly overrode the build step in settings.
       const prepare = s.deps.prepareCommand || known?.prepare || undefined;
+      const provision = known?.provision || undefined;
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -108,6 +109,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         spaceName: path.basename(s.deps.storeDir),
         ...(digest ? { digest } : {}),
         ...(prepare ? { prepare } : {}),
+        ...(provision ? { provision } : {}),
         onDelivery: (delivery, note) => {
           s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
           s.changed(note);

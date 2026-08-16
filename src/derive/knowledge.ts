@@ -22,7 +22,7 @@
 import { affectedBy, askGraph, askPlan, CodeGraph, ensureCodeGraph, hubs } from "./graph";
 import { enrichAffected } from "./spans";
 import { runContextualize } from "./contextualize";
-import { derivePrepare } from "./prepare";
+import { deriveSetup, NO_SETUP, Setup } from "./prepare";
 import { RoundDeps, runReadRound } from "./round";
 
 export interface Knowledge {
@@ -34,9 +34,12 @@ export interface Knowledge {
   map: string;
   /** Conventions and rationale, read on top of the map. */
   digest: string;
+  /** What a fresh checkout needs installed before anything resolves —
+   *  read from the repository's own manifests, empty when a checkout is
+   *  already complete. Nobody types this into a setting. */
+  provision: string;
   /** The command a single check needs before it can execute (a compile,
-   *  a codegen) — read from the repository's own manifests, empty when
-   *  tests run straight from source. Nobody types this into a setting. */
+   *  a codegen) — read the same way, empty when tests run from source. */
   prepare: string;
   /** What the human has settled — every derivation runs under these. */
   decisions: readonly string[];
@@ -93,15 +96,22 @@ export async function knowledgeOf(args: {
     if (digest) args.store?.save(key, digest);
   }
 
-  // The check-setup command is a fact about the repository; the machine
-  // reads it once per state. "NONE" is cached too — the common answer
+  // The check-setup facts are facts about the repository; the machine
+  // reads them once per state. "NONE" is cached too — the common answer
   // must not be re-asked on every derivation.
-  const prepKey = `prepare@${stampKey}`;
-  let prepare = args.store?.load(prepKey);
-  if (prepare === undefined) {
-    log("▸ asking the repository how a single check runs");
-    prepare = await derivePrepare(args.deps, undefined, map, digest);
-    args.store?.save(prepKey, prepare);
+  const setupKey = `setup@${stampKey}`;
+  const cachedSetup = args.store?.load(setupKey);
+  let setup: Setup;
+  if (cachedSetup === undefined) {
+    log("▸ asking the repository how a fresh checkout is made ready and how a single check runs");
+    setup = await deriveSetup(args.deps, undefined, map, digest);
+    args.store?.save(setupKey, JSON.stringify(setup));
+  } else {
+    try {
+      setup = { ...NO_SETUP, ...(JSON.parse(cachedSetup) as Partial<Setup>) };
+    } catch {
+      setup = { ...NO_SETUP };
+    }
   }
 
   return {
@@ -109,7 +119,8 @@ export async function knowledgeOf(args: {
     graph,
     map,
     digest,
-    prepare,
+    provision: setup.provision,
+    prepare: setup.prepare,
     decisions: args.decisions,
     ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),
     affected: (node) =>

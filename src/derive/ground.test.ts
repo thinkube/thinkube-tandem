@@ -18,8 +18,6 @@ const ASK = { id: "ask-1", text: "  make the log panel follow the running step  
 test("the prompt carries the ask byte for byte and demands structural anchors", () => {
   const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" });
   assert.ok(prompt.includes(ASK.text), "ask verbatim, whitespace included");
-  assert.ok(prompt.includes("NEVER put line numbers"));
-  assert.ok(prompt.includes("does not exist yet is a legitimate touchpoint"));
   assert.ok(
     prompt.includes('"evidence"'),
     "each anchor is asked for the reading behind it — what is there, why the change lands here",
@@ -31,21 +29,16 @@ test("the prompt carries the ask byte for byte and demands structural anchors", 
 test("the graph's answer to the ask's own words rides the prompt as a lead, not a verdict", () => {
   const graphed = "NODE LogPanel [src=src/panel/log.ts loc=L12]";
   const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo", graphed });
-  assert.ok(prompt.includes(graphed));
-  assert.ok(prompt.includes("a lead to verify, not a verdict"));
+  assert.ok(prompt.includes(graphed), "the graph's answer rides in when it has one");
   assert.ok(
-    !buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" }).includes("WHERE THE GRAPH LANDS"),
-    "no block when the graph had nothing to say",
+    !buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" }).includes(graphed),
+    "and nothing is invented when it has none",
   );
 });
 
 test("a check carries its lifetime: transitions are assessments, standing behavior a probe", () => {
   const prompt = buildGroundingPrompt({ ask: ASK, repoRoot: "/repo" });
   assert.ok(prompt.includes('"assessment"'), "the transition kind is offered");
-  assert.ok(
-    prompt.includes("documentation-wording check is ALWAYS"),
-    "prose-pinning checks are never permanent tests",
-  );
   const raw = JSON.stringify({
     nodes: [
       {

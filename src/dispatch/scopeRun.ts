@@ -23,8 +23,9 @@ export async function dispatchScopePlan(args: {
   /** The anchor repository's reading — briefs in member scopes never get
    *  it; a digest of one repository is not knowledge of another. */
   digest?: string;
-  /** The anchor repository's check-setup command, machine-derived (or the
+  /** The anchor repository's check-setup facts, machine-derived (or the
    *  human's settings override) — same scope rule as the digest. */
+  provision?: string;
   prepare?: string;
   onDelivery: (delivery: Delivery, note: string) => void;
   /** Where each criterion's standing check now lives — bound per scope,
@@ -84,6 +85,7 @@ export async function dispatchScopePlan(args: {
           : deps.prepareCommand
             ? { prepare: deps.prepareCommand }
             : {}),
+        ...(sc === "" && args.provision ? { provision: args.provision } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
       },
       args.space(),

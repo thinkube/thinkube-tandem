@@ -96,11 +96,29 @@ export async function runReadRound(
  * its answer keeps that answer: the reply arrived, and throwing it away
  * turns a recoverable round into a failure the human has to repeat.
  */
+/** One line for what a round just reached for, and at what. */
+function describeUse(b: Record<string, unknown>): string {
+  const name = typeof b.name === "string" ? b.name : "tool";
+  const input = (b.input ?? {}) as Record<string, unknown>;
+  const of =
+    ["file_path", "path", "pattern", "glob", "command"]
+      .map((k) => (typeof input[k] === "string" ? (input[k] as string) : ""))
+      .find(Boolean) ?? "";
+  return of ? `${name} ${of.length > 100 ? `${of.slice(0, 100)}…` : of}` : name;
+}
+
 export async function collectText(
   stream: () => AsyncIterable<unknown>,
   log?: (line: string) => void,
 ): Promise<string | null> {
   let text = "";
+  // What a round SPENDS, as it spends it: a round that takes minutes and
+  // reports nothing cannot be made faster by anyone — every lever (fewer
+  // turns, a cheaper model, no search tools) is a guess until the turns
+  // say where they went.
+  const began = Date.now();
+  let turns = 0;
+  const at = (): string => `${((Date.now() - began) / 1000).toFixed(0)}s`;
   try {
     for await (const msg of stream()) {
       const rec = msg as Record<string, unknown>;
@@ -108,10 +126,16 @@ export async function collectText(
         const m = rec.message as { content?: unknown } | undefined;
         for (const b of (Array.isArray(m?.content) ? m!.content : []) as Array<
           Record<string, unknown>
-        >)
+        >) {
           if (b.type === "text" && typeof b.text === "string") text += b.text;
+          if (b.type === "tool_use") {
+            turns++;
+            log?.(`  ${at()} ⚙ ${describeUse(b)}`);
+          }
+        }
       } else if (rec.type === "result" && typeof rec.result === "string") {
         text = rec.result;
+        log?.(`  ${at()} ✓ round done — ${turns} tool use(s)`);
       }
     }
   } catch (err) {
