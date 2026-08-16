@@ -45,6 +45,8 @@ export interface TreeSetup {
   provisioned: string[];
   /** Why the run cannot proceed, when the untouched tree fails its own setup. */
   refusal?: string;
+  /** The setup that finally held, when a first answer had to be corrected. */
+  corrected?: { provision: string; prepare: string };
 }
 
 /** The end of a tool's output, with the lines that name a failure kept even
@@ -57,18 +59,38 @@ const tail = (output: string, n = 900): string => {
   return [...new Set([...named, ...last])].join("\n").slice(-n);
 };
 
-/** Provision the tree, then prove the build step on it before any worker runs. */
-export async function setupRunTree(args: {
+export interface SetupArgs {
   worktree: string;
   provision?: string;
   prepare?: string;
   /** The repository's own suite: red before any work means no run can tell
    *  its effect apart from what was already broken. */
   suite?: string[];
+  /** Re-read the setup facts with a failure as evidence; the door tries the
+   *  corrected answer once before refusing. */
+  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
-}): Promise<TreeSetup> {
+}
+
+/** Provision the tree and prove the build and the suite on it before any
+ *  worker runs; a setup answer that fails is re-read once with the failure
+ *  as evidence, and the corrected answer is tried before the run refuses. */
+export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
+  const first = await proveTree(args);
+  if (!first.refusal || !args.resetup) return first;
+  const again = await args.resetup(first.refusal).catch(() => undefined);
+  if (!again || (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")))
+    return first;
+  args.log(
+    `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
+  );
+  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare });
+  return second.refusal ? second : { ...second, corrected: again };
+}
+
+async function proveTree(args: SetupArgs): Promise<TreeSetup> {
   const provisioned: string[] = [];
   if (args.provision) {
     const before = await ignoredEntries(args.worktree, args.exec);

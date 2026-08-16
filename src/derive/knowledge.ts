@@ -41,6 +41,9 @@ export interface Knowledge {
   /** The command a single check needs before it can execute (a compile,
    *  a codegen) — read the same way, empty when tests run from source. */
   prepare: string;
+  /** Re-read both facts with the evidence of a setup that failed on a fresh
+   *  checkout; the corrected answer is remembered. */
+  resetup: (evidence: string) => Promise<{ provision: string; prepare: string }>;
   /** What the human has settled — every derivation runs under these. */
   decisions: readonly string[];
   /** A bounded question of the graph: cited nodes, in milliseconds. */
@@ -99,28 +102,47 @@ export async function knowledgeOf(args: {
   // The check-setup facts are facts about the repository; the machine
   // reads them once per state. "NONE" is cached too — the common answer
   // must not be re-asked on every derivation.
+  // The answer is anchored on the last one given: a fact about the
+  // repository must not flip between two readings of unchanged manifests.
   const setupKey = `setup@${stampKey}`;
-  const cachedSetup = args.store?.load(setupKey);
-  let setup: Setup;
-  if (cachedSetup === undefined) {
-    log("▸ asking the repository how a fresh checkout is made ready and how a single check runs");
-    setup = await deriveSetup(args.deps, undefined, map, digest);
-    args.store?.save(setupKey, JSON.stringify(setup));
-  } else {
+  const parseSetupJson = (raw: string | undefined): Setup | undefined => {
+    if (raw === undefined) return undefined;
     try {
-      setup = { ...NO_SETUP, ...(JSON.parse(cachedSetup) as Partial<Setup>) };
+      return { ...NO_SETUP, ...(JSON.parse(raw) as Partial<Setup>) };
     } catch {
-      setup = { ...NO_SETUP };
+      return { ...NO_SETUP };
     }
+  };
+  const previous = parseSetupJson(args.store?.load("setup@latest"));
+  const remember = (s: Setup): void => {
+    args.store?.save(setupKey, JSON.stringify(s));
+    args.store?.save("setup@latest", JSON.stringify(s));
+  };
+  let setup = parseSetupJson(args.store?.load(setupKey));
+  if (!setup) {
+    log("▸ asking the repository how a fresh checkout is made ready and how a single check runs");
+    setup = await deriveSetup(args.deps, args.round, map, digest, previous ? { previous } : {});
+    remember(setup);
   }
+  const settled: Setup = setup;
 
   return {
     repoRoot: args.deps.repoRoot,
     graph,
     map,
     digest,
-    provision: setup.provision,
-    prepare: setup.prepare,
+    provision: settled.provision,
+    prepare: settled.prepare,
+    // A setup that failed on a fresh checkout is re-read with the failure as
+    // evidence; the corrected answer replaces the remembered one.
+    resetup: async (evidence) => {
+      log("▸ the setup failed on a fresh checkout — asking the repository again, with the failure");
+      const again = await deriveSetup(args.deps, args.round, map, digest, {
+        failed: { setup: settled, evidence },
+      });
+      remember(again);
+      return again;
+    },
     decisions: args.decisions,
     ask: (question, budget) => askGraph({ graphPath: graph.graphPath, question, budget }),
     affected: (node) =>

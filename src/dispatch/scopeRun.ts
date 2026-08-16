@@ -27,6 +27,7 @@ export async function dispatchScopePlan(args: {
    *  human's settings override) — same scope rule as the digest. */
   provision?: string;
   prepare?: string;
+  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
   onDelivery: (delivery: Delivery, note: string) => void;
   /** Where each criterion's standing check now lives — bound per scope,
    *  as each delivery lands. */
@@ -86,6 +87,7 @@ export async function dispatchScopePlan(args: {
             ? { prepare: deps.prepareCommand }
             : {}),
         ...(sc === "" && args.provision ? { provision: args.provision } : {}),
+        ...(sc === "" && args.resetup ? { resetup: args.resetup } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
       },
       args.space(),

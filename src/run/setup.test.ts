@@ -84,3 +84,53 @@ test("a repository needing no setup passes straight through", async () => {
   const r = await setupRunTree({ worktree: wt, exec: defaultExec, boundedExec: sh, log: () => {} });
   assert.deepEqual(r, { provisioned: [] });
 });
+
+test("a setup answer that fails at the door is re-read from the failure and the correction tried once", async () => {
+  const wt = tree();
+  const asked: string[] = [];
+  const said: string[] = [];
+  const r = await setupRunTree({
+    worktree: wt,
+    provision: "true",
+    prepare: "test -f deps/lib.txt",
+    resetup: async (evidence) => {
+      asked.push(evidence);
+      return { provision: "mkdir -p deps && echo lib > deps/lib.txt", prepare: "test -f deps/lib.txt" };
+    },
+    exec: defaultExec,
+    boundedExec: sh,
+    log: (l) => said.push(l),
+  });
+  assert.equal(r.refusal, undefined, "the corrected answer held");
+  assert.equal(asked.length, 1, "asked once, with the failure");
+  assert.match(asked[0], /build step/);
+  assert.deepEqual(r.corrected, { provision: "mkdir -p deps && echo lib > deps/lib.txt", prepare: "test -f deps/lib.txt" });
+  assert.deepEqual(r.provisioned, ["deps"], "what the corrected provisioning produced is what runners get");
+  assert.ok(said.some((l) => l.includes("corrected")), "the correction is spoken");
+});
+
+test("a correction that changes nothing, or fails too, ends in the refusal — the door does not loop", async () => {
+  const wt = tree();
+  let asked = 0;
+  const same = await setupRunTree({
+    worktree: wt,
+    prepare: "exit 1",
+    resetup: async () => {
+      asked++;
+      return { provision: "", prepare: "exit 1" };
+    },
+    exec: defaultExec,
+    boundedExec: sh,
+    log: () => {},
+  });
+  assert.ok(same.refusal && asked === 1, "the same answer again is not retried");
+  const worse = await setupRunTree({
+    worktree: wt,
+    prepare: "exit 1",
+    resetup: async () => ({ provision: "", prepare: "exit 2" }),
+    exec: defaultExec,
+    boundedExec: sh,
+    log: () => {},
+  });
+  assert.ok(worse.refusal, "a correction that also fails refuses — once");
+});

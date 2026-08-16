@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPreparePrompt, parseSetup, NO_SETUP } from "./prepare";
+import { buildPreparePrompt, deriveSetup, parseSetup, NO_SETUP } from "./prepare";
 
 test("the check-setup questions are asked of the repository, never of a technology list", () => {
   const prompt = buildPreparePrompt("/repo", "NODE a [src=src/a.py loc=L1]", "reading");
@@ -31,4 +31,25 @@ test("the parser accepts one command per fact or nothing — it never invents a 
   assert.deepEqual(parseSetup(null), NO_SETUP);
   assert.deepEqual(parseSetup("npx tsc -p tsconfig.test.json"), NO_SETUP, "an unlabeled line is not an answer");
   assert.deepEqual(parseSetup("PREPARE: " + "x".repeat(300)), NO_SETUP, "an essay is not a command");
+});
+
+test("a derivation holds to the earlier answer, and a failed answer is corrected from the failure's words", async () => {
+  const anchored = buildPreparePrompt("/repo", "", "", {
+    previous: { provision: "npm ci && npm ci --prefix webview/map", prepare: "npx tsc -p tsconfig.test.json" },
+  });
+  assert.ok(anchored.includes("EARLIER READING") && anchored.includes("npm ci --prefix webview/map"), "the earlier answer anchors");
+  assert.ok(/nested/i.test(anchored), "nested manifests are asked about, not assumed away");
+  const prompts: string[] = [];
+  const again = await deriveSetup(
+    { repoRoot: "/repo", model: "m" } as never,
+    async (_d, prompt) => {
+      prompts.push(prompt);
+      return "PROVISION: npm ci && npm ci --prefix webview/map\nPREPARE: npx tsc -p tsconfig.test.json";
+    },
+    "",
+    "",
+    { failed: { setup: { provision: "npm ci", prepare: "npx tsc -p tsconfig.test.json" }, evidence: "error TS2503: Cannot find namespace 'React'" } },
+  );
+  assert.ok(prompts[0].includes("TRIED ON A FRESH CHECKOUT AND FAILED") && prompts[0].includes("Cannot find namespace 'React'"), "the failure is the evidence");
+  assert.equal(again.provision, "npm ci && npm ci --prefix webview/map");
 });
