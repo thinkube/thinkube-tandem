@@ -5,6 +5,9 @@
     <title>Tandem</title>
     <style>
       html, body, #root { height: 100%; margin: 0; }
+      /* A pan that reaches the document edge must end here: overscroll
+         chaining past this frame is what the browser reads as "go back". */
+      html, body { overscroll-behavior: none; }
       body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground); background: var(--vscode-editor-background); }
     </style>
   </head>

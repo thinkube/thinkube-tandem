@@ -357,6 +357,7 @@ export function RunSection(props: {
             whiteSpace: "pre-wrap",
             maxHeight: 160,
             overflowY: "auto",
+            overscrollBehavior: "none",
             flexShrink: 0,
           }}
         >
