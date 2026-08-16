@@ -15,9 +15,20 @@ export async function verifyWithRepair(args: {
   slice: string;
   repair: Repair;
   halted?: () => boolean;
+  /** The acting unit's footprint — a build that fails only outside it is not its failure. */
+  footprint?: readonly string[];
 }): Promise<string> {
   let r = await args.oracle.verify();
   const notes: string[] = [];
+  if (r.kind === "build-failed" && args.footprint) {
+    const mine = args.footprint;
+    const outside = r.errorFiles.filter((f) => !mine.some((m) => f === m || f.startsWith(m + "/")));
+    if (outside.length && outside.length === r.errorFiles.length)
+      notes.push(
+        "──── ENVIRONMENT (not your code) ────",
+        `The build fails only in files outside your footprint: ${outside.join(", ")}. Another unit's work, or the committed base, does not compile right now. Do not change your files for this; verify again in a moment.`,
+      );
+  }
   const repaired = await repairChecks(args, r);
   if (repaired.length && !args.halted?.()) {
     r = await args.oracle.verify();

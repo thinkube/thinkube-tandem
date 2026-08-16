@@ -232,6 +232,10 @@ export async function dispatchTep(
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned,
     built,
+    footprintOf: (slice: string) => {
+      const unit = acting.get(slice)?.unit;
+      return unit ? dag.find((u) => u.id === unit)?.footprint : undefined;
+    },
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
@@ -381,7 +385,7 @@ export async function dispatchTep(
                 verifyTool: async () => {
                   st.doing(next.id, `waiting on verify — round ${oracle.invocations() + 1}`);
                   try {
-                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted, footprint: next.footprint });
                   } finally {
                     st.doing(next.id, "working");
                   }

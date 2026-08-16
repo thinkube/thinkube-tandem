@@ -210,3 +210,34 @@ test("a question left in UNDELIVERED is answered by the machine — a doubt is n
   assert.equal(tester.state, "done", "the doubt was answered; the unit is done, not red");
   assert.deepEqual(outcome.undelivered, [], "and nothing is undelivered");
 });
+
+test("the runner grades a unit on the committed base plus ITS OWN files — another coder's half-written work in the shared tree never enters it", async () => {
+  const t = trees();
+  const copied: string[] = [];
+  const args = {
+    ...t,
+    branch: "tandem/run",
+    tep: "TEP-1",
+    sliceProbes: new Map([["SL-1", [PROBE]]]),
+    sliceVerifs: new Map([["SL-1", [{ ac: 1, run: "true" }]]]),
+    briefBySlice: new Map(),
+    model: "opus",
+    exec: defaultExec,
+    boundedExec: async () => ({ code: 0, output: "" }),
+    supervisorRound: async () => null,
+    log: () => {},
+    defect: () => {},
+    acting: () => ({ unit: "SL-1#eu-0" }),
+    footprintOf: () => ["src/mine.ts"],
+  } as unknown as OracleFactoryArgs;
+  // Two dirty files in the shared code worktree: mine, and another coder's.
+  fs.mkdirSync(path.join(t.worktree, "src"), { recursive: true });
+  fs.writeFileSync(path.join(t.worktree, "src", "mine.ts"), "export const mine = 1;");
+  fs.writeFileSync(path.join(t.worktree, "src", "theirs.ts"), "export const theirs = ;"); // does not compile
+  const oracle = sliceOracleFactory(args)("SL-1")!;
+  await oracle.verify();
+  const runner = path.join(t.wtRoot, "oracle-runners", "TEP-1-SL-1");
+  assert.ok(fs.existsSync(path.join(runner, "src", "mine.ts")), "my file is in the runner");
+  assert.ok(!fs.existsSync(path.join(runner, "src", "theirs.ts")), "the other coder's half-written file is not");
+  void copied;
+});

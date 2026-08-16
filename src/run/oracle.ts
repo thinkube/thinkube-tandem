@@ -133,6 +133,10 @@ export interface OracleFactoryArgs {
   provisioned?: readonly string[];
   /** Where the build step emits compiled output — what a probe imports. */
   built?: readonly string[];
+  /** The acting unit's own footprint: the runner overlays THIS unit's
+   *  uncommitted files on the committed base — never another coder's
+   *  half-written work from the shared tree. */
+  footprintOf?: (slice: string) => readonly string[] | undefined;
   /** Lines carry the unit the oracle is acting for, when it is acting for one. */
   log: (line: string, step?: string) => void;
   /** Whom the oracle acts for right now — its lines carry that unit. */
@@ -430,8 +434,16 @@ export function sliceOracleFactory(
       ...(a.prepare ? { prepare: a.prepare } : {}),
       supervise: supervise(slice),
       exec: a.boundedExec,
-      porcelain: async (cwd) =>
-        (await a.exec("git", ["-C", cwd, "status", "--porcelain", "--untracked-files=all"], cwd)).out,
+      porcelain: async (cwd) => {
+        const out = (await a.exec("git", ["-C", cwd, "status", "--porcelain", "--untracked-files=all"], cwd)).out;
+        const mine = a.footprintOf?.(slice);
+        if (!mine) return out;
+        const owns = (p: string) => mine.some((f) => p === f || p.startsWith(f.replace(/\/$/, "") + "/"));
+        return out
+          .split("\n")
+          .filter((l) => l.length > 3 && owns(l.slice(3).trim().split(" -> ").pop() ?? ""))
+          .join("\n");
+      },
       resetRunner: async () => {
         await ensureSnapshot(a.repoRoot, a.branch, runnerDir, a.exec);
         if (a.provisioned?.length) await linkProvisioned(runnerDir, a.worktree, a.provisioned);
