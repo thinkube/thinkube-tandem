@@ -130,7 +130,11 @@ export interface OracleFactoryArgs {
   /** What provisioning the worktree produced — linked into every runner
    *  so one install serves the run. */
   provisioned?: readonly string[];
-  log: (line: string) => void;
+  /** Lines carry the unit the oracle is acting for, when it is acting for one. */
+  log: (line: string, step?: string) => void;
+  /** Whom the oracle acts for right now, and whether the round is a baseline
+   *  read of an unchanged tree (never reviewed — its failures are expected). */
+  acting?: (slice: string) => { unit: string; baseline: boolean } | undefined;
   defect: (entry: {
     slice?: string;
     activity: string;
@@ -258,19 +262,14 @@ export function sliceOracleFactory(
   a: OracleFactoryArgs,
 ): (slice: string) => VerifyOracle | undefined {
   const oracles = new Map<string, VerifyOracle>();
+  const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
 
   const supervise =
     (slice: string) =>
     async (evidence: string, failingAcs: number[]): Promise<string | undefined> => {
-      // The supervisor is consulted exactly when rounds stall — that trip is
-      // itself a find-time defect observation.
-      a.defect({
-        slice,
-        activity: "verify rounds",
-        trigger: "stall-breaker",
-        impact: "supervisor consulted",
-        detail: `check(s) ${failingAcs.join(", ") || "?"} repeating an identical failure`,
-      });
+      // A baseline read of an unchanged tree fails by expectation: nothing
+      // to review, and no round to spend on it.
+      if (a.acting?.(slice)?.baseline) return undefined;
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
       for (const rel of probes) {
@@ -306,7 +305,7 @@ export function sliceOracleFactory(
         {
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.worktree,
-          log: a.log,
+          log: logFor(slice),
         },
         prompt,
       );
@@ -371,7 +370,7 @@ export function sliceOracleFactory(
         await fs.rm(path.join(runnerDir, rel), { force: true });
       },
       readFile: (root, rel) => fs.readFile(path.join(root, rel)),
-      log: a.log,
+      log: logFor(slice),
     });
     oracles.set(slice, oracle);
     return oracle;

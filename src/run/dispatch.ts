@@ -185,6 +185,7 @@ export async function dispatchTep(
     sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
 
   const briefBySlice = new Map<string, string>();
+  const acting = new Map<string, { unit: string; baseline: boolean }>();
   // The check behind an ordinal, from the space — the adapter carried the
   // ids; the probe never carries delivery bookkeeping.
   const criterionOf = criterionLookup(slices, space);
@@ -199,6 +200,7 @@ export async function dispatchTep(
     sliceProbes,
     sliceVerifs,
     briefBySlice,
+    acting: (slice: string) => acting.get(slice),
     model: deps.model,
     workerModel: deps.workerModel,
     supervisorRound: deps.supervisorRound,
@@ -275,11 +277,12 @@ export async function dispatchTep(
     const oracle = role === "code" ? buildOracle(next.slice) : undefined;
     if (role === "code") await restoreProbes(storeDir, testerWt);
 
-    // Grade-first: when the committed state already satisfies the checks
-    // (a resume, a re-run, an earlier slice's work), the unit completes
-    // without spending a worker.
+    // Grade-first: when the committed state already satisfies the checks (a
+    // resume, a re-run, an earlier slice's work) no worker is spent.
     if (oracle) {
+      acting.set(next.slice, { unit: next.id, baseline: true });
       const pre = await oracle.confirmGreen();
+      acting.set(next.slice, { unit: next.id, baseline: false });
       if (pre.green) {
         log(`✓ ${next.id}: grade-first — the checks are already green, no worker spent`, next.id);
         st.aborts.delete(next.id);
@@ -301,8 +304,7 @@ export async function dispatchTep(
       (deps.digest
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
         : "");
-    // Only a coder's brief may be shown as "the coder's brief": every unit
-    // used to overwrite it, so stalls were diagnosed against a tester's.
+    // Only a coder's brief is "the coder's brief" — a tester's must not shadow it.
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
     const oracleStanza = coderStanza(!!oracle);
     // Dispatch-time information audit: the brief's completeness against the
@@ -427,9 +429,8 @@ export async function dispatchTep(
   const concurrency = Math.max(1, deps.concurrency ?? 2);
   const inflight = new Map<string, Promise<void>>();
   while (!st.halted) {
-    // The engine's own frontier, not a second one: it refuses a unit whose
-    // footprint is being written by a running unit. Two coders in one file
-    // is a lost update with no error, and this pump never checked.
+    // The engine's own frontier: it refuses a unit whose footprint is being
+    // written by a running unit — two coders in one file is a silent lost update.
     const ready = frontier(dag, {
       pending,
       done,
@@ -439,9 +440,8 @@ export async function dispatchTep(
     for (const u of ready) {
       if (inflight.size >= concurrency) break;
       pending.delete(u.id);
-      // On the record here, synchronously with the launch: registering it
-      // inside the worker, after a snapshot reset and a porcelain read,
-      // leaves a window where the next frontier cannot see these files.
+      // On the record synchronously with the launch — registering it later,
+      // inside the worker, leaves a window the next frontier cannot see.
       liveFootprints.set(u.id, {
         tree: (u.role ?? "code") === "test" ? testerWt : worktree,
         paths: u.footprint,
