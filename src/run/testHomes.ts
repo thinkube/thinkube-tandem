@@ -135,3 +135,28 @@ export async function storeMatches(storeDir: string, hash: string): Promise<bool
     return false;
   }
 }
+
+/** A tester's turn budget scales with what it must write. */
+export function testerTurns(files: number): number {
+  return Math.min(300, 40 + 12 * files);
+}
+
+/** Declared probes not yet on disk — what a tester that stopped short still owes. */
+export async function missingProbes(tree: string, footprint: readonly string[]): Promise<string[]> {
+  const missing: string[] = [];
+  for (const rel of footprint.filter(isProbePath))
+    if (!(await fs.access(path.join(tree, rel)).then(() => true, () => false))) missing.push(rel);
+  return missing;
+}
+
+/** The brief for a tester's continuation: what is written stays, what is left is named. */
+export function continuationBrief(brief: string, footprint: readonly string[], missing: readonly string[]): string {
+  const written = footprint.filter((r) => isProbePath(r) && !missing.includes(r));
+  return (
+    brief +
+    "\n\nCONTINUE — your previous session ended before every declared probe was written. " +
+    `Already written (do not rewrite): ${written.join(", ") || "none"}.\n` +
+    "STILL TO WRITE — write exactly these, one criterion each, then end with your DECISION lines:\n" +
+    missing.map((m) => `- ${m}`).join("\n")
+  );
+}

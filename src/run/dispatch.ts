@@ -1,24 +1,16 @@
 /**
  * The run between the gates, driven by the imported engine.
  *
- * Structural separation of concerns (the v1 doctrine, re-hosted):
- * - Test units author probes in a DETACHED TESTER SNAPSHOT of the branch's
- *   committed HEAD — the coder's uncommitted work is absent by construction,
- *   so blinding is structural, not a promise in a prompt.
- * - Finished probes persist in the ORACLE STORE; snapshots are disposable,
- *   the store survives them (committed-wins on restore).
- * - Each slice's coder gets a black-box VERIFY ORACLE: an isolated runner
- *   overlays the coder's delta + the tester-owned probe sources and runs the
- *   per-criterion checks. The coder can invoke it in-loop (a real tool) and
- *   its green — not the worker's claim — is the unit's completion condition
- *   (MANDATORY-GREEN). Non-green routes a bounded rework with the oracle's
- *   evidence; stalled/exhausted verdicts fail honestly.
- * - Ready units run CONCURRENTLY (the frontier pump); containment tolerates
- *   the union of live footprints in the same tree and still reverts strays.
- * - A slice whose units are all done is committed on the branch (probes
- *   copied in first), so later tester snapshots legitimately see it.
- * Every failure lands as an artifact — UNDELIVERED, containment, red
- * proofs — never as silence.
+ * Testers author probes and bring test homes under in a DETACHED SNAPSHOT
+ * of the branch's committed HEAD (blinding is structural); their work
+ * persists in the oracle store, keyed by the base commit. Each slice's
+ * coder is graded by a black-box VERIFY ORACLE over the committed base plus
+ * its own files and the slice's test homes; the oracle's green — never the
+ * worker's claim — completes a unit (MANDATORY-GREEN). Every failure has
+ * an owner and the owner gets the repair loop; a stopped run stops every
+ * limb; ready units run concurrently on the engine's frontier; a finished
+ * slice is committed on the branch. Every failure lands as an artifact —
+ * UNDELIVERED, containment, red proofs — never as silence.
  */
 import * as path from "node:path";
 import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
@@ -36,7 +28,7 @@ import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
-import { confirmWithRepair, verifyWithRepair } from "./repair";
+import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths } from "./plan";
 import { renderTepBody } from "./briefs";
@@ -48,7 +40,8 @@ import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
-import { decisionsStanza, extractDecisions, restoreTestHomes, storeMatches, testHomesOf, testHomesStanza } from "./testHomes";
+import { continuationBrief, decisionsStanza, extractDecisions, missingProbes, restoreTestHomes, storeMatches, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
+import { overlapWaits } from "./frontier";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -186,8 +179,7 @@ export async function dispatchTep(
   const allTestHomes = [...new Set([...sliceTestHomes.values()].flat())];
   /** The tester's tree after a reset: probes back from the store, and the
    *  test homes it edited restored OVER what the branch holds. */
-  // Reused only for the same base commit: work written against another
-  // state of the repository is out of date, not done.
+  // Reused only for the same base commit: work for another base is out of date.
   const restoreTester = async (): Promise<void> => {
     await restoreProbes(storeDir, testerWt, baseSha);
     if (await storeMatches(storeDir, baseSha)) await restoreTestHomes(storeDir, testerWt, allTestHomes);
@@ -207,8 +199,7 @@ export async function dispatchTep(
 
   const briefBySlice = new Map<string, string>();
   const acting = new Map<string, { unit: string }>();
-  // The check behind an ordinal, from the space — the adapter carried the
-  // ids; the probe never carries delivery bookkeeping.
+  // The check behind an ordinal, from the space — never from the probe.
   const criterionOf = criterionLookup(slices, space);
   const rulings: Ruling[] = [];
   const decisions: { unit: string; text: string }[] = [];
@@ -387,6 +378,8 @@ export async function dispatchTep(
           // Blind only when the oracle can answer instead.
           blind: role !== "test" && !!oracle,
           footprint: next.footprint,
+          // A tester's turns scale with what it must write; a coder keeps the default.
+          ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),
           alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
           baseline,
           abort,
@@ -411,6 +404,31 @@ export async function dispatchTep(
         },
         brief,
       );
+      // A tester that stopped short — its session ended with declared probes
+      // still unwritten — is continued from where it stopped, up to three
+      // more rounds; its written work is never thrown away.
+      for (let more = 0; role === "test" && !outcome.containment && more < 3; more++) {
+        const missing = await missingProbes(tree, next.footprint);
+        if (!missing.length) break;
+        log(`↪ ${next.id}: ${missing.length} declared probe(s) still unwritten — continuing (${more + 1}/3)`, next.id);
+        st.doing(next.id, `continuing — ${missing.length} probe(s) left to write`);
+        outcome = await worker(
+          {
+            model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, role),
+            worktree: tree,
+            role,
+            footprint: next.footprint,
+            maxTurns: testerTurns(missing.length),
+            alsoAllowed: () => unionFor(tree, next.id)(),
+            baseline,
+            abort,
+            onPark: (q, answer) =>
+              void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
+            log: (line: string) => log(line, next.id),
+          },
+          continuationBrief(brief, next.footprint, missing),
+        );
+      }
       // A question left in UNDELIVERED is answered by the machine before it
       // is counted as a gap.
       if (outcome.undelivered?.length && !outcome.containment) {
@@ -446,22 +464,19 @@ export async function dispatchTep(
         break;
       }
       st.doing(next.id, "confirming green — the oracle grades the final state");
-      let confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
-      // The tree, not the coder: when the build fails only in files this
-      // unit does not own while other slices are still landing, the failure
-      // is theirs to resolve — this unit waits for the next commit and is
-      // graded again, without spending a rework.
-      for (let waits = 0; waits < 6 && !st.halted; waits++) {
-        const r0 = confirm.result;
-        if (r0.kind !== "build-failed") break;
-        const foreign = r0.errorFiles.filter((f) => !next.footprint.some((m) => f === m || f.startsWith(m + "/")));
-        const othersPending = [...dag].some((u) => u.slice !== next.slice && !done.has(u.id) && !failed.has(u.id));
-        if (!foreign.length || foreign.length !== r0.errorFiles.length || !othersPending) break;
-        st.doing(next.id, `waiting for the tree — ${foreign.slice(0, 2).join(", ")} does not compile yet and belongs to another slice`);
-        log(`⏳ ${next.id}: the build fails only outside its footprint (${foreign.join(", ")}) — waiting for another slice to land`, next.id);
-        await nextCommit(10 * 60 * 1000);
-        confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
-      }
+      const confirm = await confirmWaitingForTree({
+        oracle,
+        slice: next.slice,
+        repair: repairFor,
+        halted: () => st.halted,
+        footprint: next.footprint,
+        othersPending: () => [...dag].some((u) => u.slice !== next.slice && !done.has(u.id) && !failed.has(u.id)),
+        waitForCommit: () => nextCommit(10 * 60 * 1000),
+        say: (why) => {
+          st.doing(next.id, why);
+          log(`⏳ ${next.id}: ${why}`, next.id);
+        },
+      });
       st.doing(next.id, undefined);
       if (confirm.green) {
         ok = true;
@@ -532,16 +547,7 @@ export async function dispatchTep(
     });
     // A ready unit that is not launched says why: a slot, or a file it
     // shares with a running unit. The graph draws edges, not overlaps.
-    const runningPaths = new Map<string, string>();
-    for (const [id, v] of liveFootprints) for (const p of v.paths) runningPaths.set(p, id);
-    for (const id of pending) {
-      const u = dag.find((x) => x.id === id);
-      if (!u || ready.some((r) => r.id === id)) continue;
-      const shared = u.footprint.filter((p) => runningPaths.has(p));
-      const unmet = u.requires.filter((r) => !done.has(r));
-      if (shared.length && !unmet.length)
-        st.doing(id, `waiting: shares ${shared.slice(0, 3).join(", ")}${shared.length > 3 ? "…" : ""} with ${[...new Set(shared.map((p) => runningPaths.get(p)))].join(", ")}`);
-    }
+    for (const [id, why] of overlapWaits(dag, pending, ready, liveFootprints, done)) st.doing(id, why);
     for (const u of ready) {
       if (inflight.size >= concurrency) {
         st.doing(u.id, `waiting for a free slot (${concurrency} running)`);

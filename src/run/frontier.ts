@@ -39,3 +39,26 @@ export function frontier(
     },
   );
 }
+
+/** Why a ready unit is not launched: a file it shares with a running unit.
+ *  The graph draws edges, not overlaps; the card says the overlap. */
+export function overlapWaits(
+  dag: readonly { id: string; footprint: string[]; requires: string[] }[],
+  pending: ReadonlySet<string>,
+  ready: readonly { id: string }[],
+  live: ReadonlyMap<string, { paths: string[] }>,
+  done: ReadonlySet<string>,
+): [string, string][] {
+  const runningPaths = new Map<string, string>();
+  for (const [id, v] of live) for (const p of v.paths) runningPaths.set(p, id);
+  const out: [string, string][] = [];
+  for (const id of pending) {
+    const u = dag.find((x) => x.id === id);
+    if (!u || ready.some((r) => r.id === id)) continue;
+    const shared = u.footprint.filter((p) => runningPaths.has(p));
+    const unmet = u.requires.filter((r) => !done.has(r));
+    if (shared.length && !unmet.length)
+      out.push([id, `waiting: shares ${shared.slice(0, 3).join(", ")}${shared.length > 3 ? "…" : ""} with ${[...new Set(shared.map((p) => runningPaths.get(p)))].join(", ")}`]);
+  }
+  return out;
+}

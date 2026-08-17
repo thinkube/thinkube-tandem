@@ -47,7 +47,7 @@ export async function verifyWithRepair(args: {
 }
 
 /** The mandatory green-check, repaired once the same way. */
-export async function confirmWithRepair(args: {
+async function confirmWithRepair(args: {
   oracle: VerifyOracle;
   slice: string;
   repair: Repair;
@@ -67,4 +67,34 @@ async function repairChecks(
   const broken = failuresByOwner(r).filter((f) => f.owner === "check");
   if (!broken.length) return [];
   return args.repair(args.slice, broken);
+}
+
+/**
+ * The mandatory green-check with the tree's failures told apart from the
+ * coder's: when the build fails only in files this unit does not own while
+ * other slices are still landing, the failure is theirs to resolve — this
+ * unit waits for the next commit and is graded again, up to six times,
+ * without spending a rework.
+ */
+export async function confirmWaitingForTree(args: {
+  oracle: VerifyOracle;
+  slice: string;
+  repair: Repair;
+  halted: () => boolean;
+  footprint: readonly string[];
+  othersPending: () => boolean;
+  waitForCommit: () => Promise<void>;
+  say: (why: string) => void;
+}): Promise<{ green: boolean; result: VerifyResult }> {
+  let confirm = await confirmWithRepair(args);
+  for (let waits = 0; waits < 6 && !args.halted(); waits++) {
+    const r = confirm.result;
+    if (r.kind !== "build-failed") break;
+    const foreign = r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/")));
+    if (!foreign.length || foreign.length !== r.errorFiles.length || !args.othersPending()) break;
+    args.say(`the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`);
+    await args.waitForCommit();
+    confirm = await confirmWithRepair(args);
+  }
+  return confirm;
 }
