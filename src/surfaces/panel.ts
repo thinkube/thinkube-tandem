@@ -299,6 +299,8 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       })(),
       ...(d.url ? { url: d.url } : {}),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
+      // A withheld delivery delivered nothing: the way back in is on its page.
+      ...(d.withheld ? { withheld: d.withheld, rerun: session.unrunCut() } : {}),
     })),
     ...(message ? { message } : {}),
   };

@@ -38,6 +38,24 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
               <span data-accepted={d.id} style={{ color: C.ok, fontSize: FS.body, fontWeight: 600 }}>
                 ✓ Accepted
               </span>
+            ) : d.withheld ? (
+              // Withheld: nothing was delivered. The record is readable and
+              // the signed work can run again from here.
+              <div data-withheld={d.id} style={{ fontSize: FS.body }}>
+                <div style={{ color: C.bad }}>
+                  <strong>Withheld — nothing was delivered.</strong> {d.withheld}
+                </div>
+                {d.rerun ? (
+                  <button
+                    data-rerun
+                    style={{ fontWeight: 600, marginTop: SP.sm }}
+                    title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+                    onClick={() => post({ action: "rerun" })}
+                  >
+                    Run {d.rerun.tepId ?? "it"} again
+                  </button>
+                ) : null}
+              </div>
             ) : d.blocked ? (
               // Not offered, because it would be refused. A button that
               // cannot work says the work is ready to go into the project,

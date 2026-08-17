@@ -484,7 +484,9 @@ export class TandemSession {
    * one button that could have started it already spent.
    */
   unrunCut(): { id: string; tepId?: string } | undefined {
-    const delivered = new Set(this.space.deliveries.map((d) => d.cutId));
+    // A withheld delivery delivered nothing: the cut is still signed work
+    // waiting to run, and the way back in must stay reachable.
+    const delivered = new Set(this.space.deliveries.filter((d) => !d.withheld).map((d) => d.cutId));
     const c = [...this.space.cuts].reverse().find((x) => x.signature && !delivered.has(x.id));
     return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
   }

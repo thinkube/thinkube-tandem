@@ -65,6 +65,9 @@ interface DeliveryVM {
   blocked?: string;
   url?: string;
   undelivered?: string[];
+  /** Why the delivery was withheld, and the signed work to run again. */
+  withheld?: string;
+  rerun?: { id: string; tepId?: string };
 }
 
 interface RunView {

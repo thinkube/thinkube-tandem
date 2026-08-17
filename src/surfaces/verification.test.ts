@@ -137,3 +137,16 @@ test("a claim card reads verification from state: verdict, proof address, drift"
     "its promise's ground is current, so the verdict stands",
   );
 });
+
+test("a withheld delivery keeps the signed work reachable: the cut is still unrun and the page offers to run again", () => {
+  const s = sessionWithVerifiedWork();
+  s.space = {
+    ...s.space,
+    deliveries: s.space.deliveries.map((d) => ({ ...d, acceptedAt: undefined, withheld: "the suite is red after the work" })),
+  };
+  const unrun = s.unrunCut();
+  assert.ok(unrun, "a withheld delivery delivered nothing — the cut is still waiting to run");
+  const push = spacePush(s) as { deliveries: { withheld?: string; rerun?: { id: string } }[] };
+  assert.equal(push.deliveries[0].withheld, "the suite is red after the work");
+  assert.equal(push.deliveries[0].rerun?.id, unrun!.id, "the way back in is on the delivery's page");
+});
