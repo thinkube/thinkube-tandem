@@ -95,7 +95,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     return planned.length ? planned : touch(false);
   };
 
-  const maintain: { of: string; testHomes: string[]; testHomeWork: { path: string; sentence: string; criteria: string[] }[] }[] = [];
+  const maintain: { of: string; production: string[]; testHomes: string[]; testHomeWork: { path: string; sentence: string; criteria: string[] }[] }[] = [];
   const main = units.map((unit, idx) => {
     const no = idx + 1;
     const handle = `${handlePrefix ?? ""}SL-${no}`;
@@ -207,7 +207,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     // own (appended after every production slice, below): scheduled after
     // the code its tests import, worked as a tester, never batched with the
     // coder, committed on its own once the code has landed.
-    if (testHomes.length) maintain.push({ of: handle, testHomes, testHomeWork });
+    if (testHomes.length) maintain.push({ of: handle, production, testHomes, testHomeWork });
 
     // THE CONTRACT: the seam this slice introduces, by name.
     //
@@ -259,8 +259,9 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
   // production its test homes import; it carries its parent's probes as
   // its checks, so the tree it leaves builds and the parent's promises
   // still hold.
-  const extra: TandemSlice[] = maintain.map((m, k) => ({
-    handle: `${handlePrefix ?? ""}SL-${main.length + k + 1}`,
+  const extra: TandemSlice[] = maintain.map((m) => ({
+    // Named for the slice it serves: "SL-5-tests" brings SL-5's tests under.
+    handle: `${m.of}-tests`,
     status: "ready",
     files: m.testHomes,
     workUnits: [
@@ -269,6 +270,9 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         execution: "serial",
         role: "code",
         note: `[bring the existing test homes under ${m.of}'s promises]`,
+        // Always after its parent's code — graph or no graph, new file or
+        // old — plus whatever else the graph adds at run start.
+        ...(m.production.length ? { consumes: m.production } : {}),
         testHomeWork: m.testHomeWork,
       } as WorkUnit & { note?: string; testHomeWork?: typeof m.testHomeWork },
     ],

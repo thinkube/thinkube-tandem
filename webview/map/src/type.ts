@@ -111,6 +111,11 @@ export const ROLES = {
     color: C.live,
     why: "This worker writes the code. It never sees the checks that will judge it.",
   },
+  maintain: {
+    text: "Tests brought under",
+    color: C.gold,
+    why: "This worker brings the existing tests of its slice under the new behavior — after the code has landed, seeing it. It writes tests only, never code, and the slice's checks must stay green behind it.",
+  },
   audit: {
     text: "Audit",
     color: C.ask,

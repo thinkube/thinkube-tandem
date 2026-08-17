@@ -9,6 +9,49 @@ import { failuresByOwner } from "./owner";
 
 export type Repair = (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]>;
 
+/** Module specifiers a build or a run said it could not find. */
+export function missingModulesIn(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/Cannot find module '([^']+)'/g)) out.add(m[1]);
+  return [...out];
+}
+
+/** The path stem a specifier or a path denotes: no extension, no build
+ *  output folder, no leading "./" — what two spellings of one module share. */
+const stemOf = (p: string): string =>
+  p
+    .replace(/\\/g, "/")
+    .replace(/^.*?\/(out-test|out|dist|build|lib)\//, "")
+    .replace(/^\.\//, "")
+    .replace(/\.[cm]?[jt]sx?$/, "")
+    .replace(/\.d$/, "");
+
+/**
+ * "The tree is not ready": a missing module is a file another unit will
+ * still create. Not this unit's failure, not the check's — the run waits
+ * for the next commit. Returns the planned files it matched, or nothing.
+ */
+export function treeNotReady(
+  r: VerifyResult,
+  pendingPlanned: readonly string[],
+  errorFiles: readonly string[] = [],
+): string[] {
+  if (!pendingPlanned.length) return [];
+  const texts =
+    r.kind === "build-failed" ? [r.output] : r.kind === "results" ? r.results.filter((x) => !x.pass).map((x) => x.evidence) : [];
+  const stems = pendingPlanned.map((p) => ({ path: p, stem: stemOf(p) }));
+  const hits = new Set<string>();
+  for (const t of texts)
+    for (const spec of missingModulesIn(t)) {
+      const candidates = spec.startsWith(".")
+        ? [stemOf(spec.replace(/^\.\//, "")), ...errorFiles.map((f) => stemOf(f.replace(/[^/]*$/, "") + spec))]
+        : [stemOf(spec)];
+      for (const c of candidates)
+        for (const s of stems) if (c && (s.stem === c || s.stem.endsWith("/" + c) || c.endsWith("/" + s.stem))) hits.add(s.path);
+    }
+  return [...hits];
+}
+
 /** One verify round for the coder, repaired once when a check could not run. */
 export async function verifyWithRepair(args: {
   oracle: VerifyOracle;
@@ -17,9 +60,18 @@ export async function verifyWithRepair(args: {
   halted?: () => boolean;
   /** The acting unit's footprint — a build that fails only outside it is not its failure. */
   footprint?: readonly string[];
+  /** Files other units will still create — a build missing one is the tree, not this unit. */
+  pendingPlanned?: () => readonly string[];
 }): Promise<string> {
   let r = await args.oracle.verify();
   const notes: string[] = [];
+  const planned = treeNotReady(r, args.pendingPlanned?.() ?? [], r.kind === "build-failed" ? r.errorFiles : []);
+  if (planned.length)
+    return [
+      formatVerifyReply(r),
+      "──── THE TREE IS NOT READY (not your code, not the checks) ────",
+      `A module the build could not find is a file another unit will still create: ${planned.join(", ")}. Do not change your files for this; verify again in a moment.`,
+    ].join("\n\n");
   if (r.kind === "build-failed" && args.footprint) {
     const mine = args.footprint;
     const outside = r.errorFiles.filter((f) => !mine.some((m) => f === m || f.startsWith(m + "/")));
@@ -47,13 +99,16 @@ export async function verifyWithRepair(args: {
 }
 
 /** The mandatory green-check, repaired once the same way. */
-async function confirmWithRepair(args: {
-  oracle: VerifyOracle;
-  slice: string;
-  repair: Repair;
-  halted?: () => boolean;
-}): Promise<{ green: boolean; result: VerifyResult }> {
-  let c = await args.oracle.confirmGreen();
+async function confirmWithRepair(
+  args: {
+    oracle: VerifyOracle;
+    slice: string;
+    repair: Repair;
+    halted?: () => boolean;
+  },
+  initial?: { green: boolean; result: VerifyResult },
+): Promise<{ green: boolean; result: VerifyResult }> {
+  let c = initial ?? (await args.oracle.confirmGreen());
   if (c.green || args.halted?.()) return c;
   const repaired = await repairChecks(args, c.result);
   if (repaired.length && !args.halted?.()) c = await args.oracle.confirmGreen();
@@ -82,19 +137,32 @@ export async function confirmWaitingForTree(args: {
   repair: Repair;
   halted: () => boolean;
   footprint: readonly string[];
+  pendingPlanned?: () => readonly string[];
   othersPending: () => boolean;
   waitForCommit: () => Promise<void>;
   say: (why: string) => void;
 }): Promise<{ green: boolean; result: VerifyResult }> {
-  let confirm = await confirmWithRepair(args);
-  for (let waits = 0; waits < 6 && !args.halted(); waits++) {
+  // The tree first, then the checks: a missing module another unit will
+  // create is waited on, never repaired as a broken check.
+  const notReady = (r: VerifyResult): string[] =>
+    treeNotReady(r, args.pendingPlanned?.() ?? [], r.kind === "build-failed" ? r.errorFiles : []);
+  let confirm = await args.oracle.confirmGreen();
+  for (let waits = 0; waits < 6 && !args.halted() && !confirm.green; waits++) {
     const r = confirm.result;
-    if (r.kind !== "build-failed") break;
-    const foreign = r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/")));
-    if (!foreign.length || foreign.length !== r.errorFiles.length || !args.othersPending()) break;
-    args.say(`the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`);
+    const planned = notReady(r);
+    const foreign =
+      r.kind === "build-failed" ? r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/"))) : [];
+    const onlyForeign = r.kind === "build-failed" && foreign.length > 0 && foreign.length === r.errorFiles.length;
+    if (!planned.length && !onlyForeign) break;
+    if (!args.othersPending()) break;
+    args.say(
+      planned.length
+        ? `a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`
+        : `the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
+    );
     await args.waitForCommit();
-    confirm = await confirmWithRepair(args);
+    confirm = await args.oracle.confirmGreen();
   }
-  return confirm;
+  if (confirm.green || notReady(confirm.result).length) return confirm;
+  return confirmWithRepair(args, confirm);
 }

@@ -361,3 +361,27 @@ test("a slice whose every landing is a test home spends no coder — its maintai
   assert.ok(maint && isMaintainUnit(maint.workUnits[0]));
   assert.deepEqual(maint.workUnits[0].footprint, ["src/gates/gates.test.ts", "src/surfaces/surfaces.test.ts"]);
 });
+
+test("a maintainer always runs after its parent's coder — graph or no graph, new file or old — and is named for the slice it serves", () => {
+  let s = emptySpace();
+  const a = addAsk(s, "a new module with its test brought under", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "a wiring ledger checker, and its test",
+    serves: [a.added.id],
+    servesClaim: "claim-w",
+    needs: [],
+    acceptance: [{ id: "c1", text: "the checker names unwired modules" }],
+    grounding: { touchpoints: [{ path: "src/engine/engineWiring.ts", planned: true }, { path: "src/engine/engineWiring.test.ts" }], stamp: [] },
+  });
+  assert.ok(n.ok);
+  s = n.space;
+  const slices = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  const maint = slices.find((x) => x.maintains === "SL-1")!;
+  assert.equal(maint.handle, "SL-1-tests", "named for the slice it serves");
+  assert.deepEqual((maint.workUnits[0] as { consumes?: string[] }).consumes, ["src/engine/engineWiring.ts"], "it consumes its parent's production, planned or not");
+  const dag = buildUnitDag(slices);
+  const m = dag.find((u) => u.slice === "SL-1-tests")!;
+  assert.ok(m.requires.includes("SL-1#eu-0"), "so the DAG runs it after the parent's coder");
+});

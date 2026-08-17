@@ -76,7 +76,7 @@ interface RunView {
     slice: string;
     /** The slice in the human's words, when the space still knows it. */
     sliceTitle?: string;
-    role: "code" | "test";
+    role: "code" | "test" | "maintain";
     /** What this unit builds, in the reading's own words. */
     what?: string;
     state: string;

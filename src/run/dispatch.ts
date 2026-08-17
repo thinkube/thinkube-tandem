@@ -30,7 +30,7 @@ import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, Oracle
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
-import { claimRunLock, coderTestPaths, isMaintainUnit } from "./plan";
+import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -167,7 +167,7 @@ export async function dispatchTep(
   for (const u of dag) {
     const requires = u.requires.filter((r) => dag.some((x) => x.id === r));
     const why = requires.map((r) => whyWait(u, r));
-    st.seed(u.id, u.slice, (u.role ?? "code") as "code" | "test", requires, u.note, why);
+    st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
   }
 
   const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
@@ -228,8 +228,7 @@ export async function dispatchTep(
     built,
     footprintOf: (slice: string) =>
       dag.filter((u) => u.slice === slice && (u.role ?? "code") === "code").flatMap((u) => u.footprint),
-    pruneIn: (slice: string) =>
-      slices.filter((x) => (x as { maintains?: string }).maintains === slice).flatMap((x) => x.files ?? []),
+    pruneIn: (slice: string) => maintainedElsewhere(slices, slice),
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
@@ -238,6 +237,7 @@ export async function dispatchTep(
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
+  const pendingPlanned = (): string[] => plannedByPending(dag, done);
   const parkFor = makeParkAnswerer(oracleArgs);
   const repairFor = makeRepair(oracleArgs);
   const answerEnd = makeEndAnswerer(oracleArgs);
@@ -297,8 +297,7 @@ export async function dispatchTep(
   };
 
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
-    // A maintainer is scheduled as code (after what it imports), worked as a tester.
-    const maintain = isMaintainUnit(next);
+    const maintain = isMaintainUnit(next); // scheduled as code, worked as a tester
     const role = (maintain ? "test" : (next.role ?? "code")) as "code" | "test";
     st.set(next.id, "running");
     log(`▸ ${next.id} (${role})`, next.id);
@@ -393,7 +392,7 @@ export async function dispatchTep(
                 verifyTool: async () => {
                   st.doing(next.id, `waiting on verify — round ${oracle.invocations() + 1}`);
                   try {
-                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted, footprint: next.footprint });
+                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted, footprint: next.footprint, pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)) });
                   } finally {
                     st.doing(next.id, "working");
                   }
@@ -470,6 +469,7 @@ export async function dispatchTep(
         repair: repairFor,
         halted: () => st.halted,
         footprint: next.footprint,
+        pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)),
         othersPending: () => [...dag].some((u) => u.slice !== next.slice && !done.has(u.id) && !failed.has(u.id)),
         waitForCommit: () => nextCommit(10 * 60 * 1000),
         say: (why) => {

@@ -305,3 +305,25 @@ export function coderTestPaths(slices: SliceForDag[]): string[] {
       });
   return out;
 }
+
+/** Production files that units not yet done will still write or create: a
+ *  build missing one of them is the tree not being ready, never the failure
+ *  of the unit that saw it. */
+export function plannedByPending(
+  dag: readonly { id: string; role?: string; footprint: string[] }[],
+  done: ReadonlySet<string>,
+): string[] {
+  return dag
+    .filter((u) => !done.has(u.id) && (u.role ?? "code") === "code" && !isMaintainUnit(u))
+    .flatMap((u) => u.footprint);
+}
+
+/** Every test home a maintainer OTHER than this slice will bring under: out
+ *  of this slice's runner build until that maintainer runs — a coder's
+ *  change that breaks or retires an old test is never the coder's failure,
+ *  and a maintainer sees only its own homes. */
+export function maintainedElsewhere(slices: readonly SliceForDag[], slice: string): string[] {
+  return slices
+    .filter((x) => (x as { maintains?: string }).maintains && x.handle !== slice)
+    .flatMap((x) => x.files ?? []);
+}

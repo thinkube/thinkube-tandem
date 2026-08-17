@@ -132,9 +132,10 @@ export function RunSection(props: {
       // which one it was.
       ...run.units.map((u) => ({
         id: u.id,
-        band: u.role === "test" ? ROLES.test : ROLES.code,
-        title: u.sliceTitle ?? u.slice,
-        titleFull: `${u.id} — ${u.sliceTitle ?? u.slice}`,
+        band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+        // A maintainer is named for the slice it serves, not as a slice of its own.
+        title: u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice),
+        titleFull: `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`,
         abs: u.id,
         chips: [chipFor(u, now), logChip(u.id, run)],
       })),
