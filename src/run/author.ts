@@ -56,13 +56,21 @@ export async function runAuthoringRound(
           thinking: { type: "adaptive" },
           maxTurns: deps.maxTurns ?? 40,
           allowedTools: ["Read", "Grep", "Glob", "Write", "Edit"],
+          // A tool that moves the session's working directory would let a
+          // relative write land outside the fence: none of those.
           disallowedTools: [
             "Bash",
             "WebFetch",
             "WebSearch",
             "Task",
+            "Agent",
+            "Workflow",
+            "Skill",
             "AskUserQuestion",
             "ExitPlanMode",
+            "EnterPlanMode",
+            "EnterWorktree",
+            "ExitWorktree",
             "NotebookEdit",
           ],
           additionalDirectories: [deps.cwd],

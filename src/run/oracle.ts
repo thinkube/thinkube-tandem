@@ -256,6 +256,7 @@ async function reauthorCheck(
   args: { rel: string; criterion: string; because: string; error?: string },
 ): Promise<boolean> {
   const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
+  const before = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
   const rewritten = await (a.author ?? runAuthoringRound)(
     { cwd: a.testerWt, model: judge, allowWrite: [args.rel], log: a.log, maxTurns: 30 },
     [
@@ -277,6 +278,9 @@ async function reauthorCheck(
     ].join("\n"),
   );
   if (rewritten === null) return false;
+  // A re-author that left the file as it was did nothing, whatever it said.
+  const after = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  if (after === before) return false;
   await a.persistProbe?.(args.rel).catch(() => {});
   return true;
 }

@@ -503,3 +503,79 @@ test("a crash inside one unit fails that unit on the record — the run goes on 
   assert.ok(outcome.undelivered.some((u) => u.includes("crashed") && u.includes("snapshot vanished")), "the cause is on the record");
   assert.ok(state.logs.some((l) => l.includes("closing gate")), "the run reached its gate");
 });
+
+test("a build that fails only in files another slice owns is the tree's failure, not this coder's: the unit waits for the next commit and is graded again", async () => {
+  const repo = tmpRepo();
+  // Two independent promises; a "build" that fails until slice 1's file exists.
+  let s = emptySpace();
+  const a = addAsk(s, "two things", "t");
+  if (!a.ok) throw new Error("ask");
+  s = a.space;
+  const n1 = addNode(s, {
+    sentence: "a greet module", serves: [a.added.id], servesClaim: "c-1", needs: [],
+    acceptance: [{ id: "c1", text: "greet() returns 'hello'" }],
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+  });
+  if (!n1.ok) throw new Error("n1");
+  s = n1.space;
+  const n2 = addNode(s, {
+    sentence: "a wave module", serves: [a.added.id], servesClaim: "c-2", needs: [],
+    acceptance: [{ id: "c2", text: "wave() returns 'wave'" }],
+    grounding: { touchpoints: [{ path: "src/wave.mjs", planned: true }], stamp: [] },
+  });
+  if (!n2.ok) throw new Error("n2");
+  s = n2.space;
+  const cut = { id: "cut-1", changeIds: [n1.added.id, n2.added.id], tepId: "TEP-t-51" };
+  const slices = tepSlices({ space: s, cut, spaceName: "two" });
+  const state = new RunState(() => {});
+  let waited = false;
+  let releaseGreet: () => void = () => {};
+  const greetMayFinish = new Promise<void>((r) => (releaseGreet = r));
+  const origLog = state.log.bind(state);
+  state.log = (line, step) => {
+    origLog(line, step);
+    if (line.includes("waiting for another slice to land")) {
+      waited = true;
+      releaseGreet();
+    }
+  };
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      // The build fails, naming src/greet.mjs, when wave.mjs exists but greet.mjs
+      // does not yet — slice 2's runner sees exactly that until slice 1 lands.
+      prepare: "if [ -f src/wave.mjs ] && [ ! -f src/greet.mjs ]; then echo 'src/greet.mjs(1,1): error TS0: not built yet'; exit 1; fi",
+      state,
+      concurrency: 4,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "two",
+      worker: async (w) => {
+        if (w.role === "test") {
+          const probe = w.footprint[0].includes("SL-1")
+            ? GREEN_PROBE
+            : GREEN_PROBE.replace(/greet/g, "wave").replace("'hello'", "'wave'").replace('"hello"', '"wave"');
+          writeInto(w.worktree, w.footprint[0], probe);
+          return { ok: true, finalText: "done" };
+        }
+        if (w.footprint.includes("src/greet.mjs")) {
+          // Slice 1's coder is slow: it lands only after slice 2 has waited once.
+          await Promise.race([greetMayFinish, new Promise((r) => setTimeout(r, 20000))]);
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+          return { ok: true, finalText: "done" };
+        }
+        writeInto(w.worktree, "src/wave.mjs", `export function wave() { return "wave"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+  assert.ok(waited, "slice 2 waited for the tree instead of being charged a rework");
+  const wave = state.view().units.find((u) => u.role === "code" && u.slice === "SL-2")!;
+  assert.equal(wave.state, "done", "and went green once slice 1 landed");
+  assert.ok(outcome.delivery, "the run delivers");
+});

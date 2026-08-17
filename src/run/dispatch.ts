@@ -262,9 +262,22 @@ export async function dispatchTep(
 
   /** Probes in, then commit the slice's paths: later tester snapshots see
    *  committed truth. */
+  // Units that wait for the tree to settle wake on the next slice commit.
+  let commitWaiters: (() => void)[] = [];
+  const nextCommit = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      const t = setTimeout(() => resolve(), ms);
+      commitWaiters.push(() => {
+        clearTimeout(t);
+        resolve();
+      });
+    });
   const commitSlice = async (slice: string): Promise<void> => {
     if (sliceCommitted.has(slice)) return;
     sliceCommitted.add(slice);
+    const wake = commitWaiters;
+    commitWaiters = [];
+    for (const w of wake) w();
     const probes = [...(sliceProbes.get(slice) ?? []), ...(sliceTestHomes.get(slice) ?? [])];
     for (const rel of probes)
       await copyRel(testerWt, worktree, rel).catch(() => {});
@@ -433,7 +446,22 @@ export async function dispatchTep(
         break;
       }
       st.doing(next.id, "confirming green — the oracle grades the final state");
-      const confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+      let confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+      // The tree, not the coder: when the build fails only in files this
+      // unit does not own while other slices are still landing, the failure
+      // is theirs to resolve — this unit waits for the next commit and is
+      // graded again, without spending a rework.
+      for (let waits = 0; waits < 6 && !st.halted; waits++) {
+        const r0 = confirm.result;
+        if (r0.kind !== "build-failed") break;
+        const foreign = r0.errorFiles.filter((f) => !next.footprint.some((m) => f === m || f.startsWith(m + "/")));
+        const othersPending = [...dag].some((u) => u.slice !== next.slice && !done.has(u.id) && !failed.has(u.id));
+        if (!foreign.length || foreign.length !== r0.errorFiles.length || !othersPending) break;
+        st.doing(next.id, `waiting for the tree — ${foreign.slice(0, 2).join(", ")} does not compile yet and belongs to another slice`);
+        log(`⏳ ${next.id}: the build fails only outside its footprint (${foreign.join(", ")}) — waiting for another slice to land`, next.id);
+        await nextCommit(10 * 60 * 1000);
+        confirm = await confirmWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted });
+      }
       st.doing(next.id, undefined);
       if (confirm.green) {
         ok = true;

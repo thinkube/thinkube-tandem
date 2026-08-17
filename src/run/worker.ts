@@ -265,10 +265,22 @@ export async function runUnitWorker(
         maxTurns: deps.maxTurns ?? 80,
         abortController: deps.abort,
         ...(mcpServers ? { mcpServers } : {}),
-        disallowedTools:
-          deps.role === "test" || deps.blind
-            ? ["Bash", "WebFetch", "WebSearch", "Task", "AskUserQuestion", "ExitPlanMode"]
-            : ["WebFetch", "WebSearch", "Task", "AskUserQuestion", "ExitPlanMode"],
+        // A tool that moves the session's working directory would let a
+        // relative write land outside the footprint: none of those, ever.
+        disallowedTools: [
+          ...(deps.role === "test" || deps.blind ? ["Bash"] : []),
+          "WebFetch",
+          "WebSearch",
+          "Task",
+          "Agent",
+          "Workflow",
+          "Skill",
+          "AskUserQuestion",
+          "ExitPlanMode",
+          "EnterPlanMode",
+          "EnterWorktree",
+          "ExitWorktree",
+        ],
         hooks: {
           PreToolUse: [
             {
