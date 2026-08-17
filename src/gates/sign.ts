@@ -143,6 +143,8 @@ export function acceptDelivery(
 ): AcceptResult {
   if (delivery.acceptedAt)
     return { ok: false, reason: "this delivery is already accepted" };
+  if (delivery.withheld)
+    return { ok: false, reason: `this delivery was withheld — ${delivery.withheld}` };
   const notGreen = delivery.proofs.filter((p) => p.verdict !== "green");
   if (delivery.proofs.length === 0)
     return { ok: false, reason: "a delivery with no proof of its checks cannot be accepted" };

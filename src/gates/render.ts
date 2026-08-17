@@ -99,6 +99,10 @@ export function renderDeliveryPage(
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`# Delivery — \`${delivery.branch}\``);
+  if (delivery.withheld) {
+    lines.push("");
+    lines.push(`**Withheld — not accepted, nothing opened.** ${delivery.withheld}`);
+  }
   // The page is written in subjects and what is now true of them, because
   // that is what a person can go and try. A promise is a step and cannot
   // be experienced on its own; a claim can.

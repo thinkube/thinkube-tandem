@@ -241,3 +241,34 @@ test("the runner grades a unit on the committed base plus ITS OWN files — anot
   assert.ok(!fs.existsSync(path.join(runner, "src", "theirs.ts")), "the other coder's half-written file is not");
   void copied;
 });
+
+test("the runner builds the slice's test homes with the coder's work — a tester's expectation is met or disclosed, never landed on the base unbuilt", async () => {
+  const t = trees();
+  fs.mkdirSync(path.join(t.testerWt, "src"), { recursive: true });
+  fs.writeFileSync(path.join(t.testerWt, "src", "greet.test.mjs"), "// brought under by the tester");
+  const args = {
+    ...t,
+    branch: "tandem/run",
+    tep: "TEP-2",
+    sliceProbes: new Map([["SL-1", [PROBE]]]),
+    sliceTestHomes: new Map([["SL-1", ["src/greet.test.mjs"]]]),
+    sliceVerifs: new Map([["SL-1", [{ ac: 1, run: "true" }]]]),
+    briefBySlice: new Map(),
+    model: "opus",
+    exec: defaultExec,
+    boundedExec: async () => ({ code: 0, output: "" }),
+    supervisorRound: async () => null,
+    log: () => {},
+    defect: () => {},
+    acting: () => ({ unit: "SL-1#eu-0" }),
+    footprintOf: () => ["src/greet.mjs"],
+  } as unknown as OracleFactoryArgs;
+  const oracle = sliceOracleFactory(args)("SL-1")!;
+  await oracle.verify();
+  const runner = path.join(t.wtRoot, "oracle-runners", "TEP-2-SL-1");
+  assert.equal(
+    fs.readFileSync(path.join(runner, "src", "greet.test.mjs"), "utf8"),
+    "// brought under by the tester",
+    "the tester's test home is in the runner, so the build sees what the coder must satisfy",
+  );
+});

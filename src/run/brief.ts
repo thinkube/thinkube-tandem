@@ -17,6 +17,12 @@ export function coderStanza(oracleAvailable: boolean): string {
     "acceptance checks against your CURRENT work in an isolated runner and " +
     "returns per-criterion PASS/FAIL with evidence. Use it before declaring " +
     "done — your completion is judged by its green, not by your claim." +
+    "\n\nHOW YOU ARE GRADED: on the committed base plus YOUR files only — another " +
+    "unit's half-written work never enters your checks, and yours never enters " +
+    "theirs. So a public signature you change must keep its existing callers " +
+    "compiling (an overload, an optional parameter, a default): the callers " +
+    "belong to other slices and are updated there. If the contract itself " +
+    "requires breaking a signature, say so as UNDELIVERED with the callers named." +
     "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
     "or probe file, and never run a build, a test command or a package " +
     "manager — you have no shell. Work from the intent and the contract, and " +

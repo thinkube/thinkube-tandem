@@ -148,7 +148,19 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     undelivered.push(...docsObligations(slices, worktree));
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
-    return { refusals: [RED_SUITE_REFUSAL], undelivered };
+    // Withheld is still on the record: what was checked and why it stopped
+    // is readable; nothing was opened and it cannot be accepted.
+    const withheld: Delivery = {
+      id: `delivery-${tep}`,
+      cutId: cut.id,
+      branch,
+      proofs,
+      withheld: RED_SUITE_REFUSAL,
+      ...(undelivered.length ? { undelivered } : {}),
+      ...(g.rulings.length ? { rulings: g.rulings } : {}),
+      ...(g.decisions.length ? { decisions: g.decisions } : {}),
+    };
+    return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
   }
 
   // Re-home the delivery's standing checks: probes leave their delivery

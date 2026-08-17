@@ -64,7 +64,13 @@ function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
 export function RunNote(props: { note: string; unrun?: { id: string; tepId?: string } }): JSX.Element {
   return (
     <div data-run-note style={{ margin: SP.xl, padding: SP.lg, border: `1px solid ${C.bad}`, borderRadius: 6, maxWidth: 560 }}>
-      <strong>The build did not start.</strong>
+      <strong>
+        {/^The delivery was withheld/.test(props.note)
+          ? "The delivery was withheld."
+          : /^The build stopped/.test(props.note)
+            ? "The build stopped."
+            : "The build did not start."}
+      </strong>
       <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{props.note}</div>
       {/* Signing happens once, so a run that refused itself would leave the
           work sealed and unreachable — the button that starts it is already

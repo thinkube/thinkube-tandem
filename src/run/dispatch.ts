@@ -34,7 +34,8 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeEndAnswerer, makeParkAnswerer, makeRepair, OracleFactoryArgs, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWithRepair, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths } from "./plan";
@@ -219,6 +220,7 @@ export async function dispatchTep(
     worktree,
     testerWt,
     sliceProbes,
+    sliceTestHomes,
     sliceVerifs,
     briefBySlice,
     acting: (slice: string) => acting.get(slice),

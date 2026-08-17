@@ -40,7 +40,9 @@ test("a red suite after the work withholds the delivery, in intent terms — nev
     cut,
     slices,
   );
-  assert.equal(outcome.delivery, undefined, "nothing is delivered red");
   assert.deepEqual(outcome.refusals, [RED_SUITE_REFUSAL]);
+  assert.equal(outcome.delivery?.withheld, RED_SUITE_REFUSAL, "the withheld delivery is on the record, with why");
+  assert.ok(outcome.delivery!.proofs.some((p) => p.kind === "suite" && p.verdict === "red"), "its proofs are readable");
+  assert.equal(outcome.url, undefined, "nothing was opened");
   assert.ok(!/\.(mjs|ts|js)\b/.test(RED_SUITE_REFUSAL), "the reason names no file — the human is not asked about internals");
 });

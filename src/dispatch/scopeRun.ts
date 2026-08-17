@@ -107,9 +107,12 @@ export async function dispatchScopePlan(args: {
       };
       args.onDelivery(
         delivery,
-        `Delivery ready on ${delivery.branch}${sc ? ` (scope ${sc})` : ""}.` +
+        (delivery.withheld
+          ? `Delivery withheld on ${delivery.branch}${sc ? ` (scope ${sc})` : ""} — the record says why.`
+          : `Delivery ready on ${delivery.branch}${sc ? ` (scope ${sc})` : ""}.`) +
           (order.length > 1 ? ` ${order.indexOf(sc) + 1}/${order.length} scopes.` : ""),
       );
+      if (delivery.withheld) return outcome;
     } else {
       args.changed(`The run refused: ${outcome.refusals.join("; ")}`);
       break;

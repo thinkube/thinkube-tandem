@@ -261,3 +261,19 @@ test("a delivery with no proof at all cannot be accepted either", () => {
   assert.equal(r.ok, false);
   assert.match(r.reason!, /no proof/);
 });
+
+test("a withheld delivery says so on its page and cannot be accepted", () => {
+  const { space, changeIds } = makeSpace();
+  const s2: Space = { ...space, cuts: [{ id: "cut-1", changeIds }] };
+  const d = {
+    id: "d-1",
+    cutId: "cut-1",
+    branch: "tandem/cut-1",
+    proofs: [{ kind: "suite" as const, label: "suite", verdict: "red" as const }],
+    withheld: "the repository's standing checks are red after the work",
+  };
+  const page = renderDeliveryPage(s2, d);
+  assert.ok(page.includes("Withheld — not accepted, nothing opened."));
+  const r = acceptDelivery(d, "2026-08-17T00:00:00Z");
+  assert.ok(!r.ok && /withheld/.test(r.reason ?? ""), "accepting a withheld delivery is refused, saying so");
+});

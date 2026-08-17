@@ -191,6 +191,10 @@ export interface Delivery {
   /** Contract-completing choices the tester made where the contract was
    *  silent — a name, a literal, a rule — flowed to the coder and kept here. */
   decisions?: { unit: string; text: string }[];
+  /** Why this delivery was withheld (the suite red after the work): the
+   *  work and its proofs are on the record, nothing was opened, and it
+   *  cannot be accepted. */
+  withheld?: string;
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
 }

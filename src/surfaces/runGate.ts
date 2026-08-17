@@ -149,7 +149,10 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         },
         changed: (m) => s.changed(m),
       });
-      if (last?.refusals.length && !last.delivery) {
+      if (last?.delivery?.withheld) {
+        s.runNote = `The delivery was withheld: ${last.delivery.withheld}`;
+        s.changed(s.runNote);
+      } else if (last?.refusals.length && !last.delivery) {
         s.runNote = `The build stopped: ${last.refusals.join(" · ")}`;
         s.changed(s.runNote);
       } else if (last?.delivery) s.runNote = undefined;
