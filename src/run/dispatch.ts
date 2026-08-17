@@ -30,7 +30,8 @@ import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, Oracle
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
-import { claimRunLock, coderTestPaths } from "./plan";
+import { claimRunLock, coderTestPaths, isMaintainUnit } from "./plan";
+import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
@@ -40,7 +41,7 @@ import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
-import { continuationBrief, decisionsStanza, extractDecisions, missingProbes, restoreTestHomes, storeMatches, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
+import { continuationBrief, decisionsStanza, extractDecisions, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
 export interface DispatchDeps {
@@ -71,6 +72,9 @@ export interface DispatchDeps {
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
   /** The door proved this setup on the untouched tree — remember it as the answer. */
   proveSetup?: (s: { provision: string; prepare: string }) => void;
+  /** The code graph's importer listing for a path — orders each slice's
+   *  test-home work after the production code those tests import. */
+  affected?: (path: string) => Promise<string>;
   /** Build/typecheck command run in the verify runner and the gate
    *  worktree before checks — the engine's own prepare seam. */
   prepare?: string;
@@ -121,8 +125,7 @@ export async function dispatchTep(
   const storeDir = path.join(wtRoot, "oracle-store", wtName);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
-  // Stop reaches the checker: once the run is halted no probe, build or
-  // suite is started — the exec answers "stopped" at once.
+  // Stop reaches the checker: a halted run starts no probe, build or suite.
   const boundedExec = (cmd: string, cwd: string) =>
     st.halted
       ? Promise.resolve({ code: 124, output: "[stopped — the run was halted]" })
@@ -151,6 +154,7 @@ export async function dispatchTep(
   const unlock = lock.unlock;
 
   try {
+  if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
@@ -175,14 +179,12 @@ export async function dispatchTep(
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceTestHomes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
-  const allTestHomes = [...new Set([...sliceTestHomes.values()].flat())];
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
   /** The tester's tree after a reset: probes back from the store, and the
    *  test homes it edited restored OVER what the branch holds. */
   // Reused only for the same base commit: work for another base is out of date.
   const restoreTester = async (): Promise<void> => {
     await restoreProbes(storeDir, testerWt, baseSha);
-    if (await storeMatches(storeDir, baseSha)) await restoreTestHomes(storeDir, testerWt, allTestHomes);
   };
   await restoreTester();
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
@@ -211,7 +213,6 @@ export async function dispatchTep(
     worktree,
     testerWt,
     sliceProbes,
-    sliceTestHomes,
     sliceVerifs,
     briefBySlice,
     acting: (slice: string) => acting.get(slice),
@@ -225,10 +226,10 @@ export async function dispatchTep(
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned,
     built,
-    footprintOf: (slice: string) => {
-      const unit = acting.get(slice)?.unit;
-      return unit ? dag.find((u) => u.id === unit)?.footprint : undefined;
-    },
+    footprintOf: (slice: string) =>
+      dag.filter((u) => u.slice === slice && (u.role ?? "code") === "code").flatMap((u) => u.footprint),
+    pruneIn: (slice: string) =>
+      slices.filter((x) => (x as { maintains?: string }).maintains === slice).flatMap((x) => x.files ?? []),
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
@@ -243,9 +244,8 @@ export async function dispatchTep(
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
-  // The tester's files ride into the code tree at slice commit — the run's
-  // own copies, never a coder's strays; a coder cannot write them anyway.
-  const testerPaths = [...new Set([...sliceProbes.values(), ...sliceTestHomes.values()].flat())];
+  // Probes ride into the code tree at slice commit — the run's own copies, never a coder's strays.
+  const testerPaths = [...new Set([...sliceProbes.values()].flat())];
 
   let testInflight = 0;
   let testerReset: Promise<void> = Promise.resolve();
@@ -253,8 +253,7 @@ export async function dispatchTep(
 
   /** Probes in, then commit the slice's paths: later tester snapshots see
    *  committed truth. */
-  // Units that wait for the tree to settle wake on the next slice commit.
-  let commitWaiters: (() => void)[] = [];
+  let commitWaiters: (() => void)[] = []; // woken on the next slice commit
   const nextCommit = (ms: number): Promise<void> =>
     new Promise((resolve) => {
       const t = setTimeout(() => resolve(), ms);
@@ -269,7 +268,7 @@ export async function dispatchTep(
     const wake = commitWaiters;
     commitWaiters = [];
     for (const w of wake) w();
-    const probes = [...(sliceProbes.get(slice) ?? []), ...(sliceTestHomes.get(slice) ?? [])];
+    const probes = sliceProbes.get(slice) ?? [];
     for (const rel of probes)
       await copyRel(testerWt, worktree, rel).catch(() => {});
     const paths = [...new Set([...(sliceFiles.get(slice) ?? []), ...probes])];
@@ -298,11 +297,13 @@ export async function dispatchTep(
   };
 
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
-    const role = (next.role ?? "code") as "code" | "test";
+    // A maintainer is scheduled as code (after what it imports), worked as a tester.
+    const maintain = isMaintainUnit(next);
+    const role = (maintain ? "test" : (next.role ?? "code")) as "code" | "test";
     st.set(next.id, "running");
     log(`▸ ${next.id} (${role})`, next.id);
-    const tree = role === "test" ? testerWt : worktree;
-    if (role === "test") {
+    const tree = role === "test" && !maintain ? testerWt : worktree;
+    if (role === "test" && !maintain) {
       // Re-snapshot only when no other test author is mid-flight — a reset
       // under a live author would wipe its work. The count rises BEFORE the
       // reset is awaited and the reset itself is one shared promise, so two
@@ -320,8 +321,8 @@ export async function dispatchTep(
     const abort = new AbortController();
     st.aborts.set(next.id, abort);
 
-    const oracle = role === "code" ? buildOracle(next.slice) : undefined;
-    if (role === "code") await restoreTester();
+    const oracle = role === "code" || maintain ? buildOracle(next.slice) : undefined;
+    if (role === "code" || maintain) await restoreTester();
 
     // The oracle speaks under the unit it acts for.
     if (oracle) acting.set(next.slice, { unit: next.id });
@@ -338,13 +339,13 @@ export async function dispatchTep(
       (deps.digest
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
         : "");
-    // Only a coder's brief is "the coder's brief" — a tester's must not shadow it.
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
     // The tester's existing test homes and the coder's contract from the
     // tester's decisions — each role's brief carries what it owns.
     const oracleStanza =
       role === "test"
         ? testerStanza(built) +
+          (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(
             testHomesOf(next.footprint),
             (next.units ?? []).flatMap(
@@ -375,7 +376,6 @@ export async function dispatchTep(
           ),
           worktree: tree,
           role,
-          // Blind only when the oracle can answer instead.
           blind: role !== "test" && !!oracle,
           footprint: next.footprint,
           // A tester's turns scale with what it must write; a coder keeps the default.
@@ -407,7 +407,7 @@ export async function dispatchTep(
       // A tester that stopped short — its session ended with declared probes
       // still unwritten — is continued from where it stopped, up to three
       // more rounds; its written work is never thrown away.
-      for (let more = 0; role === "test" && !outcome.containment && more < 3; more++) {
+      for (let more = 0; role === "test" && !maintain && !outcome.containment && more < 3; more++) {
         const missing = await missingProbes(tree, next.footprint);
         if (!missing.length) break;
         log(`↪ ${next.id}: ${missing.length} declared probe(s) still unwritten — continuing (${more + 1}/3)`, next.id);
@@ -514,7 +514,7 @@ export async function dispatchTep(
     }
     st.aborts.delete(next.id);
     liveFootprints.delete(next.id);
-    if (role === "test") {
+    if (role === "test" && !maintain) {
       testInflight--;
       if (ok) {
         try {
@@ -590,7 +590,7 @@ export async function dispatchTep(
 
   return await closeGate({
     tep, branch, baseSha, worktree, testerWt, slices, space, cut, deps,
-    sliceProbes, sliceTestHomes, sliceCommitted, checkOf, undelivered, rulings, decisions,
+    sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, log, defect,
   });
   } finally {

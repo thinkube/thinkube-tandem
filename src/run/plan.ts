@@ -12,7 +12,7 @@ import { buildVerificationTrace } from "../engine/core/trace";
 import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync } from "node:fs";
 import type { Proof } from "../core/schema";
-import { isProbePath, isTestPath, testHomesOf } from "./testHomes";
+import { isProbePath, isTestPath } from "./testHomes";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
@@ -109,9 +109,6 @@ export async function claimRunLock(
  */
 export function sliceBookkeeping(slices: SliceForDag[]): {
   sliceProbes: Map<string, string[]>;
-  /** Existing test homes the slice's tester owns — they ride with the
-   *  probes but are never run as checks of their own. */
-  sliceTestHomes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   sliceFiles: Map<string, string[]>;
   /** What each probe is FOR, in the check's own words — so a result is
@@ -119,7 +116,6 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
   checkOf: Map<string, string>;
 } {
   const sliceProbes = new Map<string, string[]>();
-  const sliceTestHomes = new Map<string, string[]>();
   const sliceVerifs = new Map<string, AcVerification[]>();
   const sliceFiles = new Map<string, string[]>();
   const checkOf = new Map<string, string>();
@@ -131,17 +127,24 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
       const check = said.replace(/^\[[^\]]*\]\s*/, "").trim();
       for (const f of u.footprint) if (check && isProbePath(f)) checkOf.set(f, check);
     }
-    const owned = tests.flatMap((u) => u.footprint);
-    const probes = owned.filter(isProbePath);
+    const probes = tests.flatMap((u) => u.footprint).filter(isProbePath);
     sliceProbes.set(s.handle, probes);
-    sliceTestHomes.set(s.handle, testHomesOf(owned));
     sliceVerifs.set(
       s.handle,
       probes.map((p, i) => ({ ac: i + 1, run: `node --test ${p}`, env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
-  return { sliceProbes, sliceTestHomes, sliceVerifs, sliceFiles, checkOf };
+  // A maintain slice is checked by its parent's probes: the tree it leaves
+  // must build and keep the parent's promises green.
+  for (const s of slices) {
+    const parent = (s as { maintains?: string }).maintains;
+    if (parent && sliceProbes.has(parent)) {
+      sliceProbes.set(s.handle, sliceProbes.get(parent)!);
+      sliceVerifs.set(s.handle, sliceVerifs.get(parent)!);
+    }
+  }
+  return { sliceProbes, sliceVerifs, sliceFiles, checkOf };
 }
 
 /**
@@ -282,14 +285,20 @@ export function docsObligations(slices: SliceForDag[], worktree: string): string
   return out;
 }
 
-/** The plan's role invariant: no coder holds a test-shaped path. Returns
- *  the offending "unit: path" pairs — a plan that breaks the roles is
- *  refused before any worker starts. */
+/** A code-role unit whose whole footprint is test homes: the slice's
+ *  maintainer, worked and briefed as a tester. */
+export function isMaintainUnit(u: { role?: string; footprint: readonly string[] }): boolean {
+  return (u.role ?? "code") === "code" && u.footprint.length > 0 && u.footprint.every((p) => isTestPath(p) && !isProbePath(p));
+}
+
+/** The plan's role invariant: no coder holds a test-shaped path (a
+ *  maintainer holds nothing else). Returns the offending "unit: path"
+ *  pairs — a plan that breaks the roles is refused before any worker starts. */
 export function coderTestPaths(slices: SliceForDag[]): string[] {
   const out: string[] = [];
   for (const s of slices)
     s.workUnits
-      .filter((u) => (u.role ?? "code") === "code")
+      .filter((u) => (u.role ?? "code") === "code" && !isMaintainUnit(u))
       .forEach((u, k) => {
         for (const p of u.footprint)
           if (isTestPath(p)) out.push(`${s.handle}#eu-${k}: ${p}`);

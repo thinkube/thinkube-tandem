@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importersIn, testHomeNeeds } from "./needs";
-import type { Change } from "../core/schema";
+import { bindTestHomeConsumes, importersIn } from "./needs";
+import type { SliceForDag } from "../engine/core/dag";
 
 const AFFECTED = [
   "Affected nodes for session.ts",
@@ -14,40 +14,30 @@ test("the graph's importer listing yields the paths that import a node — impor
   assert.deepEqual(importersIn(AFFECTED), ["src/extension.ts", "src/surfaces/surfaces.test.ts"]);
 });
 
-test("a promise bringing a test home under needs the promise whose code that test imports — read from the graph, not guessed", async () => {
-  const nodes: Change[] = [
+test("a slice's maintainer consumes the production its test homes import — read from the graph, not guessed", async () => {
+  const slices: SliceForDag[] = [
     {
-      id: "waive",
-      sentence: "the person can waive documentation",
-      serves: [],
-      needs: [],
-      acceptance: [],
-      grounding: { touchpoints: [{ path: "src/surfaces/session.ts" }], stamp: [] },
+      handle: "SL-1",
+      status: "ready",
+      files: ["src/surfaces/session.ts"],
+      workUnits: [{ footprint: ["src/surfaces/session.ts"], execution: "serial", role: "code" }],
     },
     {
-      id: "under",
-      sentence: "bring the signing tests under the rule",
-      serves: [],
-      needs: [],
-      acceptance: [],
-      grounding: { touchpoints: [{ path: "src/surfaces/surfaces.test.ts" }], stamp: [] },
-    },
-    {
-      id: "other",
-      sentence: "unrelated",
-      serves: [],
-      needs: [],
-      acceptance: [],
-      grounding: { touchpoints: [{ path: "src/other.ts" }], stamp: [] },
+      handle: "SL-2",
+      status: "ready",
+      files: ["src/gates/sign.ts", "src/surfaces/surfaces.test.ts"],
+      workUnits: [
+        { footprint: ["src/gates/sign.ts"], execution: "serial", role: "code" },
+        { footprint: ["src/surfaces/surfaces.test.ts"], execution: "fan-out", role: "code" },
+      ],
     },
   ];
   const asked: string[] = [];
-  const needs = await testHomeNeeds(nodes, async (p) => {
+  await bindTestHomeConsumes(slices, async (p) => {
     asked.push(p);
     return p === "src/surfaces/session.ts" ? AFFECTED : "";
   });
-  assert.deepEqual(needs, [
-    { from: "under", to: "waive", via: { testHome: "src/surfaces/surfaces.test.ts", imports: "src/surfaces/session.ts" } },
-  ]);
+  const maintainer = slices[1].workUnits[1] as { consumes?: string[] };
+  assert.deepEqual(maintainer.consumes, ["src/surfaces/session.ts"], "the maintainer runs after the code its test home imports — in another slice");
   assert.ok(!asked.includes("src/surfaces/surfaces.test.ts"), "only production paths are asked about");
 });

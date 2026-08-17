@@ -159,3 +159,15 @@ of them there — nothing has users.
   delivered tree and nothing else; work kept from an earlier run is reused
   only for the same base commit; a unit's card says what it is doing and
   waiting on, and since when.
+
+## Test homes are a maintain slice (2026-08-17)
+- Bringing existing test homes under a promise is its own slice, appended
+  after the production slices: scheduled after the code those tests import
+  (read from the code graph), worked as a tester (writes tests, never
+  code), checked by its parent's probes over a tree that must build,
+  committed on its own. A promise-level need that exists only because a
+  test home imports another promise's code is not a plan need: it is
+  dropped before planning, so rings it would force never merge slices.
+- A production slice's checker drops the test homes its maintain slice
+  will bring under before it builds: a test pinning retired behavior does
+  not fail the coder whose promise retires it.

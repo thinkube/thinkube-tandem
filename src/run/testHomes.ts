@@ -42,30 +42,6 @@ export function testHomesOf(footprint: readonly string[]): string[] {
   return footprint.filter((p) => isTestPath(p) && !isProbePath(p));
 }
 
-/** Test homes an edit may have touched in the tester snapshot, restored from
- *  the oracle store OVER what the branch holds: a snapshot reset returns the
- *  file to its committed state, and the store's copy is the tester's work. */
-export async function restoreTestHomes(
-  storeDir: string,
-  toRoot: string,
-  homes: readonly string[],
-): Promise<string[]> {
-  const restored: string[] = [];
-  for (const rel of homes) {
-    const src = path.join(storeDir, "files", rel);
-    try {
-      await fs.access(src);
-    } catch {
-      continue;
-    }
-    const dst = path.join(toRoot, rel);
-    await fs.mkdir(path.dirname(dst), { recursive: true });
-    await fs.copyFile(src, dst);
-    restored.push(rel);
-  }
-  return restored;
-}
-
 /** The tester's contract-completing choices, from its final words. */
 export function extractDecisions(finalText: string): string[] {
   return (finalText ?? "")
@@ -123,17 +99,6 @@ export function testHomesStanza(
     "\n\nEnd your final summary with one line per choice the contract forced on you (an exact name, literal, " +
     'or rule), each starting exactly with "DECISION: " — the coder builds to these without ever seeing your tests.'
   );
-}
-
-/** Whether the store's kept work was written against this base — the same
- *  key the probe store uses; work for another base is out of date. */
-export async function storeMatches(storeDir: string, hash: string): Promise<boolean> {
-  try {
-    const meta = JSON.parse(await fs.readFile(path.join(storeDir, "meta.json"), "utf8")) as { acHash?: string | null };
-    return meta.acHash === hash;
-  } catch {
-    return false;
-  }
 }
 
 /** A tester's turn budget scales with what it must write. */

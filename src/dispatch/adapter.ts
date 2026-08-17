@@ -35,6 +35,9 @@ export interface TepSlicesArgs {
 export type TandemSlice = SliceForDag & {
   /** Criterion id per check ordinal (index k ↔ AC-(k+1)). */
   criterionIds: string[];
+  /** A maintain slice: brings its parent slice's test homes under, after the
+   *  code they import has landed; its checks are its parent's probes. */
+  maintains?: string;
 };
 
 export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs): TandemSlice[] {
@@ -76,13 +79,15 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
    *  guarantees a producer of a cross-unit edge has at least one. */
   const producedBy = (sliceNo: number): string[] => {
     const changes = units[sliceNo - 1].changeIds.map((id) => byId.get(id)!);
+    // A slice names itself by production it alone owns — never by a test
+    // home, whose keeper is the maintain slice, later.
     const touch = (plannedOnly: boolean): string[] => [
       ...new Set(
         changes.flatMap((c) =>
           (c.grounding?.touchpoints ?? [])
             .filter((t) => (plannedOnly ? t.planned : true))
             .map((t) => t.path)
-            .filter((p) => soleOwned(p, sliceNo)),
+            .filter((p) => !isTestPath(p) && soleOwned(p, sliceNo)),
         ),
       ),
     ];
@@ -90,7 +95,8 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     return planned.length ? planned : touch(false);
   };
 
-  return units.map((unit, idx) => {
+  const maintain: { of: string; testHomes: string[]; testHomeWork: { path: string; sentence: string; criteria: string[] }[] }[] = [];
+  const main = units.map((unit, idx) => {
     const no = idx + 1;
     const handle = `${handlePrefix ?? ""}SL-${no}`;
     const changes = unit.changeIds.map((id) => byId.get(id)!);
@@ -104,6 +110,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     // the code exists. The coder never holds a test in its footprint.
     const production = files.filter((f) => !isTestPath(f));
     const testHomes = files.filter((f) => isTestPath(f));
+    files.splice(0, files.length, ...production);
 
     // The sharpest text the pipeline produced — sentences, where each
     // change lands, and what proves it (precision is monotone). The coder's
@@ -181,15 +188,10 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       ...(consumes.length ? { consumes } : {}),
       ...(reads.length ? { reads } : {}),
     };
-    // The slice's first tester owns its existing test homes alongside its
-    // probe (the probe stays first — it is the criterion's address).
-    const testUnits: (WorkUnit & { note?: string; testHomeWork?: typeof testHomeWork })[] = criteria.map(
+    // Testers write probes — one per criterion, held out, tests-first.
+    const testUnits: (WorkUnit & { note?: string })[] = criteria.map(
       (crit, k) => ({
-        footprint: [
-          `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`,
-          ...(k === 0 ? testHomes : []),
-        ],
-        ...(k === 0 && testHomes.length ? { testHomeWork } : {}),
+        footprint: [`probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`],
         // SERIAL, not fan-out: the engine gives every fan-out test unit its
         // own worker and batches serial ones into a single warm session per
         // slice. Fan-out made the run's size track the number of checks —
@@ -201,15 +203,11 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         note: `[${crit.change.sentence}] ${crit.text}`,
       }),
     );
-    // Test homes with no probe to ride beside still need their tester.
-    if (!criteria.length && testHomes.length)
-      testUnits.push({
-        footprint: testHomes,
-        execution: "serial",
-        role: "test",
-        note: "[bring the existing test homes under this slice's promises]",
-        testHomeWork,
-      });
+    // The slice's test homes are brought under by a MAINTAIN slice of their
+    // own (appended after every production slice, below): scheduled after
+    // the code its tests import, worked as a tester, never batched with the
+    // coder, committed on its own once the code has landed.
+    if (testHomes.length) maintain.push({ of: handle, testHomes, testHomeWork });
 
     // THE CONTRACT: the seam this slice introduces, by name.
     //
@@ -255,4 +253,29 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       contract,
     };
   });
+  // One maintain slice per production slice with test homes: its unit is
+  // code-role (so no tests-first rule makes anything wait on it), its own
+  // execution unit, consuming — bound at run time from the code graph — the
+  // production its test homes import; it carries its parent's probes as
+  // its checks, so the tree it leaves builds and the parent's promises
+  // still hold.
+  const extra: TandemSlice[] = maintain.map((m, k) => ({
+    handle: `${handlePrefix ?? ""}SL-${main.length + k + 1}`,
+    status: "ready",
+    files: m.testHomes,
+    workUnits: [
+      {
+        footprint: m.testHomes,
+        execution: "serial",
+        role: "code",
+        note: `[bring the existing test homes under ${m.of}'s promises]`,
+        testHomeWork: m.testHomeWork,
+      } as WorkUnit & { note?: string; testHomeWork?: typeof m.testHomeWork },
+    ],
+    satisfies: [],
+    criterionIds: [],
+    contract: "",
+    maintains: m.of,
+  }));
+  return [...main, ...extra];
 }

@@ -119,10 +119,6 @@ export interface OracleFactoryArgs {
   worktree: string;
   testerWt: string;
   sliceProbes: Map<string, string[]>;
-  /** The slice's existing test homes as the tester left them — built in the
-   *  runner with the coder's work, so an expectation the tester wrote is met
-   *  by the coder or disclosed, never landed on the base unbuilt. */
-  sliceTestHomes?: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   briefBySlice: Map<string, string>;
   model: string;
@@ -137,10 +133,14 @@ export interface OracleFactoryArgs {
   provisioned?: readonly string[];
   /** Where the build step emits compiled output — what a probe imports. */
   built?: readonly string[];
-  /** The acting unit's own footprint: the runner overlays THIS unit's
-   *  uncommitted files on the committed base — never another coder's
-   *  half-written work from the shared tree. */
+  /** The slice's own footprint: the runner overlays THIS slice's uncommitted
+   *  files on the committed base — never another slice's half-written work
+   *  from the shared tree. */
   footprintOf?: (slice: string) => readonly string[] | undefined;
+  /** Test homes a later maintain slice will bring under: removed from THIS
+   *  slice's runner before it builds, so a test pinning retired behavior
+   *  does not fail a coder whose promises retire it. */
+  pruneIn?: (slice: string) => readonly string[] | undefined;
   /** Lines carry the unit the oracle is acting for, when it is acting for one. */
   log: (line: string, step?: string) => void;
   /** Whom the oracle acts for right now — its lines carry that unit. */
@@ -437,7 +437,7 @@ export function sliceOracleFactory(
       codeWorktree: a.worktree,
       testerWorktree: a.testerWt,
       runnerDir,
-      probeFiles: [...probes, ...(a.sliceTestHomes?.get(slice) ?? [])],
+      probeFiles: probes,
       verifications: verifs,
       ...(a.prepare ? { prepare: a.prepare } : {}),
       supervise: supervise(slice),
@@ -455,6 +455,7 @@ export function sliceOracleFactory(
       resetRunner: async () => {
         await ensureSnapshot(a.repoRoot, a.branch, runnerDir, a.exec);
         if (a.provisioned?.length) await linkProvisioned(runnerDir, a.worktree, a.provisioned);
+        for (const rel of a.pruneIn?.(slice) ?? []) await fs.rm(path.join(runnerDir, rel), { force: true }).catch(() => {});
       },
       copyIn: (fromRoot, rel) => copyRel(fromRoot, runnerDir, rel),
       removeIn: async (rel) => {

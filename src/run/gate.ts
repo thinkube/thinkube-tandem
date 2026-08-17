@@ -40,7 +40,6 @@ export interface GateContext {
   cut: Cut;
   deps: DispatchDeps;
   sliceProbes: Map<string, string[]>;
-  sliceTestHomes: Map<string, string[]>;
   sliceCommitted: Set<string>;
   checkOf: Map<string, string>;
   undelivered: string[];
@@ -71,13 +70,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, testerWt, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  // Probes and test homes ride the branch: any not yet copied by a slice
-  // commit (failed or halted slices) still land in the code worktree so the
-  // gate's verdict is about the real state, not about a missing file.
+  // Probes ride the branch: any not yet copied by a slice commit (failed or
+  // halted slices) still land in the code worktree so the gate's verdict is
+  // about the real state, not about a missing file.
   for (const [slice, probes] of g.sliceProbes)
     if (!g.sliceCommitted.has(slice))
-      for (const rel of [...probes, ...(g.sliceTestHomes.get(slice) ?? [])])
-        await copyRel(testerWt, worktree, rel).catch(() => {});
+      for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
   const { verifs, probeOfAc } = closingVerifications(slices);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));

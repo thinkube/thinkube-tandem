@@ -1,14 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import {
   decisionsStanza,
   extractDecisions,
   isProbePath,
   isTestPath,
-  restoreTestHomes,
   testHomesOf,
   testHomesStanza,
 } from "./testHomes";
@@ -63,16 +59,4 @@ test("the tester's brief for existing test homes: bring under, never overwrite, 
   assert.ok(stanza.includes("src/run/lock.test.ts"), "a folded test with no promise of its own is still named");
   assert.ok(/NEVER overwrite/.test(stanza) && /DECISION: /.test(stanza));
   assert.equal(testHomesStanza([], []), "");
-});
-
-test("a tester's edited test homes come back from the store OVER the branch's copy after a reset", async () => {
-  const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-store-"));
-  const tree = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-tree-"));
-  fs.mkdirSync(path.join(store, "files", "src"), { recursive: true });
-  fs.writeFileSync(path.join(store, "files", "src", "a.test.ts"), "edited by the tester");
-  fs.mkdirSync(path.join(tree, "src"), { recursive: true });
-  fs.writeFileSync(path.join(tree, "src", "a.test.ts"), "as the branch has it");
-  const restored = await restoreTestHomes(store, tree, ["src/a.test.ts", "src/never-edited.test.ts"]);
-  assert.deepEqual(restored, ["src/a.test.ts"]);
-  assert.equal(fs.readFileSync(path.join(tree, "src", "a.test.ts"), "utf8"), "edited by the tester");
 });

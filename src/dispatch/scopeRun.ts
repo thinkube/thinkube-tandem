@@ -29,6 +29,8 @@ export async function dispatchScopePlan(args: {
   prepare?: string;
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
   proveSetup?: (s: { provision: string; prepare: string }) => void;
+  /** The code graph's importer listing for a path — orders test-home work. */
+  affected?: (path: string) => Promise<string>;
   onDelivery: (delivery: Delivery, note: string) => void;
   /** Where each criterion's standing check now lives — bound per scope,
    *  as each delivery lands. */
@@ -90,6 +92,7 @@ export async function dispatchScopePlan(args: {
         ...(sc === "" && args.provision ? { provision: args.provision } : {}),
         ...(sc === "" && args.resetup ? { resetup: args.resetup } : {}),
         ...(sc === "" && args.proveSetup ? { proveSetup: args.proveSetup } : {}),
+        ...(sc === "" && args.affected ? { affected: args.affected } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
       },
       args.space(),

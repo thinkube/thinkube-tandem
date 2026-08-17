@@ -8,7 +8,7 @@ import { signCut, acceptDelivery } from "../gates/sign";
 import { tepContentHash } from "../gates/approval";
 import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
-import { testHomeNeeds } from "../dispatch/needs";
+import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { saveRun } from "../run/record";
@@ -83,23 +83,16 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       // a run must never refuse over brief enrichment, hence fail-soft.
       const known = await s.knowledge().catch(() => undefined);
       const digest = known?.digest;
-      // Dependencies the grounding did not say: a promise bringing a test
-      // home under needs the promise whose code that test imports. Read from
-      // the graph, written into the space, before the plan is built.
+      // A promise-level need that exists only because a test home imports
+      // another promise's code belongs to the maintain slice, not the plan:
+      // dropped before planning, so it forces no ring into one slice.
       if (known) {
-        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id));
-        const extra = await testHomeNeeds(members, (p) => known.affected(p)).catch(() => []);
-        if (extra.length) {
-          s.space = {
-            ...s.space,
-            nodes: s.space.nodes.map((n) => {
-              const mine = extra.filter((e) => e.from === n.id).map((e) => e.to);
-              return mine.length ? { ...n, needs: [...new Set([...n.needs, ...mine])] } : n;
-            }),
-          };
-          for (const e of extra)
-            s.runState?.log(`plan: "${members.find((n) => n.id === e.from)?.sentence.slice(0, 60)}" needs "${members.find((n) => n.id === e.to)?.sentence.slice(0, 60)}" — ${e.via.testHome} imports ${e.via.imports}`);
-          s.changed(`plan: ${extra.length} dependenc${extra.length === 1 ? "y" : "ies"} read from the code graph`);
+        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
+        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p)).catch(() => []);
+        if (dropped.length) {
+          const byId = new Map(members.map((n) => [n.id, n]));
+          s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
+          s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
         }
       }
       const plan = planScopes(s.space, cut);
@@ -122,6 +115,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       const provision = known?.provision || undefined;
       const resetup = known?.resetup;
       const proveSetup = known?.proveSetup;
+      // The graph's importer listing: the run reads it to order each slice's
+      // test-home work after the production code those tests import.
+      const affected = known ? (p: string) => known.affected(p) : undefined;
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -135,6 +131,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         ...(provision ? { provision } : {}),
         ...(resetup ? { resetup } : {}),
         ...(proveSetup ? { proveSetup } : {}),
+        ...(affected ? { affected } : {}),
         onDelivery: (delivery, note) => {
           s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
           s.changed(note);

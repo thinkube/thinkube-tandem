@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { tepSlices } from "./adapter";
+import { isMaintainUnit } from "../run/plan";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
 import { buildUnitDag } from "../engine/core/dag";
@@ -295,7 +296,7 @@ test("a promise grounded on files but no symbols declares no seam, rather than a
   assert.equal(slice.contract, "", "no symbols, no interface — and nothing invented to fill it");
 });
 
-test("roles own paths: the coder's footprint is production-only; test homes ride with the slice's tester", () => {
+test("roles own paths: the coder's footprint is production-only; probes are the tester's; test homes are the maintainer's", () => {
   let s = emptySpace();
   const a = addAsk(s, "documentation is required to sign", "t");
   assert.ok(a.ok);
@@ -316,20 +317,26 @@ test("roles own paths: the coder's footprint is production-only; test homes ride
   });
   assert.ok(n.ok);
   s = n.space;
-  const [slice] = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  const slices = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  assert.equal(slices.length, 2, "the production slice, and its maintain slice");
+  const [slice, maint] = slices;
   const coder = slice.workUnits.find((u) => u.role === "code")!;
   const tester = slice.workUnits.find((u) => u.role === "test")!;
   assert.deepEqual(coder.footprint, ["src/gates/sign.ts"], "the coder holds no test");
   assert.ok(!(coder as { note?: string }).note?.includes("gates.test.ts"), "and its note names no test landing");
-  assert.equal(tester.footprint[0], "probes/sp__SL-1_AC-1.test.mjs", "the probe stays first — the criterion's address");
-  assert.ok(tester.footprint.includes("src/gates/gates.test.ts"), "the test home is the tester's");
-  const work = (tester as { testHomeWork?: { path: string; sentence: string }[] }).testHomeWork ?? [];
+  assert.deepEqual(tester.footprint, ["probes/sp__SL-1_AC-1.test.mjs"], "the tester writes probes only");
+  assert.deepEqual(slice.files, ["src/gates/sign.ts"], "the production slice commits production");
+  assert.equal(maint.maintains, "SL-1");
+  const maintainer = maint.workUnits[0];
+  assert.ok(isMaintainUnit(maintainer));
+  assert.deepEqual(maintainer.footprint, ["src/gates/gates.test.ts"], "the test home is the maintainer's");
+  const work = (maintainer as { testHomeWork?: { path: string; sentence: string }[] }).testHomeWork ?? [];
   assert.equal(work[0]?.path, "src/gates/gates.test.ts");
   assert.match(work[0]?.sentence ?? "", /signing is refused/);
-  assert.deepEqual(slice.files, ["src/gates/sign.ts", "src/gates/gates.test.ts"], "the slice still commits both");
+  assert.deepEqual(maint.files, ["src/gates/gates.test.ts"], "the maintain slice commits the test home");
 });
 
-test("a slice whose every landing is a test home spends no coder — its tester brings the homes under", () => {
+test("a slice whose every landing is a test home spends no coder — its maintainer brings the homes under", () => {
   let s = emptySpace();
   const a = addAsk(s, "existing tests come under the rule", "t");
   assert.ok(a.ok);
@@ -347,9 +354,10 @@ test("a slice whose every landing is a test home spends no coder — its tester 
   });
   assert.ok(n.ok);
   s = n.space;
-  const [slice] = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  const slices = tepSlices({ space: s, cut: { id: "cut", changeIds: [n.added.id], tepId: "TEP-1" }, spaceName: "sp" });
+  const [slice, maint] = slices;
   assert.equal(slice.workUnits.filter((u) => u.role === "code").length, 0, "no coder");
-  const testers = slice.workUnits.filter((u) => u.role === "test");
-  assert.equal(testers.length, 1);
-  assert.deepEqual(testers[0].footprint, ["src/gates/gates.test.ts", "src/surfaces/surfaces.test.ts"]);
+  assert.equal(slice.workUnits.filter((u) => u.role === "test").length, 0, "no probes to write");
+  assert.ok(maint && isMaintainUnit(maint.workUnits[0]));
+  assert.deepEqual(maint.workUnits[0].footprint, ["src/gates/gates.test.ts", "src/surfaces/surfaces.test.ts"]);
 });
