@@ -8,6 +8,7 @@ import { signCut, acceptDelivery } from "../gates/sign";
 import { tepContentHash } from "../gates/approval";
 import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
+import { testHomeNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { saveRun } from "../run/record";
@@ -77,6 +78,30 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     });
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
+      // The repository reading rides into every worker's brief. Cached
+      // under the repo stamp, so after a derivation this costs nothing;
+      // a run must never refuse over brief enrichment, hence fail-soft.
+      const known = await s.knowledge().catch(() => undefined);
+      const digest = known?.digest;
+      // Dependencies the grounding did not say: a promise bringing a test
+      // home under needs the promise whose code that test imports. Read from
+      // the graph, written into the space, before the plan is built.
+      if (known) {
+        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id));
+        const extra = await testHomeNeeds(members, (p) => known.affected(p)).catch(() => []);
+        if (extra.length) {
+          s.space = {
+            ...s.space,
+            nodes: s.space.nodes.map((n) => {
+              const mine = extra.filter((e) => e.from === n.id).map((e) => e.to);
+              return mine.length ? { ...n, needs: [...new Set([...n.needs, ...mine])] } : n;
+            }),
+          };
+          for (const e of extra)
+            s.runState?.log(`plan: "${members.find((n) => n.id === e.from)?.sentence.slice(0, 60)}" needs "${members.find((n) => n.id === e.to)?.sentence.slice(0, 60)}" — ${e.via.testHome} imports ${e.via.imports}`);
+          s.changed(`plan: ${extra.length} dependenc${extra.length === 1 ? "y" : "ies"} read from the code graph`);
+        }
+      }
       const plan = planScopes(s.space, cut);
       if (!plan.ok) {
         s.running = false;
@@ -91,11 +116,6 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         s.changed(anchorRefusal);
         return undefined;
       }
-      // The repository reading rides into every worker's brief. Cached
-      // under the repo stamp, so after a derivation this costs nothing;
-      // a run must never refuse over brief enrichment, hence fail-soft.
-      const known = await s.knowledge().catch(() => undefined);
-      const digest = known?.digest;
       // The check-setup facts: the machine's own reading of the repo,
       // unless the human explicitly overrode the build step in settings.
       const prepare = s.deps.prepareCommand || known?.prepare || undefined;
