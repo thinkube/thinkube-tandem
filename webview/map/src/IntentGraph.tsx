@@ -8,7 +8,7 @@
  * sentence that did not say enough. Going on to the work page is what
  * starts the thinking, and it says first what that will cost.
  */
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush, whyNot } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 /**
@@ -184,6 +184,9 @@ export function IntentGraph(props: {
   onEditAsk: (id: string) => void;
   /** Go and see the work — which is also what starts the thinking. */
   onWork: () => void;
+  /** Whether going to the work page is allowed now (a move never is refused;
+   *  the thinking it would start can be). */
+  canWork: boolean;
   /** The thinking is running: the work page is not a page yet. */
   working: boolean;
 }): JSX.Element {
@@ -293,11 +296,13 @@ export function IntentGraph(props: {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
         <button
           data-think
-          disabled={props.working}
+          disabled={props.working || !props.canWork}
           style={{ fontWeight: 600 }}
           title={
             props.working
               ? "Working out what to build. The work page opens by itself when every subject is done."
+              : !props.canWork
+                ? whyNot(push.phase)
               : push.pendingModel
                 ? "Keep this reading and work out what to build from it. This is what starts spending. You stay here until it is finished."
                 : "Go to the work page. Working out what to build is what starts spending."
@@ -332,7 +337,8 @@ export function IntentGraph(props: {
               <span style={{ flex: 1 }}>{o.text}</span>
               <button
                 data-dismiss-promise={o.id}
-                title="Remove it — nothing you wrote asks for this."
+                disabled={!can("dismiss-promise")}
+                title={can("dismiss-promise") ? "Remove it — nothing you wrote asks for this." : whyNot(push.phase)}
                 onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
               >
                 Remove

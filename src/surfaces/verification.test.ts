@@ -150,3 +150,47 @@ test("a withheld delivery keeps the signed work reachable: the cut is still unru
   assert.equal(push.deliveries[0].withheld, "the suite is red after the work");
   assert.equal(push.deliveries[0].rerun?.id, unrun!.id, "the way back in is on the delivery's page");
 });
+
+test("the phase gates the controls: the confirmed table, row by row — what the surface disables is what the host refuses", async () => {
+  const { allowedNow, phaseOf, refusedNow } = await import("./phase");
+  const s = sessionWithVerifiedWork();
+  assert.equal(phaseOf(s), "understood", "an accepted delivery leaves nothing waiting");
+  s.space = { ...s.space, deliveries: s.space.deliveries.map((d) => ({ ...d, acceptedAt: undefined })) };
+  assert.equal(phaseOf(s), "delivered", "an open delivery is the delivered phase");
+
+  const PHASES = ["empty", "drafting", "read", "understood", "signed", "running", "delivered"] as const;
+  // control → the phases in which it is on (● in the table the human confirmed)
+  const TABLE: Record<string, readonly (typeof PHASES)[number][]> = {
+    "read-draft": ["drafting", "read", "understood", "delivered"],
+    "keep-draft": ["read"],
+    "cancel-capture": ["read"],
+    think: ["understood", "delivered"],
+    reground: ["understood", "delivered"],
+    reframe: ["understood", "delivered"],
+    amend: ["understood", "delivered"],
+    "dismiss-promise": ["understood", "delivered"],
+    "propose-check": ["understood", "delivered"],
+    "accept-check": ["understood", "delivered"],
+    "open-cut-review": ["understood", "delivered"],
+    build: ["understood", "delivered"],
+    rerun: ["signed"],
+    "stop-run": ["running"],
+    "accept-delivery": ["delivered"],
+    panic: ["drafting", "read", "understood"],
+    "switch-repo": ["empty", "drafting", "read", "understood", "signed", "delivered"],
+  };
+  for (const [action, on] of Object.entries(TABLE))
+    for (const phase of PHASES) {
+      const refused = refusedNow(action, phase);
+      if (on.includes(phase)) assert.equal(refused, undefined, `${action} is on in ${phase}`);
+      else assert.match(refused ?? "", /^not now: /, `${action} is off in ${phase}`);
+      assert.equal(allowedNow(phase).includes(action), on.includes(phase), `${action} in ${phase}: the surface's list agrees`);
+    }
+  // Reading, selecting, answering a parked worker and saving the text are never refused.
+  for (const phase of PHASES)
+    for (const action of ["answer-worker", "read-log", "select-unit", "save-draft", "retry-model", "pin"])
+      assert.equal(refusedNow(action, phase), undefined, `${action} is always on (${phase})`);
+  // Each refusal says why, in the phase's own words.
+  assert.match(refusedNow("build", "running") ?? "", /a run is in flight/);
+  assert.match(refusedNow("build", "signed") ?? "", /waiting to run/);
+});

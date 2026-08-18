@@ -8,7 +8,7 @@
  */
 import { Markdown } from "./Markdown";
 import { C, FS, raised, SP } from "./type";
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush } from "./vscode";
 
 export function Delivery(props: { push: SpacePush }): JSX.Element {
   const deliveries = [...props.push.deliveries].reverse();
@@ -48,6 +48,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 {d.rerun ? (
                   <button
                     data-rerun
+                    disabled={!can("rerun")}
                     style={{ fontWeight: 600, marginTop: SP.sm }}
                     title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
                     onClick={() => post({ action: "rerun" })}
@@ -68,6 +69,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
               <>
                 <button
                   data-accept-delivery={d.id}
+                  disabled={!can("accept-delivery")}
                   style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
                   title="Accept it — this merges the work on the project's forge."
                   onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}

@@ -8,6 +8,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { TandemSession } from "./session";
+import { allowedNow, phaseOf, refusedNow } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 
@@ -101,6 +102,8 @@ export function spacePush(session: TandemSession, message?: string): unknown {
   return {
     kind: "space",
     running: session.running,
+    phase: phaseOf(session),
+    allowed: allowedNow(phaseOf(session)),
     // A space derived before the model existed cannot be read as subjects
     // and claims. It stays readable; new work starts in a new space.
     legacy:
@@ -312,6 +315,13 @@ async function handleInbound(
   push: (message?: string) => void,
   hooks?: PanelHostHooks,
 ): Promise<void> {
+  // The host refuses what the phase does not allow — a press the surface
+  // let through by mistake never starts work it must not start.
+  const refusal = refusedNow(msg.action, phaseOf(session));
+  if (refusal) {
+    push(refusal);
+    return;
+  }
   if (msg.action === "switch-repo") {
     await hooks?.onSwitchRepo?.();
     return;

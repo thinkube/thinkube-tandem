@@ -4,7 +4,7 @@
  * pushes; every abstract flips to its machine face with one gesture.
  */
 import { useEffect, useMemo, useState } from "react";
-import { onSpace, post, SpacePush } from "./vscode";
+import { can, onSpace, post, SpacePush, whyNot } from "./vscode";
 import { RunNote, RunSection } from "./Run";
 import { Compose } from "./Compose";
 import { Analysis } from "./Analysis";
@@ -140,7 +140,8 @@ export function App(): JSX.Element {
         <span style={{ opacity: O.faint }}>— its code is read; its repository receives the delivery</span>
         <button
           data-switch-repo
-          title="Switch the repository this space works on."
+          disabled={!can("switch-repo")}
+          title={can("switch-repo") ? "Switch the repository this space works on." : whyNot(push.phase)}
           style={{ marginLeft: "auto", fontSize: FS.caption, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: `1px ${SP.sm}px` }}
           onClick={() => post({ action: "switch-repo" })}
         >
@@ -159,7 +160,9 @@ export function App(): JSX.Element {
         }}
       >
         <Compose
-          busy={!!push.activity}
+          busy={!!push.activity || push.phase === "running"}
+          canRead={can("read-draft")}
+          whyNotRead={whyNot(push.phase)}
           initial={push.draft}
           onChange={(text) => post({ action: "save-draft", text })}
           onRead={() => {
@@ -201,7 +204,7 @@ export function App(): JSX.Element {
                 <span data-identity style={{ fontSize: FS.caption, opacity: O.dim, whiteSpace: "nowrap" }}>
           {push.subjects.length} subject(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
         </span>
-        {!push.running && push.signedTeps === 0 && (push.subjects.length > 0 || push.questions.length > 0) ? (
+        {can("panic") && (push.subjects.length > 0 || push.questions.length > 0) ? (
           panicArmed ? (
             <button
               data-panic-confirm
@@ -263,7 +266,7 @@ export function App(): JSX.Element {
           <button
             key={id}
             data-tab={id}
-            disabled={id === "work" && working}
+            disabled={id === "work" && (working || (!allWorkedOut && !can("think")))}
             title={
               id === "work" && working
                 ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}. This page opens when it is finished.`
@@ -397,6 +400,7 @@ export function App(): JSX.Element {
               post({ action: "think" });
             }}
             working={working}
+            canWork={allWorkedOut || can("think")}
             onEditAsk={(id) => {
               setSelected(id);
               setEditingAsk(id);

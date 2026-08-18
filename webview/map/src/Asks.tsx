@@ -17,7 +17,7 @@
  * reason enough to say the ask differently.
  */
 import { useState } from "react";
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush, whyNot } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 type Sentence = SpacePush["sentences"][number];
@@ -137,10 +137,13 @@ export function Asks(props: {
             {editing === s.id ? null : (
               <button
                 data-edit-sentence={s.id}
+                disabled={!can(s.state === "bound" ? "amend" : "reframe")}
                 title={
-                  s.state === "bound"
-                    ? "Approved work only changes through new work — add an amendment."
-                    : "Say this ask differently and I will read it again."
+                  !can(s.state === "bound" ? "amend" : "reframe")
+                    ? whyNot(props.push.phase)
+                    : s.state === "bound"
+                      ? "Approved work only changes through new work — add an amendment."
+                      : "Say this ask differently and I will read it again."
                 }
                 aria-label={s.state === "bound" ? "amend this ask" : "say this ask differently"}
                 style={{

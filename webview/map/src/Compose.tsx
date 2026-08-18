@@ -119,9 +119,14 @@ export function Compose(props: {
   initial: string;
   /** No writing while the machine is working. */
   busy: boolean;
+  /** Whether reading is allowed in this phase; when off, the reason. */
+  canRead: boolean;
+  whyNotRead?: string;
 }): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>();
+  const canReadRef = useRef(props.canRead);
+  canReadRef.current = props.canRead;
   const [count, setCount] = useState(asksOfText(props.initial).length);
   // The callbacks the keymap closes over must always be the latest ones.
   const read = useRef(props.onRead);
@@ -132,7 +137,7 @@ export function Compose(props: {
   useEffect(() => {
     if (!host.current || view.current) return;
     const commit = (): boolean => {
-      read.current();
+      if (canReadRef.current) read.current();
       return true;
     };
     const v = new EditorView({
@@ -177,9 +182,13 @@ export function Compose(props: {
       <div style={{ display: "flex", gap: SP.md, alignItems: "center", marginTop: SP.sm }}>
         <button
           data-read-draft
-          disabled={!count || props.busy}
+          disabled={!count || props.busy || !props.canRead}
           style={{ fontWeight: 600 }}
-          title="Read these words: what are they about? Nothing is recorded and nothing is built."
+          title={
+            props.canRead
+              ? "Read these words: what are they about? Nothing is recorded and nothing is built."
+              : props.whyNotRead ?? "Not now."
+          }
           onClick={() => props.onRead()}
         >
           {count ? `Read ${count} ask${count === 1 ? "" : "s"}` : "Read"}

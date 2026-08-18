@@ -7,7 +7,7 @@
  * progress header above the canvas.
  */
 import { useEffect, useMemo, useState } from "react";
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -79,6 +79,7 @@ export function RunNote(props: { note: string; unrun?: { id: string; tepId?: str
         <div style={{ marginTop: SP.md, display: "flex", gap: SP.md, alignItems: "center", flexWrap: "wrap" }}>
           <button
             data-rerun
+            disabled={!can("rerun")}
             style={{ fontWeight: 600 }}
             title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
             onClick={() => post({ action: "rerun" })}
@@ -257,6 +258,7 @@ export function RunSection(props: {
         {props.live ? (
         <button
           data-stop-run
+          disabled={!can("stop-run")}
           title="Stop the run — aborts every live worker; the run drains and reports."
           style={{ background: C.bad, color: "#fff", border: "none", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px`, cursor: "pointer" }}
           onClick={() => post({ action: "stop-run" })}

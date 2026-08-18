@@ -5,7 +5,7 @@
  * because they carry the cut checkbox and the check gestures.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush, whyNot } from "./vscode";
 import { C, FS, O, SP, label, labelIn, raised } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
@@ -135,8 +135,9 @@ export function WorkGraph(props: {
             </div>
             <button
               data-think-here
+              disabled={!can("think")}
               style={{ fontWeight: 600, marginTop: SP.md }}
-              title="Work out what to build. This is what starts spending."
+              title={can("think") ? "Work out what to build. This is what starts spending." : whyNot(push.phase)}
               onClick={() => post({ action: "think" })}
             >
               Work it out now
@@ -181,8 +182,13 @@ export function WorkGraph(props: {
           </span>
           <button
             data-reground
+            disabled={!can("reground")}
             style={{ fontWeight: 600 }}
-            title="Read the code again and work out these subjects from what is there now. Nothing you wrote changes."
+            title={
+              can("reground")
+                ? "Read the code again and work out these subjects from what is there now. Nothing you wrote changes."
+                : whyNot(push.phase)
+            }
             onClick={() => post({ action: "reground" })}
           >
             Read the code again
@@ -380,6 +386,7 @@ export function WorkGraph(props: {
                             <div style={{ display: "flex", gap: SP.sm, marginTop: SP.xs }}>
                               <button
                                 data-accept-check={p.id}
+                                disabled={!can("accept-check")}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   post({
@@ -406,8 +413,13 @@ export function WorkGraph(props: {
                         ) : (
                           <button
                             data-propose-check={p.id}
+                            disabled={!can("propose-check")}
                             style={{ fontSize: FS.caption, marginTop: SP.xs }}
-                            title="Work out a check that would prove this promise, and show it to me before it is kept."
+                            title={
+                              can("propose-check")
+                                ? "Work out a check that would prove this promise, and show it to me before it is kept."
+                                : whyNot(push.phase)
+                            }
                             onClick={(e) => {
                               e.stopPropagation();
                               setPendingFor(p.id);

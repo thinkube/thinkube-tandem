@@ -7,7 +7,7 @@
  * box you write them in, and what was read from them on the reading page.
  */
 import { useEffect, useRef, useState } from "react";
-import { post, SpacePush } from "./vscode";
+import { can, post, SpacePush, whyNot } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
 
 const btn: React.CSSProperties = {
@@ -221,16 +221,22 @@ export function Rail(props: {
             </ul>
             <button
               data-open-cut-review
+              disabled={!can("open-cut-review")}
               style={{ width: "100%", marginTop: SP.sm }}
-              title="Open the whole cut as a page you can read: every promise, where it lands, and what will prove it."
+              title={
+                can("open-cut-review")
+                  ? "Open the whole cut as a page you can read: every promise, where it lands, and what will prove it."
+                  : whyNot(push.phase)
+              }
               onClick={() => post({ action: "open-cut-review" })}
             >
               Read the cut review first
             </button>
             <button
               data-build
+              disabled={!can("build")}
               style={{ ...btn, width: "100%", marginTop: SP.sm }}
-              title="Sign this work and start the workers."
+              title={can("build") ? "Sign this work and start the workers." : whyNot(push.phase)}
               onClick={() => post({ action: "build" })}
             >
               Sign and build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
