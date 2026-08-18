@@ -10,15 +10,15 @@ import type { TandemSession } from "./session";
  *  the host both read, so a control is enabled exactly when the host would
  *  act on it and disabled when it would refuse.
  *
- *    empty      nothing written
- *    drafting   text in the box, not yet read
+ *    drafting   nothing read yet — whether there is text to read is the box's
+ *               own knowledge (typing is not pushed), never the host's
  *    read       read, waiting for keep or edit
  *    understood asks recorded and derived; nothing signed or running
  *    signed     a cut signed and not delivered (waiting to run, stopped, or withheld)
  *    running    a run in flight
  *    delivered  a delivery waiting for accept/reject
  */
-export type Phase = "empty" | "drafting" | "read" | "understood" | "signed" | "running" | "delivered";
+export type Phase = "drafting" | "read" | "understood" | "signed" | "running" | "delivered";
 
 export function phaseOf(session: TandemSession): Phase {
   if (session.running) return "running";
@@ -26,8 +26,7 @@ export function phaseOf(session: TandemSession): Phase {
   if (session.unrunCut()) return "signed";
   if (session.pendingModel) return "read";
   if (session.space.subjects?.length || session.space.nodes.length) return "understood";
-  if ((session.space.draft ?? "").trim()) return "drafting";
-  return "empty";
+  return "drafting";
 }
 
 /** The controls that shape work, and the phases in which the host acts on
@@ -35,11 +34,13 @@ export function phaseOf(session: TandemSession): Phase {
  *  parked worker, saving the draft text, switching space) is always on. */
 const OPEN: readonly Phase[] = ["understood", "delivered"];
 const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
+  // Whether there is text to read is the box's own knowledge.
   "read-draft": ["drafting", "read", "understood", "delivered"],
   "keep-draft": ["read"],
   "cancel-capture": ["read"],
   "capture-many": ["read"],
-  think: OPEN,
+  // The intent page's "see what this will build" keeps the reading first.
+  think: ["read", ...OPEN],
   reground: OPEN,
   reframe: OPEN,
   amend: OPEN,
@@ -56,7 +57,7 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],
   panic: ["drafting", "read", "understood"],
-  "switch-repo": ["empty", "drafting", "read", "understood", "signed", "delivered"],
+  "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],
 };
 
 /** The shaping actions the host acts on in this phase — sent with every
@@ -76,7 +77,6 @@ export function refusedNow(action: string, phase: Phase): string | undefined {
     read: "the reading is waiting for keep or edit",
     understood: "nothing is signed or running",
     drafting: "nothing has been read yet",
-    empty: "nothing has been written yet",
   };
   return `not now: ${why[phase]}`;
 }

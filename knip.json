@@ -16,8 +16,12 @@
       ]
     },
     "webview/map": {
+      "entry": [
+        "harness/buttons.tsx"
+      ],
       "project": [
-        "src/**/*.{ts,tsx}"
+        "src/**/*.{ts,tsx}",
+        "harness/**/*.{ts,tsx}"
       ]
     }
   }

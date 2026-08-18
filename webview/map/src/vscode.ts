@@ -100,6 +100,11 @@ interface RunView {
 export interface SpacePush {
   kind: "space";
   running: boolean;
+  /** Where the space is in its sequence of steps — controls follow it. */
+  phase: "drafting" | "read" | "understood" | "signed" | "running" | "delivered";
+  /** The shaping actions the host acts on right now; a control for any
+   *  other shaping action is disabled, and `post` drops it. */
+  allowed: string[];
   /** Set when the space predates the model — readable, not writable. */
   legacy?: string;
   signedTeps: number;
@@ -234,7 +239,43 @@ const api: VsCodeApi =
     ? acquireVsCodeApi()
     : { postMessage: () => {} };
 
+/** The shaping actions the host allows right now, from the last push.
+ *  Before the first push nothing is known, so nothing is refused here —
+ *  the host still refuses on its side. */
+let allowedNow: string[] | undefined;
+/** What the host allows now — set by every push, and by a harness that
+ *  renders the surface without a host. */
+export function noteAllowed(allowed: string[] | undefined): void {
+  allowedNow = allowed;
+}
+const SHAPING = new Set([
+  "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
+  "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "stop-run",
+  "accept-delivery", "panic", "switch-repo",
+]);
+
+/** Whether the host would act on this action now. Non-shaping actions
+ *  (reading a log, selecting, answering a worker, saving text) are always on. */
+export function can(action: string): boolean {
+  if (!SHAPING.has(action)) return true;
+  return !allowedNow || allowedNow.includes(action);
+}
+
+/** Why a control is off, for its tooltip — one sentence per phase. */
+export function whyNot(phase: SpacePush["phase"] | undefined): string {
+  switch (phase) {
+    case "running": return "A run is in flight — stop it first.";
+    case "signed": return "Signed work is waiting to run — run it, or it stays as it is.";
+    case "delivered": return "A delivery is waiting for your decision.";
+    case "read": return "The reading is waiting for keep or edit.";
+    case "drafting": return "Nothing has been read yet.";
+    default: return "Not now.";
+  }
+}
+
 export function post(msg: WebToHost): void {
+  if (!can(msg.action)) return;
   api.postMessage(msg);
 }
 
@@ -242,7 +283,10 @@ export function post(msg: WebToHost): void {
 export function onSpace(handler: (push: SpacePush) => void): () => void {
   const listener = (ev: MessageEvent) => {
     const data = ev.data as SpacePush;
-    if (data && data.kind === "space") handler(data);
+    if (data && data.kind === "space") {
+      if (Array.isArray(data.allowed)) noteAllowed(data.allowed);
+      handler(data);
+    }
   };
   window.addEventListener("message", listener);
   api.postMessage({ action: "load" });

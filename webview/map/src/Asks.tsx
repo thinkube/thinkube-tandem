@@ -53,6 +53,7 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
         <button
           data-reframe={bound ? undefined : s.id}
           data-amend={bound ? s.id : undefined}
+          disabled={!can(bound ? "amend" : "reframe")}
           style={{ fontWeight: 600 }}
           onClick={() => {
             if (!text.trim()) return;

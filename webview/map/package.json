@@ -6,7 +6,8 @@
   "description": "The Tandem space surface: capture, units map, the two gates. Built standalone into ../../media/map/.",
   "scripts": {
     "build": "tsc --noEmit -p . && vite build",
-    "watch": "vite build --watch"
+    "watch": "vite build --watch",
+    "buttons": "vite build --config harness/vite.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

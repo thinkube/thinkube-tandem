@@ -18,13 +18,17 @@ import { Asks } from "./Asks";
 import { useWorld, ZoomControls } from "./proto/world";
 
 
-export function App(): JSX.Element {
-  const [push, setPush] = useState<SpacePush | null>(null);
+export function App(props: {
+  /** A first push and page, for rendering the surface outside the host
+   *  (the button table is checked this way on every build). */
+  initial?: { push: SpacePush; tab: "write" | "intent" | "work" | "flow" };
+} = {}): JSX.Element {
+  const [push, setPush] = useState<SpacePush | null>(props.initial?.push ?? null);
   const [selected, setSelected] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  const [tab, setTab] = useState<"write" | "intent" | "work" | "flow">("write");
+  const [tab, setTab] = useState<"write" | "intent" | "work" | "flow">(props.initial?.tab ?? "write");
   // The orchestration page has two things to show and they are wanted at
   // different moments: the workers while they run, the report once they
   // have. Neither replaces the other, so the reader keeps the switch.
@@ -266,26 +270,14 @@ export function App(): JSX.Element {
           <button
             key={id}
             data-tab={id}
-            disabled={id === "work" && (working || (!allWorkedOut && !can("think")))}
             title={
               id === "work" && working
-                ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}. This page opens when it is finished.`
-                : id === "work" && push.cost.subjects > 0
-                  ? `Work out what to build — ${push.cost.subjects} subject(s), about ${push.cost.rounds} rounds.`
-                  : `Show ${why}.`
+                ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}.`
+                : `Show ${why}.`
             }
-            onClick={() => {
-              // Going to look at the work is what starts the thinking —
-              // and it is the only thing that starts it. Nothing runs
-              // speculatively behind a reading nobody has read. The move
-              // itself waits until there is a finished page to move to.
-              if (id === "work" && !allWorkedOut) {
-                setGoingToWork(true);
-                post({ action: "think" });
-                return;
-              }
-              setTab(id);
-            }}
+            // A tab only moves. What starts thinking is the page's own
+            // button, and the phase says whether that button is on.
+            onClick={() => setTab(id)}
             style={{
               background: C.raised,
               color: tab === id ? C.focus : "inherit",

@@ -251,7 +251,12 @@ export function WorkGraph(props: {
               <span style={{ fontSize: FS.body }}>{claim.text}</span>
               <button
                 data-edit-from={claim.fromAskId}
-                title={`Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`}
+                disabled={!can("reframe") && !can("amend")}
+                title={
+                  can("reframe") || can("amend")
+                    ? `Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`
+                    : whyNot(push.phase)
+                }
                 aria-label={`say ask ${claim.fromAskN} differently`}
                 style={{
                   background: "none",

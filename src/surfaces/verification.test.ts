@@ -158,13 +158,13 @@ test("the phase gates the controls: the confirmed table, row by row — what the
   s.space = { ...s.space, deliveries: s.space.deliveries.map((d) => ({ ...d, acceptedAt: undefined })) };
   assert.equal(phaseOf(s), "delivered", "an open delivery is the delivered phase");
 
-  const PHASES = ["empty", "drafting", "read", "understood", "signed", "running", "delivered"] as const;
+  const PHASES = ["drafting", "read", "understood", "signed", "running", "delivered"] as const;
   // control → the phases in which it is on (● in the table the human confirmed)
   const TABLE: Record<string, readonly (typeof PHASES)[number][]> = {
     "read-draft": ["drafting", "read", "understood", "delivered"],
     "keep-draft": ["read"],
     "cancel-capture": ["read"],
-    think: ["understood", "delivered"],
+    think: ["read", "understood", "delivered"],
     reground: ["understood", "delivered"],
     reframe: ["understood", "delivered"],
     amend: ["understood", "delivered"],
@@ -177,7 +177,7 @@ test("the phase gates the controls: the confirmed table, row by row — what the
     "stop-run": ["running"],
     "accept-delivery": ["delivered"],
     panic: ["drafting", "read", "understood"],
-    "switch-repo": ["empty", "drafting", "read", "understood", "signed", "delivered"],
+    "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],
   };
   for (const [action, on] of Object.entries(TABLE))
     for (const phase of PHASES) {

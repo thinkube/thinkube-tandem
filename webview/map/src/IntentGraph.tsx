@@ -34,7 +34,12 @@ function FromAsk(props: {
       </span>
       <button
         data-edit-from={props.id}
-        title={`Say ask #${props.n} differently — I will read it again.`}
+        disabled={!can("reframe") && !can("amend")}
+        title={
+          can("reframe") || can("amend")
+            ? `Say ask #${props.n} differently — I will read it again.`
+            : "Not now — nothing changes while work is signed or running."
+        }
         aria-label={`say ask ${props.n} differently`}
         style={{
           background: "none",
