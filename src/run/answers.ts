@@ -140,6 +140,10 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
           "",
           "Your FIRST line must be exactly one of:",
           '- "DELIVERED: <why the work is complete as it stands — answer the worker\'s doubt>"',
+          '- "CONTRACT: <a one-sentence obligation for ANOTHER role of this slice — e.g. the coder must export',
+          "   a named seam so a check can reach it>\" when the line names work that is not this worker's to do.",
+          "   The sentence becomes that role's contract and this unit is complete; wording is binding, so name",
+          "   the exact symbol, file and rule.",
           '- "GAP: <what is really missing, in one sentence>"',
           '- "ESCALATE: <the question at intent level, in the human\'s words>"',
           "",
@@ -151,6 +155,13 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
         ].join("\n"),
       ).catch(() => null);
       const first = (reply ?? "").trimStart();
+      if (/^CONTRACT:/i.test(first)) {
+        const text = first.replace(/^CONTRACT:\s*/i, "").split("\n")[0].trim().slice(0, 400);
+        a.log(`⚖ ${unit}: the closing question became another role's contract — ${text.slice(0, 140)}`, unit);
+        a.onDecision?.(unit, text);
+        a.defect({ slice, unit, activity: "worker question", trigger: "supervisor", type: "contract", impact: "flowed as contract — not a gap, not a failure", detail: `${item.slice(0, 300)}\n→ CONTRACT: ${text}` });
+        continue;
+      }
       if (/^DELIVERED:/i.test(first)) {
         a.log(`↩ ${unit}: the supervisor answered the closing question — the work stands`, unit);
         a.defect({ slice, unit, activity: "worker question", trigger: "supervisor", type: "contract", impact: "answered — not a gap", detail: `${item.slice(0, 300)}\n→ ${first.slice(0, 400)}` });

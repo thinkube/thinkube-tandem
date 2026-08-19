@@ -234,6 +234,7 @@ export async function dispatchTep(
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
     widen: makeWiden({ units: dag, pending: (id) => !done.has(id) && !failed.has(id), log, onRuling: (r) => rulings.push(r) }),
+    onDecision: (unit: string, text: string) => decisions.push({ unit, text }),
     // The repository's standing tests are every slice's check, scoped to what imports its files.
     suite: sliceSuiteArgs({ runOne: runOneTest, exec: suiteExec, affected: deps.affected, reds: deps.suiteReds, slices, pendingPlanned: () => plannedByPending(dag, done) }),
   };
@@ -305,8 +306,7 @@ export async function dispatchTep(
     log(`▸ ${next.id} (${role})`, next.id);
     const tree = role === "test" && !maintain ? testerWt : worktree;
     if (role === "test" && !maintain) {
-      // Re-snapshot only when no other test author is mid-flight (a reset under a live author wipes its work);
-      // the count rises BEFORE the await and the reset is one shared promise, so same-tick authors cannot race it.
+      // Re-snapshot only when no other test author is mid-flight; the count rises BEFORE the await and the reset is one shared promise, so same-tick authors cannot race it.
       const first = testInflight === 0;
       testInflight++;
       if (first)
@@ -401,8 +401,7 @@ export async function dispatchTep(
         },
         brief,
       );
-      // A tester that stopped short (declared probes still unwritten) continues
-      // from where it stopped, up to three more rounds; written work is kept.
+      // A tester that stopped short continues from where it stopped, up to three more rounds; written work is kept.
       for (let more = 0; role === "test" && !maintain && !outcome.containment && more < 3; more++) {
         const missing = await missingProbes(tree, next.footprint);
         if (!missing.length) break;
@@ -446,14 +445,19 @@ export async function dispatchTep(
       }
       if (!oracle) {
         ok = outcome.ok;
+        // A tester whose declared probes are ALL written is complete: a kept doubt is
+        // information — it rides the delivery — never the failure of a unit that produced everything it owed.
+        if (!ok && role === "test" && !(await missingProbes(tree, next.footprint)).length) {
+          ok = true;
+          undelivered.push(...(outcome.undelivered ?? []).map((u) => `${next.id}: ${u}`));
+          log(`✎ ${next.id}: all declared probes are written — its remaining doubt rides the delivery`, next.id);
+        }
         if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
-        else if (role === "test")
-          decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
+        if (ok && role === "test") decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
         break;
       }
 
-      // MANDATORY-GREEN: the oracle's verdict on the current state decides,
-      // not the worker's self-report. A stopped run does not confirm.
+      // MANDATORY-GREEN: the oracle's verdict decides, not the worker's self-report. A stopped run does not confirm.
       if (st.halted) {
         failWith(next.id, "stopped before its checks were confirmed");
         break;
@@ -538,16 +542,14 @@ export async function dispatchTep(
   const concurrency = Math.max(1, deps.concurrency ?? 2);
   const inflight = new Map<string, Promise<void>>();
   while (!st.halted) {
-    // The engine's own frontier: it refuses a unit whose footprint is being
-    // written by a running unit — two coders in one file is a silent lost update.
+    // The frontier refuses a unit whose footprint a running unit is writing — two coders in one file is a silent lost update.
     const ready = frontier(dag, {
       pending,
       done,
       failed,
       running: [...liveFootprints.values()].flatMap((v) => v.paths),
     });
-    // A ready unit that is not launched says why: a slot, or a file it
-    // shares with a running unit. The graph draws edges, not overlaps.
+    // A ready unit that is not launched says why: a slot, or a file it shares with a running unit.
     for (const [id, why] of overlapWaits(dag, pending, ready, liveFootprints, done)) st.doing(id, why);
     for (const u of ready) {
       if (inflight.size >= concurrency) {
@@ -556,8 +558,7 @@ export async function dispatchTep(
       }
       st.doing(u.id, undefined);
       pending.delete(u.id);
-      // On the record synchronously with the launch — registering it later,
-      // inside the worker, leaves a window the next frontier cannot see.
+      // On the record synchronously with the launch — later leaves a window the next frontier cannot see.
       liveFootprints.set(u.id, {
         tree: (u.role ?? "code") === "test" ? testerWt : worktree,
         paths: u.footprint,
@@ -583,8 +584,7 @@ export async function dispatchTep(
     await Promise.race([...inflight.values()]);
   }
   await Promise.all([...inflight.values()]);
-  // Never ran is not failed. A unit the run never reached says so, and
-  // the one unit that really failed stays findable among them.
+  // Never ran is not failed: a unit the run never reached says so, and the real failure stays findable.
   for (const id of pending)
     st.block(id, "never ran — the run stopped, or something it waits on failed");
 

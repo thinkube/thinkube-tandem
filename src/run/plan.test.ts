@@ -445,3 +445,48 @@ test("a stray write is contained, the unit fails, and the run goes on — the ot
   assert.equal(state.halted, false, "the run was not halted");
   assert.equal(state.units.get("SL-2#eu-0")?.state, "done", "the other slice kept its own fate");
 });
+
+test("a tester whose probes are all written completes on a doubt — the doubt rides the delivery; a CONTRACT answer becomes the coder's contract", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-75" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let coderBrief = "";
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async (_d, prompt) =>
+        prompt.includes("THE WORKER'S LINE")
+          ? "CONTRACT: the coder exports greet from src/greet.mjs so the check can import it directly."
+          : null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return {
+            ok: false,
+            finalText:
+              "All probes written.\nDECISION: greet() returns exactly 'hello'\n" +
+              "UNDELIVERED: the probe reaches greet only through its module seam — question: should the coder export a direct seam?",
+            undelivered: ["the probe reaches greet only through its module seam — question: should the coder export a direct seam?"],
+          };
+        }
+        coderBrief = brief;
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+  assert.equal(state.units.get("SL-1#eu-1")?.state, "done", "the tester completed — all its probes exist");
+  assert.match(coderBrief, /TESTER'S DECISIONS[\s\S]*greet\(\) returns exactly 'hello'/, "its decisions still flow");
+  assert.match(coderBrief, /exports greet from src\/greet\.mjs/, "and the CONTRACT answer flows to the coder as contract");
+  assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
+});

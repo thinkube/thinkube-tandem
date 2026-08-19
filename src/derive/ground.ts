@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { AcceptanceCriterion, Anchor, Ask, Change, Question, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { RoundDeps, runReadRound } from "./round";
+import { downgradeUnreachable } from "./reachable";
 
 /** A question the round could not settle from the code, with the machine's
  *  recommended answer — the human accepts or rewords; never left hanging. */
@@ -101,6 +102,12 @@ export function buildGroundingPrompt(args: {
     `Judged once by an independent reviewer when the work is delivered, recorded on the delivery, and never kept as a test — ` +
     `a permanent test pinning prose or an absence fails every later change that legitimately moves on. ` +
     `A documentation-wording check is ALWAYS "assessment".\n` +
+    `    A probe must name a seam a PLAIN TEST PROCESS CAN REACH: an exported function a test imports, or behavior ` +
+    `observable through an injected fake. Judge reachability PER SEAM, and never bundle two seams in one check — ` +
+    `a criterion naming two functions is TWO criteria. For a seam a test cannot reach (module-private, only behind ` +
+    `the live host), prefer PLANNING THE SEAM: add a touchpoint and words to the node so the work exports one, and ` +
+    `keep the check a probe against it; otherwise make that check an "assessment" (a reviewer reads the delivered ` +
+    `code once), never a probe that no test can execute.\n` +
     `    A check OBSERVES THE CODE AT A SEAM — a call made, a request built, a state changed inside the program — ` +
     `through a fake where the real thing is the cluster, a service, a process, or anything outside the repository. ` +
     `A check NEVER PERFORMS the effect on the world. When the effect itself cannot be verified by the machine — it ` +
@@ -277,6 +284,9 @@ export async function runGrounding(
     undefined,
     (sc) => opts.scopes?.find((x) => x.id === sc)?.dir,
   );
+  // The mechanical look behind the model's testability judgement: a probe
+  // naming a symbol its touchpoints hold unexported becomes an assessment.
+  downgradeUnreachable(derived, deps.repoRoot, deps.log);
   const questions = parseGroundedQuestions(text).map((q) => ({
     askId: ask.id,
     text: q.text,

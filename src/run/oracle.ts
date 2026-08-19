@@ -170,6 +170,8 @@ export interface OracleFactoryArgs {
   author?: typeof runAuthoringRound;
   /** The repository reading — the re-author and the finisher start from it. */
   digest?: string;
+  /** A closing answer that names another role's work — flows as that role's contract. */
+  onDecision?: (unit: string, text: string) => void;
   /** Widen a unit's footprint at the supervisor's ruling — validated and
    *  APPLIED by the run (the fence, the runner overlay and the porcelain
    *  filter all read the same footprint), and put on the record. */
