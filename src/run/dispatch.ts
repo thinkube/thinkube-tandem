@@ -339,8 +339,8 @@ export async function dispatchTep(
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
         : "");
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
-    // Each role's brief carries what it owns: the tester its test homes, the coder the tester's decisions.
-    const oracleStanza =
+    // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
+    const oracleStanza = () =>
       role === "test"
         ? testerStanza(built) +
           (maintain ? coderStanza(!!oracle) : "") +
@@ -363,7 +363,7 @@ export async function dispatchTep(
     st.doing(next.id, "working");
     let ok = false;
     const attempts = oracle ? MAX_REWORK_ATTEMPTS : 1;
-    let brief = baseBrief + oracleStanza + disclosure;
+    let brief = baseBrief + oracleStanza() + disclosure;
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
       let outcome = await worker(
         {
@@ -498,7 +498,7 @@ export async function dispatchTep(
         log(`↻ ${next.id}: checks not green — rework ${attempt + 1}/${attempts}`, next.id);
         brief =
           baseBrief +
-          oracleStanza +
+          oracleStanza() +
           disclosure +
           `\n\nREWORK ${attempt + 1}/${attempts} — a previous attempt left the checks NOT GREEN. The oracle's last verdict:\n${formatVerifyReply(r)}`;
       } else {

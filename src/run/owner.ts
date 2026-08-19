@@ -25,6 +25,9 @@ export type FailureOwner = "code" | "check" | "environment";
 export function ownerOf(evidence: string): FailureOwner {
   const e = evidence;
   if (/\[timed out\]|did not exit|timed out after/i.test(e)) return "check";
+  // The probe (or its import chain) loaded a SOURCE file the runner cannot
+  // execute — the check must import the compiled output; no code fixes it.
+  if (/ERR_UNKNOWN_FILE_EXTENSION|Unknown file extension/i.test(e)) return "check";
   if (/before any test ran:/.test(e)) {
     // Something failed at import. A missing module IMPORTED BY THE PROBE
     // is the probe's; a missing tool or a build that never happened is the

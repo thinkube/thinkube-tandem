@@ -490,3 +490,81 @@ test("a tester whose probes are all written completes on a doubt — the doubt r
   assert.match(coderBrief, /exports greet from src\/greet\.mjs/, "and the CONTRACT answer flows to the coder as contract");
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
 });
+
+test("a widening refused for a pending owner's file crosses the slice boundary: the obligation lands in the owner's brief, and the asker is told to keep callers compiling", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "deps.mjs"), `export const key = "";\n`);
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  let s = emptySpace();
+  const a = addAsk(s, "notices carry their key, and the session threads it", "t");
+  if (!a.ok) throw new Error("ask");
+  s = a.space;
+  const n1 = addNode(s, {
+    sentence: "the deps carry the key",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c1", text: "the key is not empty" }],
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+  });
+  if (!n1.ok) throw new Error("n1");
+  s = n1.space;
+  const n2 = addNode(s, {
+    sentence: "the session threads the key through",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c2", text: "session() returns the key" }],
+    grounding: { touchpoints: [{ path: "src/session.mjs", planned: true }], stamp: [] },
+  });
+  if (!n2.ok) throw new Error("n2");
+  s = n2.space;
+  const cut = { id: "cut-1", changeIds: [n1.added.id, n2.added.id], tepId: "TEP-t-76" };
+  const slices = tepSlices({ space: s, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let askerReply = "";
+  let ownerBrief = "";
+  const gate = { askerDone: false };
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async (_d, prompt) =>
+        prompt.includes("THE WORKER'S QUESTION")
+          ? "WIDEN: src/session.mjs — the check needs the session to thread the key"
+          : null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], w.footprint[0].includes("SL-1") ? GREEN_PROBE.replace(/greet/g, "key").replace(/hello/g, "k").replace("../src/key.mjs", "../src/greet.mjs") : GREEN_PROBE.replace(/greet/g, "session").replace(/hello/g, "k"));
+          return { ok: true, finalText: "done" };
+        }
+        if (w.footprint.includes("src/greet.mjs")) {
+          writeInto(w.worktree, "src/greet.mjs", `export function key() { return "k"; }\n`);
+          askerReply = await new Promise<string>((resolve) => w.onPark("I need src/session.mjs — widen?", resolve));
+          gate.askerDone = true;
+          return { ok: true, finalText: "done" };
+        }
+        // The owner's coder: launched after (needs ordering not guaranteed) —
+        // wait until the asker got its answer so the decision exists.
+        while (!gate.askerDone) await new Promise((r) => setTimeout(r, 25));
+        ownerBrief = brief;
+        writeInto(w.worktree, "src/session.mjs", `export function session() { return "k"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+  assert.match(askerReply, /Refused: src\/session\.mjs \(owned by SL-2#eu-0, still pending\)/);
+  assert.match(askerReply, /flowed to SL-2#eu-0 as contract/);
+  assert.match(askerReply, /keep every existing caller compiling/i, "the interim rule is said at the moment it matters");
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "done");
+  assert.equal(state.units.get("SL-2#eu-0")?.state, "done");
+  assert.match(ownerBrief, /CROSS-SLICE \(from SL-1#eu-0\): a change in src\/session\.mjs is needed/, "the obligation landed in the owner's own brief");
+});

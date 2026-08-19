@@ -236,3 +236,12 @@ test("the scoped run: one file at a time with the proven command; red files name
   const none = await runScopedSuite({ runOne: "run-it <file>", root, exec: async () => ({ code: 0, output: "" }), footprint: ["src/a.ts"], importersOf: async () => [] });
   assert.equal(none.green, true);
 });
+
+test("a probe that loads a source file the runner cannot execute is the check's failure — the repair loop owns it", async () => {
+  const { ownerOf } = await import("./owner");
+  assert.equal(
+    ownerOf('failing tests:\n  - pin\nTypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for /x/src/run/state.ts'),
+    "check",
+  );
+  assert.equal(ownerOf("expected 'a' to equal 'b'"), "code");
+});

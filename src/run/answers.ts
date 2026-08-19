@@ -78,7 +78,23 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
       const first = (reply ?? "").trimStart();
       if (/^WIDEN:/i.test(first) && a.widen) {
         const { granted, refused } = a.widen(slice, unit, widenPaths(first));
-        const refusedNote = refused.length ? ` Refused: ${refused.map((r) => `${r.path} (${r.why})`).join("; ")} — do not touch those.` : "";
+        // A path a PENDING unit owns is not widened — the obligation crosses
+        // the slice boundary instead: it lands in the owner's brief as
+        // contract, and this worker keeps the owner's callers compiling.
+        const crossed: string[] = [];
+        for (const r of refused) {
+          const owner = /owned by ([\w#-]+), still pending/.exec(r.why)?.[1];
+          if (!owner) continue;
+          a.onDecision?.(owner, `CROSS-SLICE (from ${unit}): a change in ${r.path} is needed that ${slice} may not make — ${question.split("\n")[0].slice(0, 240)}`);
+          crossed.push(`${r.path} → its obligation was flowed to ${owner} as contract`);
+          a.log(`⚖ ${unit}: the change in ${r.path} crosses to ${owner} — flowed as that unit's contract`, unit);
+        }
+        const refusedNote = refused.length
+          ? ` Refused: ${refused.map((r) => `${r.path} (${r.why})`).join("; ")} — do not touch those.` +
+            (crossed.length
+              ? ` ${crossed.join("; ")}. MEANWHILE keep every existing caller compiling from YOUR side — an optional parameter, an overload, a default — never a signature that breaks a file you may not fix.`
+              : "")
+          : "";
         if (granted.length) {
           a.defect({ slice, unit, activity: "worker question", trigger: "supervisor", type: "contract", impact: "footprint widened", detail: `Q: ${question.slice(0, 300)}\n→ widened: ${granted.join(", ")}` });
           answer(`Your footprint was widened at the supervisor's ruling: you may now edit ${granted.join(", ")}.${refusedNote} Make the change there and run verify.`);
