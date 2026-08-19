@@ -98,6 +98,60 @@ export async function refreshRunTrees(args: {
   return { committedSlices, resumed: true };
 }
 
+/**
+ * A resumed branch that does not build gets ONE bounded repair before the
+ * run refuses: footprint = the files the compiler names, evidence = the
+ * compiler's own words. An earlier run may have left the branch holding
+ * half a change; no dispatched worker exists yet, so the refresh owns it.
+ */
+export async function repairStandingTree(args: {
+  worktree: string;
+  tep: string;
+  refusal: string;
+  deps: DispatchDeps;
+  exec: Exec;
+  log: (line: string, step?: string) => void;
+  defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  /** Re-proves the build; true when the tree stands. */
+  rebuild: () => Promise<boolean>;
+}): Promise<boolean> {
+  const files = [...new Set([...args.refusal.matchAll(/(?:^|\s)((?:src|webview|docs)\/[\w./-]+\.[a-z]+)\(/gm)].map((m) => m[1]))];
+  if (!files.length) return false;
+  const id = "refresh#standing";
+  args.log(`🧰 ${args.tep}: the resumed branch does not build — a repair mends it before dispatch: ${files.join(", ").slice(0, 300)}`, id);
+  const worker = args.deps.worker ?? runUnitWorker;
+  await worker(
+    {
+      model: resolveWorkerModel(args.deps.workerModel ?? { workerModel: args.deps.model }, "code"),
+      worktree: args.worktree,
+      role: "test",
+      footprint: files,
+      baseline: new Set(await porcelainPaths(args.worktree)),
+      abort: new AbortController(),
+      onPark: (_q, answer) => answer("Decide from the compiler's words and the surrounding code; the run does not ask a person."),
+      log: (line: string) => args.log(line, id),
+    },
+    [
+      `The run branch of ${args.tep} holds committed work that does not compile — an earlier run`,
+      "committed half of a change. Mend the tree so it builds: read the errors, find the missing",
+      "half in the callers' own expectations, and complete it. Change only the files listed.",
+      "",
+      "THE COMPILER'S WORDS:",
+      args.refusal.slice(0, 4000),
+      "",
+      "FILES YOU MAY EDIT:",
+      ...files.map((f) => `- ${f}`),
+    ].join("\n"),
+  );
+  const ok = await args.rebuild();
+  if (!ok) return false;
+  await args.exec("git", ["-C", args.worktree, "add", "--", ...files], args.worktree);
+  await args.exec("git", ["-C", args.worktree, "commit", "-m", `tandem: ${args.tep} — mend the standing tree`], args.worktree);
+  args.log(`✓ ${args.tep}: the standing tree builds again — mended and committed`, id);
+  args.defect({ unit: id, activity: "refresh", trigger: "standing-tree", type: "code", impact: "half-committed change completed before dispatch", detail: files.join(", ").slice(0, 400) });
+  return true;
+}
+
 /** One bounded repair worker over the conflict markers; the merge concludes
  *  only when nothing is left unmerged. */
 async function resolveConflicts(args: {

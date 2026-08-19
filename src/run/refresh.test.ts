@@ -152,3 +152,108 @@ test("a conflicting base move is resolved inside the run before dispatch, on the
   assert.ok(s2.logs.some((l) => /the merge conflict was resolved inside the run and committed/.test(l)));
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the resumed run delivers after the resolution");
 });
+
+test("a widened footprint rides the slice's commit, and a half-committed branch is mended on resume before dispatch", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  // A base file whose type the cut's work must widen — the sessionDeps shape.
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "deps.mjs"), `export function onChanged(...args) { return args.slice(0, 1); }\n`);
+  // The repository's build step proves CONSISTENCY: once a caller exists,
+  // deps must accept what the caller passes. Green on the untouched base.
+  fs.writeFileSync(
+    path.join(repo, "check.mjs"),
+    `import * as fs from "node:fs";\n` +
+      `if (fs.existsSync("./src/greet.mjs")) {\n` +
+      `  const { greet } = await import("./src/greet.mjs");\n` +
+      `  if (greet().length !== 2) { console.error("src/deps.mjs(1,1): callers pass (key, message)"); process.exit(1); }\n` +
+      `}\n`,
+  );
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-79" };
+  const prepare = "node check.mjs";
+
+  // First run: the coder gets deps.mjs by widening and finishes green —
+  // but we simulate the OLD defect by having committed only the plan's
+  // files: we run with a worker that writes both, then strip the widened
+  // file's change from the branch to reproduce the half-committed state.
+  const s1 = new RunState(() => {});
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      prepare,
+      state: s1,
+      supervisorRound: async (_d, prompt) =>
+        prompt.includes("THE WORKER'S QUESTION") ? "WIDEN: src/deps.mjs — the callers pass (key, message)" : null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(
+            w.worktree,
+            w.footprint[0],
+            `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+              `import { greet } from "../src/greet.mjs";\ntest("greet", () => assert.equal(greet().length, 2));\n`,
+          );
+          return { ok: true, finalText: "done" };
+        }
+        await new Promise<string>((resolve) => w.onPark("need src/deps.mjs — widen?", resolve));
+        writeInto(w.worktree, "src/greet.mjs", `import { onChanged } from "./deps.mjs";\nexport function greet() { return onChanged("k", "m"); }\n`);
+        writeInto(w.worktree, "src/deps.mjs", `export function onChanged(key, message) { return [key, message]; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "greet space" }),
+  );
+  assert.equal(s1.units.get("SL-1#eu-0")?.state, "done");
+  // The widened file rode the commit (the fix): the branch holds both halves.
+  const branchDeps = execFileSync("git", ["-C", repo, "show", `${branchOf(repo)}:src/deps.mjs`], { encoding: "utf8" });
+  assert.match(branchDeps, /key, message/, "the widened file rode the slice's commit");
+
+  // Reproduce the OLD half-committed state: revert deps.mjs on the branch only.
+  execFileSync("git", ["-C", repo, "worktree", "remove", "--force", path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`, cut.tepId!)]);
+  execFileSync("git", ["-C", repo, "worktree", "prune"]);
+  const wt = fs.mkdtempSync(path.join(repo, "..", "half-"));
+  execFileSync("git", ["-C", repo, "worktree", "add", wt, branchOf(repo)]);
+  fs.writeFileSync(path.join(wt, "src", "deps.mjs"), `export function onChanged(...args) { return args.slice(0, 1); }\n`);
+  execFileSync("git", ["-C", wt, "commit", "-aqm", "simulate: the widened half never committed"]);
+  execFileSync("git", ["-C", repo, "worktree", "remove", "--force", wt]);
+
+  // Resume: the standing tree does not build; the mend repairs it before dispatch.
+  const s2 = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      prepare,
+      state: s2,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        assert.match(brief, /does not compile — an earlier run\s+committed half of a change/, "the only worker is the mend");
+        assert.ok(w.footprint.includes("src/deps.mjs"), "the compiler's own words scope it");
+        writeInto(w.worktree, "src/deps.mjs", `export function onChanged(key, message) { return [key, message]; }\n`);
+        return { ok: true, finalText: "mended" };
+      },
+    },
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "greet space" }),
+  );
+  assert.ok(s2.logs.some((l) => /the resumed branch does not build — a repair mends it/.test(l)));
+  assert.ok(s2.logs.some((l) => /the standing tree builds again — mended and committed/.test(l)));
+  assert.ok(outcome.delivery && !outcome.delivery.withheld, "the resume delivers after the mend");
+});
+
+function branchOf(repo: string): string {
+  const out = execFileSync("git", ["-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/tandem/"], { encoding: "utf8" });
+  return out.trim().split("\n")[0].trim();
+}

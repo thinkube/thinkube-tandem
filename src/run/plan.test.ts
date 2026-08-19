@@ -549,9 +549,12 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
           gate.askerDone = true;
           return { ok: true, finalText: "done" };
         }
-        // The owner's coder: launched after (needs ordering not guaranteed) —
-        // wait until the asker got its answer so the decision exists.
+        // The owner's coder. The guarantee is per ATTEMPT: a contract that
+        // crossed after this launch arrives at the next attempt's brief. So
+        // hold work until the asker was answered; a first attempt without
+        // the contract stays incomplete and reworks with a fresh brief.
         while (!gate.askerDone) await new Promise((r) => setTimeout(r, 25));
+        if (!/CROSS-SLICE/.test(brief)) return { ok: true, finalText: "not yet — the contract has not reached me" };
         ownerBrief = brief;
         writeInto(w.worktree, "src/session.mjs", `export function session() { return "k"; }\n`);
         return { ok: true, finalText: "done" };

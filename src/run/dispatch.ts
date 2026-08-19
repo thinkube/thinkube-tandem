@@ -28,7 +28,7 @@ import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
-import { refreshRunTrees } from "./refresh";
+import { refreshRunTrees, repairStandingTree } from "./refresh";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
@@ -173,7 +173,17 @@ export async function dispatchTep(
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, testerWt, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
+  const doSetup = () =>
+    setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
+  let ready = await doSetup();
+  // A resumed branch an earlier run left half-committed is mended, once, before the run refuses.
+  if (ready.refusal && refreshed.resumed) {
+    const mended = await repairStandingTree({
+      worktree, tep, refusal: ready.refusal, deps, exec, log, defect,
+      rebuild: async () => !deps.prepare || (await boundedExec(deps.prepare, worktree)).code === 0,
+    });
+    if (mended) ready = await doSetup();
+  }
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
   const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };

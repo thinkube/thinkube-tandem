@@ -3,6 +3,8 @@
  * ride into the code tree and the slice commits — later tester snapshots see
  * committed truth — and everyone waiting on "the next commit" wakes.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
 import type { RunState } from "./state";
@@ -12,7 +14,7 @@ export function makeCommitBook(a: {
   branch: string;
   worktree: string;
   testerWt: string;
-  dag: readonly { id: string; slice: string }[];
+  dag: readonly { id: string; slice: string; footprint: readonly string[] }[];
   st: RunState;
   exec: Exec;
   log: (line: string, step?: string) => void;
@@ -51,7 +53,13 @@ export function makeCommitBook(a: {
     for (const w of wake) w();
     const probes = a.sliceProbes.get(slice) ?? [];
     for (const rel of probes) await copyRel(a.testerWt, a.worktree, rel).catch(() => {});
-    const paths = [...new Set([...(a.sliceFiles.get(slice) ?? []), ...probes])];
+    // The unit's LIVE footprints, not only the plan's list: a footprint
+    // widened mid-run rides the commit, or the branch holds half a change.
+    const live = a.dag.filter((u) => u.slice === slice).flatMap((u) => [...u.footprint]);
+    // A granted-but-unwritten path must not sink the whole add.
+    const paths = [...new Set([...(a.sliceFiles.get(slice) ?? []), ...live, ...probes])].filter((rel) =>
+      fs.existsSync(path.join(a.worktree, rel)),
+    );
     if (paths.length) await a.exec("git", ["add", "--", ...paths], a.worktree);
     const c = await a.exec("git", ["commit", "-m", `tandem: ${a.tep} ${slice}`], a.worktree);
     if (c.code === 0) a.log(`✓ ${slice}: committed on ${a.branch}`);
