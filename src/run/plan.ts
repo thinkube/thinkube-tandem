@@ -114,6 +114,10 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
   /** What each probe is FOR, in the check's own words — so a result is
    *  reported as the check the human read on the card. */
   checkOf: Map<string, string>;
+  /** Checks homed on the maintainer at planning: the criterion names a test
+   *  home the maintain slice brings under, so the parent's coder is never
+   *  graded on a file its runner prunes. */
+  rehomed: { parent: string; maintainer: string; ac: number; check: string }[];
 } {
   const sliceProbes = new Map<string, string[]>();
   const sliceVerifs = new Map<string, AcVerification[]>();
@@ -131,20 +135,43 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
     sliceProbes.set(s.handle, probes);
     sliceVerifs.set(
       s.handle,
-      probes.map((p, i) => ({ ac: i + 1, run: `node --test ${p}`, env: "local" })),
+      // The ordinal comes from the probe's own name, so a list a later rule
+      // filters still names the right check.
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: `node --test ${p}`, env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
   // A maintain slice is checked by its parent's probes: the tree it leaves
   // must build and keep the parent's promises green.
+  const rehomed: { parent: string; maintainer: string; ac: number; check: string }[] = [];
   for (const s of slices) {
     const parent = (s as { maintains?: string }).maintains;
     if (parent && sliceProbes.has(parent)) {
       sliceProbes.set(s.handle, sliceProbes.get(parent)!);
       sliceVerifs.set(s.handle, sliceVerifs.get(parent)!);
+      // A check whose words name one of this maintainer's test homes is the
+      // maintainer's to prove — the parent's runner prunes those very files.
+      const homes = s.workUnits.filter(isMaintainUnit).flatMap((u) => u.footprint);
+      const theirs = (probe: string) => {
+        const check = checkOf.get(probe) ?? "";
+        return homes.some((h) => check.includes(h) || check.includes(h.split("/").pop() ?? h));
+      };
+      const moved = (sliceProbes.get(parent) ?? []).filter(theirs);
+      if (moved.length) {
+        for (const probe of moved)
+          rehomed.push({ parent, maintainer: s.handle, ac: acOf(probe), check: checkOf.get(probe) ?? probe });
+        sliceProbes.set(parent, (sliceProbes.get(parent) ?? []).filter((p) => !moved.includes(p)));
+        sliceVerifs.set(parent, (sliceVerifs.get(parent) ?? []).filter((v) => !moved.some((p) => v.run.includes(p))));
+      }
     }
   }
-  return { sliceProbes, sliceVerifs, sliceFiles, checkOf };
+  return { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed };
+}
+
+/** The check ordinal a probe file carries in its name. */
+function acOf(probe: string): number {
+  const m = /_AC-(\d+)\./.exec(probe);
+  return m ? Number(m[1]) : 0;
 }
 
 /**

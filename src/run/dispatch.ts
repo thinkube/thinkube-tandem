@@ -32,6 +32,7 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
+import { settleTransfers } from "./owner";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -175,7 +176,8 @@ export async function dispatchTep(
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf } = sliceBookkeeping(slices);
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices);
+  for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   /** The tester's tree after a reset: probes back from the store, and the
    *  test homes it edited restored OVER what the branch holds. */
   // Reused only for the same base commit: work for another base is out of date.
@@ -302,10 +304,8 @@ export async function dispatchTep(
     log(`▸ ${next.id} (${role})`, next.id);
     const tree = role === "test" && !maintain ? testerWt : worktree;
     if (role === "test" && !maintain) {
-      // Re-snapshot only when no other test author is mid-flight — a reset
-      // under a live author would wipe its work. The count rises BEFORE the
-      // reset is awaited and the reset itself is one shared promise, so two
-      // authors launched in the same tick cannot each reset under the other.
+      // Re-snapshot only when no other test author is mid-flight (a reset under a live author wipes its work);
+      // the count rises BEFORE the await and the reset is one shared promise, so same-tick authors cannot race it.
       const first = testInflight === 0;
       testInflight++;
       if (first)
@@ -338,8 +338,7 @@ export async function dispatchTep(
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
         : "");
     if (role !== "test") briefBySlice.set(next.slice, baseBrief);
-    // The tester's existing test homes and the coder's contract from the
-    // tester's decisions — each role's brief carries what it owns.
+    // Each role's brief carries what it owns: the tester its test homes, the coder the tester's decisions.
     const oracleStanza =
       role === "test"
         ? testerStanza(built) +
@@ -352,8 +351,7 @@ export async function dispatchTep(
           )
         : coderStanza(!!oracle) +
           decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
-    // Dispatch-time information audit: the brief's completeness against the
-    // checks is static — a missing decidable fact is missing at round zero.
+    // Dispatch-time audit: a decidable fact the brief lacks is missing at round zero.
     let disclosure = "";
     if (oracle?.preflight) {
       st.doing(next.id, "supervisor pre-flight — reading the brief against the checks");
@@ -402,9 +400,8 @@ export async function dispatchTep(
         },
         brief,
       );
-      // A tester that stopped short — its session ended with declared probes
-      // still unwritten — is continued from where it stopped, up to three
-      // more rounds; its written work is never thrown away.
+      // A tester that stopped short (declared probes still unwritten) continues
+      // from where it stopped, up to three more rounds; written work is kept.
       for (let more = 0; role === "test" && !maintain && !outcome.containment && more < 3; more++) {
         const missing = await missingProbes(tree, next.footprint);
         if (!missing.length) break;
@@ -427,8 +424,7 @@ export async function dispatchTep(
           continuationBrief(brief, next.footprint, missing),
         );
       }
-      // A question left in UNDELIVERED is answered by the machine before it
-      // is counted as a gap.
+      // A question left in UNDELIVERED is answered by the machine before it counts as a gap.
       if (outcome.undelivered?.length && !outcome.containment) {
         const kept = await answerEnd(next.slice, next.id, outcome.undelivered);
         outcome = { ...outcome, undelivered: kept, ok: kept.length === 0 };
@@ -462,7 +458,7 @@ export async function dispatchTep(
         break;
       }
       st.doing(next.id, "confirming green — the oracle grades the final state");
-      const confirm = await confirmWaitingForTree({
+      let confirm = await confirmWaitingForTree({
         oracle,
         slice: next.slice,
         repair: repairFor,
@@ -477,6 +473,11 @@ export async function dispatchTep(
         },
       });
       st.doing(next.id, undefined);
+      // A red the machine calls not-yours must not fail the unit: a check reading a pruned test home is graded at the maintainer and the gate, on the record.
+      const settled =
+        !confirm.green && !maintain &&
+        settleTransfers({ result: confirm.result, prunedHomes: maintainedElsewhere(slices, next.slice), slice: next.slice, unit: next.id, criterionOf, onRuling: (r) => rulings.push(r), log: (l) => log(l, next.id) });
+      if (settled) confirm = { ...confirm, green: true };
       if (confirm.green) {
         ok = true;
         if (outcome.undelivered?.length)

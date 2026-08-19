@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { dispatchTep } from "./dispatch";
+import { sliceBookkeeping } from "./plan";
 import { RunState } from "./state";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace, Space } from "../core/schema";
@@ -217,5 +218,96 @@ test("a slice's test homes are brought under by its maintainer, in the code tree
     slices,
   );
   assert.deepEqual(order, ["tester", "coder", "maintainer"], "probes first, then the code, then the test homes brought under");
+  assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
+});
+
+test("a check whose words name a maintainer's test home is homed on the maintainer at planning; one whose probe reads it anyway is transferred at verify — the coder is green of its own, on the record", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "greet.test.mjs"), "// the old header\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "an existing test home"]);
+  let s = emptySpace();
+  const a = addAsk(s, "greet, and fix the old test's header", "t");
+  if (!a.ok) throw new Error("ask");
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "a greet module, and the old test's header brought under",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [
+      { id: "c1", text: "greet() returns 'hello'" },
+      // Named home → homed on the maintainer at planning.
+      { id: "c2", text: "src/greet.test.mjs no longer claims the old header" },
+      // Unnamed, but its probe will read the home → transferred at verify.
+      { id: "c3", text: "the old test is brought under the new rule" },
+    ],
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }, { path: "src/greet.test.mjs" }], stamp: [] },
+  });
+  if (!n.ok) throw new Error("node");
+  s = n.space;
+  const cut = { id: "cut-1", changeIds: [n.added.id], tepId: "TEP-t-72" };
+  const slices = tepSlices({ space: s, cut, spaceName: "greet space" });
+
+  // Planning: the named check leaves the parent and stays with the maintainer.
+  const books = sliceBookkeeping(slices);
+  assert.equal(books.rehomed.length, 1, "one check is homed on the maintainer at planning");
+  assert.equal(books.rehomed[0].ac, 2);
+  assert.match(books.rehomed[0].check, /greet\.test\.mjs/);
+  assert.ok(!books.sliceVerifs.get("SL-1")!.some((v) => v.ac === 2), "the parent's coder is not graded on it");
+  assert.ok(books.sliceVerifs.get("SL-1-tests")!.some((v) => v.ac === 2), "the maintainer is");
+  assert.deepEqual(books.sliceVerifs.get("SL-1")!.map((v) => v.ac), [1, 3], "the other ordinals keep their names");
+
+  const state = new RunState(() => {});
+  const graded: Record<string, number[]> = {};
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      affected: async (p) => (p === "src/greet.mjs" ? "- greet.test.mjs [imports_from] src/greet.test.mjs:L1" : ""),
+      worker: async (w) => {
+        if (w.role === "test" && w.footprint[0]?.startsWith("probes/")) {
+          for (const f of w.footprint)
+            writeInto(
+              w.worktree,
+              f,
+              // AC-3's probe reads the maintained home — the mis-homing that slips through.
+              /_AC-3\./.test(f)
+                ? `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport * as fs from "node:fs";\n` +
+                  `test("brought under", () => assert.match(fs.readFileSync("src/greet.test.mjs", "utf8"), /brought under/));\n`
+                : /_AC-2\./.test(f)
+                  ? `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport * as fs from "node:fs";\n` +
+                    `test("header gone", () => assert.ok(!fs.readFileSync("src/greet.test.mjs", "utf8").includes("old header")));\n`
+                  : GREEN_PROBE,
+            );
+          return { ok: true, finalText: "done" };
+        }
+        if (w.role === "test") {
+          writeInto(w.worktree, "src/greet.test.mjs", "// brought under the new rule\n");
+          return { ok: true, finalText: "done" };
+        }
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        const reply = await w.verifyTool!();
+        graded["coder"] = [...(reply.match(/AC-(\d+)/g) ?? [])].map((x) => Number(x.slice(3)));
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+  assert.ok(!graded["coder"].includes(2), "the coder was never graded on the maintainer's check");
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the coder is green of its own — the pruned-home probe did not fail it");
+  assert.equal(state.units.get("SL-1-tests#eu-0")?.state, "done", "the maintainer went green on the full set");
+  assert.ok(
+    outcome.delivery?.rulings?.some((r) => /graded at the maintainer of src\/greet\.test\.mjs/.test(r.reason)),
+    "the transfer is on the delivery's record",
+  );
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
 });

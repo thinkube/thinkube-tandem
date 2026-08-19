@@ -55,3 +55,53 @@ export function evidenceKey(evidence: string): string {
     .slice(0, 8)
     .join("|");
 }
+
+/**
+ * Checks that belong to the maintainer, read from a verify result: a red
+ * check whose evidence names a test home this runner PRUNED because another
+ * unit maintains it. Narrow and mechanical — a coder cannot argue its way
+ * in, and a check transferred this way is still graded, at the maintainer
+ * and again at the gate; it is never waived.
+ */
+function transferredChecks(
+  r: VerifyResult,
+  prunedHomes: readonly string[],
+): { ac: number; home: string; evidence: string }[] {
+  if (r.kind !== "results") return [];
+  const out: { ac: number; home: string; evidence: string }[] = [];
+  for (const x of r.results) {
+    if (x.pass) continue;
+    const home = prunedHomes.find((h) => x.evidence.includes(h));
+    if (home) out.push({ ac: x.ac, home, evidence: x.evidence });
+  }
+  return out;
+}
+
+/** Whether a unit is green of its own: every red check is a transfer. */
+function greenOfItsOwn(r: VerifyResult, prunedHomes: readonly string[]): boolean {
+  if (r.kind !== "results") return false;
+  const reds = r.results.filter((x) => !x.pass);
+  return reds.length > 0 && transferredChecks(r, prunedHomes).length === reds.length;
+}
+
+/** Settle a not-green confirmation: when every red is a transfer, say each
+ *  transfer, put it on the record as a ruling, and the unit is green of its
+ *  own — the maintainer grades those checks, and the gate grades everything. */
+export function settleTransfers(a: {
+  result: VerifyResult;
+  prunedHomes: readonly string[];
+  slice: string;
+  unit: string;
+  criterionOf?: (slice: string, ac: number) => { id: string; text: string } | undefined;
+  onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
+  log: (line: string) => void;
+}): boolean {
+  if (!greenOfItsOwn(a.result, a.prunedHomes)) return false;
+  for (const t of transferredChecks(a.result, a.prunedHomes)) {
+    const crit = a.criterionOf?.(a.slice, t.ac);
+    a.log(`⚖ ${a.unit}: check ${t.ac} is graded at the maintainer of ${t.home} — its probe reads a test home this runner holds back for that unit`);
+    if (crit)
+      a.onRuling({ criterionId: crit.id, unit: a.slice, granted: true, reason: `graded at the maintainer of ${t.home} — the check reads a test home another unit brings under` });
+  }
+  return true;
+}
