@@ -28,6 +28,9 @@ import {
 import { porcelainPaths } from "./worker";
 import { criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
+import type { RunState } from "./state";
+import { suiteVerdictOf } from "./suite";
+import { repairSuiteAtGate } from "./gateRepair";
 
 export interface GateContext {
   tep: string;
@@ -47,6 +50,9 @@ export interface GateContext {
   decisions: { unit: string; text: string }[];
   exec: Exec;
   boundedExec: BoundedExec;
+  /** Runs the suite command, bounded for a whole suite. */
+  suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  state: RunState;
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
@@ -129,17 +135,43 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         }),
     })),
   );
-  const suite = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
-  proofs.push({ kind: "suite", label: "repo suite", verdict: suite.code === 0 ? "green" : "red" });
+  log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
+  const ran = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
+  let verdict = suiteVerdictOf(ran.code, ran.out, worktree);
+  if (!verdict.green) {
+    // A red suite has owners in the run: the finisher brings the delivered
+    // tree under the repository's checks, bounded; only then is it withheld.
+    const repaired = await repairSuiteAtGate({
+      tep,
+      worktree,
+      baseSha: g.baseSha,
+      deps,
+      state: g.state,
+      exec,
+      suiteExec: g.suiteExec,
+      verdict,
+      log,
+      defect,
+    });
+    verdict = repaired.verdict;
+  }
+  proofs.push({
+    kind: "suite",
+    label: "repo suite",
+    verdict: verdict.green ? "green" : "red",
+    ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
+  });
 
-  if (suite.code !== 0) {
-    log(`⛔ ${tep}: the repository's suite is red after the work — the delivery is withheld`);
+  if (!verdict.green) {
+    const names = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
+    log(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
     defect({
       activity: "closing gate",
       trigger: "suite",
       type: "code",
       impact: "delivery withheld",
-      detail: suite.out.trim().split("\n").slice(-12).join("\n").slice(0, 1000),
+      // The names, and each test's own words — never the tail of a log.
+      detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
       await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
@@ -153,7 +185,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       cutId: cut.id,
       branch,
       proofs,
-      withheld: RED_SUITE_REFUSAL,
+      withheld: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
       ...(undelivered.length ? { undelivered } : {}),
       ...(g.rulings.length ? { rulings: g.rulings } : {}),
       ...(g.decisions.length ? { decisions: g.decisions } : {}),

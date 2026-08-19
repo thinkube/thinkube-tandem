@@ -19,6 +19,8 @@ import {
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
+import { suiteVerdictOf, withSuite } from "./suite";
+import { shellLine } from "./execs";
 import { linkProvisioned } from "./setup";
 import { evidenceKey } from "./owner";
 
@@ -167,6 +169,19 @@ export interface OracleFactoryArgs {
   persistProbe?: (rel: string) => Promise<void>;
   /** Injectable for tests: the probe re-author. */
   author?: typeof runAuthoringRound;
+  /** The repository reading — the re-author and the finisher start from it. */
+  digest?: string;
+  /** The repository's own suite, run in the slice's runner once its checks
+   *  are green — the tree must stand, not only the slice's checks. */
+  suite?: {
+    command: readonly string[];
+    /** Longer than a probe: the whole suite runs. */
+    exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+    /** Every test home a maintain unit brings under — red there is theirs. */
+    maintainHomes: () => readonly string[];
+    /** Files other units will still create — red naming them is the tree's. */
+    pendingPlanned: () => readonly string[];
+  };
 }
 
 /** Challenges a slice may spend — a valve, never a grinding strategy. */
@@ -240,7 +255,7 @@ export function makeChallenge(
         detail: reason,
       });
       if (!granted) return `DENIED — ${reason}\nMeet the check as it stands.`;
-      const rewritten = await reauthorCheck(a, { rel, criterion: criterion.text, because: `an earlier rendering was ruled defective: ${reason}` });
+      const rewritten = await reauthorCheck(a, { slice, rel, criterion: criterion.text, because: `an earlier rendering was ruled defective: ${reason}` });
       if (!rewritten)
         return `GRANTED — ${reason}\nBut the re-author failed; the old check stands for now. Run verify.`;
       a.log(`⚖ ${slice}: check ${ac} re-authored at the oracle's ruling — ${reason}`);
@@ -253,12 +268,16 @@ export function makeChallenge(
  *  loop alike: the criterion is the spec, the reason is context. */
 async function reauthorCheck(
   a: OracleFactoryArgs,
-  args: { rel: string; criterion: string; because: string; error?: string },
+  args: { slice: string; rel: string; criterion: string; because: string; error?: string },
 ): Promise<boolean> {
   const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
   const before = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  // The re-author starts where the tester started: told where it is, how
+  // checks are written here, and which sibling probes run — not blind.
+  const siblings = (a.sliceProbes.get(args.slice) ?? []).filter((p) => p !== args.rel).slice(0, 3);
+  const log = (line: string) => a.log(line, a.acting?.(args.slice)?.unit);
   const rewritten = await (a.author ?? runAuthoringRound)(
-    { cwd: a.testerWt, model: judge, allowWrite: [args.rel], log: a.log, maxTurns: 30 },
+    { cwd: a.testerWt, model: judge, allowWrite: [args.rel], log, maxTurns: 30 },
     [
       `Rewrite the probe at ${args.rel} FROM ITS CRITERION alone. ${args.because}`,
       "",
@@ -266,9 +285,13 @@ async function reauthorCheck(
       ...(args.error
         ? ["", "WHAT THE RUNNER SAID when the old probe ran (fix the cause; the criterion stays):", args.error.slice(0, 2500)]
         : []),
+      "",
+      `WHERE YOU ARE: ${a.testerWt} — the tester's snapshot of the repository, with the delivery's code. Read only under it.`,
       ...(a.built?.length
-        ? ["", `WHERE THE BUILD EMITS compiled output in this repository: ${a.built.join(", ")} — import compiled modules from there, never from a folder that is not built.`]
+        ? [`WHERE THE BUILD EMITS compiled output in this repository: ${a.built.join(", ")} — import compiled modules from there, never from a folder that is not built. Compiled CommonJS modules are imported as a default object (\`import m from "…"; m.name\`), not as named exports.`]
         : []),
+      ...(siblings.length ? [`SIBLING PROBES of this slice, written to the same conventions — read one first: ${siblings.join(", ")}`] : []),
+      ...(a.digest ? ["", "THE REPOSITORY, READ FOR YOU:", a.digest.slice(0, 6000)] : []),
       "",
       "Write a complete, runnable probe file proving only that criterion,",
       "against the repository as this tree shows it. Do not weaken the",
@@ -310,6 +333,7 @@ export function makeRepair(
       spent.set(key, used + 1);
       const head = f.evidence.split("\n").find((l) => /Error|Cannot|timed out|did not exit/i.test(l))?.trim().slice(0, 200) ?? "the check could not run";
       const ok = await reauthorCheck(a, {
+        slice,
         rel,
         criterion: criterion.text,
         because: `The old probe could not run — that is the check's fault, not the code's.`,
@@ -433,7 +457,7 @@ export function sliceOracleFactory(
     const existing = oracles.get(slice);
     if (existing) return existing;
     const runnerDir = path.join(a.wtRoot, "oracle-runners", `${a.tep}-${slice}`);
-    const oracle = createVerifyOracle({
+    const bare = createVerifyOracle({
       codeWorktree: a.worktree,
       testerWorktree: a.testerWt,
       runnerDir,
@@ -464,6 +488,22 @@ export function sliceOracleFactory(
       readFile: (root, rel) => fs.readFile(path.join(root, rel)),
       log: logFor(slice),
     });
+    const suite = a.suite;
+    const oracle = suite
+      ? withSuite(bare, {
+          run: async () => {
+            const r = await suite.exec(shellLine(suite.command), runnerDir);
+            return suiteVerdictOf(r.code, r.output, runnerDir);
+          },
+          maintainHomes: suite.maintainHomes,
+          // The slice's own files are its own to create — never "the tree".
+          pendingPlanned: () => {
+            const mine = a.footprintOf?.(slice) ?? [];
+            return suite.pendingPlanned().filter((p) => !mine.includes(p));
+          },
+          log: logFor(slice),
+        })
+      : bare;
     oracles.set(slice, oracle);
     return oracle;
   };

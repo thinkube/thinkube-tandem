@@ -17,6 +17,12 @@ export function coderStanza(oracleAvailable: boolean): string {
     "acceptance checks against your CURRENT work in an isolated runner and " +
     "returns per-criterion PASS/FAIL with evidence. Use it before declaring " +
     "done — your completion is judged by its green, not by your claim." +
+    "\n\nOnce this slice's checks are green, `verify` also runs the REPOSITORY'S OWN " +
+    "SUITE on your tree — its standing checks (types, tests, size and reachability " +
+    "gates, frozen files) — and tells you which are red and whose they are. A red " +
+    "standing check that is YOURS must be fixed in your files before you are done; " +
+    "one that a maintainer brings under later, or that waits on another unit's file, " +
+    "is named as not yours." +
     "\n\nHOW YOU ARE GRADED: on the committed base plus YOUR files only — another " +
     "unit's half-written work never enters your checks, and yours never enters " +
     "theirs. So a public signature you change must keep its existing callers " +

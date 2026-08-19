@@ -5,6 +5,7 @@
  * repaired and which failures are the environment's, not its own.
  */
 import { formatVerifyReply, VerifyOracle, VerifyResult } from "../engine/verifyOracle";
+import { suiteWaitsForTree, type VerifyWithSuite } from "./suite";
 import { failuresByOwner } from "./owner";
 
 export type Repair = (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]>;
@@ -95,6 +96,10 @@ export async function verifyWithRepair(args: {
       "──── ENVIRONMENT (not your code: the runner could not build or a tool was missing) ────",
       ...env.map((f) => `- check ${f.ac}: ${f.evidence.split("\n").slice(1, 3).join(" ").trim().slice(0, 200)}`),
     );
+  // The repository's own suite, once the slice's checks are green: the
+  // coder reads it as it reads its checks — what is theirs, what is not.
+  const suite = (r as VerifyWithSuite).suite;
+  if (suite) notes.push(suite.stanza);
   return [formatVerifyReply(r), ...notes].join("\n\n");
 }
 
@@ -153,12 +158,16 @@ export async function confirmWaitingForTree(args: {
     const foreign =
       r.kind === "build-failed" ? r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/"))) : [];
     const onlyForeign = r.kind === "build-failed" && foreign.length > 0 && foreign.length === r.errorFiles.length;
-    if (!planned.length && !onlyForeign) break;
+    const suite = (r as VerifyWithSuite).suite;
+    const suiteWaits = !!suite && suiteWaitsForTree(suite);
+    if (!planned.length && !onlyForeign && !suiteWaits) break;
     if (!args.othersPending()) break;
     args.say(
       planned.length
         ? `a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`
-        : `the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
+        : suiteWaits
+          ? "the repository's suite is red only where another unit's files are still to land — waiting for them"
+          : `the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
     );
     await args.waitForCommit();
     confirm = await args.oracle.confirmGreen();

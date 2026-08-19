@@ -18,7 +18,8 @@ import type { SliceForDag } from "../engine/core/dag";
 import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
-import { DEFAULT_AC_TIMEOUT_MS, runBounded } from "../engine/core/closingGate";
+import { haltableExecs } from "./execs";
+import { maintainHomesOf } from "./suite";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
@@ -125,11 +126,7 @@ export async function dispatchTep(
   const storeDir = path.join(wtRoot, "oracle-store", wtName);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
-  // Stop reaches the checker: a halted run starts no probe, build or suite.
-  const boundedExec = (cmd: string, cwd: string) =>
-    st.halted
-      ? Promise.resolve({ code: 124, output: "[stopped — the run was halted]" })
-      : runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env });
+  const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
 
   const defect = (entry: {
     slice?: string;
@@ -234,6 +231,9 @@ export async function dispatchTep(
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
     persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], baseSha),
     ...(deps.author ? { author: deps.author } : {}),
+    ...(deps.digest ? { digest: deps.digest } : {}),
+    // The repository's suite is every slice's check, its red tests owned in the run.
+    suite: { command: deps.suiteCommand, exec: suiteExec, maintainHomes: () => maintainHomesOf(slices), pendingPlanned: () => plannedByPending(dag, done) },
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
@@ -591,7 +591,7 @@ export async function dispatchTep(
   return await closeGate({
     tep, branch, baseSha, worktree, testerWt, slices, space, cut, deps,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
-    exec, boundedExec, log, defect,
+    exec, boundedExec, suiteExec, state: st, log, defect,
   });
   } finally {
     await unlock();

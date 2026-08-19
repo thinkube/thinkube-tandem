@@ -174,6 +174,15 @@ export function closingVerifications(slices: SliceForDag[]): {
  * changed, read for self-declared deferrals. A confession in a shipped
  * file is UNDELIVERED on the delivery's face, never a footnote.
  */
+/** The word "undelivered" is this codebase's own vocabulary — a field, a
+ *  list, a doc line about the mechanism. A confession is the marker in its
+ *  form, `UNDELIVERED:` in capitals, or another marker word; the vocabulary
+ *  alone is not a deferral. */
+const OTHER_MARKERS = /\b(TODO|FIXME|XXX|HACK|not in scope|not implemented|unimplemented|pending SDK)\b/i;
+export function isDeferralVocabulary(text: string): boolean {
+  return !OTHER_MARKERS.test(text) && !/\bUNDELIVERED\s*:/.test(text);
+}
+
 export async function confessedDeferrals(args: {
   worktree: string;
   baseSha: string;
@@ -202,7 +211,7 @@ export async function confessedDeferrals(args: {
     } catch {
       continue;
     }
-    for (const h of scanStubMarkers(rel, content).filter((x) => !x.weak)) {
+    for (const h of scanStubMarkers(rel, content).filter((x) => !x.weak && !isDeferralVocabulary(x.text))) {
       out.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
       args.onHit(h.file, h.line, h.text);
     }

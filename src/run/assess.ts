@@ -22,6 +22,19 @@ export interface AssessArgs {
   onRed?: (label: string, ref: string) => void;
 }
 
+/** The reviewer's word: the last line that starts with GREEN or RED. A
+ *  reviewer that narrates before it decides is still read; one that never
+ *  decides is red. */
+export function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | undefined {
+  if (!reply) return undefined;
+  const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, "").toUpperCase());
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^GREEN\b/.test(lines[i])) return "GREEN";
+    if (/^RED\b/.test(lines[i])) return "RED";
+  }
+  return undefined;
+}
+
 export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
   const byId = new Map(a.space.nodes.map((n) => [n.id, n]));
   const proofs: Proof[] = [];
@@ -38,8 +51,13 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
         repoRoot: a.testerWt,
         ...(a.log ? { log: a.log } : {}),
       };
+      // Where to look: the promise's own files and the checks that prove it
+      // — a reviewer dropped blind into a whole tree spends its turns
+      // finding them and never reaches a verdict.
+      const where = (n.grounding?.touchpoints ?? []).map((t) => t.path);
+      const proofs_ = n.acceptance.map((x) => x.proof?.path).filter((x): x is string => !!x);
       const reply = await (a.round ?? runReadRound)(
-        { ...deps, maxTurns: 12 },
+        { ...deps, maxTurns: 24 },
         [
           "You are an INDEPENDENT REVIEWER grading one assessment check on a",
           "delivered change. You never built this code. Read the repository",
@@ -50,12 +68,15 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
           `THE ASK (the human's words): ${ask?.text ?? "(unavailable)"}`,
           `THE PROMISE: ${n.sentence}`,
           `THE CHECK TO GRADE: ${c.text}`,
+          ...(where.length ? ["", `WHERE THE PROMISE LANDS (start here): ${where.join(", ")}`] : []),
+          ...(proofs_.length ? [`WHAT ELSE PROVES IT: ${proofs_.join(", ")}`] : []),
           "",
-          "First line of your answer must be exactly GREEN or RED, then one",
-          "plain-English sentence saying why.",
+          "You have a small number of tool uses. Read what the check names, then answer.",
+          "Your LAST line must be exactly GREEN or RED, then one plain-English",
+          "sentence saying why. Nothing after it.",
         ].join("\n"),
       );
-      const green = reply?.trimStart().toUpperCase().startsWith("GREEN") ?? false;
+      const green = verdictOf(reply) === "GREEN";
       if (!green) a.onRed?.(`review-${ord}`, (reply ?? "unreachable").slice(0, 300));
       proofs.push({
         kind: "assessment",
