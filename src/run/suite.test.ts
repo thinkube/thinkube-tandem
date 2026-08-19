@@ -173,3 +173,24 @@ test("a suite command with spaces in an argument survives the shell", async () =
   assert.equal(shellLine(["npm", "test"]), "npm test");
   assert.equal(shellLine(["node", "-e", "process.exit(1 ? 1 : 0)"]), "node -e 'process.exit(1 ? 1 : 0)'");
 });
+
+test("a suite that cannot run in the runner is the environment's, not the coder's — unless what it says names the coder's files", async () => {
+  const ctx = { maintainHomes: [], pendingPlanned: [], footprint: ["src/greet.ts"] };
+  const noRun: SuiteFailure = { name: "the suite exited with code 1", detail: "sh: vite: not found\nnpm ERR! Lifecycle script failed" };
+  const mine: SuiteFailure = { name: "the suite exited with code 2", detail: "src/greet.ts(3,1): error TS2322: type mismatch" };
+  assert.equal(suiteOwner(noRun, ctx), "environment");
+  assert.equal(suiteOwner(mine, ctx), "code");
+  const green: VerifyResult = { kind: "results", results: [{ ac: 1, pass: true, evidence: "" }] };
+  const seen: string[] = [];
+  const o = withSuite(fakeOracle(green, "h9"), {
+    run: async () => suiteVerdictOf(1, "sh: vite: not found\n"),
+    maintainHomes: () => [],
+    pendingPlanned: () => [],
+    footprint: () => ["src/greet.ts"],
+    onEnvironment: (d) => seen.push(d),
+  });
+  const c = await o.confirmGreen();
+  assert.equal(c.green, true, "the coder is not held for the runner's failure");
+  assert.match(c.result.suite!.stanza, /ENVIRONMENT \(not your code\)/);
+  assert.equal(seen.length, 1, "and it is on the record");
+});

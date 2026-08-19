@@ -501,6 +501,16 @@ export function sliceOracleFactory(
             const mine = a.footprintOf?.(slice) ?? [];
             return suite.pendingPlanned().filter((p) => !mine.includes(p));
           },
+          footprint: () => a.footprintOf?.(slice) ?? [],
+          onEnvironment: (detail) =>
+            a.defect({
+              slice,
+              activity: "verify",
+              trigger: "suite",
+              type: "environment",
+              impact: "the suite could not run in the runner — not counted against the coder; the gate runs it",
+              detail: detail.slice(0, 1200),
+            }),
           log: logFor(slice),
         })
       : bare;

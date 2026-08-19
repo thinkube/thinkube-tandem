@@ -82,20 +82,26 @@ export function sourceOf(compiled: string, root?: string): string | undefined {
   return candidates.find((c) => fs.existsSync(path.join(root, c))) ?? candidates[0];
 }
 
-export type SuiteOwner = "code" | "maintainer" | "tree";
+export type SuiteOwner = "code" | "maintainer" | "tree" | "environment";
+
+/** The one failure a suite that could not run at all reports. */
+const COULD_NOT_RUN = /^the suite exited with code /;
 
 /**
  * Who a red suite test belongs to, from the coder's point of view:
- *   maintainer — the test file is a test home a maintain unit brings under
- *                after this code lands; it pins the old rule, not a break
- *   tree       — the failure names a file another unit will still create
- *   code       — everything else: the coder's tree broke a standing check
+ *   maintainer  — the test file is a test home a maintain unit brings under
+ *                 after this code lands; it pins the old rule, not a break
+ *   tree        — the failure names a file another unit will still create
+ *   environment — the suite could not run here at all, and what it says
+ *                 names none of the coder's files: the runner, not the work
+ *   code        — everything else: the coder's tree broke a standing check
  */
 export function suiteOwner(
   f: SuiteFailure,
-  ctx: { maintainHomes: readonly string[]; pendingPlanned: readonly string[] },
+  ctx: { maintainHomes: readonly string[]; pendingPlanned: readonly string[]; footprint?: readonly string[] },
 ): SuiteOwner {
   if (f.file && ctx.maintainHomes.includes(f.file)) return "maintainer";
+  if (COULD_NOT_RUN.test(f.name) && !(ctx.footprint ?? []).some((p) => f.detail.includes(p))) return "environment";
   // A planned file is named in the runner's words by its path, or by its
   // compiled name (the same path without `src/` and without an extension).
   const names = (p: string) => [p, stemOf(p), stemOf(p).replace(/^src\//, "")].filter((n) => n.length > 3);
@@ -111,6 +117,7 @@ export function suiteStanza(v: SuiteVerdict, owners: Map<SuiteFailure, SuiteOwne
   const mine = v.failures.filter((f) => owners.get(f) === "code");
   const theirs = v.failures.filter((f) => owners.get(f) === "maintainer");
   const tree = v.failures.filter((f) => owners.get(f) === "tree");
+  const env = v.failures.filter((f) => owners.get(f) === "environment");
   const line = (f: SuiteFailure) => `- ${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail.split("\n").map((d) => "    " + d.trim()).join("\n")}`;
   const out: string[] = ["──── THE REPOSITORY'S OWN CHECKS (they must stay green on your tree — the whole suite, not only your checks) ────", v.summary];
   if (mine.length)
@@ -130,6 +137,12 @@ export function suiteStanza(v: SuiteVerdict, owners: Map<SuiteFailure, SuiteOwne
       "",
       "THE TREE IS NOT READY — these name a file another unit will still create; verify again in a moment:",
       ...tree.map((f) => `- ${f.name}`),
+    );
+  if (env.length)
+    out.push(
+      "",
+      "ENVIRONMENT (not your code) — the suite could not run in this runner; the closing gate runs it on the delivered tree:",
+      ...env.map(line),
     );
   return out.join("\n");
 }
@@ -159,7 +172,11 @@ export function withSuite(
     run: () => Promise<SuiteVerdict>;
     maintainHomes: () => readonly string[];
     pendingPlanned: () => readonly string[];
+    /** The acting slice's own files — what a could-not-run failure must name to be theirs. */
+    footprint?: () => readonly string[];
     log?: (line: string) => void;
+    /** The suite could not run in the runner: on the record, not the coder's. */
+    onEnvironment?: (detail: string) => void;
   },
 ): SuiteOracle {
   const cache = new Map<string, VerifyWithSuite["suite"]>();
@@ -171,8 +188,9 @@ export function withSuite(
       opts.log?.("[suite] the slice's checks are green — running the repository's own suite on this tree");
       const verdict = await opts.run();
       const owners = new Map<SuiteFailure, SuiteOwner>();
-      const ctx = { maintainHomes: opts.maintainHomes(), pendingPlanned: opts.pendingPlanned() };
+      const ctx = { maintainHomes: opts.maintainHomes(), pendingPlanned: opts.pendingPlanned(), footprint: opts.footprint?.() ?? [] };
       for (const f of verdict.failures) owners.set(f, suiteOwner(f, ctx));
+      for (const f of verdict.failures) if (owners.get(f) === "environment") opts.onEnvironment?.(f.detail);
       suite = { verdict, owners, stanza: suiteStanza(verdict, owners) };
       opts.log?.(
         verdict.green
@@ -199,10 +217,11 @@ export function withSuite(
   };
 }
 
-/** Green for the coder: every red test is a maintainer's to bring under.
- *  The tree's failures are not green — they are waited on. */
+/** Green for the coder: every red is a maintainer's to bring under, or the
+ *  runner's own failure to run the suite. The tree's failures are not
+ *  green — they are waited on. */
 export function suiteAcceptable(s: NonNullable<VerifyWithSuite["suite"]>): boolean {
-  return s.verdict.green || [...s.owners.values()].every((o) => o === "maintainer");
+  return s.verdict.green || [...s.owners.values()].every((o) => o === "maintainer" || o === "environment");
 }
 
 /** Only the tree's failures: wait, do not rework. */
