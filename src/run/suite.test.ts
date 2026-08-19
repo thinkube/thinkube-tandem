@@ -194,3 +194,45 @@ test("a suite that cannot run in the runner is the environment's, not the coder'
   assert.match(c.result.suite!.stanza, /ENVIRONMENT \(not your code\)/);
   assert.equal(seen.length, 1, "and it is on the record");
 });
+
+test("the scope of a slice's standing tests: what imports its files, through production, plus what bit at an earlier gate — only files that exist", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-scope-"));
+  for (const f of ["src/a.ts", "src/b.ts", "src/a.test.ts", "src/b.test.ts", "src/hygiene.test.ts", "probes/p.test.mjs"]) {
+    fs.mkdirSync(path.dirname(path.join(root, f)), { recursive: true });
+    fs.writeFileSync(path.join(root, f), "");
+  }
+  const graph: Record<string, string[]> = {
+    "src/a.ts": ["src/a.test.ts", "src/b.ts", "probes/p.test.mjs"],
+    "src/b.ts": ["src/b.test.ts"],
+  };
+  const { scopedTests } = await import("./suite");
+  const files = await scopedTests({ root, footprint: ["src/a.ts"], importersOf: async (p) => graph[p] ?? [], always: ["src/hygiene.test.ts", "src/gone.test.ts"] });
+  assert.deepEqual(files.sort(), ["src/a.test.ts", "src/b.test.ts", "src/hygiene.test.ts"], "direct, through b, and the remembered gate red; never a probe, never a missing file");
+});
+
+test("the scoped run: one file at a time with the proven command; red files named even when the runner's words do not name them", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-scope-"));
+  for (const f of ["src/a.ts", "src/a.test.ts", "src/c.test.ts"]) {
+    fs.mkdirSync(path.dirname(path.join(root, f)), { recursive: true });
+    fs.writeFileSync(path.join(root, f), "");
+  }
+  const { runScopedSuite } = await import("./suite");
+  const ran: string[] = [];
+  const v = await runScopedSuite({
+    runOne: "run-it <file>",
+    root,
+    exec: async (cmd) => {
+      ran.push(cmd);
+      return cmd.includes("c.test") ? { code: 1, output: "boom\n" } : { code: 0, output: "ok 1 - fine\n# fail 0\n" };
+    },
+    footprint: ["src/a.ts"],
+    importersOf: async () => ["src/a.test.ts", "src/c.test.ts"],
+  });
+  assert.deepEqual(ran, ["run-it src/a.test.ts", "run-it src/c.test.ts"]);
+  assert.equal(v.green, false);
+  assert.equal(v.failures[0].file, "src/c.test.ts");
+  assert.match(v.failures[0].name, /src\/c\.test\.ts: the test exited with code 1/);
+  assert.match(v.summary, /2 standing test file\(s\): 1 green, 1 red/);
+  const none = await runScopedSuite({ runOne: "run-it <file>", root, exec: async () => ({ code: 0, output: "" }), footprint: ["src/a.ts"], importersOf: async () => [] });
+  assert.equal(none.green, true);
+});

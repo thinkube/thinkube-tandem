@@ -27,8 +27,11 @@ export async function dispatchScopePlan(args: {
    *  human's settings override) — same scope rule as the digest. */
   provision?: string;
   prepare?: string;
-  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
-  proveSetup?: (s: { provision: string; prepare: string }) => void;
+  runOne?: string;
+  suiteReds?: readonly string[];
+  rememberSuiteReds?: (files: readonly string[]) => void;
+  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
+  proveSetup?: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** The code graph's importer listing for a path — orders test-home work. */
   affected?: (path: string) => Promise<string>;
   onDelivery: (delivery: Delivery, note: string) => void;
@@ -90,6 +93,9 @@ export async function dispatchScopePlan(args: {
             ? { prepare: deps.prepareCommand }
             : {}),
         ...(sc === "" && args.provision ? { provision: args.provision } : {}),
+        ...(sc === "" && args.runOne ? { runOne: args.runOne } : {}),
+        ...(sc === "" && args.suiteReds ? { suiteReds: args.suiteReds } : {}),
+        ...(sc === "" && args.rememberSuiteReds ? { rememberSuiteReds: args.rememberSuiteReds } : {}),
         ...(sc === "" && args.resetup ? { resetup: args.resetup } : {}),
         ...(sc === "" && args.proveSetup ? { proveSetup: args.proveSetup } : {}),
         ...(sc === "" && args.affected ? { affected: args.affected } : {}),

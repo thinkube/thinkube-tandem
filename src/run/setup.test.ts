@@ -69,7 +69,7 @@ test("a build step that fails on the untouched tree refuses the run instead of d
 test("a repository needing no setup passes straight through", async () => {
   const wt = tree();
   const r = await setupRunTree({ worktree: wt, exec: defaultExec, boundedExec: sh, log: () => {} });
-  assert.deepEqual(r, { provisioned: [], built: [] });
+  assert.deepEqual(r, { provisioned: [], built: [], runOne: "" });
 });
 
 test("a setup answer that fails at the door is re-read from the failure and the correction tried once", async () => {
@@ -134,7 +134,7 @@ test("only an answer the door proved is remembered — a first answer that works
     boundedExec: sh,
     log: () => {},
   });
-  assert.deepEqual(proven, [{ provision: "mkdir -p deps && echo lib > deps/lib.txt", prepare: "test -f deps/lib.txt" }]);
+  assert.deepEqual(proven, [{ provision: "mkdir -p deps && echo lib > deps/lib.txt", prepare: "test -f deps/lib.txt", runOne: "" }]);
   const wt2 = tree();
   await setupRunTree({
     worktree: wt2,
@@ -146,4 +146,24 @@ test("only an answer the door proved is remembered — a first answer that works
     log: () => {},
   });
   assert.equal(proven.length, 1, "a failing answer is never remembered as proven");
+});
+
+test("the single-test command is proved on one of the repository's own tests: held when the runner ran it (green or red), dropped when it cannot run one at all — never a reason to refuse", async () => {
+  const wt = tree();
+  const g = (args: string[]) => execFileSync("git", ["-C", wt, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(wt, "tests"), { recursive: true });
+  // A red test on the base: the runner still RAN it — the command holds.
+  fs.writeFileSync(path.join(wt, "tests", "one.test.mjs"), `import { test } from "node:test"; test("red on the base", () => { throw new Error("no"); });\n`);
+  g(["add", "-A"]);
+  g(["commit", "-qm", "a test"]);
+  const said: string[] = [];
+  const held = await setupRunTree({ worktree: wt, runOne: "node --test <file>", exec: defaultExec, boundedExec: sh, log: (l) => said.push(l) });
+  assert.equal(held.runOne, "node --test <file>");
+  assert.ok(said.some((l) => /proving the single-test command on tests\/one\.test\.mjs/.test(l)) && said.some((l) => /held/.test(l)));
+  const dropped = await setupRunTree({ worktree: wt, runOne: "no-such-runner <file>", exec: defaultExec, boundedExec: sh, log: (l) => said.push(l) });
+  assert.equal(dropped.runOne, "", "a command that cannot run a file is not remembered");
+  assert.equal(dropped.refusal, undefined, "and the run is not refused for it");
+  const proven: unknown[] = [];
+  await setupRunTree({ worktree: wt, runOne: "node --test <file>", exec: defaultExec, boundedExec: sh, log: () => {}, proven: (s) => proven.push(s) });
+  assert.deepEqual(proven, [{ provision: "", prepare: "", runOne: "node --test <file>" }], "what held is what is remembered");
 });

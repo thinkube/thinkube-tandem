@@ -43,9 +43,14 @@ export interface Knowledge {
   prepare: string;
   /** Re-read both facts with the evidence of a setup that failed on a fresh
    *  checkout; the corrected answer is remembered. */
-  resetup: (evidence: string) => Promise<{ provision: string; prepare: string }>;
+  /** How one of the repository's own tests runs (`<file>` = its path), unproven until the door proves it. */
+  runOne: string;
+  /** Test files red at an earlier gate of this repository. */
+  suiteReds: string[];
+  rememberSuiteReds: (files: readonly string[]) => void;
+  resetup: (evidence: string) => Promise<{ provision: string; prepare: string; runOne: string }>;
   /** The door proved this answer on a fresh checkout — remember it as such. */
-  proveSetup: (s: { provision: string; prepare: string }) => void;
+  proveSetup: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** What the human has settled — every derivation runs under these. */
   decisions: readonly string[];
   /** A bounded question of the graph: cited nodes, in milliseconds. */
@@ -107,6 +112,14 @@ export async function knowledgeOf(args: {
   // The answer is anchored on the last one given: a fact about the
   // repository must not flip between two readings of unchanged manifests.
   const setupKey = `setup@${stampKey}`;
+  const parseReds = (raw: string | undefined): string[] => {
+    try {
+      const v = raw ? (JSON.parse(raw) as unknown) : [];
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  };
   const parseSetupJson = (raw: string | undefined): Setup | undefined => {
     if (raw === undefined) return undefined;
     try {
@@ -137,6 +150,12 @@ export async function knowledgeOf(args: {
     digest,
     provision: settled.provision,
     prepare: settled.prepare,
+    runOne: settled.runOne,
+    suiteReds: parseReds(args.store?.load("suite@reds")),
+    rememberSuiteReds: (files) => {
+      const all = [...new Set([...parseReds(args.store?.load("suite@reds")), ...files])].slice(-40);
+      args.store?.save("suite@reds", JSON.stringify(all));
+    },
     // A setup that failed on a fresh checkout is re-read with the failure as
     // evidence; the corrected answer replaces the remembered one.
     resetup: async (evidence) => {

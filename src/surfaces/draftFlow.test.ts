@@ -17,7 +17,7 @@ function session(rounds: { n: number }): TandemSession {
       graph: { graphPath: "/graph.json", stamp: { root: "/repo", head: "h", dirty: "" } },
       map: "NODE toolbar.ts [src=src/toolbar.ts loc=L1]",
       digest: "CONVENTIONS: tests sit beside the code (src/)",
-      provision: "", prepare: "", resetup: async () => ({ provision: "", prepare: "" }), proveSetup: () => {},
+      provision: "", prepare: "", runOne: "", suiteReds: [], rememberSuiteReds: () => {}, resetup: async () => ({ provision: "", prepare: "", runOne: "" }), proveSetup: () => {},
       decisions: [],
       ask: async () => "",
       affected: async () => "",

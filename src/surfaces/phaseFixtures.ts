@@ -31,7 +31,7 @@ function bare(): TandemSession {
       digest: "",
       provision: "",
       prepare: "",
-      resetup: async () => ({ provision: "", prepare: "" }),
+      resetup: async () => ({ provision: "", prepare: "", runOne: "" }),
       proveSetup: () => {},
       decisions: [],
       ask: async () => "",

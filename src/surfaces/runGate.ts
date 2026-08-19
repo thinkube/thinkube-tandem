@@ -113,6 +113,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       // unless the human explicitly overrode the build step in settings.
       const prepare = s.deps.prepareCommand || known?.prepare || undefined;
       const provision = known?.provision || undefined;
+      const runOne = known?.runOne || undefined;
+      const suiteReds = known?.suiteReds;
+      const rememberSuiteReds = known?.rememberSuiteReds;
       const resetup = known?.resetup;
       const proveSetup = known?.proveSetup;
       // The graph's importer listing: the run reads it to order each slice's
@@ -129,6 +132,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         ...(digest ? { digest } : {}),
         ...(prepare ? { prepare } : {}),
         ...(provision ? { provision } : {}),
+        ...(runOne ? { runOne } : {}),
+        ...(suiteReds ? { suiteReds } : {}),
+        ...(rememberSuiteReds ? { rememberSuiteReds } : {}),
         ...(resetup ? { resetup } : {}),
         ...(proveSetup ? { proveSetup } : {}),
         ...(affected ? { affected } : {}),

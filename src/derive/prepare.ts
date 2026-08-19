@@ -22,9 +22,12 @@ export interface Setup {
   provision: string;
   /** Builds what a single check imports; empty when tests run from source. */
   prepare: string;
+  /** Runs ONE of the repository's own test files, `<file>` standing for
+   *  its source path; empty when the repository has no such way. */
+  runOne: string;
 }
 
-export const NO_SETUP: Setup = { provision: "", prepare: "" };
+export const NO_SETUP: Setup = { provision: "", prepare: "", runOne: "" };
 
 /** What steers a derivation besides the repository: an earlier answer to
  *  hold to unless the manifests changed, and the evidence of an answer that
@@ -41,9 +44,9 @@ export function buildPreparePrompt(
   digest: string,
   ctx: SetupContext = {},
 ): string {
-  const show = (s: Setup) => `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}`;
+  const show = (s: Setup) => `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}\nRUNONE: ${s.runOne || "NONE"}`;
   return (
-    `Two questions about the repository at ${repoRoot}, answered from its ` +
+    `Three questions about the repository at ${repoRoot}, answered from its ` +
     `own manifests and configs (the dependency manifests and lockfiles, ` +
     `the test runner configuration, the build scripts, where tests import from). ` +
     `Consider EVERY dependency manifest in the repository, nested ones included: ` +
@@ -69,11 +72,18 @@ export function buildPreparePrompt(
     `2. PREPARE — when a SINGLE test file is executed directly (outside the ` +
     `full suite command), does anything have to run first — a compile, a ` +
     `codegen, a build step — for that test file's imports to resolve? ` +
-    `NONE if tests run straight from source.\n\n` +
-    `Respond with EXACTLY two lines and nothing else — no explanation, no ` +
+    `NONE if tests run straight from source.\n` +
+    `3. RUNONE — after PREPARE has run, what single command runs ONE of the ` +
+    `repository's own test files by itself and exits non-zero when it fails? ` +
+    `Write <file> where the test's SOURCE path (relative to the repository ` +
+    `root, e.g. src/a/b.test.ts) goes; if the runner needs the built ` +
+    `counterpart instead, put the mapping in the command itself (a shell ` +
+    `substitution is fine). NONE if there is no way to run one file alone.\n\n` +
+    `Respond with EXACTLY three lines and nothing else — no explanation, no ` +
     `code fences:\n` +
     `PROVISION: <the exact shell command, run from the repository root, or NONE>\n` +
-    `PREPARE: <the exact shell command, run from the repository root, or NONE>`
+    `PREPARE: <the exact shell command, run from the repository root, or NONE>\n` +
+    `RUNONE: <the exact shell command with <file> in it, or NONE>`
   );
 }
 
@@ -81,17 +91,20 @@ export function buildPreparePrompt(
  *  A round that produced no text is NOT an answer: undefined, so a caller
  *  keeps what it had rather than forgetting it. */
 export function parseSetup(raw: string | null): Setup | undefined {
-  if (!raw || !/^\s*`*\s*(PROVISION|PREPARE)\s*:/im.test(raw)) return undefined;
+  if (!raw || !/^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:/im.test(raw)) return undefined;
   const setup: Setup = { ...NO_SETUP };
   for (const l of raw.split("\n")) {
-    const m = /^\s*`*\s*(PROVISION|PREPARE)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
+    const m = /^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
     if (!m) continue;
     const cmd = m[2].replace(/^`+|`+$/g, "").trim();
     // A command is one line of sane length; an essay or NONE is not one.
     const value =
       !cmd || /^none[.!]?$/i.test(cmd) || cmd.length > 200 || /\s{4,}/.test(cmd) ? "" : cmd;
-    if (m[1].toUpperCase() === "PROVISION") setup.provision = value;
-    else setup.prepare = value;
+    const key = m[1].toUpperCase();
+    if (key === "PROVISION") setup.provision = value;
+    else if (key === "PREPARE") setup.prepare = value;
+    // A single-file command without its placeholder runs nothing in particular.
+    else setup.runOne = value.includes("<file>") ? value : "";
   }
   return setup;
 }

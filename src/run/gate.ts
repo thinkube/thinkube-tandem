@@ -139,6 +139,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const ran = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
   let verdict = suiteVerdictOf(ran.code, ran.out, worktree);
   if (!verdict.green) {
+    // The tests that bit at this gate are run early, at every slice, next time.
+    deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
     // A red suite has owners in the run: the finisher brings the delivered
     // tree under the repository's checks, bounded; only then is it withheld.
     const repaired = await repairSuiteAtGate({

@@ -19,8 +19,7 @@ import {
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
-import { suiteVerdictOf, withSuite } from "./suite";
-import { shellLine } from "./execs";
+import { runScopedSuite, withSuite } from "./suite";
 import { linkProvisioned } from "./setup";
 import { evidenceKey } from "./owner";
 
@@ -171,12 +170,16 @@ export interface OracleFactoryArgs {
   author?: typeof runAuthoringRound;
   /** The repository reading — the re-author and the finisher start from it. */
   digest?: string;
-  /** The repository's own suite, run in the slice's runner once its checks
-   *  are green — the tree must stand, not only the slice's checks. */
+  /** The repository's own standing tests, run in the slice's runner once its
+   *  checks are green — scoped to the tests that import the slice's files. */
   suite?: {
-    command: readonly string[];
-    /** Longer than a probe: the whole suite runs. */
+    /** Runs one test file (`<file>` = its source path); "" runs nothing here. */
+    runOne: string;
     exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+    /** The graph's importers of a path. */
+    importersOf: (path: string) => Promise<readonly string[]>;
+    /** Test files red at an earlier gate — run early. */
+    reds: readonly string[];
     /** Every test home a maintain unit brings under — red there is theirs. */
     maintainHomes: () => readonly string[];
     /** Files other units will still create — red naming them is the tree's. */
@@ -489,12 +492,18 @@ export function sliceOracleFactory(
       log: logFor(slice),
     });
     const suite = a.suite;
-    const oracle = suite
+    const oracle = suite?.runOne
       ? withSuite(bare, {
-          run: async () => {
-            const r = await suite.exec(shellLine(suite.command), runnerDir);
-            return suiteVerdictOf(r.code, r.output, runnerDir);
-          },
+          run: () =>
+            runScopedSuite({
+              runOne: suite.runOne,
+              root: runnerDir,
+              exec: (cmd) => suite.exec(cmd, runnerDir),
+              footprint: a.footprintOf?.(slice) ?? [],
+              importersOf: suite.importersOf,
+              always: suite.reds,
+              log: logFor(slice),
+            }),
           maintainHomes: suite.maintainHomes,
           // The slice's own files are its own to create — never "the tree".
           pendingPlanned: () => {

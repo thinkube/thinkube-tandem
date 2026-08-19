@@ -468,7 +468,7 @@ test("the graph is asked with the ask's own words, and its answer reaches ground
       graph: { graphPath: "/nowhere/graph.json", stamp: { root: repoRoot, head: "h", dirty: "" } },
       map: "NODE toolbar [src=src/toolbar.ts loc=L1]",
       digest: "CONVENTIONS: none",
-      provision: "", prepare: "", resetup: async () => ({ provision: "", prepare: "" }), proveSetup: () => {},
+      provision: "", prepare: "", runOne: "", suiteReds: [], rememberSuiteReds: () => {}, resetup: async () => ({ provision: "", prepare: "", runOne: "" }), proveSetup: () => {},
       decisions: [],
       ask: async (q) => {
         asked.push(q);

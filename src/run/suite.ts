@@ -10,8 +10,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { VerifyOracle, VerifyResult } from "../engine/verifyOracle";
-import { isTestPath } from "./testHomes";
+import { isProbePath, isTestPath } from "./testHomes";
 import { isMaintainUnit } from "./plan";
+import { importersIn } from "../dispatch/needs";
 
 /** One red test of the suite, named and located. */
 export interface SuiteFailure {
@@ -230,8 +231,102 @@ export function suiteWaitsForTree(s: NonNullable<VerifyWithSuite["suite"]>): boo
   return !s.verdict.green && owners.length > 0 && owners.every((o) => o === "tree");
 }
 
+/**
+ * The standing tests that matter to a slice: every test file that imports
+ * one of its files, directly or through production it imports (bounded
+ * walk over the graph's importers), plus the files that were red at an
+ * earlier gate. Only files present in the tree are returned.
+ */
+export async function scopedTests(args: {
+  root: string;
+  footprint: readonly string[];
+  importersOf: (path: string) => Promise<readonly string[]>;
+  always?: readonly string[];
+  maxFiles?: number;
+}): Promise<string[]> {
+  const max = args.maxFiles ?? 60;
+  const seen = new Set<string>();
+  const tests = new Set<string>();
+  const queue: { path: string; depth: number }[] = args.footprint.filter((p) => !isTestPath(p)).map((path) => ({ path, depth: 0 }));
+  for (const t of args.footprint) if (isTestPath(t) && !isProbePath(t)) tests.add(t);
+  while (queue.length && tests.size < max) {
+    const { path: p, depth } = queue.shift()!;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const importers = await args.importersOf(p).catch(() => [] as readonly string[]);
+    for (const i of importers) {
+      if (isProbePath(i)) continue;
+      if (isTestPath(i)) tests.add(i);
+      else if (depth < 3 && !seen.has(i)) queue.push({ path: i, depth: depth + 1 });
+    }
+  }
+  for (const r of args.always ?? []) tests.add(r);
+  return [...tests].filter((t) => fs.existsSync(path.join(args.root, t))).slice(0, max);
+}
+
+/**
+ * Run the slice's standing tests one file at a time with the repository's
+ * proven single-test command; the verdicts, named per file, as one suite.
+ */
+export async function runScopedSuite(args: {
+  runOne: string;
+  root: string;
+  exec: (cmd: string) => Promise<{ code: number | null; output: string }>;
+  footprint: readonly string[];
+  importersOf: (path: string) => Promise<readonly string[]>;
+  always?: readonly string[];
+  log?: (line: string) => void;
+}): Promise<SuiteVerdict> {
+  const files = await scopedTests(args);
+  if (!files.length) {
+    args.log?.("[suite] no standing test imports this slice's files — nothing to run here; the gate runs the whole suite");
+    return { green: true, failures: [], summary: "no standing test imports this slice's files" };
+  }
+  args.log?.(`[suite] running ${files.length} standing test file(s) that import this slice's files: ${files.slice(0, 5).join(", ")}${files.length > 5 ? "…" : ""}`);
+  const failures: SuiteFailure[] = [];
+  let pass = 0;
+  for (const f of files) {
+    const r = await args.exec(args.runOne.replace(/<file>/g, f));
+    const v = suiteVerdictOf(r.code, r.output, args.root);
+    if (v.green) {
+      pass++;
+      continue;
+    }
+    // A test file that fails names itself even when its runner's words do not.
+    for (const x of v.failures) failures.push({ ...x, file: x.file ?? f, name: x.name.startsWith("the suite exited") ? `${f}: ${x.name.replace("the suite", "the test")}` : x.name });
+  }
+  return { green: failures.length === 0, failures, summary: `${files.length} standing test file(s): ${pass} green, ${files.length - pass} red` };
+}
+
+/** The oracle's suite arguments for a run: the proven single-test command,
+ *  the graph's importers, the tests that bit before, and the plan's owners. */
+export function sliceSuiteArgs(a: {
+  runOne: string;
+  exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  affected?: (path: string) => Promise<string>;
+  reds?: readonly string[];
+  slices: readonly { workUnits: readonly { role?: string; footprint: readonly string[] }[] }[];
+  pendingPlanned: () => readonly string[];
+}): {
+  runOne: string;
+  exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  importersOf: (path: string) => Promise<readonly string[]>;
+  reds: readonly string[];
+  maintainHomes: () => readonly string[];
+  pendingPlanned: () => readonly string[];
+} {
+  return {
+    runOne: a.runOne,
+    exec: a.exec,
+    importersOf: async (p) => (a.affected ? importersIn(await a.affected(p).catch(() => "")) : []),
+    reds: a.reds ?? [],
+    maintainHomes: () => maintainHomesOf(a.slices),
+    pendingPlanned: a.pendingPlanned,
+  };
+}
+
 /** Every test home a maintain unit brings under, across the plan. */
-export function maintainHomesOf(slices: readonly { workUnits: readonly { role?: string; footprint: readonly string[] }[] }[]): string[] {
+function maintainHomesOf(slices: readonly { workUnits: readonly { role?: string; footprint: readonly string[] }[] }[]): string[] {
   return slices.flatMap((s) => s.workUnits.filter(isMaintainUnit).flatMap((u) => [...u.footprint]));
 }
 

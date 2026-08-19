@@ -19,7 +19,7 @@ import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
-import { maintainHomesOf } from "./suite";
+import { sliceSuiteArgs } from "./suite";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
@@ -59,20 +59,23 @@ export interface DispatchDeps {
   projectId?: string;
   /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
   storeDir?: string;
-  /** The repository reading (conventions and the why) — every worker gets
-   *  it in its brief. Workers are the only actors that MAKE changes, and
-   *  they were the only step that never saw what a change must respect. */
+  /** The repository reading (conventions and the why) — every worker gets it in its brief:
+   *  workers are the only actors that MAKE changes, so they must see what a change must respect. */
   digest?: string;
-  /** How this repository's probes are written and run. A convention is a
-   *  fact about the target repository, not about this extension — the
-   *  default fits the node harness the oracle ships with. */
+  /** How this repository's probes are written and run — a fact about the target repository;
+   *  the default fits the node harness the oracle ships with. */
   testConvention?: string;
   /** What a fresh checkout needs installed — run once; its produce is linked into every runner. */
   provision?: string;
-  /** Re-read provision/prepare from a setup failure's evidence (the door tries the correction once). */
-  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string }>;
+  /** How ONE of the repository's own tests runs (`<file>` = its path) — proved at setup. */
+  runOne?: string;
+  /** Test files red at an earlier gate — run early at every slice; told what stayed red at this one. */
+  suiteReds?: readonly string[];
+  rememberSuiteReds?: (files: readonly string[]) => void;
+  /** Re-read the setup facts from a failure's evidence (the door tries the correction once). */
+  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
   /** The door proved this setup on the untouched tree — remember it as the answer. */
-  proveSetup?: (s: { provision: string; prepare: string }) => void;
+  proveSetup?: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** The code graph's importer listing for a path — orders each slice's
    *  test-home work after the production code those tests import. */
   affected?: (path: string) => Promise<string>;
@@ -100,8 +103,7 @@ export interface DispatchOutcome {
   refusals: string[];
   undelivered: string[];
   url?: string;
-  /** Where each criterion's standing check went on living — the space
-   *  binds these onto its acceptance criteria. */
+  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
   proofAnchors?: (ProofAnchor & { criterionId: string })[];
 }
 export async function dispatchTep(
@@ -116,10 +118,7 @@ export async function dispatchTep(
   const tep = cut.tepId ?? cut.id;
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
-  const wtRoot = path.join(
-    path.dirname(deps.repoRoot),
-    `${path.basename(deps.repoRoot)}-worktrees`,
-  );
+  const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
   const wtName = runName.replace(/\//g, "__");
   const worktree = path.join(wtRoot, wtName);
   const testerWt = path.join(wtRoot, `${wtName}-tester`);
@@ -170,9 +169,9 @@ export async function dispatchTep(
   const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
   if (trees) return refuse(trees.trigger, trees.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, resetup: deps.resetup, proven: deps.proveSetup });
+  const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  const { provisioned, built } = ready;
+  const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
@@ -232,8 +231,8 @@ export async function dispatchTep(
     persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], baseSha),
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
-    // The repository's suite is every slice's check, its red tests owned in the run.
-    suite: { command: deps.suiteCommand, exec: suiteExec, maintainHomes: () => maintainHomesOf(slices), pendingPlanned: () => plannedByPending(dag, done) },
+    // The repository's standing tests are every slice's check, scoped to what imports its files.
+    suite: sliceSuiteArgs({ runOne: runOneTest, exec: suiteExec, affected: deps.affected, reds: deps.suiteReds, slices, pendingPlanned: () => plannedByPending(dag, done) }),
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);

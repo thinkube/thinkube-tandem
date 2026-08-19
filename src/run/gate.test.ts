@@ -4,6 +4,7 @@
  * suite is never delivered — withheld, with the reason in intent terms.
  */
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { dispatchTep } from "./dispatch";
 import { RED_SUITE_REFUSAL } from "./gate";
@@ -65,8 +66,17 @@ const SUITE_WANTS_FINISHED = [
   ].join(""),
 ];
 
-test("the repository's suite is the coder's check too: told which standing check its tree breaks, the coder fixes it before it is done", async () => {
+test("the repository's standing tests are the coder's check too, scoped to what imports its files: told which one its tree breaks, the coder fixes it before it is done", async () => {
   const repo = tmpRepo();
+  // A standing test of the repository, on the base, that imports the slice's file.
+  writeInto(
+    repo,
+    "src/greet.test.mjs",
+    `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport * as fs from "node:fs";\n` +
+      `test("greet is finished", () => assert.ok(fs.readFileSync("src/greet.mjs", "utf8").includes("finished"), "src/greet.mjs must say finished"));\n`,
+  );
+  execFileSync("git", ["-C", repo, "add", "-A"]);
+  execFileSync("git", ["-C", repo, "commit", "-qm", "a standing test"]);
   const { space, ids } = spaceWithOneChange();
   const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-34" };
   const slices = tepSlices({ space, cut, spaceName: "greet space" });
@@ -76,7 +86,10 @@ test("the repository's suite is the coder's check too: told which standing check
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: SUITE_WANTS_FINISHED,
+      // The whole suite is green here (the gate); what the coder sees is the scoped run.
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      runOne: "node --test <file>",
+      affected: async (p) => (p === "src/greet.mjs" ? "[imports] src/greet.test.mjs:L3" : ""),
       state,
       supervisorRound: async () => null,
       rehome: async () => ({ anchors: [], notes: [] }),
@@ -100,11 +113,13 @@ test("the repository's suite is the coder's check too: told which standing check
     cut,
     slices,
   );
-  assert.match(replies[0], /THE REPOSITORY'S OWN CHECKS/, "the suite is in the coder's verify reply");
+  assert.match(replies[0], /THE REPOSITORY'S OWN CHECKS/, "the standing tests are in the coder's verify reply");
   assert.match(replies[0], /YOURS[\s\S]*greet is finished[\s\S]*src\/greet\.mjs must say finished/, "named, with the runner's words, as the coder's own");
   assert.match(replies[1], /Green on your tree/, "and green once fixed");
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "delivered — the gate found the suite green");
   assert.ok(![...state.units.values()].some((u) => u.id.startsWith("gate#")), "no finisher was needed");
+  const unitLog = state.stepLogs.get("SL-1#eu-0") ?? [];
+  assert.ok(unitLog.some((l) => /running 1 standing test file\(s\) that import this slice's files: src\/greet\.test\.mjs/.test(l)), "the scope is said: one file, named");
 });
 
 test("a red suite at the gate goes to a finisher in the run, which brings the tree under; the delivery is opened, not withheld", async () => {
