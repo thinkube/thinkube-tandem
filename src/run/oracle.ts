@@ -87,25 +87,6 @@ export async function ensureSnapshot(
 
 /** Fresh code worktree on the run branch + detached tester snapshot.
  *  Returns the refusal when either cannot be provisioned. */
-export async function provisionRunTrees(
-  repoRoot: string,
-  branch: string,
-  worktree: string,
-  testerWt: string,
-  exec: Exec,
-): Promise<{ trigger: string; refusal: string } | undefined> {
-  for (const stale of [worktree, testerWt])
-    await exec("git", ["-C", repoRoot, "worktree", "remove", "--force", stale], repoRoot);
-  await exec("git", ["-C", repoRoot, "worktree", "prune"], repoRoot);
-  await exec("git", ["-C", repoRoot, "branch", "-D", branch], repoRoot);
-  const wt = await exec("git", ["-C", repoRoot, "worktree", "add", "-b", branch, worktree], repoRoot);
-  if (wt.code !== 0)
-    return { trigger: "worktree", refusal: `worktree failed: ${wt.out.trim().slice(0, 300)}` };
-  if (!(await ensureSnapshot(repoRoot, branch, testerWt, exec)))
-    return { trigger: "tester-snapshot", refusal: `tester snapshot failed at ${testerWt}` };
-  return undefined;
-}
-
 export async function copyRel(fromRoot: string, toRoot: string, rel: string): Promise<void> {
   const dst = path.join(toRoot, rel);
   await fs.mkdir(path.dirname(dst), { recursive: true });

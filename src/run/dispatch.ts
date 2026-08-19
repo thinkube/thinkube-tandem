@@ -27,7 +27,9 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, provisionRunTrees, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { refreshRunTrees } from "./refresh";
+import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
@@ -167,8 +169,9 @@ export async function dispatchTep(
     st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
   }
 
-  const trees = await provisionRunTrees(deps.repoRoot, branch, worktree, testerWt, exec);
-  if (trees) return refuse(trees.trigger, trees.refusal, "gate");
+  // Run again is a resume: an existing branch is kept and refreshed with the base's new commits; committed slices stand.
+  const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, testerWt, deps, exec, log, defect });
+  if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
   const ready = await setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
@@ -180,9 +183,9 @@ export async function dispatchTep(
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   /** The tester's tree after a reset: probes back from the store, and the
    *  test homes it edited restored OVER what the branch holds. */
-  // Reused only for the same base commit: work for another base is out of date.
+  // Keyed to the CUT: its criteria are fixed once signed, so probes survive base refreshes — a probe is written from the checks, not from a commit.
   const restoreTester = async (): Promise<void> => {
-    await restoreProbes(storeDir, testerWt, baseSha);
+    await restoreProbes(storeDir, testerWt, cut.id);
   };
   await restoreTester();
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
@@ -193,9 +196,14 @@ export async function dispatchTep(
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
 
-  const sliceRemaining = new Map<string, number>();
+  // A slice an earlier run of this cut committed stands: done on the record, nothing re-runs; the gate re-proves it like all work.
+  const standing = new Set(refreshed.committedSlices.filter((sl) => dag.some((u) => u.slice === sl)));
   for (const u of dag)
-    sliceRemaining.set(u.slice, (sliceRemaining.get(u.slice) ?? 0) + 1);
+    if (standing.has(u.slice)) {
+      done.add(u.id);
+      pending.delete(u.id);
+      st.set(u.id, "done");
+    }
 
   const briefBySlice = new Map<string, string>();
   const acting = new Map<string, { unit: string }>();
@@ -230,7 +238,7 @@ export async function dispatchTep(
     criterionOf,
     onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
       rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
-    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], baseSha),
+    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], cut.id),
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
     widen: makeWiden({ units: dag, pending: (id) => !done.has(id) && !failed.has(id), log, onRuling: (r) => rulings.push(r) }),
@@ -252,57 +260,19 @@ export async function dispatchTep(
 
   let testInflight = 0;
   let testerReset: Promise<void> = Promise.resolve();
-  const sliceCommitted = new Set<string>();
-
-  /** Probes in, then commit the slice's paths: later tester snapshots see
-   *  committed truth. */
-  let commitWaiters: (() => void)[] = []; // woken on the next slice commit
-  const nextCommit = (ms: number): Promise<void> =>
-    new Promise((resolve) => {
-      const t = setTimeout(() => resolve(), ms);
-      commitWaiters.push(() => {
-        clearTimeout(t);
-        resolve();
-      });
-    });
-  const commitSlice = async (slice: string): Promise<void> => {
-    if (sliceCommitted.has(slice)) return;
-    sliceCommitted.add(slice);
-    const wake = commitWaiters;
-    commitWaiters = [];
-    for (const w of wake) w();
-    const probes = sliceProbes.get(slice) ?? [];
-    for (const rel of probes)
-      await copyRel(testerWt, worktree, rel).catch(() => {});
-    const paths = [...new Set([...(sliceFiles.get(slice) ?? []), ...probes])];
-    if (paths.length) await exec("git", ["add", "--", ...paths], worktree);
-    const c = await exec("git", ["commit", "-m", `tandem: ${tep} ${slice}`], worktree);
-    if (c.code === 0) log(`✓ ${slice}: committed on ${branch}`);
-    else log(`⚠ ${slice}: nothing to commit — ${c.out.trim().split("\n").pop() ?? ""}`);
-  };
-
-  const failWith = (id: string, ...why: string[]): void => {
-    st.fail(id, why.join("; "));
-    undelivered.push(...why.map((u) => `${id}: ${u}`));
-  };
-  const finishUnit = async (id: string, slice: string, ok: boolean): Promise<void> => {
-    if (ok) {
-      done.add(id);
-      st.set(id, "done");
-    } else {
-      failed.add(id);
-      st.set(id, "failed");
-    }
-    const left = (sliceRemaining.get(slice) ?? 1) - 1;
-    sliceRemaining.set(slice, left);
-    if (left === 0 && [...dag].filter((u) => u.slice === slice).every((u) => done.has(u.id)))
-      await commitSlice(slice);
-  };
+  const { sliceCommitted, nextCommit, failWith, finishUnit } = makeCommitBook({
+    tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
+  });
 
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
     const maintain = isMaintainUnit(next); // scheduled as code, worked as a tester
     const role = (maintain ? "test" : (next.role ?? "code")) as "code" | "test";
     st.set(next.id, "running");
+    // A resumed tester whose probes all stand (restored from the cut's store) has nothing to write.
+    if (role === "test" && !maintain && refreshed.resumed && !(await missingProbes(testerWt, next.footprint)).length) {
+      log(`✓ ${next.id}: probes standing from the earlier run — nothing to write`, next.id);
+      return finishUnit(next.id, next.slice, true);
+    }
     log(`▸ ${next.id} (${role})`, next.id);
     const tree = role === "test" && !maintain ? testerWt : worktree;
     if (role === "test" && !maintain) {
@@ -523,7 +493,7 @@ export async function dispatchTep(
       testInflight--;
       if (ok) {
         try {
-          await persistProbes(storeDir, testerWt, next.footprint, baseSha);
+          await persistProbes(storeDir, testerWt, next.footprint, cut.id);
         } catch (err) {
           // A durable done-flag with no persisted probe is the lie the store
           // exists to remove — the unit fails instead.
