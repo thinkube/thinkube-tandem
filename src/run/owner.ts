@@ -14,6 +14,8 @@
  * that names its errors; the patterns are the words runners print, not a
  * language's.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { VerifyResult } from "../engine/verifyOracle";
 
 export type FailureOwner = "code" | "check" | "environment";
@@ -58,30 +60,42 @@ export function evidenceKey(evidence: string): string {
 
 /**
  * Checks that belong to the maintainer, read from a verify result: a red
- * check whose evidence names a test home this runner PRUNED because another
- * unit maintains it. Narrow and mechanical — a coder cannot argue its way
- * in, and a check transferred this way is still graded, at the maintainer
- * and again at the gate; it is never waived.
+ * check whose PROBE SOURCE references a test home this runner PRUNED
+ * because another unit maintains it (the probe is the one place the read
+ * always shows), or whose failure evidence names one. Narrow and
+ * mechanical — a coder cannot argue its way in, and a transferred check is
+ * still graded, at the maintainer and again at the gate; never waived.
  */
 function transferredChecks(
   r: VerifyResult,
   prunedHomes: readonly string[],
+  probeSource?: (ac: number) => string,
 ): { ac: number; home: string; evidence: string }[] {
   if (r.kind !== "results") return [];
   const out: { ac: number; home: string; evidence: string }[] = [];
   for (const x of r.results) {
     if (x.pass) continue;
-    const home = prunedHomes.find((h) => x.evidence.includes(h));
+    const src = probeSource?.(x.ac) ?? "";
+    const home = prunedHomes.find((h) => x.evidence.includes(h) || src.includes(h));
     if (home) out.push({ ac: x.ac, home, evidence: x.evidence });
   }
   return out;
 }
 
-/** Whether a unit is green of its own: every red check is a transfer. */
-function greenOfItsOwn(r: VerifyResult, prunedHomes: readonly string[]): boolean {
-  if (r.kind !== "results") return false;
-  const reds = r.results.filter((x) => !x.pass);
-  return reds.length > 0 && transferredChecks(r, prunedHomes).length === reds.length;
+/** A check's probe source, read from the tester's snapshot — what a probe
+ *  reads is written there, whatever the criterion's words or the runner's. */
+export function probeSourceReader(
+  sliceProbes: ReadonlyMap<string, readonly string[]>,
+  testerWt: string,
+): (slice: string) => (ac: number) => string {
+  return (slice) => (ac) => {
+    const rel = (sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    try {
+      return rel ? fs.readFileSync(path.join(testerWt, rel), "utf8") : "";
+    } catch {
+      return "";
+    }
+  };
 }
 
 /** Settle a not-green confirmation: when every red is a transfer, say each
@@ -90,14 +104,19 @@ function greenOfItsOwn(r: VerifyResult, prunedHomes: readonly string[]): boolean
 export function settleTransfers(a: {
   result: VerifyResult;
   prunedHomes: readonly string[];
+  /** The source of a check's probe, from the tester's snapshot. */
+  probeSource?: (ac: number) => string;
   slice: string;
   unit: string;
   criterionOf?: (slice: string, ac: number) => { id: string; text: string } | undefined;
   onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
   log: (line: string) => void;
 }): boolean {
-  if (!greenOfItsOwn(a.result, a.prunedHomes)) return false;
-  for (const t of transferredChecks(a.result, a.prunedHomes)) {
+  if (a.result.kind !== "results") return false;
+  const reds = a.result.results.filter((x) => !x.pass);
+  const transfers = transferredChecks(a.result, a.prunedHomes, a.probeSource);
+  if (!reds.length || transfers.length !== reds.length) return false;
+  for (const t of transfers) {
     const crit = a.criterionOf?.(a.slice, t.ac);
     a.log(`⚖ ${a.unit}: check ${t.ac} is graded at the maintainer of ${t.home} — its probe reads a test home this runner holds back for that unit`);
     if (crit)

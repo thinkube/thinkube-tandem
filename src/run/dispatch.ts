@@ -32,7 +32,7 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
-import { settleTransfers } from "./owner";
+import { probeSourceReader, settleTransfers } from "./owner";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -238,7 +238,7 @@ export async function dispatchTep(
   };
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
-  const pendingPlanned = (): string[] => plannedByPending(dag, done);
+  const pendingPlanned = (): string[] => plannedByPending(dag, done), probeSourceFor = probeSourceReader(sliceProbes, testerWt);
   const parkFor = makeParkAnswerer(oracleArgs);
   const repairFor = makeRepair(oracleArgs);
   const answerEnd = makeEndAnswerer(oracleArgs);
@@ -476,7 +476,7 @@ export async function dispatchTep(
       // A red the machine calls not-yours must not fail the unit: a check reading a pruned test home is graded at the maintainer and the gate, on the record.
       const settled =
         !confirm.green && !maintain &&
-        settleTransfers({ result: confirm.result, prunedHomes: maintainedElsewhere(slices, next.slice), slice: next.slice, unit: next.id, criterionOf, onRuling: (r) => rulings.push(r), log: (l) => log(l, next.id) });
+        settleTransfers({ result: confirm.result, prunedHomes: maintainedElsewhere(slices, next.slice), probeSource: probeSourceFor(next.slice), slice: next.slice, unit: next.id, criterionOf, onRuling: (r) => rulings.push(r), log: (l) => log(l, next.id) });
       if (settled) confirm = { ...confirm, green: true };
       if (confirm.green) {
         ok = true;

@@ -277,10 +277,13 @@ test("a check whose words name a maintainer's test home is homed on the maintain
             writeInto(
               w.worktree,
               f,
-              // AC-3's probe reads the maintained home — the mis-homing that slips through.
+              // AC-3's probe reads the maintained home — the mis-homing that
+              // slips through. Its failure message names NO path (SL-4's
+              // shape): only the probe's source shows the read.
               /_AC-3\./.test(f)
                 ? `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport * as fs from "node:fs";\n` +
-                  `test("brought under", () => assert.match(fs.readFileSync("src/greet.test.mjs", "utf8"), /brought under/));\n`
+                  `const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };\n` +
+                  `test("brought under", () => assert.ok(/brought under/.test(read("src/greet.test.mjs")), "the pin lives in one of the gate-exempt test files"));\n`
                 : /_AC-2\./.test(f)
                   ? `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport * as fs from "node:fs";\n` +
                     `test("header gone", () => assert.ok(!fs.readFileSync("src/greet.test.mjs", "utf8").includes("old header")));\n`
@@ -303,6 +306,7 @@ test("a check whose words name a maintainer's test home is homed on the maintain
     slices,
   );
   assert.ok(!graded["coder"].includes(2), "the coder was never graded on the maintainer's check");
+  assert.ok(graded["coder"].includes(3), "the sneaky check did reach the coder's verify — the transfer is what saves it");
   assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the coder is green of its own — the pruned-home probe did not fail it");
   assert.equal(state.units.get("SL-1-tests#eu-0")?.state, "done", "the maintainer went green on the full set");
   assert.ok(
