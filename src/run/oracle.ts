@@ -39,25 +39,36 @@ export type Exec = (
   cwd: string,
 ) => Promise<{ code: number; out: string }>;
 
-export const defaultExec: Exec = (cmd, args, cwd) =>
-  new Promise((resolve) => {
-    execFile(
-      cmd,
-      args,
-      { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      (err, stdout, stderr) =>
-        resolve({
-          code:
-            err && typeof (err as { code?: unknown }).code === "number"
-              ? ((err as { code?: number }).code as number)
-              : err
-                ? 1
-                : 0,
-          out: `${stdout}\n${stderr}`,
-        }),
-    );
-  });
+/** Every command the run executes is BOUNDED and NAMED: a command that
+ *  hangs becomes "timed out" with its own name in the output — a run is
+ *  never allowed to go silent inside an exec. */
+export function makeExec(timeoutMs: number): Exec {
+  return (cmd, args, cwd) =>
+    new Promise((resolve) => {
+      execFile(
+        cmd,
+        args,
+        { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL" },
+        (err, stdout, stderr) => {
+          const killed = !!err && (err as { killed?: boolean }).killed === true;
+          resolve({
+            code: killed
+              ? 124
+              : err && typeof (err as { code?: unknown }).code === "number"
+                ? ((err as { code?: number }).code as number)
+                : err
+                  ? 1
+                  : 0,
+            out: killed
+              ? `[timed out after ${Math.round(timeoutMs / 1000)}s: ${cmd} ${args.slice(0, 5).join(" ")}]\n${stdout}\n${stderr}`
+              : `${stdout}\n${stderr}`,
+          });
+        },
+      );
+    });
+}
 
+export const defaultExec: Exec = makeExec(5 * 60 * 1000);
 /**
  * Create or re-point a detached snapshot worktree at `ref`'s current commit.
  * Reuse = re-snapshot: hard reset + `clean -fd` (no -x — provisioning like

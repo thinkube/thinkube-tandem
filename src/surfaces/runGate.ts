@@ -10,7 +10,7 @@ import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
-import { RunState } from "../run/state";
+import { RunState, silentVerdict } from "../run/state";
 import { saveRun } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
@@ -52,8 +52,10 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       s.changed(s.runNote);
       return undefined;
     }
+    // The old note dies the moment a new press starts — a corpse is never news.
     s.runNote = undefined;
     s.running = true;
+    s.changed("Starting — refreshing the branch…");
     // The run is written down AS IT HAPPENS, not only when it is over.
     // A record kept until the end is a record nobody can read while they
     // need it — the surface holds the only copy, so a crash takes the
@@ -67,7 +69,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       saveRun(s.deps.storeDir, { cutId, tepId: cut.tepId, at: s.deps.now() }, s.runState);
       lastWrite = Date.now();
     };
+    let lastBeat = Date.now();
     s.runState = new RunState(() => {
+      lastBeat = Date.now();
       s.deps.onChanged?.();
       if (Date.now() - lastWrite >= 2000) keep();
       else if (!pending)
@@ -76,6 +80,29 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
           keep();
         }, 2000);
     });
+    // The heartbeat: every exec is bounded (makeExec), so the longest
+    // legitimate silence is the suite's own bound — beyond it, the run
+    // declares itself dead at its last named step instead of going quiet.
+    const pulse = setInterval(() => {
+      const st = s.runState;
+      if (!st) return;
+      const verdict = silentVerdict({
+        running: s.running,
+        lastBeatMs: lastBeat,
+        nowMs: Date.now(),
+        limitMs: 25 * 60 * 1000,
+        lastLine: st.logs.at(-1),
+        busyUnits: [...st.units.values()].filter((u) => u.state === "running").map((u) => ({ id: u.id, text: u.activity?.text })),
+      });
+      if (!verdict) return;
+      st.log(`⛔ ${verdict}`);
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "silent-stall", impact: "run stopped by its heartbeat", detail: verdict });
+      st.halt();
+      s.running = false;
+      s.runNote = `The build stopped: ${verdict}`;
+      keep();
+      s.changed(s.runNote);
+    }, 60 * 1000);
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
       // The repository reading rides into every worker's brief. Cached
@@ -190,6 +217,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       s.changed(s.runNote);
       return undefined;
     } finally {
+      clearInterval(pulse);
       s.running = false;
       if (pending) clearTimeout(pending);
       // And once more at the end, so the last thing that happened is in

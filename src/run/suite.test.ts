@@ -245,3 +245,26 @@ test("a probe that loads a source file the runner cannot execute is the check's 
   );
   assert.equal(ownerOf("expected 'a' to equal 'b'"), "code");
 });
+
+test("every command the run executes is bounded and named: a hung command becomes 'timed out' with its own name", async () => {
+  const { makeExec } = await import("./oracle");
+  const quick = makeExec(300);
+  const r = await quick("sleep", ["30"], "/tmp");
+  assert.equal(r.code, 124);
+  assert.match(r.out, /timed out after 0s: sleep 30/);
+  const fine = await quick("node", ["-e", "console.log('ok')"], "/tmp");
+  assert.equal(fine.code, 0);
+  assert.match(fine.out, /ok/);
+});
+
+test("the heartbeat: a silent run declares itself dead at its last named step; a beating or finished run is left alone", async () => {
+  const { silentVerdict } = await import("./state");
+  const base = { running: true, lastBeatMs: 0, nowMs: 26 * 60 * 1000, limitMs: 25 * 60 * 1000 };
+  assert.match(
+    silentVerdict({ ...base, busyUnits: [{ id: "SL-3#eu-0", text: "waiting on verify — round 2" }] })!,
+    /went silent for 26 minutes at: SL-3#eu-0 \(waiting on verify — round 2\)/,
+  );
+  assert.match(silentVerdict({ ...base, lastLine: "building the untouched tree" })!, /at: building the untouched tree/);
+  assert.equal(silentVerdict({ ...base, nowMs: 10 * 60 * 1000 }), undefined, "a beating run is left alone");
+  assert.equal(silentVerdict({ ...base, running: false }), undefined, "a finished run is left alone");
+});

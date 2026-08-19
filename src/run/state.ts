@@ -201,3 +201,27 @@ export class RunState {
     };
   }
 }
+
+/**
+ * The run's heartbeat verdict: a run that has written nothing to its record
+ * for longer than the longest thing it is allowed to do silently declares
+ * itself dead AT ITS LAST NAMED STEP — a silent stall is a failure with a
+ * name, never three quiet hours.
+ */
+export function silentVerdict(a: {
+  running: boolean;
+  lastBeatMs: number;
+  nowMs: number;
+  /** The longest legitimate quiet stretch (the suite's own bound, plus slack). */
+  limitMs: number;
+  lastLine?: string;
+  busyUnits?: readonly { id: string; text?: string }[];
+}): string | undefined {
+  if (!a.running || a.nowMs - a.lastBeatMs < a.limitMs) return undefined;
+  const mins = Math.round((a.nowMs - a.lastBeatMs) / 60000);
+  const at =
+    a.busyUnits?.length
+      ? a.busyUnits.map((u) => `${u.id}${u.text ? ` (${u.text})` : ""}`).join("; ")
+      : (a.lastLine ?? "an unnamed step");
+  return `the run went silent for ${mins} minutes at: ${at.slice(0, 300)} — stopped and recorded`;
+}
