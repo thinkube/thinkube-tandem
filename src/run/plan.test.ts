@@ -315,3 +315,133 @@ test("a check whose words name a maintainer's test home is homed on the maintain
   );
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
 });
+
+test("the supervisor's WIDEN has power: a validated widening reaches the fence and the unit delivers; a test file or a pending unit's file is refused; a contained violation fails the unit without halting the run", async () => {
+  const repo = tmpRepo();
+  const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  // The file the check really needs, outside the promise's footprint.
+  fs.writeFileSync(path.join(repo, "src", "deps.mjs"), `export const key = "";\n`);
+  g(["add", "-A"]);
+  g(["commit", "-qm", "base"]);
+  let s = emptySpace();
+  const a = addAsk(s, "each notice carries its own key", "t");
+  if (!a.ok) throw new Error("ask");
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "notices carry the key",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c1", text: "the key is not empty" }],
+    // The grounding missed src/deps.mjs — SL-10's gap.
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+  });
+  if (!n.ok) throw new Error("node");
+  s = n.space;
+  const cut = { id: "cut-1", changeIds: [n.added.id], tepId: "TEP-t-73" };
+  const slices = tepSlices({ space: s, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const answers: string[] = [];
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async (_d, prompt) =>
+        prompt.includes("THE WORKER'S QUESTION")
+          ? "WIDEN: src/deps.mjs probes/held.test.mjs src/greet.mjs — the check reads the key from deps"
+          : null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(
+            w.worktree,
+            w.footprint[0],
+            `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+              `import { key } from "../src/deps.mjs";\ntest("key", () => assert.ok(key.length > 0));\n`,
+          );
+          return { ok: true, finalText: "done" };
+        }
+        writeInto(w.worktree, "src/greet.mjs", `export {};\n`);
+        const reply = await new Promise<string>((resolve) => w.onPark("AC-1 needs src/deps.mjs — widen my footprint?", resolve));
+        answers.push(reply);
+        assert.ok(w.footprint.includes("src/deps.mjs"), "the widening reached the unit's own footprint — the fence reads the same array");
+        assert.ok(!w.footprint.includes("probes/held.test.mjs"), "a test path is never granted");
+        writeInto(w.worktree, "src/deps.mjs", `export const key = "alpha";\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+  assert.match(answers[0], /footprint was widened/i);
+  assert.match(answers[0], /Refused: probes\/held\.test\.mjs \(test-shaped/, "the refusal is said with its reason");
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the unit delivered inside its widened footprint");
+  assert.ok(outcome.delivery && !outcome.delivery.withheld);
+  assert.ok(outcome.delivery!.rulings?.some((r) => r.criterionId === "footprint" && /src\/deps\.mjs/.test(r.reason)), "the widening rides the delivery as a ruling");
+});
+
+test("a stray write is contained, the unit fails, and the run goes on — the other slices keep their own fate", async () => {
+  const repo = tmpRepo();
+  let s = emptySpace();
+  const a1 = addAsk(s, "greet the user", "t");
+  if (!a1.ok) throw new Error("ask");
+  s = a1.space;
+  const n1 = addNode(s, {
+    sentence: "a greet module",
+    serves: [a1.added.id],
+    needs: [],
+    acceptance: [{ id: "c1", text: "greet() returns 'hello'" }],
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+  });
+  if (!n1.ok) throw new Error("node");
+  s = n1.space;
+  const n2 = addNode(s, {
+    sentence: "a farewell module",
+    serves: [a1.added.id],
+    needs: [],
+    acceptance: [{ id: "c2", text: "bye() returns 'bye'" }],
+    grounding: { touchpoints: [{ path: "src/bye.mjs", planned: true }], stamp: [] },
+  });
+  if (!n2.ok) throw new Error("node2");
+  s = n2.space;
+  const cut = { id: "cut-1", changeIds: [n1.added.id, n2.added.id], tepId: "TEP-t-74" };
+  const slices = tepSlices({ space: s, cut, spaceName: "greet space" });
+  assert.ok(slices.length >= 2, "two slices");
+  const state = new RunState(() => {});
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w) => {
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], w.footprint[0].includes("SL-1") ? GREEN_PROBE : GREEN_PROBE.replace(/greet/g, "bye").replace(/hello/g, "bye"));
+          return { ok: true, finalText: "done" };
+        }
+        if (w.footprint.includes("src/greet.mjs")) {
+          // The stray: writes a file it does not own.
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+          writeInto(w.worktree, "src/stray.mjs", "// not mine\n");
+          return { ok: true, finalText: "done", containment: true } as never;
+        }
+        writeInto(w.worktree, "src/bye.mjs", `export function bye() { return "bye"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    s,
+    cut,
+    slices,
+  );
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "failed", "the violator failed");
+  assert.match(state.units.get("SL-1#eu-0")?.note ?? "", /reverted/);
+  assert.equal(state.halted, false, "the run was not halted");
+  assert.equal(state.units.get("SL-2#eu-0")?.state, "done", "the other slice kept its own fate");
+});

@@ -32,7 +32,7 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
-import { probeSourceReader, settleTransfers } from "./owner";
+import { makeWiden, probeSourceReader, settleTransfers } from "./owner";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -233,6 +233,7 @@ export async function dispatchTep(
     persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], baseSha),
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
+    widen: makeWiden({ units: dag, pending: (id) => !done.has(id) && !failed.has(id), log, onRuling: (r) => rulings.push(r) }),
     // The repository's standing tests are every slice's check, scoped to what imports its files.
     suite: sliceSuiteArgs({ runOne: runOneTest, exec: suiteExec, affected: deps.affected, reds: deps.suiteReds, slices, pendingPlanned: () => plannedByPending(dag, done) }),
   };
@@ -430,17 +431,17 @@ export async function dispatchTep(
         outcome = { ...outcome, undelivered: kept, ok: kept.length === 0 };
       }
       if (outcome.containment) {
-        log(`⛔ ${next.id}: footprint violation — run halted`, next.id);
-        st.fail(next.id, "wrote outside its footprint — the changes were reverted and the run halted");
+        // The stray writes are already reverted — the tree is clean; the rest of the run keeps its own fate.
+        log(`⛔ ${next.id}: footprint violation — the changes were reverted; the unit failed`, next.id);
+        st.fail(next.id, "wrote outside its footprint — the changes were reverted");
         defect({
           slice: next.slice,
           unit: next.id,
           activity: "unit execution",
           trigger: "containment",
-          impact: "run halted",
+          impact: "unit failed; writes reverted",
           detail: "worker wrote outside its footprint; offending paths reverted",
         });
-        st.halt();
         break;
       }
       if (!oracle) {
@@ -561,8 +562,7 @@ export async function dispatchTep(
         tree: (u.role ?? "code") === "test" ? testerWt : worktree,
         paths: u.footprint,
       });
-      // A crash inside one unit is that unit's failure, on the record —
-      // never the end of the run for every other unit.
+          // A crash inside one unit is that unit's failure, on the record — never the run's end.
       const p = runOne(u)
         .catch(async (err) => {
           const why = err instanceof Error ? (err.stack ?? err.message) : String(err);

@@ -170,6 +170,10 @@ export interface OracleFactoryArgs {
   author?: typeof runAuthoringRound;
   /** The repository reading — the re-author and the finisher start from it. */
   digest?: string;
+  /** Widen a unit's footprint at the supervisor's ruling — validated and
+   *  APPLIED by the run (the fence, the runner overlay and the porcelain
+   *  filter all read the same footprint), and put on the record. */
+  widen?: (slice: string, unit: string, paths: string[]) => { granted: string[]; refused: { path: string; why: string }[] };
   /** The repository's own standing tests, run in the slice's runner once its
    *  checks are green — scoped to the tests that import the slice's files. */
   suite?: {
@@ -185,6 +189,23 @@ export interface OracleFactoryArgs {
     /** Files other units will still create — red naming them is the tree's. */
     pendingPlanned: () => readonly string[];
   };
+}
+
+/** The paths in a supervisor's WIDEN line — repo-relative, before any dash. */
+export function widenPaths(reply: string): string[] {
+  const line = reply.trimStart().split("\n")[0].replace(/^WIDEN:\s*/i, "").split(/\s+[—-]{1,2}\s+/)[0];
+  return [...new Set(line.split(/[,\s]+/).map((t) => t.trim().replace(/^`|`$/g, "")).filter((t) => t.includes("/") && !t.startsWith("/") && !t.includes("..")))];
+}
+
+/** Apply a WIDEN ruling: validate, widen, put it on the record; the note the
+ *  worker reads, or undefined when nothing was granted. */
+function applyWiden(a: OracleFactoryArgs, slice: string, unit: string, reply: string): string | undefined {
+  const paths = widenPaths(reply);
+  if (!paths.length || !a.widen) return undefined;
+  const { granted, refused } = a.widen(slice, unit, paths);
+  const refusedNote = refused.length ? ` Refused: ${refused.map((r) => `${r.path} (${r.why})`).join("; ")} — do not touch those.` : "";
+  if (!granted.length) return undefined;
+  return `FOOTPRINT WIDENED at the supervisor's ruling: you may now edit ${granted.join(", ")}.${refusedNote} Make the change there and run verify.`;
 }
 
 /** Challenges a slice may spend — a valve, never a grinding strategy. */
@@ -400,6 +421,9 @@ export function sliceOracleFactory(
         "   complete and concrete; verbatim check source never crosses, everything it MEANS does>",
         '- "TEST-FAULT: <a check contradicts the intent — name both; the coder must NOT conform>',
         '- "CAPABILITY: <the brief already states every required fact — cite exactly where>',
+        '- "WIDEN: <repo-relative PRODUCTION file paths, space-separated> — <why the checks cannot pass without changing them>"',
+        "   ONLY when a check requires changing a production file the unit's footprint lacks. The run validates",
+        "   and actually widens; a test file, or a file a pending unit owns, is refused.",
         '- "ESCALATE" (intent-level ambiguity; a human must decide)',
         "",
         "──── THE CODER'S BRIEF ────",
@@ -440,6 +464,11 @@ export function sliceOracleFactory(
           impact: "a check contradicts the intent",
           detail: reply.slice(0, 1000),
         });
+      if (reply.trimStart().startsWith("WIDEN")) {
+        const unit = a.acting?.(slice)?.unit ?? slice;
+        const note = applyWiden(a, slice, unit, reply);
+        if (note) return note;
+      }
       if (reply.trimStart().startsWith("ESCALATE")) {
         a.defect({
           slice,

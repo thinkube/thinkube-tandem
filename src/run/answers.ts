@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
+import { widenPaths } from "./oracle";
 
 /**
  * A worker's question goes to the machine first. The supervisor sees the
@@ -46,6 +47,11 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         "   whenever the question is decidable from the brief, the checks, the repository or the rules of the run",
         "   (a rule of the run: the coder never touches a test file; the tester owns every test; the coder's",
         "   only feedback is `verify`; a check it believes wrong is challenged, never conformed to blindly).",
+        '- "WIDEN: <repo-relative PRODUCTION file paths, space-separated> — <why the unit cannot deliver without them>"',
+        "   ONLY when the checks require a change in a production file the unit's footprint lacks. The run",
+        "   validates and ACTUALLY widens the footprint; a test file, or a file a pending unit owns, is",
+        "   refused — then answer or escalate instead. Never tell a worker to edit a file outside its",
+        "   footprint without this: words without the widening send it into the fence.",
         '- "ESCALATE: <the question restated at the level of intent, in the human\'s vocabulary — which',
         "   behavior the asks want — with no file names, tool names or internals>\" ONLY when the answer",
         "   is a genuine choice among behaviors that the asks and the checks do not decide.",
@@ -70,6 +76,17 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         prompt,
       ).catch(() => null);
       const first = (reply ?? "").trimStart();
+      if (/^WIDEN:/i.test(first) && a.widen) {
+        const { granted, refused } = a.widen(slice, unit, widenPaths(first));
+        const refusedNote = refused.length ? ` Refused: ${refused.map((r) => `${r.path} (${r.why})`).join("; ")} — do not touch those.` : "";
+        if (granted.length) {
+          a.defect({ slice, unit, activity: "worker question", trigger: "supervisor", type: "contract", impact: "footprint widened", detail: `Q: ${question.slice(0, 300)}\n→ widened: ${granted.join(", ")}` });
+          answer(`Your footprint was widened at the supervisor's ruling: you may now edit ${granted.join(", ")}.${refusedNote} Make the change there and run verify.`);
+          return;
+        }
+        answer(`The widening was refused.${refusedNote} Do not edit files outside your footprint; finish what is yours and name the rest as UNDELIVERED.`);
+        return;
+      }
       if (/^ANSWER:/i.test(first)) {
         const text = first.replace(/^ANSWER:\s*/i, "").trim();
         a.log(`↩ ${unit}: the supervisor answered the worker's question`, unit);
