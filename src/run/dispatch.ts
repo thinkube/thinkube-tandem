@@ -27,7 +27,7 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { copyRel, defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { refreshRunTrees } from "./refresh";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
