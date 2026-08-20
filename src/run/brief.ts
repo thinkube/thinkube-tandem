@@ -29,6 +29,9 @@ export function coderStanza(oracleAvailable: boolean): string {
     "compiling (an overload, an optional parameter, a default): the callers " +
     "belong to other slices and are updated there. If the contract itself " +
     "requires breaking a signature, say so as UNDELIVERED with the callers named." +
+    "\n\nA `build` tool is also available: the repository's own build over the current tree, " +
+    "the compiler's words verbatim, in seconds — use it after edits, before `verify`. Lines in " +
+    "files outside your footprint are other units' in-flight work; ignore them." +
     "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
     "or probe file, and never run a build, a test command or a package " +
     "manager — you have no shell. Work from the intent and the contract, and " +

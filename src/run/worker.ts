@@ -36,6 +36,11 @@ export interface RunWorkerDeps {
   /** In-loop black-box check: runs the slice's acceptance checks against the
    *  current work and returns the oracle's formatted verdict. */
   verifyTool?: () => Promise<string>;
+  /** The repository's own build over the actor's current tree — the
+   *  compiler's words VERBATIM. Feedback, never a judge: the compiler is
+   *  the language's law, not gameable evidence, so it does not touch the
+   *  blinding wall. */
+  buildTool?: () => Promise<string>;
   /** The valve on the blinding wall: challenge a check the worker believes
    *  misreads its criterion. The oracle rules; the ruling is recorded and
    *  rides the delivery. Never a way to see or edit the probe. */
@@ -194,6 +199,7 @@ export async function runUnitWorker(
     if (deps.verifyTool && mod.tool && mod.createSdkMcpServer) {
       const verify = deps.verifyTool;
       const challenge = deps.challengeTool;
+      const build = deps.buildTool;
       const { z } = (await import("zod")) as { z: typeof import("zod").z };
       mcpServers = {
         tandem: mod.createSdkMcpServer({
@@ -208,6 +214,16 @@ export async function runUnitWorker(
                 content: [{ type: "text" as const, text: await verify() }],
               }),
             ),
+            ...(build
+              ? [
+                  mod.tool(
+                    "build",
+                    "Run the repository's own build over your current tree and get the compiler's words VERBATIM. Seconds, runs no tests, judges nothing — your fastest feedback for type and import errors. Lines naming files outside your footprint are other units' in-flight work in this shared tree; ignore them.",
+                    {},
+                    async () => ({ content: [{ type: "text" as const, text: await build() }] }),
+                  ),
+                ]
+              : []),
             ...(challenge
               ? [
                   mod.tool(

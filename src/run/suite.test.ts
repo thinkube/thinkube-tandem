@@ -268,3 +268,15 @@ test("the heartbeat: a silent run declares itself dead at its last named step; a
   assert.equal(silentVerdict({ ...base, nowMs: 10 * 60 * 1000 }), undefined, "a beating run is left alone");
   assert.equal(silentVerdict({ ...base, running: false }), undefined, "a finished run is left alone");
 });
+
+test("the compiler's words reach the actor verbatim, verdict first; an empty build failure says so", async () => {
+  const { formatBuild } = await import("./execs");
+  assert.equal(formatBuild({ code: 0, output: "" }), "BUILD GREEN");
+  assert.match(formatBuild({ code: 2, output: "src/a.ts(3,1): error TS2322: nope" }), /^BUILD RED \(exit 2\)\nsrc\/a\.ts\(3,1\)/);
+  assert.match(formatBuild({ code: 124, output: "" }), /produced no output — it may have timed out/);
+  const { formatVerifyReply } = await import("../engine/verifyOracle");
+  assert.match(
+    formatVerifyReply({ kind: "build-failed", testFault: false, errorFiles: [], output: "  " }),
+    /produced no output.*run the `build` tool/,
+  );
+});

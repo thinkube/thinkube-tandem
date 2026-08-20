@@ -35,6 +35,7 @@ import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
 import { makeWiden, probeSourceReader, settleTransfers } from "./owner";
+import { formatBuild } from "./execs";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -365,6 +366,9 @@ export async function dispatchTep(
           onPark: (q, answer) =>
             void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
           log: (line: string) => log(line, next.id),
+          ...(deps.prepare && tree === worktree
+            ? { buildTool: async () => formatBuild(await boundedExec(deps.prepare!, tree)) }
+            : {}),
           ...(oracle
             ? {
                 verifyTool: async () => {

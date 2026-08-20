@@ -507,7 +507,9 @@ export function sliceOracleFactory(
         if (a.provisioned?.length) await linkProvisioned(runnerDir, a.worktree, a.provisioned);
         for (const rel of a.pruneIn?.(slice) ?? []) await fs.rm(path.join(runnerDir, rel), { force: true }).catch(() => {});
       },
-      copyIn: (fromRoot, rel) => copyRel(fromRoot, runnerDir, rel),
+      // A file missing at its source (a probe an earlier run lost) is the
+      // check's red when it runs, never a crash of the whole unit.
+      copyIn: (fromRoot, rel) => copyRel(fromRoot, runnerDir, rel).catch(() => {}),
       removeIn: async (rel) => {
         await fs.rm(path.join(runnerDir, rel), { force: true });
       },

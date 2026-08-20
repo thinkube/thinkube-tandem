@@ -250,7 +250,11 @@ export function formatVerifyReply(r: VerifyResult): string {
         "If your implementation already matches the contract exactly, say so explicitly in your final summary and stop — the mismatch will be reviewed on the other side.",
       ].join("\n");
     }
-    return ["BUILD FAILED — compile errors:", clip(r.output, 4000)].join("\n");
+    return [
+      "BUILD FAILED — compile errors:",
+      clip(r.output, 4000).trim() ||
+        "(the build produced no output — it may have timed out; run the `build` tool for the compiler's words)",
+    ].join("\n");
   }
   const pass = r.results.filter((x) => x.pass).length;
   const head = `PROBES: ${pass}/${r.results.length} pass`;

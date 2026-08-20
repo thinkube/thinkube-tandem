@@ -24,3 +24,10 @@ export function haltableExecs(
 export function shellLine(cmd: readonly string[]): string {
   return cmd.map((a) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(" ");
 }
+
+/** The compiler's words, verbatim and bounded, with the verdict first. */
+export function formatBuild(r: { code: number | null; output: string }): string {
+  const out = r.output.trim();
+  if (r.code === 0) return "BUILD GREEN" + (out ? `\n${out.slice(0, 2000)}` : "");
+  return `BUILD RED (exit ${r.code ?? "null"})\n${out.slice(0, 8000) || "(the build produced no output — it may have timed out)"}`;
+}

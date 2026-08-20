@@ -16,7 +16,8 @@ import { runUnitWorker, porcelainPaths } from "./worker";
 import { suiteFootprint, suiteStanza, suiteVerdictOf } from "./suite";
 import type { SuiteFailure, SuiteVerdict } from "./suite";
 import type { Exec } from "./oracle";
-import { shellLine } from "./execs";
+import { formatBuild, shellLine } from "./execs";
+import * as path from "node:path";
 
 /** Finishing rounds the gate may spend before it withholds. */
 const GATE_REPAIR_BUDGET = 2;
@@ -104,6 +105,10 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
         abort,
         onPark: (_q, answer) => answer("Decide it yourself from the rules in your brief; the run does not ask a person."),
         log: (line: string) => a.log(line, id),
+        // The finisher may create a new file in a folder it already owns —
+        // splitting an oversized module is a legitimate finishing move.
+        alsoAllowed: () => [...new Set(footprint.map((f) => path.dirname(f)))].filter((d) => d.includes("/")),
+        ...(a.deps.prepare ? { buildTool: async () => formatBuild(await a.suiteExec(a.deps.prepare!, a.worktree)) } : {}),
         verifyTool: async () => {
           a.state.doing(id, "waiting on the suite");
           try {

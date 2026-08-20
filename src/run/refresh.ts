@@ -11,7 +11,8 @@
  */
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runUnitWorker, porcelainPaths } from "./worker";
-import { ensureSnapshot } from "./oracle";
+import { defaultExec, ensureSnapshot } from "./oracle";
+import { formatBuild } from "./execs";
 import type { Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
 
@@ -130,6 +131,7 @@ export async function repairStandingTree(args: {
       abort: new AbortController(),
       onPark: (_q, answer) => answer("Decide from the compiler's words and the surrounding code; the run does not ask a person."),
       log: (line: string) => args.log(line, id),
+      ...(args.deps.prepare ? { buildTool: async () => formatBuild(await defaultExec("sh", ["-c", args.deps.prepare!], args.worktree).then((r) => ({ code: r.code, output: r.out }))) } : {}),
     },
     [
       `The run branch of ${args.tep} holds committed work that does not compile — an earlier run`,
