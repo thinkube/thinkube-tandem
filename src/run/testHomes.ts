@@ -15,15 +15,21 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+/** Files a test runner can execute — any ecosystem, never one language's.
+ *  A configuration or a document is never a test, whatever its name says:
+ *  `tsconfig.test.json` is a compiler's config, not a check. */
+const RUNNABLE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|kts|php|cs|swift|scala|ex|exs|sh|bash|lua|dart|pl|pm)$/i;
+
 /** Any test-shaped path — by the conventions test files are named and
  *  housed under across ecosystems, never by one language's extension: a
  *  `.test`/`.spec` file, a `test_*`/`*_test` file, anything under a tests
- *  directory, a probe, held-out acceptance. */
+ *  directory, a probe, held-out acceptance. Only a file a runner could
+ *  execute qualifies — a name is not enough. */
 export function isTestPath(rel: string): boolean {
   const t = rel.replace(/\\/g, "/");
+  if (/(^|[\s/])probes\//.test(t) || /(^|\/)acceptance\//.test(t)) return true;
+  if (!RUNNABLE.test(t)) return false;
   return (
-    /(^|[\s/])probes\//.test(t) ||
-    /(^|\/)acceptance\//.test(t) ||
     /(^|\/)(tests?|__tests__|spec)\//.test(t) ||
     /\.(test|spec)[._-][^/]*$/.test(t) ||
     /(^|\/)test_[^/]*$/.test(t) ||

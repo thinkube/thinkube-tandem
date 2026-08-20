@@ -24,6 +24,10 @@ test("one rule says what is test-shaped — by naming conventions across ecosyst
     assert.ok(isTestPath(p), `${p} is test-shaped`);
   for (const p of ["src/run/dispatch.ts", "docs/testing.adoc", "src/testHomes.ts", "src/contest/entry.ts"])
     assert.ok(!isTestPath(p), `${p} is production`);
+  // A name is not enough: a runner must be able to execute the file. A
+  // compiler's config, a fixture, a document are never checks.
+  for (const p of ["tsconfig.test.json", "vitest.spec.json", "docs/x.test.md", "fixtures/tests/data.json", "tests/fixtures.yaml"])
+    assert.ok(!isTestPath(p), `${p} is not a test — nothing runs it`);
   assert.ok(isProbePath("probes/x.test.mjs") && !isProbePath("src/run/dispatch.test.ts"));
   assert.deepEqual(
     testHomesOf(["probes/p.test.mjs", "src/gates/gates.test.ts", "src/gates/sign.ts"]),
