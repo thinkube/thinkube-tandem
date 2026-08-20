@@ -365,5 +365,50 @@ test("the diagnoser RUNS the failing check, gives the judge what it printed, and
   assert.match(out!.note, /CHECK 4 WAS DEFECTIVE[\s\S]*re-authored from its criterion/, "the coder is told, not left guessing");
   assert.ok(rulings.length === 1, "the ruling rides the delivery");
   assert.ok(said.some((l) => /the judge runs it and looks/.test(l)));
-  assert.equal(await diagnose("SL-7", 4, "again"), undefined, "one diagnosis per check");
+  assert.ok(await diagnose("SL-7", 4, "again"), "a re-authored check may be looked at once more");
+  assert.equal(await diagnose("SL-7", 4, "and again"), undefined, "but a third look is a loop, and is refused");
+});
+
+test("SL-7's real evidence is recognised as saying nothing: a bullet list of failing test names is not a diff of values", async () => {
+  const { uninformative } = await import("./diagnose");
+  const real = [
+    "AC-4: FAIL",
+    "$ node --test probes/space__SL-7_AC-4.test.mjs → exit 1",
+    "failing tests:",
+    "  - heartbeat paints the status bar from the space actually given to it, when that space is running",
+    "not ok 2 - heartbeat paints the status bar from the space actually given to it",
+    "  error: 'the status bar reports the run of the space it was actually given'",
+    "  code: 'ERR_ASSERTION'",
+    "  expected:",
+    "  actual: ''",
+    "  operator: 'match'",
+  ].join("\n");
+  assert.equal(uninformative(real), true, "no value is shown — the coder has nothing to act on");
+  const withValues = real.replace("  expected:\n  actual: ''", "  expected: 'building 2 units'\n  actual: 'idle'");
+  assert.equal(uninformative(withValues), false);
+  const nodeDiff = "AssertionError\n+ actual - expected\n\n+ ['a']\n- []\n";
+  assert.equal(uninformative(nodeDiff), false, "a real diff of values is evidence");
+});
+
+test("a check may be challenged twice — the budget is per check, so questioning one check never starves another", async () => {
+  const { makeChallenge } = await import("./oracle");
+  const rulings: { granted: boolean }[] = [];
+  const ch = makeChallenge({
+    sliceProbes: new Map([["SL-7", ["probes/x__SL-7_AC-1.test.mjs", "probes/x__SL-7_AC-4.test.mjs"]]]),
+    criterionOf: (_s: string, ac: number) => ({ id: `c${ac}`, text: `criterion ${ac}` }),
+    testerWt: "/nowhere",
+    model: "sonnet",
+    log: () => {},
+    defect: () => {},
+    onRuling: (r: { granted: boolean }) => rulings.push(r),
+    supervisorRound: async () => "FAITHFUL — it renders the criterion.",
+  } as never)("SL-7");
+  const a1 = await ch(1, "one");
+  const a2 = await ch(1, "two");
+  const a3 = await ch(1, "three");
+  assert.match(a3, /check 1 has been challenged 2 times/, "the third on the SAME check is refused");
+  const other = await ch(4, "the check that is actually wrong");
+  assert.doesNotMatch(other, /has been challenged/, "another check still has its own budget");
+  void a1;
+  void a2;
 });

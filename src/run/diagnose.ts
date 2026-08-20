@@ -27,7 +27,10 @@ export function uninformative(evidence: string): boolean {
   if (!e) return true;
   // A value that is empty, or an empty string spelled out, shows nothing.
   const shown = [...e.matchAll(/(expected|actual):[ \t]*(.*)$/gim)].map((m) => m[2].trim().replace(/^['"`]|['"`]$/g, "").trim());
-  const hasValues = shown.some((v) => v.length > 0) || /^\s*[+-] (?!actual|expected)\S/m.test(e);
+  // A diff of VALUES starts with a quote, a bracket or a digit; a runner's
+  // bullet list of failing TEST NAMES does not, and shows the coder nothing.
+  const diffOfValues = /^\s*[+-]\s+(?!actual\b|expected\b)['"`[{\d]/m.test(e);
+  const hasValues = shown.some((v) => v.length > 0) || diffOfValues;
   const asserted = /AssertionError|ERR_ASSERTION|assert/i.test(e);
   if (asserted && !hasValues) return true;
   // Nothing but a heading and a command line.
@@ -40,20 +43,24 @@ export type Diagnoser = (
   evidence: string,
 ) => Promise<{ note: string; reauthored: boolean } | undefined>;
 
-/** Diagnoses a check at most once per slice. */
+/** Diagnoses one check at most twice — a re-authored check may still have
+ *  something to say, but a third look is a loop. */
+const DIAGNOSIS_BUDGET = 2;
+
 export function makeDiagnoser(
   a: OracleFactoryArgs,
   reauthor: (slice: string, ac: number, why: string) => Promise<boolean>,
 ): Diagnoser {
-  const spent = new Set<string>();
+  const spent = new Map<string, number>();
   return async (slice, ac, evidence) => {
     const key = `${slice}#${ac}`;
-    if (spent.has(key)) return undefined;
+    const used = spent.get(key) ?? 0;
+    if (used >= DIAGNOSIS_BUDGET) return undefined;
     const criterion = a.criterionOf?.(slice, ac);
     const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
     const verif = (a.sliceVerifs.get(slice) ?? []).find((v) => v.ac === ac);
     if (!criterion || !rel || !verif) return undefined;
-    spent.add(key);
+    spent.set(key, used + 1);
     const unit = a.acting?.(slice)?.unit;
     const log = (line: string) => a.log(line, unit);
     log(`🔎 ${slice}: check ${ac} failed with nothing a coder can act on — the judge runs it and looks`);

@@ -202,7 +202,10 @@ function applyWiden(a: OracleFactoryArgs, slice: string, unit: string, reply: st
   return `FOOTPRINT WIDENED at the supervisor's ruling: you may now edit ${granted.join(", ")}.${refusedNote} Make the change there and run verify.`;
 }
 
-/** Challenges a slice may spend — a valve, never a grinding strategy. */
+/** Challenges ONE CHECK may take — the judge runs the probe, so a plea is
+ *  grounded in what it printed, never in argument alone. Counted per check
+ *  (not per slice): a coder that questioned two other checks must still be
+ *  able to question the one that is actually wrong. */
 const CHALLENGE_BUDGET = 2;
 
 /**
@@ -221,13 +224,13 @@ export function makeChallenge(
   const spent = new Map<string, number>();
   return (slice: string) =>
     async (ac: number, argument: string): Promise<string> => {
-      const used = spent.get(slice) ?? 0;
+      const used = spent.get(`${slice}#${ac}`) ?? 0;
       if (used >= CHALLENGE_BUDGET)
-        return `challenge budget spent (${CHALLENGE_BUDGET} per slice) — meet the checks as they stand, or report UNDELIVERED with your evidence.`;
+        return `check ${ac} has been challenged ${CHALLENGE_BUDGET} times — meet it as it stands, or report UNDELIVERED with your evidence.`;
       const criterion = a.criterionOf?.(slice, ac);
       const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
       if (!criterion || !rel) return `no check ${ac} exists on this slice.`;
-      spent.set(slice, used + 1);
+      spent.set(`${slice}#${ac}`, used + 1);
       let probeSrc = "";
       try {
         probeSrc = (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 12000);
