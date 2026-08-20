@@ -427,3 +427,22 @@ test("every ledger row carries the tool version that produced it, so a fix can b
   assert.equal(rows[1].version, "1.2.3");
   assert.equal(rows[1].run, "TEP-1@abc");
 });
+
+test("a question full of the run's internals never reaches a person: the machine answers it as its own failure", async () => {
+  const { namesInternals } = await import("./answers");
+  assert.equal(
+    namesInternals("The verify tool fails all 6 probes: Cannot find module '.../out-test/src/surfaces/panel.js'"),
+    true,
+  );
+  assert.equal(namesInternals("should the greeting be formal or casual?"), false);
+  assert.equal(namesInternals("does the button confirm before it shuts the cluster down?"), false);
+  assert.equal(namesInternals("my footprint does not include the file the check needs"), true);
+});
+
+test("the tester and the check re-author are told where a source file actually lands, observed in the tree", async () => {
+  const { testerStanza } = await import("./brief");
+  const stanza = testerStanza(["out-test"], ["src/surfaces/panel.ts → out-test/surfaces/panel.js"]);
+  assert.match(stanza, /a source file lands EXACTLY here: src\/surfaces\/panel\.ts → out-test\/surfaces\/panel\.js/);
+  assert.match(stanza, /do not add or drop a directory/);
+  assert.doesNotMatch(testerStanza(["out-test"]), /lands EXACTLY here/, "nothing is claimed when nothing was observed");
+});

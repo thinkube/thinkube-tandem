@@ -19,6 +19,16 @@ import { widenPaths } from "./oracle";
  * among behaviors the asks do not decide — is ESCALATED to the human, in the
  * human's own words, never in the run's internals.
  */
+/** Text that shows the run's own machinery: a path, a tool, an error code,
+ *  a probe. A person is asked about behavior, never about these. */
+export function namesInternals(text: string): boolean {
+  return (
+    /(^|\s)(src|out|out-test|probes|node_modules)\//.test(text) ||
+    /\.(ts|tsx|mjs|cjs|js|json)\b/.test(text) ||
+    /\b(ERR_[A-Z_]+|tsc|npm|node --test|verify|oracle|footprint|probe)\b/i.test(text)
+  );
+}
+
 export function makeParkAnswerer(a: OracleFactoryArgs) {
   return (slice: string, unit: string) =>
     async (
@@ -118,9 +128,27 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         answer(text);
         return;
       }
-      const intent = /^ESCALATE:/i.test(first)
-        ? first.replace(/^ESCALATE:\s*/i, "").trim()
-        : question;
+      const intent = /^ESCALATE:/i.test(first) ? first.replace(/^ESCALATE:\s*/i, "").trim() : question;
+      // The human is never shown the run's internals. A "question" full of
+      // paths, tools and error codes is not an intent question: it is the
+      // machine failing to answer, and it is answered as such.
+      if (namesInternals(intent)) {
+        a.log(`⛔ ${unit}: the machine could not answer this itself and its restatement still names internals — not a question for a person`, unit);
+        a.defect({
+          slice,
+          unit,
+          activity: "worker question",
+          trigger: "supervisor",
+          type: "contract",
+          impact: "escalation refused — internals, not intent",
+          detail: intent.slice(0, 600),
+        });
+        answer(
+          "The machine cannot answer this and it is not a question for a person — it names the run's own internals. " +
+            "Do what you can inside your footprint, and end with an UNDELIVERED line stating exactly what remains and why.",
+        );
+        return;
+      }
       escalate(intent);
     };
 }

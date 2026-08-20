@@ -45,6 +45,8 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 export interface TreeSetup {
   /** The proven way to run one of the repository's own tests, or "". */
   runOne: string;
+  /** Observed source → built path pairs, so a check imports what exists. */
+  emitMap?: string[];
   /** What provisioning produced — ignored entries to link into runners. */
   provisioned: string[];
   /** What the build step produced — where compiled output lands, so a
@@ -144,7 +146,37 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
     for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
     if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
-  return { provisioned, built, runOne: await proveRunOne(args) };
+  return { provisioned, built, emitMap: await observeEmitMap(args, built), runOne: await proveRunOne(args) };
+}
+
+/**
+ * How a SOURCE path becomes its BUILT path in this repository, observed —
+ * never guessed. A probe that imports the compiled module must name the
+ * real path; "the build emits into out-test" does not say whether
+ * `src/a/b.ts` lands at `out-test/a/b.js` or `out-test/src/a/b.js`, and a
+ * tester that guesses wrong writes checks nothing can run.
+ */
+async function observeEmitMap(args: SetupArgs, built: readonly string[]): Promise<string[]> {
+  if (!built.length) return [];
+  const listed = (await args.exec("git", ["-C", args.worktree, "ls-files"], args.worktree)).out.split("\n").map((l) => l.trim());
+  const sources = listed.filter((f) => /\.(m|c)?tsx?$/.test(f) && !isTestPath(f)).slice(0, 40);
+  const pairs: string[] = [];
+  for (const src of sources) {
+    if (pairs.length >= 2) break;
+    const stem = src.replace(/\.(m|c)?tsx?$/, "");
+    const candidates = built.flatMap((dir) => [
+      path.join(dir, `${stem}.js`),
+      path.join(dir, `${stem.replace(/^[^/]+\//, "")}.js`),
+      path.join(dir, `${stem}.mjs`),
+    ]);
+    for (const c of candidates)
+      if (await fs.access(path.join(args.worktree, c)).then(() => true, () => false)) {
+        pairs.push(`${src} → ${c}`);
+        break;
+      }
+  }
+  if (pairs.length) args.log(`  a source file lands at: ${pairs.join("; ")}`);
+  return pairs;
 }
 
 /** The single-test command, tried on one of the repository's own tests.

@@ -121,7 +121,7 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, told apart from the next run of the same cut
+  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, apart from the next run of this cut
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
@@ -188,7 +188,7 @@ export async function dispatchTep(
     if (mended) ready = await doSetup();
   }
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  const { provisioned, built, runOne: runOneTest } = ready;
+  const { provisioned, built, emitMap, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
@@ -245,6 +245,7 @@ export async function dispatchTep(
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned,
     built,
+    ...(emitMap?.length ? { emitMap } : {}),
     footprintOf: (slice: string) =>
       dag.filter((u) => u.slice === slice && (u.role ?? "code") === "code").flatMap((u) => u.footprint),
     pruneIn: (slice: string) => maintainedElsewhere(slices, slice),
@@ -326,7 +327,7 @@ export async function dispatchTep(
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>
       role === "test"
-        ? testerStanza(built) +
+        ? testerStanza(built, emitMap) +
           (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(
             testHomesOf(next.footprint),
@@ -537,7 +538,6 @@ export async function dispatchTep(
     }
     await finishUnit(next.id, next.slice, ok);
   };
-
   // The pump: launch what is ready up to the cap, wake on any completion.
   const concurrency = Math.max(1, deps.concurrency ?? 2);
   const inflight = new Map<string, Promise<void>>();

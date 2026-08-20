@@ -126,6 +126,8 @@ export interface OracleFactoryArgs {
   provisioned?: readonly string[];
   /** Where the build step emits compiled output — what a probe imports. */
   built?: readonly string[];
+  /** Observed source → built path pairs; a re-authored check imports what exists. */
+  emitMap?: readonly string[];
   /** The slice's own footprint: the runner overlays THIS slice's uncommitted
    *  files on the committed base — never another slice's half-written work
    *  from the shared tree. */
@@ -310,6 +312,9 @@ async function reauthorCheck(
       `WHERE YOU ARE: ${a.testerWt} — the tester's snapshot of the repository, with the delivery's code. Read only under it.`,
       ...(a.built?.length
         ? [`WHERE THE BUILD EMITS compiled output in this repository: ${a.built.join(", ")} — import compiled modules from there, never from a folder that is not built. Compiled CommonJS modules are imported as a default object (\`import m from "…"; m.name\`), not as named exports.`]
+        : []),
+      ...(a.emitMap?.length
+        ? [`OBSERVED IN THIS TREE — a source file lands EXACTLY here: ${a.emitMap.join("; ")}. Import that path shape literally; do not add or drop a directory.`]
         : []),
       ...(siblings.length ? [`SIBLING PROBES of this slice, written to the same conventions — read one first: ${siblings.join(", ")}`] : []),
       ...(a.digest ? ["", "THE REPOSITORY, READ FOR YOU:", a.digest.slice(0, 6000)] : []),
