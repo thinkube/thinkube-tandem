@@ -280,3 +280,90 @@ test("the compiler's words reach the actor verbatim, verdict first; an empty bui
     /produced no output.*run the `build` tool/,
   );
 });
+
+test("a missing probe FILE is the check's failure — the repair regenerates it from the criterion; a missing tool stays the environment's", async () => {
+  const { ownerOf } = await import("./owner");
+  assert.equal(ownerOf("Error: Cannot find module '/x/runner/probes/space__SL-5_AC-6.test.mjs'"), "check");
+  assert.equal(ownerOf("Could not find '/x/runner/probes/space__SL-5_AC-9.test.mjs'"), "check");
+  assert.equal(ownerOf("ENOENT: no such file or directory, open 'probes/space__SL-5_AC-6.test.mjs'"), "check");
+  assert.equal(ownerOf("sh: tsc: command not found"), "environment");
+});
+
+test("evidence a coder cannot act on is recognised as such", async () => {
+  const { uninformative } = await import("./diagnose");
+  assert.equal(
+    uninformative("AssertionError [ERR_ASSERTION]: the bar reports the run\n  expected:\n  actual: ''\n  operator: 'match'"),
+    true,
+    "an assertion whose expected and actual show nothing",
+  );
+  assert.equal(uninformative("  "), true);
+  assert.equal(uninformative("$ node --test probes/x.test.mjs → exit 1"), true, "a command line is not evidence");
+  assert.equal(
+    uninformative("AssertionError: expected 'hello' to equal 'bye'\n  expected: 'bye'\n  actual: 'hello'"),
+    false,
+    "values the coder can act on",
+  );
+  assert.equal(uninformative("Cannot find module '../out/greet.js'"), false, "a named cause is evidence");
+});
+
+test("the diagnoser RUNS the failing check, gives the judge what it printed, and a defective check is re-authored with the rule that makes it passable", async () => {
+  const { makeDiagnoser } = await import("./diagnose");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-diag-"));
+  fs.mkdirSync(path.join(root, "probes"), { recursive: true });
+  const rel = "probes/space__SL-7_AC-4.test.mjs";
+  fs.writeFileSync(
+    path.join(root, rel),
+    `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `test("first", () => assert.ok(true));\n` +
+      `test("second", () => assert.match("", /never/, "the bar reports the run"));\n`,
+  );
+  let judgePrompt = "";
+  const ran: string[] = [];
+  const reauthored: { ac: number; why: string }[] = [];
+  const rulings: unknown[] = [];
+  const said: string[] = [];
+  const diagnose = makeDiagnoser(
+    {
+      wtRoot: path.join(root, "wt"),
+      tep: "TEP-x",
+      testerWt: root,
+      model: "sonnet",
+      sliceProbes: new Map([["SL-7", [rel]]]),
+      sliceVerifs: new Map([["SL-7", [{ ac: 4, run: `node --test ${rel}` }]]]),
+      criterionOf: () => ({ id: "c4", text: "the bar reports the run of the space it is given" }),
+      // The runner's own words (node --test cannot recurse inside a test run).
+      boundedExec: async (cmd: string, cwd: string) => {
+        ran.push(`${cmd} @ ${cwd}`);
+        return {
+          code: 1,
+          output: "ok 1 - first\nnot ok 2 - second\n  error: 'the bar reports the run'\n  expected:\n  actual: ''\n# fail 1\n",
+        };
+      },
+      supervisorRound: async (_d: unknown, prompt: string) => {
+        judgePrompt = prompt;
+        return "DEFECTIVE: both tests share the module loaded once, so the second reads a bar nothing wrote to.";
+      },
+      log: (l: string) => said.push(l),
+      defect: () => {},
+      onRuling: (r: unknown) => rulings.push(r),
+    } as never,
+    async (_slice: string, ac: number, why: string) => {
+      reauthored.push({ ac, why });
+      return true;
+    },
+  );
+
+  const out = await diagnose("SL-7", 4, "AssertionError [ERR_ASSERTION]\n  expected:\n  actual: ''\n  operator: 'match'");
+  assert.ok(out?.reauthored, "a defective check is re-authored");
+  assert.match(judgePrompt, /WHAT IT PRINTED[\s\S]*not ok 2 - second/, "the judge is given what the check printed when RUN, not the source alone");
+  assert.match(ran[0], /node --test probes\/space__SL-7_AC-4\.test\.mjs @ .*oracle-runners\/TEP-x-SL-7$/, "run in the slice's own runner");
+  assert.match(judgePrompt, /test\("second"/, "and the check's source");
+  assert.match(judgePrompt, /the bar reports the run of the space it is given/, "and the criterion it must render");
+  assert.match(judgePrompt, /INTERACTION its tests have with each other/, "and is told to read the file whole");
+  assert.equal(reauthored[0].ac, 4);
+  assert.match(reauthored[0].why, /share the module loaded once/, "the ruling's words reach the re-author");
+  assert.match(out!.note, /CHECK 4 WAS DEFECTIVE[\s\S]*re-authored from its criterion/, "the coder is told, not left guessing");
+  assert.ok(rulings.length === 1, "the ruling rides the delivery");
+  assert.ok(said.some((l) => /the judge runs it and looks/.test(l)));
+  assert.equal(await diagnose("SL-7", 4, "again"), undefined, "one diagnosis per check");
+});

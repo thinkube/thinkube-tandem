@@ -27,7 +27,7 @@ import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
-import { defaultExec, ensureSnapshot, makeChallenge, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { defaultExec, ensureSnapshot, makeChallenge, makeReauthor, makeRepair, OracleFactoryArgs, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { refreshRunTrees, repairStandingTree } from "./refresh";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
@@ -35,6 +35,7 @@ import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
 import { makeWiden, probeSourceReader, settleTransfers } from "./owner";
+import { makeDiagnoser } from "./diagnose";
 import { formatBuild } from "./execs";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
@@ -262,6 +263,7 @@ export async function dispatchTep(
   const pendingPlanned = (): string[] => plannedByPending(dag, done), probeSourceFor = probeSourceReader(sliceProbes, testerWt);
   const parkFor = makeParkAnswerer(oracleArgs);
   const repairFor = makeRepair(oracleArgs);
+  const diagnoseFor = makeDiagnoser(oracleArgs, makeReauthor(oracleArgs));
   const answerEnd = makeEndAnswerer(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
@@ -374,7 +376,7 @@ export async function dispatchTep(
                 verifyTool: async () => {
                   st.doing(next.id, `waiting on verify — round ${oracle.invocations() + 1}`);
                   try {
-                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, halted: () => st.halted, footprint: next.footprint, pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)) });
+                    return await verifyWithRepair({ oracle, slice: next.slice, repair: repairFor, diagnose: diagnoseFor, halted: () => st.halted, footprint: next.footprint, pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)) });
                   } finally {
                     st.doing(next.id, "working");
                   }
@@ -473,7 +475,20 @@ export async function dispatchTep(
           undelivered.push(...outcome.undelivered.map((u) => `${next.id}: ${u}`));
         break;
       }
-      const r = confirm.result;
+      let r = confirm.result;
+      // A stall means DIAGNOSE, not "keep trying": the judge runs each red
+      // check and looks. A re-authored check earns the unit its next round.
+      if (r.kind === "stalled") {
+        const last = oracle.last()?.result;
+        const reds = last?.kind === "results" ? last.results.filter((x) => !x.pass) : [];
+        let mended = false;
+        for (const f of reds) {
+          const d = await diagnoseFor(next.slice, f.ac, f.evidence);
+          if (d?.reauthored) mended = true;
+          if (d) disclosure += `\n\n${d.note}`;
+        }
+        if (mended && attempt < attempts) r = (await oracle.confirmGreen()).result;
+      }
       if (r.kind === "stalled" || r.kind === "exhausted") {
         failWith(next.id, `verify oracle ${r.kind} — the checks are not green`);
         break;

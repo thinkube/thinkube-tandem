@@ -257,6 +257,10 @@ test("a check whose words name a maintainer's test home is homed on the maintain
   assert.match(books.rehomed[0].check, /greet\.test\.mjs/);
   assert.ok(!books.sliceVerifs.get("SL-1")!.some((v) => v.ac === 2), "the parent's coder is not graded on it");
   assert.ok(books.sliceVerifs.get("SL-1-tests")!.some((v) => v.ac === 2), "the maintainer is");
+  assert.ok(
+    books.sliceProbes.get("SL-1")!.some((p) => /_AC-2\./.test(p)),
+    "only the GRADING moved — the probe file stays with the parent, rides its commit, and survives for the maintainer",
+  );
   assert.deepEqual(books.sliceVerifs.get("SL-1")!.map((v) => v.ac), [1, 3], "the other ordinals keep their names");
 
   const state = new RunState(() => {});

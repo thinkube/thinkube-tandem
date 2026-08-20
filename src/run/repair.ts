@@ -6,6 +6,7 @@
  */
 import { formatVerifyReply, VerifyOracle, VerifyResult } from "../engine/verifyOracle";
 import { suiteWaitsForTree, type VerifyWithSuite } from "./suite";
+import { uninformative, type Diagnoser } from "./diagnose";
 import { failuresByOwner } from "./owner";
 
 export type Repair = (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]>;
@@ -58,6 +59,8 @@ export async function verifyWithRepair(args: {
   oracle: VerifyOracle;
   slice: string;
   repair: Repair;
+  /** The judge that RUNS a check whose failure says nothing. */
+  diagnose?: Diagnoser;
   halted?: () => boolean;
   /** The acting unit's footprint — a build that fails only outside it is not its failure. */
   footprint?: readonly string[];
@@ -96,6 +99,15 @@ export async function verifyWithRepair(args: {
       "──── ENVIRONMENT (not your code: the runner could not build or a tool was missing) ────",
       ...env.map((f) => `- check ${f.ac}: ${f.evidence.split("\n").slice(1, 3).join(" ").trim().slice(0, 200)}`),
     );
+  // A failure a coder cannot act on is never handed back as-is: the judge
+  // runs the check, looks, and either re-authors it or says what to build.
+  if (args.diagnose && r.kind === "results")
+    for (const f of r.results.filter((x) => !x.pass && uninformative(x.evidence))) {
+      const d = await args.diagnose(args.slice, f.ac, f.evidence);
+      if (!d) continue;
+      notes.push(d.note);
+      if (d.reauthored && !args.halted?.()) r = await args.oracle.verify();
+    }
   // The repository's own suite, once the slice's checks are green: the
   // coder reads it as it reads its checks — what is theirs, what is not.
   const suite = (r as VerifyWithSuite).suite;

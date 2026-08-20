@@ -335,6 +335,24 @@ const REPAIR_BUDGET = 2;
  * challenge is spent; the coder is told what was repaired. Each check is
  * repaired at most twice per slice.
  */
+/** Re-author one check from its criterion, for a ruling made elsewhere
+ *  (the diagnoser). The probe is rewritten, never weakened. */
+export function makeReauthor(a: OracleFactoryArgs): (slice: string, ac: number, why: string) => Promise<boolean> {
+  return async (slice, ac, why) => {
+    const criterion = a.criterionOf?.(slice, ac);
+    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    if (!criterion || !rel) return false;
+    const ok = await reauthorCheck(a, {
+      slice,
+      rel,
+      criterion: criterion.text,
+      because: `the oracle ran this check and ruled it DEFECTIVE: ${why}. Write it so a correct implementation CAN pass: if its tests share module state, make each test load the module fresh after installing its own fakes.`,
+    });
+    if (ok) await a.persistProbe?.(rel).catch(() => {});
+    return ok;
+  };
+}
+
 export function makeRepair(
   a: OracleFactoryArgs,
 ): (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]> {

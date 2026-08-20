@@ -36,6 +36,9 @@ export function ownerOf(evidence: string): FailureOwner {
     if (/SyntaxError|ReferenceError|TypeError|ERR_[A-Z_]+/.test(e)) return "check";
     return "check";
   }
+  // The probe FILE itself is missing (a lost store, an uncommitted rehomed
+  // check): the repair re-authors it from its criterion — the check's own.
+  if (/(cannot find|could not find|no such file|enoent)[^\n]*(probes|acceptance)\//i.test(e)) return "check";
   if (/not found|command not found|ENOENT|not the (tsc|.*) command you are looking for/i.test(e)) return "environment";
   return "code";
 }

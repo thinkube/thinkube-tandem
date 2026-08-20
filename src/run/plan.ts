@@ -160,7 +160,8 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
       if (moved.length) {
         for (const probe of moved)
           rehomed.push({ parent, maintainer: s.handle, ac: acOf(probe), check: checkOf.get(probe) ?? probe });
-        sliceProbes.set(parent, (sliceProbes.get(parent) ?? []).filter((p) => !moved.includes(p)));
+        // Only the GRADING moves: the parent keeps the probe FILES, so they
+        // ride its commit and survive for the maintainer that grades them.
         sliceVerifs.set(parent, (sliceVerifs.get(parent) ?? []).filter((v) => !moved.some((p) => v.run.includes(p))));
       }
     }
