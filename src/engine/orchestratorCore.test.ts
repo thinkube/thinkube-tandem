@@ -1502,23 +1502,25 @@ test("AC5: reDispatchDecision re-dispatches below the bound and escalates AT the
   // Walk the loop from a fresh slice (0 prior attempts) at the default bound of 3. Each red
   // acceptance run bumps the counter; the verdict stays `re-dispatch` until the count reaches
   // the bound, then flips to `escalate` exactly once — never re-queued past that.
-  assert.equal(MAX_REWORK_ATTEMPTS, 3, "default bound is the documented value");
+  // Budgets pay for progress, not attempts (THE-LADDER §5): one rework,
+  // then the ladder — the closer is what stands behind the bound now.
+  assert.equal(MAX_REWORK_ATTEMPTS, 2, "default bound is the documented value");
   const seq: ReDispatchVerdict[] = [
     reDispatchDecision(0), // 1st failure → attempts 1, below bound
-    reDispatchDecision(1), // 2nd failure → attempts 2, below bound
-    reDispatchDecision(2), // 3rd failure → attempts 3, AT the bound → escalate
+    reDispatchDecision(1), // 2nd failure → attempts 2, AT the bound → escalate
   ];
   assert.deepEqual(
     seq.map((v) => v.action),
-    ["re-dispatch", "re-dispatch", "escalate"],
-    "re-dispatch while below the bound, escalate once it is reached — not indefinitely",
+    ["re-dispatch", "escalate"],
+    "one rework while below the bound, escalate once it is reached — not indefinitely",
   );
   assert.deepEqual(
     seq.map((v) => v.attempts),
-    [1, 2, 3],
+    [1, 2],
     "each verdict carries the incremented (prior + 1) attempt count to persist",
   );
   // Past the bound it stays escalated (never silently re-opens).
+  assert.equal(reDispatchDecision(2).action, "escalate");
   assert.equal(reDispatchDecision(3).action, "escalate");
   assert.equal(reDispatchDecision(99).action, "escalate");
 });
@@ -1544,8 +1546,9 @@ test("AC5: reDispatchDecision honours a custom bound and is fail-safe on junk pr
 
 test("AC5: isEscalated trips at/above the bound, false below, fail-safe on junk", () => {
   assert.equal(isEscalated(0), false);
-  assert.equal(isEscalated(2), false, "below the default bound of 3");
-  assert.equal(isEscalated(3), true, "at the default bound");
+  assert.equal(isEscalated(1), false, "below the default bound of 2");
+  assert.equal(isEscalated(2), true, "at the default bound");
+  assert.equal(isEscalated(3), true);
   assert.equal(isEscalated(10), true);
   // custom bound
   assert.equal(isEscalated(1, 2), false);
@@ -1556,7 +1559,7 @@ test("AC5: isEscalated trips at/above the bound, false below, fail-safe on junk"
   assert.equal(
     isEscalated(3, 0),
     true,
-    "non-positive bound falls back to default 3",
+    "non-positive bound falls back to the default",
   );
 });
 
@@ -1573,10 +1576,10 @@ test("AC5: readyFrontier DROPS every unit of a slice that has reached its rework
     }),
   ]);
 
-  // Below the bound (2 of 3 attempts) → still on the frontier: the loop keeps re-dispatching.
+  // Below the bound (1 of 2 attempts) → still on the frontier: the loop keeps re-dispatching.
   const belowBound = readyFrontier(dag, {
     ...emptyState(),
-    attempts: new Map([["SP-6_SL-9", 2]]),
+    attempts: new Map([["SP-6_SL-9", 1]]),
   });
   assert.equal(
     belowBound.length,

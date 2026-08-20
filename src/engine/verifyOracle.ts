@@ -381,7 +381,9 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
   // round after round, until the worker started probing the fences instead).
   let stallSig: string | undefined;
   let stallCount = 0;
-  const STALL_AFTER = 3;
+  // One repeat hands up the ladder (THE-LADDER §5): a round that returns
+  // an unchanged verdict has bought nothing, and something better waits.
+  const STALL_AFTER = 2;
 
   let preflightDone = false;
   /** Dispatch-time information audit (2026-07-15): completeness of brief-vs-

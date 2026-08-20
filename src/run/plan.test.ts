@@ -518,7 +518,9 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
   const n2 = addNode(s, {
     sentence: "the session threads the key through",
     serves: [a.added.id],
-    needs: [],
+    // The owner runs AFTER the asker, so the crossed contract is on the
+    // record before its brief is built — the test asserts the flow, not a race.
+    needs: [n1.added.id],
     acceptance: [{ id: "c2", text: "session() returns the key" }],
     grounding: { touchpoints: [{ path: "src/session.mjs", planned: true }], stamp: [] },
   });
@@ -557,8 +559,7 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
         // crossed after this launch arrives at the next attempt's brief. So
         // hold work until the asker was answered; a first attempt without
         // the contract stays incomplete and reworks with a fresh brief.
-        while (!gate.askerDone) await new Promise((r) => setTimeout(r, 25));
-        if (!/CROSS-SLICE/.test(brief)) return { ok: true, finalText: "not yet — the contract has not reached me" };
+        assert.ok(gate.askerDone, "the asker ran first — its refusal crossed before this brief was built");
         ownerBrief = brief;
         writeInto(w.worktree, "src/session.mjs", `export function session() { return "k"; }\n`);
         return { ok: true, finalText: "done" };

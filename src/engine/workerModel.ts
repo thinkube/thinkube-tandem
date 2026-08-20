@@ -24,12 +24,18 @@ export interface WorkerModelConfig {
  * identical output, and it NEVER reads `process.env` (so it is decoupled from `ANTHROPIC_MODEL`). A
  * per-role override wins; otherwise the configured base model; otherwise the named default `"sonnet"`.
  */
+/** The last actor of the run gets the strongest model there is: it fires
+ *  only when everything cheaper is spent, so it is rare by construction
+ *  (THE-LADDER §4). */
+const CLOSER_MODEL = "opus";
+
 export function resolveWorkerModel(
   config: WorkerModelConfig,
   role?: string,
 ): string {
   return (
     (role !== undefined ? config.workerModelByRole?.[role] : undefined) ??
+    (role === "closer" ? CLOSER_MODEL : undefined) ??
     config.workerModel ??
     "sonnet"
   );

@@ -356,7 +356,7 @@ test("formatVerifyReply: a rootCause is named ONCE, first, as one boundary failu
   assert.match(msg, /EADDRINUSE/);
 });
 
-test("oracle: three identical failing rounds trip the stall breaker; the fourth call runs nothing and says stop", async () => {
+test("oracle: a repeated failing round trips the stall breaker; the next call runs nothing and says stop", async () => {
   const w = makeWorld({
     probeCodes: {
       "node --test out-test/acceptance/SP-17_1_AC-1.test.js": 1,
@@ -364,14 +364,15 @@ test("oracle: three identical failing rounds trip the stall breaker; the fourth 
     },
   });
   const oracle = createVerifyOracle(w.deps);
-  await oracle.verify();
+  // Budgets pay for progress (THE-LADDER §5): one repeat has bought
+  // nothing, and something better waits behind this actor.
   await oracle.verify();
   await oracle.verify();
   const execsBefore = w.execs.length;
   const r = await oracle.verify();
-  assert.equal(r.kind, "stalled", "identical outcome x3 → stalled");
+  assert.equal(r.kind, "stalled", "an unchanged outcome twice → stalled");
   assert.equal(w.execs.length, execsBefore, "a stalled round runs no commands");
-  assert.match(formatVerifyReply(r), /STALLED: 3 consecutive verify rounds/);
+  assert.match(formatVerifyReply(r), /STALLED: 2 consecutive verify rounds/);
 });
 
 test("oracle: an outcome CHANGE resets the stall counter", async () => {
@@ -386,9 +387,7 @@ test("oracle: an outcome CHANGE resets the stall counter", async () => {
   };
   const oracle = createVerifyOracle(w.deps);
   await oracle.verify(); // fail/fail (1)
-  await oracle.verify(); // fail/fail (2)
-  failBoth = false;      // the coder fixed AC-2 — outcome changes
-  await oracle.verify(); // fail/pass — resets the counter
-  const r = await oracle.verify(); // fail/pass again (count 2) — still runs
+  failBoth = false;      // the coder fixed AC-2 — the outcome changes
+  const r = await oracle.verify(); // fail/pass — progress, so the round runs
   assert.equal(r.kind, "results", "progress resets the stall counter — no premature stop");
 });

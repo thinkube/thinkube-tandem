@@ -334,7 +334,7 @@ async function reauthorCheck(
   return true;
 }
 
-const REPAIR_BUDGET = 2;
+const REPAIR_BUDGET = 1;
 
 /**
  * The repair loop for check-owned failures: a check that could not run —

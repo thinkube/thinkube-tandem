@@ -365,8 +365,9 @@ test("the diagnoser RUNS the failing check, gives the judge what it printed, and
   assert.match(out!.note, /CHECK 4 WAS DEFECTIVE[\s\S]*re-authored from its criterion/, "the coder is told, not left guessing");
   assert.ok(rulings.length === 1, "the ruling rides the delivery");
   assert.ok(said.some((l) => /the judge runs it and looks/.test(l)));
-  assert.ok(await diagnose("SL-7", 4, "again"), "a re-authored check may be looked at once more");
-  assert.equal(await diagnose("SL-7", 4, "and again"), undefined, "but a third look is a loop, and is refused");
+  // One ruling per check per phase (THE-LADDER §5): a second look at an
+  // unchanged check is repetition, and repetition hands up the ladder.
+  assert.equal(await diagnose("SL-7", 4, "again"), undefined, "a second look is refused — it hands up instead");
 });
 
 test("SL-7's real evidence is recognised as saying nothing: a bullet list of failing test names is not a diff of values", async () => {
@@ -445,4 +446,106 @@ test("the tester and the check re-author are told where a source file actually l
   assert.match(stanza, /a source file lands EXACTLY here: src\/surfaces\/panel\.ts → out-test\/surfaces\/panel\.js/);
   assert.match(stanza, /do not add or drop a directory/);
   assert.doesNotMatch(testerStanza(["out-test"]), /lands EXACTLY here/, "nothing is claimed when nothing was observed");
+});
+
+test("the machine refuses a check that cannot stand: an import naming a directory nothing will create, and a simulator of a foreign platform", async () => {
+  const { auditProbe, expectedPaths, interceptsLoader } = await import("./probeAudit");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-audit-"));
+  fs.mkdirSync(path.join(root, "probes"), { recursive: true });
+  fs.mkdirSync(path.join(root, "out-test", "surfaces"), { recursive: true });
+  fs.writeFileSync(path.join(root, "out-test", "surfaces", "panel.js"), "");
+
+  // The real SL-7 shape: the build emits out-test/surfaces, the check imports out-test/src/surfaces.
+  const wrong = auditProbe("probes/p.test.mjs", `import { X } from "../out-test/src/surfaces/panel.js";`, root);
+  assert.equal(wrong.length, 1);
+  assert.equal(wrong[0].kind, "import-shape");
+  assert.match(wrong[0].detail, /out-test\/src\/surfaces.*does not exist/);
+
+  // The same file, imported where it lands: fine.
+  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { X } from "../out-test/surfaces/panel.js";`, root), []);
+
+  // A module the run will still build: its directory does not exist yet, and that is fine.
+  const planned = expectedPaths(["src/core/spaces.ts"], ["src/core/author.ts → out-test/core/author.js"]);
+  assert.deepEqual(planned, ["out-test/core/spaces.js"]);
+  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { c } from "../out-test/core/spaces.js";`, root, planned), []);
+
+  // A simulator of a platform this repository does not own.
+  const sim = auditProbe(
+    "probes/q.test.mjs",
+    `import Module from "node:module";\nModule._load = function (r) { if (r === "vscode") return fake; };`,
+    root,
+  );
+  assert.equal(sim[0].kind, "simulator");
+  assert.match(sim[0].detail, /may not simulate a system the repository does not own/);
+  assert.ok(interceptsLoader(`require.cache[require.resolve("vscode")] = {};`));
+  assert.equal(interceptsLoader(`const host = { createPanel: () => stub };`), undefined, "faking an owned seam is fine");
+});
+
+test("the closer works while it makes progress and stops when the evidence stops moving, and its check corrections become rulings", async () => {
+  const { close, rulingsIn } = await import("./closer");
+  assert.deepEqual(rulingsIn("done\nRULING: check 3 asserted a name the criterion never fixed\nUNDELIVERED: none"), [
+    "check 3 asserted a name the criterion never fixed",
+  ]);
+
+  const scores = [3, 2, 1, 0];
+  let round = 0;
+  const rulings: unknown[] = [];
+  const said: string[] = [];
+  const green = await close({
+    subject: "SL-7#eu-0",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [{ path: "probes/x.test.mjs", source: "assert.ok(true)" }],
+    history: ["the coder ground five identical rounds"],
+    criteria: [{ id: "c1", text: "the bar reports the run" }],
+    model: "sonnet",
+    measure: async () => {
+      const s = scores[Math.min(round, scores.length - 1)];
+      return { green: s === 0, score: s, evidence: `${s} red` };
+    },
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: (l) => said.push(l),
+    say: () => {},
+    onRuling: (r) => rulings.push(r),
+    defect: () => {},
+    worker: (async (_d: unknown, brief: string) => {
+      round++;
+      assert.match(brief, /You are the CLOSER/);
+      assert.match(brief, /THE CHECKS, IN FULL/, "it sees the checks — the blinding is spent");
+      assert.match(brief, /green is decided by running things/, "and the one law that still binds it");
+      return { ok: true, finalText: "RULING: check 1 was corrected against its criterion\nUNDELIVERED: none" };
+    }) as never,
+  });
+  assert.equal(green.green, true, "it finished when the evidence reached zero");
+  assert.ok(green.rounds >= 3, "it kept going while the count fell");
+  assert.equal(rulings.length, green.rounds, "each corrected check rode the delivery as a ruling");
+
+  // No progress: it stops rather than grinding.
+  let calls = 0;
+  const stuck = await close({
+    subject: "SL-3#eu-0",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "x" }],
+    model: "sonnet",
+    measure: async () => ({ green: false, score: 5, evidence: "5 red" }),
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: () => {},
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: (async () => {
+      calls++;
+      return { ok: false, finalText: "UNDELIVERED: the criterion needs a seam that does not exist" };
+    }) as never,
+  });
+  assert.equal(stuck.green, false);
+  assert.equal(calls, 2, "two rounds without progress end it — patience is not a budget");
+  assert.match(stuck.report, /UNDELIVERED: the criterion needs a seam/);
 });

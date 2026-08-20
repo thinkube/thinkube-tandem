@@ -29,9 +29,10 @@ test("a red suite after the work withholds the delivery, in intent terms — nev
       rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
       worker: async (w, brief) => {
-        // The finisher cannot help here: the standing check is red for as
-        // long as the work exists — a break nothing in the run can undo.
-        if (/FINISHER/.test(brief)) return { ok: true, finalText: "UNDELIVERED: the check forbids the work itself" };
+        // Neither the finisher nor the closer can help here: the standing
+        // check is red for as long as the work exists — a break nothing can undo.
+        if (/FINISHER|You are the CLOSER/.test(brief))
+          return { ok: true, finalText: "UNDELIVERED: the check forbids the work itself" };
         if (w.role === "test") {
           writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
           return { ok: true, finalText: "done" };
@@ -177,4 +178,50 @@ test("a red suite at the gate goes to a finisher in the run, which brings the tr
   assert.equal(finisher?.role, "maintain");
   const runLog = state.stepLogs.get("gate#suite-1") ?? [];
   assert.ok(runLog.some((l) => /finisher brings it under/.test(l)) && runLog.some((l) => /under the repository's suite/.test(l)));
+});
+
+test("the closer is the floor: a unit no other actor could finish is handed to it with full sight, and what it fixes lands green", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-81" };
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  let closerBrief = "";
+  let coderRounds = 0;
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w: { role: string; worktree: string; footprint: string[]; verifyTool?: () => Promise<string> }, brief: string) => {
+        if (/You are the CLOSER/.test(brief)) {
+          closerBrief = brief;
+          // It sees the checks, and can therefore finish what the blind coder could not.
+          writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+          return { ok: true, finalText: "RULING: none needed\nUNDELIVERED: none" };
+        }
+        if (w.role === "test") {
+          writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+          return { ok: true, finalText: "done" };
+        }
+        // The coder never gets it right: it writes something that cannot pass.
+        coderRounds++;
+        writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "not hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    } as never,
+    space,
+    cut,
+    slices,
+  );
+  assert.ok(closerBrief, "the closer was called once the cheap rungs were spent");
+  assert.match(closerBrief, /THE CHECKS, IN FULL[\s\S]*greet/, "with the checks themselves");
+  assert.match(closerBrief, /WHAT THE RUN ALREADY TRIED/, "and what was already tried");
+  assert.ok(coderRounds <= 2, `the coder stopped after its small budget (${coderRounds} attempts)`);
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the unit is done — the closer finished it");
+  assert.ok(outcome.delivery && !outcome.delivery.withheld, "and the run delivers");
 });

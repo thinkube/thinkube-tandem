@@ -31,6 +31,7 @@ import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
+import { close } from "./closer";
 
 export interface GateContext {
   tep: string;
@@ -156,6 +157,52 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       defect,
     });
     verdict = repaired.verdict;
+    // The finisher is spent and the tree still does not stand: the closer
+    // takes the whole delivery, with full sight and authority (§4).
+    if (!verdict.green && !g.state.halted) {
+      const closed = await close({
+        subject: `${tep} (the delivery)`,
+        worktree,
+        footprint: [
+          ...new Set([
+            ...(await exec("git", ["-C", worktree, "diff", "--name-only", `${g.baseSha}..HEAD`], worktree)).out
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean),
+            ...(await porcelainPaths(worktree)),
+            ...verdict.failures.map((f) => f.file).filter((f): f is string => !!f),
+          ]),
+        ],
+        probeSources: [],
+        history: verdict.failures.map((f) => `${f.name}: ${f.detail.split("\n")[0]}`).slice(0, 12),
+        criteria: [...g.checkOf.values()].slice(0, 40).map((text, i) => ({ id: `gate-${i}`, text })),
+        ...(deps.digest ? { digest: deps.digest } : {}),
+        ...(deps.prepare ? { prepare: deps.prepare } : {}),
+        model: deps.model,
+        ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
+        measure: async () => {
+          const r = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
+          const v = suiteVerdictOf(r.code, r.out, worktree);
+          return { green: v.green, score: v.failures.length, evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000) };
+        },
+        exec,
+        boundedExec: g.suiteExec,
+        halted: () => g.state.halted,
+        log: (l) => log(l, "gate#closer"),
+        say: (t) => g.state.doing("gate#closer", t),
+        onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
+        defect: (e) => defect({ unit: "gate#closer", ...e }),
+        ...(deps.worker ? { worker: deps.worker } : {}),
+      });
+      if (closed.green) {
+        const again = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
+        verdict = suiteVerdictOf(again.code, again.out, worktree);
+        if (verdict.green) {
+          await exec("git", ["add", "-A", "."], worktree);
+          await exec("git", ["commit", "-m", `tandem: ${tep} — closed`], worktree);
+        }
+      }
+    }
   }
   proofs.push({
     kind: "suite",

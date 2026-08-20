@@ -43,9 +43,9 @@ export type Diagnoser = (
   evidence: string,
 ) => Promise<{ note: string; reauthored: boolean } | undefined>;
 
-/** Diagnoses one check at most twice — a re-authored check may still have
- *  something to say, but a third look is a loop. */
-const DIAGNOSIS_BUDGET = 2;
+/** One ruling per check per phase (THE-LADDER §5): a second look at an
+ *  unchanged check is repetition, and repetition hands up the ladder. */
+const DIAGNOSIS_BUDGET = 1;
 
 export function makeDiagnoser(
   a: OracleFactoryArgs,

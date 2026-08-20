@@ -19,8 +19,8 @@ import type { Exec } from "./oracle";
 import { formatBuild, shellLine } from "./execs";
 import * as path from "node:path";
 
-/** Finishing rounds the gate may spend before it withholds. */
-const GATE_REPAIR_BUDGET = 2;
+/** One finishing round; what it cannot bring under goes to the closer. */
+const GATE_REPAIR_BUDGET = 1;
 
 export interface GateRepairArgs {
   tep: string;

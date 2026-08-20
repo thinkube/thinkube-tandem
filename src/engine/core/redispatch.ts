@@ -15,7 +15,7 @@ import { SchedUnit } from "./dag";
  * number of failed acceptance runs recorded for a slice; once a slice reaches this many, the loop
  * escalates instead of re-dispatching. Overridable per run via {@link SchedulerState.attemptBound}.
  */
-export const MAX_REWORK_ATTEMPTS = 3;
+export const MAX_REWORK_ATTEMPTS = 2;
 
 /**
  * The durable marker the orchestrator stamps onto an **escalated** slice's `## ⚑ Requires attention`

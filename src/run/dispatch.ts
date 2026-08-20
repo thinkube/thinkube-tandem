@@ -19,7 +19,6 @@ import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
-import { sliceSuiteArgs } from "./suite";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership, waitReasons } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
@@ -34,8 +33,12 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
-import { makeWiden, probeSourceReader, settleTransfers } from "./owner";
+import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
+import { finishAuthoring } from "./authoring";
+import { unitCloser } from "./closeUnit";
+import { buildOracleArgs } from "./oracleArgs";
+import { expectedPaths } from "./probeAudit";
 import { formatBuild } from "./execs";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
@@ -47,7 +50,7 @@ import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
-import { continuationBrief, decisionsStanza, extractDecisions, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
+import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
 export interface DispatchDeps {
@@ -194,9 +197,8 @@ export async function dispatchTep(
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
   const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices);
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
-  /** The tester's tree after a reset: probes back from the store, and the
-   *  test homes it edited restored OVER what the branch holds. */
-  // Keyed to the CUT: its criteria are fixed once signed, so probes survive base refreshes — a probe is written from the checks, not from a commit.
+  /** The tester's tree after a reset: probes back from the store, the test homes it edited over
+   *  what the branch holds. Keyed to the CUT, so probes survive a base refresh. */
   const restoreTester = async (): Promise<void> => {
     await restoreProbes(storeDir, testerWt, cut.id);
   };
@@ -224,42 +226,13 @@ export async function dispatchTep(
   const criterionOf = criterionLookup(slices, space);
   const rulings: Ruling[] = [];
   const decisions: { unit: string; text: string }[] = [];
-  const oracleArgs = {
-    repoRoot: deps.repoRoot,
-    branch,
-    wtRoot,
-    tep: wtName,
-    worktree,
-    testerWt,
-    sliceProbes,
-    sliceVerifs,
-    briefBySlice,
-    acting: (slice: string) => acting.get(slice),
-    model: deps.model,
-    workerModel: deps.workerModel,
-    supervisorRound: deps.supervisorRound,
-    exec,
-    boundedExec,
-    log,
-    defect,
-    ...(deps.prepare ? { prepare: deps.prepare } : {}),
-    provisioned,
-    built,
-    ...(emitMap?.length ? { emitMap } : {}),
-    footprintOf: (slice: string) =>
-      dag.filter((u) => u.slice === slice && (u.role ?? "code") === "code").flatMap((u) => u.footprint),
-    pruneIn: (slice: string) => maintainedElsewhere(slices, slice),
-    criterionOf,
-    onRuling: (r: { slice: string; criterionId: string; granted: boolean; reason: string }) =>
-      rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
-    persistProbe: (rel: string) => persistProbes(storeDir, testerWt, [rel], cut.id),
-    ...(deps.author ? { author: deps.author } : {}),
-    ...(deps.digest ? { digest: deps.digest } : {}),
-    widen: makeWiden({ units: dag, pending: (id) => !done.has(id) && !failed.has(id), log, onRuling: (r) => rulings.push(r) }),
-    onDecision: (unit: string, text: string) => decisions.push({ unit, text }),
-    // The repository's standing tests are every slice's check, scoped to what imports its files.
-    suite: sliceSuiteArgs({ runOne: runOneTest, exec: suiteExec, affected: deps.affected, reds: deps.suiteReds, slices, pendingPlanned: () => plannedByPending(dag, done) }),
-  };
+  const oracleArgs = buildOracleArgs({
+    deps, branch, wtRoot, tep: wtName, worktree, testerWt, cutId: cut.id, storeDir,
+    sliceProbes, sliceVerifs, briefBySlice, acting, exec, boundedExec, suiteExec, log, defect,
+    provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
+    pending: (id: string) => !done.has(id) && !failed.has(id),
+    plannedPending: () => plannedByPending(dag, done),
+  });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
   const pendingPlanned = (): string[] => plannedByPending(dag, done), probeSourceFor = probeSourceReader(sliceProbes, testerWt);
@@ -278,6 +251,8 @@ export async function dispatchTep(
   const { sliceCommitted, nextCommit, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
   });
+
+  const closeUnit = unitCloser({ worktree, testerWt, sliceProbes, sliceVerifs, criterionOf, st, exec, boundedExec, log, deps, rulings, undelivered, defect });
 
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
     const maintain = isMaintainUnit(next); // scheduled as code, worked as a tester
@@ -389,29 +364,37 @@ export async function dispatchTep(
         },
         brief,
       );
-      // A tester that stopped short continues from where it stopped, up to three more rounds; written work is kept.
-      for (let more = 0; role === "test" && !maintain && !outcome.containment && more < 3; more++) {
-        const missing = await missingProbes(tree, next.footprint);
-        if (!missing.length) break;
-        log(`↪ ${next.id}: ${missing.length} declared probe(s) still unwritten — continuing (${more + 1}/3)`, next.id);
-        st.doing(next.id, `continuing — ${missing.length} probe(s) left to write`);
-        outcome = await worker(
-          {
-            model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, role),
-            worktree: tree,
-            role,
-            footprint: next.footprint,
-            maxTurns: testerTurns(missing.length),
-            alsoAllowed: () => unionFor(tree, next.id)(),
-            baseline,
-            abort,
-            onPark: (q, answer) =>
-              void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
-            log: (line: string) => log(line, next.id),
-          },
-          continuationBrief(brief, next.footprint, missing),
-        );
-      }
+      if (role === "test" && !outcome.containment)
+        outcome = await finishAuthoring({
+          outcome,
+          tree,
+          footprint: next.footprint,
+          unit: next.id,
+          maintain,
+          brief,
+          emitMap: emitMap ?? [],
+          planned: expectedPaths(dag.flatMap((u) => u.footprint).filter((f) => !isProbePath(f)), emitMap ?? []),
+          halted: () => st.halted,
+          say: (text) => st.doing(next.id, text),
+          log: (line) => log(line, next.id),
+          defect: (detail) => defect({ slice: next.slice, unit: next.id, activity: "check authoring", trigger: "probe-audit", type: "test", impact: "refused before anyone was graded", detail }),
+          runWorker: (text, turns) =>
+            worker(
+              {
+                model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, role),
+                worktree: tree,
+                role,
+                footprint: next.footprint,
+                maxTurns: turns,
+                alsoAllowed: () => unionFor(tree, next.id)(),
+                baseline,
+                abort,
+                onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
+                log: (line: string) => log(line, next.id),
+              },
+              text,
+            ),
+        });
       // A question left in UNDELIVERED is answered by the machine before it counts as a gap.
       if (outcome.undelivered?.length && !outcome.containment) {
         const kept = await answerEnd(next.slice, next.id, outcome.undelivered);
@@ -491,8 +474,17 @@ export async function dispatchTep(
         }
         if (mended && attempt < attempts) r = (await oracle.confirmGreen()).result;
       }
+      // Everything cheaper is spent: the closer takes it, with full sight
+      // and full authority (THE-LADDER §4). Only if IT cannot does the unit fail.
+      if (r.kind === "stalled" || r.kind === "exhausted" || attempt >= attempts) {
+        const closed = await closeUnit(next, oracle);
+        if (closed) {
+          ok = true;
+          break;
+        }
+      }
       if (r.kind === "stalled" || r.kind === "exhausted") {
-        failWith(next.id, `verify oracle ${r.kind} — the checks are not green`);
+        failWith(next.id, `verify oracle ${r.kind} — the checks are not green, and the closer could not finish it`);
         break;
       }
       if (attempt < attempts) {
@@ -505,7 +497,7 @@ export async function dispatchTep(
       } else {
         failWith(
           next.id,
-          `checks not green after ${attempts} attempts — ${formatVerifyReply(r).split("\n")[0]}`,
+          `checks not green after ${attempts} attempts and the closer — ${formatVerifyReply(r).split("\n")[0]}`,
         );
         defect({
           slice: next.slice,
