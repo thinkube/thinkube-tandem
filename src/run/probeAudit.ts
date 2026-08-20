@@ -5,10 +5,11 @@
  * — but two things about it are decidable the moment it is written, and
  * both have cost whole runs:
  *
- * - Its imports must resolve IN SHAPE. The directory it imports from must
- *   exist in the built output. The module itself may be missing — that is
- *   code not written yet — but `out-test/src/…` where the build emits
- *   `out-test/…` is a path no implementation will ever create.
+ * - Its imports must be able to EXIST. Never "does the file exist" — a check
+ *   is written before the code — but "could this path ever exist": the
+ *   source directory it corresponds to must be one this repository has, or
+ *   one this run's plan will create. `out-test/src/…` where the build emits
+ *   `out-test/…` inverts to `src/src/…`, which nothing will ever create.
  * - It may not SIMULATE A SYSTEM THIS REPOSITORY DOES NOT OWN. A fake of an
  *   interface the repository defines and injects is a few lines; a fake of
  *   a foreign platform is a simulator, bigger than the code it tests, with
@@ -44,39 +45,41 @@ export function interceptsLoader(source: string): string | undefined {
   return hits ? hits.source.replace(/\\/g, "") : undefined;
 }
 
-/**
- * Where the work still to come will land, in the shape a check must import.
- * A planned source file does not exist yet, and neither does its compiled
- * form — but exactly one path is the one it will occupy, and the door
- * observed the transform (`src/core/author.ts → out-test/core/author.js`).
- * With no build step, a planned source path is its own answer.
- */
-export function expectedPaths(plannedSources: readonly string[], emitMap: readonly string[] = []): string[] {
+/** The transform the door measured, as functions both ways. Absent or
+ *  unreadable, the audit decides nothing. */
+function emitTransform(emitMap: readonly string[] = []): { toSource: (built: string) => string | undefined } | undefined {
   const pair = emitMap.map((m) => m.split("→").map((x) => x.trim())).find((p) => p.length === 2 && p[0] && p[1]);
-  if (!pair) return [...plannedSources];
+  if (!pair) return undefined;
   const [srcEx, outEx] = pair;
-  const srcDir = srcEx.includes("/") ? srcEx.slice(0, srcEx.indexOf("/") + 1) : "";
-  const outDir = outEx.includes("/") ? outEx.slice(0, outEx.indexOf("/") + 1) : "";
-  const outExt = path.extname(outEx);
-  const strips = outEx.replace(outDir, "").split("/").length === srcEx.replace(srcDir, "").split("/").length;
-  return plannedSources.map((p) => {
-    const stem = p.replace(/\.[^./]+$/, "");
-    const tail = strips && srcDir && stem.startsWith(srcDir) ? stem.slice(srcDir.length) : stem;
-    return `${outDir}${tail}${outExt}`;
-  });
+  const srcRoot = srcEx.includes("/") ? srcEx.slice(0, srcEx.indexOf("/") + 1) : "";
+  const outRoot = outEx.includes("/") ? outEx.slice(0, outEx.indexOf("/") + 1) : "";
+  const srcExt = path.extname(srcEx);
+  if (!outRoot || !srcExt) return undefined;
+  return {
+    toSource: (built) => {
+      const b = built.replace(/^\.\//, "");
+      if (!b.startsWith(outRoot)) return undefined;
+      return `${srcRoot}${b.slice(outRoot.length).replace(/\.[^./]+$/, "")}${srcExt}`;
+    },
+  };
 }
 
 /**
- * Audit one probe against the tree it will run in. `root` is the tester's
- * snapshot; `plannedBuilt` are built paths the run's own work will create
- * (so a check may import a module that does not exist yet, as long as its
- * directory does).
+ * Audit one probe against the repository it will run in. `root` is a
+ * checkout of the base — its SOURCE is the ground truth, because the build
+ * output may live in another tree, or not exist yet at all.
+ *
+ * The question is never "does this file exist" — a check is written before
+ * the code — but "could this path ever exist": the DIRECTORY its source
+ * corresponds to must exist in the repository, or be one the plan says this
+ * run will create. Anything the audit cannot decide, it allows.
  */
 export function auditProbe(
   probe: string,
   source: string,
   root: string,
-  plannedBuilt: readonly string[] = [],
+  planned: readonly string[] = [],
+  emitMap: readonly string[] = [],
 ): ProbeFault[] {
   const faults: ProbeFault[] = [];
   const loader = interceptsLoader(source);
@@ -88,18 +91,37 @@ export function auditProbe(
         `it intercepts the module loader (${loader}) to hand back an invented platform. A check may fake an interface THIS repository ` +
         `defines and injects; it may not simulate a system the repository does not own.`,
     });
-  const here = path.dirname(path.join(root, probe));
+  const transform = emitTransform(emitMap);
+  const plannedDirs = new Set(planned.map((p) => path.posix.dirname(p)));
   for (const spec of importsOf(source)) {
-    const abs = path.resolve(here, spec);
-    if (fs.existsSync(abs)) continue;
-    const dir = path.dirname(abs);
-    if (fs.existsSync(dir)) continue; // the module is not built yet — fine
-    const rel = path.relative(root, abs);
-    if (plannedBuilt.some((p) => path.resolve(root, p) === abs)) continue;
+    const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
+    if (fs.existsSync(path.join(root, rel))) continue; // it is already there
+    if (planned.some((p) => p === rel)) continue; // this run writes it
+    const asSource = transform?.toSource(rel);
+    if (!asSource) {
+      const dir = path.posix.dirname(rel);
+      if (fs.existsSync(path.join(root, dir)) || plannedDirs.has(dir)) continue;
+      // A path whose very first segment is absent from this checkout is a
+      // build output the tester's tree does not hold: unjudgeable here, so
+      // the audit says nothing (THE-LADDER §6 — it fails closed).
+      const top = rel.split("/")[0];
+      if (!fs.existsSync(path.join(root, top))) continue;
+      faults.push({
+        probe,
+        kind: "import-shape",
+        detail: `it imports "${spec}", which resolves to ${rel} — ${dir} exists nowhere in this repository, and nothing in this run's plan will create it.`,
+      });
+      continue;
+    }
+    const dir = path.posix.dirname(asSource);
+    if (fs.existsSync(path.join(root, dir))) continue; // a new file in a real directory: fine
+    if (plannedDirs.has(dir) || planned.some((p) => p === asSource)) continue; // the plan creates it
     faults.push({
       probe,
       kind: "import-shape",
-      detail: `it imports "${spec}", and the directory that path names (${path.dirname(rel)}) does not exist in this tree — no implementation can make it appear.`,
+      detail:
+        `it imports "${spec}", which is the compiled form of ${asSource} — and ${dir} is not a directory of this repository, ` +
+        `nor one this run will create. No implementation can make that path appear.`,
     });
   }
   return faults;
@@ -109,7 +131,8 @@ export function auditProbe(
 export function auditProbes(
   root: string,
   probes: readonly string[],
-  plannedBuilt: readonly string[] = [],
+  planned: readonly string[] = [],
+  emitMap: readonly string[] = [],
 ): ProbeFault[] {
   const faults: ProbeFault[] = [];
   for (const rel of probes) {
@@ -119,7 +142,7 @@ export function auditProbes(
     } catch {
       continue; // a missing probe is the run's own business, not this audit's
     }
-    faults.push(...auditProbe(rel, src, root, plannedBuilt));
+    faults.push(...auditProbe(rel, src, root, planned, emitMap));
   }
   return faults;
 }

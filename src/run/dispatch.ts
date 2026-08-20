@@ -38,7 +38,6 @@ import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
 import { unitCloser } from "./closeUnit";
 import { buildOracleArgs } from "./oracleArgs";
-import { expectedPaths } from "./probeAudit";
 import { formatBuild } from "./execs";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
@@ -373,7 +372,7 @@ export async function dispatchTep(
           maintain,
           brief,
           emitMap: emitMap ?? [],
-          planned: expectedPaths(dag.flatMap((u) => u.footprint).filter((f) => !isProbePath(f)), emitMap ?? []),
+          planned: dag.flatMap((u) => u.footprint).filter((f) => !isProbePath(f)),
           halted: () => st.halted,
           say: (text) => st.doing(next.id, text),
           log: (line) => log(line, next.id),

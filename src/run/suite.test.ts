@@ -448,35 +448,42 @@ test("the tester and the check re-author are told where a source file actually l
   assert.doesNotMatch(testerStanza(["out-test"]), /lands EXACTLY here/, "nothing is claimed when nothing was observed");
 });
 
-test("the machine refuses a check that cannot stand: an import naming a directory nothing will create, and a simulator of a foreign platform", async () => {
-  const { auditProbe, expectedPaths, interceptsLoader } = await import("./probeAudit");
+test("the machine refuses only a check that could NEVER stand: a path nothing will create, or a simulator — and it decides nothing when unsure", async () => {
+  const { auditProbe, interceptsLoader } = await import("./probeAudit");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-audit-"));
-  fs.mkdirSync(path.join(root, "probes"), { recursive: true });
-  fs.mkdirSync(path.join(root, "out-test", "surfaces"), { recursive: true });
-  fs.writeFileSync(path.join(root, "out-test", "surfaces", "panel.js"), "");
+  for (const d of ["probes", "src/surfaces", "src/engine"]) fs.mkdirSync(path.join(root, d), { recursive: true });
+  fs.writeFileSync(path.join(root, "src/surfaces/panel.ts"), "");
+  const EMIT = ["src/core/author.ts → out-test/core/author.js"];
 
-  // The real SL-7 shape: the build emits out-test/surfaces, the check imports out-test/src/surfaces.
-  const wrong = auditProbe("probes/p.test.mjs", `import { X } from "../out-test/src/surfaces/panel.js";`, root);
+  // SL-7's family: the compiled path inverts to src/src/… — nothing, ever.
+  const wrong = auditProbe("probes/p.test.mjs", `import { X } from "../out-test/src/surfaces/panel.js";`, root, [], EMIT);
   assert.equal(wrong.length, 1);
   assert.equal(wrong[0].kind, "import-shape");
-  assert.match(wrong[0].detail, /out-test\/src\/surfaces.*does not exist/);
+  assert.match(wrong[0].detail, /compiled form of src\/src\/surfaces\/panel\.ts/);
 
-  // The same file, imported where it lands: fine.
-  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { X } from "../out-test/surfaces/panel.js";`, root), []);
+  // The same module, imported where it lands.
+  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { X } from "../out-test/surfaces/panel.js";`, root, [], EMIT), []);
 
-  // A module the run will still build: its directory does not exist yet, and that is fine.
-  const planned = expectedPaths(["src/core/spaces.ts"], ["src/core/author.ts → out-test/core/author.js"]);
-  assert.deepEqual(planned, ["out-test/core/spaces.js"]);
-  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { c } from "../out-test/core/spaces.js";`, root, planned), []);
+  // A file the CODER will create, in a directory the repository has: allowed.
+  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { y } from "../out-test/engine/newThing.js";`, root, [], EMIT), []);
 
-  // A simulator of a platform this repository does not own.
-  const sim = auditProbe(
-    "probes/q.test.mjs",
-    `import Module from "node:module";\nModule._load = function (r) { if (r === "vscode") return fake; };`,
-    root,
+  // A file in a directory only the PLAN will create: allowed.
+  assert.deepEqual(
+    auditProbe("probes/p.test.mjs", `import { z } from "../out-test/hostui/tabs.js";`, root, ["src/hostui/tabs.ts"], EMIT),
+    [],
   );
+
+  // A path with no source behind it at all.
+  const nowhere = auditProbe("probes/p.test.mjs", `import { w } from "./engine/wired.mjs";`, root, [], EMIT);
+  assert.equal(nowhere.length, 1);
+  assert.match(nowhere[0].detail, /probes\/engine exists nowhere in this repository/);
+
+  // Unsure — no measured transform — decides nothing.
+  assert.deepEqual(auditProbe("probes/p.test.mjs", `import { X } from "../out-test/src/surfaces/panel.js";`, root, [], []), []);
+
+  // The simulator rule stands on its own.
+  const sim = auditProbe("probes/q.test.mjs", `import Module from "node:module";\nModule._load = () => fake;`, root, [], EMIT);
   assert.equal(sim[0].kind, "simulator");
-  assert.match(sim[0].detail, /may not simulate a system the repository does not own/);
   assert.ok(interceptsLoader(`require.cache[require.resolve("vscode")] = {};`));
   assert.equal(interceptsLoader(`const host = { createPanel: () => stub };`), undefined, "faking an owned seam is fine");
 });

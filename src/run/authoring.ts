@@ -15,8 +15,8 @@ import { continuationBrief, isProbePath, missingProbes, testerTurns } from "./te
 
 /** Continuations a tester that stopped short may spend. */
 const CONTINUATIONS = 3;
-/** Rounds to mend checks the audit refused — one look, one fix. */
-const AUDIT_FIXES = 2;
+/** One mend: a fault that survives it hands up rather than grinding. */
+const AUDIT_FIXES = 1;
 
 export async function finishAuthoring(a: {
   outcome: WorkerOutcome;
@@ -44,7 +44,7 @@ export async function finishAuthoring(a: {
     outcome = await a.runWorker(continuationBrief(a.brief, a.footprint, missing), testerTurns(missing.length));
   }
   for (let fix = 0; !outcome.containment && fix < AUDIT_FIXES && !a.halted(); fix++) {
-    const faults = auditProbes(a.tree, a.footprint.filter(isProbePath), a.planned);
+    const faults = auditProbes(a.tree, a.footprint.filter(isProbePath), a.planned, a.emitMap);
     if (!faults.length) break;
     a.log(
       `⌦ ${a.unit}: ${faults.length} check(s) cannot stand as written — ` +
