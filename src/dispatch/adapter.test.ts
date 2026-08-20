@@ -135,7 +135,7 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
 test("engine-hash gate: engine sources change only with an ENGINE-CHANGE.md marker", () => {
   const repo = path.resolve(__dirname, "..", "..");
   const engineDir = path.join(repo, "src", "engine");
-  const mine = new Set(["importSmoke.test.ts", "splitFidelity.test.ts", "storeSync.test.ts"]);
+  const mine = new Set(["importSmoke.test.ts", "storeSync.test.ts"]);
   const current: Record<string, string> = {};
   const walk = (d: string) => {
     for (const name of fs.readdirSync(d).sort()) {
