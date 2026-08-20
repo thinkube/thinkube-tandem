@@ -1,13 +1,16 @@
 /**
  * The two signatures. Signing a cut binds the PAIR: the render the human
  * read and the grounded members underneath it — neither can drift under a
- * signature without the drift being detectable. Accepting a delivery is
- * refused while any proof is not green: acceptance means the evidence was
- * on the table.
+ * signature without the drift being detectable. Signing also always
+ * requires documentation or a written exemption; that requirement is not
+ * gated by any setting. Accepting a delivery is refused while any proof
+ * is not green: acceptance means the evidence was on the table, and its
+ * own documentation check is the one setting (`docsGateMode`) governs.
  */
 import { createHash } from "node:crypto";
 import { Cut, Delivery, Space } from "../core/schema";
 import { renderCutScreen } from "./render";
+import { docLandings } from "../core/docs";
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -91,6 +94,15 @@ export function signCut(
       ok: false,
       reason: `undecided question(s) on these asks: ${open.map((q) => q.text).join(" · ")} — decide them before signing`,
     };
+  // Signing always requires documentation or a written exemption — this
+  // holds regardless of docsGateMode, which governs the accept gate only.
+  const exemptionReason = cut.docsExemption?.reason?.trim();
+  if (docLandings(space, cut).length === 0 && !exemptionReason)
+    return {
+      ok: false,
+      reason:
+        "documentation is missing: this cut lands no page under docs/ — write the documentation, or excuse it with a written reason before signing",
+    };
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
   ).length;
@@ -134,8 +146,11 @@ export type AcceptResult =
   | { ok: true; delivery: Delivery }
   | { ok: false; reason: string };
 
-/** The human's second gate. Refused while evidence is missing or red; the
- *  docs gate blocks by default (advisory is the recorded escape hatch). */
+/** The human's second gate. Refused while evidence is missing or red. The
+ *  documentation requirement itself is signing's job, always enforced,
+ *  never gated by a setting — `docsGateMode` governs only THIS gate's
+ *  handling of an unmet obligation surfaced on the delivery (block by
+ *  default; advisory is the recorded escape hatch). */
 export function acceptDelivery(
   delivery: Delivery,
   at: string,

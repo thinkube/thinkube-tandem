@@ -36,3 +36,15 @@ grinding. Two units in the last run spent five identical rounds each.
 setting says otherwise. The closer is the floor of the ladder — it fires
 only when every cheaper actor is spent, so it is rare by construction, and
 the one place where the strongest model is always warranted.
+
+# Engine change
+
+`src/engine/core/preflight.ts` › `buildWorkerPrompt`: when the spec body
+and the TEP body are the same text, the PARENT SPEC block is no longer
+rendered alongside an identical THE INTENT block — only THE INTENT is
+emitted, and it counts as embedded context on its own. The doubled body
+was wrong: a run path with no separate spec artifact was handing the
+worker the same text twice under two headings, paying twice for context
+that says one thing once. `satisfies` ordinals are now stripped from the
+TEP body for code-role workers exactly as they already were for the spec
+body, closing the gap that let a grader ordinal leak through the TEP path.

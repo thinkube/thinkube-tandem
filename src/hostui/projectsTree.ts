@@ -104,6 +104,7 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
     private readonly listSpaces: (ownerKey: string, kind: SpaceOwnerKind) => SpaceRef[],
     private readonly activeSpace: (ownerKey: string) => string | undefined,
     private readonly listProjects: () => WorkProject[],
+    private readonly isSpaceOpen: (key: string) => boolean,
   ) {}
 
   refresh(): void {
@@ -143,20 +144,18 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
       ];
     if (el instanceof RepositoryItem) {
       const ownerKey = el.project.card.id;
-      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
       return [
         ...this.listSpaces(ownerKey, "repository").map(
-          (s) => new ThinkingSpaceItem(ownerKey, "repository", s, s.slug === activeSlug),
+          (s) => new ThinkingSpaceItem(ownerKey, "repository", s, this.isSpaceOpen(`${ownerKey}/${s.slug}`)),
         ),
         new NewSpaceItem(ownerKey, "repository"),
       ];
     }
     if (el instanceof WorkProjectItem) {
       const ownerKey = `wp:${el.wp.id}`;
-      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
       return [
         ...this.listSpaces(el.wp.id, "project").map(
-          (s) => new ThinkingSpaceItem(ownerKey, "project", s, s.slug === activeSlug),
+          (s) => new ThinkingSpaceItem(ownerKey, "project", s, this.isSpaceOpen(`${ownerKey}/${s.slug}`)),
         ),
         new NewSpaceItem(ownerKey, "project"),
       ];

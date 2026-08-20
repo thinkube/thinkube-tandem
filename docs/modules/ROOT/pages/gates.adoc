@@ -8,7 +8,17 @@ Signing freezes a cut into a TEP. The gate refuses:
 * an empty cut;
 * a change with no acceptance criteria ("nothing proves this");
 * a change with no grounding (no place in the code);
-* an ask in the cut with an undecided question.
+* an ask in the cut with an undecided question;
+* documentation missing: the cut lands no page under `docs/` and carries
+  no written exemption.
+
+Documentation is required for every cut, always — this holds regardless
+of `thinkubeTandem.docsGateMode`, which governs Gate 2 only (below). The
+one way past it is a written exemption: before signing, say documentation
+is not needed and type why. A blank reason is refused. The reason is
+recorded once for the whole cut, stamped on the signed cut alongside the
+signing moment, and bound by the signature — editing it afterwards shows
+up as drift, the same as editing any other grounded content.
 
 The click mints `TEP-<you>-<n>` and a machine-local HMAC token bound to
 the pair you actually saw: the rendered cut screen plus the grounded

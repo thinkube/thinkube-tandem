@@ -204,7 +204,8 @@ export async function dispatchTep(
   await restoreTester();
   log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
 
-  const specBody = renderTepBody(space, cut);
+  // This run path has no separate spec artifact — the TEP body IS the whole intent.
+  const tepBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
@@ -285,10 +286,11 @@ export async function dispatchTep(
     // The oracle speaks under the unit it acts for.
     if (oracle) acting.set(next.slice, { unit: next.id });
 
+    // This run path has no separate spec artifact — the TEP body is the whole intent, so it is
+    // passed under the single `tepBody` field. `buildWorkerPrompt` renders it once, as THE INTENT.
     const baseBrief =
       buildWorkerPrompt(next, tep, {
-        specBody,
-        tepBody: specBody,
+        tepBody,
         cwd: tree,
         testConvention:
           deps.testConvention ??

@@ -45,8 +45,11 @@ of them there — nothing has users.
 - Sign refuses unprovable/ungrounded changes and undecided questions on the
   cut's asks — the freeze-gate refusals moved from warnings into the gate.
 - The docs obligation derives from grounding: a slice declaring a docs/
-  touchpoint must land it; blocking at accept by default (advisory setting
-  is the recorded escape hatch).
+  touchpoint must land it. Documentation (or a written exemption, its
+  reason non-empty) is required for EVERY cut at signing — always, not by
+  setting. `thinkubeTandem.docsGateMode` governs only the accept gate's
+  handling of an unmet obligation surfaced on the delivery: blocking by
+  default, with `advisory` the recorded escape hatch.
 - The retired-symbol importer gate stays unwired until grounding grows a
   `retires` declaration for symbol-deleting changes — it arms the day that
   field exists; the module is imported and tested.

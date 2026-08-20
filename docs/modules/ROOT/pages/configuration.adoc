@@ -55,8 +55,10 @@ and every verify runner shares what that produced. A run whose build
 step fails on the untouched tree is refused before any worker starts,
 with the tool's own output.
 
-|`thinkubeTandem.docsGateMode` |`blocking` |Whether an unmet
-documentation obligation blocks accepting.
+|`thinkubeTandem.docsGateMode` |`blocking` |Governs Gate 2 (Accept)
+only: whether an unmet documentation obligation blocks accepting, or is
+advisory. It does not excuse Gate 1 (Sign) — signing always requires
+documentation or a written exemption, whatever this setting is.
 
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
 (github.com remotes use the `gh` CLI instead).

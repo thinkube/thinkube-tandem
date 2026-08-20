@@ -130,6 +130,12 @@ export interface Cut {
     renderHash: string;
     groundingHash: string;
   };
+  /** A written excuse for landing no documentation, in the human's own
+   *  words. Once for the whole cut: signing is one decision over one cut,
+   *  so a per-promise exemption would turn one sentence into a form. A
+   *  blank reason is never recorded — the gate refuses it before it lands
+   *  here. */
+  docsExemption?: { reason: string };
 }
 
 /**

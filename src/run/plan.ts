@@ -13,6 +13,7 @@ import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import { isProbePath, isTestPath } from "./testHomes";
+import { isDocPath } from "../core/docs";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
@@ -295,13 +296,14 @@ export async function writeDeliveryRecord(
 }
 
 
-/** Docs gate: a slice that declares documentation (a docs/ touchpoint)
- *  must have LANDED it — the engine's obligation check runs against the
- *  real tree, and an unmet obligation is UNDELIVERED on the page's face. */
+/** Docs gate: a slice that declares documentation (a doc path per the one
+ *  shared rule, `isDocPath`) must have LANDED it — the engine's obligation
+ *  check runs against the real tree, and an unmet obligation is
+ *  UNDELIVERED on the page's face. */
 export function docsObligations(slices: SliceForDag[], worktree: string): string[] {
   const out: string[] = [];
   for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
+    const declaresDocs = (s.files ?? []).some(isDocPath);
     const note = unmetDocsObligation(
       {
         docs: declaresDocs ? "required" : undefined,

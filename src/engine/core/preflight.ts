@@ -274,7 +274,15 @@ export function buildWorkerPrompt(
     (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
   const intentSpec = viewOf(context?.specBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const specBlock = intentSpec
+  const intentTep = viewOf(context?.tepBody ?? "");
+  // One intent body, once (SL-4): a run path with no separate spec artifact renders the TEP
+  // body as the spec body too, so specBody and tepBody arrive identical. Rendering both blocks
+  // would show the worker the same text twice under two headings. When the two texts match,
+  // THE INTENT block alone carries it — that block IS the embedded spec context, so downstream
+  // context checks (hasCtx) must see it as such. A genuinely different spec body still renders
+  // its own PARENT SPEC block beside THE INTENT.
+  const specIsTep = !!intentTep && intentTep === intentSpec;
+  const specBlock = intentSpec && !specIsTep
     ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
     : "";
   const sliceBlock = intentSlice
@@ -283,8 +291,8 @@ export function buildWorkerPrompt(
   // Full-intention threading (context tranche): the parent TEP — the WHY behind the spec —
   // rendered verbatim for BOTH roles. The spec approximates the TEP; when they diverge the
   // TEP is the star the delivery is eventually judged against (the intent check).
-  const tepBlock = context?.tepBody?.trim()
-    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${context.tepBody.trim()}\n`
+  const tepBlock = intentTep
+    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${intentTep}\n`
     : "";
   // Sibling awareness (context tranche): every sibling unit's task note, labeled by its
   // author role — a code worker sees what the test-author will assert; a test worker sees
@@ -310,12 +318,15 @@ export function buildWorkerPrompt(
   // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
   // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
   const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
-  const hasCtx = specBlock || sliceBlock;
+  // THE INTENT counts as embedded context on its own (SL-4): a run path with no separate spec
+  // artifact still gives the worker its full brief inline — it never needs to go looking for a
+  // spec that, in that path, does not exist.
+  const hasCtx = specBlock || sliceBlock || tepBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
     `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
     (hasCtx
-      ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
+      ? `The thinking space/specs dir is NOT in this worktree; your intent, spec and slice context is embedded below — use it, don't search the filesystem for specs/.\n`
       : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
     `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +

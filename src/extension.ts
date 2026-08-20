@@ -19,6 +19,7 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
+import { SpaceTabs } from "./surfaces/spaceTabs";
 import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
 import {
   chooseThinkingSpace,
@@ -47,6 +48,7 @@ import * as nodeFs from "node:fs";
 let panel: SpacePanel | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
+const spaceTabs = new SpaceTabs();
 
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -316,6 +318,7 @@ export function activate(context: vscode.ExtensionContext): void {
     (ownerId, kind) => listThinkingSpaces(configuredStoreRoot(), ownerId, kind),
     (ownerKey) => context.workspaceState.get<string>(`tandem.space.${ownerKey}`),
     () => listWorkProjects(configuredStoreRoot()),
+    (key) => spaceTabs.isOpen(key),
   );
   context.subscriptions.push(
     vscode.window.createTreeView("tandemProjects", {
@@ -588,6 +591,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  panel?.dispose();
+  spaceTabs.dispose();
   storeSync?.dispose();
 }
