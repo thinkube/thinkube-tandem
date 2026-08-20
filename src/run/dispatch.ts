@@ -121,6 +121,7 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
+  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, told apart from the next run of the same cut
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
@@ -142,7 +143,7 @@ export async function dispatchTep(
     impact: string;
     detail: string;
   }): void => {
-    if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, ...entry });
+    if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry });
   };
 
   const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {

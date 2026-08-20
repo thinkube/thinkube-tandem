@@ -412,3 +412,18 @@ test("a check may be challenged twice — the budget is per check, so questionin
   void a1;
   void a2;
 });
+
+test("every ledger row carries the tool version that produced it, so a fix can be measured instead of remembered", async () => {
+  const { appendDefect, toolVersion } = await import("../engine/defectLog");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ledger-"));
+  assert.match(toolVersion(), /^\d+\.\d+\.\d+$/, "the version comes from the extension's own manifest");
+  assert.equal(appendDefect(dir, { spec: "TEP-1", activity: "verify", trigger: "supervisor", impact: "round lost", detail: "x" }), true);
+  const file = fs.readdirSync(path.join(dir, "defects"))[0];
+  const row = JSON.parse(fs.readFileSync(path.join(dir, "defects", file), "utf8").trim());
+  assert.equal(row.version, toolVersion());
+  // A caller may state its own (a replayed row keeps the version it was born with).
+  appendDefect(dir, { spec: "TEP-1", version: "1.2.3", run: "TEP-1@abc", activity: "verify", trigger: "supervisor", impact: "round lost", detail: "y" });
+  const rows = fs.readFileSync(path.join(dir, "defects", file), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(rows[1].version, "1.2.3");
+  assert.equal(rows[1].run, "TEP-1@abc");
+});

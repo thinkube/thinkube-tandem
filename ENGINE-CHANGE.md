@@ -13,3 +13,11 @@ one line that names the cause.
 failure whose output is empty now says so — "(the build produced no
 output — it may have timed out; run the `build` tool)" — instead of a
 bare heading. A worker must never receive a verdict without evidence.
+
+# Engine change
+
+`src/engine/defectLog.ts` › `appendDefect`: every row now carries the
+extension version that produced it (read once from the extension's own
+manifest) and the run it belongs to. Without them a ledger spanning many
+deploys cannot answer "did that fix move the numbers?" — the question the
+ledger exists for.

@@ -37,6 +37,11 @@ export interface DefectEntry {
   impact: string;
   /** Free-text detail — the evidence, clipped by the caller. */
   detail: string;
+  /** The extension version that produced the row — so "did this fix move
+   *  the numbers?" is a question to the ledger, not a memory of mine. */
+  version?: string;
+  /** The run the row belongs to: two runs of one cut are told apart. */
+  run?: string;
   /** Related identifiers (AC ordinals, file:line refs, …). */
   refs?: string[];
 }
@@ -53,11 +58,27 @@ export function defectLogPath(thinkubeDir: string, when: Date): string {
  * Fills `ts` when absent. Returns true when the line landed, false on ANY error —
  * and never throws: capture must never cost the run that is doing the finding.
  */
+/** The running extension's version, read once from its own manifest. */
+export function toolVersion(): string {
+  if (cachedVersion) return cachedVersion;
+  for (const up of [2, 3, 1]) {
+    try {
+      const p = path.resolve(__dirname, ...Array(up).fill(".."), "package.json");
+      const v = (JSON.parse(fs.readFileSync(p, "utf8")) as { name?: string; version?: string });
+      if (v.version && /tandem/i.test(v.name ?? "")) return (cachedVersion = v.version);
+    } catch {
+      /* try the next level up */
+    }
+  }
+  return (cachedVersion = "unknown");
+}
+let cachedVersion = "";
+
 export function appendDefect(thinkubeDir: string, entry: DefectEntry): boolean {
   try {
     if (!thinkubeDir || typeof thinkubeDir !== "string") return false;
     const now = new Date();
-    const full: DefectEntry = { ts: entry.ts ?? now.toISOString(), ...entry };
+    const full: DefectEntry = { ts: entry.ts ?? now.toISOString(), version: toolVersion(), ...entry };
     // Keep `ts` first for human-scannable lines; JSON key order is cosmetic only.
     if (!full.ts) full.ts = now.toISOString();
     const file = defectLogPath(thinkubeDir, now);

@@ -26,7 +26,7 @@
   "src/engine/core/trace.ts": "e12e7858bc11911c87d5bd0f2d3d6c8b17e475847e4be527d8d96204937225e1",
   "src/engine/core/watchdog.ts": "479275826b5a52b60d7f39eeba2c1811b1fc2b3e883783df2acd4803609a07ae",
   "src/engine/defectLog.test.ts": "135d7a9e3bfd4d062e11d046c17319a40fd3979fc62e45ac8c71f5187f4582d1",
-  "src/engine/defectLog.ts": "545ab435da2d7723ff067d2027234a21b564357d42245ae1125b6f3eebb98d81",
+  "src/engine/defectLog.ts": "2e487bac4b8db3026af6ba6485018f386c8d77b26f0b30fcee59eb28b05ee7dd",
   "src/engine/defectStats.ts": "1c067b4664a9248fe5f97b5c21d14a41a36128d9f473a0ea1ba5515fa12194a9",
   "src/engine/dispatchGuard.test.ts": "a10d7132ae50328717d872bd4eed28adfff18091ff3e48568789589b36a9de2a",
   "src/engine/dispatchGuard.ts": "1ff96639fb16257da5830969368c14038f0bcb276dd01000edc780c23691a818",
