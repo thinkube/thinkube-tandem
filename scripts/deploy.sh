@@ -41,13 +41,17 @@ mkdir -p "$STORAGE"
 ln -sfn "${HOME}/.local/share/code-server/extensions/thinkube.thinkube-tandem-${VERSION}" \
   "$STORAGE/extension-current"
 
-# Keep the current AND the previous version: a window that has not
-# reloaded yet still runs the previous build, and pruning it out from
-# under the live extension host ENOENTs every lazy require (field-hit
-# on 2.0.12→2.0.13; same hazard class as the 2.0.0 wrapper outage).
-echo "▸ prune stale versions (keeping current + previous for live windows)…"
+# A window that has not reloaded still runs an OLDER build, and pruning it
+# out from under the live extension host ENOENTs every lazy require — which
+# kills a run in flight. Keeping two was not enough on a day of many
+# deploys: a run started on 2.0.127 died when 2.0.130 pruned it. Keep the
+# last ten, and never prune a directory a live process is reading.
+echo "▸ prune stale versions (keeping the last ten, and any version in use)…"
 EXT_ROOT="${HOME}/.local/share/code-server/extensions"
-KEEP=$(ls -d "${EXT_ROOT}"/thinkube.thinkube-tandem-* 2>/dev/null | sort -V | tail -2)
+KEEP=$(ls -d "${EXT_ROOT}"/thinkube.thinkube-tandem-* 2>/dev/null | sort -V | tail -10)
+IN_USE=$(ls -l /proc/*/cwd /proc/*/exe 2>/dev/null | grep -o "thinkube.thinkube-tandem-[0-9.]*" | sort -u)
+for v in $IN_USE; do KEEP="${KEEP}
+${EXT_ROOT}/${v}"; done
 for d in "${EXT_ROOT}"/thinkube.thinkube-tandem-*; do
   [ -d "$d" ] || continue
   echo "$KEEP" | grep -qx "$d" || { rm -rf "$d" && echo "  − $(basename "$d")"; }
