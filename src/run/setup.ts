@@ -159,16 +159,19 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
 async function observeEmitMap(args: SetupArgs, built: readonly string[]): Promise<string[]> {
   if (!built.length) return [];
   const listed = (await args.exec("git", ["-C", args.worktree, "ls-files"], args.worktree)).out.split("\n").map((l) => l.trim());
-  const sources = listed.filter((f) => /\.(m|c)?tsx?$/.test(f) && !isTestPath(f)).slice(0, 40);
+  // Any source this repository holds, in any language it writes them in —
+  // the mapping is a fact about the build, never about TypeScript.
+  const SOURCE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|dart|lua)$/i;
+  const sources = listed.filter((f) => SOURCE.test(f) && !isTestPath(f)).slice(0, 40);
   const pairs: string[] = [];
   for (const src of sources) {
     if (pairs.length >= 2) break;
-    const stem = src.replace(/\.(m|c)?tsx?$/, "");
-    const candidates = built.flatMap((dir) => [
-      path.join(dir, `${stem}.js`),
-      path.join(dir, `${stem.replace(/^[^/]+\//, "")}.js`),
-      path.join(dir, `${stem}.mjs`),
-    ]);
+    const stem = src.replace(/\.[^./]+$/, "");
+    const ext = path.extname(src);
+    const stripped = stem.replace(/^[^/]+\//, "");
+    const candidates = built.flatMap((dir) =>
+      [stem, stripped].flatMap((base) => [ext, ".js", ".mjs", ".cjs"].map((e) => path.join(dir, `${base}${e}`))),
+    );
     for (const c of candidates)
       if (await fs.access(path.join(args.worktree, c)).then(() => true, () => false)) {
         pairs.push(`${src} → ${c}`);
