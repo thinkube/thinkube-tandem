@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frontier, othersCanLand } from "./frontier";
+import { frontier, whoCanLand } from "./frontier";
 import type { SchedUnit } from "../engine/core/dag";
 
 const unit = (id: string, footprint: string[], requires: string[] = []): SchedUnit =>
@@ -55,20 +55,19 @@ test("REGRESSION (v2.0.134): nobody waits on a unit that is waiting — three un
     unit("SL-3#eu-0", ["src/d.ts"], ["SL-4#eu-0"]),
   ];
   const st = (waiting: string[]) => ({ done: new Set<string>(), failed: new Set<string>(), waiting: new Set(waiting) });
-  assert.equal(othersCanLand(dag, "SL-1", st(["SL-1#eu-0"])), true, "SL-4 is awake and can still land");
-  assert.equal(
-    othersCanLand(dag, "SL-1", st(["SL-1#eu-0", "SL-4#eu-0"])),
-    false,
+  assert.ok(whoCanLand(dag, "SL-1", st(["SL-1#eu-0"])).includes("SL-4#eu-0"), "SL-4 is awake and can still land");
+  assert.deepEqual(
+    whoCanLand(dag, "SL-1", st(["SL-1#eu-0", "SL-4#eu-0"])),
+    [],
     "both are asleep and everything else is queued behind them — waiting longer changes nothing",
   );
-  assert.equal(
-    othersCanLand(dag, "SL-1", { done: new Set(), failed: new Set(["SL-4#eu-0"]), waiting: new Set(["SL-1#eu-0"]) }),
-    false,
+  assert.deepEqual(
+    whoCanLand(dag, "SL-1", { done: new Set(), failed: new Set(["SL-4#eu-0"]), waiting: new Set(["SL-1#eu-0"]) }),
+    [],
     "a consumer of failed work lands nothing either",
   );
-  assert.equal(
-    othersCanLand(dag, "SL-1", { done: new Set(["SL-4#eu-0"]), failed: new Set(), waiting: new Set(["SL-1#eu-0"]) }),
-    true,
+  assert.ok(
+    whoCanLand(dag, "SL-1", { done: new Set(["SL-4#eu-0"]), failed: new Set(), waiting: new Set(["SL-1#eu-0"]) }).length > 0,
     "but a unit whose producer landed can run, so the wait is worth it",
   );
 });
@@ -88,14 +87,14 @@ test("REGRESSION (v2.0.138): a unit that shares a file with a sleeper can never 
     waiting: new Set(["SL-6#eu-0"]),
     live: new Map([["SL-6#eu-0", ["src/extension.ts", "src/spaceTabs.ts"]]]),
   };
-  assert.equal(
-    othersCanLand(dag, "SL-6", asleep),
-    false,
+  assert.deepEqual(
+    whoCanLand(dag, "SL-6", asleep),
+    [],
     "SL-8 shares extension.ts with the sleeper: the scheduler will never launch it, so SL-6 must stop waiting",
   );
-  assert.equal(
-    othersCanLand(dag, "SL-6", { ...asleep, live: new Map([["SL-6#eu-0", ["src/spaceTabs.ts"]]]) }),
-    true,
+  assert.deepEqual(
+    whoCanLand(dag, "SL-6", { ...asleep, live: new Map([["SL-6#eu-0", ["src/spaceTabs.ts"]]]) }),
+    ["SL-8#eu-0"],
     "with no file in common, SL-8 can start and the wait is worth taking",
   );
 });

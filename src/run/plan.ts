@@ -13,6 +13,8 @@ import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import { isProbePath, isTestPath } from "./testHomes";
+import { waitReasons } from "./fence";
+import type { RunState } from "./state";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
@@ -363,4 +365,23 @@ export function maintainedElsewhere(slices: readonly SliceForDag[], slice: strin
   return slices
     .filter((x) => (x as { maintains?: string }).maintains && x.handle !== slice)
     .flatMap((x) => x.files ?? []);
+}
+
+/**
+ * Seed the surface's view of every unit: its role, what it waits on, and
+ * WHY it waits per edge. Two very different things live in `requires` — a
+ * cross-slice dependency, and the same-slice rule that a coder starts once
+ * its checks exist — and drawn as one arrow they read alike.
+ */
+export function seedUnitViews(
+  st: RunState,
+  dag: readonly { id: string; slice: string; role?: string; requires: string[]; note?: string; footprint: string[] }[],
+  slices: readonly { handle: string; workUnits: { consumes?: string[] }[] }[],
+): void {
+  const whyWait = waitReasons(dag as never, slices as never);
+  for (const u of dag) {
+    const requires = u.requires.filter((r) => dag.some((x) => x.id === r));
+    const why = requires.map((r) => whyWait(u, r));
+    st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
+  }
 }

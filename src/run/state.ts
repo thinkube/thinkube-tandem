@@ -142,7 +142,13 @@ export class RunState {
   }
 
   /** A line for the whole run, and for the step it belongs to when known. */
+  /** Where every line also goes, as it happens: the run's own log on disk.
+   *  A log that lives only in a window cannot be read while the run is in
+   *  flight, which is exactly when it is needed. */
+  sink?: (line: string, step: string) => void;
+
   log(line: string, step = "run"): void {
+    this.sink?.(line, step);
     this.logs.push(line);
     if (this.logs.length > 200) this.logs.shift();
     const own = this.stepLogs.get(step) ?? [];
