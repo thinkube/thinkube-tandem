@@ -38,13 +38,14 @@ import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
 import { unitCloser } from "./closeUnit";
 import { buildOracleArgs } from "./oracleArgs";
+import { doorView } from "./clearance";
 import { formatBuild } from "./execs";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
 import { Forge } from "../dispatch/forge";
 import { RunState } from "./state";
-import { coderStanza, testerStanza } from "./brief";
+import { clearanceStanza, coderStanza, testerStanza } from "./brief";
 import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
@@ -231,6 +232,9 @@ export async function dispatchTep(
     provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
     pending: (id: string) => !done.has(id) && !failed.has(id),
     plannedPending: () => plannedByPending(dag, done),
+    // The door's view (docs/WORDS.md): who is changing what right now.
+    ...doorView({ live: () => liveFootprints, waiting: () => waiting, tree: worktree, commitUnitWork: (id, why) => commitUnitWork(id, why) }),
+    halted: () => st.halted,
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
@@ -247,7 +251,7 @@ export async function dispatchTep(
 
   let testInflight = 0;
   let testerReset: Promise<void> = Promise.resolve();
-  const { sliceCommitted, waiting, waitForCommit, failWith, finishUnit } = makeCommitBook({
+  const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
   });
 
@@ -312,7 +316,8 @@ export async function dispatchTep(
               (u) => (u as { testHomeWork?: { path: string; sentence: string; criteria: string[] }[] }).testHomeWork ?? [],
             ),
           )
-        : coderStanza(!!oracle) +
+        : clearanceStanza(next) +
+          coderStanza(!!oracle) +
           decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
     // Dispatch-time audit: a decidable fact the brief lacks is missing at round zero.
     let disclosure = "";

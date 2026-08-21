@@ -82,7 +82,7 @@ export async function verifyWithRepair(args: {
     if (outside.length && outside.length === r.errorFiles.length)
       notes.push(
         "──── ENVIRONMENT (not your code) ────",
-        `The build fails only in files outside your footprint: ${outside.join(", ")}. Another unit's work, or the committed base, does not compile right now. Do not change your files for this; verify again in a moment.`,
+        `The build fails only in files you are not cleared for: ${outside.join(", ")}. Another unit's work, or the committed base, does not compile right now. Do not change your files for this; verify again in a moment.`,
       );
   }
   const repaired = await repairChecks(args, r);

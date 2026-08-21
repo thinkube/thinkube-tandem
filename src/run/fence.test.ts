@@ -61,7 +61,7 @@ test("held-out evidence is recognised wherever a coder might reach for it", () =
     assert.equal(isHeldOut(t), false, `${t} is the coder's own work`);
 });
 
-test("the write fence really reverts: a stray file is undone on disk and the unit strays", async () => {
+test("the guard really restores: an uncleared change is undone on disk and the unit fails", async () => {
   const repo = tmpRepo();
   const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
   fs.mkdirSync(path.join(repo, "src"), { recursive: true });
@@ -92,7 +92,7 @@ test("the write fence really reverts: a stray file is undone on disk and the uni
     "export const a = 2;\n",
     "and the unit's own work is untouched",
   );
-  assert.ok(said.some((l) => /containment: src\/theirs\.ts/.test(l)));
+  assert.ok(said.some((l) => /the guard restored src\/theirs\.ts/.test(l)));
 });
 
 test("a live peer's files are allowed, so the frontier can share a tree", async () => {

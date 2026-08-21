@@ -2698,7 +2698,7 @@ test("buildDeliveryReport: undelivered + stub-scan sections render after the int
   assert.doesNotMatch(legacy, /## Self-declared deferrals/);
 });
 
-test("preflight provisions: every missing piece is NAMED — TEP, spec body, contract (multi-unit), note, footprint", () => {
+test("preflight provisions: every missing piece is NAMED — TEP, spec body, contract (multi-unit), note, what it is cleared to change", () => {
   const failures = preflightProvisionFailures({
     specBody: "",
     tepBody: "",
@@ -2718,7 +2718,7 @@ test("preflight provisions: every missing piece is NAMED — TEP, spec body, con
   assert.equal(failures.length, 5);
   assert.ok(failures.some((f) => /spec body is empty/.test(f)));
   assert.ok(failures.some((f) => /parent TEP body unresolvable.*"TEP-9"/.test(f)));
-  assert.ok(failures.some((f) => /no declared footprint/.test(f)));
+  assert.ok(failures.some((f) => /nothing cleared/.test(f)));
   assert.ok(failures.some((f) => /unit note is empty/.test(f)));
   assert.ok(failures.some((f) => /multi-unit slice has no `contract`/.test(f)));
 });

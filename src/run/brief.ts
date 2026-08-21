@@ -9,6 +9,29 @@
  * broken environment, and a sentence nothing enforces is a suggestion.
  */
 
+/**
+ * What this unit is cleared to do, stated as actions. A list of paths says
+ * where a worker may write; it never says what the plan expects to happen
+ * there, and a worker that must create a file reads the same line as one
+ * that must change an existing one (docs/WORDS.md).
+ */
+export function clearanceStanza(unit: { units?: unknown[] }): string {
+  const cleared = (unit.units ?? []).flatMap(
+    (w) => (w as { cleared?: { action: string; path: string }[] }).cleared ?? [],
+  );
+  if (!cleared.length) return "";
+  const say = { create: "CREATE", change: "CHANGE", delete: "DELETE" } as Record<string, string>;
+  return (
+    "\n\n──── WHAT YOU ARE CLEARED TO DO ────\n" +
+    cleared.map((c) => `- ${say[c.action] ?? c.action.toUpperCase()} ${c.path}`).join("\n") +
+    "\nThis is the plan's expectation, not a limit on your judgement about the work itself. If a " +
+    "criterion you are responsible for needs a change somewhere you are NOT cleared for, ask — say " +
+    "which file and which criterion requires it. The run rules on it and clears you, waiting if " +
+    "another unit is changing that file at this moment; then you make the change yourself, in this " +
+    "session. Your promise is never handed to another slice."
+  );
+}
+
 /** The stanza appended to a worker's brief when the oracle can answer. */
 export function coderStanza(oracleAvailable: boolean): string {
   if (!oracleAvailable) return "";
@@ -31,7 +54,7 @@ export function coderStanza(oracleAvailable: boolean): string {
     "requires breaking a signature, say so as UNDELIVERED with the callers named." +
     "\n\nA `build` tool is also available: the repository's own build over the current tree, " +
     "the compiler's words verbatim, in seconds — use it after edits, before `verify`. Lines in " +
-    "files outside your footprint are other units' in-flight work; ignore them." +
+    "files you are not cleared for are other units' in-flight work; ignore them." +
     "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
     "or probe file, and never run a build, a test command or a package " +
     "manager — you have no shell. Work from the intent and the contract, and " +

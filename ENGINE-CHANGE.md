@@ -36,3 +36,17 @@ grinding. Two units in the last run spent five identical rounds each.
 setting says otherwise. The closer is the floor of the ladder — it fires
 only when every cheaper actor is spent, so it is rare by construction, and
 the one place where the strongest model is always warranted.
+
+# Engine change
+
+`core/preflight.ts`: the words a worker reads about the files it may
+change. The brief said "your footprint", "YOUR LANE" and "files outside it
+belong to others" — possession, for what is only a list of files this unit
+is cleared to change while the run lasts. One word carried two facts, and a
+run cost: `makeWiden` called the unit whose list held a path the *owner*,
+and the caller moved the *obligation* there, so a promise about a session's
+name was handed to a slice responsible for something else and nobody kept
+it. The brief now says what is cleared, that the guard restores an
+uncleared change, and — new, and load-bearing — that a unit needing a
+change elsewhere ASKS, is cleared, and makes the change itself. Its promise
+is never handed to another slice. The vocabulary is fixed in docs/WORDS.md.

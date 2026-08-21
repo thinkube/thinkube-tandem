@@ -35,6 +35,8 @@ export function makeCommitBook(a: {
   /** Sleep until the next commit, on the record: a unit that is waiting
    *  lands nothing, so nobody may wait on it in turn. */
   waitForCommit: (id: string) => Promise<void>;
+  /** Commit a unit's work mid-flight, so it holds nothing while it waits. */
+  commitUnitWork: (unitId: string, why: string) => Promise<void>;
   failWith: (id: string, ...why: string[]) => void;
   finishUnit: (id: string, slice: string, ok: boolean) => Promise<void>;
 } {
@@ -98,6 +100,21 @@ export function makeCommitBook(a: {
     sliceRemaining.set(slice, left);
     if (left === 0 && [...a.dag].filter((u) => u.slice === slice).every((u) => a.done.has(u.id))) await commitSlice(slice);
   };
+  // A unit about to wait commits what it has written, so it holds nothing
+  // while it is idle. Deadlock needs a unit to hold and wait; this removes
+  // the holding. The message deliberately carries text after the slice
+  // handle: `committedSlicesOf` only counts a line that ends there, so a
+  // partial commit never reads as a finished slice on a later resume.
+  const commitUnitWork = async (unitId: string, why: string): Promise<void> => {
+    const u = a.dag.find((x) => x.id === unitId);
+    if (!u) return;
+    const paths = [...u.footprint].filter((rel) => fs.existsSync(path.join(a.worktree, rel)));
+    if (!paths.length) return;
+    await a.exec("git", ["add", "--", ...paths], a.worktree);
+    const c = await a.exec("git", ["commit", "-m", `tandem: ${a.tep} ${u.slice} — partial: ${unitId} ${why}`], a.worktree);
+    if (c.code === 0) a.log(`✓ ${unitId}: its work so far is committed — it holds nothing while it waits`, unitId);
+  };
+
   const waiting = new Set<string>();
   const waitForCommit = async (id: string): Promise<void> => {
     waiting.add(id);
@@ -107,5 +124,5 @@ export function makeCommitBook(a: {
       waiting.delete(id);
     }
   };
-  return { sliceCommitted, waiting, waitForCommit, failWith, finishUnit };
+  return { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit };
 }

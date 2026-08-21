@@ -23,10 +23,10 @@ export interface RunWorkerDeps {
   model: string;
   worktree: string;
   role: "code" | "test";
-  /** Files this unit may touch; everything else is reverted + terminal. */
+  /** What this unit is cleared to change; anything else is restored. */
   footprint: string[];
-  /** Live footprints of OTHER units sharing this tree — their writes are
-   *  legitimate, not this unit's strays (the frontier runs in parallel). */
+  /** What OTHER units in this tree are cleared to change — their writes are
+   *  legitimate, not this unit's (the frontier runs in parallel). */
   alsoAllowed?: () => string[];
   /** Paths already dirty at unit start — exempt from containment. */
   baseline: Set<string>;
@@ -60,12 +60,13 @@ export interface RunWorkerDeps {
 const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
 
 /**
- * The write fence, as it really runs: read what the tree has become, judge
- * it against this unit's footprint plus whatever its live peers are
- * allowed, and REVERT anything else. Extracted from the hook so the wiring
- * — porcelain, judgement, revert — is testable; only its arithmetic was.
+ * The guard, as it really runs: read what the tree has become, judge it
+ * against what this unit is cleared to change plus what its live peers are
+ * cleared to change, and RESTORE anything else. Extracted from the hook so
+ * the wiring — porcelain, judgement, restore — is testable.
  *
- * Returns true when the unit strayed, which the caller turns into a halt.
+ * Returns true when the unit changed something it was not cleared for,
+ * which the caller turns into a halt.
  */
 export async function encloseWork(deps: {
   worktree: string;
@@ -81,7 +82,7 @@ export async function encloseWork(deps: {
     deps.baseline,
   );
   if (!bad.length) return false;
-  deps.log(`⛔ containment: ${bad.join(", ")} — reverted, unit failed`);
+  deps.log(`⛔ the guard restored ${bad.join(", ")} — an uncleared change; the unit fails`);
   await revertPaths(deps.worktree, bad);
   return true;
 }
@@ -218,7 +219,7 @@ export async function runUnitWorker(
               ? [
                   mod.tool(
                     "build",
-                    "Run the repository's own build over your current tree and get the compiler's words VERBATIM. Seconds, runs no tests, judges nothing — your fastest feedback for type and import errors. Lines naming files outside your footprint are other units' in-flight work in this shared tree; ignore them.",
+                    "Run the repository's own build over your current tree and get the compiler's words VERBATIM. Seconds, runs no tests, judges nothing — your fastest feedback for type and import errors. Lines naming files you are not cleared for are other units' in-flight work in this shared tree; ignore them.",
                     {},
                     async () => ({ content: [{ type: "text" as const, text: await build() }] }),
                   ),
