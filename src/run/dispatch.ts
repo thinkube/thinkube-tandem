@@ -234,8 +234,8 @@ export async function dispatchTep(
     provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
     pending: (id: string) => !done.has(id) && !failed.has(id),
     plannedPending: () => plannedByPending(dag, done),
-    // The door's view (docs/WORDS.md): who is changing what right now.
-    ...doorView({ live: () => liveFootprints, waiting: () => waiting, tree: worktree, commitUnitWork: (id, why) => commitUnitWork(id, why) }),
+    // The door's view: who is changing what right now (docs/WORDS.md).
+    ...doorView({ live: () => liveFootprints, waiting: () => waiting, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) }),
     halted: () => st.halted,
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
@@ -451,7 +451,7 @@ export async function dispatchTep(
         halted: () => st.halted,
         footprint: next.footprint,
         pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)),
-        othersPending: () => othersCanLand(dag, next.slice, { done, failed, waiting }),
+        othersPending: () => othersCanLand(dag, next.slice, { done, failed, waiting, live: new Map([...liveFootprints].map(([i, v]) => [i, v.paths] as const)) }),
         waitForCommit: () => waitForCommit(next.id),
         say: (why) => {
           st.doing(next.id, why);

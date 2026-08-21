@@ -49,16 +49,37 @@ export function frontier(
  * itself: three units waited for files owned by units that were waiting
  * behind them, and every one of those was, by that reading, pending.
  *
- * A unit can land only if it is neither failed nor waiting, and every unit
- * it requires has either landed or can land in turn. A cycle answers no,
- * which is the whole point.
+ * A unit can land only if it is neither failed nor waiting, every unit it
+ * requires has landed or can land in turn, and NO FILE IT MUST CHANGE IS
+ * held by a unit that is itself asleep. A cycle answers no, which is the
+ * whole point.
+ *
+ * That last clause is the second half of the same defect. The dependency
+ * graph is not the only thing that stops a unit from starting: the
+ * scheduler refuses to launch a unit that shares a file with one that is
+ * running. A sleeping unit is still "running", and it will not finish
+ * while it waits — so a pending unit sharing a file with it can never
+ * begin, and the sleeper waits for work that unit was going to do. Five
+ * coders sat in exactly that for half an hour, waiting on three units the
+ * scheduler could not launch, because each shared a file with a sleeper.
  */
 function canLand(
-  dag: readonly { id: string; slice: string; requires: string[] }[],
-  state: { done: ReadonlySet<string>; failed: ReadonlySet<string>; waiting: ReadonlySet<string> },
+  dag: readonly { id: string; slice: string; requires: string[]; footprint?: string[] }[],
+  state: {
+    done: ReadonlySet<string>;
+    failed: ReadonlySet<string>;
+    waiting: ReadonlySet<string>;
+    /** What each running unit is changing, so a file held by a sleeper is
+     *  seen for what it is: a door that will not open. */
+    live?: ReadonlyMap<string, readonly string[]>;
+  },
 ): (id: string) => boolean {
   const byId = new Map(dag.map((u) => [u.id, u]));
   const memo = new Map<string, boolean>();
+  const heldByASleeper = (u: { id: string; footprint?: string[] }): boolean =>
+    [...(state.live ?? [])].some(
+      ([id, paths]) => id !== u.id && state.waiting.has(id) && (u.footprint ?? []).some((p) => paths.includes(p)),
+    );
   const walk = (id: string, seen: Set<string>): boolean => {
     if (state.done.has(id)) return true;
     const cached = memo.get(id);
@@ -67,6 +88,7 @@ function canLand(
     if (state.failed.has(id) || state.waiting.has(id)) return false;
     const u = byId.get(id);
     if (!u) return false;
+    if (heldByASleeper(u)) return false;
     seen.add(id);
     const ok = u.requires.filter((r) => byId.has(r)).every((r) => walk(r, seen));
     seen.delete(id);
@@ -78,9 +100,14 @@ function canLand(
 
 /** Is any unit outside this slice still able to land something? */
 export function othersCanLand(
-  dag: readonly { id: string; slice: string; requires: string[] }[],
+  dag: readonly { id: string; slice: string; requires: string[]; footprint?: string[] }[],
   slice: string,
-  state: { done: ReadonlySet<string>; failed: ReadonlySet<string>; waiting: ReadonlySet<string> },
+  state: {
+    done: ReadonlySet<string>;
+    failed: ReadonlySet<string>;
+    waiting: ReadonlySet<string>;
+    live?: ReadonlyMap<string, readonly string[]>;
+  },
 ): boolean {
   const can = canLand(dag, state);
   return dag.some((u) => u.slice !== slice && !state.done.has(u.id) && !state.failed.has(u.id) && can(u.id));
