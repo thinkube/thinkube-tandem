@@ -41,14 +41,23 @@ function sessionWith(spaceName, scopeLabel) {
 test("a session carries the display name of its own thinking space, taken from the space listing rather than the repository or project label", () => {
   const session = sessionWith("Rebrand the checkout flow", "checkout-service");
 
+  // The criterion is that the session is BUILT CARRYING the space's display
+  // name as SessionDeps.spaceName. That is what is read back here, off the
+  // session's own public deps — the surface the criterion names — rather
+  // than through a convenience accessor the criterion never asks for.
   assert.equal(
-    session.spaceName,
+    session.deps.spaceName,
     "Rebrand the checkout flow",
     "the session's space name is the display name handed in as SessionDeps.spaceName",
   );
   assert.notEqual(
-    session.spaceName,
+    session.deps.spaceName,
     session.repoName,
     "the space's display name is never the repository/project label — they are two different names read from two different places",
+  );
+  assert.equal(
+    session.repoName,
+    "checkout-service",
+    "the repository/project label is still read from the scope, unchanged and independent",
   );
 });

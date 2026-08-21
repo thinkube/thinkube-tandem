@@ -83,6 +83,12 @@ export class TandemSession {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
 
+  /** The display name of this session's own thinking space, titling its
+   *  tab — never the repository or project label named by repoName. */
+  get spaceName(): string | undefined {
+    return this.deps.spaceName;
+  }
+
   changed(message?: string): void {
     this.persist();
     this.deps.onChanged?.(message);

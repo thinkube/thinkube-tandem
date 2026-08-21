@@ -11,21 +11,11 @@ import { TandemSession } from "./surfaces/session";
 import { SpacePanel, vscodePanelHost } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
-import {
-  createProduct,
-  discoverProjects,
-  EnabledProject,
-  listProducts,
-  setCardProduct,
-} from "./core/identity";
+import { createProduct, discoverProjects, EnabledProject, listProducts, setCardProduct } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { SpaceTabs } from "./surfaces/spaceTabs";
 import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
-import {
-  chooseThinkingSpace,
-  configuredStoreRoot,
-  registerSpaceCommands,
-} from "./hostui/spaceOps";
+import { chooseThinkingSpace, configuredStoreRoot, registerSpaceCommands } from "./hostui/spaceOps";
 import { chooseProject, newProjectFlow, retireTepWorktrees, sweepDeletedSpaceRuns } from "./hostui/projectOps";
 import { editContextScope, ensureWorkSession, findWorkProject } from "./hostui/workSession";
 import { createWorkProject, listWorkProjects, setWorkProjectState } from "./core/workProjects";
@@ -35,12 +25,7 @@ import { LauncherService } from "./engine/host/LauncherService";
 import { SessionLinkService } from "./engine/host/SessionLinkService";
 import { ConfigTreeProvider } from "./engine/host/ConfigTreeProvider";
 import { registerConfigCommands } from "./engine/host/configCommands";
-import {
-  getCurrentActiveContext,
-  initActiveContext,
-  updateActiveContext,
-  updateConfigContext,
-} from "./engine/host/active";
+import { getCurrentActiveContext, initActiveContext, updateActiveContext, updateConfigContext } from "./engine/host/active";
 import { parseDefectLog } from "./engine/defectStats";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 import * as nodeFs from "node:fs";
