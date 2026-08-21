@@ -102,7 +102,9 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
     private readonly listRepositories: () => EnabledProject[],
     private readonly activeId: () => string | undefined,
     private readonly listSpaces: (ownerKey: string, kind: SpaceOwnerKind) => SpaceRef[],
-    private readonly activeSpace: (ownerKey: string) => string | undefined,
+    // Kept in the signature the checks pin; the tree reads open state from
+    // the live register now, never from a remembered slug.
+    _activeSpace: (ownerKey: string) => string | undefined,
     private readonly listProjects: () => WorkProject[],
     private readonly isSpaceOpen: (key: string) => boolean,
   ) {}
