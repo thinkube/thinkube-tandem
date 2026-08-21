@@ -2475,6 +2475,51 @@ test("context tranche: the parent TEP rides every worker prompt as THE INTENT �
   assert.doesNotMatch(bare, /THE INTENT — the north star/);
 });
 
+test("one intent body, once (SL-4): identical specBody/tepBody render the shared text exactly once, headed by THE INTENT alone, never PARENT SPEC", () => {
+  const sharedText =
+    "## The asks (verbatim)\n- a person can archive a card with one keystroke.\n## The changes\n- wire the archive reducer.";
+  const p = buildWorkerPrompt(tranchUnit(), "4", { specBody: sharedText, tepBody: sharedText });
+  const escaped = sharedText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.equal(
+    (p.match(new RegExp(escaped, "g")) ?? []).length,
+    1,
+    "the shared text must appear exactly once, not once per block",
+  );
+  assert.match(p, /THE INTENT — the north star/);
+  assert.doesNotMatch(p, /PARENT SPEC/);
+});
+
+test("one intent body, once (SL-4): a genuinely different specBody still renders its own PARENT SPEC block beside THE INTENT, each exactly once", () => {
+  const specBody = "## Design\n\nBuild the docs exemption gate in the sign path.";
+  const tepBody = "## Goal\n\nA person can excuse documentation with a written reason.";
+  const p = buildWorkerPrompt(tranchUnit(), "4", { specBody, tepBody });
+  const countOf = (needle: string) =>
+    (p.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length;
+  assert.equal(countOf("Build the docs exemption gate in the sign path."), 1);
+  assert.equal(countOf("A person can excuse documentation with a written reason."), 1);
+  assert.match(p, /THE INTENT — the north star/);
+  assert.match(p, /PARENT SPEC/);
+});
+
+test("one intent body, once (SL-4): a tepBody alone says the intent is embedded, never points the worker at a parent spec to read", () => {
+  const p = buildWorkerPrompt(tranchUnit(), "4", {
+    tepBody: "## Goal\n\nA person can excuse documentation with a written reason.",
+  });
+  assert.match(p, /embedded/i);
+  assert.doesNotMatch(p, /read the parent spec/i);
+});
+
+test("one intent body, once (SL-4): a `satisfies` ordinal in tepBody is stripped from a code unit's prompt, exactly like specBody", () => {
+  const bodyWithSatisfies = ["---", "satisfies: [3, 5]", "---", "", "## Goal", "", "A person can excuse documentation with a written reason."].join("\n");
+  const viaTep = buildWorkerPrompt(tranchUnit(), "4", { tepBody: bodyWithSatisfies });
+  assert.doesNotMatch(viaTep, /satisfies\s*:/i);
+  assert.doesNotMatch(viaTep, /\[3, 5\]/);
+  assert.match(viaTep, /A person can excuse documentation with a written reason\./);
+  const viaSpec = buildWorkerPrompt(tranchUnit(), "4", { specBody: bodyWithSatisfies });
+  assert.doesNotMatch(viaSpec, /satisfies\s*:/i);
+  assert.doesNotMatch(viaSpec, /\[3, 5\]/);
+});
+
 test("context tranche: sibling unit notes are threaded, labeled by the NOTE AUTHOR's role, for both audiences", () => {
   const siblingNotes = [
     {

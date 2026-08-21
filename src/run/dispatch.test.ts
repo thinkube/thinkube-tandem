@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { dispatchTep } from "./dispatch";
 import { RunState } from "./state";
 import { containmentViolations } from "./worker";
+import { renderTepBody } from "./briefs";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
@@ -96,6 +97,50 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
   );
   assert.ok(shipped.includes(probeRel), "the probe is committed on the delivery branch");
   assert.ok(shipped.includes("src/greet.mjs"), "the implementation is committed on the delivery branch");
+});
+
+test("the dispatcher's call site threads the rendered TEP body under a single field: it rides both the coder's and the tester's brief exactly once", async () => {
+  const repo = tmpRepo();
+  const { space, ids } = spaceWithOneChange();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-t-2" };
+  const tepBody = renderTepBody(space, cut);
+  const slices = tepSlices({ space, cut, spaceName: "greet space" });
+  const state = new RunState(() => {});
+  const briefs: Record<string, string> = {};
+
+  await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      state,
+      supervisorRound: async () => null,
+      rehome: async () => ({ anchors: [], notes: [] }),
+      spaceName: "greet space",
+      worker: async (w, brief) => {
+        briefs[w.role] = brief;
+        if (w.role === "test") writeInto(w.worktree, w.footprint[0], GREEN_PROBE);
+        else writeInto(w.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
+        return { ok: true, finalText: "done" };
+      },
+    },
+    space,
+    cut,
+    slices,
+  );
+
+  const escaped = tepBody.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(escaped, "g");
+  assert.equal(
+    (briefs.code.match(re) ?? []).length,
+    1,
+    "the rendered TEP body must ride the coder's brief exactly once",
+  );
+  assert.equal(
+    (briefs.test.match(re) ?? []).length,
+    1,
+    "the rendered TEP body must ride the tester's brief exactly once",
+  );
 });
 
 test("standing checks re-home: the outcome carries each criterion's forwarding address, stamped", async () => {

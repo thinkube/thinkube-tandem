@@ -183,6 +183,61 @@ test("the freeze refusals: unprovable, ungrounded, and open questions refuse the
   assert.ok(!open.ok && open.reason.includes("which panel?"), "the refusal names the question");
 });
 
+test("signing requires documentation or a written exemption — refused with neither, signed once a member lands a doc path, signed with a non-empty exemption reason, and docsGateMode has no channel into signing", () => {
+  const groundedOnly: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "add a greeting", at: "t" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a greeting function",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "greets by name" }],
+        grounding: { touchpoints: [{ path: "src/greet.ts" }], stamp: [] },
+      },
+    ],
+  };
+  const bareCut = { id: "cut-1", changeIds: ["n1"] };
+  const refused = signCut(groundedOnly, bareCut, "2026-08-20T00:00:00Z");
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason!, /document/i, "the refusal says documentation is missing");
+
+  // docsGateMode is not a parameter signCut accepts at all — the refusal
+  // above already stands with the gate's full call shape (space, cut, at,
+  // author), proving the setting has nowhere to reach in.
+  const refusedAuthored = signCut(groundedOnly, bareCut, "2026-08-20T00:00:00Z", "user");
+  assert.equal(refusedAuthored.ok, false, "docsGateMode governs acceptDelivery only, never signCut");
+  assert.match(refusedAuthored.reason!, /document/i, "the refusal names documentation, not a mode setting");
+
+  const withDocLanding: Space = {
+    ...groundedOnly,
+    nodes: [
+      ...groundedOnly.nodes,
+      {
+        id: "n2",
+        sentence: "a guide page for the greeting",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c2", text: "the guide exists" }],
+        grounding: { touchpoints: [{ path: "docs/greet.md", planned: true }], stamp: [] },
+      },
+    ],
+  };
+  const signedByLanding = signCut(withDocLanding, { id: "cut-2", changeIds: ["n1", "n2"] }, "2026-08-20T00:00:00Z");
+  assert.ok(signedByLanding.ok, signedByLanding.ok ? "" : signedByLanding.reason);
+  assert.ok(signedByLanding.ok && signedByLanding.cut.signature, "the cut carries a signature");
+
+  const exemptedCut = {
+    id: "cut-3",
+    changeIds: ["n1"],
+    docsExemption: { reason: "internal refactor, no user-facing behavior" },
+  };
+  const signedByExemption = signCut(groundedOnly, exemptedCut, "2026-08-20T00:00:00Z");
+  assert.ok(signedByExemption.ok, signedByExemption.ok ? "" : signedByExemption.reason);
+  assert.ok(signedByExemption.ok && signedByExemption.cut.signature, "the cut carries a signature");
+});
+
 test("the docs gate blocks an accept by default; advisory is the explicit escape hatch", () => {
   const d = {
     id: "d-1",

@@ -9,13 +9,35 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { dispatchTep } from "./dispatch";
-import { sliceBookkeeping } from "./plan";
+import { docsObligations, sliceBookkeeping } from "./plan";
 import { RunState } from "./state";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace, Space } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
+import { isDocPath } from "../core/docs";
+import type { SliceForDag } from "../engine/core/dag";
 import { GREEN_PROBE, spaceWithOneChange, tmpRepo, writeInto } from "./runHarness";
+
+test("docsObligations reads the same rule as isDocPath: it names exactly the docs/ path isDocPath calls documentation, never a path isDocPath rejects, and clears once that path lands", () => {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-sl1-ac5-"));
+  const files = ["docs/guide.md", "src/gates/sign.ts", "src/core/docs.ts"];
+  const docPaths = files.filter(isDocPath);
+  assert.deepEqual(docPaths, ["docs/guide.md"], "sanity: isDocPath picks out exactly the docs/ path here");
+
+  const slice: SliceForDag = { handle: "SL-1", status: "doing", files, workUnits: [] };
+  const [note] = docsObligations([slice], worktree);
+  assert.ok(note, "the missing doc page is reported");
+  assert.match(note, /docs\/guide\.md/, "the gate names the path isDocPath calls documentation");
+  assert.doesNotMatch(note, /src\/gates\/sign\.ts/, "a non-doc path is never named as a doc obligation");
+  assert.doesNotMatch(note, /src\/core\/docs\.ts/, "a non-doc path is never named as a doc obligation");
+
+  fs.mkdirSync(path.join(worktree, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(worktree, "docs", "guide.md"), "# guide\n");
+  const metNotes = docsObligations([slice], worktree);
+  assert.deepEqual(metNotes, [], "landing the doc page the gates agree on satisfies the obligation");
+});
 
 test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELIVERED on the delivery", async () => {
   const repo = tmpRepo();
