@@ -105,54 +105,101 @@ export async function refreshRunTrees(args: {
  * compiler's own words. An earlier run may have left the branch holding
  * half a change; no dispatched worker exists yet, so the refresh owns it.
  */
+/** Rounds a broken standing tree may spend. Progress ends it sooner: a
+ *  round that does not reduce the compiler's error count buys nothing. */
+const MEND_ROUNDS = 4;
+
+/** The files a compiler names, plus the module each named test belongs to —
+ *  a test that cannot compile is often waiting on an export from its own
+ *  subject, which the compiler names nowhere. */
+function filesNamedIn(words: string): string[] {
+  const named = [...new Set([...words.matchAll(/(?:^|\s)((?:src|webview|docs)\/[\w./-]+\.[a-z]+)[(:]/gm)].map((m) => m[1]))];
+  const subjects = named
+    .map((f) => f.replace(/\.(test|spec)\.([cm]?[jt]sx?)$/, ".$2"))
+    .filter((f) => !named.includes(f));
+  return [...named, ...subjects];
+}
+
+/** How many errors the compiler reported — the number a round must reduce. */
+function errorCount(words: string): number {
+  return [...words.matchAll(/\berror\s+TS\d+/g)].length || (words.trim() ? 1 : 0);
+}
+
 export async function repairStandingTree(args: {
   worktree: string;
   tep: string;
   refusal: string;
   deps: DispatchDeps;
   exec: Exec;
+  halted?: () => boolean;
   log: (line: string, step?: string) => void;
   defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
-  /** Re-proves the build; true when the tree stands. */
-  rebuild: () => Promise<boolean>;
+  /** Re-proves the build: whether the tree stands, and the compiler's words. */
+  rebuild: () => Promise<{ ok: boolean; words: string }>;
 }): Promise<boolean> {
-  const files = [...new Set([...args.refusal.matchAll(/(?:^|\s)((?:src|webview|docs)\/[\w./-]+\.[a-z]+)\(/gm)].map((m) => m[1]))];
-  if (!files.length) return false;
   const id = "refresh#standing";
-  args.log(`🧰 ${args.tep}: the resumed branch does not build — a repair mends it before dispatch: ${files.join(", ").slice(0, 300)}`, id);
   const worker = args.deps.worker ?? runUnitWorker;
-  await worker(
-    {
-      model: resolveWorkerModel(args.deps.workerModel ?? { workerModel: args.deps.model }, "code"),
-      worktree: args.worktree,
-      role: "test",
-      footprint: files,
-      baseline: new Set(await porcelainPaths(args.worktree)),
-      abort: new AbortController(),
-      onPark: (_q, answer) => answer("Decide from the compiler's words and the surrounding code; the run does not ask a person."),
-      log: (line: string) => args.log(line, id),
-      ...(args.deps.prepare ? { buildTool: async () => formatBuild(await defaultExec("sh", ["-c", args.deps.prepare!], args.worktree).then((r) => ({ code: r.code, output: r.out }))) } : {}),
-    },
-    [
-      `The run branch of ${args.tep} holds committed work that does not compile — an earlier run`,
-      "committed half of a change. Mend the tree so it builds: read the errors, find the missing",
-      "half in the callers' own expectations, and complete it. Change only the files listed.",
-      "",
-      "THE COMPILER'S WORDS:",
-      args.refusal.slice(0, 4000),
-      "",
-      "FILES YOU MAY EDIT:",
-      ...files.map((f) => `- ${f}`),
-    ].join("\n"),
-  );
-  const ok = await args.rebuild();
-  if (!ok) return false;
-  await args.exec("git", ["-C", args.worktree, "add", "--", ...files], args.worktree);
-  await args.exec("git", ["-C", args.worktree, "commit", "-m", `tandem: ${args.tep} — mend the standing tree`], args.worktree);
-  args.log(`✓ ${args.tep}: the standing tree builds again — mended and committed`, id);
-  args.defect({ unit: id, activity: "refresh", trigger: "standing-tree", type: "code", impact: "half-committed change completed before dispatch", detail: files.join(", ").slice(0, 400) });
-  return true;
+  const mended = new Set<string>();
+  let words = args.refusal;
+  let fewest = errorCount(words);
+  // A compiler names the errors it can see; mending those reveals the next
+  // ones behind them. One round could only ever fix the first wave, so a
+  // tree with two waves refused every run — the machine asking a person to
+  // repair its own branch by hand. Rounds are bought with progress: while
+  // the error count falls, another round; when it stops falling, it stops.
+  for (let round = 1; round <= MEND_ROUNDS && !args.halted?.(); round++) {
+    const files = filesNamedIn(words);
+    if (!files.length) return false;
+    for (const f of files) mended.add(f);
+    args.log(
+      `🧰 ${args.tep}: the resumed branch does not build — mending it before dispatch ` +
+        `(round ${round}/${MEND_ROUNDS}, ${fewest} error(s)): ${files.join(", ").slice(0, 300)}`,
+      id,
+    );
+    await worker(
+      {
+        model: resolveWorkerModel(args.deps.workerModel ?? { workerModel: args.deps.model }, "code"),
+        worktree: args.worktree,
+        role: "test",
+        footprint: files,
+        baseline: new Set(await porcelainPaths(args.worktree)),
+        abort: new AbortController(),
+        onPark: (_q, answer) => answer("Decide from the compiler's words and the surrounding code; the run does not ask a person."),
+        log: (line: string) => args.log(line, id),
+        ...(args.deps.prepare ? { buildTool: async () => formatBuild(await defaultExec("sh", ["-c", args.deps.prepare!], args.worktree).then((r) => ({ code: r.code, output: r.out }))) } : {}),
+      },
+      [
+        `The run branch of ${args.tep} holds committed work that does not compile — an earlier run`,
+        "committed half of a change. Mend the tree so it builds: read the errors, find the missing",
+        "half in the callers' own expectations, and complete it. Change only the files listed.",
+        "",
+        "THE COMPILER'S WORDS:",
+        words.slice(0, 4000),
+        "",
+        "FILES YOU MAY CHANGE:",
+        ...files.map((f) => `- ${f}`),
+      ].join("\n"),
+    );
+    const proof = await args.rebuild();
+    if (proof.ok) {
+      await args.exec("git", ["-C", args.worktree, "add", "--", ...mended], args.worktree);
+      await args.exec("git", ["-C", args.worktree, "commit", "-m", `tandem: ${args.tep} — mend the standing tree`], args.worktree);
+      args.log(`✓ ${args.tep}: the standing tree builds again — mended in ${round} round(s) and committed`, id);
+      args.defect({ unit: id, activity: "refresh", trigger: "standing-tree", type: "code", impact: "half-committed change completed before dispatch", detail: [...mended].join(", ").slice(0, 400) });
+      return true;
+    }
+    const left = errorCount(proof.words);
+    if (left >= fewest) {
+      args.log(`⛔ ${args.tep}: the mend stopped making progress — ${left} error(s) still stand`, id);
+      args.defect({ unit: id, activity: "refresh", trigger: "standing-tree", type: "code", impact: "run refused — the branch does not build", detail: proof.words.slice(0, 1000) });
+      return false;
+    }
+    fewest = left;
+    words = proof.words;
+  }
+  return false;
 }
+
 
 /** One bounded repair worker over the conflict markers; the merge concludes
  *  only when nothing is left unmerged. */
