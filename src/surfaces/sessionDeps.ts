@@ -59,4 +59,8 @@ export interface SessionDeps {
   projectDir?: string;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
+  /** The display name of this session's own thinking space, read from the
+   *  space listing — never the repository or project label, which name the
+   *  owner, not the space. Titles the space's tab. */
+  spaceName?: string;
 }

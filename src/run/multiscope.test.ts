@@ -68,7 +68,13 @@ test("multirepo TEP: one branch and one delivery PER REPO, producer scope first,
     serves: [a.added.id],
     needs: [],
     acceptance: [{ id: "c1", text: "greet() returns 'hello'" }],
-    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+    grounding: {
+      touchpoints: [
+        { path: "src/greet.mjs", planned: true },
+        { path: "docs/greet.md", planned: true },
+      ],
+      stamp: [],
+    },
   });
   assert.ok(n1.ok);
   s = n1.space;

@@ -19,7 +19,7 @@ function makeSpace(): { space: Space; changeIds: string[] } {
   const ids: string[] = [];
   const specs = [
     { sentence: "the log panel scrolls with the active step", tp: "src/panel/log.ts", acceptance: [{ id: "c1", text: "scrolls on advance" }] },
-    { sentence: "a follow toggle in the panel header", tp: "src/panel/header.ts", acceptance: [{ id: "c2", text: "toggle visible and sticky" }] },
+    { sentence: "a follow toggle in the panel header", tp: "docs/panel.md", acceptance: [{ id: "c2", text: "toggle visible and sticky" }] },
     { sentence: "a change with nothing proving it yet", tp: "src/panel/other.ts", acceptance: [] },
   ];
   for (const sp of specs) {

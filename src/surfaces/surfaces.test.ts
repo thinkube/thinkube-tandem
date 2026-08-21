@@ -81,7 +81,10 @@ test("session round-trip: capture grounds and clusters; sign; accept only on gre
           serves: [ask.id],
           needs: [],
           acceptance: [{ id: "c1", text: "box visible" }],
-          grounding: { touchpoints: [{ path: "src/toolbar.ts" }], stamp: [] },
+          grounding: {
+            touchpoints: [{ path: "src/toolbar.ts" }, { path: "docs/toolbar.md" }],
+            stamp: [],
+          },
         },
       ],
       questions:
@@ -291,7 +294,7 @@ test("panic clears the derived thinking, keeps the asks, and is refused after an
           serves: [ask.id],
           needs: [],
           acceptance: [{ id: "c", text: "visible" }],
-          grounding: { touchpoints: [{ path: "src/x.ts" }], stamp: [] },
+          grounding: { touchpoints: [{ path: "src/x.ts" }, { path: "docs/x.md" }], stamp: [] },
         },
       ],
       questions: [],

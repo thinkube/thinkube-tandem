@@ -36,6 +36,9 @@ test("retired vocabulary appears nowhere outside TERMINOLOGY.md", () => {
   for (const file of walk(repo)) {
     if (file.endsWith(path.join("docs", "TERMINOLOGY.md"))) continue;
     if (file.endsWith("terminology.test.ts")) continue;
+    // ENGINE-WIRING.md documents why each unreached v1 engine module is
+    // retired — like TERMINOLOGY.md, naming the retired term is its job.
+    if (file.endsWith("ENGINE-WIRING.md")) continue;
     if (file.includes(path.join("src", "engine") + path.sep)) continue;
     const text = fs.readFileSync(file, "utf8");
     for (const term of RETIRED)

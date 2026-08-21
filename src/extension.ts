@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
-import { SpacePanel } from "./surfaces/panel";
+import { SpacePanel, vscodePanelHost } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import {
@@ -176,7 +176,7 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
   heartbeat(context);
   const s = activeSession(context);
   if (!s) return;
-  panel?.pushFrom(s, message);
+  panel?.pushFrom(message);
   if (message?.startsWith("Delivery ready"))
     void vscode.window
       .showInformationMessage(`Tandem — ${message}`, "Open the space")
@@ -187,10 +187,16 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
 }
 
+/**
+ * Resolve which thinking space the human means and build (or reuse) its
+ * session, handing back the owner-and-slug key beside it — so the caller
+ * addresses a tab register with the key THIS act resolved, never a
+ * remembered active slug.
+ */
 async function ensureSession(
   context: vscode.ExtensionContext,
   interactive = true,
-): Promise<TandemSession | undefined> {
+): Promise<{ key: string; session: TandemSession } | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
   // No identity, no records: writing under a name every installation
   // shares would silently overwrite the other person's whole space.
@@ -230,7 +236,10 @@ async function ensureSession(
   if (!spaceSlug) return undefined;
   const sessionKey = `${project.card.id}/${spaceSlug}`;
   const existing = sessions.get(sessionKey);
-  if (existing) return existing;
+  if (existing) return { key: sessionKey, session: existing };
+  const spaceName =
+    listThinkingSpaces(storeRootOf(), project.card.id).find((s) => s.slug === spaceSlug)
+      ?.label ?? spaceSlug;
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const storeRoot = configuredStoreRoot();
   const forge = await resolveForge(
@@ -276,6 +285,7 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, message),
+    spaceName,
   });
   sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
@@ -284,7 +294,7 @@ async function ensureSession(
     storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
     storeSync.start();
   }
-  return s;
+  return { key: sessionKey, session: s };
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -356,11 +366,6 @@ export function activate(context: vscode.ExtensionContext): void {
     updateConfigContext,
   });
 
-  const requireSession = (): TandemSession => {
-    const s = activeSession(context);
-    if (!s) throw new Error("no active Tandem session — open the space first");
-    return s;
-  };
   const hooks = {
     onSwitchRepo: async () => {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
@@ -368,12 +373,20 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
-    const s = await ensureSession(context, true);
-    if (!s) return;
+    const resolved = await ensureSession(context, true);
+    if (!resolved) return;
+    const { key, session: s } = resolved;
     updateStatusBar(rememberedProject(context));
     projectsTree?.refresh();
-    if (!panel) panel = new SpacePanel(requireSession, hooks);
-    await panel.show(context.extensionUri);
+    if (!panel)
+      panel = new SpacePanel(
+        key,
+        s,
+        vscodePanelHost(context.extensionUri),
+        hooks,
+        context.extensionUri,
+      );
+    await panel.show();
     pushActive(context);
   };
 

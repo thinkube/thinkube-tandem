@@ -10,7 +10,7 @@
 import type * as vscodeTypes from "vscode";
 import { createRequire } from "node:module";
 import { EnabledProject } from "../core/identity";
-import { nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
+import { listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
 import {
   listWorkProjects,
   readContextScope,
@@ -80,7 +80,9 @@ function scopesReader(
   };
 }
 
-/** Build (or reuse) the session for a project thinking space. */
+/** Build (or reuse) the session for a project thinking space, handing back
+ *  the owner-and-slug key beside it so the caller can address a tab
+ *  register with the key this act resolved. */
 export async function ensureWorkSession(args: {
   context: vscodeTypes.ExtensionContext;
   ownerKey: string;
@@ -96,15 +98,20 @@ export async function ensureWorkSession(args: {
   openRepos: () => EnabledProject[];
   onChanged: (message?: string) => void;
   storageDir: string;
-}): Promise<import("../surfaces/session").TandemSession | undefined> {
+}): Promise<
+  { key: string; session: import("../surfaces/session").TandemSession } | undefined
+> {
   const wp = findWorkProject(args.storeRoot, args.ownerKey.slice(3));
   if (!wp) return undefined;
   const slug = await args.chooseSpace(args.ownerKey, args.interactive);
   if (!slug) return undefined;
   const key = `${args.ownerKey}/${slug}`;
   const existing = args.sessions.get(key);
-  if (existing) return existing;
+  if (existing) return { key, session: existing };
   const author = args.author;
+  const spaceName =
+    listThinkingSpaces(args.storeRoot, wp.id, "project").find((s) => s.slug === slug)
+      ?.label ?? slug;
   const dirs = thinkingSpaceDirs(args.storeRoot, wp.id, slug, author, "project");
   if (args.interactive && readContextScope(dirs.foldDir).length === 0)
     await editContextScope(args.storeRoot, wp, slug, args.openRepos());
@@ -141,7 +148,8 @@ export async function ensureWorkSession(args: {
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
     onChanged: args.onChanged,
+    spaceName,
   });
   args.sessions.set(key, s);
-  return s;
+  return { key, session: s };
 }

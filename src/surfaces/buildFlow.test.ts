@@ -70,7 +70,7 @@ test("building commits whole components: assumptions become decisions, and the a
         servesClaim: c.id,
         needs: [],
         acceptance: [{ id: `a${i}`, text: "proved" }],
-        grounding: { touchpoints: [{ path: "src/a.ts" }], stamp: [] },
+        grounding: { touchpoints: [{ path: i === 0 ? "docs/delivery-page.md" : "src/a.ts" }], stamp: [] },
       })),
       questions: [
         {

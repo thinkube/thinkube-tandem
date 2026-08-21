@@ -50,9 +50,10 @@ of them there — nothing has users.
   setting. `thinkubeTandem.docsGateMode` governs only the accept gate's
   handling of an unmet obligation surfaced on the delivery: blocking by
   default, with `advisory` the recorded escape hatch.
-- The retired-symbol importer gate stays unwired until grounding grows a
-  `retires` declaration for symbol-deleting changes — it arms the day that
-  field exists; the module is imported and tested.
+- The retired-symbol importer gate's wiring verdict is held in
+  `ENGINE-WIRING.md`, not here — that ledger is kept complete against the
+  real tree by its own standing check, so this entry states the decision
+  behind the verdict and no longer restates the verdict itself.
 - Supervisor rounds resolve on the judge role (workerModelByRole raises it);
   ESCALATE falls through to the stalled park, DISCLOSE is ledgered.
 - Frontier concurrency default follows v1 (4), setting thinkubeTandem.maxConcurrent.
