@@ -147,7 +147,7 @@ export interface SliceBrief {
   id: string;
   cutId: string;
   changeIds: string[];
-  /** Files the worker may touch. */
+  /** What the worker is cleared to change. */
   footprint: string[];
   anchors: Anchor[];
   /** Exact exports/signatures to create or change. */

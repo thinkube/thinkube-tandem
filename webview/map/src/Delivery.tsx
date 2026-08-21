@@ -10,6 +10,24 @@ import { Markdown } from "./Markdown";
 import { C, FS, raised, SP } from "./type";
 import { can, post, SpacePush } from "./vscode";
 
+/** The way back in: the signed work runs again. It is offered on every
+ *  delivery that is not accepted — withheld, refused by the gate, or still
+ *  waiting for a decision. Signing happens once, so a delivery the gate
+ *  will not accept would otherwise leave the work with no door at all. */
+function RunAgain(props: { rerun: { id: string; tepId?: string } }): JSX.Element {
+  return (
+    <button
+      data-rerun
+      disabled={!can("rerun")}
+      style={{ fontWeight: 600 }}
+      title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+      onClick={() => post({ action: "rerun" })}
+    >
+      Run {props.rerun.tepId ?? "it"} again
+    </button>
+  );
+}
+
 export function Delivery(props: { push: SpacePush }): JSX.Element {
   const deliveries = [...props.push.deliveries].reverse();
   return (
@@ -46,24 +64,24 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                   <strong>Withheld — nothing was delivered.</strong> {d.withheld}
                 </div>
                 {d.rerun ? (
-                  <button
-                    data-rerun
-                    disabled={!can("rerun")}
-                    style={{ fontWeight: 600, marginTop: SP.sm }}
-                    title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
-                    onClick={() => post({ action: "rerun" })}
-                  >
-                    Run {d.rerun.tepId ?? "it"} again
-                  </button>
+                  <div style={{ marginTop: SP.sm }}>
+                    <RunAgain rerun={d.rerun} />
+                  </div>
                 ) : null}
               </div>
             ) : d.blocked ? (
-              // Not offered, because it would be refused. A button that
-              // cannot work says the work is ready to go into the project,
+              // Accept is not offered, because it would be refused: a button
+              // that cannot work says the work is ready for the project,
               // which over a page of red checks is the machine lying about
-              // the one decision it exists to support.
+              // the one decision it exists to support. The way back in is
+              // offered instead — saying "no" and nothing else is a dead end.
               <div data-cannot-accept={d.id} style={{ fontSize: FS.body, color: C.bad }}>
                 <strong>This cannot be accepted.</strong> {d.blocked}
+                {d.rerun ? (
+                  <div style={{ marginTop: SP.sm }}>
+                    <RunAgain rerun={d.rerun} />
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -76,6 +94,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 >
                   Accept
                 </button>
+                {d.rerun ? <RunAgain rerun={d.rerun} /> : null}
                 <span style={{ fontSize: FS.caption, color: C.quiet }}>
                   Try it first — every “see it” line above is a way in.
                 </span>

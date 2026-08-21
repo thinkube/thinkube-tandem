@@ -34,7 +34,7 @@ const TABLE: Record<string, readonly Phase[]> = {
   "accept-check": ["understood", "delivered"],
   "open-cut-review": ["understood", "delivered"],
   build: ["understood", "delivered"],
-  rerun: ["signed"],
+  rerun: ["signed", "delivered"],
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],
   panic: ["drafting", "read", "understood"],
@@ -46,7 +46,7 @@ const PRESENT: Partial<Record<Phase, string[]>> = {
   read: ["keep-draft", "think"],
   understood: ["think", "edit-sentence"],
   signed: ["rerun"],
-  delivered: ["accept-delivery"],
+  delivered: ["accept-delivery", "rerun"],
 };
 
 test("every button on every page is on exactly in the phases the table says", () => {

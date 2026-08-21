@@ -342,7 +342,7 @@ test("a check whose words name a maintainer's test home is homed on the maintain
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
 });
 
-test("the supervisor's WIDEN has power: a validated widening reaches the fence and the unit delivers; a test file or a pending unit's file is refused; a contained violation fails the unit without halting the run", async () => {
+test("the supervisor's CLEAR has power: the ruling reaches the guard and the unit makes the change itself; only a check file is refused", async () => {
   const repo = tmpRepo();
   const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
   fs.mkdirSync(path.join(repo, "src"), { recursive: true });
@@ -376,7 +376,7 @@ test("the supervisor's WIDEN has power: a validated widening reaches the fence a
       state,
       supervisorRound: async (_d, prompt) =>
         prompt.includes("THE WORKER'S QUESTION")
-          ? "WIDEN: src/deps.mjs probes/held.test.mjs src/greet.mjs — the check reads the key from deps"
+          ? "CLEAR: src/deps.mjs probes/held.test.mjs src/greet.mjs — the check reads the key from deps"
           : null,
       rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
@@ -393,8 +393,8 @@ test("the supervisor's WIDEN has power: a validated widening reaches the fence a
         writeInto(w.worktree, "src/greet.mjs", `export {};\n`);
         const reply = await new Promise<string>((resolve) => w.onPark("AC-1 needs src/deps.mjs — widen my footprint?", resolve));
         answers.push(reply);
-        assert.ok(w.footprint.includes("src/deps.mjs"), "the widening reached the unit's own footprint — the fence reads the same array");
-        assert.ok(!w.footprint.includes("probes/held.test.mjs"), "a test path is never granted");
+        assert.ok(w.footprint.includes("src/deps.mjs"), "the clearance reached the list the guard reads");
+        assert.ok(!w.footprint.includes("probes/held.test.mjs"), "a check file is never cleared to a production worker");
         writeInto(w.worktree, "src/deps.mjs", `export const key = "alpha";\n`);
         return { ok: true, finalText: "done" };
       },
@@ -403,11 +403,12 @@ test("the supervisor's WIDEN has power: a validated widening reaches the fence a
     cut,
     slices,
   );
-  assert.match(answers[0], /footprint was widened/i);
-  assert.match(answers[0], /Refused: probes\/held\.test\.mjs \(test-shaped/, "the refusal is said with its reason");
-  assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the unit delivered inside its widened footprint");
+  assert.match(answers[0], /CLEARED at the supervisor's ruling/);
+  assert.match(answers[0], /NOW, in this session/, "a grant says go, never later");
+  assert.match(answers[0], /Not cleared: probes\/held\.test\.mjs \(test-shaped/, "the refusal is said with its reason");
+  assert.equal(state.units.get("SL-1#eu-0")?.state, "done", "the unit kept its own promise");
   assert.ok(outcome.delivery && !outcome.delivery.withheld);
-  assert.ok(outcome.delivery!.rulings?.some((r) => r.criterionId === "footprint" && /src\/deps\.mjs/.test(r.reason)), "the widening rides the delivery as a ruling");
+  assert.ok(outcome.delivery!.rulings?.some((r) => r.criterionId === "clearance" && /src\/deps\.mjs/.test(r.reason)), "the clearance rides the delivery as a ruling");
 });
 
 test("a stray write is contained, the unit fails, and the run goes on — the other slices keep their own fate", async () => {
@@ -517,7 +518,7 @@ test("a tester whose probes are all written completes on a doubt — the doubt r
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
 });
 
-test("a widening refused for a pending owner's file crosses the slice boundary: the obligation lands in the owner's brief, and the asker is told to keep callers compiling", async () => {
+test("REGRESSION (v2.0.135): a file another slice is cleared for is cleared to the asker too — it keeps its own promise, and nothing crosses to the other slice", async () => {
   const repo = tmpRepo();
   const g = (args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
   fs.mkdirSync(path.join(repo, "src"), { recursive: true });
@@ -562,7 +563,7 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
       state,
       supervisorRound: async (_d, prompt) =>
         prompt.includes("THE WORKER'S QUESTION")
-          ? "WIDEN: src/session.mjs — the check needs the session to thread the key"
+          ? "CLEAR: src/session.mjs — the check needs the session to thread the key"
           : null,
       rehome: async () => ({ anchors: [], notes: [] }),
       spaceName: "greet space",
@@ -573,7 +574,10 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
         }
         if (w.footprint.includes("src/greet.mjs")) {
           writeInto(w.worktree, "src/greet.mjs", `export function key() { return "k"; }\n`);
-          askerReply = await new Promise<string>((resolve) => w.onPark("I need src/session.mjs — widen?", resolve));
+          askerReply = await new Promise<string>((resolve) => w.onPark("I need to change src/session.mjs — am I cleared?", resolve));
+          // The key, not a note for later: it goes and makes the change.
+          assert.ok(w.footprint.includes("src/session.mjs"), "the clearance reached the list the guard reads");
+          writeInto(w.worktree, "src/session.mjs", `export function session() { return "k"; }\n`);
           gate.askerDone = true;
           return { ok: true, finalText: "done" };
         }
@@ -591,10 +595,10 @@ test("a widening refused for a pending owner's file crosses the slice boundary: 
     cut,
     slices,
   );
-  assert.match(askerReply, /Refused: src\/session\.mjs \(owned by SL-2#eu-0, still pending\)/);
-  assert.match(askerReply, /flowed to SL-2#eu-0 as contract/);
-  assert.match(askerReply, /keep every existing caller compiling/i, "the interim rule is said at the moment it matters");
+  assert.match(askerReply, /CLEARED at the supervisor's ruling/, "the asker got the key");
+  assert.match(askerReply, /src\/session\.mjs/);
+  assert.doesNotMatch(askerReply, /flowed to|crosses to/, "nothing is handed to another slice");
   assert.equal(state.units.get("SL-1#eu-0")?.state, "done");
   assert.equal(state.units.get("SL-2#eu-0")?.state, "done");
-  assert.match(ownerBrief, /CROSS-SLICE \(from SL-1#eu-0\): a change in src\/session\.mjs is needed/, "the obligation landed in the owner's own brief");
+  assert.doesNotMatch(ownerBrief, /CROSS-SLICE/, "the other slice is never asked to keep this promise");
 });

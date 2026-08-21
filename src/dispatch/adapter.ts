@@ -12,6 +12,7 @@ import { Change, Cut, Space } from "../core/schema";
 import { formUnits } from "../core/cluster";
 import type { SliceForDag } from "../engine/core/dag";
 import type { WorkUnit } from "../engine/orchestratorCore";
+import type { PlannedChange } from "../run/clearance";
 import { isTestPath } from "../run/testHomes";
 
 function sanitize(s: string): string {
@@ -180,8 +181,21 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
         .filter((a) => a.kind !== "assessment")
         .map((a) => ({ change: c, id: a.id, text: a.text })),
     );
-    const codeUnit: WorkUnit & { note?: string } = {
+    // What the plan says this unit will DO to each file, not merely which
+    // paths it may write: a touchpoint the grounding marks as planned is a
+    // file to create, anything else is a file to change (docs/WORDS.md).
+    // The bare path list below is a projection of this, because git and the
+    // guard take paths.
+    const planned = new Set(
+      changes.flatMap((c) => (c.grounding?.touchpoints ?? []).filter((t) => t.planned).map((t) => t.path)),
+    );
+    const cleared: PlannedChange[] = production.map((path) => ({
+      action: planned.has(path) ? ("create" as const) : ("change" as const),
+      path,
+    }));
+    const codeUnit: WorkUnit & { note?: string; cleared?: PlannedChange[] } = {
       footprint: production,
+      cleared,
       execution: "serial",
       role: "code",
       note,
@@ -192,6 +206,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     const testUnits: (WorkUnit & { note?: string })[] = criteria.map(
       (crit, k) => ({
         footprint: [`probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs`],
+        cleared: [{ action: "create" as const, path: `probes/${sanitize(spaceName)}__${handle}_AC-${k + 1}.test.mjs` }],
         // SERIAL, not fan-out: the engine gives every fan-out test unit its
         // own worker and batches serial ones into a single warm session per
         // slice. Fan-out made the run's size track the number of checks —
@@ -267,6 +282,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     workUnits: [
       {
         footprint: m.testHomes,
+      cleared: m.testHomes.map((path: string) => ({ action: "change" as const, path })),
         execution: "serial",
         role: "code",
         note: `[bring the existing test homes under ${m.of}'s promises]`,

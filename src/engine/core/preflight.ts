@@ -57,7 +57,7 @@ export function preflightProvisionFailures(input: {
   for (const u of input.units) {
     if (!(u.footprint ?? []).filter((f) => f.trim()).length)
       failures.push(
-        `${u.id} (${u.slice}): no declared footprint — the unit has nowhere to write.`,
+        `${u.id} (${u.slice}): nothing cleared — the unit has nowhere to write.`,
       );
     if (u.hasAuthoredUnits && !(u.note ?? "").trim())
       failures.push(
@@ -115,12 +115,12 @@ export function buildWorkerPrompt(
     /** Orientation (2026-07-15): the worker's absolute cwd — stated up front so no
      *  worker ever guesses its own checkout path or ls-walks the tree to orient. */
     cwd?: string;
-    /** Retirement carve-out (2026-07-15): test paths this unit's footprint owns for
-     *  DELETION (other specs' obsolete probes) — named in the lane text so the prose
-     *  never contradicts the fence that allows exactly these. */
+    /** Retirement carve-out (2026-07-15): test paths this unit is cleared to
+     *  DELETE (other specs' obsolete probes) — named in the brief so the prose
+     *  never contradicts the guard, which allows exactly these. */
     retiredTestFiles?: string[];
-    /** Provisioned footprint contents (2026-07-15, speed): the CURRENT content of the
-     *  unit's existing footprint files at dispatch, so the coder starts with its files
+    /** Provisioned cleared-file contents (2026-07-15, speed): the CURRENT content of the
+     *  files this unit is cleared for at dispatch, so the coder starts with them
      *  in context instead of a serial read phase. Characters are cheap; round trips
      *  are the latency. Truncated/omitted files carry a marker instead of content. */
     footprintFiles?: { path: string; content: string; omitted?: string }[];
@@ -131,7 +131,7 @@ export function buildWorkerPrompt(
     graphOrientation?: string;
   },
 ): string {
-  const fp = unit.footprint.join(", ") || "(no declared footprint)";
+  const fp = unit.footprint.join(", ") || "(nothing cleared)";
   // Files a sibling unit produces that THIS unit reads — the contract-first dependency.
   // Surface it structurally (not just buried in the prose note): the worker must IMPORT the
   // sibling's contract for these files, never re-invent it (the prose-pinning the gate replaces).
@@ -164,7 +164,7 @@ export function buildWorkerPrompt(
       ? `This is a MECHANIZE unit: author ONE transform and apply it across all of [${fp}] — do not hand-edit each object.`
       : unit.shape === "fan-out"
         ? `This is a FAN-OUT unit over [${fp}].${unit.note ? ` Task: ${unit.note}` : ""}`
-        : `This is a SERIAL unit — one coherent pass over your footprint (listed above).${unit.note ? ` Task: ${unit.note}` : ""}`;
+        : `This is a SERIAL unit — one coherent pass over the files you are cleared for (listed above).${unit.note ? ` Task: ${unit.note}` : ""}`;
   // The test convention (framework + how the file is run), injected so a test unit — which has no
   // Bash to poke the toolchain — can author a runnable test straight from its prompt (SP-6/7).
   const conventionBlock =
@@ -186,7 +186,7 @@ export function buildWorkerPrompt(
   // not an error to fix. Independence is structural (its cwd is a pre-feature snapshot; it never
   // sees the implementer's in-progress work) and stated as fact.
   const footprintFilesBlock = (context?.footprintFiles ?? []).length
-    ? `\n──── YOUR FOOTPRINT FILES (current content at dispatch — start from these instead of reading them; re-read a file only after YOUR OWN edits) ────\n` +
+    ? `\n──── THE FILES YOU ARE CLEARED FOR (current content at dispatch — start from these instead of reading them; re-read a file only after YOUR OWN edits) ────\n` +
       (context!.footprintFiles ?? [])
         .map((f) =>
           f.omitted
@@ -194,10 +194,10 @@ export function buildWorkerPrompt(
             : `── ${f.path} ──\n${f.content}\n`,
         )
         .join("") +
-      `──── END FOOTPRINT FILES ────\n`
+      `──── END OF THOSE FILES ────\n`
     : "";
   const graphOrientationBlock = context?.graphOrientation?.trim()
-    ? `\n──── GRAPH ORIENTATION (deterministic map from AST parsing — importers and seams around your footprint; verify against the repo, which is the authority) ────\n` +
+    ? `\n──── GRAPH ORIENTATION (deterministic map from AST parsing — importers and seams around the files you are cleared for; verify against the repo, which is the authority) ────\n` +
       `${context.graphOrientation.trim()}\n──── END GRAPH ORIENTATION ────\n`
     : "";
   const workspaceBlock = isTest
@@ -209,7 +209,7 @@ export function buildWorkerPrompt(
   const orientationBlock = context?.cwd?.trim()
     ? `\n──── YOUR WORKSPACE (orientation — read once instead of probing) ────\n` +
       `- Your working directory IS the repository checkout: ${context.cwd.trim()}. It is complete; every path in this brief is relative to it. Use relative paths in every command and tool call.\n` +
-      `- Your footprint files live at exactly those relative paths — never derive a directory from your unit id or search sibling directories for them.\n` +
+      `- The files you are cleared for live at exactly those relative paths — never derive a directory from your unit id or search sibling directories for them.\n` +
       `- Sibling worktrees (paths ending in -test, other TEP-*/SP-* checkouts) belong to other roles and are fenced — never list, read, or search them.\n`
     : "";
   // SP-6/3: the Spec-wide design-time CONTRACT — the shared interface (union of every slice's
@@ -227,8 +227,9 @@ export function buildWorkerPrompt(
   //  1. VERIFICATION BLOCK — only when a self-verify command is supplied: the exact, non-mutating
   //     build-and-test invocation, verbatim, under a distinct `SELF-VERIFY` marker so its absence is
   //     grep-checkable. Omitted ENTIRELY (block + marker) when no command is declared.
-  //  2. FOOTPRINT PROHIBITION (unconditional) — files outside the declared footprint, shared
-  //     build/config (`tsconfig*.json`, etc.) included, are off-limits; the guard reverts a breach.
+  //  2. CLEARANCE (unconditional) — a file this unit is not cleared for, shared build/config
+  //     (`tsconfig*.json`, etc.) included, is another unit's to change; the guard restores an
+  //     uncleared change. A criterion that needs one is ASKED for, never taken and never handed on.
   //  3. HELD-OUT PROHIBITION (unconditional) — the held-out `acceptance/` probes are the closing
   //     gate's to grade; the worker must not build or run them.
   const selfVerify = context?.selfVerifyCommand?.trim();
@@ -244,8 +245,8 @@ export function buildWorkerPrompt(
       ? `\n──── SELF-VERIFY (after editing your files, run this non-mutating build-and-test command to check your work) ────\n${selfVerify}\n`
       : "";
   const prohibitionsBlock = !isTest
-    ? `\nYOUR LANE (these are the rules of the setup above, not obstacles to route around):\n` +
-      `- Edit only within your declared footprint. Files outside it — shared build/config (\`tsconfig*.json\`, other tsconfig files) included — belong to others; the guard reverts an out-of-footprint write.\n` +
+    ? `\nWHAT YOU ARE CLEARED TO DO (these are the rules of the setup above, not obstacles to route around):\n` +
+      `- Change only the files you are cleared for. Anything else — shared build/config (\`tsconfig*.json\`, other tsconfig files) included — is another unit's to change, and the guard restores an uncleared change. If a criterion you are responsible for needs a change somewhere else, ASK: say which file and which criterion requires it. The run rules on it, clears you, and you make the change yourself — your promise is never handed to another slice.\n` +
       (oracle
         ? `- Writing tests is the test author's job, not yours: never create, edit, read or run ANY test file (\`*.test.*\`, anything under \`acceptance/\`). Your work is the implementation; verification is the \`verify\` tool.${
             (context?.retiredTestFiles ?? []).length

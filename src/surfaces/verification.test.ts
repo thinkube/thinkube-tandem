@@ -173,7 +173,11 @@ test("the phase gates the controls: the confirmed table, row by row — what the
     "accept-check": ["understood", "delivered"],
     "open-cut-review": ["understood", "delivered"],
     build: ["understood", "delivered"],
-    rerun: ["signed"],
+    // A delivery that is open, refused by the gate or withheld is not the
+    // end of the work: the signed cut can always be run again until it is
+    // accepted. Without this the surface had no door at all — no Accept
+    // (the gate would refuse it) and no way to run.
+    rerun: ["signed", "delivered"],
     "stop-run": ["running"],
     "accept-delivery": ["delivered"],
     panic: ["drafting", "read", "understood"],

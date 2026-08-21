@@ -22,6 +22,8 @@ import { runAuthoringRound } from "./author";
 import { runScopedSuite, withSuite } from "./suite";
 import { linkProvisioned } from "./setup";
 import { evidenceKey } from "./owner";
+import { clearanceNote } from "./clearance";
+import type { ClearanceRuling } from "./clearance";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -169,7 +171,9 @@ export interface OracleFactoryArgs {
   /** Widen a unit's footprint at the supervisor's ruling — validated and
    *  APPLIED by the run (the fence, the runner overlay and the porcelain
    *  filter all read the same footprint), and put on the record. */
-  widen?: (slice: string, unit: string, paths: string[]) => { granted: string[]; refused: { path: string; why: string }[] };
+  /** The door (src/run/clearance.ts): rules on a change the plan did not
+   *  clear, waits if that file is being changed at this moment, and grants. */
+  clearance?: (slice: string, unit: string, paths: string[]) => Promise<ClearanceRuling>;
   /** The repository's own standing tests, run in the slice's runner once its
    *  checks are green — scoped to the tests that import the slice's files. */
   suite?: {
@@ -187,21 +191,18 @@ export interface OracleFactoryArgs {
   };
 }
 
-/** The paths in a supervisor's WIDEN line — repo-relative, before any dash. */
-export function widenPaths(reply: string): string[] {
-  const line = reply.trimStart().split("\n")[0].replace(/^WIDEN:\s*/i, "").split(/\s+[—-]{1,2}\s+/)[0];
+/** The paths in a supervisor's CLEAR line — repo-relative, before any dash. */
+export function clearedPaths(reply: string): string[] {
+  const line = reply.trimStart().split("\n")[0].replace(/^(CLEAR|WIDEN):\s*/i, "").split(/\s+[—-]{1,2}\s+/)[0];
   return [...new Set(line.split(/[,\s]+/).map((t) => t.trim().replace(/^`|`$/g, "")).filter((t) => t.includes("/") && !t.startsWith("/") && !t.includes("..")))];
 }
 
-/** Apply a WIDEN ruling: validate, widen, put it on the record; the note the
- *  worker reads, or undefined when nothing was granted. */
-function applyWiden(a: OracleFactoryArgs, slice: string, unit: string, reply: string): string | undefined {
-  const paths = widenPaths(reply);
-  if (!paths.length || !a.widen) return undefined;
-  const { granted, refused } = a.widen(slice, unit, paths);
-  const refusedNote = refused.length ? ` Refused: ${refused.map((r) => `${r.path} (${r.why})`).join("; ")} — do not touch those.` : "";
-  if (!granted.length) return undefined;
-  return `FOOTPRINT WIDENED at the supervisor's ruling: you may now edit ${granted.join(", ")}.${refusedNote} Make the change there and run verify.`;
+/** Apply a CLEAR ruling: rule, wait at the door if the file is being changed
+ *  right now, grant, and put it on the record. The note the worker reads. */
+async function applyClearance(a: OracleFactoryArgs, slice: string, unit: string, reply: string): Promise<string | undefined> {
+  const paths = clearedPaths(reply);
+  if (!paths.length || !a.clearance) return undefined;
+  return clearanceNote(await a.clearance(slice, unit, paths));
 }
 
 /** Challenges ONE CHECK may take — the judge runs the probe, so a plea is
@@ -441,9 +442,10 @@ export function sliceOracleFactory(
         "   complete and concrete; verbatim check source never crosses, everything it MEANS does>",
         '- "TEST-FAULT: <a check contradicts the intent — name both; the coder must NOT conform>',
         '- "CAPABILITY: <the brief already states every required fact — cite exactly where>',
-        '- "WIDEN: <repo-relative PRODUCTION file paths, space-separated> — <why the checks cannot pass without changing them>"',
-        "   ONLY when a check requires changing a production file the unit's footprint lacks. The run validates",
-        "   and actually widens; a test file, or a file a pending unit owns, is refused.",
+        '- "CLEAR: <repo-relative PRODUCTION file paths, space-separated> — <why the checks cannot pass without changing them>"',
+        "   ONLY when a check requires changing a production file this unit is not cleared for. The run clears it",
+        "   and the unit makes the change in this same session. A file another unit is changing AT THIS MOMENT is",
+        "   waited for, never refused; only a test-shaped path is refused, because the checks are the test author's.",
         '- "ESCALATE" (intent-level ambiguity; a human must decide)',
         "",
         "──── THE CODER'S BRIEF ────",
@@ -484,9 +486,9 @@ export function sliceOracleFactory(
           impact: "a check contradicts the intent",
           detail: reply.slice(0, 1000),
         });
-      if (reply.trimStart().startsWith("WIDEN")) {
+      if (/^(CLEAR|WIDEN)/.test(reply.trimStart())) {
         const unit = a.acting?.(slice)?.unit ?? slice;
-        const note = applyWiden(a, slice, unit, reply);
+        const note = await applyClearance(a, slice, unit, reply);
         if (note) return note;
       }
       if (reply.trimStart().startsWith("ESCALATE")) {

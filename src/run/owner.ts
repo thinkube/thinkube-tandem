@@ -17,7 +17,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { VerifyResult } from "../engine/verifyOracle";
-import { isTestPath } from "./testHomes";
 
 export type FailureOwner = "code" | "check" | "environment";
 
@@ -132,37 +131,3 @@ export function settleTransfers(a: {
   return true;
 }
 
-/**
- * Footprint widening with power: production files no pending unit owns join
- * the unit's own footprint array — the fence, the runner overlay and the
- * porcelain filter all read that same array — and the grant rides the
- * delivery as a ruling. Everything else is refused with its reason.
- */
-export function makeWiden(a: {
-  units: readonly { id: string; footprint: string[] }[];
-  pending: (unitId: string) => boolean;
-  log: (line: string, step?: string) => void;
-  onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
-}): (slice: string, unitId: string, paths: string[]) => { granted: string[]; refused: { path: string; why: string }[] } {
-  return (slice, unitId, paths) => {
-    const me = a.units.find((u) => u.id === unitId);
-    const granted: string[] = [];
-    const refused: { path: string; why: string }[] = [];
-    for (const p of paths) {
-      const owner = a.units.find((u) => u.id !== unitId && a.pending(u.id) && u.footprint.includes(p));
-      if (!me) refused.push({ path: p, why: "unknown unit" });
-      else if (isTestPath(p)) refused.push({ path: p, why: "test-shaped — the tester owns it" });
-      else if (owner) refused.push({ path: p, why: `owned by ${owner.id}, still pending` });
-      else {
-        if (!me.footprint.includes(p)) me.footprint.push(p);
-        granted.push(p);
-      }
-    }
-    if (granted.length) {
-      a.log(`⚖ ${unitId}: footprint widened at the supervisor's ruling — ${granted.join(", ")}`, unitId);
-      a.onRuling({ criterionId: "footprint", unit: slice, granted: true, reason: `footprint widened to ${granted.join(", ")} — the checks require a change there and no pending unit owns it` });
-    }
-    for (const r of refused) a.log(`⚖ ${unitId}: widening refused for ${r.path} — ${r.why}`, unitId);
-    return { granted, refused };
-  };
-}

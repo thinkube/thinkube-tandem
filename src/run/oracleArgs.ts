@@ -8,7 +8,7 @@ import type { AcVerification } from "../engine/core/closingGate";
 import type { SliceForDag, SchedUnit } from "../engine/core/dag";
 import { persistProbes } from "../engine/oracleStore";
 import { maintainedElsewhere } from "./plan";
-import { makeWiden } from "./owner";
+import { makeClearance } from "./clearance";
 import { sliceSuiteArgs } from "./suite";
 import type { OracleFactoryArgs, Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
@@ -42,6 +42,11 @@ export function buildOracleArgs(a: {
   runOneTest: string;
   pending: (unitId: string) => boolean;
   plannedPending: () => string[];
+  /** Who is changing which files at this moment — the door reads it. */
+  changingNow: () => ReadonlyMap<string, readonly string[]>;
+  /** Commit a waiting unit's work, so it holds nothing while it waits. */
+  commitBeforeWaiting: (unitId: string, why: string) => Promise<void>;
+  halted: () => boolean;
 }): OracleFactoryArgs {
   const { deps, dag, slices, rulings } = a;
   return {
@@ -74,7 +79,16 @@ export function buildOracleArgs(a: {
     persistProbe: (rel: string) => persistProbes(a.storeDir, a.testerWt, [rel], a.cutId),
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
-    widen: makeWiden({ units: dag, pending: a.pending, log: a.log, onRuling: (r) => rulings.push(r) }),
+    clearance: makeClearance({
+      units: dag,
+      changingNow: a.changingNow,
+      commitBeforeWaiting: a.commitBeforeWaiting,
+      halted: a.halted,
+      sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+      log: a.log,
+      onRuling: (r) => rulings.push(r),
+      defect: a.defect,
+    }),
     onDecision: (unit: string, text: string) => a.decisions.push({ unit, text }),
     // The repository's standing tests are every slice's check, scoped to what imports its files.
     suite: sliceSuiteArgs({

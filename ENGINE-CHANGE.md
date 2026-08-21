@@ -48,3 +48,17 @@ worker the same text twice under two headings, paying twice for context
 that says one thing once. `satisfies` ordinals are now stripped from the
 TEP body for code-role workers exactly as they already were for the spec
 body, closing the gap that let a grader ordinal leak through the TEP path.
+
+# Engine change
+
+`core/preflight.ts`: the words a worker reads about the files it may
+change. The brief said "your footprint", "YOUR LANE" and "files outside it
+belong to others" — possession, for what is only a list of files this unit
+is cleared to change while the run lasts. One word carried two facts, and a
+run cost: `makeWiden` called the unit whose list held a path the *owner*,
+and the caller moved the *obligation* there, so a promise about a session's
+name was handed to a slice responsible for something else and nobody kept
+it. The brief now says what is cleared, that the guard restores an
+uncleared change, and — new, and load-bearing — that a unit needing a
+change elsewhere ASKS, is cleared, and makes the change itself. Its promise
+is never handed to another slice. The vocabulary is fixed in docs/WORDS.md.
