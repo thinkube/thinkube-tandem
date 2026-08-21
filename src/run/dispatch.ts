@@ -175,18 +175,19 @@ export async function dispatchTep(
     st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
   }
 
-  // Run again is a resume: an existing branch is kept and refreshed with the base's new commits; committed slices stand.
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, testerWt, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
   const doSetup = () =>
     setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   let ready = await doSetup();
-  // A resumed branch an earlier run left half-committed is mended, once, before the run refuses.
+  // A resumed branch an earlier run left half-committed is mended before the run refuses.
   if (ready.refusal && refreshed.resumed) {
     const mended = await repairStandingTree({
       worktree, tep, refusal: ready.refusal, deps, exec, log, defect,
-      rebuild: async () => !deps.prepare || (await boundedExec(deps.prepare, worktree)).code === 0,
+      halted: () => st.halted,
+      rebuild: async () =>
+        deps.prepare ? boundedExec(deps.prepare, worktree).then((r) => ({ ok: r.code === 0, words: r.output })) : { ok: true, words: "" },
     });
     if (mended) ready = await doSetup();
   }

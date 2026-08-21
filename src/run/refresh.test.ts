@@ -248,8 +248,8 @@ test("a widened footprint rides the slice's commit, and a half-committed branch 
     cut,
     tepSlices({ space, cut, spaceName: "greet space" }),
   );
-  assert.ok(s2.logs.some((l) => /the resumed branch does not build — a repair mends it/.test(l)));
-  assert.ok(s2.logs.some((l) => /the standing tree builds again — mended and committed/.test(l)));
+  assert.ok(s2.logs.some((l) => /the resumed branch does not build — mending it before dispatch/.test(l)));
+  assert.ok(s2.logs.some((l) => /the standing tree builds again — mended in \d+ round/.test(l)));
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the resume delivers after the mend");
 });
 
