@@ -83,7 +83,7 @@ export function sourceOf(compiled: string, root?: string): string | undefined {
   return candidates.find((c) => fs.existsSync(path.join(root, c))) ?? candidates[0];
 }
 
-export type SuiteOwner = "code" | "maintainer" | "tree" | "environment";
+export type SuiteOwner = "code" | "maintainer" | "tree" | "environment" | "elsewhere";
 
 /** The one failure a suite that could not run at all reports. */
 const COULD_NOT_RUN = /^the suite exited with code /;
@@ -95,19 +95,32 @@ const COULD_NOT_RUN = /^the suite exited with code /;
  *   tree        — the failure names a file another unit will still create
  *   environment — the suite could not run here at all, and what it says
  *                 names none of the coder's files: the runner, not the work
- *   code        — everything else: the coder's tree broke a standing check
+ *   code        — the failure names one of this unit's own files
+ *   elsewhere   — it names none of them: every coder shares one tree, so a
+ *                 red here is as likely another slice's in-flight work as
+ *                 this one's. It is recorded and carried to the closing
+ *                 gate, which sees the whole tree and can reach every file.
+ *
+ * The default is elsewhere, not code, and the reason is a run that failed
+ * four units whose own checks were all green: one slice's uncommitted
+ * change reddened standing tests in files those units could not edit, and
+ * each was reworked, closed and failed for a break it had no hand in.
+ * A unit is answerable for what its own files break — never for a tree it
+ * shares.
  */
 export function suiteOwner(
   f: SuiteFailure,
   ctx: { maintainHomes: readonly string[]; pendingPlanned: readonly string[]; footprint?: readonly string[] },
 ): SuiteOwner {
   if (f.file && ctx.maintainHomes.includes(f.file)) return "maintainer";
-  if (COULD_NOT_RUN.test(f.name) && !(ctx.footprint ?? []).some((p) => f.detail.includes(p))) return "environment";
+  const mine = ctx.footprint ?? [];
+  const namesMine = mine.some((p) => f.detail.includes(p)) || (!!f.file && mine.includes(f.file));
+  if (COULD_NOT_RUN.test(f.name) && !namesMine) return "environment";
   // A planned file is named in the runner's words by its path, or by its
   // compiled name (the same path without `src/` and without an extension).
   const names = (p: string) => [p, stemOf(p), stemOf(p).replace(/^src\//, "")].filter((n) => n.length > 3);
   if (ctx.pendingPlanned.some((p) => names(p).some((n) => f.detail.includes(n)))) return "tree";
-  return "code";
+  return namesMine ? "code" : "elsewhere";
 }
 
 const stemOf = (p: string): string => p.replace(/\.[^./]+$/, "");
@@ -119,6 +132,7 @@ export function suiteStanza(v: SuiteVerdict, owners: Map<SuiteFailure, SuiteOwne
   const theirs = v.failures.filter((f) => owners.get(f) === "maintainer");
   const tree = v.failures.filter((f) => owners.get(f) === "tree");
   const env = v.failures.filter((f) => owners.get(f) === "environment");
+  const other = v.failures.filter((f) => owners.get(f) === "elsewhere");
   const line = (f: SuiteFailure) => `- ${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail.split("\n").map((d) => "    " + d.trim()).join("\n")}`;
   const out: string[] = ["──── THE REPOSITORY'S OWN CHECKS (they must stay green on your tree — the whole suite, not only your checks) ────", v.summary];
   if (mine.length)
@@ -138,6 +152,12 @@ export function suiteStanza(v: SuiteVerdict, owners: Map<SuiteFailure, SuiteOwne
       "",
       "THE TREE IS NOT READY — these name a file another unit will still create; verify again in a moment:",
       ...tree.map((f) => `- ${f.name}`),
+    );
+  if (other.length)
+    out.push(
+      "",
+      "NOT YOURS — these name none of your files. Every coder shares this tree, so they are as likely another slice's in-flight work; they are recorded and carried to the closing gate, which sees the whole tree:",
+      ...other.map((f) => `- ${f.name}${f.file ? ` (${f.file})` : ""}`),
     );
   if (env.length)
     out.push(
@@ -218,11 +238,24 @@ export function withSuite(
   };
 }
 
-/** Green for the coder: every red is a maintainer's to bring under, or the
- *  runner's own failure to run the suite. The tree's failures are not
- *  green — they are waited on. */
+/** Green for the coder: every red is a maintainer's to bring under, the
+ *  runner's own failure to run the suite, or a break in files this unit
+ *  does not own — which the closing gate holds. The tree's failures are
+ *  not green: they are waited on. */
 export function suiteAcceptable(s: NonNullable<VerifyWithSuite["suite"]>): boolean {
-  return s.verdict.green || [...s.owners.values()].every((o) => o === "maintainer" || o === "environment");
+  return (
+    s.verdict.green ||
+    [...s.owners.values()].every((o) => o === "maintainer" || o === "environment" || o === "elsewhere")
+  );
+}
+
+/** The reds a unit is answerable for, and those the gate must still hold. */
+export function suiteReds(s: NonNullable<VerifyWithSuite["suite"]>): {
+  mine: SuiteFailure[];
+  held: SuiteFailure[];
+} {
+  const of = (...o: SuiteOwner[]) => s.verdict.failures.filter((f) => o.includes(s.owners.get(f) ?? "code"));
+  return { mine: of("code"), held: of("elsewhere", "tree") };
 }
 
 /** Only the tree's failures: wait, do not rework. */

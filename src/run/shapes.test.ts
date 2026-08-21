@@ -38,8 +38,12 @@ function oneAsk(): { space: ReturnType<typeof emptySpace>; ids: string[] } {
   return { space: n.space, ids: [n.added.id] };
 }
 
-async function runIn(shape: RepoShape, how: Parameters<typeof scriptedWorker>[1], opts: { closerFixes?: boolean } = {}) {
-  const repo = repoInShape(shape);
+async function runIn(
+  shape: RepoShape,
+  how: Parameters<typeof scriptedWorker>[1],
+  opts: { closerFixes?: boolean; standingRed?: boolean } = {},
+) {
+  const repo = repoInShape(shape, { standingRed: !!opts.standingRed });
   const { space, ids } = oneAsk();
   const cut = { id: "cut-1", changeIds: ids, tepId: `TEP-${shape.name.slice(0, 6).replace(/\W/g, "")}-${how}` };
   const state = new RunState(() => {});
@@ -51,6 +55,7 @@ async function runIn(shape: RepoShape, how: Parameters<typeof scriptedWorker>[1]
       suiteCommand: ["node", "-e", "process.exit(0)"],
       ...(shape.prepare ? { prepare: shape.prepare } : {}),
       ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      ...(opts.standingRed ? { suiteReds: ["src/gate.test.mjs"] } : {}),
       state,
       supervisorRound: async () => null,
       rehome: async () => ({ anchors: [], notes: [] }),
@@ -97,6 +102,18 @@ test("REGRESSION (v2.0.132): the audit must not fault a check because the tester
   assert.equal(wrong.length, 1, "and the path that inverts to src/src IS faulted");
   assert.match(wrong[0].detail, /src\/src/);
   execFileSync("git", ["-C", repo, "worktree", "remove", "--force", testerLike]);
+});
+
+test("REGRESSION (v2.0.134): a unit green on its own checks delivers, even where the repository's suite is red in files it does not own", async () => {
+  // The run this comes from failed four units this way. Every one of them
+  // had all its own checks green; every one was reworked twice, closed and
+  // failed for standing tests broken by another slice's uncommitted work,
+  // in files none of them could edit. The machine called it "your code".
+  const { state, outcome, scripted } = await runIn(MIRROR_STRIPPED, "honest", { standingRed: true });
+  const bad = [...state.units.values()].filter((u) => u.state !== "done");
+  assert.deepEqual(bad.map((u) => `${u.id}: ${u.state} ${u.note ?? ""}`), [], "no unit is failed for a red it did not cause");
+  assert.ok(outcome.delivery, "the run reaches a delivery");
+  assert.equal(scripted.briefs.filter((b) => /You are the CLOSER/.test(b.brief)).length, 0, "and no closer was needed");
 });
 
 test("a tester that writes an impossible import is mended once, and the run still delivers", async () => {

@@ -5,8 +5,9 @@
  * checks in full, the tree, what was already tried — and is judged by the
  * same oracle as the coder it replaces (THE-LADDER §4).
  */
-import * as path from "node:path";
 import { formatVerifyReply } from "../engine/verifyOracle";
+import { suiteAcceptable, suiteFootprint, suiteReds } from "./suite";
+import type { VerifyWithSuite } from "./suite";
 import type { VerifyOracle } from "../engine/verifyOracle";
 import type { AcVerification } from "../engine/core/closingGate";
 import type { RunState } from "./state";
@@ -23,6 +24,9 @@ export interface UnitForClosing {
 export function unitCloser(a: {
   worktree: string;
   testerWt: string;
+  /** Files units running right now are writing: never granted to a closer,
+   *  because two writers in one file is a lost update, not authority. */
+  heldElsewhere?: () => readonly string[];
   sliceProbes: ReadonlyMap<string, string[]>;
   sliceVerifs: ReadonlyMap<string, AcVerification[]>;
   criterionOf: (slice: string, ac: number) => { id: string; text: string } | undefined;
@@ -48,8 +52,10 @@ export function unitCloser(a: {
     const closed = await close({
       subject: unit.id,
       worktree: a.worktree,
-      // Its own files, and the checks themselves — the blinding is spent.
-      footprint: [...new Set([...unit.footprint, ...probes.map((p) => path.join(a.testerWt, p))])],
+      // Its own files, in the tree the run commits from.
+      footprint: [...new Set(unit.footprint)],
+      // The checks themselves — the blinding is spent — in their own tree.
+      checks: { root: a.testerWt, paths: probes },
       probeSources: readProbes(a.testerWt, probes),
       history: a.st
         .logTail(unit.id)
@@ -64,8 +70,21 @@ export function unitCloser(a: {
       ...(a.deps.workerModel ? { workerModel: a.deps.workerModel } : {}),
       measure: async () => {
         const c = await oracle.confirmGreen();
-        const reds = c.result.kind === "results" ? c.result.results.filter((x) => !x.pass).length : 99;
-        return { green: c.green, score: reds, evidence: formatVerifyReply(c.result) };
+        const suite = (c.result as VerifyWithSuite).suite;
+        const probeReds = c.result.kind === "results" ? c.result.results.filter((x) => !x.pass).length : 99;
+        // Everything that holds the unit red counts, and the suite's reds
+        // hold it red too: a score that counts only probes cannot move when
+        // the probes are green, so the closer stops on its no-progress rule
+        // while the real failure sits in front of it, unnamed.
+        const standing = suite && !suiteAcceptable(suite) ? suiteReds(suite) : undefined;
+        const held = standing ? [...standing.mine, ...standing.held] : [];
+        return {
+          green: c.green,
+          score: probeReds + held.length,
+          evidence: [formatVerifyReply(c.result), suite?.stanza].filter(Boolean).join("\n\n"),
+          // What the standing reds point at is what it must reach to finish.
+          alsoOwn: suiteFootprint(held, a.worktree).filter((p) => !(a.heldElsewhere?.() ?? []).includes(p)),
+        };
       },
       exec: a.exec,
       boundedExec: a.boundedExec,

@@ -67,7 +67,7 @@ export const SHAPES: readonly RepoShape[] = [FROM_SOURCE, MIRROR_STRIPPED, MIRRO
  * standing test of its own, and a build script that emits where the shape
  * says. Everything is `sh` and `cp` — the machine must not care.
  */
-export function repoInShape(shape: RepoShape): string {
+export function repoInShape(shape: RepoShape, opts: { standingRed?: boolean } = {}): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-shape-"));
   const g = (args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
   const write = (rel: string, body: string) => {
@@ -85,6 +85,14 @@ export function repoInShape(shape: RepoShape): string {
     `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
       `import { hello } from "./hello.mjs";\ntest("hello", () => assert.equal(hello(), "hi"));\n`,
   );
+  // A standing test that is already red for a reason no unit of this run
+  // owns — one slice's in-flight change, in a file nobody here may edit.
+  if (opts.standingRed)
+    write(
+      "src/gate.test.mjs",
+      `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+        `test("the signing gate refuses a cut with no documentation", () => assert.equal(1, 2));\n`,
+    );
   if (shape.prepare) {
     // A real build: it mirrors whatever the tree holds, including files the
     // run has not written yet — a fixture that only copies known files

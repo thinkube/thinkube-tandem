@@ -9,6 +9,9 @@ import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
 import type { RunState } from "./state";
 
+/** How long a unit sleeps on another slice's commit before looking again. */
+const WAIT_FOR_COMMIT_MS = 10 * 60 * 1000;
+
 export function makeCommitBook(a: {
   tep: string;
   branch: string;
@@ -27,7 +30,11 @@ export function makeCommitBook(a: {
   sliceFiles: ReadonlyMap<string, string[]>;
 }): {
   sliceCommitted: Set<string>;
-  nextCommit: (ms: number) => Promise<void>;
+  /** Units asleep on the next commit right now. */
+  waiting: Set<string>;
+  /** Sleep until the next commit, on the record: a unit that is waiting
+   *  lands nothing, so nobody may wait on it in turn. */
+  waitForCommit: (id: string) => Promise<void>;
   failWith: (id: string, ...why: string[]) => void;
   finishUnit: (id: string, slice: string, ok: boolean) => Promise<void>;
 } {
@@ -39,11 +46,21 @@ export function makeCommitBook(a: {
   let commitWaiters: (() => void)[] = [];
   const nextCommit = (ms: number): Promise<void> =>
     new Promise((resolve) => {
-      const t = setTimeout(() => resolve(), ms);
-      commitWaiters.push(() => {
+      // Stop must be visible at once. A wait that only watches for a commit
+      // leaves a halted run looking alive for as long as its timeout: the
+      // person presses Stop and nothing appears to happen.
+      let t: NodeJS.Timeout;
+      let halt: NodeJS.Timeout;
+      const done = (): void => {
         clearTimeout(t);
+        clearInterval(halt);
         resolve();
-      });
+      };
+      t = setTimeout(done, ms);
+      halt = setInterval(() => {
+        if (a.st.halted) done();
+      }, 1000);
+      commitWaiters.push(done);
     });
   const commitSlice = async (slice: string): Promise<void> => {
     if (sliceCommitted.has(slice)) return;
@@ -81,5 +98,14 @@ export function makeCommitBook(a: {
     sliceRemaining.set(slice, left);
     if (left === 0 && [...a.dag].filter((u) => u.slice === slice).every((u) => a.done.has(u.id))) await commitSlice(slice);
   };
-  return { sliceCommitted, nextCommit, failWith, finishUnit };
+  const waiting = new Set<string>();
+  const waitForCommit = async (id: string): Promise<void> => {
+    waiting.add(id);
+    try {
+      await nextCommit(WAIT_FOR_COMMIT_MS);
+    } finally {
+      waiting.delete(id);
+    }
+  };
+  return { sliceCommitted, waiting, waitForCommit, failWith, finishUnit };
 }

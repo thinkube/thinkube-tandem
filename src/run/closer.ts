@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
-import { runUnitWorker, porcelainPaths } from "./worker";
+import { runUnitWorker, porcelainPaths, encloseWork } from "./worker";
 import { formatBuild } from "./execs";
 import type { WorkerOutcome } from "./worker";
 
@@ -30,14 +30,21 @@ interface CloserState {
   /** What the actor is shown: the current evidence, in the tools' own words. */
   evidence: string;
   green: boolean;
+  /** Files the CURRENT evidence says it must reach to finish. Authority is
+   *  not a sentence in a brief: what fails the closer, the closer may edit. */
+  alsoOwn?: string[];
 }
 
 export interface CloserArgs {
   /** What is being closed, for the record: a unit id, or the delivery. */
   subject: string;
+  /** Where production is written — the tree the run commits from. */
   worktree: string;
-  /** Everything the closer may edit — the delivery's own files and checks. */
+  /** Production files it may edit, relative to `worktree`. */
   footprint: string[];
+  /** The checks: a second tree, and the files in it this closer may correct.
+   *  They live apart from production, so the fence for them is its own. */
+  checks?: { root: string; paths: string[] };
   /** Its full sight: the checks it is judged by, read from the tester's tree. */
   probeSources: { path: string; source: string }[];
   /** What the run already tried and could not settle. */
@@ -68,6 +75,8 @@ function closerBrief(a: {
   criteria: readonly { id: string; text: string }[];
   probeSources: readonly { path: string; source: string }[];
   footprint: readonly string[];
+  worktree: string;
+  checks?: { root: string; paths: readonly string[] };
   digest?: string;
 }): string {
   const lines = [
@@ -97,9 +106,19 @@ function closerBrief(a: {
     "──── THE CHECKS, IN FULL ────",
     ...a.probeSources.slice(0, 12).map((p) => `── ${p.path} ──\n${p.source.slice(0, 6000)}`),
     "",
-    "──── FILES YOU MAY EDIT ────",
+    `──── PRODUCTION: EDIT THESE, IN ${a.worktree} ────`,
+    "This tree is the one the run commits from. Work here, and nowhere else — a file you",
+    "change in any other directory is thrown away when the run ends.",
     ...a.footprint.map((f) => `- ${f}`),
   ];
+  if (a.checks?.paths.length)
+    lines.push(
+      "",
+      `──── THE CHECKS: A SEPARATE TREE, AT ${a.checks.root} ────`,
+      "You may correct these check files, in place, at that absolute path — and nothing else there.",
+      "Never write production code into the checks' tree: it is not committed, and the work is lost.",
+      ...a.checks.paths.map((p) => `- ${p}`),
+    );
   if (a.digest) lines.push("", "──── THE REPOSITORY, READ FOR YOU ────", a.digest.slice(0, 8000));
   return lines.join("\n");
 }
@@ -120,9 +139,23 @@ export function rulingsIn(finalText: string): string[] {
  */
 export async function close(a: CloserArgs): Promise<{ green: boolean; report: string; rounds: number }> {
   const worker = a.worker ?? runUnitWorker;
+  const owns = new Set(a.footprint);
+  // Authority, as a fact rather than a sentence: whatever the evidence says
+  // is failing it, the closer may edit. A last actor fenced out of the file
+  // that fails it can only report — which is what happened, twice, in one run.
+  const grant = (paths: readonly string[] | undefined): void => {
+    const fresh = (paths ?? []).filter((p) => !owns.has(p));
+    if (!fresh.length) return;
+    for (const p of fresh) owns.add(p);
+    a.log(`⚖ ${a.subject}: the closer takes ${fresh.slice(0, 4).join(", ")}${fresh.length > 4 ? "…" : ""} — the evidence says they are what fails it`);
+  };
   const before = await a.measure();
   if (before.green) return { green: true, report: "nothing to close", rounds: 0 };
+  grant(before.alsoOwn);
   a.log(`🛟 ${a.subject}: every other actor is spent — the closer takes it, with full sight and authority`);
+  const checkRoot = a.checks?.root;
+  const checkPaths = a.checks?.paths ?? [];
+  const checkBaseline = checkRoot ? new Set(await porcelainPaths(checkRoot)) : new Set<string>();
   let best = before.score;
   let stale = 0;
   let round = 0;
@@ -132,13 +165,14 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
     round++;
     a.say(`the closer is working — round ${round}, ${state.score} thing(s) still red`);
     const abort = new AbortController();
+    const footprint = [...owns, ...checkPaths.map((p) => path.join(checkRoot ?? "", p))];
     outcome = await worker(
       {
         model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "closer"),
         worktree: a.worktree,
         // It writes production and checks alike: the roles are spent.
         role: "test",
-        footprint: a.footprint,
+        footprint,
         maxTurns: CLOSER_TURNS,
         baseline: new Set(await porcelainPaths(a.worktree)),
         abort,
@@ -149,12 +183,28 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
         verifyTool: async () => {
           a.say("the closer is being graded");
           state = await a.measure();
+          grant(state.alsoOwn);
           return state.evidence;
         },
       },
-      closerBrief({ subject: a.subject, round, state, history: a.history, criteria: a.criteria, probeSources: a.probeSources, footprint: a.footprint, ...(a.digest ? { digest: a.digest } : {}) }),
+      closerBrief({
+        subject: a.subject,
+        round,
+        state,
+        history: a.history,
+        criteria: a.criteria,
+        probeSources: a.probeSources,
+        footprint: [...owns],
+        worktree: a.worktree,
+        ...(checkRoot ? { checks: { root: checkRoot, paths: checkPaths } } : {}),
+        ...(a.digest ? { digest: a.digest } : {}),
+      }),
     );
+    // The checks live in their own tree, which no other fence watches: a
+    // production file written there is lost work, so it goes back at once.
+    if (checkRoot) await encloseWork({ worktree: checkRoot, footprint: [...checkPaths], baseline: checkBaseline, log: a.log });
     state = await a.measure();
+    grant(state.alsoOwn);
     for (const r of rulingsIn(outcome.finalText)) {
       const crit = a.criteria.find((c) => r.includes(c.text.slice(0, 30))) ?? a.criteria[0];
       a.onRuling({ criterionId: crit?.id ?? "closer", unit: a.subject, granted: true, reason: `the closer corrected a check: ${r.slice(0, 300)}` });

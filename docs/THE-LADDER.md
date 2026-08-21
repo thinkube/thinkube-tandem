@@ -52,7 +52,7 @@ inside, that is a defect of the machine, not a question for you.
 | Actor | Sees | Writes | Decides |
 |---|---|---|---|
 | Assessment reviewer | the delivered tree | verdicts | criteria a reviewer must judge rather than a test |
-| Repository suite | the delivered tree | verdicts | whether the tree stands |
+| Repository suite | the delivered tree | verdicts | whether the tree stands — and it is the ONLY place a red nobody in the run owns is decided: every coder shares one tree, so a standing test broken in files a unit cannot edit is carried here, never charged to that unit |
 | Finisher | the red tests and the delivery's files | code and tests | how to bring the delivered tree under the repository's own checks |
 | Re-homer | the checks and their promises | moves checks into the repository's suite | where each proof lives on |
 | You | the delivery page | accept or reject | whether this is what you asked for |
@@ -158,6 +158,28 @@ settled.
 | 5 | Finisher | the delivered tree fails the repository's own checks | change code and tests to bring the tree under, never weakening a check | one round |
 | 6 | Closer | everything above is spent | full sight, full authority, everything documented | until it is green or stops making progress |
 
+**Authority is a fact, not a sentence.** The first run with the closer in it
+proved the difference. In one unit the closer knew the fix exactly — three
+lines, a missing accessor — wrote it, and the write fence reverted it,
+because the file belonged to another unit that never ran. In another it was
+shown a verdict reading "7/7 green" while the thing failing it went unnamed,
+scored on a count of red checks that was already zero, and stopped after two
+rounds by its own no-progress rule. It had every authority the brief could
+give it and none the code could. So:
+
+- **It sees what fails it.** Its evidence is the same reading the coder
+  gets, the repository's own suite included — never a verdict that says
+  green while the unit is held red.
+- **It is scored on all of it.** Every red that holds the subject counts
+  toward the number its no-progress rule watches.
+- **It takes what fails it.** Whatever file the evidence names is added to
+  its footprint, unless a unit running right now is writing it — two
+  writers in one file is a lost update, not authority.
+- **It works in the tree that is committed.** Production and checks live in
+  two trees; the brief names both, and a production file written into the
+  checks' tree goes back at once. A fix in a tree nobody commits is not a
+  fix.
+
 **The closer.** It reads everything, including the checks — the blinding has
 already done its work by then, since the checks were written from your
 signed criteria before the code existed. It may change production or a
@@ -184,7 +206,7 @@ earns nothing and hands up at once.
 | Arbiter | six doors, 2 each | 1 ruling per check per phase |
 | Tester | 300 turns | one pass, plus the mechanical checks of §6 |
 | Gate finisher | 2 rounds | 1, then the closer |
-| Waiting for another unit | six waits of ten minutes | only while a pending unit owns the red file |
+| Waiting for another unit | six waits of ten minutes | only while some unit can still land something — a unit that is itself waiting lands nothing, so nobody waits on it |
 | Closer | — | until green or no progress |
 
 What this would have saved in the last run: two units spent five rounds
