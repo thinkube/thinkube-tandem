@@ -73,6 +73,33 @@ test("REGRESSION (v2.0.134): nobody waits on a unit that is waiting — three un
   );
 });
 
+test("REGRESSION (v2.0.138): a unit that shares a file with a sleeper can never start, so waiting for it is waiting for nothing", () => {
+  // The run this comes from: five coders asleep, each waiting for another
+  // unit's files to land, and every unit that could land them blocked by
+  // the scheduler because it shared a file with one of the sleepers. The
+  // dependency graph showed those units as perfectly able to run.
+  const dag = [
+    unit("SL-6#eu-0", ["src/extension.ts", "src/spaceTabs.ts"]),
+    unit("SL-8#eu-0", ["src/extension.ts", "src/workSession.ts"]),
+  ];
+  const asleep = {
+    done: new Set<string>(),
+    failed: new Set<string>(),
+    waiting: new Set(["SL-6#eu-0"]),
+    live: new Map([["SL-6#eu-0", ["src/extension.ts", "src/spaceTabs.ts"]]]),
+  };
+  assert.equal(
+    othersCanLand(dag, "SL-6", asleep),
+    false,
+    "SL-8 shares extension.ts with the sleeper: the scheduler will never launch it, so SL-6 must stop waiting",
+  );
+  assert.equal(
+    othersCanLand(dag, "SL-6", { ...asleep, live: new Map([["SL-6#eu-0", ["src/spaceTabs.ts"]]]) }),
+    true,
+    "with no file in common, SL-8 can start and the wait is worth taking",
+  );
+});
+
 test("dependencies still hold, and work waiting on a failure never runs", () => {
   const dag = [unit("prod", ["src/a.ts"]), unit("cons", ["src/b.ts"], ["prod"])];
   assert.deepEqual(frontier(dag, all(["prod", "cons"])).map((u) => u.id), ["prod"]);
