@@ -40,6 +40,52 @@ export function frontier(
   );
 }
 
+/**
+ * Can anything still land — is there a unit that could deliver the file
+ * somebody is waiting for?
+ *
+ * A unit waits while "others are pending", and pending was read as "not
+ * done and not failed". That reading made a run wait for two hours on
+ * itself: three units waited for files owned by units that were waiting
+ * behind them, and every one of those was, by that reading, pending.
+ *
+ * A unit can land only if it is neither failed nor waiting, and every unit
+ * it requires has either landed or can land in turn. A cycle answers no,
+ * which is the whole point.
+ */
+function canLand(
+  dag: readonly { id: string; slice: string; requires: string[] }[],
+  state: { done: ReadonlySet<string>; failed: ReadonlySet<string>; waiting: ReadonlySet<string> },
+): (id: string) => boolean {
+  const byId = new Map(dag.map((u) => [u.id, u]));
+  const memo = new Map<string, boolean>();
+  const walk = (id: string, seen: Set<string>): boolean => {
+    if (state.done.has(id)) return true;
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    if (seen.has(id)) return false; // a cycle lands nothing
+    if (state.failed.has(id) || state.waiting.has(id)) return false;
+    const u = byId.get(id);
+    if (!u) return false;
+    seen.add(id);
+    const ok = u.requires.filter((r) => byId.has(r)).every((r) => walk(r, seen));
+    seen.delete(id);
+    memo.set(id, ok);
+    return ok;
+  };
+  return (id) => walk(id, new Set());
+}
+
+/** Is any unit outside this slice still able to land something? */
+export function othersCanLand(
+  dag: readonly { id: string; slice: string; requires: string[] }[],
+  slice: string,
+  state: { done: ReadonlySet<string>; failed: ReadonlySet<string>; waiting: ReadonlySet<string> },
+): boolean {
+  const can = canLand(dag, state);
+  return dag.some((u) => u.slice !== slice && !state.done.has(u.id) && !state.failed.has(u.id) && can(u.id));
+}
+
 /** Why a ready unit is not launched: a file it shares with a running unit.
  *  The graph draws edges, not overlaps; the card says the overlap. */
 export function overlapWaits(

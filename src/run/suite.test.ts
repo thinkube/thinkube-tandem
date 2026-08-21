@@ -71,14 +71,21 @@ test("the suite's TAP output is read into named, located failures with the runne
   assert.equal(suiteVerdictOf(0, "ok 1 - x\n# fail 0\n").green, true);
 });
 
-test("every red suite test has an owner: the maintainer's test home, the tree that is not ready, or the coder", () => {
+test("every red suite test has an owner: the maintainer's test home, the tree that is not ready, the coder — or nobody this unit can answer for", () => {
   const home: SuiteFailure = { name: "old rule", file: "src/gates/gates.test.ts", detail: "expected true" };
   const tree: SuiteFailure = { name: "missing", detail: "Cannot find module '../out/surfaces/spaceTabs.js'" };
   const mine: SuiteFailure = { name: "size", file: "src/hygiene.test.ts", detail: "src/extension.ts: 656 lines" };
   const ctx = { maintainHomes: ["src/gates/gates.test.ts"], pendingPlanned: ["src/surfaces/spaceTabs.ts"] };
   assert.equal(suiteOwner(home, ctx), "maintainer");
   assert.equal(suiteOwner(tree, ctx), "tree");
-  assert.equal(suiteOwner(mine, ctx), "code");
+  assert.equal(suiteOwner(mine, { ...ctx, footprint: ["src/extension.ts"] }), "code", "it names a file this unit owns");
+
+  // REGRESSION (v2.0.134): a run failed four units whose own checks were all
+  // green, because one slice's uncommitted change reddened standing tests in
+  // files those units could not edit — and the default owner was "yours".
+  assert.equal(suiteOwner(mine, { ...ctx, footprint: ["src/surfaces/spaceTabs.ts"] }), "elsewhere");
+  const gate: SuiteFailure = { name: "signing binds the pair", file: "src/gates/sign.test.ts", detail: "expected the cut to sign" };
+  assert.equal(suiteOwner(gate, { maintainHomes: [], pendingPlanned: [], footprint: ["src/surfaces/spaceTabs.ts"] }), "elsewhere");
 });
 
 function fakeOracle(results: VerifyResult, stateHash = "h1"): VerifyOracle {
@@ -98,12 +105,14 @@ test("the oracle with the suite behind it: green checks run the suite once per s
     run: async () => (runs++, suiteVerdictOf(1, output)),
     maintainHomes: () => [],
     pendingPlanned: () => [],
+    footprint: () => ["src/surfaces/panel.ts"],
   });
   const r = await oracle.verify();
   assert.equal(runs, 1, "the suite ran when the checks were green");
   assert.ok(r.suite && !r.suite.verdict.green);
   assert.match(r.suite!.stanza, /YOURS — your tree makes these standing checks fail/);
-  assert.match(r.suite!.stanza, /ENGINE-WIRING/);
+  assert.match(r.suite!.stanza, /handleInbound/, "the red that names one of its own files is its own");
+  assert.match(r.suite!.stanza, /NOT YOURS — these name none of your files/, "and the one that names none of them is not");
   const c = await oracle.confirmGreen();
   assert.equal(runs, 1, "the same verified state does not run the suite twice");
   assert.equal(c.green, false, "green checks and a red suite are not green");

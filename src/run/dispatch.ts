@@ -50,7 +50,7 @@ import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
-import { overlapWaits } from "./frontier";
+import { othersCanLand, overlapWaits } from "./frontier";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -248,11 +248,14 @@ export async function dispatchTep(
 
   let testInflight = 0;
   let testerReset: Promise<void> = Promise.resolve();
-  const { sliceCommitted, nextCommit, failWith, finishUnit } = makeCommitBook({
+  const { sliceCommitted, waiting, waitForCommit, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
   });
 
-  const closeUnit = unitCloser({ worktree, testerWt, sliceProbes, sliceVerifs, criterionOf, st, exec, boundedExec, log, deps, rulings, undelivered, defect });
+  const closeUnit = unitCloser({
+    worktree, testerWt, sliceProbes, sliceVerifs, criterionOf, st, exec, boundedExec, log, deps, rulings, undelivered, defect,
+    heldElsewhere: () => [...liveFootprints.values()].filter((v) => v.tree === worktree).flatMap((v) => v.paths),
+  });
 
   const runOne = async (next: (typeof dag)[number]): Promise<void> => {
     const maintain = isMaintainUnit(next); // scheduled as code, worked as a tester
@@ -442,8 +445,8 @@ export async function dispatchTep(
         halted: () => st.halted,
         footprint: next.footprint,
         pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)),
-        othersPending: () => [...dag].some((u) => u.slice !== next.slice && !done.has(u.id) && !failed.has(u.id)),
-        waitForCommit: () => nextCommit(10 * 60 * 1000),
+        othersPending: () => othersCanLand(dag, next.slice, { done, failed, waiting }),
+        waitForCommit: () => waitForCommit(next.id),
         say: (why) => {
           st.doing(next.id, why);
           log(`⏳ ${next.id}: ${why}`, next.id);
