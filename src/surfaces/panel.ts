@@ -302,8 +302,10 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       })(),
       ...(d.url ? { url: d.url } : {}),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
-      // A withheld delivery delivered nothing: the way back in is on its page.
-      ...(d.withheld ? { withheld: d.withheld, rerun: session.unrunCut() } : {}),
+      ...(d.withheld ? { withheld: d.withheld } : {}),
+      // The way back in, on every delivery that is not accepted: withheld,
+      // blocked by a red check, or simply still waiting for your decision.
+      ...(d.acceptedAt ? {} : { rerun: session.unrunCut() }),
     })),
     ...(message ? { message } : {}),
   };
