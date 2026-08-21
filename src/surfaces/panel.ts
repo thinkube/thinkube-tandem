@@ -31,7 +31,7 @@ interface PanelHostHooks {
  * knocked on without opening a real VS Code tab. Shaped like a raw VS Code
  * webview panel so the real host can hand one back untouched.
  */
-interface HostWebview {
+export interface HostWebview {
   html: string;
   postMessage(message: unknown): Thenable<boolean> | void;
   onDidReceiveMessage(listener: (message: unknown) => void): { dispose(): void };
