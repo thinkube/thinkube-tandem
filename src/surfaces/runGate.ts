@@ -307,7 +307,7 @@ export function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: 
 export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     const d = s.space.deliveries.find((x) => x.id === deliveryId);
     if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
-    const r = acceptDelivery(d, s.deps.now(), s.deps.docsGateMode ?? "blocking");
+    const r = acceptDelivery(d, s.deps.now(), s.deps.docsGateMode ?? "blocking", s.space.deliveries);
     if (!r.ok) return r;
     const cut = s.space.cuts.find((c) => c.id === d.cutId);
     const tepId = cut?.tepId;

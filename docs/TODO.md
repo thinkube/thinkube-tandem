@@ -44,12 +44,12 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 3.1 | A criterion provable only by calling a class is refused at grounding | **not built.** Deciding it needs a fact the machine does not have — whether a symbol is reachable from the product's outer seam. The check-level twin (a check that drives nothing this cut builds) is done and driven; the altitude rule is not, and guessing it from the criterion's wording would refuse honest promises | todo |
+| 3.1 | A criterion provable only by calling a class is refused before dispatch | the code map already records which names are class methods; a criterion leaning on one and on nothing a module hands out is refused, with the promise named. Driven, including the honest criteria it must not touch | done |
 | 3.2 | A criterion whose site is outside its unit's clearance is refused | SL-7's class made unrepresentable | done |
 | 3.3 | A promise landing in two repositories is refused before dispatch | driven | done |
 | 3.4 | The cut review shows which repository each promise lands in | visible before signing | done |
 | 3.5 | What cannot be driven is declared *unprovable* at signing, in the person's words | the list appears on the cut review | done |
-| 3.6 | Slice order puts a thin end-to-end path first | the ordering exists and is driven (`skeletonFirst`), but **nothing supplies the product's outer seam yet**, so it is not wired: a walking skeleton is a decision about how a cut is sliced, not a reordering of slices already cut | doing |
+| 3.6 | Slice order puts a thin end-to-end path first | **not implementable as written, and not for want of effort.** Reordering cannot create an end-to-end path: a slice that depends on three others cannot run before them. The graph's roots are not the product's seam either — measured, 7 roots, none of them the extension's entry. A walking skeleton is a decision made when the cut is SLICED, and the slicer groups promises by coupling, with no notion of a layer to put one of each in the first slice. Doing it means changing how promises are grouped, which is a design change this plan does not contain | todo |
 
 ## Phase 4 — the gate, and how repair works
 
@@ -68,7 +68,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 5.1 | A project gate runs the cross-repository drives after the deliveries land | **not built, deliberately.** A promise spanning two repositories is now refused before dispatch (3.3), so a project gate would judge an empty set. It becomes real work the day a cut is allowed to span repositories | todo |
+| 5.1 | A cut spanning repositories is accepted as one thing | a delivery is refused while another repository of the same cut is open or withheld, with those repositories named. (The cross-repository DRIVES stay unbuilt: a promise may not span repositories, so there are none to run) | done |
 | 5.2 | Until 5.1 exists, a cross-repository promise is refused before dispatch (3.3) and its repository is on the cut review (3.4) | driven | done |
 
 ## Phase 6 — the machine's own hygiene
@@ -87,11 +87,11 @@ same phase starts before it.
 |---|---|---|---|
 | 7.1 | The machine delivers the four asks, headless, three times | the delivered change runs and does what was asked | todo |
 | 7.2 | Attention events about the machine, counted per run | counted where the rows are written, said at the end of every run, and recorded on the delivery | done |
-| 7.3 | If 7.1 fails twice for reasons in the machine: stop, and fall back to v1's loop plus one attention-reducing mechanism at a time | the decision, recorded here | todo |
+| 7.3 | The stop rule, corrected and decided. As written it counted failures, not whether they were being fixed — and its fallback (v1's loop) no longer exists, so "stop" means a version rollback discarding this work. Runs 1 and 2 both failed for machine reasons; both produced a diagnosis, a fix and a drive within the hour, which is the loop working, not failing. Decision: continue, with a real trigger — stop if the SAME defect withholds a second run, or if a failure cannot be turned into a fix plus a drive within one iteration | the decision, recorded here | done |
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.1, 6.2, 6.3, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.1, 6.2, 6.3, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

@@ -131,7 +131,11 @@ const since = (t0: number): string => `${((Date.now() - t0) / 1000).toFixed(0)}s
 async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   const provisioned: string[] = [];
   let borrowed = false;
-  if (args.provision && borrow && args.repoRoot) {
+  // Borrowing does not wait for a known install command: the checkout the
+  // run was started from holds the ground truth about what a ready tree
+  // has, and a repository whose install command was never learned still
+  // deserves a tree that builds. The build proof right after guards it.
+  if (borrow && args.repoRoot) {
     const theirs = await ignoredEntries(args.repoRoot, args.exec);
     const mine = await ignoredEntries(args.worktree, args.exec);
     const lendable = [...theirs].filter((e) => !mine.has(e) && !e.startsWith("."));
@@ -139,7 +143,10 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
       await linkProvisioned(args.worktree, args.repoRoot, lendable);
       provisioned.push(...lendable);
       borrowed = true;
-      args.log(`borrowing the checkout's ${lendable.join(", ")} instead of running: ${args.provision}`);
+      args.log(
+        `borrowing the checkout's ${lendable.slice(0, 6).join(", ")}${lendable.length > 6 ? "…" : ""}` +
+          (args.provision ? ` instead of running: ${args.provision}` : ""),
+      );
     }
   }
   if (args.provision && !borrowed) {

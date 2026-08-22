@@ -11,7 +11,7 @@ proves nothing and is deleted.
 
 ## The requirements, and how each is shown
 
-State, 22 August: **11 of the 13 rows are driven.** Rows 9 and 11 are not.
+State, 22 August: **12 of the 13 rows are driven.** Row 6 is not, and cannot be as written.
 
 | # | Claim | Driven by | Falsified by |
 |---|---|---|---|
@@ -23,7 +23,7 @@ State, 22 August: **11 of the 13 rows are driven.** Rows 9 and 11 are not.
 | 6 ○ | Integration is exercised first — the ordering is written and driven, but nothing supplies the product's outer seam yet, so it is not wired | the plan's first slice drives the product end to end | order the slices with the seam last: the drive fails |
 | 7 ✔ | Wiring is proven by execution | the SL-6 fixture — a register built, disposed, and connected to nothing, with every check green — is **rejected**, because the drive never executed the unit's lines | remove the trace requirement: the fixture passes and the drive fails |
 | 8 ✔ | A stalled run says so and stops — and so does one that talks forever | a run with no progress writes what is open and halts itself | remove the watchdog: the drive hangs and fails |
-| 9 | Nothing reaches the person except the work | every question or refusal shown to a person is free of file names, tool names and internals | feed an internals-laden question: the drive fails |
+| 9 ✔ | Nothing reaches the person except the work | every question or refusal shown to a person is free of file names, tool names and internals | feed an internals-laden question: the drive fails |
 | 10 ✔ | A failed criterion returns to its author's own session | the repair arrives as the next message in the session that wrote the code, carrying the drive's evidence and what changed since | start a fresh worker instead: the drive sees a new session id and fails |
 | 11 ✔ | Every repair says which stage it implicates | after a run with repairs, each row names one of: author's slip, brief lacked a fact, check misreads the criterion, clearance could not reach the site, criterion at the wrong altitude | write the row without the stage: the drive fails |
 | 12 ✔ | The loop always ends — driven for silence, for the wall clock, and for a repair that stops improving; the fuzz over configurations is not written | a fuzz over run configurations — failing checks, unbuildable trees, a repairer that oscillates, a silent worker — reaches one of the three terminal states within its budgets, every time | remove the patience rule or the watchdog: a configuration hangs and the drive fails |
@@ -31,13 +31,21 @@ State, 22 August: **11 of the 13 rows are driven.** Rows 9 and 11 are not.
 
 ## What is not driven
 
-Row 9 — nothing reaches the person except the work — has no drive. The rule
-is real and the code obeys it in the places a person actually reads, but
-there is no gate that reads a message and refuses it for naming a file, and
-writing one from a word list would be a gate that passes anything phrased
-carefully. It is honest to say it is unproven.
+Row 6 — a thin end-to-end path first — is not built, and not for want of
+effort. Reordering slices cannot create one: a slice that depends on three
+others cannot run before them. The code map's roots are not the product's
+seam either; measured on this repository it names seven, none of them the
+extension's entry point. A walking skeleton is a decision made when a cut is
+SLICED, and the slicer groups promises by how they couple, with no notion of
+a layer that would let it put one of each in the first slice. Building it
+means changing how promises are grouped — real work, and a design change
+this plan does not contain.
 
-Row 6 is written and not wired, for the reason in its row.
+Row 9 is driven, but narrowly and honestly: not a word list over arbitrary
+text, which would pass anything phrased carefully, but the machine's OWN
+refusals, produced by the real functions with real inputs, read for the two
+things a person can do nothing with — the name of a tool and the name of a
+part of the run. It fails when one refusal is made to mention either.
 
 ## The end-to-end acceptance
 

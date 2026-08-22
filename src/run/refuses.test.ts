@@ -13,12 +13,14 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { auditProbe } from "./probeAudit";
-import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
+import { refusedBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { renderCutScreen } from "../gates/render";
-import { signCut, verifyCutSignature } from "../gates/sign";
+import { acceptDelivery, signCut, verifyCutSignature } from "../gates/sign";
+import type { Delivery } from "../core/schema";
+import { classMethodsIn, wrongAltitude } from "./altitude";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
@@ -31,6 +33,20 @@ function repo(): string {
 }
 
 const PLANNED = ["src/greet.mjs"];
+
+
+/** The pre-flight as the run calls it, with the repository stood in for. */
+async function refusedBeforeDispatchIn(a: { slices: unknown[]; space: unknown }): Promise<string[]> {
+  const r = await refusedBeforeDispatch({
+    slices: a.slices as never,
+    space: a.space as never,
+    cut: { id: "cut-1", changeIds: ["n1"] },
+    repoRoot: "/nowhere",
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  return r.refusal ? r.refusal.refusal.split("\n") : [];
+}
 
 test("a check that reads the source instead of driving it is refused", () => {
   const faults = auditProbe(
@@ -101,8 +117,8 @@ test("a check reading a fixture is not a source-text check", () => {
  * And what the machine refuses before it dispatches anybody — read from the
  * plan, said in the person's own words, with no worker started.
  */
-test("a promise landing in two repositories is refused before any worker", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise landing in two repositories is refused before any worker", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-1",
@@ -137,8 +153,8 @@ test("a promise landing in two repositories is refused before any worker", () =>
   assert.match(refusals[0], /greet the user everywhere/, "the person's own words, not a file");
 });
 
-test("a promise whose only site its unit may not change is refused before any worker", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise whose only site its unit may not change is refused before any worker", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-7",
@@ -166,8 +182,8 @@ test("a promise whose only site its unit may not change is refused before any wo
   assert.match(refusals[0], /may not change src\/extension\.mjs/);
 });
 
-test("a promise its unit can reach, in one repository, is refused nothing", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise its unit can reach, in one repository, is refused nothing", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-1",
@@ -273,6 +289,31 @@ test("the door borrows the checkout's provisioning instead of installing again",
   assert.deepEqual(setup.provisioned, ["node_modules"], "and the run still knows what it has");
   assert.ok(fs.existsSync(path.join(wt, "node_modules", "dep", "index.js")), "the dependency is reachable in the worktree");
   assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
+});
+
+test("the door borrows even when no install command was ever learned", async () => {
+  // Run 2 of the acceptance died here: no install command was known, so
+  // nothing was borrowed and nothing was installed, and the suite failed
+  // before its first test on a tree missing its dependencies.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  fs.mkdirSync(path.join(base, "webview", "map", "node_modules", "vite"), { recursive: true });
+  fs.writeFileSync(path.join(base, "webview", "map", "node_modules", "vite", "index.js"), "");
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    exec: async (cmd, args, cwd) =>
+      cmd === "git" && args[2] === "status"
+        ? { code: 0, out: cwd === base ? "!! webview/map/node_modules/\n" : "" }
+        : { code: 0, out: "" },
+    boundedExec: async () => ({ code: 0, output: "" }),
+    log: () => {},
+  });
+  assert.deepEqual(setup.provisioned, ["webview/map/node_modules"]);
+  assert.ok(
+    fs.existsSync(path.join(wt, "webview", "map", "node_modules", "vite", "index.js")),
+    "a nested dependency directory is lent too",
+  );
 });
 
 test("the four facts about a repository are kept in the repository", () => {
@@ -381,4 +422,168 @@ test("a signature survives the repository moving, but not the promise moving", (
 
   // The promise now lands somewhere else. That is drift.
   assert.equal(verifyCutSignature(at("src/other.ts", "aaa"), signed.cut).ok, false);
+});
+
+/**
+ * Altitude — the rule the whole methodology exists for. A criterion that
+ * can only be checked by building a class and calling it is a criterion
+ * whose check passes for a part connected to nothing.
+ */
+const METHODS = [
+  { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  { className: "SpacePanel", method: "show", file: "src/surfaces/panel.ts" },
+];
+
+test("a criterion that can only be checked by calling a class method is refused", () => {
+  const why = wrongAltitude({
+    criterion: "SpacePanel.reveal() sets the active tab",
+    methods: METHODS,
+    exported: () => false,
+  });
+  assert.ok(why, "it is refused");
+  assert.match(why!, /building SpacePanel and calling reveal/);
+  assert.match(why!, /Say what the product must DO/, "and it says what to write instead");
+});
+
+test("a criterion about what the product does is not refused", () => {
+  for (const text of [
+    "opening the same space twice reveals the one tab, never a second",
+    "greet() returns 'hello'",
+    "the delivery page shows one row per cut",
+  ])
+    assert.equal(
+      wrongAltitude({ criterion: text, methods: METHODS, exported: (s) => s === "greet" }),
+      undefined,
+      `refused an honest criterion: ${text}`,
+    );
+});
+
+test("a criterion naming a method the module also exports is at the seam", () => {
+  // A library's public function IS the outer seam, even when a class of the
+  // same name has a method beside it.
+  assert.equal(
+    wrongAltitude({ criterion: "`show()` opens the panel", methods: METHODS, exported: (s) => s === "show" }),
+    undefined,
+  );
+});
+
+test("the class methods come from the code map the machine already builds", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-graph-"));
+  const graph = path.join(dir, "graph.json");
+  fs.writeFileSync(
+    graph,
+    JSON.stringify({
+      nodes: [
+        { id: "cls", label: "SpacePanel", source_file: "src/surfaces/panel.ts" },
+        { id: "m1", label: ".reveal()", source_file: "src/surfaces/panel.ts" },
+        { id: "m2", label: ".constructor()", source_file: "src/surfaces/panel.ts" },
+      ],
+      links: [
+        { relation: "method", source: "cls", target: "m1" },
+        { relation: "method", source: "cls", target: "m2" },
+        { relation: "imports", source: "cls", target: "m1" },
+      ],
+    }),
+  );
+  assert.deepEqual(classMethodsIn(graph), [
+    { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  ]);
+  assert.deepEqual(classMethodsIn(path.join(dir, "absent.json")), [], "no map is never a refusal");
+});
+
+/**
+ * A cut that spans repositories is one piece of work. Accepting a third of
+ * it merges a third of a promise and leaves the rest to memory.
+ */
+const green = (id: string, cutId: string, branch: string): Delivery => ({
+  id,
+  cutId,
+  branch,
+  proofs: [{ kind: "probe", label: "it works", verdict: "green" }],
+});
+
+test("a delivery is not accepted while another repository of the same cut is open", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = green("d-api", "cut-1", "tandem/api/TEP-1");
+  const r = acceptDelivery(web, "2026-08-22T00:00:00Z", "advisory", [web, api]);
+  assert.equal(r.ok, false);
+  assert.match(r.ok ? "" : r.reason, /also lands in 1 other repository/);
+  assert.match(r.ok ? "" : r.reason, /tandem\/api\/TEP-1/);
+});
+
+test("a delivery is accepted once every repository of its cut is", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = { ...green("d-api", "cut-1", "tandem/api/TEP-1"), acceptedAt: "2026-08-22T00:00:00Z" };
+  const r = acceptDelivery(web, "2026-08-22T00:01:00Z", "advisory", [web, api]);
+  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+});
+
+test("a withheld sibling is named as withheld, not merely missing", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = { ...green("d-api", "cut-1", "tandem/api/TEP-1"), withheld: "two promises are not kept" };
+  const r = acceptDelivery(web, "2026-08-22T00:00:00Z", "advisory", [web, api]);
+  assert.match(r.ok ? "" : r.reason, /withheld/);
+});
+
+/**
+ * What reaches a person is about the work.
+ *
+ * Not a word list over arbitrary text — that would pass anything phrased
+ * carefully. These are the machine's OWN messages, produced by the real
+ * functions with real inputs, and read for the two things a person can do
+ * nothing with: the name of a tool, and the name of a part of the run.
+ */
+const INTERNALS =
+  /\b(oracle|probe|footprint|worktree|dag|frontier|knip|tsc|npx|Bash|Grep|Glob|NotebookEdit|eu-\d|#eu|mcp__|stdout|stderr|regex)\b/i;
+
+test("every refusal a person reads is about the work, not about the machine", async () => {
+  const said: string[] = [];
+
+  // The pre-flight refusals, from the real function.
+  const impossible = await refusedBeforeDispatchIn({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/panel.ts"],
+        workUnits: [{ footprint: ["src/panel.ts"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      },
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "one editor tab per thinking space",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "opening a space twice reveals the same tab" }],
+          grounding: { touchpoints: [{ path: "src/extension.ts", planned: false }], stamp: [] },
+        },
+      ],
+    },
+  });
+  said.push(...impossible);
+
+  // What acceptance refuses, in each of its shapes.
+  for (const d of [
+    { id: "d1", cutId: "c", branch: "tandem/TEP-1", proofs: [], withheld: "two promises are not kept" },
+    { id: "d2", cutId: "c", branch: "tandem/TEP-1", proofs: [{ kind: "probe" as const, label: "it works", verdict: "red" as const }] },
+  ] as Delivery[]) {
+    const r = acceptDelivery(d, "2026-08-22T00:00:00Z", "advisory", []);
+    if (!r.ok) said.push(r.reason);
+  }
+
+  // The altitude refusal, which has the most to explain.
+  const why = wrongAltitude({
+    criterion: "SpacePanel.reveal() sets the active tab",
+    methods: [{ className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" }],
+    exported: () => false,
+  });
+  if (why) said.push(why);
+
+  const offending = said.filter((line) => INTERNALS.test(line));
+  assert.deepEqual(offending, [], `these name the machine rather than the work:\n${offending.join("\n")}`);
+  assert.ok(said.length >= 4, `the drive read nothing: ${said.length}`);
 });

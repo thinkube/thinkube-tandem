@@ -173,6 +173,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       ...(args.maxRunMs ? { maxRunMs: args.maxRunMs } : {}),
       storeDir: args.space,
       ...(known?.digest ? { digest: known.digest } : {}),
+      ...(known?.graph?.graphPath ? { graphPath: known.graph.graphPath } : {}),
       ...(args.prepare ?? told?.prepare ?? known?.prepare
         ? { prepare: args.prepare ?? told?.prepare ?? known!.prepare }
         : {}),

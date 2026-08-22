@@ -28,9 +28,12 @@ produces something that satisfies its own files. SL-6's register was correct
 in isolation and connected to nothing; the only actor that noticed was the
 closer, because it is the only one that sees the whole tree.
 
-**Direction: A — v1's split (1 and 3), with the person's attention replaced
-by gate repair rather than by per-unit verdicts.** One experiment decides it
-before any deletion (§6).
+**Direction, as decided by the experiment in §6: NOT A.** The fresh run of
+22 August put nine criteria red→green inside units' own rounds, across six
+of nine code units — per-unit verification earns its machinery. So the
+per-unit oracle stays, and v2.5 keeps 2 and 3, paying with 1 the way v2
+did: each unit's verdict is computed over the committed base plus that
+unit's own files, and the whole tree is judged once more at the gate.
 
 ## 1. One worktree per repository — and no others
 
@@ -56,14 +59,15 @@ file, as v1 did.
 
 ## 2. One judgement per level
 
-- A **unit** completes on its own claim plus a green build. Under A there is
-  no per-unit verdict; the gate judges.
+- A **unit** completes when its own criteria are green (the experiment in
+  §6 kept the per-unit verdict — see §0).
 - The **repository gate** judges everything, once, on the whole tree.
 - **Cross-repository promises** are judged at a project gate after the
   repositories' deliveries land, or declared unprovable at signing.
 
-*Deletes:* the per-slice suite, the owner classification, the waits, and
-with them both deadlock classes.
+*Deleted:* the per-slice suite as a judge (it informs, never fails a
+unit), the owner classification, the tree-waits, and with them both
+deadlock classes.
 
 ## 3. Prevention: decide it before orchestration, while a person is present
 
