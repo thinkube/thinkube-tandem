@@ -14,6 +14,10 @@ import assert from "node:assert/strict";
 import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
+import { filesNamedIn } from "./suite";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { dispatchTep } from "./dispatch";
 import { tepSlices } from "../dispatch/adapter";
@@ -236,4 +240,17 @@ test("nothing a unit wrote is lost from the branch", async () => {
     .toString()
     .split("\n");
   assert.ok(onBranch.includes("src/greet.mjs"), `the work the coder wrote is on the branch: ${onBranch.join(" ")}`);
+});
+
+test("the closer is cleared for the files the compiler names", () => {
+  // The gate's last actor had "full authority" and had its edit restored by
+  // the guard, because the clearance was read from the TEST failures only
+  // and the tree's real problem was a compiler error in another file.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-named-"));
+  fs.mkdirSync(path.join(repo, "src", "core"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "core", "records.ts"), "export const x = 1;\n");
+  const out =
+    "src/core/records.ts(96,10): error TS2305: Module has no exported member 'foldSpaces'.\n" +
+    "src/gone/away.ts(1,1): error TS2307: file that does not exist here\n";
+  assert.deepEqual(filesNamedIn(out, repo), ["src/core/records.ts"], "named, and only what really exists");
 });
