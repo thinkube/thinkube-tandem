@@ -35,7 +35,14 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     const lands = (n.grounding?.touchpoints ?? [])
       .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : "") + (t.planned ? " (new)" : ""))
       .join(", ");
-    lines.push(`      lands at: ${lands || "(not grounded)"}`);
+    // Which repository this promise lands in — visible before signing,
+    // because a cut spanning two repositories is delivered twice, accepted
+    // twice, and a person signing it should know that from the page.
+    const where = [...new Set((n.grounding?.touchpoints ?? []).map((t) => t.scope ?? ""))];
+    lines.push(
+      `      lands at: ${lands || "(not grounded)"}` +
+        (where.some(Boolean) ? ` — in ${where.map((w) => w || "this repository").join(" and ")}` : ""),
+    );
     if (n.acceptance.length === 0) lines.push(`      checked by: (no check yet)`);
     for (const c of n.acceptance)
       lines.push(
@@ -60,6 +67,16 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   if (unprovable.length) {
     lines.push(`Nothing proves these yet:`);
     for (const n of unprovable) lines.push(`  ⚠ ${n.sentence}`);
+  }
+
+  // What the machine cannot observe, said before you sign rather than
+  // discovered on the delivery. Never silently substituted with a check
+  // of something else: you accept it knowingly, or the promise is
+  // re-grounded until it can be driven.
+  const unverified = members.flatMap((n) => (n.unverified ?? []).map((u) => ({ n, u })));
+  if (unverified.length) {
+    lines.push(`The machine cannot prove these — accept them knowingly, or re-ground them:`);
+    for (const { n, u } of unverified) lines.push(`  ○ ${u.text} (${n.sentence}) — ${u.why}`);
   }
 
   const openQuestions = space.questions.filter(

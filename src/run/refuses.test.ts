@@ -17,6 +17,7 @@ import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
+import { renderCutScreen } from "../gates/render";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
@@ -289,4 +290,26 @@ test("the four facts about a repository are kept in the repository", () => {
   fs.writeFileSync(path.join(blocked, ".tandem"), "not a directory\n");
   assert.doesNotThrow(() => rememberFacts(blocked, { provision: "", prepare: "", runOne: "" }, "now"));
   assert.equal(factsOf(blocked), undefined, "and it simply asks again next time");
+});
+
+test("the cut review says where each promise lands and what cannot be proven", () => {
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "the panel opens once per space",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "opening twice reveals the same tab" }],
+        grounding: { touchpoints: [{ path: "src/panel.ts", planned: false, scope: "web" }], stamp: [] },
+        unverified: [{ text: "it looks right on a small screen", why: "no one can drive a person's eyes" }],
+      },
+    ],
+  };
+  const screen = renderCutScreen(space, { id: "cut-1", changeIds: ["n1"] });
+  assert.match(screen, /in web/, "the repository each promise lands in is on the page");
+  assert.match(screen, /cannot prove these/);
+  assert.match(screen, /looks right on a small screen/);
+  assert.match(screen, /no one can drive a person's eyes/, "with the reason it cannot be driven");
 });
