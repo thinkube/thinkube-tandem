@@ -207,7 +207,6 @@ export async function refusedBeforeDispatch(a: {
   // What was signed is what runs. Only DRIFT is judged here; whether an
   // unsigned cut may run at all is the sign gate's question, asked earlier.
   const signed = a.cut.signature ? verifyCutSignature(a.space, a.cut) : { ok: true as const };
-  if (signed.ok && "unchecked" in signed && signed.unchecked) a.log(signed.unchecked);
   if (!signed.ok)
     return {
       dag,
