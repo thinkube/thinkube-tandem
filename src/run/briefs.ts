@@ -103,7 +103,6 @@ export interface UnitRunnerArgs {
   dag: readonly SchedUnit[];
   slices: readonly { handle: string; maintains?: string; files?: string[] }[];
   built: readonly string[];
-  emitMap?: readonly string[];
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   ensureSnapshot: (repoRoot: string, ref: string, dir: string, exec: unknown) => Promise<boolean>;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
@@ -197,7 +196,7 @@ export function makeUnitRunner(a: UnitRunnerArgs): (next: SchedUnit) => Promise<
     if (role !== "test") a.briefBySlice.set(next.slice, baseBrief);
     const oracleStanza = () =>
       role === "test"
-        ? testerStanza(a.built, a.emitMap) +
+        ? testerStanza(a.built) +
           (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(
             testHomesOf(next.footprint),
@@ -269,7 +268,6 @@ export function makeUnitRunner(a: UnitRunnerArgs): (next: SchedUnit) => Promise<
           unit: next.id,
           maintain,
           brief,
-          emitMap: a.emitMap ?? [],
           planned: a.dag.flatMap((u) => u.footprint).filter((f) => !isProbePath(f)),
           halted: () => a.st.halted,
           say: (text) => a.st.doing(next.id, text),
