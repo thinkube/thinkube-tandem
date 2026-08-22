@@ -21,7 +21,9 @@ import { loadFolded } from "../core/records";
 import { RunState } from "../run/state";
 import { dispatchTep } from "../run/dispatch";
 import { tepSlices } from "../dispatch/adapter";
+import { planScopes } from "../dispatch/scopes";
 import { knowledgeOf } from "../derive/knowledge";
+import { factsOf } from "../run/facts";
 import type { Cut, Space } from "../core/schema";
 
 interface Args {
@@ -33,6 +35,7 @@ interface Args {
   provision?: string;
   model: string;
   digest: boolean;
+  maxRunMs?: number;
 }
 
 export function parseArgs(argv: readonly string[]): Args | string {
@@ -43,7 +46,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
   const space = get("space");
   const repo = get("repo");
   if (!space || !repo)
-    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--no-digest]";
+    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--hours <n>] [--no-digest]";
   const suite = (get("suite") ?? "npm test").split(" ").filter(Boolean);
   return {
     space: path.resolve(space),
@@ -52,6 +55,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     suite,
     ...(get("prepare") ? { prepare: get("prepare")! } : {}),
     ...(get("provision") ? { provision: get("provision")! } : {}),
+    ...(get("hours") ? { maxRunMs: Math.round(Number(get("hours")) * 3_600_000) } : {}),
     model: get("model") ?? "sonnet",
     digest: !argv.includes("--no-digest"),
   };
@@ -100,7 +104,22 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${cut}\n`);
     return 2;
   }
+  // The same planner the editor uses: a cut is grouped by the repository
+  // each promise lands in, and a promise that mixes two is refused here
+  // exactly as it is refused there — never differently because the run was
+  // started without a window.
+  const plan = planScopes(space, cut);
+  if (!plan.ok) {
+    process.stdout.write(`${plan.reason}\n`);
+    return 2;
+  }
+  const others = plan.order.filter((sc) => sc !== "");
   process.stdout.write(`running ${cut.tepId ?? cut.id} from ${args.space} over ${args.repo}\n`);
+  if (others.length)
+    process.stdout.write(
+      `this cut also lands in ${others.join(", ")}, which this entry cannot reach: it runs one repository, the one given by --repo. ` +
+        `Those promises are not run.\n`,
+    );
 
   const st = new RunState(() => {});
   // The run replaces the sink with its own on-disk log, so chain rather
@@ -119,6 +138,16 @@ export async function main(argv: readonly string[]): Promise<number> {
     };
   };
   setTimeout(chain, 2000).unref();
+
+  // The repository's own facts, if it has already told a run: no flag, no
+  // reading, no model call. A repository that has never been run against
+  // falls through to the reading below.
+  const told = factsOf(args.repo);
+  if (told)
+    process.stdout.write(
+      `the repository's own setup facts, proved ${told.provenAt ?? "earlier"}: ` +
+        `install ${told.provision || "NONE"}; build ${told.prepare || "NONE"}; one test ${told.runOne || "NONE"}\n`,
+    );
 
   // The repository's own facts: how it installs, builds and runs one test.
   // Fail-soft — a run must never refuse because the reading was unavailable.
@@ -141,11 +170,16 @@ export async function main(argv: readonly string[]): Promise<number> {
       suiteCommand: args.suite,
       state: st,
       spaceName: path.basename(args.space),
+      ...(args.maxRunMs ? { maxRunMs: args.maxRunMs } : {}),
       storeDir: args.space,
       ...(known?.digest ? { digest: known.digest } : {}),
-      ...(args.prepare ?? known?.prepare ? { prepare: args.prepare ?? known!.prepare } : {}),
-      ...(args.provision ?? known?.provision ? { provision: args.provision ?? known!.provision } : {}),
-      ...(known?.runOne ? { runOne: known.runOne } : {}),
+      ...(args.prepare ?? told?.prepare ?? known?.prepare
+        ? { prepare: args.prepare ?? told?.prepare ?? known!.prepare }
+        : {}),
+      ...(args.provision ?? told?.provision ?? known?.provision
+        ? { provision: args.provision ?? told?.provision ?? known!.provision }
+        : {}),
+      ...(told?.runOne ?? known?.runOne ? { runOne: told?.runOne ?? known!.runOne } : {}),
       ...(known ? { affected: (p: string) => known.affected(p) } : {}),
     },
     space,
@@ -156,7 +190,13 @@ export async function main(argv: readonly string[]): Promise<number> {
   const d = outcome.delivery;
   process.stdout.write(
     `\n── ${cut.tepId ?? cut.id} ──\n` +
-      (d?.url ? `delivered: ${d.url}\n` : d?.withheld ? `withheld: ${d.withheld}\n` : `no delivery\n`) +
+      (d?.withheld
+        ? `withheld: ${d.withheld}\n`
+        : d
+          ? `delivered${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
+            `proofs: ${d.proofs.filter((p) => p.verdict === "green").length} green, ${d.proofs.filter((p) => p.verdict !== "green").length} not\n` +
+            d.proofs.filter((p) => p.verdict !== "green").map((p) => `  ✗ ${p.label}\n`).join("")
+          : `no delivery\n`) +
       (outcome.refusals.length ? `refused: ${outcome.refusals.join("; ")}\n` : "") +
       (outcome.undelivered.length ? `undelivered:\n${outcome.undelivered.map((u) => `  - ${u}`).join("\n")}\n` : ""),
   );

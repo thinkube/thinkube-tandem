@@ -13,10 +13,10 @@
 import { RoundDeps, runReadRound } from "./round";
 
 /** Beyond this the digest is carrying homework, not context. */
-export const DIGEST_CHAR_BUDGET = 6000;
+const DIGEST_CHAR_BUDGET = 6000;
 
 /** Build the prompt. Pure; exported for tests. */
-export function buildContextualizePrompt(repoRoot: string, map: string): string {
+function buildContextualizePrompt(repoRoot: string, map: string): string {
   return (
     `Below is a STRUCTURAL MAP of the repository at ${repoRoot}, extracted ` +
     `from the code itself: what is here, what hangs off what, with the file ` +

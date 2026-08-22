@@ -14,6 +14,23 @@
  * into every verify runner (a runner is a snapshot of the same branch), so
  * one install serves the whole run.
  *
+ * When the checkout the run was started from ALREADY HOLDS what
+ * provisioning would produce, the run borrows it — the same links, from
+ * the base — and skips the command. A machine with little memory dies
+ * during an install it did not need, which is how two runs ended before
+ * their first worker. Borrowing is checked immediately, because the build
+ * is proved right after: if the build then fails, the borrowed state is
+ * dropped and the real command runs, so a stale borrow costs one build and
+ * never a wrong run.
+ *
+ * When the checkout the run was started from already holds what
+ * provisioning would produce, the run BORROWS it — the same links, from
+ * the base — and skips the command. A machine with little memory dies
+ * during an install it did not need; borrowing costs nothing and is
+ * checked immediately, because the build is proved right after. If the
+ * build then fails, the borrowed state is dropped and the real command
+ * runs, so a stale borrow costs one build, never a wrong run.
+ *
  * Then the build step is PROVED on the untouched tree: if it fails before
  * any worker has changed a line, the fault is the environment's, and the
  * run is refused with the output — never dispatched into a wall. The
@@ -45,8 +62,6 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 export interface TreeSetup {
   /** The proven way to run one of the repository's own tests, or "". */
   runOne: string;
-  /** Observed source → built path pairs, so a check imports what exists. */
-  emitMap?: string[];
   /** What provisioning produced — ignored entries to link into runners. */
   provisioned: string[];
   /** What the build step produced — where compiled output lands, so a
@@ -70,6 +85,9 @@ const tail = (output: string, n = 900): string => {
 
 export interface SetupArgs {
   worktree: string;
+  /** The checkout the run was started from, whose provisioning can be
+   *  borrowed instead of installed again. */
+  repoRoot?: string;
   provision?: string;
   prepare?: string;
   /** Runs one of the repository's own test files (`<file>` = its source
@@ -110,9 +128,21 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
 /** Seconds since a moment, for a door that must say how long each step took. */
 const since = (t0: number): string => `${((Date.now() - t0) / 1000).toFixed(0)}s`;
 
-async function proveTree(args: SetupArgs): Promise<TreeSetup> {
+async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   const provisioned: string[] = [];
-  if (args.provision) {
+  let borrowed = false;
+  if (args.provision && borrow && args.repoRoot) {
+    const theirs = await ignoredEntries(args.repoRoot, args.exec);
+    const mine = await ignoredEntries(args.worktree, args.exec);
+    const lendable = [...theirs].filter((e) => !mine.has(e) && !e.startsWith("."));
+    if (lendable.length) {
+      await linkProvisioned(args.worktree, args.repoRoot, lendable);
+      provisioned.push(...lendable);
+      borrowed = true;
+      args.log(`borrowing the checkout's ${lendable.join(", ")} instead of running: ${args.provision}`);
+    }
+  }
+  if (args.provision && !borrowed) {
     const before = await ignoredEntries(args.worktree, args.exec);
     args.log(`provisioning the worktree: ${args.provision}`);
     const t0 = Date.now();
@@ -135,51 +165,26 @@ async function proveTree(args: SetupArgs): Promise<TreeSetup> {
     const t0 = Date.now();
     const b = await args.boundedExec(args.prepare, args.worktree);
     args.log(`  built in ${since(t0)}`);
-    if (b.code !== 0)
+    if (b.code !== 0) {
+      // A borrowed provisioning that does not build is simply wrong for
+      // this tree: drop it and pay for the real install once.
+      if (borrowed) {
+        args.log("  the borrowed provisioning does not build here — installing instead");
+        for (const rel of provisioned) await fs.rm(path.join(args.worktree, rel), { force: true }).catch(() => {});
+        return proveTree(args, false);
+      }
       return {
         runOne: "",
         provisioned,
         built,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
       };
+    }
     const after = await ignoredEntries(args.worktree, args.exec);
     for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
     if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
-  return { provisioned, built, emitMap: await observeEmitMap(args, built), runOne: await proveRunOne(args) };
-}
-
-/**
- * How a SOURCE path becomes its BUILT path in this repository, observed —
- * never guessed. A probe that imports the compiled module must name the
- * real path; "the build emits into out-test" does not say whether
- * `src/a/b.ts` lands at `out-test/a/b.js` or `out-test/src/a/b.js`, and a
- * tester that guesses wrong writes checks nothing can run.
- */
-async function observeEmitMap(args: SetupArgs, built: readonly string[]): Promise<string[]> {
-  if (!built.length) return [];
-  const listed = (await args.exec("git", ["-C", args.worktree, "ls-files"], args.worktree)).out.split("\n").map((l) => l.trim());
-  // Any source this repository holds, in any language it writes them in —
-  // the mapping is a fact about the build, never about TypeScript.
-  const SOURCE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|dart|lua)$/i;
-  const sources = listed.filter((f) => SOURCE.test(f) && !isTestPath(f)).slice(0, 40);
-  const pairs: string[] = [];
-  for (const src of sources) {
-    if (pairs.length >= 2) break;
-    const stem = src.replace(/\.[^./]+$/, "");
-    const ext = path.extname(src);
-    const stripped = stem.replace(/^[^/]+\//, "");
-    const candidates = built.flatMap((dir) =>
-      [stem, stripped].flatMap((base) => [ext, ".js", ".mjs", ".cjs"].map((e) => path.join(dir, `${base}${e}`))),
-    );
-    for (const c of candidates)
-      if (await fs.access(path.join(args.worktree, c)).then(() => true, () => false)) {
-        pairs.push(`${src} → ${c}`);
-        break;
-      }
-  }
-  if (pairs.length) args.log(`  a source file lands at: ${pairs.join("; ")}`);
-  return pairs;
+  return { provisioned, built, runOne: await proveRunOne(args) };
 }
 
 /** The single-test command, tried on one of the repository's own tests.

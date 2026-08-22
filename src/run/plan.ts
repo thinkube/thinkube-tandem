@@ -110,7 +110,13 @@ export async function claimRunLock(
  * downstream is this list's ORDER — the probe filenames carry the same
  * number, which is what lets a failing check be traced back to its source.
  */
-export function sliceBookkeeping(slices: SliceForDag[]): {
+export function sliceBookkeeping(
+  slices: SliceForDag[],
+  /** How this repository runs one of its own tests (`<file>` = its path),
+   *  proved at the door. A check is run the way the repository runs a test,
+   *  not the way one language does. */
+  runOne = "",
+): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   sliceFiles: Map<string, string[]>;
@@ -140,7 +146,7 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: `node --test ${p}`, env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : `node --test ${p}`, env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -210,7 +216,7 @@ export function closingVerifications(slices: SliceForDag[]): {
  *  form, `UNDELIVERED:` in capitals, or another marker word; the vocabulary
  *  alone is not a deferral. */
 const OTHER_MARKERS = /\b(TODO|FIXME|XXX|HACK|not in scope|not implemented|unimplemented|pending SDK)\b/i;
-export function isDeferralVocabulary(text: string): boolean {
+function isDeferralVocabulary(text: string): boolean {
   return !OTHER_MARKERS.test(text) && !/\bUNDELIVERED\s*:/.test(text);
 }
 
@@ -267,6 +273,10 @@ export async function writeDeliveryRecord(
     undelivered: string[];
     verifs: AcVerification[];
     acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
+    /** The checks themselves — kept here because the files are discarded. */
+    checks?: KeptCheck[];
+    /** Attention events about the machine in this run. Target: zero. */
+    machineAttention?: number;
   },
 ): Promise<void> {
   try {
@@ -287,6 +297,8 @@ export async function writeDeliveryRecord(
           proofs: record.proofs,
           undelivered: record.undelivered,
           trace,
+          ...(record.checks?.length ? { checks: record.checks } : {}),
+          machineAttention: record.machineAttention ?? 0,
         },
         null,
         2,
@@ -295,6 +307,36 @@ export async function writeDeliveryRecord(
   } catch {
     /* best-effort */
   }
+}
+
+/** A check whose file leaves the tree: what it proved, and its source. */
+export interface KeptCheck {
+  criterionId: string;
+  /** Where the check lived while the run drove it. */
+  path: string;
+  source: string;
+}
+
+/**
+ * Read the run's checks out of the tree so the delivery can carry them.
+ *
+ * A check that cannot be read is dropped rather than recorded empty: an
+ * empty source on the record would read as "this criterion was proven by
+ * nothing", which is worse than its absence.
+ */
+export async function keptChecks(
+  probes: readonly string[],
+  worktree: string,
+  criterionByProbe: ReadonlyMap<string, string>,
+): Promise<KeptCheck[]> {
+  const out: KeptCheck[] = [];
+  for (const rel of [...new Set(probes)]) {
+    const criterionId = criterionByProbe.get(rel);
+    if (!criterionId) continue;
+    const source = await fsp.readFile(path.join(worktree, rel), "utf8").catch(() => undefined);
+    if (source !== undefined) out.push({ criterionId, path: rel, source });
+  }
+  return out;
 }
 
 

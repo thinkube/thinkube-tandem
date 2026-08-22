@@ -15,13 +15,20 @@
  *   a foreign platform is a simulator, bigger than the code it tests, with
  *   its own defects, and green against it proves nothing about the real
  *   thing (THE-LADDER §3.2).
+ * - It may not READ THE SOURCE INSTEAD OF DRIVING IT. A check that opens a
+ *   file and asserts on its text passes for a stub, a comment, or a
+ *   coincidence of wording, and fails on a rename that changes nothing. It
+ *   proves that something was written, never that anything works.
+ * - It must DRIVE SOMETHING THIS CUT BUILDS. A check importing nothing this
+ *   run touches is green before the run starts and stays green whatever the
+ *   coders do.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 export interface ProbeFault {
   probe: string;
-  kind: "import-shape" | "simulator";
+  kind: "import-shape" | "simulator" | "source-text" | "drives-nothing";
   detail: string;
 }
 
@@ -35,7 +42,7 @@ function importsOf(source: string): string[] {
 }
 
 /** Module-loader interception: the mark of a simulator, whatever it fakes. */
-export function interceptsLoader(source: string): string | undefined {
+function interceptsLoader(source: string): string | undefined {
   const hits = [
     /Module\._load/,
     /Module\._resolveFilename/,
@@ -45,23 +52,16 @@ export function interceptsLoader(source: string): string | undefined {
   return hits ? hits.source.replace(/\\/g, "") : undefined;
 }
 
-/** The transform the door measured, as functions both ways. Absent or
- *  unreadable, the audit decides nothing. */
-function emitTransform(emitMap: readonly string[] = []): { toSource: (built: string) => string | undefined } | undefined {
-  const pair = emitMap.map((m) => m.split("→").map((x) => x.trim())).find((p) => p.length === 2 && p[0] && p[1]);
-  if (!pair) return undefined;
-  const [srcEx, outEx] = pair;
-  const srcRoot = srcEx.includes("/") ? srcEx.slice(0, srcEx.indexOf("/") + 1) : "";
-  const outRoot = outEx.includes("/") ? outEx.slice(0, outEx.indexOf("/") + 1) : "";
-  const srcExt = path.extname(srcEx);
-  if (!outRoot || !srcExt) return undefined;
-  return {
-    toSource: (built) => {
-      const b = built.replace(/^\.\//, "");
-      if (!b.startsWith(outRoot)) return undefined;
-      return `${srcRoot}${b.slice(outRoot.length).replace(/\.[^./]+$/, "")}${srcExt}`;
-    },
-  };
+/** Reading a source file's TEXT: the check that greps instead of driving.
+ *  Reading a fixture is ordinary; reading something the repository compiles
+ *  is a check written about the code rather than against it. */
+function readsSource(source: string): string | undefined {
+  const CODE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs)$/;
+  for (const m of source.matchAll(
+    /\b(readFileSync|readFile|readFileAsync|read_text|readText|open|File\.read|slurp)\s*\(\s*["'`]([^"'`\n]+)["'`]/g,
+  ))
+    if (CODE.test(m[2])) return m[2];
+  return undefined;
 }
 
 /**
@@ -79,9 +79,18 @@ export function auditProbe(
   source: string,
   root: string,
   planned: readonly string[] = [],
-  emitMap: readonly string[] = [],
 ): ProbeFault[] {
   const faults: ProbeFault[] = [];
+  const grepped = readsSource(source);
+  if (grepped)
+    faults.push({
+      probe,
+      kind: "source-text",
+      detail:
+        `it opens ${grepped} and asserts on the text it finds there. A stub, a comment, or a sentence that happens to match ` +
+        `passes that check, and a rename that changes no behaviour fails it. Drive the behaviour instead: call what the promise ` +
+        `introduces and assert on what it does.`,
+    });
   const loader = interceptsLoader(source);
   if (loader)
     faults.push({
@@ -91,14 +100,12 @@ export function auditProbe(
         `it intercepts the module loader (${loader}) to hand back an invented platform. A check may fake an interface THIS repository ` +
         `defines and injects; it may not simulate a system the repository does not own.`,
     });
-  const transform = emitTransform(emitMap);
   const plannedDirs = new Set(planned.map((p) => path.posix.dirname(p)));
   for (const spec of importsOf(source)) {
     const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
     if (fs.existsSync(path.join(root, rel))) continue; // it is already there
     if (planned.some((p) => p === rel)) continue; // this run writes it
-    const asSource = transform?.toSource(rel);
-    if (!asSource) {
+    {
       const dir = path.posix.dirname(rel);
       if (fs.existsSync(path.join(root, dir)) || plannedDirs.has(dir)) continue;
       // A path whose very first segment is absent from this checkout is a
@@ -111,19 +118,25 @@ export function auditProbe(
         kind: "import-shape",
         detail: `it imports "${spec}", which resolves to ${rel} — ${dir} exists nowhere in this repository, and nothing in this run's plan will create it.`,
       });
-      continue;
     }
-    const dir = path.posix.dirname(asSource);
-    if (fs.existsSync(path.join(root, dir))) continue; // a new file in a real directory: fine
-    if (plannedDirs.has(dir) || planned.some((p) => p === asSource)) continue; // the plan creates it
+  }
+  // Nothing of this cut is imported: whatever it asserts, no coder can
+  // change its verdict.
+  if (
+    planned.length &&
+    !faults.some((f) => f.kind === "import-shape") &&
+    !importsOf(source).some((spec) => {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
+      return planned.some((p) => p === rel || p.replace(/\.[^./]+$/, "") === rel.replace(/\.[^./]+$/, ""));
+    })
+  )
     faults.push({
       probe,
-      kind: "import-shape",
+      kind: "drives-nothing",
       detail:
-        `it imports "${spec}", which is the compiled form of ${asSource} — and ${dir} is not a directory of this repository, ` +
-        `nor one this run will create. No implementation can make that path appear.`,
+        `it imports nothing this cut builds, so its verdict cannot change whatever any coder writes. Import what the promise ` +
+        `introduces — ${planned.slice(0, 4).join(", ")} — and drive it.`,
     });
-  }
   return faults;
 }
 
@@ -132,7 +145,6 @@ export function auditProbes(
   root: string,
   probes: readonly string[],
   planned: readonly string[] = [],
-  emitMap: readonly string[] = [],
 ): ProbeFault[] {
   const faults: ProbeFault[] = [];
   for (const rel of probes) {
@@ -142,21 +154,19 @@ export function auditProbes(
     } catch {
       continue; // a missing probe is the run's own business, not this audit's
     }
-    faults.push(...auditProbe(rel, src, root, planned, emitMap));
+    faults.push(...auditProbe(rel, src, root, planned));
   }
   return faults;
 }
 
 /** What the tester is told, so it fixes them itself before anyone is graded. */
-export function faultsBrief(faults: readonly ProbeFault[], emitMap: readonly string[] = []): string {
+export function faultsBrief(faults: readonly ProbeFault[]): string {
   const lines = [
     "STOP — the checks you wrote cannot stand as written. The machine looked at them before",
     "anyone was graded by them, and found these faults. Fix every one, in place.",
     "",
   ];
   for (const f of faults) lines.push(`- ${f.probe}\n    ${f.detail}`);
-  if (emitMap.length)
-    lines.push("", `WHERE A SOURCE FILE LANDS, observed in this tree: ${emitMap.join("; ")}. Import that shape literally.`);
   lines.push(
     "",
     "If a check can only observe its promise by simulating a platform this repository does not own,",

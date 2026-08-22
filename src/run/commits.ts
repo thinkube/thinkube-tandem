@@ -5,7 +5,6 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
 import type { RunState } from "./state";
 
@@ -78,7 +77,6 @@ export function makeCommitBook(a: {
     commitWaiters = [];
     for (const w of wake) w();
     const probes = a.sliceProbes.get(slice) ?? [];
-    for (const rel of probes) await copyRel(a.testerWt, a.worktree, rel).catch(() => {});
     // The unit's LIVE footprints, not only the plan's list: a footprint
     // widened mid-run rides the commit, or the branch holds half a change.
     const live = a.dag.filter((u) => u.slice === slice).flatMap((u) => [...u.footprint]);

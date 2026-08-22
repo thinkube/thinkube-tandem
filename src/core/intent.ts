@@ -44,10 +44,6 @@ export function addNode(
   };
 }
 
-/** Nodes with no path up to any ask — scope creep, surfaced by the UI. */
-export function orphanChanges(space: Space): Change[] {
-  return space.nodes.filter((n) => n.serves.length === 0);
-}
 
 /** The asks a node serves, resolved — for renders written in the asks' words. */
 export function asksOf(space: Space, node: Change): Ask[] {

@@ -33,7 +33,7 @@ export interface SuiteVerdict {
 /** The suite's TAP output read into named failures. A `location:` line
  *  under a failure names the compiled file; the source it came from is the
  *  same path under `src/` with a source extension, when it exists. */
-export function parseSuite(output: string, root?: string): SuiteVerdict {
+function parseSuite(output: string, root?: string): SuiteVerdict {
   const lines = output.split(/\r?\n/);
   const failures: SuiteFailure[] = [];
   const summary: string[] = [];
@@ -90,7 +90,7 @@ export function suiteVerdictOf(code: number | null, output: string, root?: strin
 }
 
 /** `…/out-test/a/b.test.js` → `src/a/b.test.ts` when that file exists under root. */
-export function sourceOf(compiled: string, root?: string): string | undefined {
+function sourceOf(compiled: string, root?: string): string | undefined {
   const m = /(?:^|\/)out(?:-test)?\/(.+)\.(?:m?js)$/.exec(compiled.replace(/\\/g, "/"));
   if (!m) return undefined;
   const stem = m[1];
@@ -124,7 +124,7 @@ const COULD_NOT_RUN = /^the suite exited with code /;
  * A unit is answerable for what its own files break — never for a tree it
  * shares.
  */
-export function suiteOwner(
+function suiteOwner(
   f: SuiteFailure,
   ctx: { maintainHomes: readonly string[]; pendingPlanned: readonly string[]; footprint?: readonly string[] },
 ): SuiteOwner {
@@ -266,7 +266,7 @@ export function withSuite(
  * walk over the graph's importers), plus the files that were red at an
  * earlier gate. Only files present in the tree are returned.
  */
-export async function scopedTests(args: {
+async function scopedTests(args: {
   root: string;
   footprint: readonly string[];
   importersOf: (path: string) => Promise<readonly string[]>;

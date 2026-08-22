@@ -67,6 +67,14 @@ the file is discarded. A criterion declares whether it is an **invariant**
 (true forever) or a **transition** (true once, at the moment of a change);
 a transition is graded at its gate and never re-homed.
 
+*Built as:* the discard, always. A check's source and verdict are kept on
+the delivery record and the file leaves the tree. The question — does this
+check catch something nothing else catches — is NOT asked, and no criterion
+declares itself an invariant, because asking it needs somebody to answer
+and every automatic answer is the growth engine again by another name. So
+today no check ever joins the standing suite. When a check should have
+stayed, that is a person's decision, made by reading the delivery.
+
 *Prevents:* the growth engine — N promises delivered means N new permanent
 tests, forever, whether or not the behaviour is at risk. And the rename
 gate that still fails runs months after the rename, on any sentence that

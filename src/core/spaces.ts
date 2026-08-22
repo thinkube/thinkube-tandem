@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadFolded } from "./records";
 
-export function slugifySpaceName(name: string): string {
+function slugifySpaceName(name: string): string {
   return name
     .trim()
     .toLowerCase()

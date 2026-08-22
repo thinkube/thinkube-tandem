@@ -11,7 +11,7 @@
  */
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runUnitWorker, porcelainPaths } from "./worker";
-import { defaultExec, ensureSnapshot } from "./oracle";
+import { defaultExec } from "./oracle";
 import { formatBuild } from "./execs";
 import type { Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
@@ -25,7 +25,7 @@ export interface RefreshResult {
 }
 
 /** The slices an earlier run of this cut committed, from the branch's own log. */
-export function committedSlicesOf(log: string, tep: string): string[] {
+function committedSlicesOf(log: string, tep: string): string[] {
   const out: string[] = [];
   for (const line of log.split("\n")) {
     const m = new RegExp(`^tandem: ${tep.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} (\\S+)$`).exec(line.trim());
@@ -44,15 +44,13 @@ export async function refreshRunTrees(args: {
   branch: string;
   tep: string;
   worktree: string;
-  testerWt: string;
   deps: DispatchDeps;
   exec: Exec;
   log: (line: string, step?: string) => void;
   defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
 }): Promise<RefreshResult> {
-  const { repoRoot, branch, worktree, testerWt, exec, log } = args;
-  for (const stale of [worktree, testerWt])
-    await exec("git", ["-C", repoRoot, "worktree", "remove", "--force", stale], repoRoot);
+  const { repoRoot, branch, worktree, exec, log } = args;
+  await exec("git", ["-C", repoRoot, "worktree", "remove", "--force", worktree], repoRoot);
   await exec("git", ["-C", repoRoot, "worktree", "prune"], repoRoot);
   const exists = (await exec("git", ["-C", repoRoot, "rev-parse", "--verify", "--quiet", branch], repoRoot)).code === 0;
   const refuse = (trigger: string, refusal: string): RefreshResult => ({ refusal: { trigger, refusal }, committedSlices: [], resumed: exists });
@@ -60,8 +58,6 @@ export async function refreshRunTrees(args: {
   if (!exists) {
     const wt = await exec("git", ["-C", repoRoot, "worktree", "add", "-b", branch, worktree], repoRoot);
     if (wt.code !== 0) return refuse("worktree", `worktree failed: ${wt.out.trim().slice(0, 300)}`);
-    if (!(await ensureSnapshot(repoRoot, branch, testerWt, exec)))
-      return refuse("tester-snapshot", `tester snapshot failed at ${testerWt}`);
     return { committedSlices: [], resumed: false };
   }
 
@@ -91,8 +87,6 @@ export async function refreshRunTrees(args: {
   } else {
     log(`${args.tep}: resuming the existing branch — the base has not moved`);
   }
-  if (!(await ensureSnapshot(repoRoot, branch, testerWt, exec)))
-    return refuse("tester-snapshot", `tester snapshot failed at ${testerWt}`);
   const history = (await exec("git", ["-C", worktree, "log", `--grep=^tandem: ${args.tep} `, "--format=%s"], worktree)).out;
   const committedSlices = committedSlicesOf(history, args.tep);
   if (committedSlices.length) log(`${args.tep}: standing from the earlier run: ${committedSlices.join(", ")}`);

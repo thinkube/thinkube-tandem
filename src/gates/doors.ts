@@ -22,7 +22,7 @@ export interface Door {
 }
 
 /** Every human door the registry declares, with the handle to look for. */
-export function declaredDoors(): Door[] {
+function declaredDoors(): Door[] {
   return Object.entries(AFFORDANCES)
     .filter(([, e]) => e.kind === "human")
     .map(([action, e]) => ({
@@ -38,7 +38,7 @@ export function declaredDoors(): Door[] {
  * rendered webview source; a door is present when its handle appears, or
  * when the action is posted from a control the bundle carries.
  */
-export function missingDoors(bundle: string, doors: Door[] = declaredDoors()): Door[] {
+function missingDoors(bundle: string, doors: Door[] = declaredDoors()): Door[] {
   return doors.filter(
     (d) => !bundle.includes(d.handle) && !bundle.includes(`"${d.action}"`),
   );
@@ -52,18 +52,3 @@ export function verifiedDoors(bundleText?: string): Door[] {
   return doors.filter((x) => !missing.has(x.action));
 }
 
-/**
- * The walkthrough for a delivery: one line per promise, each naming a door
- * that was verified to exist. A promise whose door is missing yields no
- * line — the delivery says it is undelivered instead of inventing a way in.
- */
-export function walkthroughLines(
-  promises: { id: string; sentence: string; action?: string }[],
-  present: Set<string>,
-): { id: string; line: string }[] {
-  return promises.flatMap((p) => {
-    const door = p.action ? declaredDoors().find((d) => d.action === p.action) : undefined;
-    if (!door || !present.has(door.action)) return [];
-    return [{ id: p.id, line: `see it: ${door.surface} — ${door.gesture}` }];
-  });
-}

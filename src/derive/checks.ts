@@ -12,7 +12,7 @@ export interface ProposedCheck {
   kind: "probe" | "assessment";
 }
 
-export function buildCheckPrompt(promise: Change, askText: string): string {
+function buildCheckPrompt(promise: Change, askText: string): string {
   const lands = (promise.grounding?.touchpoints ?? [])
     .map((t) => t.path + (t.symbol ? ` › ${t.symbol}` : ""))
     .join(", ");
@@ -32,7 +32,7 @@ export function buildCheckPrompt(promise: Change, askText: string): string {
   );
 }
 
-export function parseProposedCheck(raw: string | null): ProposedCheck | undefined {
+function parseProposedCheck(raw: string | null): ProposedCheck | undefined {
   if (!raw) return undefined;
   const a = raw.indexOf("{");
   const b = raw.lastIndexOf("}");

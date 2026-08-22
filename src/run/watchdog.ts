@@ -13,15 +13,28 @@
  * and says the run is stalled. If nothing moves for as long again, it halts
  * the run, which drains it into a delivery record and a report instead of
  * leaving it to sit until someone gives up.
+ *
+ * Silence is not the only way a run fails to end. A run can talk steadily
+ * for hours and still be going nowhere — rounds that repair each other's
+ * damage, a unit reworking a criterion it cannot reach. So the same watch
+ * holds a wall clock: past its bound, the run stops and reports, whatever
+ * it was saying.
  */
 import type { RunState } from "./state";
 
 /** How long, in words a person reads without converting units. */
 const howLong = (ms: number): string =>
-  ms < 90_000 ? `${Math.round(ms / 1000)} seconds` : `${Math.round(ms / 60000)} minutes`;
+  ms < 90_000
+    ? `${Math.round(ms / 1000)} seconds`
+    : ms < 90 * 60_000
+      ? `${Math.round(ms / 60_000)} minutes`
+      : `${(ms / 3_600_000).toFixed(1)} hours`;
 
 /** How long a run may be silent before the watchdog says so. */
 const QUIET_BEFORE_NOTICE_MS = 8 * 60 * 1000;
+
+/** How long a run may take, talking or not, before it stops and reports. */
+const RUN_BOUND_MS = 3 * 60 * 60 * 1000;
 
 export interface StallWatch {
   /** A beat: something moved. */
@@ -39,10 +52,13 @@ export function watchForStall(a: {
   log: (line: string, step?: string) => void;
   defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
   quietMs?: number;
+  /** The wall clock: how long this run may take in total. */
+  maxMs?: number;
   now?: () => number;
   every?: (fn: () => void, ms: number) => { stop: () => void };
 }): StallWatch {
   const quiet = a.quietMs ?? QUIET_BEFORE_NOTICE_MS;
+  const bound = a.maxMs ?? RUN_BOUND_MS;
   const now = a.now ?? (() => Date.now());
   const every =
     a.every ??
@@ -51,6 +67,7 @@ export function watchForStall(a: {
       if (typeof t.unref === "function") t.unref();
       return { stop: () => clearInterval(t) };
     });
+  const started = now();
   let last = now();
   let noticed = false;
   // The pulse is the run's own log: every line any actor writes is a beat.
@@ -66,14 +83,26 @@ export function watchForStall(a: {
     beat();
   };
   const stillGoing = () => a.units().filter((u) => u.state !== "done" && u.state !== "failed" && u.state !== "blocked");
-  const tick = (): void => {
-    if (a.st.halted) return;
-    const silent = now() - last;
-    if (silent < quiet) return;
-    const open = stillGoing();
-    const account = open
+  const accountOf = (): string =>
+    stillGoing()
       .map((u) => `- ${u.id}: ${u.state}${u.activity ? ` — ${u.activity.text}` : ""}${u.requires.length ? ` (waits on ${u.requires.join(", ")})` : ""}`)
       .join("\n");
+  const tick = (): void => {
+    if (a.st.halted) return;
+    const spent = now() - started;
+    if (spent >= bound) {
+      const account = accountOf();
+      a.log(
+        `⛔ the run has been going for ${howLong(spent)}, which is its bound, and is stopping itself. ` +
+          `What never finished:\n${account}`,
+      );
+      a.defect({ activity: "run", trigger: "watchdog", type: "gate", impact: "run halted — over its bound", detail: account.slice(0, 1500) });
+      a.st.halt();
+      return;
+    }
+    const silent = now() - last;
+    if (silent < quiet) return;
+    const account = accountOf();
     if (!noticed) {
       noticed = true;
       a.log(
@@ -87,7 +116,7 @@ export function watchForStall(a: {
     a.defect({ activity: "run", trigger: "watchdog", type: "gate", impact: "run halted — stalled", detail: account.slice(0, 1500) });
     a.st.halt();
   };
-  const timer = every(tick, Math.max(15_000, Math.floor(quiet / 4)));
+  const timer = every(tick, Math.max(15_000, Math.min(60_000, Math.floor(quiet / 4))));
   return {
     beat,
     stop: () => {

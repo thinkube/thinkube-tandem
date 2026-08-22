@@ -34,7 +34,7 @@ export interface DerivedNode {
 }
 
 /** Build the derivation prompt. Pure; exported for tests. */
-export function buildGroundingPrompt(args: {
+function buildGroundingPrompt(args: {
   ask: Ask;
   repoRoot: string;
   /** The structural map, extracted from the code: what is here and what

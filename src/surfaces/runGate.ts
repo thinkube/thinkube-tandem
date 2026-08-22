@@ -172,7 +172,18 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         ...(proveSetup ? { proveSetup } : {}),
         ...(affected ? { affected } : {}),
         onDelivery: (delivery, note) => {
-          s.space = { ...s.space, deliveries: [...s.space.deliveries, delivery] };
+          // One delivery per cut, replaced by the newest run. A cut run four
+          // times used to leave four rows on the page, three of them stale
+          // and none of them marked as such, and a person had to read the
+          // branch names to find which one was now true.
+          const kept = s.space.deliveries.filter(
+            (d) => d.cutId !== delivery.cutId || d.acceptedAt || d.id === delivery.id,
+          );
+          const at = kept.findIndex((d) => d.id === delivery.id);
+          s.space = {
+            ...s.space,
+            deliveries: at >= 0 ? kept.map((d, i) => (i === at ? delivery : d)) : [...kept, delivery],
+          };
           s.changed(note);
         },
         // The check's forwarding address: each criterion records where its
@@ -271,6 +282,26 @@ export function stopRunGesture(s: TandemSession): number {
   const n = s.runState?.halt() ?? 0;
   s.changed(n ? `Stopped — ${n} worker(s) aborted.` : "Nothing to stop.");
   return n;
+}
+
+/**
+ * Refuse a delivery: it ends nothing, and the way back in stays open.
+ *
+ * The work stays on its branch — nothing is thrown away — the delivery
+ * keeps its proofs as the record of what was tried, and the cut returns to
+ * signed, so the same signed promises can run again against what was
+ * learned by refusing.
+ */
+export function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): { ok: boolean; reason?: string } {
+  const d = s.space.deliveries.find((x) => x.id === deliveryId);
+  if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
+  if (d.acceptedAt) return { ok: false, reason: "it was already accepted" };
+  s.space = {
+    ...s.space,
+    deliveries: s.space.deliveries.map((x) => (x.id === deliveryId ? { ...x, rejectedAt: at } : x)),
+  };
+  s.changed("The delivery was refused — the work stays on its branch, and the signed promises can run again.");
+  return { ok: true };
 }
 
 export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string): Promise<{ ok: boolean; reason?: string }> {

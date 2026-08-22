@@ -27,12 +27,12 @@ import { readStamp, SourceStamp, stampsEqual } from "../core/stamp";
 
 const run = promisify(execFile);
 
-export function graphifyBin(): string {
+function graphifyBin(): string {
   return process.env.THINKUBE_GRAPHIFY_BIN?.trim() || "graphify";
 }
 
 /** Why the machine will not derive. Carries what to do about it. */
-export class NoCodeGraph extends Error {
+class NoCodeGraph extends Error {
   constructor(why: string) {
     super(
       `${why} — the code graph is how this reads your repository, and it will not derive ` +
@@ -58,10 +58,6 @@ async function version(): Promise<string> {
   return probed;
 }
 
-/** For tests. */
-export function resetGraphProbe(): void {
-  probed = undefined;
-}
 
 const cacheDirFor = (cacheRoot: string, repoRoot: string): string =>
   path.join(cacheRoot, "graphs", createHash("sha256").update(repoRoot).digest("hex").slice(0, 16));

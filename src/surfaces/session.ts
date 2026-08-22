@@ -21,6 +21,7 @@ import {
   acceptDeliveryGesture,
   answerWorkerGesture,
   executeRun,
+  rejectDeliveryGesture,
   rerunGesture,
   signCutGesture,
   stopRunGesture,
@@ -39,7 +40,6 @@ import { loadLastRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
-export { SESSION_ACTIONS } from "./affordances";
 
 export class TandemSession {
   space: Space = emptySpace();
@@ -553,6 +553,11 @@ export class TandemSession {
    *  retire (best-effort) — refused without green proof BEFORE the merge. */
   acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     return acceptDeliveryGesture(this, deliveryId);
+  }
+
+  /** Refuse a delivery: the cut goes back to signed and can run again. */
+  rejectDelivery(deliveryId: string): { ok: boolean; reason?: string } {
+    return rejectDeliveryGesture(this, deliveryId, this.deps.now());
   }
 
   private _lastWritten = "";

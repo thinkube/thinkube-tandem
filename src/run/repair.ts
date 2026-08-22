@@ -12,7 +12,7 @@ import { failuresByOwner } from "./owner";
 export type Repair = (slice: string, failures: { ac: number; evidence: string }[]) => Promise<string[]>;
 
 /** Module specifiers a build or a run said it could not find. */
-export function missingModulesIn(text: string): string[] {
+function missingModulesIn(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/Cannot find module '([^']+)'/g)) out.add(m[1]);
   return [...out];
@@ -33,7 +33,7 @@ const stemOf = (p: string): string =>
  * still create. Not this unit's failure, not the check's — the run waits
  * for the next commit. Returns the planned files it matched, or nothing.
  */
-export function treeNotReady(
+function treeNotReady(
   r: VerifyResult,
   pendingPlanned: readonly string[],
   errorFiles: readonly string[] = [],

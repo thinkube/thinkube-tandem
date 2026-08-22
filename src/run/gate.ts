@@ -2,20 +2,20 @@
  * The closing gate: everything after the last unit — probes ride the
  * branch, the delivered tree is built, every check runs, assessments are
  * graded by a fresh reviewer, the honesty scan reads the diff, the
- * repository's own suite decides, standing checks re-home, and the
- * delivery is recorded and opened.
+ * repository's own suite decides, the checks are recorded on the delivery
+ * and discarded from the tree, and the delivery is opened.
  *
  * A red suite is not delivered. The work may satisfy its own checks and
  * still leave the repository's standing checks red; that delivery is
  * withheld — recorded, with the reason in intent terms — never handed over
  * red for the human to finish.
  */
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { Cut, Delivery, Proof, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
-import { resolveWorkerModel } from "../engine/workerModel";
 import { gradeAssessments, logRedChecks } from "./assess";
-import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
@@ -23,22 +23,28 @@ import {
   closingVerifications,
   confessedDeferrals,
   docsObligations,
+  keptChecks,
   writeDeliveryRecord,
 } from "./plan";
 import { porcelainPaths } from "./worker";
-import { criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
+import { criterionMapOf } from "./criteria";
+import { provedByExecution } from "./wiring";
+import type { WiringVerdict } from "./wiring";
+import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
-import { close } from "./closer";
+import { close, convergenceScore } from "./closer";
+import { repairByAuthors } from "./authorRepair";
+import type { RedCriterion } from "./authorRepair";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
   tep: string;
   branch: string;
   baseSha: string;
   worktree: string;
-  testerWt: string;
   slices: SliceForDag[];
   space: Space;
   cut: Cut;
@@ -54,6 +60,12 @@ export interface GateContext {
   /** Runs the suite command, bounded for a whole suite. */
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   state: RunState;
+  /** The session a unit was worked in, when the run still holds it. */
+  sessionOf: (unit: string) => string | undefined;
+  /** The run's worker, so a repair is the next message in that session. */
+  worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
+  /** How many times this run made a person interpret the machine. */
+  machineAttention: () => number;
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
@@ -62,27 +74,23 @@ export interface GateContext {
     trigger: string;
     type?: string;
     qualifier?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;
   }) => void;
 }
 
 /** The reason a red suite withholds the delivery — intent-level, no internals. */
-export const RED_SUITE_REFUSAL =
+const RED_SUITE_REFUSAL =
   "the repository's standing checks are red after the work — the delivery is withheld " +
   "rather than handed over red; the branch keeps the work and the run record keeps the " +
   "suite's verdict (if the repository was already red before, it must be green first)";
 
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
-  const { tep, branch, worktree, testerWt, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
+  const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  // Probes ride the branch: any not yet copied by a slice commit (failed or
-  // halted slices) still land in the code worktree so the gate's verdict is
-  // about the real state, not about a missing file.
-  for (const [slice, probes] of g.sliceProbes)
-    if (!g.sliceCommitted.has(slice))
-      for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
   const { verifs, probeOfAc } = closingVerifications(slices);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
@@ -105,15 +113,51 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   });
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
   const criterionByProbe = criterionMapOf(slices);
+  // Wiring proven by execution: a green check is asked whether running it
+  // actually executed the code its promise lands in. A stub satisfies an
+  // assertion; it cannot appear on a path nothing reaches.
+  const subjectsOf = (criterionId?: string): string[] => {
+    if (!criterionId) return [];
+    const promise = space.nodes.find((n) => n.acceptance.some((a) => a.id === criterionId));
+    return (promise?.grounding?.touchpoints ?? []).map((t) => t.path).filter((p) => !isTestPath(p));
+  };
+  const wiring = new Map<number, WiringVerdict>();
+  for (const r of acResults) {
+    if (!r.pass) continue;
+    const v = verifs.find((x) => x.ac === r.ac);
+    if (!v?.run || v.env === "assessment") continue;
+    const probe = probeOfAc.get(r.ac);
+    const verdict = await provedByExecution({
+      run: v.run,
+      subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
+      worktree,
+      exec: boundedExec,
+    });
+    wiring.set(r.ac, verdict);
+    if (verdict.executed === "no")
+      defect({
+        activity: "closing gate",
+        trigger: "wiring-trace",
+        type: "code",
+        stage: "author",
+        impact: "a green check proved nothing",
+        detail: verdict.detail.slice(0, 400),
+      });
+  }
+  const unproven = [...wiring.values()].filter((w) => w.executed === "unknown").length;
+  if (unproven) log(`${tep}: ${unproven} check(s) ran under a runtime that does not report what it executed — their wiring is unproven`);
   const proofs: Proof[] = assessed.concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;
+      const wired = wiring.get(r.ac);
+      const kept = r.pass && wired?.executed !== "no";
+      const ref = wired && wired.executed !== "yes" ? wired.detail : r.evidence;
       return {
         kind: "probe" as const,
         label: (probe && g.checkOf.get(probe)) || `check ${r.ac}`,
-        verdict: r.pass ? ("green" as const) : ("red" as const),
-        ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
+        verdict: kept ? ("green" as const) : ("red" as const),
+        ...(ref ? { ref: ref.slice(0, 300) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
     }),
@@ -183,9 +227,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         measure: async () => {
           const r = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
           const v = suiteVerdictOf(r.code, r.out, worktree);
+          // Build first: an unbuildable tree is one failure, not many, so a
+          // repair that breaks imports for a round is not read as a collapse.
+          const built = deps.prepare ? await boundedExec(deps.prepare, worktree) : { code: 0, output: "" };
           return {
-            green: v.green,
-            score: v.failures.length,
+            green: v.green && built.code === 0,
+            score: convergenceScore({ buildRed: built.code !== 0, reds: v.failures.length }),
             evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000),
             // The last actor's clearance grows with what fails it. At the
             // gate this was computed once, at the start, so the closer was
@@ -252,37 +299,142 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
   }
 
-  // Re-home the delivery's standing checks: probes leave their delivery
-  // coordinates and join the repository's own suite at each promise's
-  // module test home, the criterion recording where its proof went on living.
-  const rehomedAnchors = await rehomeAtGate({
-    worktree,
-    space,
-    criterionByProbe,
-    model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, "code"),
-    ...(deps.digest ? { digest: deps.digest } : {}),
-    ...(deps.testConvention ? { testConvention: deps.testConvention } : {}),
-    suite: async () =>
-      (await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree)).code === 0,
-    exec,
-    log,
-    rehome: deps.rehome ?? rehomeProbes,
-  });
-
-  if (deps.storeDir)
-    await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
   undelivered.push(...docsObligations(slices, worktree));
+
+  // Delivery only at zero. The branch may hold any state along the way —
+  // there is deliberately no rule that it may never get worse, because that
+  // would forbid demolition — but nothing is handed over while a promise is
+  // unkept. A delivery with a red proof asks the person to finish the work
+  // and to decide which reds are acceptable, which is the machine's job.
+  let unkept = proofs.filter((p) => p.verdict !== "green");
+  // Each red criterion goes back to the unit that wrote its code, as the
+  // next message in that unit's own session, with the drive's evidence and
+  // what changed in the tree since it stopped. Then the checks run again.
+  if (unkept.length && !g.state.halted) {
+    const unitOf = (criterionId?: string): string | undefined => {
+      if (!criterionId) return undefined;
+      for (const [slice, probes] of g.sliceProbes)
+        if (probes.some((p) => criterionByProbe.get(p) === criterionId))
+          return slices
+            .find((s) => s.handle === slice)
+            ?.workUnits.map((_, i) => `${slice}#eu-${i}`)
+            .find((id) => g.sessionOf(id));
+      return undefined;
+    };
+    const changedSince = (
+      await exec("git", ["-C", worktree, "diff", "--name-only", `${g.baseSha}..HEAD`], worktree)
+    ).out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const reds: RedCriterion[] = [];
+    for (const p of unkept) {
+      const unit = unitOf(p.criterionId);
+      if (!unit) continue;
+      const slice = unit.split("#")[0];
+      reds.push({
+        unit,
+        text: p.label,
+        evidence: p.ref ?? "the check did not pass",
+        footprint: slices.find((s) => s.handle === slice)?.workUnits.flatMap((u) => u.footprint) ?? [],
+      });
+    }
+    if (reds.length) {
+      await repairByAuthors({
+        reds,
+        sessionOf: g.sessionOf,
+        changedSince,
+        worktree,
+        model: deps.model,
+        worker: g.worker,
+        log: (line) => log(line),
+        defect,
+      });
+      await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+      const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
+      for (const r of again) {
+        const probe = probeOfAc.get(r.ac);
+        const criterionId = probe ? criterionByProbe.get(probe) : undefined;
+        const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
+        // By the criterion it proves; two checks can carry the same words.
+        const proof = criterionId
+          ? proofs.find((p) => p.criterionId === criterionId)
+          : proofs.find((p) => p.label === label);
+        if (!proof || !r.pass) continue;
+        const wired = await provedByExecution({
+          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
+          subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
+          worktree,
+          exec: boundedExec,
+        });
+        if (wired.executed === "no") continue;
+        proof.verdict = "green";
+        proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
+      }
+      unkept = proofs.filter((p) => p.verdict !== "green");
+      log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
+    }
+  }
+  // A check proves a promise once; it does not join the repository's suite
+  // because it exists. Its source and its verdict are kept on the delivery
+  // record — where a person can read what was driven — and the file leaves
+  // the tree, so a delivery of N promises does not hand the repository N
+  // permanent tests to maintain forever.
+  const kept = await keptChecks([...g.sliceProbes.values()].flat(), worktree, criterionByProbe);
+  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
+  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
+
+  const recordPath = deps.storeDir ? path.join(deps.storeDir, "deliveries", `${tep}.json`) : undefined;
+  if (deps.storeDir)
+    await writeDeliveryRecord(deps.storeDir, {
+      tep,
+      branch,
+      baseSha: g.baseSha,
+      proofs,
+      undelivered,
+      verifs,
+      acResults,
+      checks: kept,
+      machineAttention: g.machineAttention(),
+    });
+  undelivered.push(...docsObligations(slices, worktree));
+
+  if (unkept.length) {
+    await exec("git", ["add", "-A", "."], worktree);
+    await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
+    await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
+    const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
+    log(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
+    return {
+      refusals: [],
+      undelivered,
+      delivery: {
+        id: `delivery-${tep}`,
+        cutId: cut.id,
+        branch,
+        proofs,
+        withheld:
+          `${unkept.length} of the cut's promises are not kept, so nothing is handed over. The branch holds the work:\n` +
+          named.join("\n"),
+        ...(undelivered.length ? { undelivered } : {}),
+        ...(g.rulings.length ? { rulings: g.rulings } : {}),
+        ...(g.decisions.length ? { decisions: g.decisions } : {}),
+      },
+    };
+  }
 
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);
   await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
   const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
-  const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = rehomedAnchors.map((a) => ({
-    criterionId: a.criterionId,
-    path: a.path,
-    ...(a.test ? { test: a.test } : {}),
-    stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
-  }));
+  // A criterion's proof lives on the delivery record, not in a test file.
+  const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = recordPath
+    ? kept.map((c) => ({
+        criterionId: c.criterionId,
+        path: recordPath,
+        stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
+      }))
+    : [];
   const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
   let url: string | undefined;
   if (pushed.code === 0 && deps.forge) {

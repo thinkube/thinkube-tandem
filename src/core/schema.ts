@@ -133,26 +133,14 @@ export interface Cut {
     at: string;
     renderHash: string;
     groundingHash: string;
+    /** Which rule computed those two hashes. When the machine changes what
+     *  it hashes — a new line on the cut review, a field no longer counted —
+     *  every older signature stops matching for a reason that has nothing to
+     *  do with the person or the promises. A signature from an older rule is
+     *  therefore not checked for drift, and says so, instead of refusing a
+     *  run for the machine's own change. */
+    rule?: number;
   };
-}
-
-/**
- * The per-worker instruction, assembled from the cut at dispatch — never
- * authored. Anchors resolve against the worker's actual worktree; the
- * rendered positions live only inside the brief text handed over.
- */
-export interface SliceBrief {
-  id: string;
-  cutId: string;
-  changeIds: string[];
-  /** What the worker is cleared to change. */
-  footprint: string[];
-  anchors: Anchor[];
-  /** Exact exports/signatures to create or change. */
-  contracts: string[];
-  /** Probe paths that define done for this order. */
-  probes: string[];
-  stamp: SourceStamp[];
 }
 
 type ProofVerdict = "green" | "red" | "pending";
@@ -201,6 +189,12 @@ export interface Delivery {
   withheld?: string;
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
+  /** When the person refused it. A refused delivery ends nothing: the work
+   *  stays on its branch, the cut goes back to signed, and it can run
+   *  again. Saying "no" is a decision the machine must be able to record —
+   *  without it, the only way to reject was to leave the page and never
+   *  come back. */
+  rejectedAt?: string;
 }
 
 /** One project's working graph. */
@@ -228,7 +222,7 @@ export interface Question {
 
 /** A staged machine suggestion — visible, structurally inert until the
  *  human accepts or rejects. A rejected merge is a PERMANENT veto. */
-export interface MergeProposal {
+interface MergeProposal {
   id: string;
   a: string;
   b: string;

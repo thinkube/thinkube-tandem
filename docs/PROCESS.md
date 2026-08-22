@@ -75,10 +75,14 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 
 ### G4 — Unit completion
 - **Evidence:** the build over the tree, and the unit's own claim.
-- **Passes when:** the build is green and the unit says it is finished.
-  There is no per-unit verdict on the criteria: the gate judges them, once,
-  where the whole tree exists. (This is v1's shape. The experiment in
-  TARGET.md §6 decides it before the per-unit oracle is removed.)
+- **Passes when:** the build is green, the unit says it is finished, and
+  the unit's own criteria are green. The gate judges them again on the
+  whole tree; this verdict is the unit's, and it is where the unit
+  repairs itself. (The experiment in TARGET.md §6 settled this: in a
+  fresh run, nine criteria went red→green inside a unit's own rounds,
+  across six of nine code units. Removing the per-unit oracle would move
+  those nine repairs to the gate, one round each, with the unit's context
+  gone.)
 - **Fails →** the unit fails with its report; its work stays in the tree and
   is named on the delivery.
 - **Attends:** no.
