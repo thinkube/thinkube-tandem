@@ -12,11 +12,21 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { TandemSession } from "./session";
-import { spacePush } from "./panel";
+import { spacePush } from "./push";
 import { emptySpace } from "../core/schema";
 import type { Space } from "../core/schema";
 import type { Phase } from "./phase";
-import { PHASES } from "./phaseFixtures";
+
+/** Every phase the phase table recognizes, in the order phase.ts's own
+ *  doc-comment lists them — the fixture this test builds one session per. */
+const PHASES: readonly Phase[] = [
+  "drafting",
+  "read",
+  "understood",
+  "signed",
+  "running",
+  "delivered",
+];
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const CURRENT = { root: "/repo", head: "h2", dirty: "" };

@@ -15,7 +15,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { TandemSession } from "./session";
-import { spacePush, SpacePanel } from "./panel";
+import { spacePush } from "./push";
+import { SpacePanel } from "./panel";
 import type { PanelHost, PanelLike } from "./panel";
 
 function bareSession(tag: string): TandemSession {

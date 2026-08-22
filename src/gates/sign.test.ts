@@ -80,12 +80,23 @@ test("signCut signs a cut that lands no documentation when the cut carries an ex
 test("signCut refuses an undocumented, unexempted cut the same way regardless of docsGateMode, which governs the accept gate only", () => {
   const space = baseSpace();
   const cut = { id: "c1", changeIds: ["n1"] };
+  // The setting governs the accept gate, so signCut has no channel to be
+  // told it: there is no mode parameter, and no mode field is read off the
+  // space. Refusal therefore cannot vary with it — which is the criterion.
+  assert.ok(
+    signCut.length <= 5,
+    "signCut must take no docsGateMode parameter — the setting is the accept gate's, not the sign gate's",
+  );
   const strict = signCut(space, cut, "2026-08-22T00:00:00.000Z");
-  const withExtraArg = signCut(space, cut, "2026-08-22T00:00:00.000Z", "user", undefined, "advisory" as never);
+  const advisory = signCut(
+    { ...space, docsGateMode: "advisory" } as unknown as Space,
+    cut,
+    "2026-08-22T00:00:00.000Z",
+  );
   assert.equal(strict.ok, false);
-  assert.equal(withExtraArg.ok, false);
-  if (strict.ok === false && withExtraArg.ok === false) {
-    assert.equal(strict.reason, withExtraArg.reason);
+  assert.equal(advisory.ok, false);
+  if (strict.ok === false && advisory.ok === false) {
+    assert.equal(strict.reason, advisory.reason);
     assert.match(strict.reason.toLowerCase(), /documentation/);
     assert.match(strict.reason.toLowerCase(), /accept/);
   }

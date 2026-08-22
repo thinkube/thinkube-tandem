@@ -14,7 +14,7 @@ import * as path from "node:path";
 import { SpaceTabs } from "./spaceTabs";
 import type { SpaceTab } from "./spaceTabs";
 import { TandemSession } from "./session";
-import { spacePush } from "./panel";
+import { spacePush } from "./push";
 
 interface FakeTab extends SpaceTab {
   key: string;
@@ -95,12 +95,13 @@ test("opening a key with a live tab reveals that tab and creates no second one",
 
   const opened = tabs.open("owner-a/space-1");
   assert.equal(factory.created.length, 1);
+  const openedFake = factory.created[0];
 
   const openedAgain = tabs.open("owner-a/space-1");
 
   assert.equal(openedAgain, opened, "reopening a live key must return the same tab");
   assert.equal(factory.created.length, 1, "no second tab may be created for a live key");
-  assert.equal(opened.revealed, 1, "the existing tab must be revealed on reopen");
+  assert.equal(openedFake.revealed, 1, "the existing tab must be revealed on reopen");
 });
 
 test("a tab that reports itself closed is dropped, so reopening that key creates a fresh tab", () => {
@@ -110,7 +111,7 @@ test("a tab that reports itself closed is dropped, so reopening that key creates
   const first = tabs.open("owner-a/space-1");
   // The editor closed this tab out from under the register — the tab now
   // reports itself closed, but nothing told the register directly.
-  first.closed = true;
+  factory.created[0].closed = true;
 
   const second = tabs.open("owner-a/space-1");
 
@@ -138,17 +139,19 @@ test("disposing the register disposes every registered tab and leaves it empty",
 
   // The register itself is now empty: opening any of the same keys again
   // must create fresh tabs, not reveal ones that were just disposed.
-  const reopened = tabs.open("owner-a/space-1");
+  tabs.open("owner-a/space-1");
   assert.equal(factory.created.length, 4, "the register held nothing after dispose, so reopening makes a new tab");
-  assert.equal(reopened.closed, false);
+  assert.equal(factory.created[3].closed, false);
 });
 
 test("a push for one space key reaches only that space's tab; the other open tabs receive nothing", () => {
   const factory = fakeTabFactory();
   const tabs = new SpaceTabs(factory);
 
-  const tabA = tabs.open("owner-a/space-1");
-  const tabB = tabs.open("owner-b/space-2");
+  tabs.open("owner-a/space-1");
+  tabs.open("owner-b/space-2");
+  const tabA = factory.created[0];
+  const tabB = factory.created[1];
 
   tabs.push("owner-a/space-1", { kind: "space", marker: "for-A-only" });
 
@@ -174,7 +177,8 @@ test("a push for a space with no live tab — never opened, or closed — is dro
   });
   assert.equal(factory.created.length, 0, "pushing to a key with no tab must not create one");
 
-  const tab = tabs.open("owner-a/space-1");
+  tabs.open("owner-a/space-1");
+  const tab = factory.created[factory.created.length - 1];
   tab.closed = true;
   assert.doesNotThrow(() => {
     tabs.push("owner-a/space-1", { kind: "space" });
@@ -195,8 +199,10 @@ test("each tab's push carries the state of its own space's session — two tabs 
   sessionA.activity = { label: "thinking about A", current: 1, total: 3 };
   sessionB.activity = undefined;
 
-  const tabA = tabs.open("owner/space-a");
-  const tabB = tabs.open("owner/space-b");
+  tabs.open("owner/space-a");
+  tabs.open("owner/space-b");
+  const tabA = factory.created[0];
+  const tabB = factory.created[1];
 
   tabs.push("owner/space-a", spacePush(sessionA));
   tabs.push("owner/space-b", spacePush(sessionB));
