@@ -46,6 +46,31 @@ export type BoundedExec = (
   cwd: string,
 ) => Promise<{ code: number | null; output: string }>;
 
+/**
+ * Directories a package manager fills — the ONLY thing the borrow may lend.
+ *
+ * The costs are asymmetric. A store this list misses costs one real
+ * install. A directory lent wrongly is a symlink into the base checkout:
+ * lend the build output and the run compiles THROUGH it — writing into the
+ * base and judging the base's code instead of its own tree, which is how a
+ * run reported seven reds against work that was finished. So the list is
+ * closed, and everything else — build output, packages, media — is the
+ * run's own to produce.
+ */
+const DEPENDENCY_STORES = new Set([
+  "node_modules",
+  "vendor",
+  "venv",
+  ".venv",
+  "bower_components",
+  "Pods",
+  "__pypackages__",
+]);
+
+function isDependencyStore(rel: string): boolean {
+  return DEPENDENCY_STORES.has(rel.split("/").filter(Boolean).pop() ?? "");
+}
+
 /** Ignored entries at the tree's surface (`!! node_modules/`), collapsed —
  *  never one line per installed file. */
 async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
@@ -138,7 +163,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   if (borrow && args.repoRoot) {
     const theirs = await ignoredEntries(args.repoRoot, args.exec);
     const mine = await ignoredEntries(args.worktree, args.exec);
-    const lendable = [...theirs].filter((e) => !mine.has(e) && !e.startsWith("."));
+    const lendable = [...theirs].filter((e) => !mine.has(e) && isDependencyStore(e));
     if (lendable.length) {
       await linkProvisioned(args.worktree, args.repoRoot, lendable);
       provisioned.push(...lendable);

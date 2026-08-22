@@ -316,6 +316,35 @@ test("the door borrows even when no install command was ever learned", async () 
   );
 });
 
+test("the borrow lends dependency stores and nothing else", async () => {
+  // Run 4 judged the wrong tree: the borrow lent out-test/ as a symlink, so
+  // the worktree's suite compiled through it INTO the base checkout and ran
+  // the base's code. Seven reds against work that was finished.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  for (const d of ["node_modules", "out-test", "out", "media", "coverage"])
+    fs.mkdirSync(path.join(base, d), { recursive: true });
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    exec: async (cmd, args, cwd) =>
+      cmd === "git" && args[2] === "status"
+        ? {
+            code: 0,
+            out:
+              cwd === base
+                ? "!! node_modules/\n!! out-test/\n!! out/\n!! media/\n!! coverage/\n!! thinkube-tandem-2.0.144.vsix\n"
+                : "",
+          }
+        : { code: 0, out: "" },
+    boundedExec: async () => ({ code: 0, output: "" }),
+    log: () => {},
+  });
+  assert.deepEqual(setup.provisioned, ["node_modules"], "only the dependency store crossed");
+  for (const d of ["out-test", "out", "media", "coverage", "thinkube-tandem-2.0.144.vsix"])
+    assert.ok(!fs.existsSync(path.join(wt, d)), `${d} was lent — the run would judge the base's tree`);
+});
+
 test("the four facts about a repository are kept in the repository", () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-facts-"));
   assert.equal(factsOf(repo), undefined, "a repository never run against tells nothing");
