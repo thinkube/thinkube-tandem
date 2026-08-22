@@ -128,8 +128,6 @@ export interface OracleFactoryArgs {
   provisioned?: readonly string[];
   /** Where the build step emits compiled output — what a probe imports. */
   built?: readonly string[];
-  /** Observed source → built path pairs; a re-authored check imports what exists. */
-  emitMap?: readonly string[];
   /** The slice's own footprint: the runner overlays THIS slice's uncommitted
    *  files on the committed base — never another slice's half-written work
    *  from the shared tree. */

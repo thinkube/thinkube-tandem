@@ -46,6 +46,7 @@ import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, testerStanza } from "./brief";
 import { sliceBookkeeping } from "./plan";
+import { rehouseChecks } from "./checkHomes";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
@@ -121,6 +122,15 @@ export async function dispatchTep(
   }); // a silent run says so and stops
   try {
   if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
+  // A check is born where this repository already keeps its tests, beside
+  // the module it drives — so it imports its subject the same way before
+  // and after the build, and nothing has to map one path to the other.
+  const rehoused = rehouseChecks(
+    slices,
+    (await exec("git", ["-C", deps.repoRoot, "ls-files"], deps.repoRoot)).out.split("\n").map((l) => l.trim()),
+  );
+  if (rehoused.length)
+    log(`${tep}: ${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
@@ -143,11 +153,11 @@ export async function dispatchTep(
     if (await repairStandingTree({ worktree, tep, refusal: ready.refusal, deps, exec, log, defect, halted: () => st.halted, rebuild })) ready = await doSetup();
   }
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  const { provisioned, built, emitMap, runOne: runOneTest } = ready;
+  const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices);
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   const specBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
@@ -173,7 +183,7 @@ export async function dispatchTep(
   const oracleArgs = buildOracleArgs({
     deps, branch, wtRoot, tep: wtName, worktree, testerWt, cutId: cut.id,
     sliceProbes, sliceVerifs, briefBySlice, acting, exec, boundedExec, suiteExec, log, defect,
-    provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
+    provisioned, built, dag, slices, criterionOf, rulings, decisions, runOneTest,
     pending: (id: string) => !done.has(id) && !failed.has(id),
     plannedPending: () => plannedByPending(dag, done),
     changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
@@ -242,7 +252,7 @@ export async function dispatchTep(
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>
       role === "test"
-        ? testerStanza(built, emitMap) +
+        ? testerStanza(built) +
           (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(
             testHomesOf(next.footprint),
@@ -313,7 +323,6 @@ export async function dispatchTep(
           unit: next.id,
           maintain,
           brief,
-          emitMap: emitMap ?? [],
           planned: dag.flatMap((u) => u.footprint).filter((f) => !isProbePath(f)),
           halted: () => st.halted,
           say: (text) => st.doing(next.id, text),

@@ -31,7 +31,6 @@ export function buildOracleArgs(a: {
   defect: OracleFactoryArgs["defect"];
   provisioned: string[];
   built: string[];
-  emitMap?: string[];
   dag: SchedUnit[];
   slices: SliceForDag[];
   criterionOf: (slice: string, ac: number) => { id: string; text: string } | undefined;
@@ -68,7 +67,6 @@ export function buildOracleArgs(a: {
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned: a.provisioned,
     built: a.built,
-    ...(a.emitMap?.length ? { emitMap: a.emitMap } : {}),
     footprintOf: (slice: string) =>
       dag.filter((u) => u.slice === slice && (u.role ?? "code") === "code").flatMap((u) => u.footprint),
     pruneIn: (slice: string) => maintainedElsewhere(slices, slice),

@@ -26,7 +26,6 @@ export async function finishAuthoring(a: {
   /** A maintain unit writes test homes, not declared probes: no continuation. */
   maintain: boolean;
   brief: string;
-  emitMap: readonly string[];
   /** Where the run's still-unwritten work will land — a check may import it. */
   planned: readonly string[];
   halted: () => boolean;
@@ -44,7 +43,7 @@ export async function finishAuthoring(a: {
     outcome = await a.runWorker(continuationBrief(a.brief, a.footprint, missing), testerTurns(missing.length));
   }
   for (let fix = 0; !outcome.containment && fix < AUDIT_FIXES && !a.halted(); fix++) {
-    const faults = auditProbes(a.tree, a.footprint.filter(isProbePath), a.planned, a.emitMap);
+    const faults = auditProbes(a.tree, a.footprint.filter(isProbePath), a.planned);
     if (!faults.length) break;
     a.log(
       `⌦ ${a.unit}: ${faults.length} check(s) cannot stand as written — ` +
@@ -54,7 +53,7 @@ export async function finishAuthoring(a: {
     );
     a.defect(faults.map((f) => `${f.probe}: ${f.detail}`).join("\n").slice(0, 1200));
     a.say(`mending ${faults.length} check(s) the machine refused`);
-    outcome = await a.runWorker(`${a.brief}\n\n${faultsBrief(faults, a.emitMap)}`, testerTurns(faults.length));
+    outcome = await a.runWorker(`${a.brief}\n\n${faultsBrief(faults)}`, testerTurns(faults.length));
   }
   return outcome;
 }

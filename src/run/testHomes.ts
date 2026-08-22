@@ -37,10 +37,19 @@ export function isTestPath(rel: string): boolean {
   );
 }
 
-/** A probe: held-out evidence authored by this run, never a test home. */
+/**
+ * A check this run authored — held-out evidence, never a test home the
+ * repository maintains.
+ *
+ * A check is known by the criterion in its name (`_AC-3`), not by the
+ * directory it sits in, because a check is now born beside the module it
+ * drives (src/run/checkHomes.ts). The old `probes/` coordinate still reads
+ * as a check, so a branch an earlier run left half-finished still parses.
+ */
 export function isProbePath(rel: string): boolean {
   const t = rel.replace(/\\/g, "/");
-  return /(^|[\s/])probes\//.test(t) || /(^|\/)acceptance\//.test(t);
+  if (/(^|[\s/])probes\//.test(t) || /(^|\/)acceptance\//.test(t)) return true;
+  return /_AC-\d+/.test(t) && isTestPath(t);
 }
 
 /** Every existing test home a slice's tester owns — test-shaped, not a probe. */

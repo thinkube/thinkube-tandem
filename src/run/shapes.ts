@@ -168,9 +168,13 @@ export function scriptedWorker(shape: RepoShape, how: Personality, closerFixes =
         write(deps.worktree, "src/greet.mjs", `export function greet() { return "hello"; }\n`);
         return { ok: true, finalText: "UNDELIVERED: none" };
       }
-      if (deps.role === "test" && deps.footprint.some((f) => f.startsWith("probes/"))) {
-        for (const rel of deps.footprint.filter((f) => f.startsWith("probes/"))) {
-          const target = built("src/greet.mjs");
+      const checks = deps.footprint.filter((f) => /_AC-\d+/.test(f));
+      if (deps.role === "test" && checks.length) {
+        for (const rel of checks) {
+          // A check born beside its subject imports it as a neighbour — the
+          // same line before and after the build, whatever the build does.
+          const here = path.posix.relative(path.posix.dirname(rel), built("src/greet.mjs"));
+          const neighbour = rel.startsWith("probes/") ? `../${built("src/greet.mjs")}` : `./${path.posix.basename(here)}`;
           const body =
             how === "wrong-import"
               ? `import { greet } from "../${built("src/src/greet.mjs")}";\n` +
@@ -179,7 +183,7 @@ export function scriptedWorker(shape: RepoShape, how: Personality, closerFixes =
                 ? `import Module from "node:module";\nModule._load = () => ({ greet: () => "hello" });\n` +
                   `import { test } from "node:test";\ntest("greet", () => {});\n`
                 : `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
-                  `import { greet } from "../${target}";\ntest("greet", () => assert.equal(greet(), "hello"));\n`;
+                  `import { greet } from "${neighbour}";\ntest("greet", () => assert.equal(greet(), "hello"));\n`;
           write(deps.worktree, rel, body);
         }
         return { ok: true, finalText: "done" };

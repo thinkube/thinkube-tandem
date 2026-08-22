@@ -109,7 +109,13 @@ export async function claimRunLock(
  * downstream is this list's ORDER — the probe filenames carry the same
  * number, which is what lets a failing check be traced back to its source.
  */
-export function sliceBookkeeping(slices: SliceForDag[]): {
+export function sliceBookkeeping(
+  slices: SliceForDag[],
+  /** How this repository runs one of its own tests (`<file>` = its path),
+   *  proved at the door. A check is run the way the repository runs a test,
+   *  not the way one language does. */
+  runOne = "",
+): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   sliceFiles: Map<string, string[]>;
@@ -139,7 +145,7 @@ export function sliceBookkeeping(slices: SliceForDag[]): {
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: `node --test ${p}`, env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : `node --test ${p}`, env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }

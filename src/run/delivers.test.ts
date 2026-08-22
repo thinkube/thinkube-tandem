@@ -50,6 +50,8 @@ for (const shape of SHAPES as readonly RepoShape[])
     const { space, ids } = oneAsk();
     const cut = { id: "cut-1", changeIds: ids, tepId: `TEP-${shape.name.slice(0, 8).replace(/\W/g, "")}` };
     const state = new RunState(() => {});
+    const said: string[] = [];
+    state.sink = (line) => said.push(line);
     const outcome = await dispatchTep(
       {
         repoRoot: repo,
@@ -97,6 +99,18 @@ for (const shape of SHAPES as readonly RepoShape[])
       delivered.filter((p) => /\.test\.|\.spec\./.test(p)).filter((p) => !before.has(p)),
       [],
       "the delivery installed no test into the repository",
+    );
+
+    // A check is born where this repository keeps its tests — beside the
+    // module it drives, in the suffix its own tests wear — never under a
+    // coordinate of the run.
+    assert.ok(
+      said.some((l) => /check\(s\) born in the repository's own test homes/.test(l)),
+      `no check was rehoused: ${said.filter((l) => /check/.test(l)).slice(0, 3).join(" | ")}`,
+    );
+    assert.ok(
+      said.some((l) => /src\/greet_AC-1\.test\.mjs/.test(l)),
+      "and it is named for its subject and its criterion",
     );
 
     // One tree per repository. A second tree inside a repository is what
