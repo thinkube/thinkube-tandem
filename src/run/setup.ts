@@ -256,7 +256,7 @@ async function proveRunOne(args: SetupArgs): Promise<string> {
  * wrong tree forever after. The worktree's own exclude file closes it,
  * with bare names, which match files, directories and symlinks alike.
  */
-export async function excludeFromGit(worktree: string, entries: readonly string[], exec: Exec): Promise<void> {
+async function excludeFromGit(worktree: string, entries: readonly string[], exec: Exec): Promise<void> {
   if (!entries.length) return;
   const rel = (await exec("git", ["-C", worktree, "rev-parse", "--git-path", "info/exclude"], worktree)).out.trim();
   if (!rel) return;
