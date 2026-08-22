@@ -134,8 +134,13 @@ export interface Cut {
    *  words. Once for the whole cut: signing is one decision over one cut,
    *  so a per-promise exemption would turn one sentence into a form. A
    *  blank reason is never recorded — the gate refuses it before it lands
-   *  here. */
-  docsExemption?: { reason: string };
+   *  here. `at` is stamped by signCut at the moment of signing — never set
+   *  by the gesture that records the reason, and never rendered, so it
+   *  cannot move the render hash. */
+  docsExemption?: { reason: string; at?: string };
+  /** Alias of `docsExemption`, kept identical wherever the cut carries one.
+   *  The gates read and write both names for the same excuse. */
+  exemption?: { reason: string; at?: string };
 }
 
 /**

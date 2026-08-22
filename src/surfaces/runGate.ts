@@ -21,6 +21,7 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      ...(s.docsExemption ? { docsExemption: s.docsExemption } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
@@ -30,6 +31,8 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
     s.cutNodeIds.clear();
+    // Spent on this one cut: the session holds no exemption for the next.
+    s.docsExemption = undefined;
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
     void executeRun(s, r.cut.id);
     return { ok: true };

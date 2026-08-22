@@ -16,7 +16,20 @@ function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
-/** The grounded half of the pair: members with their grounding, canonical. */
+/** The documentation exemption a cut carries, under either of its two
+ *  equivalent names — `exemption` and `docsExemption` are read as the same
+ *  excuse throughout the gates. */
+function exemptionOf(cut: Cut): { reason: string; at?: string } | undefined {
+  return cut.exemption ?? cut.docsExemption;
+}
+
+/** The grounded half of the pair: members with their grounding, canonical,
+ *  plus the documentation exemption's reason when the cut carries one — an
+ *  excused cut's grounding half is never empty, and editing the recorded
+ *  reason after signing is grounding drift like any other moved input. The
+ *  stamped signing moment is deliberately left out: it is written by this
+ *  same call, so folding it in would make every fresh signature its own
+ *  drift. */
 function groundingHashOf(space: Space, cut: Cut): string {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const canonical = [...cut.changeIds]
@@ -32,7 +45,9 @@ function groundingHashOf(space: Space, cut: Cut): string {
       });
     })
     .join("\n");
-  return sha(canonical);
+  const reason = exemptionOf(cut)?.reason?.trim();
+  const exemptionPart = reason ? ` exemption:${reason}` : "";
+  return sha(canonical + exemptionPart);
 }
 
 export type SignResult =
@@ -96,7 +111,7 @@ export function signCut(
     };
   // Signing always requires documentation or a written exemption — this
   // holds regardless of docsGateMode, which governs the accept gate only.
-  const exemptionReason = cut.docsExemption?.reason?.trim();
+  const exemptionReason = exemptionOf(cut)?.reason?.trim();
   if (docLandings(space, cut).length === 0 && !exemptionReason)
     return {
       ok: false,
@@ -106,11 +121,19 @@ export function signCut(
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
   ).length;
+  const exemption = exemptionOf(cut);
   return {
     ok: true,
     cut: {
       ...cut,
       tepId: `TEP-${author}-${tepNumber ?? mine + 1}`,
+      // The exemption's reason is stamped with the moment it was signed —
+      // bound by the signature below, spent on this one cut. The moment
+      // never enters the render, so it cannot move the render hash. Both
+      // names the cut may carry the exemption under are kept in sync.
+      ...(exemption
+        ? { docsExemption: { ...exemption, at }, exemption: { ...exemption, at } }
+        : {}),
       signature: {
         at,
         renderHash: sha(renderCutScreen(space, cut)),

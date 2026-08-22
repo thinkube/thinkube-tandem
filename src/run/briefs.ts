@@ -20,6 +20,9 @@ export function renderTepBody(space: Space, cut: Cut): string {
     lines.push(`## Decisions in force (the human settled these — build under them)`);
     for (const q of decided) lines.push(`- ${q.decided!.text}`);
   }
+  const exemptionReason = (cut.exemption ?? cut.docsExemption)?.reason?.trim();
+  if (exemptionReason)
+    lines.push(`Documentation is not needed: ${exemptionReason}`);
   lines.push(`## The changes`);
   for (const c of members) {
     lines.push(`- ${c!.sentence}`);

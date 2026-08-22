@@ -5,6 +5,7 @@
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
+import { docLandings } from "../core/docs";
 
 /** A render that exceeds this is not a decision — it is homework. Blank
  *  lines separate the sections of a rendered page and say nothing, so
@@ -74,6 +75,24 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   if (ungrounded.length) {
     lines.push(`Not grounded (no place in the code yet):`);
     for (const n of ungrounded) lines.push(`  ⚠ ${n.sentence}`);
+  }
+
+  // Documentation: where it lands, or why it is not needed, or that it is
+  // missing — always said, never left implicit. The exemption reason is
+  // printed word for word and the signing moment never appears here, so
+  // this render cannot move between the hash signCut takes and the one
+  // verifyCutSignature re-renders after.
+  const docs = docLandings(space, cut);
+  const exemptionReason = (cut.exemption ?? cut.docsExemption)?.reason?.trim();
+  if (docs.length) {
+    lines.push(`Documentation lands at:`);
+    for (const d of docs) lines.push(`  • ${d}`);
+  } else if (exemptionReason) {
+    lines.push(`Documentation is not needed: ${exemptionReason}`);
+  } else {
+    lines.push(
+      `Documentation is missing — this cut cannot be signed until it is written or excused.`,
+    );
   }
   return lines.join("\n");
 }
