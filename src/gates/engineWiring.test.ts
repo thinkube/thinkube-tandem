@@ -13,6 +13,11 @@ import {
   type RepoFile,
 } from "./engineWiring";
 
+/** The repository root. These tests run from the compiled `out-test/` tree,
+ *  so any read of authored source must resolve against the repo, never
+ *  against the directory this module was loaded from. */
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+
 function pathOf(m: string | { path: string }): string {
   return typeof m === "string" ? m : m.path;
 }
@@ -132,7 +137,7 @@ test("parseWiringLedger: a fully valid entry parses to a clean verdict and reaso
 });
 
 test("engineWiring.ts imports no Node I/O, no vscode, no model client, and its header declares that contract", () => {
-  const src = readFileSync(path.join(__dirname, "engineWiring.ts"), "utf8");
+  const src = readFileSync(path.join(REPO_ROOT, "src", "gates", "engineWiring.ts"), "utf8");
   const importLines = src
     .split("\n")
     .filter((l) => /^\s*import\b/.test(l) || /^\s*export\s+\*\s+from/.test(l));
@@ -152,7 +157,6 @@ test("engineWiring.ts imports no Node I/O, no vscode, no model client, and its h
 
 // --- Real tree: ENGINE-WIRING.md stays complete against the current scan ---
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SOURCE_EXT_RE = /\.tsx?$/;
 
 function walk(dir: string, out: RepoFile[]): void {

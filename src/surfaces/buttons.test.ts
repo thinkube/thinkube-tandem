@@ -133,9 +133,15 @@ function sessionInPhase(phase: Phase): TandemSession {
  * attribute on the built surface belongs in this table.
  */
 const TABLE: Record<string, readonly Phase[]> = {
-  "open-cut-review": ["understood", "delivered"],
-  "excuse-docs": ["drafting", "read", "understood"],
-  build: ["understood", "delivered"],
+  // The rail offers these three only inside its build section, and that
+  // section renders only while something is still buildable
+  // (`ready.subjects > 0`). Once a cut is signed its promises are no longer
+  // buildable, so in "signed", "running" and "delivered" the section — and
+  // every control in it — is absent from the surface, whatever the phase
+  // table would let the host act on.
+  "open-cut-review": ["understood"],
+  "excuse-docs": ["understood"],
+  build: ["understood"],
 };
 
 test("the button table: every gated control is on exactly in its listed phases", () => {
@@ -162,7 +168,15 @@ test("the button table: every gated control is on exactly in its listed phases",
       // (App.tsx passes canBuild={tab === "work"}); every other tab must
       // never carry the control at all.
       const buttons = table[phase]["work"];
-      const line = buttons.find((b) => b.includes(`data-${action}`));
+      // The harness lists a button by its data-attribute names with the
+      // `data-` prefix stripped ("on  open-cut-review"), so the control is
+      // matched as a whole token — `build` must not match `build-price`.
+      const line = buttons.find((b) =>
+        b
+          .slice(4)
+          .split(" ")
+          .some((token) => token === action || token.startsWith(`${action}=`)),
+      );
       const isOn = !!line && line.startsWith("on");
       assert.equal(
         isOn,

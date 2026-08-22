@@ -1,199 +1,143 @@
 /**
- * Engine wiring: which engine modules nothing in the product reaches, and
- * what the wiring ledger (ENGINE-WIRING.md) says about them.
+ * Engine wiring: which `src/engine/` modules no product (non-test) file
+ * reaches, directly or transitively, from `src/extension.ts`.
  *
- * `unreachedEngineModules` walks the static `import ... from "..."` graph
- * from the product entry point and reports every `src/engine/` module no
- * reachable product (non-test) file imports, directly or transitively. An
- * import written inside a `.test.ts` file never establishes reach — a
- * module only test files import is exactly the case this check exists to
- * name. `parseWiringLedger` reads the ledger's markdown back into entries
- * carrying a verdict (`wire` | `retire` | `fold`) and a reasoning sentence,
- * refusing anything else with a named reason instead of throwing.
- *
- * Pure / total / deterministic — no disk read, no `vscode`, no model
- * client — so it is unit-testable with synthetic `{ path, content }` file
- * maps, matching the convention in `src/engine/testImpactFootprint.ts:17-20`.
+ * No I/O contract: this module reads nothing from disk itself — every file
+ * it looks at arrives already read, in the `files` array its caller builds.
+ * It never imports `vscode` and never imports a model client; the caller
+ * that walks the real tree and the caller that talks to a model both stay
+ * outside it, so this module can be exercised on a synthetic file map with
+ * no disk read, no vscode host, and no model round.
  */
 
-/** A repo source file supplied as path→content (repo-relative path + full text). */
+/** One source file, already read: its repo-relative path and its text. */
 export interface RepoFile {
   path: string;
   content: string;
 }
 
-/** The whole tree to scan, plus the product's entry point to reach from. */
-export interface WiringScanInput {
-  /** Repo-relative path of the product entry point, e.g. "src/extension.ts". */
-  entry: string;
-  /** Every source file in the tree being scanned (not only src/engine/). */
-  files: RepoFile[];
-}
+const IMPORT_RE = /^\s*(?:import|export)\s+(?:[^;]*?\bfrom\s+)?["']([^"']+)["']/;
+const IMPORT_CLAUSE_RE = /\bfrom\s+["']([^"']+)["']/g;
 
-/** An engine module (repo-relative path) that no product file reaches. */
-export interface UnreachedEngineModule {
-  path: string;
-}
-
-const ENGINE_PREFIX = "src/engine/";
-const TEST_SUFFIX_RE = /\.test\.tsx?$/;
-const IMPORT_RE = /(?:^|\n)\s*(?:import|export)[^;]*?\bfrom\s+["']([^"']+)["']/g;
-const SOURCE_EXT_RE = /\.tsx?$/;
-
-function isTestFile(path: string): boolean {
-  return TEST_SUFFIX_RE.test(path);
-}
-
-function isEngineModule(path: string): boolean {
-  return path.startsWith(ENGINE_PREFIX);
-}
-
-/** Repo-relative directory of a repo-relative file path ("" at the root). */
-function dirOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i === -1 ? "" : path.slice(0, i);
-}
-
-/** Resolves a relative import specifier against the importing file's directory. */
-function resolveSpecifier(fromDir: string, specifier: string): string | undefined {
-  if (!specifier.startsWith(".")) return undefined;
-  const parts = (fromDir ? fromDir.split("/") : []).concat(specifier.split("/"));
-  const stack: string[] = [];
-  for (const part of parts) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") stack.pop();
-    else stack.push(part);
-  }
-  return stack.join("/");
-}
-
-/** Every relative import specifier a file's source text names, in order. */
-function importSpecifiers(content: string): string[] {
+/** The module specifiers a file imports or re-exports, in source order. */
+function importsOf(content: string): string[] {
   const out: string[] = [];
-  IMPORT_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = IMPORT_RE.exec(content))) out.push(m[1]);
+  for (const line of content.split("\n")) {
+    const m = IMPORT_CLAUSE_RE.exec(line);
+    IMPORT_CLAUSE_RE.lastIndex = 0;
+    if (m) {
+      out.push(m[1]);
+      continue;
+    }
+    const bare = IMPORT_RE.exec(line);
+    if (bare) out.push(bare[1]);
+  }
   return out;
 }
 
-/**
- * Every engine module (`src/engine/...`) that no product (non-test) file
- * reaches, directly or transitively, from `input.entry`. Reach follows
- * static relative imports only, resolved against the in-memory file map —
- * an import inside a `.test.ts` file never establishes reach, however
- * many test files carry it or how deep the chain runs before it reaches a
- * genuine product importer.
- */
-export function unreachedEngineModules(input: WiringScanInput): UnreachedEngineModule[] {
-  const byResolved = new Map<string, RepoFile>();
-  for (const f of input.files) {
-    if (!SOURCE_EXT_RE.test(f.path)) continue;
-    byResolved.set(f.path.replace(SOURCE_EXT_RE, ""), f);
-  }
-
-  const resolve = (fromPath: string, specifier: string): RepoFile | undefined => {
-    const resolved = resolveSpecifier(dirOf(fromPath), specifier);
-    if (resolved === undefined) return undefined;
-    const direct = byResolved.get(resolved);
-    if (direct) return direct;
-    return byResolved.get(`${resolved}/index`);
-  };
-
-  const reached = new Set<string>();
-  const visit = (file: RepoFile) => {
-    if (reached.has(file.path)) return;
-    reached.add(file.path);
-    for (const specifier of importSpecifiers(file.content)) {
-      const target = resolve(file.path, specifier);
-      if (target) visit(target);
-    }
-  };
-
-  const entry = byResolved.get(input.entry.replace(SOURCE_EXT_RE, ""));
-  if (entry && !isTestFile(entry.path)) visit(entry);
-
-  // A second pass folds in every other product (non-test) file's own
-  // imports, so reach holds for the whole product graph, not only what
-  // hangs off the single entry point's transitive closure.
-  for (const f of input.files) {
-    if (isTestFile(f.path)) continue;
-    if (!reached.has(f.path)) continue;
-    for (const specifier of importSpecifiers(f.content)) {
-      const target = resolve(f.path, specifier);
-      if (target) visit(target);
-    }
-  }
-
-  const unreached: UnreachedEngineModule[] = [];
-  for (const f of input.files) {
-    if (!isEngineModule(f.path)) continue;
-    if (isTestFile(f.path)) continue;
-    if (reached.has(f.path)) continue;
-    unreached.push({ path: f.path });
-  }
-  return unreached;
+function isTestPath(p: string): boolean {
+  return /\.test\.tsx?$/.test(p);
 }
 
-/** A verdict the wiring ledger may record for an unreached engine module. */
-export type WiringVerdict = "wire" | "retire" | "fold";
+/** Resolves a relative import specifier against the importing file's own
+ *  directory, to the repo-relative path of the file it names — trying the
+ *  extensions and the `/index` form a bundler would, in order. */
+function resolveImport(fromPath: string, spec: string, known: Set<string>): string | undefined {
+  if (!spec.startsWith(".")) return undefined;
+  const dir = fromPath.split("/").slice(0, -1);
+  const parts = spec.split("/");
+  for (const part of parts) {
+    if (part === "." || part === "") continue;
+    if (part === "..") dir.pop();
+    else dir.push(part);
+  }
+  const base = dir.join("/");
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}/index.ts`,
+    `${base}/index.tsx`,
+  ];
+  return candidates.find((c) => known.has(c));
+}
 
-const VALID_VERDICTS: ReadonlySet<string> = new Set(["wire", "retire", "fold"]);
+/**
+ * Every `src/engine/` module not reached, directly or transitively, from
+ * `entry` — walking only product (non-test) files, so a module only a test
+ * imports still counts as unreached, and reach never launders through a
+ * module that is itself unreached.
+ */
+export function unreachedEngineModules(opts: { entry: string; files: RepoFile[] }): RepoFile[] {
+  const { entry, files } = opts;
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  const known = new Set(byPath.keys());
+  const engineFiles = files.filter((f) => f.path.startsWith("src/engine/") && !isTestPath(f.path));
 
-/** One ledger entry: a module, its verdict, and the sentence saying why. */
+  const reached = new Set<string>();
+  const queue: string[] = known.has(entry) ? [entry] : [];
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (reached.has(current)) continue;
+    reached.add(current);
+    const file = byPath.get(current);
+    if (!file || isTestPath(current)) continue;
+    for (const spec of importsOf(file.content)) {
+      const resolved = resolveImport(current, spec, known);
+      if (resolved && !reached.has(resolved)) queue.push(resolved);
+    }
+  }
+
+  return engineFiles.filter((f) => !reached.has(f.path));
+}
+
+export type Verdict = "wire" | "retire" | "fold";
+
 export interface WiringEntry {
   path: string;
-  verdict: WiringVerdict;
+  verdict: Verdict;
   reason: string;
 }
 
-/** A ledger line that failed to parse into a valid entry, and why. */
 export interface WiringProblem {
   path: string;
   reason: string;
 }
 
-/** The ledger's entries, plus any lines that failed to parse. */
 export interface WiringLedger {
   entries: WiringEntry[];
   problems: WiringProblem[];
 }
 
-// One bullet per module: `path` — **verdict**: reasoning sentence.
-const LEDGER_LINE_RE = /^\s*[-*]\s*`([^`]+)`\s*(?:—|-{1,2})\s*\*\*([^*]+)\*\*\s*:\s*(.*)$/;
+const KNOWN_VERDICTS: readonly string[] = ["wire", "retire", "fold"];
+const ENTRY_RE = /^-\s*`([^`]+)`\s*—\s*\*\*([^*]+)\*\*:\s*(.*)$/;
 
 /**
- * Reads the wiring ledger's raw markdown text back into entries carrying
- * their verdict and reasoning sentence. A verdict outside `wire`, `retire`,
- * `fold`, or a missing/blank reason, is reported as a problem naming the
- * module's path rather than thrown.
+ * Parses the `- \`path\` — **verdict**: reason.` lines of ENGINE-WIRING.md.
+ * One entry per listed module; an unrecognized verdict or a blank reasoning
+ * sentence is reported as a named problem rather than thrown or silently
+ * accepted.
  */
-export function parseWiringLedger(markdown: string): WiringLedger {
+export function parseWiringLedger(md: string): WiringLedger {
   const entries: WiringEntry[] = [];
   const problems: WiringProblem[] = [];
-
-  for (const rawLine of markdown.split("\n")) {
-    const m = LEDGER_LINE_RE.exec(rawLine);
+  for (const rawLine of md.split("\n")) {
+    const line = rawLine.trim();
+    if (!line.startsWith("-")) continue;
+    const m = ENTRY_RE.exec(line);
     if (!m) continue;
-    const [, path, verdictWord, reasonRaw] = m;
-    const verdict = verdictWord.trim().toLowerCase();
-    const reason = reasonRaw.trim();
-
-    if (!VALID_VERDICTS.has(verdict)) {
-      problems.push({
-        path,
-        reason: `"${path}" carries an unrecognized verdict "${verdictWord.trim()}" — must be wire, retire, or fold`,
-      });
+    const [, path, verdictWord, reason] = m;
+    const verdict = verdictWord.trim();
+    const trimmedReason = reason.trim();
+    if (!KNOWN_VERDICTS.includes(verdict)) {
+      problems.push({ path, reason: `unrecognized verdict "${verdict}"` });
       continue;
     }
-    if (reason.length === 0) {
-      problems.push({
-        path,
-        reason: `"${path}" carries no reasoning sentence for its ${verdict} verdict`,
-      });
+    if (!trimmedReason) {
+      problems.push({ path, reason: "blank reasoning sentence" });
       continue;
     }
-    entries.push({ path, verdict: verdict as WiringVerdict, reason });
+    entries.push({ path, verdict: verdict as Verdict, reason: trimmedReason });
   }
-
   return { entries, problems };
 }

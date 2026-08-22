@@ -17,7 +17,15 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
+import {
+  acceptDeliveryGesture,
+  answerWorkerGesture,
+  executeRun,
+  rerunGesture,
+  signCutGesture,
+  stopRunGesture,
+  unrunCutOf,
+} from "./runGate";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
@@ -508,45 +516,24 @@ export class TandemSession {
     return executeRun(this, cutId);
   }
 
-  /**
-   * Signed work that never delivered, if there is any: the cut is a
-   * record and cannot be signed twice, so without this a run that
-   * refused itself — a plan the engine would not accept, a forge that
-   * was not reachable — left the work sealed and unreachable, with the
-   * one button that could have started it already spent.
-   */
+  /** Signed work that never delivered, if there is any. */
   unrunCut(): { id: string; tepId?: string } | undefined {
-    // Only an ACCEPTED delivery ends a cut. A delivery that was withheld
-    // delivered nothing; one that is open and undecided — or that cannot be
-    // accepted, because a check or a review is red — is not the end of the
-    // work either. In all three the signed work is still there to run, and
-    // the way back in must stay reachable.
-    const delivered = new Set(this.space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
-    const c = [...this.space.cuts].reverse().find((x) => x.signature && !delivered.has(x.id));
-    return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+    return unrunCutOf(this);
   }
 
   /** Start the signed work that never delivered, again. */
-  async rerun(): Promise<{ ok: boolean; reason?: string }> {
-    const c = this.unrunCut();
-    if (!c) return { ok: false, reason: "there is no signed work waiting to run" };
-    if (this.running) return { ok: false, reason: "a run is already in flight" };
-    await executeRun(this, c.id);
-    return { ok: true };
+  rerun(): Promise<{ ok: boolean; reason?: string }> {
+    return rerunGesture(this);
   }
 
   /** Answer a parked worker — the oracle's door on the run view. */
   answerWorker(unitId: string, text: string): boolean {
-    const ok = this.runState?.answer(unitId, text) ?? false;
-    if (ok) this.changed(`Answered ${unitId}.`);
-    return ok;
+    return answerWorkerGesture(this, unitId, text);
   }
 
   /** Stop the run: abort every live worker; the run drains and reports. */
   stopRun(): number {
-    const n = this.runState?.halt() ?? 0;
-    this.changed(n ? `Stopped — ${n} worker(s) aborted.` : "Nothing to stop.");
-    return n;
+    return stopRunGesture(this);
   }
 
   deliveryPage(deliveryId: string): string | undefined {

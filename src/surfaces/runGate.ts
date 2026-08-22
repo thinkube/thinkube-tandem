@@ -232,6 +232,47 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     }
   }
 
+/**
+ * Signed work that never delivered, if there is any: the cut is a record
+ * and cannot be signed twice, so without this a run that refused itself —
+ * a plan the engine would not accept, a forge that was not reachable —
+ * left the work sealed and unreachable, with the one button that could
+ * have started it already spent.
+ */
+export function unrunCutOf(s: TandemSession): { id: string; tepId?: string } | undefined {
+  // Only an ACCEPTED delivery ends a cut. A delivery that was withheld
+  // delivered nothing; one that is open and undecided — or that cannot be
+  // accepted, because a check or a review is red — is not the end of the
+  // work either. In all three the signed work is still there to run, and
+  // the way back in must stay reachable.
+  const delivered = new Set(s.space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
+  const c = [...s.space.cuts].reverse().find((x) => x.signature && !delivered.has(x.id));
+  return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+}
+
+/** Start the signed work that never delivered, again. */
+export async function rerunGesture(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
+  const c = unrunCutOf(s);
+  if (!c) return { ok: false, reason: "there is no signed work waiting to run" };
+  if (s.running) return { ok: false, reason: "a run is already in flight" };
+  await executeRun(s, c.id);
+  return { ok: true };
+}
+
+/** Answer a parked worker — the oracle's door on the run view. */
+export function answerWorkerGesture(s: TandemSession, unitId: string, text: string): boolean {
+  const ok = s.runState?.answer(unitId, text) ?? false;
+  if (ok) s.changed(`Answered ${unitId}.`);
+  return ok;
+}
+
+/** Stop the run: abort every live worker; the run drains and reports. */
+export function stopRunGesture(s: TandemSession): number {
+  const n = s.runState?.halt() ?? 0;
+  s.changed(n ? `Stopped — ${n} worker(s) aborted.` : "Nothing to stop.");
+  return n;
+}
+
 export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     const d = s.space.deliveries.find((x) => x.id === deliveryId);
     if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
