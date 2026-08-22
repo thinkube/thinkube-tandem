@@ -28,6 +28,11 @@ export function makeCommitBook(a: {
   standing: ReadonlySet<string>;
   sliceProbes: ReadonlyMap<string, string[]>;
   sliceFiles: ReadonlyMap<string, string[]>;
+  /** How a unit sleeps between looks. Injectable so a test drives a
+   *  ten-minute wait in no time: every deadlock this run has met lives in
+   *  the waits, and a wait nothing can fast-forward is a wait no test can
+   *  reach. Defaults to the clock. */
+  sleep?: (ms: number, wake: (fn: () => void) => void) => Promise<void>;
 }): {
   sliceCommitted: Set<string>;
   /** Units asleep on the next commit right now. */
@@ -46,11 +51,11 @@ export function makeCommitBook(a: {
   for (const sl of a.standing) sliceRemaining.set(sl, 0);
 
   let commitWaiters: (() => void)[] = [];
-  const nextCommit = (ms: number): Promise<void> =>
+  /** Sleep on the clock, waking on the next commit or on Stop. Stop must be
+   *  visible at once: a wait that only watches for a commit leaves a halted
+   *  run looking alive for as long as its timeout. */
+  const sleepOnTheClock = (ms: number, wake: (fn: () => void) => void): Promise<void> =>
     new Promise((resolve) => {
-      // Stop must be visible at once. A wait that only watches for a commit
-      // leaves a halted run looking alive for as long as its timeout: the
-      // person presses Stop and nothing appears to happen.
       let t: NodeJS.Timeout;
       let halt: NodeJS.Timeout;
       const done = (): void => {
@@ -62,8 +67,10 @@ export function makeCommitBook(a: {
       halt = setInterval(() => {
         if (a.st.halted) done();
       }, 1000);
-      commitWaiters.push(done);
+      wake(done);
     });
+  const nextCommit = (ms: number): Promise<void> =>
+    (a.sleep ?? sleepOnTheClock)(ms, (fn) => commitWaiters.push(fn));
   const commitSlice = async (slice: string): Promise<void> => {
     if (sliceCommitted.has(slice)) return;
     sliceCommitted.add(slice);

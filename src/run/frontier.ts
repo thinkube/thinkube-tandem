@@ -98,8 +98,10 @@ function canLand(
   return (id) => walk(id, new Set());
 }
 
-/** Is any unit outside this slice still able to land something? */
-export function othersCanLand(
+/** Which units outside this slice are still able to land something — named,
+ *  because "waiting for another unit" with no name is unreadable when the
+ *  answer is nobody. Empty means waiting buys nothing. */
+export function whoCanLand(
   dag: readonly { id: string; slice: string; requires: string[]; footprint?: string[] }[],
   slice: string,
   state: {
@@ -108,9 +110,11 @@ export function othersCanLand(
     waiting: ReadonlySet<string>;
     live?: ReadonlyMap<string, readonly string[]>;
   },
-): boolean {
+): string[] {
   const can = canLand(dag, state);
-  return dag.some((u) => u.slice !== slice && !state.done.has(u.id) && !state.failed.has(u.id) && can(u.id));
+  return dag
+    .filter((u) => u.slice !== slice && !state.done.has(u.id) && !state.failed.has(u.id) && can(u.id))
+    .map((u) => u.id);
 }
 
 /** Why a ready unit is not launched: a file it shares with a running unit.

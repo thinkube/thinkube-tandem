@@ -67,7 +67,16 @@ export const SHAPES: readonly RepoShape[] = [FROM_SOURCE, MIRROR_STRIPPED, MIRRO
  * standing test of its own, and a build script that emits where the shape
  * says. Everything is `sh` and `cp` — the machine must not care.
  */
-export function repoInShape(shape: RepoShape, opts: { standingRed?: boolean } = {}): string {
+export function repoInShape(
+  shape: RepoShape,
+  opts: {
+    standingRed?: boolean;
+    /** A standing test that imports a module THIS RUN will create: red
+     *  until that unit lands it, and red in the words the machine reads as
+     *  "the tree is not ready yet" — the only red that makes a unit wait. */
+    waitsFor?: string;
+  } = {},
+): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-shape-"));
   const g = (args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
   const write = (rel: string, body: string) => {
@@ -92,6 +101,12 @@ export function repoInShape(shape: RepoShape, opts: { standingRed?: boolean } = 
       "src/gate.test.mjs",
       `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
         `test("the signing gate refuses a cut with no documentation", () => assert.equal(1, 2));\n`,
+    );
+  if (opts.waitsFor)
+    write(
+      "src/link.test.mjs",
+      `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+        `import { thing } from "../${opts.waitsFor}";\ntest("linked", () => assert.ok(thing()));\n`,
     );
   if (shape.prepare) {
     // A real build: it mirrors whatever the tree holds, including files the

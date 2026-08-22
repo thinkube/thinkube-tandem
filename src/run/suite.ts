@@ -37,6 +37,18 @@ export function parseSuite(output: string, root?: string): SuiteVerdict {
   const lines = output.split(/\r?\n/);
   const failures: SuiteFailure[] = [];
   const summary: string[] = [];
+  // What the runner printed BEFORE its first verdict. A test that cannot
+  // even load — a module another unit has yet to create, a syntax error —
+  // says so there, in `#` diagnostics, and the verdict line that follows
+  // carries nothing but the file name. Dropping the preamble left the
+  // machine unable to tell "the tree is not ready yet" from "your code
+  // broke this", which is the difference between waiting and being blamed.
+  const preamble = lines
+    .slice(0, lines.findIndex((l) => /^not ok \d+ /.test(l)) + 1 || lines.length)
+    .filter((l) => /^#\s+\S/.test(l) && !/^# (Subtest|tests|pass|fail|cancelled|skipped|todo|duration)/.test(l))
+    .map((l) => l.replace(/^#\s?/, ""))
+    .join("\n")
+    .slice(0, 800);
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (/^# (pass|fail|tests|cancelled|skipped) /.test(l)) summary.push(l.trim());
@@ -54,7 +66,11 @@ export function parseSuite(output: string, root?: string): SuiteVerdict {
       if (loc && !file) file = sourceOf(loc[1], root);
       if (/^\s+(error:|expected|actual|\+ |- |Error|operator)/.test(d) || /^\s{4}\S/.test(d)) detail.push(d.trimEnd());
     }
-    failures.push({ name, ...(file ? { file } : {}), detail: detail.join("\n").slice(0, 1200) });
+    failures.push({
+      name,
+      ...(file ? { file } : {}),
+      detail: [detail.join("\n"), failures.length === 0 && preamble ? preamble : ""].filter(Boolean).join("\n").slice(0, 1600),
+    });
   }
   // A subtest and its parent both print "not ok" with the same words: keep one.
   const seen = new Set<string>();

@@ -20,7 +20,7 @@ import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
 import { validateDag } from "../engine/methodology/parallelSlices";
-import { ownership, waitReasons } from "./fence";
+import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { persistProbes, restoreProbes } from "../engine/oracleStore";
@@ -32,14 +32,16 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
-import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending } from "./plan";
+import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
 import { unitCloser } from "./closeUnit";
 import { buildOracleArgs } from "./oracleArgs";
-import { doorView } from "./clearance";
+import { runWaits } from "./waits";
 import { formatBuild } from "./execs";
+import { runLogSink } from "./runLog";
+import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { runReadRound } from "../derive/round";
@@ -51,7 +53,7 @@ import { runUnitWorker, porcelainPaths, WorkerOutcome } from "./worker";
 import { criterionLookup, rehomeProbes } from "./rehome";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
-import { othersCanLand, overlapWaits } from "./frontier";
+import { overlapWaits } from "./frontier";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -92,6 +94,9 @@ export interface DispatchDeps {
   prepare?: string;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
+  /** Injectable for tests: how a unit sleeps waiting for another unit's
+   *  commit — a wait nothing can fast-forward is a wait no test can reach. */
+  waitSleep?: (ms: number, wake: (fn: () => void) => void) => Promise<void>;
   /** Injectable for tests: replaces the SDK worker. */
   worker?: (
     deps: Parameters<typeof runUnitWorker>[0],
@@ -132,6 +137,7 @@ export async function dispatchTep(
   const worktree = path.join(wtRoot, wtName);
   const testerWt = path.join(wtRoot, `${wtName}-tester`);
   const storeDir = path.join(wtRoot, "oracle-store", wtName);
+  if (deps.storeDir) st.sink = runLogSink(deps.storeDir, tep, runId);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
   const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
@@ -158,22 +164,17 @@ export async function dispatchTep(
   if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
 
+  const watch = watchForStall({ st, units: () => [...st.units.values()], log: (l) => st.log(l), defect }); // a silent run says so and stops
   try {
   if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
   const dag = buildUnitDag(slices);
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return refuse("plan-validation", `the engine refused the plan: ${JSON.stringify(verdict)}`);
-  // The roles' invariant, checked before any worker starts: no coder holds a test.
   const misowned = coderTestPaths(slices);
   if (misowned.length)
     return refuse("plan-roles", `the plan hands a coder test-shaped paths — refused before dispatch: ${misowned.join(", ")}`);
-  const whyWait = waitReasons(dag, slices);
-  for (const u of dag) {
-    const requires = u.requires.filter((r) => dag.some((x) => x.id === r));
-    const why = requires.map((r) => whyWait(u, r));
-    st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
-  }
+  seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, testerWt, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
@@ -183,13 +184,9 @@ export async function dispatchTep(
   let ready = await doSetup();
   // A resumed branch an earlier run left half-committed is mended before the run refuses.
   if (ready.refusal && refreshed.resumed) {
-    const mended = await repairStandingTree({
-      worktree, tep, refusal: ready.refusal, deps, exec, log, defect,
-      halted: () => st.halted,
-      rebuild: async () =>
-        deps.prepare ? boundedExec(deps.prepare, worktree).then((r) => ({ ok: r.code === 0, words: r.output })) : { ok: true, words: "" },
-    });
-    if (mended) ready = await doSetup();
+    const rebuild = async () =>
+      deps.prepare ? boundedExec(deps.prepare, worktree).then((r) => ({ ok: r.code === 0, words: r.output })) : { ok: true, words: "" };
+    if (await repairStandingTree({ worktree, tep, refusal: ready.refusal, deps, exec, log, defect, halted: () => st.halted, rebuild })) ready = await doSetup();
   }
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
   const { provisioned, built, emitMap, runOne: runOneTest } = ready;
@@ -234,8 +231,8 @@ export async function dispatchTep(
     provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
     pending: (id: string) => !done.has(id) && !failed.has(id),
     plannedPending: () => plannedByPending(dag, done),
-    // The door's view: who is changing what right now (docs/WORDS.md).
-    ...doorView({ live: () => liveFootprints, waiting: () => waiting, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) }),
+    changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
+    commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
@@ -247,6 +244,8 @@ export async function dispatchTep(
   const answerEnd = makeEndAnswerer(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
+  const waits = runWaits({ dag, done, failed, waiting: () => waiting, live: () => liveFootprints, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) });
+  const wakers = (sl: string, self: string) => waits.wakers(sl, self);
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
   // Probes ride into the code tree at slice commit — the run's own copies, never a coder's strays.
   const testerPaths = [...new Set([...sliceProbes.values()].flat())];
@@ -255,7 +254,7 @@ export async function dispatchTep(
   let testerReset: Promise<void> = Promise.resolve();
   const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
-  });
+    ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}) });
 
   const closeUnit = unitCloser({
     worktree, testerWt, sliceProbes, sliceVerifs, criterionOf, st, exec, boundedExec, log, deps, rulings, undelivered, defect,
@@ -451,11 +450,11 @@ export async function dispatchTep(
         halted: () => st.halted,
         footprint: next.footprint,
         pendingPlanned: () => pendingPlanned().filter((p) => !next.footprint.includes(p)),
-        othersPending: () => othersCanLand(dag, next.slice, { done, failed, waiting, live: new Map([...liveFootprints].map(([i, v]) => [i, v.paths] as const)) }),
+        othersPending: () => wakers(next.slice, next.id).length > 0,
         waitForCommit: () => waitForCommit(next.id),
         say: (why) => {
           st.doing(next.id, why);
-          log(`⏳ ${next.id}: ${why}`, next.id);
+          log(`⏳ ${next.id}: ${why} — still able to land: ${wakers(next.slice, next.id).slice(0, 4).join(", ") || "nobody"}`, next.id);
         },
       });
       st.doing(next.id, undefined);
@@ -591,6 +590,7 @@ export async function dispatchTep(
     exec, boundedExec, suiteExec, state: st, log, defect,
   });
   } finally {
+    watch.stop();
     await unlock();
   }
 }
