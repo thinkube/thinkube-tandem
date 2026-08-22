@@ -52,9 +52,10 @@ of them there — nothing has users.
   land it. The `docsGateMode` setting (default `blocking`, `advisory` the
   recorded escape hatch) governs the ACCEPT gate only — it has no effect
   on the sign-time requirement above.
-- The retired-symbol importer gate stays unwired until grounding grows a
-  `retires` declaration for symbol-deleting changes — it arms the day that
-  field exists; the module is imported and tested.
+- The retired-symbol importer gate's wiring verdict is held in
+  ENGINE-WIRING.md, not here — that ledger is kept complete against the
+  live tree by `src/gates/engineWiring.test.ts` and is the one place to
+  read or change its verdict.
 - Supervisor rounds resolve on the judge role (workerModelByRole raises it);
   ESCALATE falls through to the stalled park, DISCLOSE is ledgered.
 - Frontier concurrency default follows v1 (4), setting thinkubeTandem.maxConcurrent.
