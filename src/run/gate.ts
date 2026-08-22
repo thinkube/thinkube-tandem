@@ -35,7 +35,7 @@ import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
-import { close } from "./closer";
+import { close, convergenceScore } from "./closer";
 import { repairByAuthors } from "./authorRepair";
 import type { RedCriterion } from "./authorRepair";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
@@ -225,9 +225,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         measure: async () => {
           const r = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
           const v = suiteVerdictOf(r.code, r.out, worktree);
+          // Build first: an unbuildable tree is one failure, not many, so a
+          // repair that breaks imports for a round is not read as a collapse.
+          const built = deps.prepare ? await boundedExec(deps.prepare, worktree) : { code: 0, output: "" };
           return {
-            green: v.green,
-            score: v.failures.length,
+            green: v.green && built.code === 0,
+            score: convergenceScore({ buildRed: built.code !== 0, reds: v.failures.length }),
             evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000),
             // The last actor's clearance grows with what fails it. At the
             // gate this was computed once, at the start, so the closer was

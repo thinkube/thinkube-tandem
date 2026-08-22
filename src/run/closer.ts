@@ -21,8 +21,33 @@ import type { WorkerOutcome } from "./worker";
 
 /** How much room the last actor gets: wide, because nothing follows it. */
 const CLOSER_TURNS = 200;
-/** Rounds that changed nothing end it — progress, never patience. */
-const NO_PROGRESS_LIMIT = 2;
+/**
+ * How a round is scored, and why the count is not simply "things red".
+ *
+ * **Build first.** A tree that does not compile is ONE failure, not many. A
+ * repair that deletes a module and breaks five imports has done one thing
+ * wrong, not five, and counting five would tell the loop it had made things
+ * far worse than it had — which is how a refactor gets abandoned halfway,
+ * leaving the tree in the worst state either side of it.
+ *
+ * **Demolition is not punished.** A structural change is allowed to make
+ * the count worse for a round or two; what ends the loop is failing to
+ * improve on the BEST state seen, for longer than that patience.
+ */
+export function convergenceScore(a: { buildRed: boolean; reds: number }): number {
+  return a.buildRed ? 1 : a.reds;
+}
+
+/**
+ * How many rounds may pass without improving on the best state seen.
+ *
+ * Three, because that is the shape of a structural repair: the round that
+ * breaks the imports, the round that mends them, and the round that lands
+ * green. At two, a demolition is abandoned on its worst round — the tree
+ * left in a state worse than either side of the change, which is the one
+ * outcome nobody wants.
+ */
+const NO_PROGRESS_LIMIT = 3;
 
 interface CloserState {
   /** Fewer is better: red checks, build errors, red standing tests. */

@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
+import { close, convergenceScore } from "./closer";
 
 /** A clock and a tick the test drives by hand — no waiting, no flake. */
 function driven(): { now: () => number; pass: (ms: number) => void; every: (fn: () => void, ms: number) => { stop: () => void } } {
@@ -74,4 +75,73 @@ test("a run that talks forever still ends at its bound", () => {
     said.some((l) => l.includes("bound")),
     "and the report says it was the bound, not a stall",
   );
+});
+
+/**
+ * Convergence: the loop must end, and it must not end by abandoning a
+ * repair halfway through a structural change.
+ */
+test("a tree that does not build is one failure, not many", () => {
+  // The count a repair loop watches decides whether it keeps going. A
+  // deletion that breaks five imports has done ONE thing wrong.
+  assert.equal(convergenceScore({ buildRed: true, reds: 5 }), 1);
+  assert.equal(convergenceScore({ buildRed: true, reds: 40 }), 1);
+  assert.equal(convergenceScore({ buildRed: false, reds: 3 }), 3);
+});
+
+test("demolition is not punished: the closer rides out a worse round and finishes", async () => {
+  // The real loop, over a repair that gets WORSE before it gets better —
+  // a deletion that breaks imports for a round, which is what a structural
+  // change looks like from the outside.
+  const scores = [4, 9, 6, 0];
+  let round = -1;
+  const said: string[] = [];
+  const result = await close({
+    subject: "the delivery",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "it works" }],
+    model: "sonnet",
+    measure: async () => {
+      round++;
+      const score = scores[Math.min(round, scores.length - 1)];
+      return { green: score === 0, score, evidence: `${score} red` };
+    },
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: (l) => said.push(l),
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: async () => ({ ok: true, finalText: "working" }),
+  });
+
+  assert.equal(result.green, true, "the repair that ends green is not abandoned on its worst round");
+  assert.ok(result.rounds >= 2, `it took more than one round: ${result.rounds}`);
+});
+
+test("a repair that stops improving does end", async () => {
+  const result = await close({
+    subject: "the delivery",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "it works" }],
+    model: "sonnet",
+    measure: async () => ({ green: false, score: 5, evidence: "5 red" }),
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: () => {},
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: async () => ({ ok: true, finalText: "no idea" }),
+  });
+  assert.equal(result.green, false);
+  assert.ok(result.rounds <= 3, `it stopped instead of grinding: ${result.rounds} rounds`);
 });
