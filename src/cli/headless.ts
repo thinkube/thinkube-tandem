@@ -156,7 +156,13 @@ export async function main(argv: readonly string[]): Promise<number> {
   const d = outcome.delivery;
   process.stdout.write(
     `\n── ${cut.tepId ?? cut.id} ──\n` +
-      (d?.url ? `delivered: ${d.url}\n` : d?.withheld ? `withheld: ${d.withheld}\n` : `no delivery\n`) +
+      (d?.withheld
+        ? `withheld: ${d.withheld}\n`
+        : d
+          ? `delivered${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
+            `proofs: ${d.proofs.filter((p) => p.verdict === "green").length} green, ${d.proofs.filter((p) => p.verdict !== "green").length} not\n` +
+            d.proofs.filter((p) => p.verdict !== "green").map((p) => `  ✗ ${p.label}\n`).join("")
+          : `no delivery\n`) +
       (outcome.refusals.length ? `refused: ${outcome.refusals.join("; ")}\n` : "") +
       (outcome.undelivered.length ? `undelivered:\n${outcome.undelivered.map((u) => `  - ${u}`).join("\n")}\n` : ""),
   );
