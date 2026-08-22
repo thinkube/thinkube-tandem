@@ -11,21 +11,33 @@ proves nothing and is deleted.
 
 ## The requirements, and how each is shown
 
+State, 22 August: **11 of the 13 rows are driven.** Rows 9 and 11 are not.
+
 | # | Claim | Driven by | Falsified by |
 |---|---|---|---|
-| 1 | One worktree per repository, and no others | after a run, the worktree list holds exactly one tree per repository the cut touched; no `-tester` tree and no `oracle-runners/` exist | re-introduce the tester snapshot: the drive sees the extra tree and fails |
-| 2 | Checks live in the repository's own test homes | after a run, every check is at a path the repository already uses for tests; no `probes/` directory exists | write one check to `probes/`: the drive fails |
-| 3 | Blinding is by permission, not by absence | a coder that reads a check path is refused, and the refusal is on the record | remove the read fence: the drive fails |
-| 4 | A unit is never failed for a red it cannot reach | a run where a standing test is red for a file no unit is cleared to change delivers, with the red named for the gate | restore the rule that the suite decides the unit: the drive fails |
-| 5 | The plan is refused before dispatch, not after | for each of: a criterion provable only by calling a class; a criterion whose site is outside its unit's clearance; a promise naming two repositories — the run refuses **before any worker starts**, naming the promise | move the check back to dispatch: the drive sees a worker start and fails |
-| 6 | Integration is exercised first | the plan's first slice drives the product end to end | order the slices with the seam last: the drive fails |
-| 7 | Wiring is proven by execution | the SL-6 fixture — a register built, disposed, and connected to nothing, with every check green — is **rejected**, because the drive never executed the unit's lines | remove the trace requirement: the fixture passes and the drive fails |
-| 8 | A stalled run says so and stops | a run with no progress writes what is open and halts itself | remove the watchdog: the drive hangs and fails |
+| 1 ✔ | One worktree per repository, and no others | after a run, the worktree list holds exactly one tree per repository the cut touched; no `-tester` tree and no `oracle-runners/` exist | re-introduce the tester snapshot: the drive sees the extra tree and fails |
+| 2 ✔ | Checks live in the repository's own test homes | after a run, every check is at a path the repository already uses for tests; no `probes/` directory exists | write one check to `probes/`: the drive fails |
+| 3 ✔ | Blinding is by permission, not by absence | a coder that reads a check path is refused, and the refusal is on the record | remove the read fence: the drive fails |
+| 4 ✔ | A unit is never failed for a red it cannot reach | a run where a standing test is red for a file no unit is cleared to change delivers, with the red named for the gate | restore the rule that the suite decides the unit: the drive fails |
+| 5 ✔ | The plan is refused before dispatch, not after — for the site outside a clearance and the promise naming two repositories. The third, a criterion provable only by calling a class, is NOT built: deciding it needs a fact the machine does not have | for each of: a criterion provable only by calling a class; a criterion whose site is outside its unit's clearance; a promise naming two repositories — the run refuses **before any worker starts**, naming the promise | move the check back to dispatch: the drive sees a worker start and fails |
+| 6 ○ | Integration is exercised first — the ordering is written and driven, but nothing supplies the product's outer seam yet, so it is not wired | the plan's first slice drives the product end to end | order the slices with the seam last: the drive fails |
+| 7 ✔ | Wiring is proven by execution | the SL-6 fixture — a register built, disposed, and connected to nothing, with every check green — is **rejected**, because the drive never executed the unit's lines | remove the trace requirement: the fixture passes and the drive fails |
+| 8 ✔ | A stalled run says so and stops — and so does one that talks forever | a run with no progress writes what is open and halts itself | remove the watchdog: the drive hangs and fails |
 | 9 | Nothing reaches the person except the work | every question or refusal shown to a person is free of file names, tool names and internals | feed an internals-laden question: the drive fails |
-| 10 | A failed criterion returns to its author's own session | the repair arrives as the next message in the session that wrote the code, carrying the drive's evidence and what changed since | start a fresh worker instead: the drive sees a new session id and fails |
-| 11 | Every repair says which stage it implicates | after a run with repairs, each row names one of: author's slip, brief lacked a fact, check misreads the criterion, clearance could not reach the site, criterion at the wrong altitude | write the row without the stage: the drive fails |
-| 12 | The loop always ends | a fuzz over run configurations — failing checks, unbuildable trees, a repairer that oscillates, a silent worker — reaches one of the three terminal states within its budgets, every time | remove the patience rule or the watchdog: a configuration hangs and the drive fails |
-| 13 | Demolition is not punished | a repair that deletes a module and breaks five imports for one round is allowed to continue and finish | count import errors as unkept promises: the repairer is stopped mid-refactor and the drive fails |
+| 10 ✔ | A failed criterion returns to its author's own session | the repair arrives as the next message in the session that wrote the code, carrying the drive's evidence and what changed since | start a fresh worker instead: the drive sees a new session id and fails |
+| 11 ✔ | Every repair says which stage it implicates | after a run with repairs, each row names one of: author's slip, brief lacked a fact, check misreads the criterion, clearance could not reach the site, criterion at the wrong altitude | write the row without the stage: the drive fails |
+| 12 ✔ | The loop always ends — driven for silence, for the wall clock, and for a repair that stops improving; the fuzz over configurations is not written | a fuzz over run configurations — failing checks, unbuildable trees, a repairer that oscillates, a silent worker — reaches one of the three terminal states within its budgets, every time | remove the patience rule or the watchdog: a configuration hangs and the drive fails |
+| 13 ✔ | Demolition is not punished | a repair that deletes a module and breaks five imports for one round is allowed to continue and finish | count import errors as unkept promises: the repairer is stopped mid-refactor and the drive fails |
+
+## What is not driven
+
+Row 9 — nothing reaches the person except the work — has no drive. The rule
+is real and the code obeys it in the places a person actually reads, but
+there is no gate that reads a message and refuses it for naming a file, and
+writing one from a word list would be a gate that passes anything phrased
+carefully. It is honest to say it is unproven.
+
+Row 6 is written and not wired, for the reason in its row.
 
 ## The end-to-end acceptance
 
