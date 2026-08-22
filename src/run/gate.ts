@@ -65,6 +65,8 @@ export interface GateContext {
     trigger: string;
     type?: string;
     qualifier?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;
   }) => void;
@@ -128,6 +130,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         activity: "closing gate",
         trigger: "wiring-trace",
         type: "code",
+        stage: "author",
         impact: "a green check proved nothing",
         detail: verdict.detail.slice(0, 400),
       });
@@ -306,6 +309,36 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       checks: kept,
     });
   undelivered.push(...docsObligations(slices, worktree));
+
+  // Delivery only at zero. The branch may hold any state along the way —
+  // there is deliberately no rule that it may never get worse, because that
+  // would forbid demolition — but nothing is handed over while a promise is
+  // unkept. A delivery with a red proof asks the person to finish the work
+  // and to decide which reds are acceptable, which is the machine's job.
+  const unkept = proofs.filter((p) => p.verdict !== "green");
+  if (unkept.length) {
+    await exec("git", ["add", "-A", "."], worktree);
+    await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
+    await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
+    const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
+    log(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
+    return {
+      refusals: [],
+      undelivered,
+      delivery: {
+        id: `delivery-${tep}`,
+        cutId: cut.id,
+        branch,
+        proofs,
+        withheld:
+          `${unkept.length} of the cut's promises are not kept, so nothing is handed over. The branch holds the work:\n` +
+          named.join("\n"),
+        ...(undelivered.length ? { undelivered } : {}),
+        ...(g.rulings.length ? { rulings: g.rulings } : {}),
+        ...(g.decisions.length ? { decisions: g.decisions } : {}),
+      },
+    };
+  }
 
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);

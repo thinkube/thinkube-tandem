@@ -57,10 +57,10 @@ same phase starts before it.
 |---|---|---|---|
 | 4.1 | Wiring proven by execution: the drive must execute the unit's lines | the SL-6 fixture is rejected | done |
 | 4.2 | A red criterion returns to its author's own session (resume), with the evidence and what changed | the repair is the next message in that session | todo |
-| 4.3 | Every repair records which stage it implicates (author, brief, check, clearance, altitude) | the ledger's new axis, per run | todo |
+| 4.3 | Every repair records which stage it implicates (author, brief, check, clearance, altitude) | the ledger's new axis, per run | done |
 | 4.4 | Convergence: build first, then unkept promises with patience against the best seen | a fuzz of configurations always reaches a terminal state | todo |
 | 4.5 | Demolition is not punished: a deletion that breaks imports for a round may continue | driven, and falsified by counting import errors as unkept | todo |
-| 4.6 | A delivery opens only when nothing is unkept; otherwise withheld, named per promise | a red proof never opens a delivery | todo |
+| 4.6 | A delivery opens only when nothing is unkept; otherwise withheld, named per promise | a red proof never opens a delivery | done |
 | 4.7 | Reject: a delivery the person refuses returns the cut to `signed` | the button exists and the state moves | todo |
 | 4.8 | One delivery record per cut, replaced per run | the space holds one row per cut, not four | todo |
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.3, 4.6, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

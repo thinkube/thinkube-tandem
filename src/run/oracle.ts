@@ -146,6 +146,8 @@ export interface OracleFactoryArgs {
     activity: string;
     trigger: string;
     type?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;
   }) => void;
@@ -280,6 +282,7 @@ export function sliceOracleFactory(
           activity: "verify-oracle supervision",
           trigger: "supervisor",
           type: "contract",
+          stage: "brief",
           impact: "round lost",
           detail: reply.slice(0, 1000),
         });
@@ -289,19 +292,33 @@ export function sliceOracleFactory(
           activity: "verify-oracle supervision",
           trigger: "supervisor",
           type: "test",
+          stage: "check",
           impact: "a check contradicts the intent",
           detail: reply.slice(0, 1000),
         });
       if (/^(CLEAR|WIDEN)/.test(reply.trimStart())) {
         const unit = a.acting?.(slice)?.unit ?? slice;
         const note = await applyClearance(a, slice, unit, reply);
-        if (note) return note;
+        if (note) {
+          a.defect({
+            slice,
+            unit,
+            activity: "verify-oracle supervision",
+            trigger: "supervisor",
+            type: "gate",
+            stage: "clearance",
+            impact: "a clearance could not reach the promise's site",
+            detail: note.slice(0, 400),
+          });
+          return note;
+        }
       }
       if (reply.trimStart().startsWith("ESCALATE")) {
         a.defect({
           slice,
           activity: "verify-oracle supervision",
           trigger: "supervisor",
+          stage: "altitude",
           impact: "a person must decide",
           detail: reply.slice(0, 500),
         });

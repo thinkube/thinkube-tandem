@@ -152,3 +152,33 @@ test("a blinded coder is refused the checks, and a coder never writes one", () =
     "and the tester writes its own checks",
   );
 });
+
+test("a promise that is not kept is withheld, never handed over red", async () => {
+  // The coder's work never satisfies the check and never changes, and the
+  // closer cannot save it either: there is nothing to deliver.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape);
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-withheld" };
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      state,
+      supervisorRound: async () => null,
+      spaceName: "delivers",
+      worker: scriptedWorker(shape, "unchanging", false).worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "delivers" }),
+  );
+
+  assert.ok(outcome.delivery, "the run still reaches a terminal state");
+  assert.ok(outcome.delivery?.withheld, "and it is withheld, not opened");
+  assert.match(outcome.delivery!.withheld!, /not kept/);
+  assert.equal(outcome.url, undefined, "nothing was handed over");
+});

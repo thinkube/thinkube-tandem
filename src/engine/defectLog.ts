@@ -33,6 +33,16 @@ export interface DefectEntry {
   type?: string;
   /** ODC qualifier (missing / incorrect / extraneous), when known. */
   qualifier?: string;
+  /**
+   * Which stage of the machine this repair implicates.
+   *
+   * The axis the first 461 rows did not have. A row saying a check went red
+   * says nothing about what to improve; a row saying the BRIEF lacked a
+   * fact, or the CHECK misread its criterion, or the CLEARANCE could not
+   * reach the site, points at the stage that has to change. It is what
+   * tells a reader whether to work on briefs, on checks, or on grounding.
+   */
+  stage?: "author" | "brief" | "check" | "clearance" | "altitude";
   /** The cost class: e.g. `prevented` (caught before damage), `round lost`. */
   impact: string;
   /** Free-text detail — the evidence, clipped by the caller. */

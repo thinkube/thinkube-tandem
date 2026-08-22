@@ -99,6 +99,8 @@ export async function dispatchTep(
     trigger: string;
     type?: string;
     qualifier?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;
   }): void => {
@@ -460,6 +462,7 @@ export async function dispatchTep(
           activity: "unit execution",
           trigger: "gate-verifier",
           type: "code",
+          stage: "author",
           impact: "unit undelivered",
           detail: formatVerifyReply(r).slice(0, 1000),
         });
