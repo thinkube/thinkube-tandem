@@ -15,13 +15,20 @@
  *   a foreign platform is a simulator, bigger than the code it tests, with
  *   its own defects, and green against it proves nothing about the real
  *   thing (THE-LADDER §3.2).
+ * - It may not READ THE SOURCE INSTEAD OF DRIVING IT. A check that opens a
+ *   file and asserts on its text passes for a stub, a comment, or a
+ *   coincidence of wording, and fails on a rename that changes nothing. It
+ *   proves that something was written, never that anything works.
+ * - It must DRIVE SOMETHING THIS CUT BUILDS. A check importing nothing this
+ *   run touches is green before the run starts and stays green whatever the
+ *   coders do.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 export interface ProbeFault {
   probe: string;
-  kind: "import-shape" | "simulator";
+  kind: "import-shape" | "simulator" | "source-text" | "drives-nothing";
   detail: string;
 }
 
@@ -45,6 +52,18 @@ export function interceptsLoader(source: string): string | undefined {
   return hits ? hits.source.replace(/\\/g, "") : undefined;
 }
 
+/** Reading a source file's TEXT: the check that greps instead of driving.
+ *  Reading a fixture is ordinary; reading something the repository compiles
+ *  is a check written about the code rather than against it. */
+export function readsSource(source: string): string | undefined {
+  const CODE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs)$/;
+  for (const m of source.matchAll(
+    /\b(readFileSync|readFile|readFileAsync|read_text|readText|open|File\.read|slurp)\s*\(\s*["'`]([^"'`\n]+)["'`]/g,
+  ))
+    if (CODE.test(m[2])) return m[2];
+  return undefined;
+}
+
 /**
  * Audit one probe against the repository it will run in. `root` is a
  * checkout of the base — its SOURCE is the ground truth, because the build
@@ -62,6 +81,16 @@ export function auditProbe(
   planned: readonly string[] = [],
 ): ProbeFault[] {
   const faults: ProbeFault[] = [];
+  const grepped = readsSource(source);
+  if (grepped)
+    faults.push({
+      probe,
+      kind: "source-text",
+      detail:
+        `it opens ${grepped} and asserts on the text it finds there. A stub, a comment, or a sentence that happens to match ` +
+        `passes that check, and a rename that changes no behaviour fails it. Drive the behaviour instead: call what the promise ` +
+        `introduces and assert on what it does.`,
+    });
   const loader = interceptsLoader(source);
   if (loader)
     faults.push({
@@ -91,6 +120,23 @@ export function auditProbe(
       });
     }
   }
+  // Nothing of this cut is imported: whatever it asserts, no coder can
+  // change its verdict.
+  if (
+    planned.length &&
+    !faults.some((f) => f.kind === "import-shape") &&
+    !importsOf(source).some((spec) => {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
+      return planned.some((p) => p === rel || p.replace(/\.[^./]+$/, "") === rel.replace(/\.[^./]+$/, ""));
+    })
+  )
+    faults.push({
+      probe,
+      kind: "drives-nothing",
+      detail:
+        `it imports nothing this cut builds, so its verdict cannot change whatever any coder writes. Import what the promise ` +
+        `introduces — ${planned.slice(0, 4).join(", ")} — and drive it.`,
+    });
   return faults;
 }
 

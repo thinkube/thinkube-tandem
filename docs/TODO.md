@@ -37,8 +37,8 @@ same phase starts before it.
 | # | Work | Proof | State |
 |---|---|---|---|
 | 2.1 | Checks are born in the repository's own test homes and idiom | after a run, no `probes/` directory | done |
-| 2.2 | A check drives the product at its outer seam; a source-text check is refused at authoring | a grep-shaped check is rejected before any coder starts | todo |
-| 2.3 | A check that only exercises a class in isolation is refused | same gate, driven | todo |
+| 2.2 | A check drives the product at its outer seam; a source-text check is refused at authoring | a grep-shaped check is rejected before any coder starts | done |
+| 2.3 | A check that drives nothing this cut builds is refused. *Altitude — a criterion provable only by calling a class — is refused at grounding (3.1), not here: a check follows the criterion it was written from, so refusing it at authoring punishes the wrong actor* | same gate, driven | done |
 
 ## Phase 3 — refuse the impossible before dispatch
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.
