@@ -181,4 +181,15 @@ test("a promise that is not kept is withheld, never handed over red", async () =
   assert.ok(outcome.delivery?.withheld, "and it is withheld, not opened");
   assert.match(outcome.delivery!.withheld!, /not kept/);
   assert.equal(outcome.url, undefined, "nothing was handed over");
+
+  // A withheld run keeps its evidence: the checks stay on the branch, for
+  // the person to read and the next run to resume from. Only an OPENED
+  // delivery discards them.
+  const held = execFileSync("git", ["-C", repo, "ls-tree", "-r", "--name-only", outcome.delivery!.branch])
+    .toString()
+    .split("\n");
+  assert.ok(
+    held.some((p) => /_AC-\d/.test(p)),
+    `the withheld branch lost its checks: ${held.filter((p) => p.includes("test")).join(", ")}`,
+  );
 });
