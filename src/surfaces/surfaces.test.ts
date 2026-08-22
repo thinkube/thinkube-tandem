@@ -45,6 +45,21 @@ test("no capability without a door: every session action is registered", () => {
   }
   assert.ok(gestureFor("build")!.includes("press Build"));
   assert.ok(gestureFor("reground")!.includes("out-of-date badge"), "re-grounding has a human door");
+
+  // The documentation-exemption action is covered by the loop above like
+  // every other action; named here so a regression on it is never lost in
+  // the general count.
+  const excuseDocs = AFFORDANCES["excuse-docs"];
+  assert.ok(excuseDocs, "the documentation-exemption action is registered in AFFORDANCES");
+  assert.equal(excuseDocs.kind, "human", "excusing documentation is a human decision, not machine-only");
+  assert.ok(
+    excuseDocs.kind === "human" && excuseDocs.affordance.surface.trim().length > 0,
+    "the door's surface is named and non-empty",
+  );
+  assert.ok(
+    excuseDocs.kind === "human" && excuseDocs.affordance.gesture.trim().length > 0,
+    "the door's gesture is named and non-empty",
+  );
 });
 
 test("session round-trip: capture grounds and clusters; sign; accept only on green; persistence keeps both", async () => {

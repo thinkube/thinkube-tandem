@@ -238,6 +238,144 @@ test("signing requires documentation or a written exemption — refused with nei
   assert.ok(signedByExemption.ok && signedByExemption.cut.signature, "the cut carries a signature");
 });
 
+test("the cut screen's documentation line names where docs land, says why they are not needed when excused, and says they are missing when neither holds", () => {
+  const landingSpace: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "document the new gate", at: "t" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "the docs page explains the new gate",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "the page reads clearly" }],
+        grounding: { touchpoints: [{ path: "docs/modules/ROOT/pages/gates.adoc" }], stamp: [] },
+      },
+    ],
+  };
+  const landingScreen = renderCutScreen(landingSpace, { id: "cut-1", changeIds: ["n1"] });
+  assert.ok(
+    landingScreen.includes("docs/modules/ROOT/pages/gates.adoc"),
+    "the cut screen names the documentation page the cut lands at",
+  );
+
+  const noLandingSpace: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "add a small internal helper", at: "t" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a helper function that trims whitespace",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "trims leading and trailing space" }],
+        grounding: { touchpoints: [{ path: "src/core/trim.ts" }], stamp: [] },
+      },
+    ],
+  };
+  const reason = "purely internal refactor, nothing user-facing to explain";
+  const excusedScreen = renderCutScreen(noLandingSpace, {
+    id: "cut-1",
+    changeIds: ["n1"],
+    docsException: { reason },
+  });
+  assert.ok(
+    excusedScreen.toLowerCase().includes("not needed"),
+    "the render says documentation is not needed for an excused cut",
+  );
+  assert.ok(excusedScreen.includes(reason), "the render carries the human's exemption reason word for word");
+
+  const missingScreen = renderCutScreen(noLandingSpace, { id: "cut-1", changeIds: ["n1"] });
+  assert.ok(
+    missingScreen.toLowerCase().includes("documentation") && missingScreen.toLowerCase().includes("missing"),
+    "the render says documentation is missing when there is no landing and no exemption",
+  );
+  assert.ok(
+    missingScreen.toLowerCase().includes("cannot be signed"),
+    "the render says the cut cannot be signed until documentation is written or excused",
+  );
+});
+
+test("signCut stamps the recorded exemption reason and the signing moment onto the signed cut, and verifyCutSignature reports grounding drift once that reason is edited", () => {
+  const space: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "ship a change with no documentation", at: "t" }],
+    nodes: [
+      {
+        id: "node-1",
+        sentence: "a change that lands only in code",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "it works" }],
+        grounding: { touchpoints: [{ path: "src/thing.ts" }], stamp: [] },
+      },
+    ],
+  };
+  const cut = {
+    id: "cut-1",
+    changeIds: ["node-1"],
+    exemption: { reason: "this is a config-only change; nothing to document" },
+  };
+  const r = signCut(space, cut, "2026-08-20T09:00:00Z", "user");
+  assert.ok(r.ok, r.ok ? "" : r.reason);
+  assert.ok(r.ok && r.cut.exemption, "the signed cut carries the exemption");
+  assert.equal(
+    r.ok && r.cut.exemption!.reason,
+    "this is a config-only change; nothing to document",
+    "the recorded reason rides the signed cut, word for word",
+  );
+  assert.equal(
+    r.ok && r.cut.exemption!.at,
+    "2026-08-20T09:00:00Z",
+    "the moment of signing is stamped onto the exemption alongside the reason",
+  );
+  assert.equal(r.ok && verifyCutSignature(space, r.cut).ok, true, "unedited, the signature holds");
+
+  const edited = {
+    ...(r.ok ? r.cut : cut),
+    exemption: { ...(r.ok ? r.cut.exemption : undefined), reason: "a different reason, typed after signing" },
+  };
+  const v = verifyCutSignature(space, edited);
+  assert.ok(!v.ok, "an edited reason must not still verify");
+  assert.equal(!v.ok && v.drift, "grounding", "the drift is grounding — the reason is part of what was signed");
+});
+
+test("verifyCutSignature is ok on the cut signCut just returned for an excused cut, and renderCutScreen prints the reason word for word without a signing moment", () => {
+  const space: Space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "ship a change with no documentation", at: "t" }],
+    nodes: [
+      {
+        id: "node-1",
+        sentence: "a change that lands only in code",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "it works" }],
+        grounding: { touchpoints: [{ path: "src/thing.ts" }], stamp: [] },
+      },
+    ],
+  };
+  const reason = "config-only change; nothing to document, verbatim reason here";
+  const cut = { id: "cut-1", changeIds: ["node-1"], exemption: { reason } };
+  const screen = renderCutScreen(space, cut);
+  assert.ok(screen.includes(reason), "the reason appears word for word");
+
+  const signed = signCut(space, cut, "2026-08-20T09:00:00Z", "user");
+  assert.ok(signed.ok, signed.ok ? "" : signed.reason);
+  assert.ok(signed.ok && verifyCutSignature(space, signed.cut).ok, "verifyCutSignature is ok on the cut signCut just returned");
+
+  const screenAfterSigning = renderCutScreen(space, signed.ok ? signed.cut : cut);
+  assert.equal(
+    screenAfterSigning,
+    screen,
+    "the render is byte-identical before and after signing — the signing moment does not appear in it",
+  );
+  assert.ok(
+    !screenAfterSigning.includes("2026-08-20T09:00:00Z"),
+    "the signing moment itself never appears on the render",
+  );
+});
+
 test("the docs gate blocks an accept by default; advisory is the explicit escape hatch", () => {
   const d = {
     id: "d-1",

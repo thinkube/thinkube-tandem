@@ -18,21 +18,22 @@ import type { TandemSession } from "./session";
 import * as path from "node:path";
 
 export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string } {
+    const pending = s.space.pendingDocException;
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
-      ...(s.docsExemption ? { docsExemption: s.docsExemption } : {}),
+      ...(pending ? { docsExemption: pending } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
-    s.space = { ...s.space, cuts: [...s.space.cuts, r.cut] };
+    // Spent on this one cut: the space holds no pending exception for the
+    // next — cleared in the same act that records the signed cut.
+    s.space = { ...s.space, cuts: [...s.space.cuts, r.cut], pendingDocException: undefined };
     // The human's click IS the mint (this message only arrives from the
     // panel): a content-bound token in the machine-local store — the same
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
     s.cutNodeIds.clear();
-    // Spent on this one cut: the session holds no exemption for the next.
-    s.docsExemption = undefined;
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
     void executeRun(s, r.cut.id);
     return { ok: true };

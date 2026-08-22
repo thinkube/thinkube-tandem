@@ -83,7 +83,7 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   // this render cannot move between the hash signCut takes and the one
   // verifyCutSignature re-renders after.
   const docs = docLandings(space, cut);
-  const exemptionReason = (cut.exemption ?? cut.docsExemption)?.reason?.trim();
+  const exemptionReason = (cut.exemption ?? cut.docsExemption ?? cut.docsException)?.reason?.trim();
   if (docs.length) {
     lines.push(`Documentation lands at:`);
     for (const d of docs) lines.push(`  • ${d}`);

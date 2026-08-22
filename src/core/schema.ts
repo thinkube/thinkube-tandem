@@ -141,6 +141,11 @@ export interface Cut {
   /** Alias of `docsExemption`, kept identical wherever the cut carries one.
    *  The gates read and write both names for the same excuse. */
   exemption?: { reason: string; at?: string };
+  /** The same excuse, unsigned: what the cut-review render reads before a
+   *  signature exists — carried over from the space's pending exception so
+   *  the render the human reads before the click and the one re-rendered
+   *  after it are the same text. Never carries a stamp. */
+  docsException?: { reason: string };
 }
 
 /**
@@ -286,6 +291,13 @@ export interface Space {
   };
   /** A reading that failed, with the round's own words for why. */
   readingFailure?: { askIds: string[]; texts: string[]; reason: string };
+  /** A written excuse for the next cut to land no documentation, staged
+   *  before signing — the documentation exception. Once for the whole cut:
+   *  signing is one decision over one cut, so a per-promise exception would
+   *  turn one sentence into a form. Carried on the space (not the session
+   *  alone) so it survives a reload and a multi-author fold; spent the
+   *  moment signCut binds it onto the signed cut. */
+  pendingDocException?: { reason: string };
 }
 
 /**

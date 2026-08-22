@@ -132,6 +132,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
     impacts: space.impacts?.map((im) => ({ ...im, askId: r(im.askId), questionId: r(im.questionId) })),
     cuts: space.cuts.map((c) => ({ ...c, id: r(c.id), changeIds: c.changeIds.map(r) })),
     deliveries: space.deliveries.map((d) => ({ ...d, id: r(d.id), cutId: r(d.cutId) })),
+    pendingDocException: space.pendingDocException,
   };
 }
 
@@ -205,6 +206,11 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
       if (!existing) merged.deliveries.push(d);
       else if (!existing.acceptedAt && d.acceptedAt) existing.acceptedAt = d.acceptedAt;
     }
+    // A pending documentation exception is one author's staged excuse for
+    // the next cut — carried through the fold rather than dropped, the
+    // same way every other pre-signature field survives it.
+    if (!merged.pendingDocException && space.pendingDocException)
+      merged.pendingDocException = space.pendingDocException;
   }
 
   // Decisions: one distinct answer stands; two or more distinct answers

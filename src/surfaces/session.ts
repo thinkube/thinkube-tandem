@@ -40,11 +40,6 @@ export class TandemSession {
   units: Unit[] = [];
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
-  /** A written excuse for the next cut to land no documentation, staged
-   *  before signing. Once for the whole cut, spent the moment signCut uses
-   *  it — after a signed cut carries it, the session holds no exemption
-   *  for the next cut. */
-  docsExemption: { reason: string } | undefined;
   stale = new Set<string>();
   /** Criteria whose standing proof moved since it was bound — the test
    *  file changed after the anchor's stamp, so "proved" is out of date. */
@@ -472,10 +467,27 @@ export class TandemSession {
   }
 
   cutScreen(): string {
+    const pending = this.space.pendingDocException;
     return renderCutScreen(this.space, {
       id: `cut-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
+      ...(pending ? { docsException: { reason: pending.reason } } : {}),
     });
+  }
+
+  /**
+   * Before signing, say documentation is not needed for this cut — a
+   * written reason is required; a blank or whitespace-only reason is
+   * refused and nothing is recorded. Once for the whole cut: spent the
+   * moment signCut binds it onto the signed cut.
+   */
+  excuseDocs(reason: string): { ok: boolean; reason?: string } {
+    const trimmed = reason.trim();
+    if (!trimmed)
+      return { ok: false, reason: "documentation cannot be excused without a reason" };
+    this.space = { ...this.space, pendingDocException: { reason: trimmed } };
+    this.changed("Documentation excused for this cut — recorded, waiting to sign.");
+    return { ok: true };
   }
 
   /** Gate 1. On success the run starts — nothing between the gates is human. */

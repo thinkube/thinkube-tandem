@@ -9,8 +9,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { HostPanel, HostWebview, PanelHost, SpacePanel } from "./panel";
+import { HostPanel, HostWebview, PanelHost, SpacePanel, spacePush } from "./panel";
 import { TandemSession } from "./session";
+import { emptySpace } from "../core/schema";
 
 function bareSession(spaceName: string): TandemSession {
   return new TandemSession({
@@ -183,4 +184,35 @@ test("the panel tells its owner when the editor closed it, so nothing keeps a de
   host.made[0].closeFromEditor();
 
   assert.equal(closedCalls, 1, "the owner was told exactly once when the editor closed the tab");
+});
+
+test("spacePush carries the recorded documentation-exemption reason when the session holds one, and no exemption field when it holds none", () => {
+  const session = bareSession("Space A");
+  const reason = "internal-only change, nothing to document for users";
+  session.space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "add a tiny internal helper", at: "t" }],
+    pendingDocException: { reason },
+  };
+  const withException = spacePush(session);
+  assert.ok(
+    (withException as { docsException?: { reason: string } }).docsException,
+    "the push must carry a docsException field when one is held",
+  );
+  assert.equal(
+    (withException as { docsException?: { reason: string } }).docsException?.reason,
+    reason,
+    "the pushed exemption must carry the exact recorded reason text",
+  );
+
+  session.space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "add a tiny internal helper", at: "t" }],
+  };
+  const withoutException = spacePush(session);
+  assert.equal(
+    (withoutException as { docsException?: unknown }).docsException,
+    undefined,
+    "the push must carry no exemption field when the session holds none",
+  );
 });

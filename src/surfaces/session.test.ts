@@ -59,3 +59,78 @@ test("a session carries the display name of its own thinking space, taken from t
     "the repository/project label is still read from the scope, unchanged and independent",
   );
 });
+
+const CURRENT = { root: "/repo", head: "h1", dirty: "" };
+
+function docsSession(): TandemSession {
+  return new TandemSession({
+    round: { model: "sonnet", repoRoot: "/repo" },
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-docs-")),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-docs-keys-")),
+    now: () => "2026-08-20T10:00:00Z",
+    author: "t",
+    readCurrentStamp: async () => [CURRENT],
+  } as unknown as SessionDeps);
+}
+
+test("the session gesture that excuses documentation records the reason and the cut review carries it", () => {
+  const s = docsSession();
+  s.space = {
+    ...s.space,
+    asks: [{ id: "ask-1", text: "add a tiny internal helper", at: "t" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a helper that trims whitespace",
+        serves: ["ask-1"],
+        needs: [],
+        grounding: { touchpoints: [{ path: "src/core/trim.ts" }], stamp: [CURRENT] },
+        acceptance: [{ id: "c1", text: "trims leading and trailing space" }],
+      },
+    ],
+  };
+  s.cutNodeIds = new Set(["n1"]);
+
+  const reason = "internal-only change, nothing to document for users";
+  const r = s.excuseDocs(reason);
+  assert.ok(r.ok, `excusing documentation with a real reason must succeed: ${r.reason ?? ""}`);
+
+  const screen = s.cutScreen();
+  assert.ok(
+    screen.includes(reason),
+    "the cut review rendered after excusing documentation carries the recorded reason",
+  );
+});
+
+test("excusing documentation with a blank or whitespace-only reason is refused and records nothing", () => {
+  for (const blank of ["", "   ", "\t\n"]) {
+    const s = docsSession();
+    s.space = {
+      ...s.space,
+      asks: [{ id: "ask-1", text: "add a tiny internal helper", at: "t" }],
+      nodes: [
+        {
+          id: "n1",
+          sentence: "a helper that trims whitespace",
+          serves: ["ask-1"],
+          needs: [],
+          grounding: { touchpoints: [{ path: "src/core/trim.ts" }], stamp: [CURRENT] },
+          acceptance: [{ id: "c1", text: "trims leading and trailing space" }],
+        },
+      ],
+    };
+    s.cutNodeIds = new Set(["n1"]);
+
+    const r = s.excuseDocs(blank);
+    assert.equal(r.ok, false, `a blank reason (${JSON.stringify(blank)}) must be refused`);
+    assert.ok(
+      typeof r.reason === "string" && r.reason.toLowerCase().includes("reason"),
+      "the refusal says documentation cannot be excused without a reason",
+    );
+    assert.equal(
+      s.space.pendingDocException,
+      undefined,
+      "a refused gesture records no pending exemption on the space",
+    );
+  }
+});
