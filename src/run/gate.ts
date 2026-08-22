@@ -28,6 +28,9 @@ import {
 } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
+import { provedByExecution } from "./wiring";
+import type { WiringVerdict } from "./wiring";
+import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { suiteFootprint, suiteVerdictOf } from "./suite";
@@ -99,15 +102,50 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   });
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
   const criterionByProbe = criterionMapOf(slices);
+  // Wiring proven by execution: a green check is asked whether running it
+  // actually executed the code its promise lands in. A stub satisfies an
+  // assertion; it cannot appear on a path nothing reaches.
+  const subjectsOf = (criterionId?: string): string[] => {
+    if (!criterionId) return [];
+    const promise = space.nodes.find((n) => n.acceptance.some((a) => a.id === criterionId));
+    return (promise?.grounding?.touchpoints ?? []).map((t) => t.path).filter((p) => !isTestPath(p));
+  };
+  const wiring = new Map<number, WiringVerdict>();
+  for (const r of acResults) {
+    if (!r.pass) continue;
+    const v = verifs.find((x) => x.ac === r.ac);
+    if (!v?.run || v.env === "assessment") continue;
+    const probe = probeOfAc.get(r.ac);
+    const verdict = await provedByExecution({
+      run: v.run,
+      subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
+      worktree,
+      exec: boundedExec,
+    });
+    wiring.set(r.ac, verdict);
+    if (verdict.executed === "no")
+      defect({
+        activity: "closing gate",
+        trigger: "wiring-trace",
+        type: "code",
+        impact: "a green check proved nothing",
+        detail: verdict.detail.slice(0, 400),
+      });
+  }
+  const unproven = [...wiring.values()].filter((w) => w.executed === "unknown").length;
+  if (unproven) log(`${tep}: ${unproven} check(s) ran under a runtime that does not report what it executed — their wiring is unproven`);
   const proofs: Proof[] = assessed.concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;
+      const wired = wiring.get(r.ac);
+      const kept = r.pass && wired?.executed !== "no";
+      const ref = wired && wired.executed !== "yes" ? wired.detail : r.evidence;
       return {
         kind: "probe" as const,
         label: (probe && g.checkOf.get(probe)) || `check ${r.ac}`,
-        verdict: r.pass ? ("green" as const) : ("red" as const),
-        ...(r.evidence ? { ref: r.evidence.slice(0, 200) } : {}),
+        verdict: kept ? ("green" as const) : ("red" as const),
+        ...(ref ? { ref: ref.slice(0, 300) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
     }),
