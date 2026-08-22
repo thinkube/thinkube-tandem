@@ -45,11 +45,11 @@ same phase starts before it.
 | # | Work | Proof | State |
 |---|---|---|---|
 | 3.1 | A criterion provable only by calling a class is refused at grounding | refused with the promise named, before signing | todo |
-| 3.2 | A criterion whose site is outside its unit's clearance is refused | SL-7's class made unrepresentable | todo |
-| 3.3 | The repository is a field of the promise, not of each touchpoint | a promise cannot name two repositories | todo |
+| 3.2 | A criterion whose site is outside its unit's clearance is refused | SL-7's class made unrepresentable | done |
+| 3.3 | A promise landing in two repositories is refused before dispatch | driven | done |
 | 3.4 | The cut review shows which repository each promise lands in | visible before signing | todo |
 | 3.5 | What cannot be driven is declared *unprovable* at signing, in the person's words | the list appears on the cut review | todo |
-| 3.6 | Slice order puts a thin end-to-end path first (walking skeleton) | the first slice drives the product end to end | todo |
+| 3.6 | Slice order puts a thin end-to-end path first | the ordering exists and is driven (`skeletonFirst`), but **nothing supplies the product's outer seam yet**, so it is not wired: a walking skeleton is a decision about how a cut is sliced, not a reordering of slices already cut | doing |
 
 ## Phase 4 — the gate, and how repair works
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

@@ -14,6 +14,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { auditProbe } from "./probeAudit";
+import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
+import { emptySpace } from "../core/schema";
 
 /** A repository with one directory, so the import audit has ground truth. */
 function repo(): string {
@@ -87,5 +89,113 @@ test("a check reading a fixture is not a source-text check", () => {
     faults.filter((f) => f.kind === "source-text"),
     [],
     "reading a fixture is not reading the source",
+  );
+});
+
+/**
+ * And what the machine refuses before it dispatches anybody — read from the
+ * plan, said in the person's own words, with no worker started.
+ */
+test("a promise landing in two repositories is refused before any worker", () => {
+  const refusals = refusalsBeforeDispatch({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/greet.mjs"],
+        workUnits: [{ footprint: ["src/greet.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "greet the user everywhere",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "greet() returns hello" }],
+          grounding: {
+            touchpoints: [
+              { path: "src/greet.mjs", planned: true, scope: "web" },
+              { path: "src/greet.mjs", planned: true, scope: "api" },
+            ],
+            stamp: [],
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(refusals.length, 1, JSON.stringify(refusals));
+  assert.match(refusals[0], /more than one repository/);
+  assert.match(refusals[0], /greet the user everywhere/, "the person's own words, not a file");
+});
+
+test("a promise whose only site its unit may not change is refused before any worker", () => {
+  const refusals = refusalsBeforeDispatch({
+    slices: [
+      {
+        handle: "SL-7",
+        status: "ready",
+        files: ["src/panel.mjs"],
+        workUnits: [{ footprint: ["src/panel.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "one editor tab per thinking space",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "opening a space twice reveals the same tab" }],
+          grounding: { touchpoints: [{ path: "src/extension.mjs", planned: false }], stamp: [] },
+        },
+      ],
+    },
+  });
+  assert.equal(refusals.length, 1, JSON.stringify(refusals));
+  assert.match(refusals[0], /may not change src\/extension\.mjs/);
+});
+
+test("a promise its unit can reach, in one repository, is refused nothing", () => {
+  const refusals = refusalsBeforeDispatch({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/greet.mjs"],
+        workUnits: [{ footprint: ["src/greet.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "greet the user",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "greet() returns hello" }],
+          grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+        },
+      ],
+    },
+  });
+  assert.deepEqual(refusals, []);
+});
+
+test("the plan runs a thin end-to-end path first", () => {
+  const slice = (handle: string, file: string): never =>
+    ({ handle, status: "ready", files: [file], workUnits: [{ footprint: [file], execution: "serial", role: "code" }] }) as never;
+  const ordered = skeletonFirst([slice("SL-1", "src/deep/core.mjs"), slice("SL-2", "src/main.mjs")], ["src/main.mjs"]);
+  assert.deepEqual(
+    ordered.map((s) => s.handle),
+    ["SL-2", "SL-1"],
+    "the slice that reaches the product's outer seam goes first",
   );
 });

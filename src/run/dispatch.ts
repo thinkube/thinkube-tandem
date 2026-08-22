@@ -47,6 +47,7 @@ import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, testerStanza } from "./brief";
 import { sliceBookkeeping } from "./plan";
 import { rehouseChecks } from "./checkHomes";
+import { refusalsBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
@@ -138,6 +139,10 @@ export async function dispatchTep(
   const misowned = coderTestPaths(slices);
   if (misowned.length)
     return refuse("plan-roles", `the plan hands a coder test-shaped paths — refused before dispatch: ${misowned.join(", ")}`);
+  // A promise nobody can keep is refused now, in the person's own words —
+  // never discovered by a worker four rounds in.
+  const impossible = refusalsBeforeDispatch({ slices, space });
+  if (impossible.length) return refuse("plan-promises", impossible.join("\n"), "gate");
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
