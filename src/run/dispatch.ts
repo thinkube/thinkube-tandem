@@ -94,6 +94,29 @@ export async function dispatchTep(
   const env = scrubbedEnv();
   const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
 
+  /**
+   * Attention events ABOUT THE MACHINE — the number this design is judged
+   * by, counted where the rows are written rather than reconstructed later.
+   *
+   * A question about the WORK is legitimate and designed in. A stall, a
+   * crash, a run that refused itself, a unit failed for something it could
+   * not reach: each is a moment a person had to interpret the machine, and
+   * each is a defect of the machine.
+   */
+  const MACHINE_ATTENTION = new Set([
+    "watchdog",
+    "crash",
+    "run-lock",
+    "setup",
+    "worktree",
+    "refresh-conflict",
+    "plan-validation",
+    "plan-roles",
+    "signature-drift",
+    "gate-infra",
+  ]);
+  let machineAttention = 0;
+
   const defect = (entry: {
     slice?: string;
     unit?: string;
@@ -106,6 +129,7 @@ export async function dispatchTep(
     impact: string;
     detail: string;
   }): void => {
+    if (MACHINE_ATTENTION.has(entry.trigger)) machineAttention++;
     if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry });
   };
 
@@ -556,12 +580,17 @@ export async function dispatchTep(
   for (const id of pending)
     st.block(id, "never ran — the run stopped, or something it waits on failed");
 
+  if (machineAttention)
+    log(
+      `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
+    );
   return await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),
     worker,
+    machineAttention: () => machineAttention,
   });
   } finally {
     watch.stop();

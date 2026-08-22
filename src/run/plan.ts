@@ -274,6 +274,8 @@ export async function writeDeliveryRecord(
     acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
     /** The checks themselves — kept here because the files are discarded. */
     checks?: KeptCheck[];
+    /** Attention events about the machine in this run. Target: zero. */
+    machineAttention?: number;
   },
 ): Promise<void> {
   try {
@@ -295,6 +297,7 @@ export async function writeDeliveryRecord(
           undelivered: record.undelivered,
           trace,
           ...(record.checks?.length ? { checks: record.checks } : {}),
+          machineAttention: record.machineAttention ?? 0,
         },
         null,
         2,

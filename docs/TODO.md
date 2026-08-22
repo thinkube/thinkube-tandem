@@ -68,7 +68,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 5.1 | A project gate runs the cross-repository drives after the deliveries land | a promise spanning two repositories is proven or named unproven | todo |
+| 5.1 | A project gate runs the cross-repository drives after the deliveries land | **not built, deliberately.** A promise spanning two repositories is now refused before dispatch (3.3), so a project gate would judge an empty set. It becomes real work the day a cut is allowed to span repositories | todo |
 | 5.2 | Until 5.1 exists, a cross-repository promise is refused before dispatch (3.3) and its repository is on the cut review (3.4) | driven | done |
 
 ## Phase 6 — the machine's own hygiene
@@ -86,7 +86,7 @@ same phase starts before it.
 | # | Work | Proof | State |
 |---|---|---|---|
 | 7.1 | The machine delivers the four asks, headless, three times | the delivered change runs and does what was asked | todo |
-| 7.2 | Attention events about the machine, counted per run | zero | todo |
+| 7.2 | Attention events about the machine, counted per run | counted where the rows are written, said at the end of every run, and recorded on the delivery | done |
 | 7.3 | If 7.1 fails twice for reasons in the machine: stop, and fall back to v1's loop plus one attention-reducing mechanism at a time | the decision, recorded here | todo |
 
 ---

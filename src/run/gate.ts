@@ -64,6 +64,8 @@ export interface GateContext {
   sessionOf: (unit: string) => string | undefined;
   /** The run's worker, so a repair is the next message in that session. */
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
+  /** How many times this run made a person interpret the machine. */
+  machineAttention: () => number;
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
@@ -317,6 +319,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       verifs,
       acResults,
       checks: kept,
+      machineAttention: g.machineAttention(),
     });
   undelivered.push(...docsObligations(slices, worktree));
 
