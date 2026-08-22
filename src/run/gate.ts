@@ -299,28 +299,6 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
   }
 
-  // A check proves a promise once; it does not join the repository's suite
-  // because it exists. Its source and its verdict are kept on the delivery
-  // record — where a person can read what was driven — and the file leaves
-  // the tree, so a delivery of N promises does not hand the repository N
-  // permanent tests to maintain forever.
-  const kept = await keptChecks([...g.sliceProbes.values()].flat(), worktree, criterionByProbe);
-  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
-  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
-
-  const recordPath = deps.storeDir ? path.join(deps.storeDir, "deliveries", `${tep}.json`) : undefined;
-  if (deps.storeDir)
-    await writeDeliveryRecord(deps.storeDir, {
-      tep,
-      branch,
-      baseSha: g.baseSha,
-      proofs,
-      undelivered,
-      verifs,
-      acResults,
-      checks: kept,
-      machineAttention: g.machineAttention(),
-    });
   undelivered.push(...docsObligations(slices, worktree));
 
   // Delivery only at zero. The branch may hold any state along the way —
@@ -376,8 +354,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
       for (const r of again) {
         const probe = probeOfAc.get(r.ac);
+        const criterionId = probe ? criterionByProbe.get(probe) : undefined;
         const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
-        const proof = proofs.find((p) => p.label === label);
+        // By the criterion it proves; two checks can carry the same words.
+        const proof = criterionId
+          ? proofs.find((p) => p.criterionId === criterionId)
+          : proofs.find((p) => p.label === label);
         if (!proof || !r.pass) continue;
         const wired = await provedByExecution({
           run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
@@ -393,6 +375,30 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
     }
   }
+  // A check proves a promise once; it does not join the repository's suite
+  // because it exists. Its source and its verdict are kept on the delivery
+  // record — where a person can read what was driven — and the file leaves
+  // the tree, so a delivery of N promises does not hand the repository N
+  // permanent tests to maintain forever.
+  const kept = await keptChecks([...g.sliceProbes.values()].flat(), worktree, criterionByProbe);
+  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
+  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
+
+  const recordPath = deps.storeDir ? path.join(deps.storeDir, "deliveries", `${tep}.json`) : undefined;
+  if (deps.storeDir)
+    await writeDeliveryRecord(deps.storeDir, {
+      tep,
+      branch,
+      baseSha: g.baseSha,
+      proofs,
+      undelivered,
+      verifs,
+      acResults,
+      checks: kept,
+      machineAttention: g.machineAttention(),
+    });
+  undelivered.push(...docsObligations(slices, worktree));
+
   if (unkept.length) {
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
