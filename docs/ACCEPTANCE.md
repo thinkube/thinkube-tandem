@@ -22,6 +22,10 @@ proves nothing and is deleted.
 | 7 | Wiring is proven by execution | the SL-6 fixture — a register built, disposed, and connected to nothing, with every check green — is **rejected**, because the drive never executed the unit's lines | remove the trace requirement: the fixture passes and the drive fails |
 | 8 | A stalled run says so and stops | a run with no progress writes what is open and halts itself | remove the watchdog: the drive hangs and fails |
 | 9 | Nothing reaches the person except the work | every question or refusal shown to a person is free of file names, tool names and internals | feed an internals-laden question: the drive fails |
+| 10 | A failed criterion returns to its author's own session | the repair arrives as the next message in the session that wrote the code, carrying the drive's evidence and what changed since | start a fresh worker instead: the drive sees a new session id and fails |
+| 11 | Every repair says which stage it implicates | after a run with repairs, each row names one of: author's slip, brief lacked a fact, check misreads the criterion, clearance could not reach the site, criterion at the wrong altitude | write the row without the stage: the drive fails |
+| 12 | The loop always ends | a fuzz over run configurations — failing checks, unbuildable trees, a repairer that oscillates, a silent worker — reaches one of the three terminal states within its budgets, every time | remove the patience rule or the watchdog: a configuration hangs and the drive fails |
+| 13 | Demolition is not punished | a repair that deletes a module and breaks five imports for one round is allowed to continue and finish | count import errors as unkept promises: the repairer is stopped mid-refactor and the drive fails |
 
 ## The end-to-end acceptance
 
@@ -42,11 +46,21 @@ Measured, from artefacts that already exist:
 Until that run exists, v2.5 is a design document, and I will say so rather
 than report progress against the mechanisms.
 
+## The experiment that comes first
+
+Before any of the deletions in TARGET.md §1, one fresh run — a cut with no
+prior work — measuring from the log how many criteria go red→green **inside
+a unit's own rounds**. That number decides whether per-unit verification is
+earning the machinery it requires. Today's only measurement is a resumed
+run, where five units out of five arrived green and improved nothing, which
+proves nothing about a fresh one.
+
 ## Order, and what "ready" means at each step
 
 Each step is finished when its drive passes **and** its falsification turns
 it red. Nothing moves to the next step first.
 
+0. Run the experiment above and record the number.
 1. Delete the extra trees inside each repository (rows 1–3).
 2. Checks born in the repository's test homes (row 2 completes).
 3. Pre-flight refusals and slice order (rows 5–6).

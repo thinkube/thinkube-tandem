@@ -73,12 +73,14 @@ Each gate states its evidence, its pass rule, and what happens on failure.
   fails with its reason.
 - **Attends:** no.
 
-### G4 — Unit gate (per unit, every round)
-- **Evidence:** the build, the unit's own checks, the execution trace.
-- **Passes when:** the build is green, every check of its criteria passes,
-  and the drive **executed** the lines the unit wrote.
-- **Fails →** rework (bounded), then the closer, then the unit fails with
-  its report. The repository's suite is not consulted here.
+### G4 — Unit completion
+- **Evidence:** the build over the tree, and the unit's own claim.
+- **Passes when:** the build is green and the unit says it is finished.
+  There is no per-unit verdict on the criteria: the gate judges them, once,
+  where the whole tree exists. (This is v1's shape. The experiment in
+  TARGET.md §6 decides it before the per-unit oracle is removed.)
+- **Fails →** the unit fails with its report; its work stays in the tree and
+  is named on the delivery.
 - **Attends:** no.
 
 ### G5 — Slice commit
@@ -88,14 +90,21 @@ Each gate states its evidence, its pass rule, and what happens on failure.
   named on the delivery.
 - **Attends:** no.
 
-### G6 — Repository gate (once, on the whole tree)
+### G6 — Repository gate (once, on the whole tree; the only judge of criteria)
 - **Evidence:** the whole repository suite, every criterion's check, the
   assessments, the stub scan, the docs obligation, the execution traces.
 - **Passes when:** the suite is green, every criterion has a green proof,
   no stub marker survives, and every promise's drive executed its code.
-- **Fails →** the finisher (one round), then the closer (while it makes
-  progress). If it still fails, the delivery is **withheld** with the
-  reasons named, and the way back in is offered.
+- **Fails →** each red criterion returns to the unit that owns it, **as the
+  next message in that worker's own session** (resume), with the drive's
+  evidence and what changed in the tree since it stopped. Then the check
+  repair, then the closer with the whole tree. If it still fails, the
+  delivery is **withheld** with every unkept promise named, and the way back
+  in is offered.
+- **Records:** every repair writes which stage it implicates — the author's
+  own slip, a brief that lacked a fact, a check that misreads its criterion,
+  a clearance that could not reach the site, or a criterion at the wrong
+  altitude.
 - **Attends:** only to decide accept or reject, and only on a delivery that
   passed.
 
@@ -136,11 +145,35 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 | lines written by a unit that its drive executed | **100%** | the execution trace |
 | repository suite at G6 | green | the gate |
 | the machine's own tests: defects caught / defects introduced | rises, never falls | the mutation run |
+| unkept promises per run | falls to zero, or the run withholds | the delivery record's trajectory |
+| where repairs implicate an upstream stage | shifts toward "author's own slip" | the defect ledger's new axis |
 
 A release that raises the first measure is a bad release, whatever the test
 count says.
 
-## 6. Escalation policy
+## 6. Convergence — why the loop ends
+
+- **Build first.** A tree that does not compile is one failure, not many. A
+  deletion that breaks five imports is a build failure, never five unkept
+  promises.
+- **Then the count of unkept promises**, measured at round boundaries
+  against the best seen so far, with patience of a couple of rounds: a
+  repairer may make things temporarily worse while it does something
+  structural, but not for long.
+- **Bounded rungs:** author, check repair, arbiter ruling, closer — each
+  once per failure, none re-entered.
+- **A wall-clock backstop:** the watchdog ends a silent run with its report.
+- **Three terminal states only:** delivered; withheld with every unkept
+  promise named; halted with what was open.
+- **Delivery only at zero.** The branch may hold any state along the way —
+  there is deliberately no rule that it may never get worse, because that
+  would forbid demolition. Nothing is handed over until nothing is unkept.
+
+Guaranteed: termination, honesty, and that nothing incomplete is handed
+over. Not guaranteed: that the count reaches zero. When it cannot, the run
+stops and says which promise it could not keep, in your words.
+
+## 7. Escalation policy
 
 1. A failure is first the actor's own to fix, within its budget.
 2. Then the next rung: check repair, arbiter, finisher, closer — each once,

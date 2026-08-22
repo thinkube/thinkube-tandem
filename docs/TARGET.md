@@ -1,115 +1,152 @@
-# v2.5 — the design the findings add up to
+# v2.5 — the design, and what decides it
 
-Judged by two numbers, and nothing else:
+Judged by two numbers and nothing else:
 
-- **attention events about the machine, per run: zero.** (About the *work* —
-  an intent question, a promise that cannot be observed — is legitimate and
-  designed in. About the *machine* — a stall, a dead end, a green unit
-  failed for what it cannot reach — is a defect.)
+- **attention events about the machine, per run: zero.** Attention about the
+  *work* — an intent question, a promise that cannot be observed — is
+  legitimate and designed in, at two points. Attention about the *machine* —
+  a stall, a dead end, a unit failed for what it cannot reach — is a defect.
 - **did the delivered thing do what was asked**, proven by driving it.
 
-Everything below follows from failures that actually happened, and most of
-it is deletion.
+Most of what follows is deletion. Where something is added, it says so.
+
+## 0. The dimension that decides most of it: context
+
+Three properties, and you can have two:
+
+1. **Full context** — every actor sees the repository as it really is.
+2. **Per-unit verdicts** — each round says whether *this* unit is done.
+3. **Clean attribution** — a verdict is never contaminated by another
+   unit's half-finished work.
+
+v1 chose 1 and 3: everything in one tree per spec, verification at the gate.
+It delivered, with a person attending when it stuck.
+
+v2 chose 2 and 3, and paid with 1 — every actor works in a partial world.
+That is where tricycles come from: a unit that can only see its own files
+produces something that satisfies its own files. SL-6's register was correct
+in isolation and connected to nothing; the only actor that noticed was the
+closer, because it is the only one that sees the whole tree.
+
+**Direction: A — v1's split (1 and 3), with the person's attention replaced
+by gate repair rather than by per-unit verdicts.** One experiment decides it
+before any deletion (§6).
 
 ## 1. One worktree per repository — and no others
 
-v1 did all its work in one tree per spec, with the held-out checks inside it
-and the coder blinded by **permission** — the engine's own `codeReadFence`:
-a code worker cannot read an acceptance check. v2 kept a tree per repository and then split the work *again inside it* —
-a shared code tree, a detached tester snapshot, and a composed runner per
-slice — and called that split "structural blinding".
+A cut spanning three repositories has three worktrees, three branches, three
+deliveries. What goes is every *additional* tree v2 created **inside** a
+repository: the tester snapshot, and — if A holds — the composed runners.
 
-Five mechanisms exist only because of that split, and every one of them cost
-a night this week:
+Five mechanisms exist only because checks and grading live in other trees:
 
 | Mechanism | Exists because | Cost |
 |---|---|---|
-| the emit map (compiled-path mapping) | checks live in a tree without build output | the audit faulted correct checks |
-| the probe store | the tester tree is detached and reset | complexity, restore bugs |
+| the emit map | checks live where the build output does not | the audit faulted correct checks |
+| the probe store | the tester tree is detached and reset | restore bugs, complexity |
 | re-homing | checks were never in the repository's test homes | the growth engine behind 796 tests |
 | runner composition | grading needs a tree that does not exist | "the tree is not ready" reds, the cascade, both deadlocks |
-| the closer's tree confusion | two trees, one footprint | its real fix for SL-6 was written where nothing commits |
+| the closer's tree confusion | two trees, one clearance | its real fix for SL-6 was written where nothing commits |
 
-**Decision: exactly one worktree per repository the cut touches, and none
-beyond that.** A cut spanning three repositories has three worktrees, three
-branches and three deliveries — as v1 had one per spec, and as v2 already
-does per repository. What goes is every *additional* tree v2 created
-*inside* a repository: the tester snapshot and the per-slice runners.
-
-Within a repository's tree, everything happens: the tester writes checks
-into the repository's own test homes, the coder writes production beside
-them, and verification runs there. Blinding is by permission — the guard
-already refuses a coder any test-shaped path, in both engines. The
-scheduler keeps two units off one file, as v1 did.
-
-*Deletes:* the tester snapshot, the probe store, the emit map, the runner
-composition, re-homing, and the entire "incomplete tree" class of reds.
+Within the repository's one tree: the tester writes checks into the
+repository's own test homes, the coder writes production beside them,
+blinding is by **permission** (the guard refuses a coder any test-shaped
+path — v1's `codeReadFence`), and the scheduler keeps two units off one
+file, as v1 did.
 
 ## 2. One judgement per level
 
-- A **unit** is judged by the checks of its own criteria. Nothing else.
-- The **repository's suite** is judged once, at the gate, on the whole tree,
-  where the finisher and the closer can reach every file.
-- **Cross-repository behaviour** is judged at a project-level gate after the
-  repositories' deliveries land — or declared unprovable at signing.
+- A **unit** completes on its own claim plus a green build. Under A there is
+  no per-unit verdict; the gate judges.
+- The **repository gate** judges everything, once, on the whole tree.
+- **Cross-repository promises** are judged at a project gate after the
+  repositories' deliveries land, or declared unprovable at signing.
 
-*Deletes:* the per-slice suite, the owner classification (code / tree /
-elsewhere / maintainer), the waits it drove, and with them both deadlocks.
+*Deletes:* the per-slice suite, the owner classification, the waits, and
+with them both deadlock classes.
 
-## 3. Criteria that can be observed, and states that cannot be written wrong
+## 3. Prevention: decide it before orchestration, while a person is present
 
-- A criterion must be **drivable at the product's outer seam**. One that can
-  only be proven by calling a class is at the wrong altitude and goes back
-  at grounding — not at dispatch, when the cut is already frozen.
-- A **promise belongs to one repository**, as a field on the promise, with
-  touchpoint paths relative to it. The mixed state becomes unrepresentable,
-  so the late refusal and the missing split mechanism both disappear.
-- What cannot be driven is **declared at signing**, in the person's words,
-  and they accept it knowingly or send it back.
+Every failure this week was decided before a worker started and discovered
+during the run. A refusal before dispatch costs one interaction at a moment
+you are already looking; the same defect during the run costs an hour and an
+attention event. So the plan is refused, before any worker, when:
 
-*Deletes:* the "mixes scopes — split it" dead end, and the silent
-substitution of a class-level check for an unobservable promise.
+1. a criterion is provable only by calling a class — wrong altitude;
+2. a criterion's implementation site is outside the clearance of the unit
+   responsible for it — SL-7's class, made unrepresentable;
+3. a promise names more than one repository — better still, make the
+   repository a field of the promise so the state cannot be written;
+4. a promise has no check site, or a check that could only read source text;
+5. the slice order does not put a thin end-to-end path first — the walking
+   skeleton, so integration is exercised in slice one rather than at the
+   last gate.
 
-## 4. Wiring proven by execution
+## 4. Repair: the author, resumed, with what it already knew
 
-The drive must **execute** the lines the unit wrote. A stub satisfies
-assertions; it cannot appear on the execution path of a drive it is not
-connected to. This is the only new machinery in the design, and it is the
-one that answers the original question — *did I ask for a car and get a
-tricycle*.
+A criterion red at the gate returns to the unit that owns it — **as the next
+message in the same worker session**, not as a fresh worker with a brief.
+The SDK takes a `resume`; the engine already captures session ids. The
+author still holds its own reasoning, so intent survives the repair.
 
-## 5. Enforced by construction, never by prose
+Bound by three prohibitions, unchanged from the ladder:
 
-Every rule that has held was enforced structurally: a coder cannot write a
-test (tool refusal), two units cannot write one file at once (scheduler).
-Every rule that has failed was a sentence in a prompt with a validator
-downstream and a person as the error handler.
+- it may not touch the promise — your sentence is fixed;
+- it may not change a check without a ruling citing the criterion the check
+  proves, recorded on the delivery — a check may be corrected, never
+  weakened;
+- it is judged by execution and the trace, so it cannot satisfy a check
+  without wiring the behaviour.
 
-So: illegal states unrepresentable, permissions enforced by the guard,
-collisions prevented by the scheduler, and everything else measured rather
-than asked.
+Fallbacks in order: the session is gone → a fresh worker with the evidence;
+the author cannot → the closer, with the whole tree; the closer cannot →
+withheld, named per promise.
 
-## The build order — each step ends in a demonstration
+**And every repair writes which stage it implicates** — a slip by the
+author, a brief that lacked a fact, a check that misreads its criterion, a
+clearance that could not reach the site, or a criterion at the wrong
+altitude. That is the axis today's 461 defect rows do not have, and it is
+what tells you whether to improve briefs, checks, or grounding.
 
-No step is "done" because it was written. It is done when it is shown.
+## 5. Convergence: how the loop is guaranteed to end
 
-1. **Collapse to one worktree per repository.** Delete the extra trees
-   inside each repository, and the five mechanisms of §1 with them.
-   *Shown by:* the existing repository-shape runs still deliver.
-2. **Checks born in the repository's test homes.** Delete re-homing, the
-   store, the emit map.
-   *Shown by:* a run delivers, and afterwards the checks are where the
-   repository keeps its tests.
-3. **Altitude and the promise's repository.** Grounding refuses what cannot
-   be driven; signing shows where each promise lands.
-   *Shown by:* a criterion that can only be proven by calling a class is
-   refused before signing.
-4. **Drives and the wiring trace.**
-   *Shown by:* the SL-6 tricycle — a register built, disposed and connected
-   to nothing — fails, where seven checks passed it.
-5. **Measure.** Three runs, counting attention events about the machine.
-   *Shown by:* the number, not an opinion.
+- **Build first.** A tree that does not compile is one failure, not many. A
+  deletion that breaks five imports is a build failure, never five unkept
+  promises.
+- **Then the promise count, with patience.** Unkept promises are counted at
+  round boundaries against the best seen so far; a repairer may make things
+  temporarily worse while it does something structural, but not for long.
+  Sustained failure to improve ends the loop; a transient rise does not.
+- **Bounded rungs.** Author, check repair, arbiter ruling, closer — each
+  once per failure, none re-entered.
+- **A wall-clock backstop.** Silence past the watchdog's threshold ends the
+  run with its report, whatever any loop believes.
+- **Exactly three terminal states**: delivered; withheld with every unkept
+  promise named; halted with what was open.
+- **Delivery only at zero.** The branch may hold any state along the way;
+  nothing is handed over until nothing is unkept. There is deliberately *no*
+  rule that the branch may never get worse — that would forbid demolition.
 
-If step 1 does not deliver, nothing after it matters, and the honest move is
-back to v1's loop plus one attention-reducing mechanism at a time — each
-proven to reduce the count before the next is allowed in.
+What this guarantees: termination, honesty, and that nothing incomplete is
+handed over. What it does not guarantee: that the count reaches zero. When
+it cannot, the machine's obligation is to stop and say which promise it
+could not keep, in your words.
+
+## 6. The experiment that decides A before anything is deleted
+
+The claim "gate-first loses almost nothing" is unproven. The ledger cannot
+answer it — it counts surviving failures, not what a coder fixed inside its
+own round. Today's log shows zero in-round improvement across five units,
+but that run was a resume, where the work was already done.
+
+**One fresh run — a cut with no prior work — counting, from the log, how
+many criteria go red→green inside a unit's own rounds.**
+
+- Units routinely climb inside their rounds → per-unit verification is
+  earning its machinery, and A moves that repair to the gate. Say so, and
+  reconsider.
+- Units arrive green, as in the resumed run → the loop is paying for
+  machinery it is not using, and A is deletion with no loss.
+
+That run costs what a run costs, and it decides the largest question in this
+document. Nothing in §1 is deleted before it.
