@@ -117,6 +117,39 @@ test("a tree that does not build is one failure, not many", () => {
   assert.equal(convergenceScore({ buildRed: false, reds: 3 }), 3);
 });
 
+test("the closer is fenced by nothing — full authority is a fact, not a list", async () => {
+  // Two runs withheld because the closer wrote the correct fix in a file
+  // its clearance list did not contain, and the guard deleted the edit. A
+  // list can never hold the file the closer discovers by reading; behind
+  // the last actor nobody runs, so there is nothing a fence protects.
+  let sawUnfenced: boolean | undefined;
+  await close({
+    subject: "the delivery",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "it works" }],
+    model: "sonnet",
+    measure: (() => {
+      let n = 0;
+      return async () => ({ green: n++ > 0, score: n > 1 ? 0 : 1, evidence: "" });
+    })(),
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: () => {},
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: async (deps) => {
+      sawUnfenced = (deps as { unfenced?: boolean }).unfenced;
+      return { ok: true, finalText: "done" };
+    },
+  });
+  assert.equal(sawUnfenced, true, "the guard does not run over the closer");
+});
+
 test("demolition is not punished: the closer rides out a worse round and finishes", async () => {
   // The real loop, over a repair that gets WORSE before it gets better —
   // a deletion that breaks imports for a round, which is what a structural

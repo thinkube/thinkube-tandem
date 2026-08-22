@@ -195,8 +195,10 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
       {
         model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "closer"),
         worktree: a.worktree,
-        // It writes production and checks alike: the roles are spent.
+        // It writes production and checks alike: the roles are spent —
+        // and it is fenced by nothing, because there is no rung behind it.
         role: "test",
+        unfenced: true,
         footprint,
         maxTurns: CLOSER_TURNS,
         baseline: new Set(await porcelainPaths(a.worktree)),

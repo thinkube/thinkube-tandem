@@ -56,6 +56,15 @@ export interface RunWorkerDeps {
    * against a test the author read is evidence about the test.
    */
   blind?: boolean;
+  /**
+   * The last actor is fenced by nothing. The guard exists to keep parallel
+   * workers off each other's files; behind the closer nobody runs, its work
+   * is judged by execution like everyone else's, and a fence on it turns
+   * "full authority" into a list — which can never contain the file the
+   * closer discovers by reading. Twice a run withheld because the closer
+   * wrote the correct fix and the guard deleted it.
+   */
+  unfenced?: boolean;
   maxTurns?: number;
   /** Continue a session this run already had: the author still holds its
    *  own reasoning, so the intent behind the code survives the repair. */
@@ -346,7 +355,7 @@ export async function runUnitWorker(
             {
               hooks: [
                 async (h: { tool_name?: string }) => {
-                  if (!WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
+                  if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
                   if (await encloseWork(deps)) {
                     containment = true;
                     deps.abort.abort();
