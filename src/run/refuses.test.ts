@@ -19,6 +19,7 @@ import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { classMethodsIn, wrongAltitude } from "./altitude";
+import { rehouseChecks } from "./checkHomes";
 import { acceptDelivery } from "../gates/sign";
 import type { Delivery } from "../core/schema";
 import * as os from "node:os";
@@ -533,5 +534,32 @@ test("what the door lends can never be committed, even by add -A", async () => {
     g(wt, "status", "--porcelain").split("\n").filter((l: string) => l.includes("node_modules")).join(""),
     "",
     "and add -A cannot stage it",
+  );
+});
+
+test("a check an earlier run already wrote keeps its address", () => {
+  // A resumed run once judged 64 criteria red: every check existed on the
+  // branch at probes/, and the plan had been renamed to expect them beside
+  // their subjects — an address nobody would ever create, because the
+  // testers' slices were already standing.
+  const slices = [
+    {
+      handle: "SL-1",
+      workUnits: [
+        { role: "code", footprint: ["src/greet.mjs"] },
+        { role: "test", footprint: ["probes/x__SL-1_AC-1.test.mjs"] },
+      ],
+    },
+  ];
+  const moved = rehouseChecks(
+    slices as never,
+    ["src/greet.mjs", "src/greet.test.mjs"],
+    new Set(["probes/x__SL-1_AC-1.test.mjs"]),
+  );
+  assert.deepEqual(moved, [], "nothing moves");
+  assert.deepEqual(
+    (slices[0].workUnits[1] as { footprint: string[] }).footprint,
+    ["probes/x__SL-1_AC-1.test.mjs"],
+    "the plan still points at the check that exists",
   );
 });

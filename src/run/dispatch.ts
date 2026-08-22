@@ -153,6 +153,7 @@ export async function dispatchTep(
     space,
     cut,
     repoRoot: deps.repoRoot,
+    branch,
     ...(deps.graphPath ? { graphPath: deps.graphPath } : {}),
     exec,
     log: (l) => log(`${tep}: ${l}`),

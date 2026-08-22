@@ -162,16 +162,26 @@ export async function refusedBeforeDispatch(a: {
   space: Space;
   cut: Cut;
   repoRoot: string;
+  /** The run's branch, whose earlier work may already hold the checks. */
+  branch?: string;
   graphPath?: string;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   log: (line: string) => void;
 }): Promise<{ dag: ReturnType<typeof buildUnitDag>; refusal?: { trigger: string; refusal: string } }> {
   // A check is born where this repository already keeps its tests, beside
   // the module it drives — so it imports its subject the same way before
-  // and after the build, and nothing has to map one path to the other.
+  // and after the build, and nothing has to map one path to the other. A
+  // check an earlier run of this branch already wrote keeps its address.
+  const onBranch = a.branch
+    ? (await a.exec("git", ["-C", a.repoRoot, "ls-tree", "-r", "--name-only", a.branch], a.repoRoot)).out
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+    : [];
   const rehoused = rehouseChecks(
     a.slices,
     (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out.split("\n").map((l) => l.trim()),
+    new Set(onBranch),
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);

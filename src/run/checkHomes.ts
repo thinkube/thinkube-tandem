@@ -95,6 +95,12 @@ interface SliceLike {
 export function rehouseChecks(
   slices: readonly SliceLike[],
   repoFiles: readonly string[],
+  /** Files already on the run's branch. A check that was ALREADY WRITTEN
+   *  in an earlier run keeps its address: renaming it would leave the plan
+   *  expecting a file nobody will create, and a resumed run once judged 64
+   *  criteria red for exactly that — every check present, every one at the
+   *  address the plan no longer used. */
+  alreadyWritten: ReadonlySet<string> = new Set(),
 ): { from: string; to: string }[] {
   const idiom = inferTestIdiom(repoFiles);
   if (!idiom) return [];
@@ -110,7 +116,7 @@ export function rehouseChecks(
       if ((u.role ?? "code") !== "test") continue;
       u.footprint = u.footprint.map((f) => {
         const k = /_AC-(\d+)/.exec(f)?.[1];
-        if (!isProbePath(f) || !k) return f;
+        if (!isProbePath(f) || !k || alreadyWritten.has(f)) return f;
         const to = checkHomeIn(idiom, subject, Number(k));
         moved.push({ from: f, to });
         return to;
