@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
+import { SpaceTabs } from "./surfaces/spaceTabs";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import {
@@ -89,6 +90,13 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
 
 const sessions = new Map<string, TandemSession>();
 
+// The register of open thinking-space tabs, keyed by "ownerKey/slug". Its
+// factory is wired at the call site that actually opens a tab; until then
+// the register legitimately holds none, and disposing it is still correct.
+const spaceTabs = new SpaceTabs((key) => {
+  throw new Error(`no thinking-space tab factory wired yet for ${key}`);
+});
+
 function activeSession(
   context: vscode.ExtensionContext,
   project?: EnabledProject,
@@ -107,6 +115,16 @@ function openProjects(): EnabledProject[] {
     for (const p of discoverProjects(f.uri.fsPath))
       if (!seen.has(p.card.id)) seen.set(p.card.id, p);
   return [...seen.values()];
+}
+
+// Read fresh on every call — never cached — so a tab closed between two
+// tree renders stops showing as open on the very next draw.
+function openSlugsFor(ownerKey: string): string[] {
+  const prefix = `${ownerKey}/`;
+  return spaceTabs
+    .liveKeys()
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length));
 }
 
 function activeOwnerKey(context: vscode.ExtensionContext): string | undefined {
@@ -314,7 +332,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openProjects,
     () => activeOwnerKey(context),
     (ownerId, kind) => listThinkingSpaces(configuredStoreRoot(), ownerId, kind),
-    (ownerKey) => context.workspaceState.get<string>(`tandem.space.${ownerKey}`),
+    (ownerKey) => openSlugsFor(ownerKey),
     () => listWorkProjects(configuredStoreRoot()),
   );
   context.subscriptions.push(
@@ -588,6 +606,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  panel?.dispose();
+  spaceTabs.dispose();
   storeSync?.dispose();
 }

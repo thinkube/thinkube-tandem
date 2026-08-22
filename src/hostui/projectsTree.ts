@@ -5,24 +5,31 @@
  * "New thinking space…" row. Clicking a space opens that space's map.
  * The tree renders labels only; identity stays in the cards.
  */
-import * as vscode from "vscode";
+import type * as vscodeTypes from "vscode";
+import { createRequire } from "node:module";
 import { EnabledProject } from "../core/identity";
 import { SpaceOwnerKind, SpaceRef } from "../core/spaces";
 import { WorkProject } from "../core/workProjects";
 
-class RepositoryItem extends vscode.TreeItem {
+const req: NodeRequire =
+  typeof require !== "undefined" ? require : createRequire(__filename);
+function vs(): typeof vscodeTypes {
+  return req("vscode") as typeof vscodeTypes;
+}
+
+class RepositoryItem extends vs().TreeItem {
   constructor(
     public readonly project: EnabledProject,
     active: boolean,
   ) {
-    super(project.card.label, vscode.TreeItemCollapsibleState.Expanded);
+    super(project.card.label, vs().TreeItemCollapsibleState.Expanded);
     this.id = project.card.id;
     this.contextValue = "tandem-repository";
     this.description =
       (project.prefix
-        ? `${vscode.workspace.asRelativePath(project.gitRoot)}/${project.prefix}`
-        : vscode.workspace.asRelativePath(project.gitRoot)) + (active ? "  ●" : "");
-    this.iconPath = new vscode.ThemeIcon(active ? "repo" : "repo-clone");
+        ? `${vs().workspace.asRelativePath(project.gitRoot)}/${project.prefix}`
+        : vs().workspace.asRelativePath(project.gitRoot)) + (active ? "  ●" : "");
+    this.iconPath = new (vs().ThemeIcon)(active ? "repo" : "repo-clone");
     this.tooltip = [
       `Repository: ${project.card.label}`,
       project.card.product ? `product: ${project.card.product}` : undefined,
@@ -34,12 +41,12 @@ class RepositoryItem extends vscode.TreeItem {
   }
 }
 
-class ThinkingSpaceItem extends vscode.TreeItem {
+class ThinkingSpaceItem extends vs().TreeItem {
   constructor(ownerKey: string, kind: SpaceOwnerKind, space: SpaceRef, active: boolean) {
-    super(space.label, vscode.TreeItemCollapsibleState.None);
+    super(space.label, vs().TreeItemCollapsibleState.None);
     this.id = `${ownerKey}/${space.slug}`;
     this.contextValue = kind === "project" ? "tandem-thinking-space-project" : "tandem-thinking-space";
-    this.iconPath = new vscode.ThemeIcon("notebook");
+    this.iconPath = new (vs().ThemeIcon)("notebook");
     if (active) this.description = "●";
     this.tooltip = `Thinking space "${space.label}" — click to open its map.`;
     this.command = {
@@ -51,12 +58,12 @@ class ThinkingSpaceItem extends vscode.TreeItem {
 }
 
 /** The permanent creation row — v1's gesture, verbatim. */
-class NewSpaceItem extends vscode.TreeItem {
+class NewSpaceItem extends vs().TreeItem {
   constructor(ownerKey: string, kind: SpaceOwnerKind) {
-    super("New thinking space…", vscode.TreeItemCollapsibleState.None);
+    super("New thinking space…", vs().TreeItemCollapsibleState.None);
     this.id = `${ownerKey}/…new`;
     this.contextValue = "tandem-new-space";
-    this.iconPath = new vscode.ThemeIcon("add");
+    this.iconPath = new (vs().ThemeIcon)("add");
     this.tooltip = "Start a new, independent stream of thinking here.";
     this.command = {
       command: "thinkube-tandem.newThinkingSpace",
@@ -68,49 +75,55 @@ class NewSpaceItem extends vscode.TreeItem {
 
 /** A project in the v1 sense: bounded WORK across repositories, open or
  *  done — never code. Its thinking spaces hang beneath it. */
-class WorkProjectItem extends vscode.TreeItem {
+class WorkProjectItem extends vs().TreeItem {
   constructor(public readonly wp: WorkProject, active: boolean) {
-    super(wp.name, vscode.TreeItemCollapsibleState.Expanded);
+    super(wp.name, vs().TreeItemCollapsibleState.Expanded);
     this.id = `wp:${wp.id}`;
     this.contextValue = wp.state === "done" ? "tandem-work-project-done" : "tandem-work-project";
-    this.iconPath = new vscode.ThemeIcon(wp.state === "done" ? "pass-filled" : "milestone");
+    this.iconPath = new (vs().ThemeIcon)(wp.state === "done" ? "pass-filled" : "milestone");
     this.description = (wp.state === "done" ? "✓ done" : "open") + (active ? "  ●" : "");
     this.tooltip = `Project "${wp.name}" — work that may touch several repositories.`;
   }
 }
 
-export class ProductItem extends vscode.TreeItem {
+export class ProductItem extends vs().TreeItem {
   constructor(
     public readonly product: string,
     empty: boolean,
   ) {
-    super(product, vscode.TreeItemCollapsibleState.Expanded);
+    super(product, vs().TreeItemCollapsibleState.Expanded);
     this.contextValue = "tandem-product";
-    this.iconPath = new vscode.ThemeIcon("archive");
+    this.iconPath = new (vs().ThemeIcon)("archive");
     if (empty) this.description = "no repositories yet — use + on this row";
   }
 }
 
 type Node = ProductItem | RepositoryItem | WorkProjectItem | ThinkingSpaceItem | NewSpaceItem;
 
-export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
-  private _emitter = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this._emitter.event;
+export class ProjectsTreeProvider implements vscodeTypes.TreeDataProvider<Node> {
+  private _emitter: vscodeTypes.EventEmitter<void>;
+  readonly onDidChangeTreeData: vscodeTypes.Event<void>;
 
   constructor(
     private readonly listProductNames: () => string[],
     private readonly listRepositories: () => EnabledProject[],
     private readonly activeId: () => string | undefined,
     private readonly listSpaces: (ownerKey: string, kind: SpaceOwnerKind) => SpaceRef[],
-    private readonly activeSpace: (ownerKey: string) => string | undefined,
+    // Every slug this owner currently holds an OPEN tab for — read fresh on
+    // each render, never captured, so a tab closed between two renders
+    // stops showing as open on the very next draw.
+    private readonly openSpacesFor: (ownerKey: string) => string[],
     private readonly listProjects: () => WorkProject[],
-  ) {}
+  ) {
+    this._emitter = new (vs().EventEmitter)<void>();
+    this.onDidChangeTreeData = this._emitter.event;
+  }
 
   refresh(): void {
     this._emitter.fire();
   }
 
-  getTreeItem(el: Node): vscode.TreeItem {
+  getTreeItem(el: Node): vscodeTypes.TreeItem {
     return el;
   }
 
@@ -143,20 +156,20 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<Node> {
       ];
     if (el instanceof RepositoryItem) {
       const ownerKey = el.project.card.id;
-      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
+      const openSlugs = this.openSpacesFor(ownerKey);
       return [
         ...this.listSpaces(ownerKey, "repository").map(
-          (s) => new ThinkingSpaceItem(ownerKey, "repository", s, s.slug === activeSlug),
+          (s) => new ThinkingSpaceItem(ownerKey, "repository", s, openSlugs.includes(s.slug)),
         ),
         new NewSpaceItem(ownerKey, "repository"),
       ];
     }
     if (el instanceof WorkProjectItem) {
       const ownerKey = `wp:${el.wp.id}`;
-      const activeSlug = ownerKey === this.activeId() ? this.activeSpace(ownerKey) : undefined;
+      const openSlugs = this.openSpacesFor(ownerKey);
       return [
         ...this.listSpaces(el.wp.id, "project").map(
-          (s) => new ThinkingSpaceItem(ownerKey, "project", s, s.slug === activeSlug),
+          (s) => new ThinkingSpaceItem(ownerKey, "project", s, openSlugs.includes(s.slug)),
         ),
         new NewSpaceItem(ownerKey, "project"),
       ];
