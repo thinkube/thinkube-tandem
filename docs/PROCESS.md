@@ -1,0 +1,153 @@
+# The process: actors, states, control points
+
+This is the operating design. `TARGET.md` says what changes and why; this
+says how the machine runs, who decides what, and what happens at each
+control point when the answer is no.
+
+## 1. Actors and their authority
+
+| Actor | Sees | Decides | May never |
+|---|---|---|---|
+| **The person** | their own asks, the cut review, the delivery page | what to ask for; what a promise means; whether to sign; whether to accept | be asked about files, tools, ordering, or any internal of the run |
+| **Reader** | the draft text | which sentences are asks | invent an ask |
+| **Grounder** | asks, repository map, digest | which repository a promise lands in; where it lands; what proves it | write a criterion that cannot be driven; mix repositories in one promise |
+| **Planner** | the signed cut, the code graph | slices, units, order, what each unit may change | give a unit a criterion whose site it may not change |
+| **Tester** | criteria, contract, the repository's test homes | how each criterion is driven | read the implementation; write a check that greps source |
+| **Coder** | its brief, the contract, its own files | the implementation | read or write any check; run tests itself |
+| **Supervisor** | brief, checks, repository | answers a worker's question; grants a clearance | move a promise to another unit |
+| **Repository gate** | the delivered tree | whether the tree stands and the promises are kept | pass a promise whose drive did not execute the code |
+| **Closer** | everything, including the checks | how to finish what no other actor could | declare itself green; delete a check to pass |
+| **Project gate** | every repository's delivered tree | whether cross-repository promises hold | run before the deliveries land |
+
+## 2. States and transitions
+
+| State | Entry condition | Exit | Refusals |
+|---|---|---|---|
+| `drafting` | a space exists | text is read | — |
+| `read` | the reader returned asks | asks kept, or edited | a repeated ask; an empty draft |
+| `understood` | promises derived and grounded | a cut is signed | see **G0** |
+| `signed` | signature binds render + grounding | the run starts | see **G1** |
+| `running` | the door proved the repository | every unit finished or failed | see **G2** |
+| `delivered` | the repository gate ruled | accepted, rejected, or run again | see **G6** |
+| `accepted` | the person accepted | merged | acceptance with a red proof |
+
+A run is never in two states. `running` ends in exactly one of: delivered,
+withheld with a report, or halted by the watchdog with a report.
+
+## 3. Control points
+
+Each gate states its evidence, its pass rule, and what happens on failure.
+"Attends" means a person is asked — and only ever about the work.
+
+### G0 — Grounding gate (before signing)
+- **Evidence:** each promise's touchpoints, criteria, repository.
+- **Passes when:** every criterion is drivable at the product's outer seam;
+  every promise names exactly one repository; every criterion has a check
+  site that the promise's own unit will be cleared to change.
+- **Fails →** the promise returns to grounding with the reason. A criterion
+  that cannot be driven anywhere is marked *unprovable* and carried to G1.
+- **Attends:** no.
+
+### G1 — Sign gate (the person)
+- **Evidence:** the cut review: promises in the person's words, the
+  repository each lands in, the unprovable list, open questions.
+- **Passes when:** the person signs. The signature binds the rendered text
+  and the grounding together.
+- **Fails →** nothing is signed; editing stays open.
+- **Attends:** yes — this is the designed attention point.
+
+### G2 — Door (before any worker)
+- **Evidence:** the untouched tree: install, build, one test run, where a
+  source file lands.
+- **Passes when:** all four are observed, on the tree as it stands.
+- **Fails →** one bounded mend of a half-committed branch; then the run
+  refuses with the compiler's own words. No worker is dispatched.
+- **Attends:** no.
+
+### G3 — Check-authoring gate (per slice, before any coder starts)
+- **Evidence:** the checks the tester wrote, in the repository's test homes.
+- **Passes when:** every criterion has a check; no check reads source text;
+  no check simulates a platform the repository does not own; every import
+  resolves to a path that exists or that this run will create.
+- **Fails →** one authoring round with the faults named; then the slice
+  fails with its reason.
+- **Attends:** no.
+
+### G4 — Unit gate (per unit, every round)
+- **Evidence:** the build, the unit's own checks, the execution trace.
+- **Passes when:** the build is green, every check of its criteria passes,
+  and the drive **executed** the lines the unit wrote.
+- **Fails →** rework (bounded), then the closer, then the unit fails with
+  its report. The repository's suite is not consulted here.
+- **Attends:** no.
+
+### G5 — Slice commit
+- **Evidence:** the slice's declared files and its checks.
+- **Passes when:** every unit of the slice is done.
+- **Fails →** the slice does not commit; its work stays in the tree and is
+  named on the delivery.
+- **Attends:** no.
+
+### G6 — Repository gate (once, on the whole tree)
+- **Evidence:** the whole repository suite, every criterion's check, the
+  assessments, the stub scan, the docs obligation, the execution traces.
+- **Passes when:** the suite is green, every criterion has a green proof,
+  no stub marker survives, and every promise's drive executed its code.
+- **Fails →** the finisher (one round), then the closer (while it makes
+  progress). If it still fails, the delivery is **withheld** with the
+  reasons named, and the way back in is offered.
+- **Attends:** only to decide accept or reject, and only on a delivery that
+  passed.
+
+### G7 — Project gate (multi-repository cuts)
+- **Evidence:** every repository's delivered tree, together.
+- **Passes when:** the cross-repository drives observe their promises.
+- **Fails →** the promises that span repositories are named on the
+  deliveries as unproven; nothing is silently accepted.
+- **Attends:** no.
+
+### G8 — Accept (the person)
+- **Evidence:** the delivery page: what was promised, what was proven, what
+  was not, and where each proof lives.
+- **Passes when:** the person accepts. The merge follows.
+- **Fails →** reject returns the cut to `signed`; it can run again.
+- **Attends:** yes — the second and last designed attention point.
+
+## 4. Artifacts
+
+| Artifact | Written by | Read by | Lives |
+|---|---|---|---|
+| asks | reader, from the person's text | grounder, briefs | the space |
+| promises, criteria, repository | grounder | planner, tester, gates | the space |
+| cut + signature | the person, at G1 | every actor | the space |
+| slices, units, clearances | planner | scheduler, workers | the run |
+| checks | tester | the oracle, the gates | the repository's test homes |
+| commits | the commit book | the branch | the branch |
+| run log | every actor, as it happens | the person, the next session | `<store>/runs/<tep>.log` |
+| delivery record | the repository gate | the person, the ledger | the space + the forge |
+| defect rows | every gate that refuses | the analysis | `<store>/defects/YYYY-MM.jsonl` |
+
+## 5. Measures
+
+| Measure | Threshold | Read from |
+|---|---|---|
+| attention events about the machine, per run | **0** | the defect ledger: every stall, dead end, or refusal a person had to interpret |
+| promises delivered with a green drive | all of them | the delivery record |
+| lines written by a unit that its drive executed | **100%** | the execution trace |
+| repository suite at G6 | green | the gate |
+| the machine's own tests: defects caught / defects introduced | rises, never falls | the mutation run |
+
+A release that raises the first measure is a bad release, whatever the test
+count says.
+
+## 6. Escalation policy
+
+1. A failure is first the actor's own to fix, within its budget.
+2. Then the next rung: check repair, arbiter, finisher, closer — each once,
+   each paying for progress rather than attempts.
+3. When every rung is spent, the unit or the delivery **fails with its
+   report** — named, on the record, never silence.
+4. A question reaches the person **only** if it is about the work and can be
+   asked in their words. A question naming a file, a tool, or an internal is
+   the machine's own failure and is answered by the machine or recorded as a
+   defect.
