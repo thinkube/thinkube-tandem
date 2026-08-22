@@ -91,15 +91,15 @@ export function unreachedEngineModules(opts: { entry: string; files: RepoFile[] 
   return engineFiles.filter((f) => !reached.has(f.path));
 }
 
-export type Verdict = "wire" | "retire" | "fold";
+type Verdict = "wire" | "retire" | "fold";
 
-export interface WiringEntry {
+interface WiringEntry {
   path: string;
   verdict: Verdict;
   reason: string;
 }
 
-export interface WiringProblem {
+interface WiringProblem {
   path: string;
   reason: string;
 }

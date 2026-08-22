@@ -62,6 +62,18 @@ of any mismatch.
   footprint check (`src/run/`) is extended to call it as the author-time
   reverse-dependency check its header describes, folding an affected test
   into scope or refusing an unfootprinted one.
+- `src/engine/WorktreeService.ts` — **wire**: the git-worktree creation and
+  retirement service is how a run gets the isolated checkout it dispatches a
+  worker into — it arms the day this product's dispatch path creates its own
+  worktree instead of running against a directory the caller already provides.
+- `src/engine/worktreeProvision.ts` — **wire**: the language-agnostic runner
+  for a repo's declared `## Worktree setup` recipe is what makes a fresh
+  worktree able to build and verify at all — it arms together with
+  `WorktreeService.ts`, its only caller, which invokes it on every create.
+- `src/engine/provisionDetect.ts` — **wire**: the lockfile-first manifest
+  scan supplies the setup steps for a repo that declares no recipe, the floor
+  that stops a fresh worktree from running its gate with no dependencies
+  installed — it arms together with `worktreeProvision.ts`, its only caller.
 - `src/engine/retiredSymbolFootprint.ts` — **wire**: as DECISIONS.md
   records, the retired-symbol importer gate stays unwired until grounding
   grows a `retires` declaration for symbol-deleting changes — it arms the

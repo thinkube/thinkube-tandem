@@ -595,6 +595,5 @@ export class TandemSession {
     } catch {
       this.space = emptySpace();
     }
-  
   }
 }

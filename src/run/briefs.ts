@@ -61,7 +61,7 @@ export function renderTepBody(space: Space, cut: Cut): string {
  *  are mid-flight right now, and the shared reset promise they wait on —
  *  a crash outside the runner (the pump's own catch) still has to account
  *  for a tester that never reached its own decrement. */
-export interface TesterInflight {
+interface TesterInflight {
   count: number;
   reset: Promise<void>;
 }
@@ -71,7 +71,7 @@ export interface TesterInflight {
  *  unit reports into. Grouped here so the pump that launches units stays
  *  readable, and so this factory takes exactly what it uses — nothing
  *  reached back out of a closure it does not own. */
-export interface UnitRunnerArgs {
+interface UnitRunnerArgs {
   deps: {
     repoRoot: string;
     model: string;
@@ -150,7 +150,7 @@ export interface UnitRunnerArgs {
  *  rework attempts, and reports what it decided. Kept apart from the
  *  dispatcher's pump so the frontier loop that launches units reads as a
  *  loop rather than as this whole procedure inlined into it. */
-export function makeUnitRunner(a: UnitRunnerArgs): (next: SchedUnit) => Promise<void> {
+function makeUnitRunner(a: UnitRunnerArgs): (next: SchedUnit) => Promise<void> {
   const worker = a.deps.worker ?? runUnitWorker;
 
   return async function runOne(next: SchedUnit): Promise<void> {

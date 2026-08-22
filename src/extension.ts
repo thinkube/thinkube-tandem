@@ -13,21 +13,11 @@ import { PanelHost, PanelLike, SpacePanel } from "./surfaces/panel";
 import { SpaceTabs } from "./surfaces/spaceTabs";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
-import {
-  createProduct,
-  discoverProjects,
-  EnabledProject,
-  listProducts,
-  setCardProduct,
-} from "./core/identity";
+import { createProduct, discoverProjects, EnabledProject, listProducts, setCardProduct } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
 import { resolveSpaceHandle } from "./surfaces/sessionDeps";
-import {
-  chooseThinkingSpace,
-  configuredStoreRoot,
-  registerSpaceCommands,
-} from "./hostui/spaceOps";
+import { chooseThinkingSpace, configuredStoreRoot, registerSpaceCommands } from "./hostui/spaceOps";
 import { chooseProject, newProjectFlow, retireTepWorktrees, sweepDeletedSpaceRuns } from "./hostui/projectOps";
 import { placeCommands } from "./hostui/placeCommands";
 import { editContextScope, ensureWorkSession, findWorkProject } from "./hostui/workSession";
@@ -38,12 +28,7 @@ import { LauncherService } from "./engine/host/LauncherService";
 import { SessionLinkService } from "./engine/host/SessionLinkService";
 import { ConfigTreeProvider } from "./engine/host/ConfigTreeProvider";
 import { registerConfigCommands } from "./engine/host/configCommands";
-import {
-  getCurrentActiveContext,
-  initActiveContext,
-  updateActiveContext,
-  updateConfigContext,
-} from "./engine/host/active";
+import { getCurrentActiveContext, initActiveContext, updateActiveContext, updateConfigContext } from "./engine/host/active";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 
 let projectsTree: ProjectsTreeProvider | undefined;
@@ -60,11 +45,7 @@ function makeVscodePanelHost(extensionUri: vscode.Uri): PanelHost {
         "thinkubeTandemSpace",
         title,
         { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-        {
-          enableScripts: true,
-          localResourceRoots: [extensionUri],
-          retainContextWhenHidden: true,
-        },
+        { enableScripts: true, localResourceRoots: [extensionUri], retainContextWhenHidden: true },
       );
       void renderBundleHtml(extensionUri, webviewPanel.webview).then((html) => {
         webviewPanel.webview.html = html;
@@ -74,10 +55,7 @@ function makeVscodePanelHost(extensionUri: vscode.Uri): PanelHost {
   };
 }
 
-async function renderBundleHtml(
-  extensionUri: vscode.Uri,
-  webview: vscode.Webview,
-): Promise<string> {
+async function renderBundleHtml(extensionUri: vscode.Uri, webview: vscode.Webview): Promise<string> {
   const mediaRoot = vscode.Uri.joinPath(extensionUri, "media", "map");
   let raw: string;
   try {
@@ -85,21 +63,13 @@ async function renderBundleHtml(
   } catch {
     return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
   }
-  const nonce = Array.from({ length: 16 }, () =>
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(
-      Math.floor(Math.random() * 62),
-    ),
-  ).join("");
-  const rewritten = raw.replace(
-    /(\s(?:src|href))="([^"]+)"/g,
-    (_m, attr: string, ref: string) => {
-      if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
-      const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
-      return `${attr}="${webview
-        .asWebviewUri(vscode.Uri.joinPath(mediaRoot, ...cleaned.split("/")))
-        .toString()}"`;
-    },
-  );
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const nonce = Array.from({ length: 16 }, () => alphabet.charAt(Math.floor(Math.random() * 62))).join("");
+  const rewritten = raw.replace(/(\s(?:src|href))="([^"]+)"/g, (_m, attr: string, ref: string) => {
+    if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
+    const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
+    return `${attr}="${webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, ...cleaned.split("/"))).toString()}"`;
+  });
   const withNonce = rewritten.replace(/<script(\s)/g, `<script nonce="${nonce}"$1`);
   const csp = [
     `default-src 'none'`,
@@ -108,19 +78,13 @@ async function renderBundleHtml(
     `script-src 'nonce-${nonce}'`,
     `font-src ${webview.cspSource}`,
   ].join("; ");
-  return withNonce.replace(
-    /<head>/i,
-    `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`,
-  );
+  return withNonce.replace(/<head>/i, `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`);
 }
 
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
-    execFile(
-      "git",
-      ["-C", repoRoot, "remote", "get-url", "origin"],
-      { encoding: "utf8" },
-      (err, stdout) => resolve(err ? undefined : stdout.trim()),
+    execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"], { encoding: "utf8" }, (err, stdout) =>
+      resolve(err ? undefined : stdout.trim()),
     );
   });
 }
@@ -136,14 +100,8 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
     return forgeFor(remote, {
       giteaToken: giteaToken || creds?.[2] || undefined,
       http: async (method, url, token, payload) => {
-        const res = await fetch(url, {
-          method,
-          headers: {
-            Authorization: `token ${token}`,
-            "Content-Type": "application/json",
-          },
-          ...(payload ? { body: JSON.stringify(payload) } : {}),
-        });
+        const headers = { Authorization: `token ${token}`, "Content-Type": "application/json" };
+        const res = await fetch(url, { method, headers, ...(payload ? { body: JSON.stringify(payload) } : {}) });
         if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
         return res.json();
       },
@@ -267,14 +225,12 @@ function pushActive(context: vscode.ExtensionContext, message?: string, spaceKey
   if (!s) return;
   spaceTabs.push(spaceKey, message);
   if (message?.startsWith("Delivery ready"))
-    void vscode.window
-      .showInformationMessage(`Tandem — ${message}`, "Open the space")
-      .then((pick) => {
-        // Opens the space that finished — the key this push carries —
-        // never the workspace's remembered "active" one, and never the
-        // zero-argument command that reads that memory.
-        if (pick) spaceTabs.open(spaceKey).reveal();
-      });
+    // Opens the space that finished — the key this push carries — never
+    // the workspace's remembered "active" one, and never the zero-argument
+    // command that reads that memory.
+    void vscode.window.showInformationMessage(`Tandem — ${message}`, "Open the space").then((pick) => {
+      if (pick) spaceTabs.open(spaceKey).reveal();
+    });
   else if (message?.startsWith("The run refused"))
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
 }
@@ -283,10 +239,7 @@ function pushActive(context: vscode.ExtensionContext, message?: string, spaceKey
  *  owner-and-slug key this act resolved and the space's own display name
  *  — so the caller addresses the tab register with THIS key, never a
  *  remembered active slug. */
-async function ensureSession(
-  context: vscode.ExtensionContext,
-  interactive = true,
-): Promise<{ key: string; name: string; session: TandemSession } | undefined> {
+async function ensureSession(context: vscode.ExtensionContext, interactive = true): Promise<{ key: string; name: string; session: TandemSession } | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
   // No identity, no records: writing under a name every installation
   // shares would silently overwrite the other person's whole space.
@@ -309,10 +262,7 @@ async function ensureSession(
       chooseSpace: (k, i) => chooseThinkingSpace(context, k, i),
       author,
       resolveForge: (root) =>
-        resolveForge(
-          root,
-          vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
-        ),
+        resolveForge(root, vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", "")),
       openRepos: openProjects,
       // ensureWorkSession binds this to the session's OWN resolved key
       // before wiring it in — never "the active session" read back later.
@@ -330,19 +280,11 @@ async function ensureSession(
   // The space's own display name and owner-and-slug key, read from the
   // listing by the one act both owner kinds resolve through — never the
   // repository or project label, never a remembered active slug.
-  const { key: sessionKey, name: spaceName } = resolveSpaceHandle(
-    storeRoot,
-    project.card.id,
-    project.card.id,
-    spaceSlug,
-  );
+  const { key: sessionKey, name: spaceName } = resolveSpaceHandle(storeRoot, project.card.id, project.card.id, spaceSlug);
   const existing = sessions.get(sessionKey);
   if (existing) return { key: sessionKey, name: spaceName, session: existing };
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
-  const forge = await resolveForge(
-    project.gitRoot,
-    config.get<string>("giteaToken", ""),
-  );
+  const forge = await resolveForge(project.gitRoot, config.get<string>("giteaToken", ""));
   const bound = project;
   const s = new TandemSession({
     round: {
@@ -364,16 +306,11 @@ async function ensureSession(
       gitRoot: project.gitRoot,
       prefix: project.prefix,
       projectId: project.card.id,
-      label: project.card.product
-        ? `${project.card.product} / ${project.card.label}`
-        : project.card.label,
+      label: project.card.product ? `${project.card.product} / ${project.card.label}` : project.card.label,
     },
     spaceName,
     spaceKey: sessionKey,
-    suiteCommand: config
-      .get<string>("suiteCommand", "npm test")
-      .split(" ")
-      .filter(Boolean),
+    suiteCommand: config.get<string>("suiteCommand", "npm test").split(" ").filter(Boolean),
     prepareCommand: config.get<string>("prepareCommand", ""),
     retire: (tepId) => retireTepWorktrees(bound.gitRoot, tepId),
     workerModel: {
@@ -414,9 +351,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(sessionLinks);
   const launcher = new LauncherService(context, sessionLinks);
   context.subscriptions.push(launcher);
-  launcher.activate().catch((err) => {
-    console.error("LauncherService activation failed:", err);
-  });
+  launcher.activate().catch((err) => console.error("LauncherService activation failed:", err));
 
   // The sidebar NAVIGATES; the editor WORKS (the v1 shell rule): the
   // Projects tree + Configuration tree live in the container, the space is
@@ -430,10 +365,7 @@ export function activate(context: vscode.ExtensionContext): void {
     () => listWorkProjects(configuredStoreRoot()),
   );
   context.subscriptions.push(
-    vscode.window.createTreeView("tandemProjects", {
-      treeDataProvider: projectsTree,
-      showCollapseAll: true,
-    }),
+    vscode.window.createTreeView("tandemProjects", { treeDataProvider: projectsTree, showCollapseAll: true }),
   );
 
   // The Configuration area (v1, verbatim).
@@ -442,21 +374,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const seedPath = rememberedProject(context)?.gitRoot ?? process.env.HOME ?? "/";
   const configService = new ClaudeConfigService(seedPath);
   const configTree = new ConfigTreeProvider(configService);
-  const configView = vscode.window.createTreeView("claudeConfigTree", {
-    treeDataProvider: configTree,
-    showCollapseAll: true,
-  });
+  const configView = vscode.window.createTreeView("claudeConfigTree", { treeDataProvider: configTree, showCollapseAll: true });
   context.subscriptions.push(configView);
   initActiveContext({ configService, treeProvider: configTree, statusBarItem: statusBar });
-  configService.onConfigChanged(() => {
-    void updateConfigContext();
-  });
+  configService.onConfigChanged(() => void updateConfigContext());
   void updateActiveContext(rememberedProject(context)?.gitRoot);
-  context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => {
-      void updateActiveContext();
-    }),
-  );
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => void updateActiveContext()));
   registerConfigCommands(context, {
     configService,
     treeProvider: configTree,
@@ -477,21 +400,15 @@ export function activate(context: vscode.ExtensionContext): void {
       title: string,
       run: (report: (message: string) => void, onCancel: (fn: () => void) => void) => Promise<void>,
     ) => {
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title, cancellable: true },
-        (progress, token) =>
-          run(
-            (message) => progress.report({ message }),
-            (fn) => token.onCancellationRequested(fn),
-          ),
+      const opts = { location: vscode.ProgressLocation.Notification, title, cancellable: true };
+      await vscode.window.withProgress(opts, (progress, token) =>
+        run((message) => progress.report({ message }), (fn) => token.onCancellationRequested(fn)),
       );
     },
     // The tab itself is already gone from the register the moment it
     // reports isClosed() — nothing to remove here. The tree still needs
     // telling, since a closed tab must stop showing as open in it.
-    onClosed: () => {
-      projectsTree?.refresh();
-    },
+    onClosed: () => projectsTree?.refresh(),
   };
   // The one register of open thinking-space tabs, keyed by owner and slug:
   // reveals a space's tab when it is already open, builds a fresh
@@ -500,11 +417,7 @@ export function activate(context: vscode.ExtensionContext): void {
   spaceTabs = new SpaceTabs((key) => {
     const session = sessions.get(key);
     if (!session) throw new Error(`no session resolved yet for thinking-space tab ${key}`);
-    const tab = new SpacePanel(
-      { key, name: session.spaceName ?? key, session },
-      makeVscodePanelHost(context.extensionUri),
-      hooks,
-    );
+    const tab = new SpacePanel({ key, name: session.spaceName ?? key, session }, makeVscodePanelHost(context.extensionUri), hooks);
     void tab.show();
     return tab;
   });
@@ -524,13 +437,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("thinkube-ai.claude.openHere", (uri?: vscode.Uri) =>
-      launcher.openHere(uri),
-    ),
+    vscode.commands.registerCommand("thinkube-ai.claude.openHere", (uri?: vscode.Uri) => launcher.openHere(uri)),
     vscode.commands.registerCommand("thinkube-tandem.openSpace", () => openSpaceFor()),
-    vscode.commands.registerCommand("thinkube-tandem.activateProject", (id: string) =>
-      openSpaceFor(id),
-    ),
+    vscode.commands.registerCommand("thinkube-tandem.activateProject", (id: string) => openSpaceFor(id)),
     // The v1 gestures (open / create / delete a thinking space) — spaceOps.
     ...registerSpaceCommands(context, {
       openSpaceFor,
