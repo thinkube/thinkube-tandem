@@ -21,10 +21,16 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      // The pending exemption, typed before the click, rides onto this one
+      // cut — it is spent here and carries no further.
+      ...(s.space.pendingDocsExemption
+        ? { docsExemption: { reason: s.space.pendingDocsExemption.reason } }
+        : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
-    s.space = { ...s.space, cuts: [...s.space.cuts, r.cut] };
+    // Spent: the session holds no exemption for the next cut.
+    s.space = { ...s.space, cuts: [...s.space.cuts, r.cut], pendingDocsExemption: undefined };
     // The human's click IS the mint (this message only arrives from the
     // panel): a content-bound token in the machine-local store — the same
     // no-expiry, edit-re-arms discipline the engine's gates verify.
