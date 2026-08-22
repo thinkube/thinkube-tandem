@@ -71,7 +71,7 @@ function twoSlicesSharingAFile(): { space: ReturnType<typeof emptySpace>; ids: s
 
 /** A worker that writes what its unit is for. Checks are written to pass
  *  once the module exists; production is written plainly. */
-function honestWorker(): (deps: { role: string; worktree: string; footprint: string[] }, brief: string) => Promise<WorkerOutcome> {
+function honestWorker(skip?: string): (deps: { role: string; worktree: string; footprint: string[] }, brief: string) => Promise<WorkerOutcome> {
   const write = (root: string, rel: string, body: string): void => {
     fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
     fs.writeFileSync(path.join(root, rel), body);
@@ -90,7 +90,7 @@ function honestWorker(): (deps: { role: string; worktree: string; footprint: str
         continue;
       }
       if (rel.endsWith("greet.mjs")) write(deps.worktree, rel, `export function greet() { return "hello"; }\n`);
-      if (rel.endsWith("memory.mjs")) write(deps.worktree, rel, `export function remember() { return "who"; }\n`);
+      if (rel.endsWith("memory.mjs") && skip !== "memory") write(deps.worktree, rel, `export function remember() { return "who"; }\n`);
       if (rel.endsWith("shared.mjs")) write(deps.worktree, rel, `export const shared = true;\n`);
     }
     return { ok: true, finalText: "done" };
@@ -198,4 +198,56 @@ test("the stall watchdog: a run that goes silent names every open unit and stops
   assert.match(lines.join("\n"), /stopping itself/);
   assert.equal(st.halted, true, "a run that cannot move ends itself instead of sitting");
   watch.stop();
+});
+
+test("REGRESSION (v2.0.140): a standing red the machine says is nobody's here never fails a unit whose own checks are green", async () => {
+  // What happened this morning: four units, every probe green — 6/6, 7/7,
+  // 7/7, 6/6 — and one `knip` line red, which the run itself labelled "a
+  // file another unit will still create". Each unit waited, reworked twice,
+  // went to the closer, and failed. The closers read the evidence, agreed it
+  // was not theirs, said so, and the units failed anyway. The machine knew
+  // the answer and did the opposite.
+  //
+  // Here the standing test imports the module SL-2 is planned to create —
+  // so the red is labelled "tree", exactly as knip's was — and SL-2's worker
+  // never writes it. The red can never clear. SL-2 fails on its own checks,
+  // honestly. SL-1, green on all of its own, must not.
+  let log = "";
+  let state = new RunState(() => {});
+  let outcome: Awaited<ReturnType<typeof dispatchTep>> | undefined;
+  for (let attempt = 1; attempt <= 4 && !/\[tree\]/.test(log); attempt++) {
+    const repo = repoInShape(MIRROR_STRIPPED, { waitsFor: "out/memory.mjs" });
+    const { space, ids } = twoSlicesSharingAFile();
+    const cut = { id: "cut-1", changeIds: ids, tepId: `TEP-notmine-${attempt}` };
+    state = new RunState(() => {});
+    outcome = await dispatchTep(
+      {
+        repoRoot: repo,
+        model: "sonnet",
+        suiteCommand: ["node", "-e", "process.exit(0)"],
+        prepare: MIRROR_STRIPPED.prepare,
+        runOne: MIRROR_STRIPPED.runOne,
+        suiteReds: ["src/link.test.mjs"],
+        state,
+        supervisorRound: async () => null,
+        rehome: async () => ({ anchors: [], notes: [] }),
+        spaceName: "notmine",
+        waitSleep: async () => {},
+        worker: honestWorker("memory") as never,
+      } as never,
+      space,
+      cut,
+      tepSlices({ space, cut, spaceName: "notmine" }),
+    );
+    log = [...state.logs].join("\n");
+    if (process.env.TANDEM_DEBUG) console.log(log);
+  }
+  assert.match(log, /\[tree\]/, "no attempt produced the shape under test — the fixture proves nothing");
+  const failed = [...state.units.values()].filter((u) => u.state === "failed");
+  assert.deepEqual(
+    failed.filter((u) => u.id.startsWith("SL-1")).map((u) => `${u.id}: ${u.note ?? ""}`),
+    [],
+    "the unit green on every one of its own checks does not die for a red the machine said was not its own",
+  );
+  assert.ok(outcome?.delivery, "the run reaches a delivery, which carries the red for the gate to hold");
 });

@@ -184,6 +184,29 @@ export async function confirmWaitingForTree(args: {
     await args.waitForCommit();
     confirm = await args.oracle.confirmGreen();
   }
+  // The wait is over and the suite is still red — but the machine has
+  // already decided, red by red, that none of it is this unit's. Failing it
+  // now contradicts what the machine itself said one line earlier: four
+  // units with every one of their own checks green were reworked, closed
+  // and failed for one `knip` line the run had labelled "another unit will
+  // still create this file". A red nobody here can clear is carried to the
+  // closing gate, which sees the whole tree; it is never a unit's death.
+  const settled = suiteRedButNotThisUnit(confirm.result);
+  if (!confirm.green && settled) {
+    args.say(`the repository's suite is still red, and no red of it is this unit's — carried to the closing gate: ${settled}`);
+    return { ...confirm, green: true };
+  }
   if (confirm.green || notReady(confirm.result).length) return confirm;
   return confirmWithRepair(args, confirm);
+}
+
+/** Every check of this unit passes, the suite does not, and no red of it is
+ *  owned by this unit's code — named, for the record and the log. */
+function suiteRedButNotThisUnit(r: VerifyResult): string | undefined {
+  if (r.kind !== "results" || !r.results.every((x) => x.pass)) return undefined;
+  const suite = (r as VerifyWithSuite).suite;
+  if (!suite || suite.verdict.green || !suite.verdict.failures.length) return undefined;
+  const owners = [...suite.owners.values()];
+  if (owners.some((o) => o === "code")) return undefined;
+  return suite.verdict.failures.map((f) => `${f.name} [${suite.owners.get(f)}]`).join("; ").slice(0, 300);
 }
