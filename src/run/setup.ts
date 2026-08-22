@@ -216,6 +216,9 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
     if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
+  // Nothing the door lent or watched appear may ever be staged: the gate,
+  // the closer and every slice commit run `git add -A` in this tree.
+  await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
   return { provisioned, built, runOne: await proveRunOne(args) };
 }
 
@@ -240,6 +243,33 @@ async function proveRunOne(args: SetupArgs): Promise<string> {
   const ran = r.code === 0 || /^(not )?ok \d+|\b\d+ (passed|failed)\b|^(--- )?(PASS|FAIL)\b/m.test(r.output);
   args.log(`  ${ran ? "held" : "did not hold"} in ${since(t0)}${ran ? "" : ` — ${tail(r.output, 300).split("\n").pop() ?? ""}`}`);
   return ran ? args.runOne : "";
+}
+
+/**
+ * What the door lends or produces must never reach a commit.
+ *
+ * The repository's own ignore rules do not promise that: `node_modules/`
+ * with a trailing slash matches a directory and NOT a symlink, so a lent
+ * link is stageable — and the gate's `git add -A` once committed four of
+ * them onto a run's branch, after which every fresh checkout of that
+ * branch recreated links into the base checkout and the suite judged the
+ * wrong tree forever after. The worktree's own exclude file closes it,
+ * with bare names, which match files, directories and symlinks alike.
+ */
+export async function excludeFromGit(worktree: string, entries: readonly string[], exec: Exec): Promise<void> {
+  if (!entries.length) return;
+  const rel = (await exec("git", ["-C", worktree, "rev-parse", "--git-path", "info/exclude"], worktree)).out.trim();
+  if (!rel) return;
+  const file = path.isAbsolute(rel) ? rel : path.join(worktree, rel);
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const had = await fs.readFile(file, "utf8").catch(() => "");
+    const lines = new Set(had.split("\n").filter(Boolean));
+    for (const e of entries) lines.add(`/${e.replace(/\/$/, "")}`);
+    await fs.writeFile(file, `${[...lines].join("\n")}\n`);
+  } catch {
+    /* an unwritable exclude falls back to the repository's own rules */
+  }
 }
 
 /** Make a runner share the worktree's provisioning: each produced entry is

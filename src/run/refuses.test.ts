@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { auditProbe } from "./probeAudit";
 import { refusedBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
@@ -497,4 +498,42 @@ test("every refusal a person reads is about the work, not about the machine", as
   const offending = said.filter((line) => INTERNALS.test(line));
   assert.deepEqual(offending, [], `these name the machine rather than the work:\n${offending.join("\n")}`);
   assert.ok(said.length >= 4, `the drive read nothing: ${said.length}`);
+});
+
+test("what the door lends can never be committed, even by add -A", async () => {
+  // Run 4's withheld commit ran `git add -A` and committed four borrowed
+  // symlinks onto the branch — the repository's own `node_modules/` ignore
+  // matches a directory, not a symlink. After that, every fresh checkout of
+  // the branch recreated links into the base checkout and the suite judged
+  // the wrong tree, run after run.
+  const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8" });
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-real-base-"));
+  execFileSync("git", ["init", "-q", base]);
+  g(base, "config", "user.email", "t@t");
+  g(base, "config", "user.name", "t");
+  fs.writeFileSync(path.join(base, "a.txt"), "a\n");
+  fs.writeFileSync(path.join(base, ".gitignore"), "node_modules/\n");
+  fs.mkdirSync(path.join(base, "node_modules", "dep"), { recursive: true });
+  fs.writeFileSync(path.join(base, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
+  g(base, "add", "a.txt", ".gitignore");
+  g(base, "commit", "-qm", "seed");
+  const wt = path.join(base, "..", `${path.basename(base)}-wt`);
+  g(base, "worktree", "add", "-q", "-b", "run", wt);
+
+  const exec = async (cmd: string, args: string[], cwd: string) => {
+    try {
+      return { code: 0, out: execFileSync(cmd, ["-C", cwd, ...args.slice(2)], { encoding: "utf8" }) };
+    } catch (err) {
+      return { code: 1, out: String((err as { stdout?: string }).stdout ?? "") };
+    }
+  };
+  await setupRunTree({ worktree: wt, repoRoot: base, exec: exec as never, boundedExec: async () => ({ code: 0, output: "" }), log: () => {} });
+
+  assert.ok(fs.lstatSync(path.join(wt, "node_modules")).isSymbolicLink(), "the dependency store was lent as a link");
+  g(wt, "add", "-A", ".");
+  assert.equal(
+    g(wt, "status", "--porcelain").split("\n").filter((l: string) => l.includes("node_modules")).join(""),
+    "",
+    "and add -A cannot stage it",
+  );
 });
