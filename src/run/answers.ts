@@ -22,7 +22,7 @@ import { clearanceNote } from "./clearance";
  */
 /** Text that shows the run's own machinery: a path, a tool, an error code,
  *  a probe. A person is asked about behavior, never about these. */
-export function namesInternals(text: string): boolean {
+function namesInternals(text: string): boolean {
   return (
     /(^|\s)(src|out|out-test|probes|node_modules)\//.test(text) ||
     /\.(ts|tsx|mjs|cjs|js|json)\b/.test(text) ||

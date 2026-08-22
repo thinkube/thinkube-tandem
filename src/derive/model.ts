@@ -39,7 +39,7 @@ export interface ProposedModel {
 }
 
 /** Build the model prompt. Pure; exported for tests. */
-export function buildModelPrompt(sentences: string[], map = ""): string {
+function buildModelPrompt(sentences: string[], map = ""): string {
   const listed = sentences.map((s, i) => `${i + 1}. ${s}`).join("\n");
   return (
     // The subject is the thing the writer is TALKING ABOUT, and most of
@@ -121,7 +121,7 @@ function asString(v: unknown): string {
 }
 
 /** Parse the model reply. Fail-soft: junk yields nothing, never a throw. */
-export function parseModel(raw: string | null, count: number): ProposedModel | undefined {
+function parseModel(raw: string | null, count: number): ProposedModel | undefined {
   if (!raw) return undefined;
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");

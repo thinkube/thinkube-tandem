@@ -215,7 +215,7 @@ export function closingVerifications(slices: SliceForDag[]): {
  *  form, `UNDELIVERED:` in capitals, or another marker word; the vocabulary
  *  alone is not a deferral. */
 const OTHER_MARKERS = /\b(TODO|FIXME|XXX|HACK|not in scope|not implemented|unimplemented|pending SDK)\b/i;
-export function isDeferralVocabulary(text: string): boolean {
+function isDeferralVocabulary(text: string): boolean {
   return !OTHER_MARKERS.test(text) && !/\bUNDELIVERED\s*:/.test(text);
 }
 

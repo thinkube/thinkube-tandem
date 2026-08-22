@@ -80,7 +80,7 @@ export interface GateContext {
 }
 
 /** The reason a red suite withholds the delivery — intent-level, no internals. */
-export const RED_SUITE_REFUSAL =
+const RED_SUITE_REFUSAL =
   "the repository's standing checks are red after the work — the delivery is withheld " +
   "rather than handed over red; the branch keeps the work and the run record keeps the " +
   "suite's verdict (if the repository was already red before, it must be green first)";

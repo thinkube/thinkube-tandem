@@ -42,7 +42,7 @@ function importsOf(source: string): string[] {
 }
 
 /** Module-loader interception: the mark of a simulator, whatever it fakes. */
-export function interceptsLoader(source: string): string | undefined {
+function interceptsLoader(source: string): string | undefined {
   const hits = [
     /Module\._load/,
     /Module\._resolveFilename/,
@@ -55,7 +55,7 @@ export function interceptsLoader(source: string): string | undefined {
 /** Reading a source file's TEXT: the check that greps instead of driving.
  *  Reading a fixture is ordinary; reading something the repository compiles
  *  is a check written about the code rather than against it. */
-export function readsSource(source: string): string | undefined {
+function readsSource(source: string): string | undefined {
   const CODE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs)$/;
   for (const m of source.matchAll(
     /\b(readFileSync|readFile|readFileAsync|read_text|readText|open|File\.read|slurp)\s*\(\s*["'`]([^"'`\n]+)["'`]/g,

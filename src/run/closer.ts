@@ -149,7 +149,7 @@ function closerBrief(a: {
 }
 
 /** Rulings the closer declared for the checks it changed. */
-export function rulingsIn(finalText: string): string[] {
+function rulingsIn(finalText: string): string[] {
   return (finalText ?? "")
     .split(/\r?\n/)
     .map((l) => l.trim().replace(/^[-*+]\s*/, ""))

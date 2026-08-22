@@ -38,7 +38,7 @@ export interface SetupContext {
 }
 
 /** Build the prompt. Pure; exported for tests. */
-export function buildPreparePrompt(
+function buildPreparePrompt(
   repoRoot: string,
   map: string,
   digest: string,
@@ -90,7 +90,7 @@ export function buildPreparePrompt(
 /** One command per label or nothing — a parser that never invents a step.
  *  A round that produced no text is NOT an answer: undefined, so a caller
  *  keeps what it had rather than forgetting it. */
-export function parseSetup(raw: string | null): Setup | undefined {
+function parseSetup(raw: string | null): Setup | undefined {
   if (!raw || !/^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:/im.test(raw)) return undefined;
   const setup: Setup = { ...NO_SETUP };
   for (const l of raw.split("\n")) {

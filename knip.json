@@ -2,7 +2,6 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/extension.ts",
         "src/cli/headless.ts"
       ],
       "project": [

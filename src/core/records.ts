@@ -93,7 +93,7 @@ function readAllRecords(projectDir: string): SnapshotRecord[] {
 /** Latest record per author, ordered by (at, author, read-order) — the
  *  read order (sorted filenames) is the tiebreaker, so a constant clock
  *  still yields a deterministic "latest". */
-export function latestPerAuthor(records: SnapshotRecord[]): SnapshotRecord[] {
+function latestPerAuthor(records: SnapshotRecord[]): SnapshotRecord[] {
   const cmp = (a: [SnapshotRecord, number], b: [SnapshotRecord, number]): number =>
     a[0].at !== b[0].at
       ? a[0].at < b[0].at
@@ -139,7 +139,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
  * Fold the latest snapshot of every author into ONE space. Deterministic
  * and total; contradictory decisions surface as a question.
  */
-export function foldSpaces(latest: SnapshotRecord[]): Space {
+function foldSpaces(latest: SnapshotRecord[]): Space {
   if (latest.length === 0) return emptySpace();
   if (latest.length === 1) return latest[0].space;
 

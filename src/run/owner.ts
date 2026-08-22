@@ -21,7 +21,7 @@ import type { VerifyResult } from "../engine/verifyOracle";
 export type FailureOwner = "code" | "check" | "environment";
 
 /** The owner of one failing check, from its evidence. */
-export function ownerOf(evidence: string): FailureOwner {
+function ownerOf(evidence: string): FailureOwner {
   const e = evidence;
   if (/\[timed out\]|did not exit|timed out after/i.test(e)) return "check";
   // The probe (or its import chain) loaded a SOURCE file the runner cannot

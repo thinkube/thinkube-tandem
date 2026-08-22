@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 /** `identifier`-shaped names the check's own words carry. */
-export function namedSymbols(text: string): string[] {
+function namedSymbols(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/`([A-Za-z_$][\w$]*)(?:\(\))?`/g)) out.add(m[1]);
   // Bare camelCase call-shaped names ("ensureSession(...)") count too.
@@ -19,7 +19,7 @@ export function namedSymbols(text: string): string[] {
 }
 
 /** Whether a source file exports the symbol, by the common forms. */
-export function exportsSymbol(source: string, symbol: string): boolean {
+function exportsSymbol(source: string, symbol: string): boolean {
   const s = symbol.replace(/[$]/g, "\\$&");
   return (
     new RegExp(`export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const|let|var|class|interface|type|enum)\\s+${s}\\b`).test(source) ||
@@ -29,7 +29,7 @@ export function exportsSymbol(source: string, symbol: string): boolean {
   );
 }
 
-export interface ReachabilityFlag {
+interface ReachabilityFlag {
   criterionText: string;
   symbol: string;
   file: string;
@@ -41,7 +41,7 @@ export interface ReachabilityFlag {
  * is flagged. A symbol not found at all is NOT flagged — the file may be
  * planned, the name may be prose.
  */
-export function auditProbeReachability(
+function auditProbeReachability(
   node: {
     acceptance: { text: string; kind?: string }[];
     touchpoints?: { path: string; planned?: boolean }[];

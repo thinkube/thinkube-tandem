@@ -23,13 +23,13 @@ function vs(): typeof vscodeTypes {
   return req("vscode") as typeof vscodeTypes;
 }
 
-export interface ControlAuth {
+interface ControlAuth {
   base: string;
   token: string;
 }
 
 /** Pure: dig the control URL + bearer token out of a Claude MCP config. */
-export function parseControlAuth(config: unknown): ControlAuth | undefined {
+function parseControlAuth(config: unknown): ControlAuth | undefined {
   const dig = (o: unknown): ControlAuth | undefined => {
     if (typeof o !== "object" || o === null) return undefined;
     const rec = o as Record<string, unknown>;

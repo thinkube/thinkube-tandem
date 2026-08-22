@@ -38,7 +38,7 @@ const FROM_SOURCE: RepoShape = {
 };
 
 /** The built tree mirrors the source tree with its first directory dropped. */
-export const MIRROR_STRIPPED: RepoShape = {
+const MIRROR_STRIPPED: RepoShape = {
   name: "build mirrors source, the leading directory dropped",
   prepare: "sh build.sh",
   runOne: 'node --test "out/$(echo <file> | sed -e \'s#^src/##\')"',

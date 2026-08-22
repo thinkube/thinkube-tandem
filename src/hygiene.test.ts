@@ -1,5 +1,8 @@
 /**
- * The size limit, which exists because files here once reached five
+ * Two rules about the shape of this repository itself: nothing grows past
+ * reading size, and nothing is kept that nothing reaches.
+ *
+ * The size limit exists because files here once reached five
  * thousand lines.
  *
  * It briefly withheld a delivery of unrelated work, and my answer was to
@@ -13,6 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const repo = path.resolve(__dirname, "..");
 const SIZE_LIMIT = 600;
@@ -34,4 +38,20 @@ test(`module size: no file exceeds ${SIZE_LIMIT} lines (the imported engine is e
   walk(path.join(repo, "src"));
   walk(path.join(repo, "webview", "map", "src"));
   assert.deepEqual(offenders, []);
+});
+
+test("nothing in this repository is unreachable from the product's own entry points", () => {
+  // The gate was off because its old configuration used TEST files as entry
+  // points, which made it a coverage gate wearing a reachability gate's
+  // name: anything a test imported counted as reached. With the product's
+  // real entry point it says something true — and the day it went back on it
+  // found four files and sixty-two exports that nothing reached, all of them
+  // kept alive by tests that no longer exist.
+  const out = execFileSync("npx", ["knip", "--no-progress"], {
+    cwd: repo,
+    encoding: "utf8",
+    // A finding is an exit code, not a throw, so both are read the same way.
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  assert.equal(out, "", `unreachable code:\n${out}`);
 });

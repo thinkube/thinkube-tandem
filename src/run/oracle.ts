@@ -44,7 +44,7 @@ export type Exec = (
 /** Every command the run executes is BOUNDED and NAMED: a command that
  *  hangs becomes "timed out" with its own name in the output — a run is
  *  never allowed to go silent inside an exec. */
-export function makeExec(timeoutMs: number): Exec {
+function makeExec(timeoutMs: number): Exec {
   return (cmd, args, cwd) =>
     new Promise((resolve) => {
       execFile(
@@ -76,7 +76,7 @@ export const defaultExec: Exec = makeExec(5 * 60 * 1000);
  * Reuse = re-snapshot: hard reset + `clean -fd` (no -x — provisioning like
  * node_modules survives), so every use grades a fresh base.
  */
-export async function ensureSnapshot(
+async function ensureSnapshot(
   repoRoot: string,
   ref: string,
   dir: string,
@@ -100,7 +100,7 @@ export async function ensureSnapshot(
 
 /** Fresh code worktree on the run branch + detached tester snapshot.
  *  Returns the refusal when either cannot be provisioned. */
-export async function copyRel(fromRoot: string, toRoot: string, rel: string): Promise<void> {
+async function copyRel(fromRoot: string, toRoot: string, rel: string): Promise<void> {
   const dst = path.join(toRoot, rel);
   await fs.mkdir(path.dirname(dst), { recursive: true });
   await fs.copyFile(path.join(fromRoot, rel), dst);

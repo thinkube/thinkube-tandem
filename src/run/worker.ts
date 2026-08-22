@@ -112,7 +112,7 @@ function describeTool(b: Record<string, unknown>): string {
 const READ_TOOLS = ["Read", "Grep", "Glob", "NotebookRead"];
 
 /** Held-out evidence: a probe, or any test-shaped path — one rule. */
-export function isHeldOut(target: string): boolean {
+function isHeldOut(target: string): boolean {
   return isTestPath(target);
 }
 
@@ -159,7 +159,7 @@ async function revertPaths(worktree: string, paths: string[]): Promise<void> {
   }
 }
 
-export function containmentViolations(
+function containmentViolations(
   dirty: string[],
   footprint: string[],
   baseline: Set<string>,
@@ -417,7 +417,7 @@ export async function runUnitWorker(
 /** What a worker really left undone. "UNDELIVERED: none." — with or
  *  without a trailing remark ("none — all files written") — is a report
  *  of completeness, not a gap: a unit must never fail on its own honesty. */
-export function realUndelivered(text: string): string[] {
+function realUndelivered(text: string): string[] {
   return extractUndelivered(text).filter(
     (u) => !/^\s*(none|nothing( undelivered)?|n\/a|-)\s*([.!,;:(—–-]|$)/i.test(u),
   );

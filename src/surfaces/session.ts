@@ -31,7 +31,6 @@ import { loadLastRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
-export { SESSION_ACTIONS } from "./affordances";
 
 export class TandemSession {
   space: Space = emptySpace();

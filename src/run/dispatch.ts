@@ -54,6 +54,7 @@ import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
+import { verifyCutSignature } from "../gates/sign";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
@@ -146,6 +147,20 @@ export async function dispatchTep(
   // never discovered by a worker four rounds in.
   const impossible = refusalsBeforeDispatch({ slices, space });
   if (impossible.length) return refuse("plan-promises", impossible.join("\n"), "gate");
+  // What was signed is what runs. A signature binds the words the person
+  // read to the grounding underneath them; if either moved since, the run
+  // would be building something nobody approved.
+  // Only drift is judged here. Whether an unsigned cut may run at all is
+  // the sign gate's question, asked before this one.
+  const signed = cut.signature ? verifyCutSignature(space, cut) : { ok: true as const };
+  if (!signed.ok)
+    return refuse(
+      "signature-drift",
+      signed.drift === "render"
+        ? `the promises changed after they were signed (${signed.reason}) — read the cut again and sign what it says now`
+        : `where the promises land changed after they were signed (${signed.reason}) — re-ground them and sign again`,
+      "gate",
+    );
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });

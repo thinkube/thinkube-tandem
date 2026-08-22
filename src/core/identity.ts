@@ -43,7 +43,7 @@ export interface SpaceCard {
   scopes?: ProjectScope[];
 }
 
-export const CARD_RELPATH = path.join(".tandem", "space.yaml");
+const CARD_RELPATH = path.join(".tandem", "space.yaml");
 
 /** Minted ids stay human-tolerable (label root + short suffix) because the
  *  store keys directories by them — but the LABEL half is frozen at mint:
@@ -59,7 +59,7 @@ export function mintId(label: string, rand: () => string = () => randomBytes(3).
 }
 
 /** Read a card at `dir` (the anchor scope directory). Absent → not enabled. */
-export function readCard(dir: string): SpaceCard | undefined {
+function readCard(dir: string): SpaceCard | undefined {
   try {
     const raw = parseYaml(fs.readFileSync(path.join(dir, CARD_RELPATH), "utf8")) as Record<string, unknown>;
     if (typeof raw?.id !== "string" || !raw.id.trim()) return undefined;

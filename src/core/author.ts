@@ -13,7 +13,7 @@
 
 import { readFileSync } from "node:fs";
 
-export interface AuthorDeps {
+interface AuthorDeps {
   env: Record<string, string | undefined>;
   /** Reads a file, or undefined when it is not there. */
   readFile: (path: string) => string | undefined;
@@ -47,7 +47,7 @@ function fromGitHubCli(deps: AuthorDeps): string {
  * be identified. Never invents one: an anonymous default is the same
  * constant on every installation, which is the defect it would hide.
  */
-export function resolveAuthor(deps: AuthorDeps): string | undefined {
+function resolveAuthor(deps: AuthorDeps): string | undefined {
   return clean(deps.env[AUTHOR_VARIABLE] ?? "") || fromGitHubCli(deps) || undefined;
 }
 

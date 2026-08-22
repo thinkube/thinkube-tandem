@@ -21,7 +21,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export type Executed = "yes" | "no" | "unknown";
+type Executed = "yes" | "no" | "unknown";
 
 export interface WiringVerdict {
   executed: Executed;
@@ -35,7 +35,7 @@ interface V8Coverage {
 }
 
 /** Every file the recorded run actually executed a line of. */
-export async function executedFiles(dir: string): Promise<string[]> {
+async function executedFiles(dir: string): Promise<string[]> {
   const out = new Set<string>();
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   for (const n of names) {

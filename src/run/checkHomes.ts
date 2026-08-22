@@ -21,7 +21,7 @@
 import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
 
-export interface TestIdiom {
+interface TestIdiom {
   /** The suffix this repository's tests wear: `.test.ts`, `_test.go`. */
   suffix: string;
   /** A directory every test lives under, or "" when tests sit beside code. */
@@ -42,7 +42,7 @@ function suffixOf(rel: string): string {
 }
 
 /** How this repository names and houses its tests, read from the tests it has. */
-export function inferTestIdiom(files: readonly string[]): TestIdiom | undefined {
+function inferTestIdiom(files: readonly string[]): TestIdiom | undefined {
   const tests = files.filter((f) => f && isTestPath(f) && !isProbePath(f));
   if (!tests.length) return undefined;
   const counted = new Map<string, number>();
@@ -66,7 +66,7 @@ export function inferTestIdiom(files: readonly string[]): TestIdiom | undefined 
  * The ordinal stays in the name because the run reads it back — a check's
  * verdict is reported against the criterion it was written from.
  */
-export function checkHomeIn(idiom: TestIdiom, subject: string, k: number): string {
+function checkHomeIn(idiom: TestIdiom, subject: string, k: number): string {
   const stem = subject.replace(/\.[^./]+$/, "");
   const rel = idiom.dir ? `${idiom.dir}${path.basename(stem)}` : stem;
   return `${rel}_AC-${k}${idiom.suffix}`;

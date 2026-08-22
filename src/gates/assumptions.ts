@@ -119,7 +119,7 @@ function looksLikeIdentifier(token: string): boolean {
  * The machine's own language inside `text`, minus anything the human has
  * written themselves — their words are theirs, whatever they are.
  */
-export function foreignWords(text: string, humanText: string[]): string[] {
+function foreignWords(text: string, humanText: string[]): string[] {
   const theirs = new Set(contentWords(humanText.join(" ")));
   const out = new Set<string>();
   for (const token of text.split(/\s+/)) {

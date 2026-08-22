@@ -38,7 +38,7 @@ function linesOf(root: string, rel: string): string[] | undefined {
 }
 
 /** The line at `path:Lnn`, quoted verbatim (1-based, as graphify counts). */
-export function quoteAt(root: string, rel: string, line: number): string | undefined {
+function quoteAt(root: string, rel: string, line: number): string | undefined {
   const lines = linesOf(root, rel);
   if (!lines || line < 1 || line > lines.length) return undefined;
   const text = lines[line - 1].trim();

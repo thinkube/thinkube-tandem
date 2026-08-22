@@ -25,7 +25,7 @@ export interface RefreshResult {
 }
 
 /** The slices an earlier run of this cut committed, from the branch's own log. */
-export function committedSlicesOf(log: string, tep: string): string[] {
+function committedSlicesOf(log: string, tep: string): string[] {
   const out: string[] = [];
   for (const line of log.split("\n")) {
     const m = new RegExp(`^tandem: ${tep.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} (\\S+)$`).exec(line.trim());

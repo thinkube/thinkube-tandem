@@ -17,7 +17,7 @@ export interface Forge {
   merge(ref: string): Promise<void>;
 }
 
-export interface RemoteTarget {
+interface RemoteTarget {
   kind: "github" | "gitea";
   host: string;
   owner: string;
@@ -26,7 +26,7 @@ export interface RemoteTarget {
 
 /** Resolve which forge a remote URL names. Unknown hosts are Gitea: the
  *  self-hosted platform is the default world, github.com the special case. */
-export function detectForge(remoteUrl: string): RemoteTarget | undefined {
+function detectForge(remoteUrl: string): RemoteTarget | undefined {
   const m =
     /^(?:git@|https?:\/\/)([^/:]+)[/:]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(
       remoteUrl.trim(),
@@ -50,7 +50,7 @@ const defaultExec: Exec = (cmd, args) =>
     );
   });
 
-export function githubForge(target: RemoteTarget, exec: Exec = defaultExec): Forge {
+function githubForge(target: RemoteTarget, exec: Exec = defaultExec): Forge {
   const repo = `${target.owner}/${target.repo}`;
   return {
     kind: "github",

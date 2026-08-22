@@ -25,7 +25,7 @@ export interface AssessArgs {
 /** The reviewer's word: the last line that starts with GREEN or RED. A
  *  reviewer that narrates before it decides is still read; one that never
  *  decides is red. */
-export function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | undefined {
+function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | undefined {
   if (!reply) return undefined;
   const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, "").toUpperCase());
   for (let i = lines.length - 1; i >= 0; i--) {

@@ -6,14 +6,7 @@
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
 
-/** A render that exceeds this is not a decision — it is homework. Blank
- *  lines separate the sections of a rendered page and say nothing, so
- *  what counts is the lines that carry something. */
-export const RENDER_LINE_BUDGET = 30;
 
-/** What a render costs against the budget. */
-export const renderWeight = (page: string): number =>
-  page.split("\n").filter((l) => l.trim()).length;
 
 function nodesOf(space: Space, ids: readonly string[]): Change[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));

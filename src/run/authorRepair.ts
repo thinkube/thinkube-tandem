@@ -39,7 +39,7 @@ export interface AuthorRepairResult {
 }
 
 /** What the resumed author is told. Its own work is already in its context. */
-export function repairMessage(a: {
+function repairMessage(a: {
   criterion: string;
   evidence: string;
   changedSince: readonly string[];
