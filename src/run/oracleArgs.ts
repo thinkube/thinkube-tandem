@@ -6,7 +6,6 @@
  */
 import type { AcVerification } from "../engine/core/closingGate";
 import type { SliceForDag, SchedUnit } from "../engine/core/dag";
-import { persistProbes } from "../engine/oracleStore";
 import { maintainedElsewhere } from "./plan";
 import { makeClearance } from "./clearance";
 import { sliceSuiteArgs } from "./suite";
@@ -21,7 +20,6 @@ export function buildOracleArgs(a: {
   worktree: string;
   testerWt: string;
   cutId: string;
-  storeDir: string;
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
   briefBySlice: Map<string, string>;
@@ -76,7 +74,6 @@ export function buildOracleArgs(a: {
     pruneIn: (slice: string) => maintainedElsewhere(slices, slice),
     criterionOf: a.criterionOf,
     onRuling: (r) => rulings.push({ criterionId: r.criterionId, unit: r.slice, granted: r.granted, reason: r.reason }),
-    persistProbe: (rel: string) => persistProbes(a.storeDir, a.testerWt, [rel], a.cutId),
     ...(deps.author ? { author: deps.author } : {}),
     ...(deps.digest ? { digest: deps.digest } : {}),
     clearance: makeClearance({

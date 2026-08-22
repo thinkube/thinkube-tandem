@@ -16,7 +16,6 @@ import { Cut, Delivery, Proof, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
 import { gradeAssessments, logRedChecks } from "./assess";
-import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
@@ -40,7 +39,6 @@ export interface GateContext {
   branch: string;
   baseSha: string;
   worktree: string;
-  testerWt: string;
   slices: SliceForDag[];
   space: Space;
   cut: Cut;
@@ -76,15 +74,9 @@ export const RED_SUITE_REFUSAL =
   "suite's verdict (if the repository was already red before, it must be green first)";
 
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
-  const { tep, branch, worktree, testerWt, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
+  const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  // Probes ride the branch: any not yet copied by a slice commit (failed or
-  // halted slices) still land in the code worktree so the gate's verdict is
-  // about the real state, not about a missing file.
-  for (const [slice, probes] of g.sliceProbes)
-    if (!g.sliceCommitted.has(slice))
-      for (const rel of probes) await copyRel(testerWt, worktree, rel).catch(() => {});
   const { verifs, probeOfAc } = closingVerifications(slices);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));

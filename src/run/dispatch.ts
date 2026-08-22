@@ -1,12 +1,12 @@
 /**
  * The run between the gates, driven by the imported engine.
  *
- * Testers author probes and bring test homes under in a DETACHED SNAPSHOT
- * of the branch's committed HEAD (blinding is structural); their work
- * persists in the oracle store, keyed by the base commit. Each slice's
- * coder is graded by a black-box VERIFY ORACLE over the committed base plus
- * its own files and the slice's test homes; the oracle's green — never the
- * worker's claim — completes a unit (MANDATORY-GREEN). Every failure has
+ * One tree per repository. The tester writes its checks beside the code
+ * and the coder is kept off them by permission, not by absence: the guard
+ * refuses a blinded author any test-shaped path. Each slice's coder is
+ * graded by a black-box VERIFY ORACLE over the committed base plus its own
+ * files; the oracle's green — never the worker's claim — completes a unit
+ * (MANDATORY-GREEN). Every failure has
  * an owner and the owner gets the repair loop; a stopped run stops every
  * limb; ready units run concurrently on the engine's frontier; a finished
  * slice is committed on the branch. Every failure lands as an artifact —
@@ -23,10 +23,9 @@ import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
-import { persistProbes, restoreProbes } from "../engine/oracleStore";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel } from "../engine/workerModel";
-import { defaultExec, ensureSnapshot, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { defaultExec, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
 import { refreshRunTrees, repairStandingTree } from "./refresh";
 import { makeCommitBook } from "./commits";
@@ -79,8 +78,13 @@ export async function dispatchTep(
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
   const wtName = runName.replace(/\//g, "__");
   const worktree = path.join(wtRoot, wtName);
-  const testerWt = path.join(wtRoot, `${wtName}-tester`);
-  const storeDir = path.join(wtRoot, "oracle-store", wtName);
+  // One tree per repository. The tester writes its checks beside the code,
+  // and the coder is kept off them by permission — the guard refuses a
+  // blinded coder any test-shaped path (src/run/worker.ts). A second tree
+  // bought the same blinding structurally and charged for it in every
+  // mechanism that had to reconcile the two: the probe store, the runner
+  // overlay, the closer's fix written where nothing commits.
+  const testerWt = worktree;
   if (deps.storeDir) st.sink = runLogSink(deps.storeDir, tep, runId);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = scrubbedEnv();
@@ -126,11 +130,11 @@ export async function dispatchTep(
     return refuse("plan-roles", `the plan hands a coder test-shaped paths — refused before dispatch: ${misowned.join(", ")}`);
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
-  const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, testerWt, deps, exec, log, defect });
+  const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
   const doSetup = () =>
-    setupRunTree({ worktree, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
+    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   let ready = await doSetup();
   // A resumed branch an earlier run left half-committed is mended before the run refuses.
   if (ready.refusal && refreshed.resumed) {
@@ -145,14 +149,6 @@ export async function dispatchTep(
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
   const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices);
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
-  /** The tester's tree after a reset: probes back from the store, the test homes it edited over
-   *  what the branch holds. Keyed to the CUT, so probes survive a base refresh. */
-  const restoreTester = async (): Promise<void> => {
-    await restoreProbes(storeDir, testerWt, cut.id);
-  };
-  await restoreTester();
-  log(`${tep}: tester snapshot at ${path.basename(testerWt)} (structural blinding)`);
-
   const specBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
   const done = new Set<string>();
@@ -175,7 +171,7 @@ export async function dispatchTep(
   const rulings: Ruling[] = [];
   const decisions: { unit: string; text: string }[] = [];
   const oracleArgs = buildOracleArgs({
-    deps, branch, wtRoot, tep: wtName, worktree, testerWt, cutId: cut.id, storeDir,
+    deps, branch, wtRoot, tep: wtName, worktree, testerWt, cutId: cut.id,
     sliceProbes, sliceVerifs, briefBySlice, acting, exec, boundedExec, suiteExec, log, defect,
     provisioned, built, emitMap, dag, slices, criterionOf, rulings, decisions, runOneTest,
     pending: (id: string) => !done.has(id) && !failed.has(id),
@@ -200,7 +196,6 @@ export async function dispatchTep(
   const testerPaths = [...new Set([...sliceProbes.values()].flat())];
 
   let testInflight = 0;
-  let testerReset: Promise<void> = Promise.resolve();
   const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
     ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}) });
@@ -214,30 +209,19 @@ export async function dispatchTep(
     const maintain = isMaintainUnit(next); // scheduled as code, worked as a tester
     const role = (maintain ? "test" : (next.role ?? "code")) as "code" | "test";
     st.set(next.id, "running");
-    // A resumed tester whose probes all stand (restored from the cut's store) has nothing to write.
-    if (role === "test" && !maintain && refreshed.resumed && !(await missingProbes(testerWt, next.footprint)).length) {
-      log(`✓ ${next.id}: probes standing from the earlier run — nothing to write`, next.id);
+    // A resumed tester whose checks all stand on the branch has nothing to write.
+    if (role === "test" && !maintain && refreshed.resumed && !(await missingProbes(worktree, next.footprint)).length) {
+      log(`✓ ${next.id}: checks standing from the earlier run — nothing to write`, next.id);
       return finishUnit(next.id, next.slice, true);
     }
     log(`▸ ${next.id} (${role})`, next.id);
-    const tree = role === "test" && !maintain ? testerWt : worktree;
-    if (role === "test" && !maintain) {
-      // Re-snapshot only when no other test author is mid-flight; the count rises BEFORE the await and the reset is one shared promise, so same-tick authors cannot race it.
-      const first = testInflight === 0;
-      testInflight++;
-      if (first)
-        testerReset = (async () => {
-          await ensureSnapshot(deps.repoRoot, branch, testerWt, exec);
-          await restoreTester();
-        })();
-      await testerReset;
-    }
+    const tree = worktree;
+    if (role === "test" && !maintain) testInflight++;
     const baseline = new Set(await porcelainPaths(tree));
     const abort = new AbortController();
     st.aborts.set(next.id, abort);
 
     const oracle = role === "code" || maintain ? buildOracle(next.slice) : undefined;
-    if (role === "code" || maintain) await restoreTester();
 
     // The oracle speaks under the unit it acts for.
     if (oracle) acting.set(next.slice, { unit: next.id });
@@ -469,22 +453,7 @@ export async function dispatchTep(
     }
     st.aborts.delete(next.id);
     liveFootprints.delete(next.id);
-    if (role === "test" && !maintain) {
-      testInflight--;
-      if (ok) {
-        try {
-          await persistProbes(storeDir, testerWt, next.footprint, cut.id);
-        } catch (err) {
-          // A durable done-flag with no persisted probe is the lie the store
-          // exists to remove — the unit fails instead.
-          ok = false;
-          failWith(
-            next.id,
-            `declared probe missing at persist (${err instanceof Error ? err.message : String(err)})`,
-          );
-        }
-      }
-    }
+    if (role === "test" && !maintain) testInflight--;
     await finishUnit(next.id, next.slice, ok);
   };
   // The pump: launch what is ready up to the cap, wake on any completion.
@@ -538,7 +507,7 @@ export async function dispatchTep(
     st.block(id, "never ran — the run stopped, or something it waits on failed");
 
   return await closeGate({
-    tep, branch, baseSha, worktree, testerWt, slices, space, cut, deps,
+    tep, branch, baseSha, worktree, slices, space, cut, deps,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
   });

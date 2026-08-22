@@ -25,9 +25,9 @@ same phase starts before it.
 | # | Work | Proof | State |
 |---|---|---|---|
 | 1.1 | The experiment: how many criteria go red→green inside a unit's own rounds | **nine**, across six of nine code units, in the run of 22 Aug 12:10 | done |
-| 1.2 | Delete the tester snapshot; the tester writes in the one tree | after a run no `-tester` tree exists | todo |
-| 1.3 | Blinding by permission: a code worker reading a check path is refused | the refusal, driven | todo |
-| 1.4 | Delete the probe store (persist/restore) | a resumed run still finds its checks | todo |
+| 1.2 | Delete the tester snapshot; the tester writes in the one tree | after a run no `-tester` tree exists | done |
+| 1.3 | Blinding by permission: a code worker reading a check path is refused | the refusal, driven | done |
+| 1.4 | Delete the probe store (persist/restore) | a resumed run still finds its checks | done |
 | 1.5 | Delete the emit map | checks import what exists, with no path mapping | todo |
 | 1.6 | A does not hold — the per-unit oracle stays. G4 in PROCESS.md is stale and says the opposite | the number in 1.1 | done |
 | 1.7 | Setup facts (install, build, one test) belong to the repository, not the editor's cache | a headless run needs no `--provision` flag | todo |
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.6, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.6, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

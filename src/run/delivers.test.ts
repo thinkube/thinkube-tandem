@@ -21,6 +21,7 @@ import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "../core/schema";
 import { addAsk, addNode } from "../core/intent";
 import { SHAPES, repoInShape, scriptedWorker } from "./shapes";
+import { refusedToolUse } from "./worker";
 import type { RepoShape } from "./shapes";
 
 /** One ask, one promise, one criterion — the content is never the point. */
@@ -97,4 +98,43 @@ for (const shape of SHAPES as readonly RepoShape[])
       [],
       "the delivery installed no test into the repository",
     );
+
+    // One tree per repository. A second tree inside a repository is what
+    // the probe store, the runner overlay and the closer's misplaced fix
+    // all existed to reconcile.
+    const trees = execFileSync("git", ["-C", repo, "worktree", "list", "--porcelain"])
+      .toString()
+      .split("\n")
+      .filter((l) => l.startsWith("worktree "))
+      .map((l) => l.slice("worktree ".length));
+    assert.deepEqual(
+      trees.filter((t) => t.endsWith("-tester")),
+      [],
+      "the run left no tester tree",
+    );
   });
+
+test("a blinded coder is refused the checks, and a coder never writes one", () => {
+  // Blinding is a permission, not an absence: the checks sit beside the
+  // code in one tree, and the guard is what keeps the author off them.
+  assert.match(
+    refusedToolUse({ role: "code", blind: true }, "Read", "src/run/gate.test.ts") ?? "",
+    /held out/,
+    "a blinded coder cannot read a check",
+  );
+  assert.match(
+    refusedToolUse({ role: "code" }, "Write", "probes/x_AC-1.test.mjs") ?? "",
+    /tests are the tester's/,
+    "and no coder writes one, blinded or not",
+  );
+  assert.equal(
+    refusedToolUse({ role: "code", blind: true }, "Read", "src/run/gate.ts"),
+    undefined,
+    "while production code stays readable",
+  );
+  assert.equal(
+    refusedToolUse({ role: "test", blind: false }, "Write", "probes/x_AC-1.test.mjs"),
+    undefined,
+    "and the tester writes its own checks",
+  );
+});
