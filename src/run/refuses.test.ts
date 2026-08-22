@@ -291,6 +291,31 @@ test("the door borrows the checkout's provisioning instead of installing again",
   assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
 });
 
+test("the door borrows even when no install command was ever learned", async () => {
+  // Run 2 of the acceptance died here: no install command was known, so
+  // nothing was borrowed and nothing was installed, and the suite failed
+  // before its first test on a tree missing its dependencies.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  fs.mkdirSync(path.join(base, "webview", "map", "node_modules", "vite"), { recursive: true });
+  fs.writeFileSync(path.join(base, "webview", "map", "node_modules", "vite", "index.js"), "");
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    exec: async (cmd, args, cwd) =>
+      cmd === "git" && args[2] === "status"
+        ? { code: 0, out: cwd === base ? "!! webview/map/node_modules/\n" : "" }
+        : { code: 0, out: "" },
+    boundedExec: async () => ({ code: 0, output: "" }),
+    log: () => {},
+  });
+  assert.deepEqual(setup.provisioned, ["webview/map/node_modules"]);
+  assert.ok(
+    fs.existsSync(path.join(wt, "webview", "map", "node_modules", "vite", "index.js")),
+    "a nested dependency directory is lent too",
+  );
+});
+
 test("the four facts about a repository are kept in the repository", () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-facts-"));
   assert.equal(factsOf(repo), undefined, "a repository never run against tells nothing");

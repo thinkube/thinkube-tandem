@@ -176,15 +176,16 @@ export async function dispatchTep(
   // What the door proved on an untouched checkout is a fact about the
   // repository: it is kept there, so the next run — with a window or
   // without one — is told by the repository rather than by a person.
-  rememberFacts(
-    deps.repoRoot,
-    {
-      provision: ready.corrected?.provision ?? deps.provision ?? "",
-      prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
-      runOne: ready.runOne,
-    },
-    new Date().toISOString(),
-  );
+  // "Nothing needed" proved on a tree that already had its dependencies is
+  // not a fact about the repository — run 2 of the acceptance believed one
+  // and died before its first test. Only an answer with content is kept.
+  const facts = {
+    provision: ready.corrected?.provision ?? deps.provision ?? "",
+    prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
+    runOne: ready.runOne,
+  };
+  if (facts.provision || facts.prepare || facts.runOne)
+    rememberFacts(deps.repoRoot, facts, new Date().toISOString());
   const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
