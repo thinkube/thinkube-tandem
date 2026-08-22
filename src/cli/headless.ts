@@ -30,6 +30,7 @@ interface Args {
   cut?: string;
   suite: string[];
   prepare?: string;
+  provision?: string;
   model: string;
   digest: boolean;
 }
@@ -41,7 +42,8 @@ export function parseArgs(argv: readonly string[]): Args | string {
   };
   const space = get("space");
   const repo = get("repo");
-  if (!space || !repo) return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--model <name>] [--no-digest]";
+  if (!space || !repo)
+    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--no-digest]";
   const suite = (get("suite") ?? "npm test").split(" ").filter(Boolean);
   return {
     space: path.resolve(space),
@@ -49,6 +51,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     ...(get("cut") ? { cut: get("cut")! } : {}),
     suite,
     ...(get("prepare") ? { prepare: get("prepare")! } : {}),
+    ...(get("provision") ? { provision: get("provision")! } : {}),
     model: get("model") ?? "sonnet",
     digest: !argv.includes("--no-digest"),
   };
@@ -100,7 +103,20 @@ export async function main(argv: readonly string[]): Promise<number> {
   process.stdout.write(`running ${cut.tepId ?? cut.id} from ${args.space} over ${args.repo}\n`);
 
   const st = new RunState(() => {});
-  st.sink = (line, step) => process.stdout.write(`${new Date().toISOString()} [${step}] ${line}\n`);
+  // The run replaces the sink with its own on-disk log, so chain rather
+  // than assign: a headless run that prints nothing is a run nobody can
+  // watch, which is the whole point of this entry.
+  const toStdout = (line: string, step: string): void => process.stdout.write(`${new Date().toISOString()} [${step}] ${line}\n`);
+  st.sink = toStdout;
+  const chain = (): void => {
+    const theirs = st.sink;
+    if (theirs === toStdout) return;
+    st.sink = (line, step) => {
+      theirs?.(line, step);
+      toStdout(line, step);
+    };
+  };
+  setTimeout(chain, 2000).unref();
 
   // The repository's own facts: how it installs, builds and runs one test.
   // Fail-soft — a run must never refuse because the reading was unavailable.
@@ -126,7 +142,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       storeDir: args.space,
       ...(known?.digest ? { digest: known.digest } : {}),
       ...(args.prepare ?? known?.prepare ? { prepare: args.prepare ?? known!.prepare } : {}),
-      ...(known?.provision ? { provision: known.provision } : {}),
+      ...(args.provision ?? known?.provision ? { provision: args.provision ?? known!.provision } : {}),
       ...(known?.runOne ? { runOne: known.runOne } : {}),
       ...(known ? { affected: (p: string) => known.affected(p) } : {}),
     },
