@@ -14,6 +14,15 @@
  * into every verify runner (a runner is a snapshot of the same branch), so
  * one install serves the whole run.
  *
+ * When the checkout the run was started from ALREADY HOLDS what
+ * provisioning would produce, the run borrows it — the same links, from
+ * the base — and skips the command. A machine with little memory dies
+ * during an install it did not need, which is how two runs ended before
+ * their first worker. Borrowing is checked immediately, because the build
+ * is proved right after: if the build then fails, the borrowed state is
+ * dropped and the real command runs, so a stale borrow costs one build and
+ * never a wrong run.
+ *
  * When the checkout the run was started from already holds what
  * provisioning would produce, the run BORROWS it — the same links, from
  * the base — and skips the command. A machine with little memory dies

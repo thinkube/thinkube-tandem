@@ -21,6 +21,7 @@ import { loadFolded } from "../core/records";
 import { RunState } from "../run/state";
 import { dispatchTep } from "../run/dispatch";
 import { tepSlices } from "../dispatch/adapter";
+import { planScopes } from "../dispatch/scopes";
 import { knowledgeOf } from "../derive/knowledge";
 import type { Cut, Space } from "../core/schema";
 
@@ -102,7 +103,22 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${cut}\n`);
     return 2;
   }
+  // The same planner the editor uses: a cut is grouped by the repository
+  // each promise lands in, and a promise that mixes two is refused here
+  // exactly as it is refused there — never differently because the run was
+  // started without a window.
+  const plan = planScopes(space, cut);
+  if (!plan.ok) {
+    process.stdout.write(`${plan.reason}\n`);
+    return 2;
+  }
+  const others = plan.order.filter((sc) => sc !== "");
   process.stdout.write(`running ${cut.tepId ?? cut.id} from ${args.space} over ${args.repo}\n`);
+  if (others.length)
+    process.stdout.write(
+      `this cut also lands in ${others.join(", ")}, which this entry cannot reach: it runs one repository, the one given by --repo. ` +
+        `Those promises are not run.\n`,
+    );
 
   const st = new RunState(() => {});
   // The run replaces the sink with its own on-disk log, so chain rather

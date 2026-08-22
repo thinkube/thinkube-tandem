@@ -11,11 +11,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { auditProbe } from "./probeAudit";
 import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
+import { setupRunTree } from "./setup";
+import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
 /** A repository with one directory, so the import audit has ground truth. */
@@ -236,4 +237,37 @@ test("a red criterion is repaired as the next message in its author's own sessio
   );
   assert.match(results[1].why, /no session/);
   assert.ok(said.some((l) => /its session is gone/.test(l)), "a lost session is said, never skipped in silence");
+});
+
+/**
+ * The door: a run must not die installing what the checkout beside it
+ * already holds. Two headless runs were killed for their memory doing
+ * exactly that.
+ */
+test("the door borrows the checkout's provisioning instead of installing again", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  fs.mkdirSync(path.join(base, "node_modules", "dep"), { recursive: true });
+  fs.writeFileSync(path.join(base, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const ran: string[] = [];
+  const said: string[] = [];
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    provision: "npm ci",
+    exec: async (cmd, args, cwd) =>
+      cmd === "git" && args[2] === "status"
+        ? { code: 0, out: cwd === base ? "!! node_modules/\n" : "" }
+        : { code: 0, out: "" },
+    boundedExec: async (cmd) => {
+      ran.push(cmd);
+      return { code: 0, output: "" };
+    },
+    log: (l) => said.push(l),
+  });
+
+  assert.deepEqual(ran, [], "the install never ran");
+  assert.deepEqual(setup.provisioned, ["node_modules"], "and the run still knows what it has");
+  assert.ok(fs.existsSync(path.join(wt, "node_modules", "dep", "index.js")), "the dependency is reachable in the worktree");
+  assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
 });

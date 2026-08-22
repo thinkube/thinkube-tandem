@@ -16,9 +16,9 @@ same phase starts before it.
 |---|---|---|---|
 | 0.1 | Re-homing off: a run's checks stay evidence, never installed into the repository's suite | a run delivers and the repository holds no new test file | done |
 | 0.2 | Checks do not ride the merge: a delivery does not add `probes/` to the project | after a delivery, the merged tree holds no probe | done |
-| 0.3 | Headless run survives this pod: link the existing `node_modules` instead of installing | a run reaches its first worker without being killed | todo |
+| 0.3 | Headless run survives this pod: link the existing `node_modules` instead of installing | driven: the door borrows and never runs the install | done |
 | 0.4 | Every run is bounded by wall clock, not only by silence | a run past its bound ends with a report | done |
-| 0.5 | The headless entry uses the same scope planner as the editor | a two-repository cut runs the same way from both | todo |
+| 0.5 | The headless entry uses the same scope planner as the editor | it refuses a mixed-scope promise identically, and names the repositories it cannot reach | done |
 
 ## Phase 1 — decide A, then collapse the trees
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.
