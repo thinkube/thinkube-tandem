@@ -561,11 +561,8 @@ export async function dispatchTep(
       st.doing(u.id, undefined);
       pending.delete(u.id);
       // On the record synchronously with the launch — later leaves a window the next frontier cannot see.
-      liveFootprints.set(u.id, {
-        tree: (u.role ?? "code") === "test" ? testerWt : worktree,
-        paths: u.footprint,
-      });
-          // A crash inside one unit is that unit's failure, on the record — never the run's end.
+      liveFootprints.set(u.id, { tree: (u.role ?? "code") === "test" ? testerWt : worktree, paths: u.footprint });
+      // A crash inside one unit is that unit's failure, on the record — never the run's end.
       const p = runOne(u)
         .catch(async (err) => {
           const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
@@ -577,9 +574,7 @@ export async function dispatchTep(
           failWith(u.id, `crashed: ${why.split("\n")[0].slice(0, 200)}`);
           await finishUnit(u.id, u.slice, false);
         })
-        .finally(() => {
-          inflight.delete(u.id);
-        });
+        .finally(() => inflight.delete(u.id));
       inflight.set(u.id, p);
     }
     if (inflight.size === 0) break;

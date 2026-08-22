@@ -18,12 +18,12 @@ export interface RepoFile {
 }
 
 /** The set of engine-wiring ledger verdicts a module may carry. */
-export type WiringVerdict = "wire" | "retire" | "fold";
+type WiringVerdict = "wire" | "retire" | "fold";
 
 const VERDICTS: ReadonlySet<string> = new Set(["wire", "retire", "fold"]);
 
 /** One parsed ledger entry: the module it is about, its verdict, and why. */
-export interface WiringEntry {
+interface WiringEntry {
   module: string;
   verdict: WiringVerdict;
   reason: string;

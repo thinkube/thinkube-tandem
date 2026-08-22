@@ -30,7 +30,6 @@ import { parseDefectLog } from "./engine/defectStats";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 import * as nodeFs from "node:fs";
 
-let panel: SpacePanel | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 const spaceTabs = new SpaceTabs();
@@ -76,10 +75,7 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
 
 const sessions = new Map<string, TandemSession>();
 
-function activeSession(
-  context: vscode.ExtensionContext,
-  project?: EnabledProject,
-): TandemSession | undefined {
+function activeSession(context: vscode.ExtensionContext, project?: EnabledProject): TandemSession | undefined {
   const ownerKey = project?.card.id ?? activeOwnerKey(context);
   if (!ownerKey) return undefined;
   const slug = context.workspaceState.get<string>(`tandem.space.${ownerKey}`);
@@ -159,9 +155,15 @@ function heartbeat(context: vscode.ExtensionContext): void {
 
 function pushActive(context: vscode.ExtensionContext, message?: string): void {
   heartbeat(context);
-  const s = activeSession(context);
+  const ownerKey = activeOwnerKey(context);
+  const slug = ownerKey
+    ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`)
+    : undefined;
+  const s = ownerKey && slug ? sessions.get(`${ownerKey}/${slug}`) : undefined;
   if (!s) return;
-  panel?.pushFrom(message);
+  // The update belongs to the tab holding THIS space, not to whichever
+  // tab happened to be opened first.
+  spaceTabs.push(`${ownerKey}/${slug}`, (tab) => (tab as SpacePanel).pushFrom(message));
   if (message?.startsWith("Delivery ready"))
     void vscode.window
       .showInformationMessage(`Tandem — ${message}`, "Open the space")
@@ -178,10 +180,7 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
  * addresses a tab register with the key THIS act resolved, never a
  * remembered active slug.
  */
-async function ensureSession(
-  context: vscode.ExtensionContext,
-  interactive = true,
-): Promise<{ key: string; session: TandemSession } | undefined> {
+async function ensureSession(context: vscode.ExtensionContext, interactive = true): Promise<{ key: string; session: TandemSession } | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
   // No identity, no records: writing under a name every installation
   // shares would silently overwrite the other person's whole space.
@@ -204,10 +203,7 @@ async function ensureSession(
       chooseSpace: (k, i) => chooseThinkingSpace(context, k, i),
       author,
       resolveForge: (root) =>
-        resolveForge(
-          root,
-          vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
-        ),
+        resolveForge(root, vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", "")),
       openRepos: openProjects,
       onChanged: (message) => pushActive(context, message),
       storageDir: context.globalStorageUri.fsPath,
@@ -227,10 +223,7 @@ async function ensureSession(
       ?.label ?? spaceSlug;
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const storeRoot = configuredStoreRoot();
-  const forge = await resolveForge(
-    project.gitRoot,
-    config.get<string>("giteaToken", ""),
-  );
+  const forge = await resolveForge(project.gitRoot, config.get<string>("giteaToken", ""));
   const bound = project;
   const s = new TandemSession({
     round: {
@@ -256,10 +249,7 @@ async function ensureSession(
         ? `${project.card.product} / ${project.card.label}`
         : project.card.label,
     },
-    suiteCommand: config
-      .get<string>("suiteCommand", "npm test")
-      .split(" ")
-      .filter(Boolean),
+    suiteCommand: config.get<string>("suiteCommand", "npm test").split(" ").filter(Boolean),
     prepareCommand: config.get<string>("prepareCommand", ""),
     retire: (tepId) => retireTepWorktrees(bound.gitRoot, tepId),
     workerModel: {
@@ -362,16 +352,22 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!resolved) return;
     const { key, session: s } = resolved;
     updateStatusBar(rememberedProject(context));
+    // One tab per space key: an already-open space is revealed, a new one
+    // is built and registered, and a tab the human closed drops out of the
+    // register so the tree stops marking that space open.
+    const tab = spaceTabs.open(
+      key,
+      () =>
+        new SpacePanel(
+          key,
+          s,
+          vscodePanelHost(context.extensionUri),
+          { ...hooks, onClosed: () => projectsTree?.refresh() },
+          context.extensionUri,
+        ),
+    );
+    await (tab as SpacePanel).show();
     projectsTree?.refresh();
-    if (!panel)
-      panel = new SpacePanel(
-        key,
-        s,
-        vscodePanelHost(context.extensionUri),
-        hooks,
-        context.extensionUri,
-      );
-    await panel.show();
     pushActive(context);
   };
 

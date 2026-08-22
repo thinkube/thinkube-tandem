@@ -79,9 +79,7 @@ test("docs gate: a slice declaring a docs/ touchpoint that never lands is UNDELI
         return { ok: true, finalText: "done" };
       },
     },
-    n.space,
-    cut,
-    slices,
+    n.space, cut, slices,
   );
   assert.ok(
     outcome.undelivered.some((u) => u.includes("docs obligation unmet")),
@@ -116,9 +114,7 @@ test("the honesty scan: a delivered confession marker is UNDELIVERED on the deli
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   assert.ok(
     outcome.undelivered.some((u) => u.includes("confesses a deferral")),
@@ -171,9 +167,7 @@ test("a tester that stops short is continued from where it stopped — its writt
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.equal(testerRounds, 2, "one continuation");
   assert.match(briefs[1], /CONTINUE/);
@@ -235,9 +229,7 @@ test("a slice's test homes are brought under by its maintainer, in the code tree
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.deepEqual(order, ["tester", "coder", "maintainer"], "probes first, then the code, then the test homes brought under");
   assert.ok(outcome.delivery && !outcome.delivery.withheld, "the run delivers");
@@ -327,9 +319,7 @@ test("a check whose words name a maintainer's test home is homed on the maintain
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.ok(!graded["coder"].includes(2), "the coder was never graded on the maintainer's check");
   assert.ok(graded["coder"].includes(3), "the sneaky check did reach the coder's verify — the transfer is what saves it");
@@ -399,9 +389,7 @@ test("the supervisor's CLEAR has power: the ruling reaches the guard and the uni
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.match(answers[0], /CLEARED at the supervisor's ruling/);
   assert.match(answers[0], /NOW, in this session/, "a grant says go, never later");
@@ -463,9 +451,7 @@ test("a stray write is contained, the unit fails, and the run goes on — the ot
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.equal(state.units.get("SL-1#eu-0")?.state, "failed", "the violator failed");
   assert.match(state.units.get("SL-1#eu-0")?.note ?? "", /reverted/);
@@ -508,9 +494,7 @@ test("a tester whose probes are all written completes on a doubt — the doubt r
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   assert.equal(state.units.get("SL-1#eu-1")?.state, "done", "the tester completed — all its probes exist");
   assert.match(coderBrief, /TESTER'S DECISIONS[\s\S]*greet\(\) returns exactly 'hello'/, "its decisions still flow");
@@ -591,9 +575,7 @@ test("REGRESSION (v2.0.135): a file another slice is cleared for is cleared to t
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.match(askerReply, /CLEARED at the supervisor's ruling/, "the asker got the key");
   assert.match(askerReply, /src\/session\.mjs/);

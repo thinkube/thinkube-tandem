@@ -59,9 +59,7 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
 
   assert.equal(briefs[0].role, "test", "tests-first: the probe author dispatched before the coder");
@@ -90,11 +88,7 @@ test("a signed TEP runs through the engine: tests-first, blinded tester, oracle-
   const store = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`, "oracle-store", "TEP-t-1");
   const probeRel = slices[0].workUnits.find((u) => u.role === "test")!.footprint[0];
   assert.ok(fs.existsSync(path.join(store, "files", probeRel)), "probe persisted in the oracle store");
-  const shipped = execFileSync(
-    "git",
-    ["-C", repo, "ls-tree", "-r", "--name-only", "tandem/TEP-t-1"],
-    { encoding: "utf8" },
-  );
+  const shipped = execFileSync("git", ["-C", repo, "ls-tree", "-r", "--name-only", "tandem/TEP-t-1"], { encoding: "utf8" });
   assert.ok(shipped.includes(probeRel), "the probe is committed on the delivery branch");
   assert.ok(shipped.includes("src/greet.mjs"), "the implementation is committed on the delivery branch");
 });
@@ -124,9 +118,7 @@ test("the dispatcher's call site threads the rendered TEP body under a single fi
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
 
   const escaped = tepBody.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -173,9 +165,7 @@ test("standing checks re-home: the outcome carries each criterion's forwarding a
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
 
   assert.equal(rehomeSaw?.criterionId, "c1", "the check's identity reaches the re-homer from the space");
@@ -225,9 +215,7 @@ test("MANDATORY-GREEN: a wrong implementation is not done — the oracle's evide
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
 
   assert.equal(codeAttempts, 2, "the oracle's red verdict routed exactly one rework");
@@ -269,9 +257,7 @@ test("the in-loop verify tool grades the coder's current work against the real p
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
 
   assert.ok(replyWrong!.includes("0/1 pass") || replyWrong!.includes("FAIL"), "wrong work reads FAIL with evidence");
@@ -305,9 +291,7 @@ test("a red probe is a red proof — the delivery exists and says so", async () 
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   const probeProof = outcome.delivery!.proofs.find((p) => p.kind === "probe")!;
   assert.equal(probeProof.verdict, "red");
@@ -374,9 +358,7 @@ test("independent slices run on the parallel frontier — two probe authors in f
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
 
   assert.ok(maxInflight >= 2, `the frontier pump ran units concurrently (saw ${maxInflight})`);
@@ -414,9 +396,7 @@ test("parked worker: the question surfaces, the answer resumes, UNDELIVERED is h
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   assert.equal(seenAnswer, "hello", "the answer flowed through the run view door");
   assert.ok(outcome.undelivered.some((u) => u.includes("could not finish")), "the gap is on the delivery, not hidden");
@@ -458,9 +438,7 @@ test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISC
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   assert.ok(coderBrief!.includes("SUPERVISOR PRE-FLIGHT"), "the disclosure reached the brief");
   assert.ok(coderBrief!.includes("exact literal 'hello'"));
@@ -472,9 +450,7 @@ test("the supervisor's pre-flight disclosure rides the coder's brief, and a DISC
     rows.some((r) => r.includes("DISCLOSE") && r.includes("supervisor")),
     "the disclosure is a ledgered contract gap",
   );
-  const record = JSON.parse(
-    fs.readFileSync(path.join(ledger, "deliveries", "TEP-t-10.json"), "utf8"),
-  );
+  const record = JSON.parse(fs.readFileSync(path.join(ledger, "deliveries", "TEP-t-10.json"), "utf8"));
   assert.equal(record.tep, "TEP-t-10");
   assert.ok(Array.isArray(record.trace) && record.trace.length > 0, "the engine's verification trace persisted as the machine face");
 });
@@ -505,9 +481,7 @@ test("the tester's decisions ride the coder's brief as contract and land on the 
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   assert.ok(coderBrief.includes("TESTER'S DECISIONS") && coderBrief.includes("named function `greet`"), "the coder builds to the tester's choices");
   assert.deepEqual(
@@ -538,9 +512,7 @@ test("a crash inside one unit fails that unit on the record — the run goes on 
         return { ok: true, finalText: "done" };
       },
     },
-    space,
-    cut,
-    slices,
+    space, cut, slices,
   );
   const tester = slices[0].workUnits.findIndex((u) => u.role === "test");
   const testerId = `SL-1#eu-${tester}`;
@@ -615,9 +587,7 @@ test("a build that fails only in files another slice owns is the tree's failure,
         return { ok: true, finalText: "done" };
       },
     },
-    s,
-    cut,
-    slices,
+    s, cut, slices,
   );
   assert.ok(waited, "slice 2 waited for the tree instead of being charged a rework");
   const wave = state.view().units.find((u) => u.role === "code" && u.slice === "SL-2")!;
