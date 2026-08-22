@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import { Cut, Delivery, Space } from "../core/schema";
 import { renderCutScreen } from "./render";
+import { docLandings } from "../core/docs";
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -90,6 +91,17 @@ export function signCut(
     return {
       ok: false,
       reason: `undecided question(s) on these asks: ${open.map((q) => q.text).join(" · ")} — decide them before signing`,
+    };
+  // Signing always requires documentation or a written exemption — this is
+  // separate from and stricter than the accept gate's docsGateMode, which
+  // only governs whether accepting blocks or advises on an unmet obligation.
+  const reason = cut.docsExemption?.reason?.trim();
+  if (docLandings(space, cut).length === 0 && !reason)
+    return {
+      ok: false,
+      reason:
+        "documentation is missing for this cut — land a doc-module page under docs/, or excuse it with a written reason. " +
+        "(the docsGateMode setting governs the accept gate only; it never excuses this at sign time)",
     };
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,

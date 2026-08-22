@@ -124,6 +124,10 @@ export interface Cut {
   changeIds: string[];
   /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
   tepId?: string;
+  /** The human's written excuse for landing no documentation with this
+   *  cut. A non-empty `reason` is required to sign a cut whose members
+   *  ground no documentation path — the sign gate's only escape hatch. */
+  docsExemption?: { reason: string };
   /** Set when the human signs; binds the render AND the grounded members. */
   signature?: {
     at: string;

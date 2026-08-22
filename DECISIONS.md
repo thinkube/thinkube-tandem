@@ -44,9 +44,14 @@ of them there — nothing has users.
 ## Parity batch (2026-08-06, post-audit)
 - Sign refuses unprovable/ungrounded changes and undecided questions on the
   cut's asks — the freeze-gate refusals moved from warnings into the gate.
-- The docs obligation derives from grounding: a slice declaring a docs/
-  touchpoint must land it; blocking at accept by default (advisory setting
-  is the recorded escape hatch).
+- The docs obligation is required at sign time for every cut: signing
+  refuses a cut whose members ground no documentation path, unless the cut
+  carries a written exemption (a non-empty reason) — the sign gate's one
+  and only escape hatch. Separately, the docs obligation also derives from
+  grounding at the run level: a slice declaring a docs/ touchpoint must
+  land it. The `docsGateMode` setting (default `blocking`, `advisory` the
+  recorded escape hatch) governs the ACCEPT gate only — it has no effect
+  on the sign-time requirement above.
 - The retired-symbol importer gate stays unwired until grounding grows a
   `retires` declaration for symbol-deleting changes — it arms the day that
   field exists; the module is imported and tested.

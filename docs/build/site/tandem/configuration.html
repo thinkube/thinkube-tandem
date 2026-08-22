@@ -217,7 +217,10 @@ its verdict is a delivery proof.</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>thinkubeTandem.docsGateMode</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>blocking</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Whether an unmet
-documentation obligation blocks accepting.</p></td>
+documentation obligation blocks ACCEPTING a delivery (<code>advisory</code> warns
+instead). This governs the accept gate only &#8212; it has no effect on
+signing: the sign gate always requires documentation or a written
+exemption, regardless of this setting.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>thinkubeTandem.giteaToken</code></p></td>

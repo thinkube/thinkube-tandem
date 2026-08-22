@@ -141,9 +141,21 @@
 <p>a change with no grounding (no place in the code);</p>
 </li>
 <li>
-<p>an ask in the cut with an undecided question.</p>
+<p>an ask in the cut with an undecided question;</p>
+</li>
+<li>
+<p>a cut that lands no documentation and carries no written exemption.</p>
 </li>
 </ul>
+</div>
+<div class="paragraph">
+<p>Documentation is required at sign time for every cut: at least one member
+must ground a doc-module path under <code>docs/</code>, or the cut must carry a
+written exemption &#8212; a non-empty reason the human types before signing.
+That reason is recorded on the signed cut itself and rides the TEP; it is
+the sign gate&#8217;s only escape hatch. This is separate from
+<code>thinkubeTandem.docsGateMode</code>, which governs the accept gate only (see
+Gate 2 below) and never excuses the sign-time requirement.</p>
 </div>
 <div class="paragraph">
 <p>The click mints <code>TEP-&lt;you&gt;-&lt;n&gt;</code> and a machine-local HMAC token bound to

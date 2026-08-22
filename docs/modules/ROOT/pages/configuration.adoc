@@ -56,7 +56,10 @@ step fails on the untouched tree is refused before any worker starts,
 with the tool's own output.
 
 |`thinkubeTandem.docsGateMode` |`blocking` |Whether an unmet
-documentation obligation blocks accepting.
+documentation obligation blocks ACCEPTING a delivery (`advisory` warns
+instead). This governs the accept gate only — it has no effect on
+signing: the sign gate always requires documentation or a written
+exemption, regardless of this setting.
 
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
 (github.com remotes use the `gh` CLI instead).

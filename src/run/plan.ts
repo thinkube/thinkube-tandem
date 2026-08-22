@@ -12,6 +12,7 @@ import { buildVerificationTrace } from "../engine/core/trace";
 import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync } from "node:fs";
 import type { Proof } from "../core/schema";
+import { isDocPath } from "../core/docs";
 import { isProbePath, isTestPath } from "./testHomes";
 import { waitReasons } from "./fence";
 import type { RunState } from "./state";
@@ -303,7 +304,7 @@ export async function writeDeliveryRecord(
 export function docsObligations(slices: SliceForDag[], worktree: string): string[] {
   const out: string[] = [];
   for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
+    const declaresDocs = (s.files ?? []).some(isDocPath);
     const note = unmetDocsObligation(
       {
         docs: declaresDocs ? "required" : undefined,
