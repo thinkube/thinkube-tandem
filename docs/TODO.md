@@ -14,8 +14,8 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 0.1 | Re-homing off: a run's checks stay evidence, never installed into the repository's suite | a run delivers and the repository holds no new test file | doing |
-| 0.2 | Checks do not ride the merge: a delivery does not add `probes/` to the project | after a delivery, the merged tree holds no probe | todo |
+| 0.1 | Re-homing off: a run's checks stay evidence, never installed into the repository's suite | a run delivers and the repository holds no new test file | done |
+| 0.2 | Checks do not ride the merge: a delivery does not add `probes/` to the project | after a delivery, the merged tree holds no probe | done |
 | 0.3 | Headless run survives this pod: link the existing `node_modules` instead of installing | a run reaches its first worker without being killed | todo |
 | 0.4 | Every run is bounded by wall clock, not only by silence | a run past its bound ends with a report | todo |
 | 0.5 | The headless entry uses the same scope planner as the editor | a two-repository cut runs the same way from both | todo |
@@ -24,12 +24,12 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 1.1 | The experiment: how many criteria go red→green inside a unit's own rounds | the number, recorded in this file | todo |
+| 1.1 | The experiment: how many criteria go red→green inside a unit's own rounds | **nine**, across six of nine code units, in the run of 22 Aug 12:10 | done |
 | 1.2 | Delete the tester snapshot; the tester writes in the one tree | after a run no `-tester` tree exists | todo |
 | 1.3 | Blinding by permission: a code worker reading a check path is refused | the refusal, driven | todo |
 | 1.4 | Delete the probe store (persist/restore) | a resumed run still finds its checks | todo |
 | 1.5 | Delete the emit map | checks import what exists, with no path mapping | todo |
-| 1.6 | If A holds: delete the composed runners and the per-unit oracle; the gate judges | `a run delivers` still passes | todo |
+| 1.6 | A does not hold — the per-unit oracle stays. G4 in PROCESS.md is stale and says the opposite | the number in 1.1 | done |
 | 1.7 | Setup facts (install, build, one test) belong to the repository, not the editor's cache | a headless run needs no `--provision` flag | todo |
 
 ## Phase 2 — checks where they belong
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 6.4, 6.5, the headless entry (phase 0, partially — 0.3 to
+**Done so far:** 0.1, 0.2, 1.1, 1.6, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.
