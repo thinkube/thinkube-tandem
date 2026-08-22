@@ -50,3 +50,18 @@ it. The brief now says what is cleared, that the guard restores an
 uncleared change, and — new, and load-bearing — that a unit needing a
 change elsewhere ASKS, is cleared, and makes the change itself. Its promise
 is never handed to another slice. The vocabulary is fixed in docs/WORDS.md.
+
+# Engine change
+
+`core/preflight.ts` › `buildWorkerPrompt`: on the run path with no separate
+spec artifact, the caller rendered the same TEP text twice and handed it to
+the prompt builder under two field names (`specBody` and `tepBody`), which
+printed it twice under two headings — "PARENT SPEC" and "THE INTENT" — for
+every worker, on every unit, doubling that half of the brief for no reason:
+one text was never two decisions. `buildWorkerPrompt` now compares the two
+bodies once it has applied its own view of each (code units still strip
+`satisfies` ordinals from both); when they are the same text it renders
+only "THE INTENT — the north star" and treats that block as the embedded
+spec, and the intro line stops telling a worker to "read the parent spec"
+when nothing but the TEP was ever embedded. When the two bodies genuinely
+differ, both blocks still render, each exactly once, unchanged from before.

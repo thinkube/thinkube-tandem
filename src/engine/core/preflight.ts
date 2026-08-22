@@ -275,17 +275,26 @@ export function buildWorkerPrompt(
     (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
   const intentSpec = viewOf(context?.specBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const specBlock = intentSpec
-    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
-    : "";
+  const intentTep = viewOf(context?.tepBody ?? "");
+  // De-duplicated intent (this task): the spec approximates the TEP, and on this run path
+  // they are routinely the SAME rendered text — the run has no separate spec artifact, it
+  // renders the signed TEP twice under two names. Printing it twice wastes context and buries
+  // the one heading a worker should orient against. When the two bodies are identical, ONLY
+  // "THE INTENT" is emitted (it counts as the embedded spec too); the "PARENT SPEC" block is
+  // dropped. When they differ (a real spec layered over the TEP), both render, each once.
+  const tepEqualsSpec = !!intentTep && intentTep === intentSpec;
+  const specBlock =
+    intentSpec && !tepEqualsSpec
+      ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
+      : "";
   const sliceBlock = intentSlice
     ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
     : "";
   // Full-intention threading (context tranche): the parent TEP — the WHY behind the spec —
   // rendered verbatim for BOTH roles. The spec approximates the TEP; when they diverge the
   // TEP is the star the delivery is eventually judged against (the intent check).
-  const tepBlock = context?.tepBody?.trim()
-    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${context.tepBody.trim()}\n`
+  const tepBlock = intentTep
+    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${intentTep}\n`
     : "";
   // Sibling awareness (context tranche): every sibling unit's task note, labeled by its
   // author role — a code worker sees what the test-author will assert; a test worker sees
@@ -311,13 +320,16 @@ export function buildWorkerPrompt(
   // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
   // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
   const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
-  const hasCtx = specBlock || sliceBlock;
+  // Whatever intent is embedded (spec, slice, or — this run path — the TEP alone standing in
+  // for the spec) counts as embedded context: the worker is told plainly that it is embedded
+  // below, and never told to go read a parent spec that this run path does not separately carry.
+  const hasCtx = specBlock || sliceBlock || tepBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
     `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
     (hasCtx
-      ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
-      : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+      ? `The thinking space/specs dir is NOT in this worktree; your intent is embedded below — use it, don't search the filesystem for specs/.\n`
+      : `(No spec, slice or TEP body was embedded for this run — proceed from the SPEC CONTRACT and task below.)\n`) +
     `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +
     contractBlock +
