@@ -57,6 +57,9 @@ export interface DispatchDeps {
   waitSleep?: (ms: number, wake: (fn: () => void) => void) => Promise<void>;
   /** How long this run may take before it stops and reports (ms). */
   maxRunMs?: number;
+  /** The code map, so a criterion pitched at a class is refused before any
+   *  worker starts (src/run/altitude.ts). */
+  graphPath?: string;
   /** Injectable for tests: replaces the SDK worker. */
   worker?: (
     deps: Parameters<typeof runUnitWorker>[0],

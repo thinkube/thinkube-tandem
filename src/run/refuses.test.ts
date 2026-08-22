@@ -13,12 +13,13 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { auditProbe } from "./probeAudit";
-import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
+import { refusedBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { renderCutScreen } from "../gates/render";
 import { signCut, verifyCutSignature } from "../gates/sign";
+import { classMethodsIn, wrongAltitude } from "./altitude";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
@@ -31,6 +32,20 @@ function repo(): string {
 }
 
 const PLANNED = ["src/greet.mjs"];
+
+
+/** The pre-flight as the run calls it, with the repository stood in for. */
+async function refusedBeforeDispatchIn(a: { slices: unknown[]; space: unknown }): Promise<string[]> {
+  const r = await refusedBeforeDispatch({
+    slices: a.slices as never,
+    space: a.space as never,
+    cut: { id: "cut-1", changeIds: ["n1"] },
+    repoRoot: "/nowhere",
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  return r.refusal ? r.refusal.refusal.split("\n") : [];
+}
 
 test("a check that reads the source instead of driving it is refused", () => {
   const faults = auditProbe(
@@ -101,8 +116,8 @@ test("a check reading a fixture is not a source-text check", () => {
  * And what the machine refuses before it dispatches anybody — read from the
  * plan, said in the person's own words, with no worker started.
  */
-test("a promise landing in two repositories is refused before any worker", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise landing in two repositories is refused before any worker", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-1",
@@ -137,8 +152,8 @@ test("a promise landing in two repositories is refused before any worker", () =>
   assert.match(refusals[0], /greet the user everywhere/, "the person's own words, not a file");
 });
 
-test("a promise whose only site its unit may not change is refused before any worker", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise whose only site its unit may not change is refused before any worker", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-7",
@@ -166,8 +181,8 @@ test("a promise whose only site its unit may not change is refused before any wo
   assert.match(refusals[0], /may not change src\/extension\.mjs/);
 });
 
-test("a promise its unit can reach, in one repository, is refused nothing", () => {
-  const refusals = refusalsBeforeDispatch({
+test("a promise its unit can reach, in one repository, is refused nothing", async () => {
+  const refusals = await refusedBeforeDispatchIn({
     slices: [
       {
         handle: "SL-1",
@@ -381,4 +396,71 @@ test("a signature survives the repository moving, but not the promise moving", (
 
   // The promise now lands somewhere else. That is drift.
   assert.equal(verifyCutSignature(at("src/other.ts", "aaa"), signed.cut).ok, false);
+});
+
+/**
+ * Altitude — the rule the whole methodology exists for. A criterion that
+ * can only be checked by building a class and calling it is a criterion
+ * whose check passes for a part connected to nothing.
+ */
+const METHODS = [
+  { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  { className: "SpacePanel", method: "show", file: "src/surfaces/panel.ts" },
+];
+
+test("a criterion that can only be checked by calling a class method is refused", () => {
+  const why = wrongAltitude({
+    criterion: "SpacePanel.reveal() sets the active tab",
+    methods: METHODS,
+    exported: () => false,
+  });
+  assert.ok(why, "it is refused");
+  assert.match(why!, /building SpacePanel and calling reveal/);
+  assert.match(why!, /Say what the product must DO/, "and it says what to write instead");
+});
+
+test("a criterion about what the product does is not refused", () => {
+  for (const text of [
+    "opening the same space twice reveals the one tab, never a second",
+    "greet() returns 'hello'",
+    "the delivery page shows one row per cut",
+  ])
+    assert.equal(
+      wrongAltitude({ criterion: text, methods: METHODS, exported: (s) => s === "greet" }),
+      undefined,
+      `refused an honest criterion: ${text}`,
+    );
+});
+
+test("a criterion naming a method the module also exports is at the seam", () => {
+  // A library's public function IS the outer seam, even when a class of the
+  // same name has a method beside it.
+  assert.equal(
+    wrongAltitude({ criterion: "`show()` opens the panel", methods: METHODS, exported: (s) => s === "show" }),
+    undefined,
+  );
+});
+
+test("the class methods come from the code map the machine already builds", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-graph-"));
+  const graph = path.join(dir, "graph.json");
+  fs.writeFileSync(
+    graph,
+    JSON.stringify({
+      nodes: [
+        { id: "cls", label: "SpacePanel", source_file: "src/surfaces/panel.ts" },
+        { id: "m1", label: ".reveal()", source_file: "src/surfaces/panel.ts" },
+        { id: "m2", label: ".constructor()", source_file: "src/surfaces/panel.ts" },
+      ],
+      links: [
+        { relation: "method", source: "cls", target: "m1" },
+        { relation: "method", source: "cls", target: "m2" },
+        { relation: "imports", source: "cls", target: "m1" },
+      ],
+    }),
+  );
+  assert.deepEqual(classMethodsIn(graph), [
+    { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  ]);
+  assert.deepEqual(classMethodsIn(path.join(dir, "absent.json")), [], "no map is never a refusal");
 });

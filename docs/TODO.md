@@ -44,7 +44,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 3.1 | A criterion provable only by calling a class is refused at grounding | **not built.** Deciding it needs a fact the machine does not have — whether a symbol is reachable from the product's outer seam. The check-level twin (a check that drives nothing this cut builds) is done and driven; the altitude rule is not, and guessing it from the criterion's wording would refuse honest promises | todo |
+| 3.1 | A criterion provable only by calling a class is refused before dispatch | the code map already records which names are class methods; a criterion leaning on one and on nothing a module hands out is refused, with the promise named. Driven, including the honest criteria it must not touch | done |
 | 3.2 | A criterion whose site is outside its unit's clearance is refused | SL-7's class made unrepresentable | done |
 | 3.3 | A promise landing in two repositories is refused before dispatch | driven | done |
 | 3.4 | The cut review shows which repository each promise lands in | visible before signing | done |
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.1, 6.2, 6.3, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.1, 6.2, 6.3, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

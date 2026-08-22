@@ -15,11 +15,9 @@
 import * as path from "node:path";
 import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
-import { buildUnitDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
-import { validateDag } from "../engine/methodology/parallelSlices";
 import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
@@ -33,7 +31,7 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
-import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -47,14 +45,12 @@ import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, testerStanza } from "./brief";
 import { sliceBookkeeping } from "./plan";
-import { rehouseChecks } from "./checkHomes";
-import { refusalsBeforeDispatch } from "./refusals";
+import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
-import { verifyCutSignature } from "../gates/sign";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
@@ -151,41 +147,17 @@ export async function dispatchTep(
   }); // a silent run says so and stops
   try {
   if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
-  // A check is born where this repository already keeps its tests, beside
-  // the module it drives — so it imports its subject the same way before
-  // and after the build, and nothing has to map one path to the other.
-  const rehoused = rehouseChecks(
+  const before = await refusedBeforeDispatch({
     slices,
-    (await exec("git", ["-C", deps.repoRoot, "ls-files"], deps.repoRoot)).out.split("\n").map((l) => l.trim()),
-  );
-  if (rehoused.length)
-    log(`${tep}: ${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
-  const dag = buildUnitDag(slices);
-  const verdict = validateDag(dag) as { ok: boolean; error?: string };
-  if (!verdict.ok)
-    return refuse("plan-validation", `the engine refused the plan: ${JSON.stringify(verdict)}`);
-  const misowned = coderTestPaths(slices);
-  if (misowned.length)
-    return refuse("plan-roles", `the plan hands a coder test-shaped paths — refused before dispatch: ${misowned.join(", ")}`);
-  // A promise nobody can keep is refused now, in the person's own words —
-  // never discovered by a worker four rounds in.
-  const impossible = refusalsBeforeDispatch({ slices, space });
-  if (impossible.length) return refuse("plan-promises", impossible.join("\n"), "gate");
-  // What was signed is what runs. A signature binds the words the person
-  // read to the grounding underneath them; if either moved since, the run
-  // would be building something nobody approved.
-  // Only drift is judged here. Whether an unsigned cut may run at all is
-  // the sign gate's question, asked before this one.
-  const signed = cut.signature ? verifyCutSignature(space, cut) : { ok: true as const };
-  if (signed.ok && "unchecked" in signed && signed.unchecked) log(`${tep}: ${signed.unchecked}`);
-  if (!signed.ok)
-    return refuse(
-      "signature-drift",
-      signed.drift === "render"
-        ? `the promises changed after they were signed (${signed.reason}) — read the cut again and sign what it says now`
-        : `where the promises land changed after they were signed (${signed.reason}) — re-ground them and sign again`,
-      "gate",
-    );
+    space,
+    cut,
+    repoRoot: deps.repoRoot,
+    ...(deps.graphPath ? { graphPath: deps.graphPath } : {}),
+    exec,
+    log: (l) => log(`${tep}: ${l}`),
+  });
+  const dag = before.dag;
+  if (before.refusal) return refuse(before.refusal.trigger, before.refusal.refusal, "gate");
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
