@@ -206,6 +206,9 @@ export async function dispatchTep(
   const answerEnd = makeEndAnswerer(oracleArgs);
 
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
+  // The session each unit was worked in: a criterion red at the gate goes
+  // back to the author that wrote the code, not to a stranger with a summary.
+  const sessions = new Map<string, string>();
   const waits = runWaits({ dag, done, failed, waiting: () => waiting, live: () => liveFootprints, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) });
   const wakers = (sl: string, self: string) => waits.wakers(sl, self);
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -322,6 +325,7 @@ export async function dispatchTep(
         },
         brief,
       );
+      if (outcome.sessionId) sessions.set(next.id, outcome.sessionId);
       if (role === "test" && !outcome.containment)
         outcome = await finishAuthoring({
           outcome,
@@ -527,6 +531,8 @@ export async function dispatchTep(
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
+    sessionOf: (unit: string) => sessions.get(unit),
+    worker,
   });
   } finally {
     watch.stop();

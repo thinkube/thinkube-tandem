@@ -15,6 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { auditProbe } from "./probeAudit";
 import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
+import { repairByAuthors } from "./authorRepair";
 import { emptySpace } from "../core/schema";
 
 /** A repository with one directory, so the import audit has ground truth. */
@@ -198,4 +199,41 @@ test("the plan runs a thin end-to-end path first", () => {
     ["SL-2", "SL-1"],
     "the slice that reaches the product's outer seam goes first",
   );
+});
+
+/**
+ * A repair goes back to the author that wrote the code, in its own session.
+ * The evidence for that is the session id the worker is resumed with — a
+ * fresh worker carries none, which is exactly the failure this replaces.
+ */
+test("a red criterion is repaired as the next message in its author's own session", async () => {
+  const resumedWith: (string | undefined)[] = [];
+  const said: string[] = [];
+  const results = await repairByAuthors({
+    reds: [
+      { unit: "SL-1#eu-0", text: "greet() returns hello", evidence: "expected 'hello', got 'hi'", footprint: ["src/greet.mjs"] },
+      { unit: "SL-2#eu-0", text: "the panel opens once", evidence: "two panels", footprint: ["src/panel.mjs"] },
+    ],
+    sessionOf: (unit) => (unit === "SL-1#eu-0" ? "session-abc" : undefined),
+    changedSince: ["src/other.mjs"],
+    worktree: "/nowhere",
+    model: "sonnet",
+    worker: async (deps, brief) => {
+      resumedWith.push(deps.resume);
+      assert.match(brief, /THE PROMISE: greet\(\) returns hello/);
+      assert.match(brief, /expected 'hello', got 'hi'/);
+      assert.match(brief, /src\/other\.mjs/, "and what changed since it stopped");
+      return { ok: true, finalText: "UNDELIVERED: none" };
+    },
+    log: (l) => said.push(l),
+    defect: () => {},
+  });
+
+  assert.deepEqual(resumedWith, ["session-abc"], "the author is resumed, and only where a session survives");
+  assert.deepEqual(
+    results.map((r) => r.resumed),
+    [true, false],
+  );
+  assert.match(results[1].why, /no session/);
+  assert.ok(said.some((l) => /its session is gone/.test(l)), "a lost session is said, never skipped in silence");
 });

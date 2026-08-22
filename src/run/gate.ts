@@ -36,6 +36,9 @@ import type { RunState } from "./state";
 import { suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close } from "./closer";
+import { repairByAuthors } from "./authorRepair";
+import type { RedCriterion } from "./authorRepair";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
   tep: string;
@@ -57,6 +60,10 @@ export interface GateContext {
   /** Runs the suite command, bounded for a whole suite. */
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   state: RunState;
+  /** The session a unit was worked in, when the run still holds it. */
+  sessionOf: (unit: string) => string | undefined;
+  /** The run's worker, so a repair is the next message in that session. */
+  worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
@@ -315,7 +322,71 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // would forbid demolition — but nothing is handed over while a promise is
   // unkept. A delivery with a red proof asks the person to finish the work
   // and to decide which reds are acceptable, which is the machine's job.
-  const unkept = proofs.filter((p) => p.verdict !== "green");
+  let unkept = proofs.filter((p) => p.verdict !== "green");
+  // Each red criterion goes back to the unit that wrote its code, as the
+  // next message in that unit's own session, with the drive's evidence and
+  // what changed in the tree since it stopped. Then the checks run again.
+  if (unkept.length && !g.state.halted) {
+    const unitOf = (criterionId?: string): string | undefined => {
+      if (!criterionId) return undefined;
+      for (const [slice, probes] of g.sliceProbes)
+        if (probes.some((p) => criterionByProbe.get(p) === criterionId))
+          return slices
+            .find((s) => s.handle === slice)
+            ?.workUnits.map((_, i) => `${slice}#eu-${i}`)
+            .find((id) => g.sessionOf(id));
+      return undefined;
+    };
+    const changedSince = (
+      await exec("git", ["-C", worktree, "diff", "--name-only", `${g.baseSha}..HEAD`], worktree)
+    ).out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const reds: RedCriterion[] = [];
+    for (const p of unkept) {
+      const unit = unitOf(p.criterionId);
+      if (!unit) continue;
+      const slice = unit.split("#")[0];
+      reds.push({
+        unit,
+        text: p.label,
+        evidence: p.ref ?? "the check did not pass",
+        footprint: slices.find((s) => s.handle === slice)?.workUnits.flatMap((u) => u.footprint) ?? [],
+      });
+    }
+    if (reds.length) {
+      await repairByAuthors({
+        reds,
+        sessionOf: g.sessionOf,
+        changedSince,
+        worktree,
+        model: deps.model,
+        worker: g.worker,
+        log: (line) => log(line),
+        defect,
+      });
+      await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+      const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
+      for (const r of again) {
+        const probe = probeOfAc.get(r.ac);
+        const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
+        const proof = proofs.find((p) => p.label === label);
+        if (!proof || !r.pass) continue;
+        const wired = await provedByExecution({
+          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
+          subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
+          worktree,
+          exec: boundedExec,
+        });
+        if (wired.executed === "no") continue;
+        proof.verdict = "green";
+        proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
+      }
+      unkept = proofs.filter((p) => p.verdict !== "green");
+      log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
+    }
+  }
   if (unkept.length) {
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);

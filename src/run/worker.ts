@@ -17,6 +17,9 @@ export interface WorkerOutcome {
   finalText: string;
   undelivered?: string[];
   containment?: boolean;
+  /** The session this unit was worked in, so a repair can be the NEXT
+   *  message in it rather than a stranger with a summary. */
+  sessionId?: string;
 }
 
 export interface RunWorkerDeps {
@@ -54,6 +57,9 @@ export interface RunWorkerDeps {
    */
   blind?: boolean;
   maxTurns?: number;
+  /** Continue a session this run already had: the author still holds its
+   *  own reasoning, so the intent behind the code survives the repair. */
+  resume?: string;
 }
 
 /** Tools whose use can leave a change on disk. */
@@ -271,12 +277,14 @@ export async function runUnitWorker(
 
   let text = "";
   let containment = false;
+  let sessionId: string | undefined;
   try {
     const stream = query({
       prompt: input(),
       options: {
         model: deps.model,
         cwd: deps.worktree,
+        ...(deps.resume ? { resume: deps.resume } : {}),
         permissionMode: "bypassPermissions",
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
@@ -353,6 +361,7 @@ export async function runUnitWorker(
     });
     for await (const msg of stream) {
       const rec = msg as Record<string, unknown>;
+      if (typeof rec.session_id === "string") sessionId = rec.session_id;
       if (rec.type === "assistant") {
         const m = rec.message as { content?: unknown } | undefined;
         for (const b of (Array.isArray(m?.content) ? m!.content : []) as Array<Record<string, unknown>>) {
@@ -385,21 +394,23 @@ export async function runUnitWorker(
     }
   } catch (err) {
     if (containment)
-      return { ok: false, finalText: text, containment: true };
+      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
     return {
       ok: false,
       finalText: text,
       undelivered: [
         `worker errored: ${err instanceof Error ? err.message : String(err)}`,
       ],
+      ...(sessionId ? { sessionId } : {}),
     };
   }
-  if (containment) return { ok: false, finalText: text, containment: true };
+  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
   const undelivered = realUndelivered(text);
   return {
     ok: undelivered.length === 0,
     finalText: text,
     ...(undelivered.length ? { undelivered } : {}),
+    ...(sessionId ? { sessionId } : {}),
   };
 }
 
