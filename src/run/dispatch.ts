@@ -32,6 +32,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
+import { rememberFacts } from "./facts";
 import { claimRunLock, coderTestPaths, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
@@ -160,6 +161,18 @@ export async function dispatchTep(
     if (await repairStandingTree({ worktree, tep, refusal: ready.refusal, deps, exec, log, defect, halted: () => st.halted, rebuild })) ready = await doSetup();
   }
   if (ready.refusal) return refuse("setup", ready.refusal, "gate");
+  // What the door proved on an untouched checkout is a fact about the
+  // repository: it is kept there, so the next run — with a window or
+  // without one — is told by the repository rather than by a person.
+  rememberFacts(
+    deps.repoRoot,
+    {
+      provision: ready.corrected?.provision ?? deps.provision ?? "",
+      prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
+      runOne: ready.runOne,
+    },
+    new Date().toISOString(),
+  );
   const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();

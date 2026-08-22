@@ -16,6 +16,7 @@ import { auditProbe } from "./probeAudit";
 import { refusalsBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
+import { factsOf, rememberFacts } from "./facts";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
@@ -270,4 +271,22 @@ test("the door borrows the checkout's provisioning instead of installing again",
   assert.deepEqual(setup.provisioned, ["node_modules"], "and the run still knows what it has");
   assert.ok(fs.existsSync(path.join(wt, "node_modules", "dep", "index.js")), "the dependency is reachable in the worktree");
   assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
+});
+
+test("the four facts about a repository are kept in the repository", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-facts-"));
+  assert.equal(factsOf(repo), undefined, "a repository never run against tells nothing");
+
+  rememberFacts(repo, { provision: "npm ci", prepare: "npm run build", runOne: "node --test <file>" }, "2026-08-22T20:00:00Z");
+  const told = factsOf(repo);
+  assert.equal(told?.provision, "npm ci");
+  assert.equal(told?.runOne, "node --test <file>");
+  assert.equal(told?.provenAt, "2026-08-22T20:00:00Z", "and says when it was proved");
+
+  // A repository that cannot be written to still runs: a file where the
+  // directory would go makes the write impossible, and nothing throws.
+  const blocked = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-blocked-"));
+  fs.writeFileSync(path.join(blocked, ".tandem"), "not a directory\n");
+  assert.doesNotThrow(() => rememberFacts(blocked, { provision: "", prepare: "", runOne: "" }, "now"));
+  assert.equal(factsOf(blocked), undefined, "and it simply asks again next time");
 });

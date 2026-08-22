@@ -30,7 +30,7 @@ same phase starts before it.
 | 1.4 | Delete the probe store (persist/restore) | a resumed run still finds its checks | done |
 | 1.5 | Delete the emit map | checks import what exists, with no path mapping | done |
 | 1.6 | A does not hold — the per-unit oracle stays. G4 in PROCESS.md is stale and says the opposite | the number in 1.1 | done |
-| 1.7 | Setup facts (install, build, one test) belong to the repository, not the editor's cache | a headless run needs no `--provision` flag | todo |
+| 1.7 | Setup facts (install, build, one test) belong to the repository, not the editor's cache | a headless run needs no `--provision` flag once the door has proved one | done |
 
 ## Phase 2 — checks where they belong
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

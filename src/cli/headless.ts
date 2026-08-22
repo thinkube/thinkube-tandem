@@ -23,6 +23,7 @@ import { dispatchTep } from "../run/dispatch";
 import { tepSlices } from "../dispatch/adapter";
 import { planScopes } from "../dispatch/scopes";
 import { knowledgeOf } from "../derive/knowledge";
+import { factsOf } from "../run/facts";
 import type { Cut, Space } from "../core/schema";
 
 interface Args {
@@ -138,6 +139,16 @@ export async function main(argv: readonly string[]): Promise<number> {
   };
   setTimeout(chain, 2000).unref();
 
+  // The repository's own facts, if it has already told a run: no flag, no
+  // reading, no model call. A repository that has never been run against
+  // falls through to the reading below.
+  const told = factsOf(args.repo);
+  if (told)
+    process.stdout.write(
+      `the repository's own setup facts, proved ${told.provenAt ?? "earlier"}: ` +
+        `install ${told.provision || "NONE"}; build ${told.prepare || "NONE"}; one test ${told.runOne || "NONE"}\n`,
+    );
+
   // The repository's own facts: how it installs, builds and runs one test.
   // Fail-soft — a run must never refuse because the reading was unavailable.
   const known = args.digest
@@ -162,9 +173,13 @@ export async function main(argv: readonly string[]): Promise<number> {
       ...(args.maxRunMs ? { maxRunMs: args.maxRunMs } : {}),
       storeDir: args.space,
       ...(known?.digest ? { digest: known.digest } : {}),
-      ...(args.prepare ?? known?.prepare ? { prepare: args.prepare ?? known!.prepare } : {}),
-      ...(args.provision ?? known?.provision ? { provision: args.provision ?? known!.provision } : {}),
-      ...(known?.runOne ? { runOne: known.runOne } : {}),
+      ...(args.prepare ?? told?.prepare ?? known?.prepare
+        ? { prepare: args.prepare ?? told?.prepare ?? known!.prepare }
+        : {}),
+      ...(args.provision ?? told?.provision ?? known?.provision
+        ? { provision: args.provision ?? told?.provision ?? known!.provision }
+        : {}),
+      ...(told?.runOne ?? known?.runOne ? { runOne: told?.runOne ?? known!.runOne } : {}),
       ...(known ? { affected: (p: string) => known.affected(p) } : {}),
     },
     space,
