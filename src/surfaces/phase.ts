@@ -22,7 +22,7 @@ export type Phase = "drafting" | "read" | "understood" | "signed" | "running" | 
 
 export function phaseOf(session: TandemSession): Phase {
   if (session.running) return "running";
-  if (session.space.deliveries.some((d) => !d.acceptedAt && !d.withheld)) return "delivered";
+  if (session.space.deliveries.some((d) => !d.acceptedAt && !d.withheld && !d.rejectedAt)) return "delivered";
   if (session.unrunCut()) return "signed";
   if (session.pendingModel) return "read";
   if (session.space.subjects?.length || session.space.nodes.length) return "understood";
@@ -56,6 +56,7 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   rerun: ["signed", "delivered"],
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],
+  "reject-delivery": ["delivered"],
   panic: ["drafting", "read", "understood"],
   "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],
 };

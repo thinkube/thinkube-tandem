@@ -61,8 +61,8 @@ same phase starts before it.
 | 4.4 | Convergence: build first, then unkept promises with patience against the best seen | driven: an unbuildable tree scores one, a worsening repair finishes, a stuck one ends | done |
 | 4.5 | Demolition is not punished: a deletion that breaks imports for a round may continue | driven through the real closer | done |
 | 4.6 | A delivery opens only when nothing is unkept; otherwise withheld, named per promise | a red proof never opens a delivery | done |
-| 4.7 | Reject: a delivery the person refuses returns the cut to `signed` | the button exists and the state moves | todo |
-| 4.8 | One delivery record per cut, replaced per run | the space holds one row per cut, not four | todo |
+| 4.7 | Reject: a delivery the person refuses returns the cut to `signed` | the button exists and the state moves | done |
+| 4.8 | One delivery record per cut, replaced per run | the space holds one row per cut, not four | done |
 
 ## Phase 5 — multi-repository
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

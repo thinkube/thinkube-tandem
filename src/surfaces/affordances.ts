@@ -80,6 +80,13 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "read the page, try the gestures, press Accept",
     },
   },
+  "reject-delivery": {
+    kind: "human",
+    affordance: {
+      surface: "delivery page",
+      gesture: "press Not this",
+    },
+  },
   "answer-worker": {
     kind: "human",
     affordance: {

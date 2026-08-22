@@ -94,6 +94,15 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 >
                   Accept
                 </button>
+                <button
+                  data-reject-delivery={d.id}
+                  disabled={!can("reject-delivery")}
+                  style={{ padding: `${SP.xs}px ${SP.md}px` }}
+                  title="Not this — the work stays on its branch and the signed promises can run again."
+                  onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
+                >
+                  Not this
+                </button>
                 {d.rerun ? <RunAgain rerun={d.rerun} /> : null}
                 <span style={{ fontSize: FS.caption, color: C.quiet }}>
                   Try it first — every “see it” line above is a way in.

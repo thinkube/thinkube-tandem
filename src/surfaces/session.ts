@@ -17,7 +17,7 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, executeRun, signCutGesture } from "./runGate";
+import { acceptDeliveryGesture, executeRun, rejectDeliveryGesture, signCutGesture } from "./runGate";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
@@ -534,6 +534,11 @@ export class TandemSession {
    *  retire (best-effort) — refused without green proof BEFORE the merge. */
   acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     return acceptDeliveryGesture(this, deliveryId);
+  }
+
+  /** Refuse a delivery: the cut goes back to signed and can run again. */
+  rejectDelivery(deliveryId: string): { ok: boolean; reason?: string } {
+    return rejectDeliveryGesture(this, deliveryId, this.deps.now());
   }
 
   private _lastWritten = "";

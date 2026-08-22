@@ -197,6 +197,12 @@ export interface Delivery {
   withheld?: string;
   /** Set when the human accepts; acceptance merges on the project's forge. */
   acceptedAt?: string;
+  /** When the person refused it. A refused delivery ends nothing: the work
+   *  stays on its branch, the cut goes back to signed, and it can run
+   *  again. Saying "no" is a decision the machine must be able to record —
+   *  without it, the only way to reject was to leave the page and never
+   *  come back. */
+  rejectedAt?: string;
 }
 
 /** One project's working graph. */

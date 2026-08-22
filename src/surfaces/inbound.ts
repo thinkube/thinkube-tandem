@@ -83,6 +83,9 @@ export async function handleInbound(
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "reject-delivery" && msg.deliveryId) {
+    const r = session.rejectDelivery(msg.deliveryId);
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-question" && msg.questionId) {
     push("Recording the decision…");
     const r = await session.acceptQuestion(msg.questionId, msg.text);

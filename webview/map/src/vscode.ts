@@ -219,6 +219,7 @@ export type WebToHost =
   | { action: "pin"; pinKind: "together" | "apart"; changeIds: [string, string] }
   | { action: "select-unit"; unitId: string }
   | { action: "accept-delivery"; deliveryId: string }
+  | { action: "reject-delivery"; deliveryId: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "accept-question"; questionId: string; text?: string }
@@ -252,7 +253,7 @@ const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
   "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "stop-run",
-  "accept-delivery", "panic", "switch-repo",
+  "accept-delivery", "reject-delivery", "panic", "switch-repo",
 ]);
 
 /** Whether the host would act on this action now. Non-shaping actions
