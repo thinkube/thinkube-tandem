@@ -33,7 +33,7 @@ import type { WiringVerdict } from "./wiring";
 import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
-import { suiteFootprint, suiteVerdictOf } from "./suite";
+import { filesNamedIn, suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
 import { repairByAuthors } from "./authorRepair";
@@ -233,13 +233,18 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
           return {
             green: v.green && built.code === 0,
             score: convergenceScore({ buildRed: built.code !== 0, reds: v.failures.length }),
-            evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000),
-            // The last actor's clearance grows with what fails it. At the
-            // gate this was computed once, at the start, so the closer was
-            // handed "full authority" and then had two of its edits
-            // restored by the guard because the files the failure named
-            // were not in a list made before the failure was read.
-            alsoOwn: suiteFootprint(v.failures, worktree),
+            evidence: (
+              (built.code === 0 ? "" : `THE TREE DOES NOT BUILD — fix this first:\n${built.output.slice(-3000)}\n\n`) +
+              `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`
+            ).slice(0, 8000),
+            // The last actor's clearance grows with what fails it —
+            // including what the BUILD names. A tree that will not compile
+            // fails the delivery, and the compiler names the file to fix;
+            // reading only the test failures left the closer without it,
+            // so the guard restored the very edit the evidence asked for.
+            alsoOwn: [
+              ...new Set([...suiteFootprint(v.failures, worktree), ...filesNamedIn(built.output, worktree)]),
+            ],
           };
         },
         exec,

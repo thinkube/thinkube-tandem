@@ -47,11 +47,18 @@ test("nothing in this repository is unreachable from the product's own entry poi
   // real entry point it says something true — and the day it went back on it
   // found four files and sixty-two exports that nothing reached, all of them
   // kept alive by tests that no longer exist.
-  const out = execFileSync("npx", ["knip", "--no-progress"], {
-    cwd: repo,
-    encoding: "utf8",
-    // A finding is an exit code, not a throw, so both are read the same way.
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  // A finding is a non-zero exit, which execFileSync throws on: the finding
+  // itself is on the error's stdout, and a reader needs to see it rather
+  // than the words "command failed".
+  let out = "";
+  try {
+    out = execFileSync("npx", ["knip", "--no-progress"], {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (err) {
+    out = String((err as { stdout?: string }).stdout ?? err).trim();
+  }
   assert.equal(out, "", `unreachable code:\n${out}`);
 });

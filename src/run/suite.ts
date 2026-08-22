@@ -374,3 +374,18 @@ export function suiteFootprint(failures: readonly SuiteFailure[], root: string):
   }
   return [...out];
 }
+
+/**
+ * Files a tool's own output names, which exist in this tree.
+ *
+ * The compiler says where to fix a broken tree, and the actor that has to
+ * fix it must be cleared to change those files — otherwise the guard
+ * restores the fix the evidence asked for, which is what happened to the
+ * closer at the gate.
+ */
+export function filesNamedIn(words: string, root: string): string[] {
+  const out = new Set<string>();
+  for (const m of words.matchAll(/\b((?:src|webview|docs)\/[\w./-]+\.[a-z]+)/g))
+    if (fs.existsSync(path.join(root, m[1]))) out.add(m[1]);
+  return [...out];
+}
