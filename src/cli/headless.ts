@@ -106,7 +106,9 @@ export async function main(argv: readonly string[]): Promise<number> {
   // The run replaces the sink with its own on-disk log, so chain rather
   // than assign: a headless run that prints nothing is a run nobody can
   // watch, which is the whole point of this entry.
-  const toStdout = (line: string, step: string): void => process.stdout.write(`${new Date().toISOString()} [${step}] ${line}\n`);
+  const toStdout = (line: string, step: string): void => {
+    process.stdout.write(`${new Date().toISOString()} [${step}] ${line}\n`);
+  };
   st.sink = toStdout;
   const chain = (): void => {
     const theirs = st.sink;
