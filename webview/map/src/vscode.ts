@@ -109,6 +109,9 @@ export interface SpacePush {
   legacy?: string;
   signedTeps: number;
   repoName?: string;
+  /** Documentation excused for this cut, in the human's own words — absent
+   *  when nothing has been excused. */
+  docsExemption?: { reason: string };
   /** No repository chosen yet — the view renders the chooser state. */
   needsRepo?: boolean;
   /** Liveness: what the machine is doing right now, and for which ask. */
@@ -207,6 +210,7 @@ export type WebToHost =
   | { action: "cancel-capture" }
   | { action: "reground" }
   | { action: "open-cut-review" }
+  | { action: "excuse-docs"; text: string }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "retry-model" }
   | { action: "reframe"; unitId: string; text: string }
@@ -251,8 +255,8 @@ export function noteAllowed(allowed: string[] | undefined): void {
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "stop-run",
-  "accept-delivery", "panic", "switch-repo",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "excuse-docs", "build", "rerun",
+  "stop-run", "accept-delivery", "panic", "switch-repo",
 ]);
 
 /** Whether the host would act on this action now. Non-shaping actions

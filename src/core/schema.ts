@@ -279,6 +279,9 @@ export interface Space {
   };
   /** A reading that failed, with the round's own words for why. */
   readingFailure?: { askIds: string[]; texts: string[]; reason: string };
+  /** A documentation exemption typed before signing, waiting to land on the
+   *  next cut. Spent the moment that cut signs — see `Cut.docsExemption`. */
+  pendingDocsExemption?: { reason: string };
 }
 
 /**

@@ -111,6 +111,12 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ? "This space was thought through before subjects and claims existed. Its promises are kept and readable, but new work starts in a new thinking space — paste your asks there."
         : undefined,
     repoName: session.repoName,
+    // Documentation excused for this cut, in the human's own words — absent
+    // entirely when nothing has been excused, so the rail can tell "said
+    // nothing" apart from "said it is not needed".
+    ...(session.space.pendingDocsExemption
+      ? { docsExemption: { reason: session.space.pendingDocsExemption.reason } }
+      : {}),
     activity: session.activity,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
@@ -401,6 +407,9 @@ async function handleInbound(
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "panic") {
     const r = session.panic();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "excuse-docs") {
+    const r = session.excuseDocs(msg.text ?? "");
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "open-cut-review") {
     const doc = await vs().workspace.openTextDocument({

@@ -117,6 +117,13 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "press an out-of-date badge to re-read the code under those promises",
     },
   },
+  "excuse-docs": {
+    kind: "human",
+    affordance: {
+      surface: "the work page, beside 'Read the cut review first'",
+      gesture: "press 'Documentation not needed' and type the reason — a blank reason is refused",
+    },
+  },
 };
 
 SESSION_ACTIONS.push(...Object.keys(AFFORDANCES));

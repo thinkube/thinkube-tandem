@@ -132,6 +132,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
     impacts: space.impacts?.map((im) => ({ ...im, askId: r(im.askId), questionId: r(im.questionId) })),
     cuts: space.cuts.map((c) => ({ ...c, id: r(c.id), changeIds: c.changeIds.map(r) })),
     deliveries: space.deliveries.map((d) => ({ ...d, id: r(d.id), cutId: r(d.cutId) })),
+    ...(space.pendingDocsExemption ? { pendingDocsExemption: space.pendingDocsExemption } : {}),
   };
 }
 
@@ -205,6 +206,11 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
       if (!existing) merged.deliveries.push(d);
       else if (!existing.acceptedAt && d.acceptedAt) existing.acceptedAt = d.acceptedAt;
     }
+    // A pending exemption is working state, not yet a signed fact — the
+    // first author to hold one in fold order keeps it, same as any other
+    // scalar pre-signature field with no id of its own to union by.
+    if (!merged.pendingDocsExemption && space.pendingDocsExemption)
+      merged.pendingDocsExemption = space.pendingDocsExemption;
   }
 
   // Decisions: one distinct answer stands; two or more distinct answers

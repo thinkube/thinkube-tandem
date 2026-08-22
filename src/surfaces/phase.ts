@@ -53,6 +53,9 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "apply-all-impacts": OPEN,
   "open-cut-review": OPEN,
   build: OPEN,
+  // Same phases as panic: nothing is signed or running yet, so an
+  // exemption can still be typed and spent by the next signature.
+  "excuse-docs": ["drafting", "read", "understood"],
   rerun: ["signed", "delivered"],
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],

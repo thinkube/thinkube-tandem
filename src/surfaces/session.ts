@@ -464,7 +464,27 @@ export class TandemSession {
     return renderCutScreen(this.space, {
       id: `cut-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
+      ...(this.space.pendingDocsExemption
+        ? { docsExemption: this.space.pendingDocsExemption }
+        : {}),
     });
+  }
+
+  /**
+   * Before signing: say documentation is not needed for this cut, in your
+   * own words. A blank or whitespace-only reason is refused and nothing is
+   * recorded — the cut review page then carries the reason word for word.
+   */
+  excuseDocs(reason: string): { ok: boolean; reason?: string } {
+    const text = reason.trim();
+    if (!text)
+      return {
+        ok: false,
+        reason: "documentation cannot be excused without a reason — type why it is not needed",
+      };
+    this.space = { ...this.space, pendingDocsExemption: { reason: text } };
+    this.changed("Documentation excused for this cut.");
+    return { ok: true };
   }
 
   /** Gate 1. On success the run starts — nothing between the gates is human. */

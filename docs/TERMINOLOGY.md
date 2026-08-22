@@ -31,6 +31,7 @@ plain English or does not belong in the product.
 | **stale** | An abstract whose inputs moved since it was rendered. Computed on read, never stored. |
 | **UNDELIVERED** | A worker's declared gap: what it could not do and why. |
 | **affordance** | The registered human door to a machine capability — button, gesture, command. |
+| **documentation exemption** | The human's written reason that a cut needs no documentation, typed before signing and bound onto the cut by its signature. A blank reason cannot excuse a cut. |
 
 ## Retired vocabulary
 

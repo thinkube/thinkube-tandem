@@ -122,6 +122,54 @@ function StepLog(props: {
   );
 }
 
+/**
+ * Say documentation is not needed for this cut. Typing is required — the
+ * gesture refuses a blank or whitespace-only reason, so the button stays
+ * disabled until there is something to send.
+ */
+function ExcuseDocs(props: {
+  docsExemption?: { reason: string };
+  phase: SpacePush["phase"];
+}): JSX.Element {
+  const [reason, setReason] = useState("");
+  const excused = props.docsExemption?.reason;
+  return (
+    <div data-excuse-docs-section style={{ marginTop: SP.sm }}>
+      {excused ? (
+        <div style={{ fontSize: FS.caption, color: C.quiet }}>
+          Documentation excused: {excused}
+        </div>
+      ) : (
+        <>
+          <textarea
+            data-excuse-docs-reason
+            rows={2}
+            style={{ width: "100%", fontSize: FS.caption, marginTop: SP.xs }}
+            placeholder="why documentation is not needed for this cut"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button
+            data-excuse-docs
+            disabled={!can("excuse-docs")}
+            style={{ width: "100%", marginTop: SP.xs }}
+            title={
+              can("excuse-docs")
+                ? "Say documentation is not needed for this cut — you must type why."
+                : whyNot(props.phase)
+            }
+            onClick={() => {
+              if (reason.trim()) post({ action: "excuse-docs", text: reason });
+            }}
+          >
+            Documentation not needed
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** What the human alone can answer: a worker that cannot go on without them. */
 function Parked(props: { push: SpacePush }): JSX.Element | null {
   const parked = props.push.run?.parked ?? [];
@@ -232,6 +280,7 @@ export function Rail(props: {
             >
               Read the cut review first
             </button>
+            <ExcuseDocs docsExemption={push.docsExemption} phase={push.phase} />
             <button
               data-build
               disabled={!can("build")}

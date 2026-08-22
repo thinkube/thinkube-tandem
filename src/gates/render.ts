@@ -5,6 +5,7 @@
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
+import { docLandings } from "../core/docs";
 
 /** A render that exceeds this is not a decision — it is homework. Blank
  *  lines separate the sections of a rendered page and say nothing, so
@@ -74,6 +75,22 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   if (ungrounded.length) {
     lines.push(`Not grounded (no place in the code yet):`);
     for (const n of ungrounded) lines.push(`  ⚠ ${n.sentence}`);
+  }
+
+  // Documentation always gets a line: where it lands, that it is excused
+  // in the human's own words, or that it is missing and blocks signing.
+  // No signing moment is printed here — the reason alone must hash the
+  // same before the click and after, or the signature would drift on
+  // every re-render.
+  const docs = docLandings(space, cut);
+  if (docs.length) {
+    lines.push(`Documentation lands at: ${docs.join(", ")}`);
+  } else if (cut.docsExemption?.reason) {
+    lines.push(`Documentation is not needed — ${cut.docsExemption.reason}`);
+  } else {
+    lines.push(
+      `Documentation is missing — this cut cannot be signed until it is written or excused.`,
+    );
   }
   return lines.join("\n");
 }
