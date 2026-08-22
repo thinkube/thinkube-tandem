@@ -17,6 +17,7 @@ import {
   WorkProject,
   writeContextScope,
 } from "../core/workProjects";
+import { resolveSpaceHandle } from "../surfaces/sessionDeps";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -80,7 +81,10 @@ function scopesReader(
   };
 }
 
-/** Build (or reuse) the session for a project thinking space. */
+/** Build (or reuse) the session for a project thinking space, handed back
+ *  beside the owner-and-slug key it was resolved under — so the caller
+ *  addresses the tab register with the key this act resolved, never a
+ *  remembered active slug. */
 export async function ensureWorkSession(args: {
   context: vscodeTypes.ExtensionContext;
   ownerKey: string;
@@ -96,14 +100,25 @@ export async function ensureWorkSession(args: {
   openRepos: () => EnabledProject[];
   onChanged: (message?: string) => void;
   storageDir: string;
-}): Promise<import("../surfaces/session").TandemSession | undefined> {
+}): Promise<
+  { key: string; name: string; session: import("../surfaces/session").TandemSession } | undefined
+> {
   const wp = findWorkProject(args.storeRoot, args.ownerKey.slice(3));
   if (!wp) return undefined;
   const slug = await args.chooseSpace(args.ownerKey, args.interactive);
   if (!slug) return undefined;
-  const key = `${args.ownerKey}/${slug}`;
+  // The space's own display name and owner-and-slug key, read from the
+  // listing by the one act both owner kinds resolve through — never the
+  // project label.
+  const { key, name: spaceName } = resolveSpaceHandle(
+    args.storeRoot,
+    args.ownerKey,
+    wp.id,
+    slug,
+    "project",
+  );
   const existing = args.sessions.get(key);
-  if (existing) return existing;
+  if (existing) return { key, name: spaceName, session: existing };
   const author = args.author;
   const dirs = thinkingSpaceDirs(args.storeRoot, wp.id, slug, author, "project");
   if (args.interactive && readContextScope(dirs.foldDir).length === 0)
@@ -124,6 +139,8 @@ export async function ensureWorkSession(args: {
     now: () => new Date().toISOString(),
     author,
     scope: { gitRoot: args.storeRoot, prefix: "", projectId: wp.id, label: `${wp.product} / ${wp.name}` },
+    spaceName,
+    spaceKey: key,
     scopes: scopesReader(args.storeRoot, wp, slug, args.openRepos),
     resolveScope: async (scopeId) => {
       const p = args.openRepos().find((x) => x.card.id === scopeId);
@@ -143,5 +160,5 @@ export async function ensureWorkSession(args: {
     onChanged: args.onChanged,
   });
   args.sessions.set(key, s);
-  return s;
+  return { key, name: spaceName, session: s };
 }

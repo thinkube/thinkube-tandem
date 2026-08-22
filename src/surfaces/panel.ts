@@ -1,26 +1,64 @@
 /**
- * The space panel: loads the built map bundle and bridges its registered
- * actions to the session. Pushes the whole surface state after every act —
- * the webview holds no state of its own beyond selection.
+ * The space panel: bridges one thinking space's registered actions to its
+ * own session, and asks its host for a tab titled with that space's name.
+ * Pushes the whole surface state after every act — the webview holds no
+ * state of its own beyond selection.
+ *
+ * Host-agnostic by construction: nothing here reaches the real vscode API.
+ * Building the actual webview panel (loading the bundle, computing CSP,
+ * resolving the extension's install path) is the concrete PanelHost's job,
+ * supplied from outside — a panel opened for one space never touches, and
+ * never disposes, a panel any other space's SpacePanel created.
  */
-import type * as vscodeTypes from "vscode";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import { createRequire } from "node:module";
 import { TandemSession } from "./session";
 import { allowedNow, phaseOf, refusedNow } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
+/** The minimal panel-like object a concrete host hands back from
+ *  createPanel — a drop-in for whatever vscode.WebviewPanel exposes that
+ *  this module actually drives. */
+export interface PanelLike {
+  webview: {
+    html: string;
+    readonly cspSource: string;
+    asWebviewUri(uri: unknown): unknown;
+    onDidReceiveMessage(cb: (message: unknown) => unknown): { dispose(): void };
+    postMessage(message: unknown): Promise<boolean>;
+  };
+  reveal(): void;
+  onDidDispose(cb: () => void): { dispose(): void };
+  dispose(): void;
+}
+
+/** What a SpacePanel needs from its host: one ready-to-use panel per ask,
+ *  titled as asked. The host owns everything vscode-specific — building
+ *  the panel, loading and rewriting the bundle HTML, computing CSP. */
+export interface PanelHost {
+  createPanel(title: string): PanelLike;
+}
+
+/** The space this panel was opened for and nothing else: its
+ *  owner-and-slug key, its display name, and its own session. */
+export interface SpacePanelHandle {
+  key: string;
+  name: string;
+  session: TandemSession;
 }
 
 export interface PanelHostHooks {
   /** Host-side gesture: the QuickPick that rebinds the space to a repo. */
   onSwitchRepo?: () => Promise<void>;
+  /** Host-side gesture: open the rendered cut-review text for reading. */
+  onOpenCutReview?: (content: string) => Promise<void>;
+  /** Host-side liveness wrapper for a long-running gesture (capture). */
+  onWithProgress?: (
+    title: string,
+    run: (report: (message: string) => void, onCancel: (fn: () => void) => void) => Promise<void>,
+  ) => Promise<void>;
+  /** Told when the editor closed this space's tab, so the owner can drop
+   *  it from whatever register keeps it — nothing keeps a dead tab. */
+  onClosed?: (key: string) => void;
 }
 
 interface InboundAction {
@@ -412,11 +450,7 @@ async function handleInbound(
     const r = session.excuseDocs(msg.text ?? "");
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "open-cut-review") {
-    const doc = await vs().workspace.openTextDocument({
-      content: session.cutScreen(),
-      language: "markdown",
-    });
-    await vs().window.showTextDocument(doc, { preview: true });
+    await hooks?.onOpenCutReview?.(session.cutScreen());
   } else if (msg.action === "propose-check") {
     const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
     note = r.ok ? undefined : r.reason;
@@ -463,62 +497,52 @@ function boundState(
   };
 }
 
-export class SpacePanel implements vscodeTypes.Disposable {
-  private _panel: vscodeTypes.WebviewPanel | undefined;
-  private _disposables: vscodeTypes.Disposable[] = [];
+/**
+ * One space's own tab. Everything it does — asking for the panel, pushing
+ * state, dispatching inbound actions — runs against `handle.session`
+ * captured at construction; it never reaches any other space's panel and
+ * never looks anything up as "the active session".
+ */
+export class SpacePanel {
+  private _panel: PanelLike | undefined;
+  private _disposables: { dispose(): void }[] = [];
 
   constructor(
-    private readonly getSession: () => TandemSession,
+    private readonly handle: SpacePanelHandle,
+    private readonly host: PanelHost,
     private readonly hooks?: PanelHostHooks,
   ) {}
 
-  async show(extensionUri: vscodeTypes.Uri): Promise<void> {
-    const session = this.getSession();
+  /** Ask the host for this space's own panel — titled with its display
+   *  name — exactly once for this instance's lifetime; reveal it on every
+   *  later call instead of asking again. */
+  async show(): Promise<void> {
     if (this._panel) {
-      this._panel.reveal();
-      this._push(session);
+      this.reveal();
+      this._push();
       return;
     }
-    this._panel = vs().window.createWebviewPanel(
-      "thinkubeTandemSpace",
-      "Tandem",
-      { viewColumn: vs().ViewColumn.One, preserveFocus: false },
-      {
-        enableScripts: true,
-        localResourceRoots: [extensionUri],
-        retainContextWhenHidden: true,
-      },
-    );
-    this._panel.webview.html = await renderBundleHtml(
-      extensionUri,
-      this._panel.webview,
-    );
+    const panel = this.host.createPanel(this.handle.name);
+    this._panel = panel;
     this._disposables.push(
-      this._panel.webview.onDidReceiveMessage(async (raw) => {
+      panel.webview.onDidReceiveMessage(async (raw) => {
         const msg = raw as InboundAction;
-        const session = this.getSession();
+        const session = this.handle.session;
         const run = () =>
-          handleInbound(
-            session,
-            msg,
-            (m) => this._push(this.getSession(), m),
-            this.hooks,
-          );
+          handleInbound(session, msg, (m) => this._push(m), this.hooks);
         // Industry-standard liveness: a real progress notification with a
         // working Cancel for anything that thinks longer than a beat.
-        if (msg.action === "capture" || msg.action === "capture-many") {
-          await vs().window.withProgress(
-            {
-              location: vs().ProgressLocation.Notification,
-              title: "Tandem is thinking about your ask",
-              cancellable: true,
-            },
-            async (progress, token) => {
-              token.onCancellationRequested(() => session.cancelCapture());
+        if (
+          (msg.action === "capture" || msg.action === "capture-many") &&
+          this.hooks?.onWithProgress
+        ) {
+          await this.hooks.onWithProgress(
+            "Tandem is thinking about your ask",
+            async (report, onCancel) => {
+              onCancel(() => session.cancelCapture());
               const tick = setInterval(() => {
                 const a = session.activity;
-                if (a)
-                  progress.report({ message: `${a.label} (${a.current}/${a.total})` });
+                if (a) report(`${a.label} (${a.current}/${a.total})`);
               }, 400);
               try {
                 await run();
@@ -531,20 +555,32 @@ export class SpacePanel implements vscodeTypes.Disposable {
         }
         await run();
       }),
-      this._panel.onDidDispose(() => {
+      panel.onDidDispose(() => {
         this._panel = undefined;
+        this.hooks?.onClosed?.(this.handle.key);
       }),
     );
-    this._push(session);
+    this._push();
   }
 
-  /** Public so the session's onChanged hook can re-push mid-run. */
-  pushFrom(session: TandemSession, message?: string): void {
-    this._push(session, message);
+  /** Public so this space's own onChanged hook can re-push mid-run —
+   *  always this panel's own session's state, never another's. */
+  push(message?: string): void {
+    this._push(message);
   }
 
-  private _push(session: TandemSession, message?: string): void {
-    void this._panel?.webview.postMessage(spacePush(session, message));
+  private _push(message?: string): void {
+    void this._panel?.webview.postMessage(spacePush(this.handle.session, message));
+  }
+
+  /** Whether the editor still shows this space's tab. */
+  isClosed(): boolean {
+    return !this._panel;
+  }
+
+  /** Bring this space's own tab to the front — never another's. */
+  reveal(): void {
+    this._panel?.reveal();
   }
 
   dispose(): void {
@@ -553,47 +589,4 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._panel?.dispose();
     this._panel = undefined;
   }
-}
-
-async function renderBundleHtml(
-  extensionUri: vscodeTypes.Uri,
-  webview: vscodeTypes.Webview,
-): Promise<string> {
-  const mediaRoot = vs().Uri.joinPath(extensionUri, "media", "map");
-  let raw: string;
-  try {
-    raw = await fs.readFile(
-      vs().Uri.joinPath(mediaRoot, "index.html").fsPath,
-      "utf8",
-    );
-  } catch {
-    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
-  }
-  const nonce = Array.from({ length: 16 }, () =>
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(
-      Math.floor(Math.random() * 62),
-    ),
-  ).join("");
-  const rewritten = raw.replace(
-    /(\s(?:src|href))="([^"]+)"/g,
-    (_m, attr: string, ref: string) => {
-      if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
-      const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
-      return `${attr}="${webview
-        .asWebviewUri(vs().Uri.joinPath(mediaRoot, ...cleaned.split("/")))
-        .toString()}"`;
-    },
-  );
-  const withNonce = rewritten.replace(/<script(\s)/g, `<script nonce="${nonce}"$1`);
-  const csp = [
-    `default-src 'none'`,
-    `img-src ${webview.cspSource} data:`,
-    `style-src ${webview.cspSource} 'unsafe-inline'`,
-    `script-src 'nonce-${nonce}'`,
-    `font-src ${webview.cspSource}`,
-  ].join("; ");
-  return withNonce.replace(
-    /<head>/i,
-    `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`,
-  );
 }

@@ -6,9 +6,10 @@
  */
 import * as vscode from "vscode";
 import * as path from "node:path";
+import * as fs from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
-import { SpacePanel } from "./surfaces/panel";
+import { PanelHost, PanelLike, SpacePanel } from "./surfaces/panel";
 import { SpaceTabs } from "./surfaces/spaceTabs";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
@@ -21,6 +22,7 @@ import {
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
+import { resolveSpaceHandle } from "./surfaces/sessionDeps";
 import {
   chooseThinkingSpace,
   configuredStoreRoot,
@@ -45,9 +47,77 @@ import { parseDefectLog } from "./engine/defectStats";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 import * as nodeFs from "node:fs";
 
+// SL-8 replaces this with per-space tabs addressed through the register
+// below; SL-7 only gives SpacePanel its host-agnostic, per-space shape.
 let panel: SpacePanel | undefined;
+let panelKey: string | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
+
+/** The concrete, vscode-backed panel host: builds the real webview panel,
+ *  loads and rewrites the bundle HTML, computes CSP. SpacePanel itself
+ *  never reaches any of this — a panel opened for one space never touches
+ *  a panel any other space's SpacePanel created. */
+function makeVscodePanelHost(extensionUri: vscode.Uri): PanelHost {
+  return {
+    createPanel(title: string): PanelLike {
+      const webviewPanel = vscode.window.createWebviewPanel(
+        "thinkubeTandemSpace",
+        title,
+        { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
+        {
+          enableScripts: true,
+          localResourceRoots: [extensionUri],
+          retainContextWhenHidden: true,
+        },
+      );
+      void renderBundleHtml(extensionUri, webviewPanel.webview).then((html) => {
+        webviewPanel.webview.html = html;
+      });
+      return webviewPanel as unknown as PanelLike;
+    },
+  };
+}
+
+async function renderBundleHtml(
+  extensionUri: vscode.Uri,
+  webview: vscode.Webview,
+): Promise<string> {
+  const mediaRoot = vscode.Uri.joinPath(extensionUri, "media", "map");
+  let raw: string;
+  try {
+    raw = await fs.readFile(vscode.Uri.joinPath(mediaRoot, "index.html").fsPath, "utf8");
+  } catch {
+    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
+  }
+  const nonce = Array.from({ length: 16 }, () =>
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(
+      Math.floor(Math.random() * 62),
+    ),
+  ).join("");
+  const rewritten = raw.replace(
+    /(\s(?:src|href))="([^"]+)"/g,
+    (_m, attr: string, ref: string) => {
+      if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
+      const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
+      return `${attr}="${webview
+        .asWebviewUri(vscode.Uri.joinPath(mediaRoot, ...cleaned.split("/")))
+        .toString()}"`;
+    },
+  );
+  const withNonce = rewritten.replace(/<script(\s)/g, `<script nonce="${nonce}"$1`);
+  const csp = [
+    `default-src 'none'`,
+    `img-src ${webview.cspSource} data:`,
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
+    `font-src ${webview.cspSource}`,
+  ].join("; ");
+  return withNonce.replace(
+    /<head>/i,
+    `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`,
+  );
+}
 
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -192,7 +262,7 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
   heartbeat(context);
   const s = activeSession(context);
   if (!s) return;
-  panel?.pushFrom(s, message);
+  panel?.push(message);
   if (message?.startsWith("Delivery ready"))
     void vscode.window
       .showInformationMessage(`Tandem — ${message}`, "Open the space")
@@ -203,10 +273,14 @@ function pushActive(context: vscode.ExtensionContext, message?: string): void {
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
 }
 
+/** Resolves a thinking space to its session, handed back beside the
+ *  owner-and-slug key this act resolved and the space's own display name
+ *  — so the caller addresses the tab register with THIS key, never a
+ *  remembered active slug. */
 async function ensureSession(
   context: vscode.ExtensionContext,
   interactive = true,
-): Promise<TandemSession | undefined> {
+): Promise<{ key: string; name: string; session: TandemSession } | undefined> {
   const savedOwner = context.workspaceState.get<string>("tandem.activeProject") ?? "";
   // No identity, no records: writing under a name every installation
   // shares would silently overwrite the other person's whole space.
@@ -244,11 +318,19 @@ async function ensureSession(
   updateStatusBar(project);
   const spaceSlug = await chooseThinkingSpace(context, project.card.id, interactive);
   if (!spaceSlug) return undefined;
-  const sessionKey = `${project.card.id}/${spaceSlug}`;
-  const existing = sessions.get(sessionKey);
-  if (existing) return existing;
-  const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const storeRoot = configuredStoreRoot();
+  // The space's own display name and owner-and-slug key, read from the
+  // listing by the one act both owner kinds resolve through — never the
+  // repository or project label, never a remembered active slug.
+  const { key: sessionKey, name: spaceName } = resolveSpaceHandle(
+    storeRoot,
+    project.card.id,
+    project.card.id,
+    spaceSlug,
+  );
+  const existing = sessions.get(sessionKey);
+  if (existing) return { key: sessionKey, name: spaceName, session: existing };
+  const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const forge = await resolveForge(
     project.gitRoot,
     config.get<string>("giteaToken", ""),
@@ -278,6 +360,8 @@ async function ensureSession(
         ? `${project.card.product} / ${project.card.label}`
         : project.card.label,
     },
+    spaceName,
+    spaceKey: sessionKey,
     suiteCommand: config
       .get<string>("suiteCommand", "npm test")
       .split(" ")
@@ -300,7 +384,7 @@ async function ensureSession(
     storeSync = new StoreSyncService(storeRoot, (l) => console.log(l));
     storeSync.start();
   }
-  return s;
+  return { key: sessionKey, name: spaceName, session: s };
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -371,24 +455,49 @@ export function activate(context: vscode.ExtensionContext): void {
     updateConfigContext,
   });
 
-  const requireSession = (): TandemSession => {
-    const s = activeSession(context);
-    if (!s) throw new Error("no active Tandem session — open the space first");
-    return s;
-  };
   const hooks = {
     onSwitchRepo: async () => {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
     },
+    onOpenCutReview: async (content: string) => {
+      const doc = await vscode.workspace.openTextDocument({ content, language: "markdown" });
+      await vscode.window.showTextDocument(doc, { preview: true });
+    },
+    onWithProgress: async (
+      title: string,
+      run: (report: (message: string) => void, onCancel: (fn: () => void) => void) => Promise<void>,
+    ) => {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title, cancellable: true },
+        (progress, token) =>
+          run(
+            (message) => progress.report({ message }),
+            (fn) => token.onCancellationRequested(fn),
+          ),
+      );
+    },
+    onClosed: (key: string) => {
+      if (panelKey === key) {
+        panel = undefined;
+        panelKey = undefined;
+      }
+    },
   };
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
-    const s = await ensureSession(context, true);
-    if (!s) return;
+    const resolved = await ensureSession(context, true);
+    if (!resolved) return;
     updateStatusBar(rememberedProject(context));
     projectsTree?.refresh();
-    if (!panel) panel = new SpacePanel(requireSession, hooks);
-    await panel.show(context.extensionUri);
+    if (!panel || panelKey !== resolved.key) {
+      panel = new SpacePanel(
+        { key: resolved.key, name: resolved.name, session: resolved.session },
+        makeVscodePanelHost(context.extensionUri),
+        hooks,
+      );
+      panelKey = resolved.key;
+    }
+    await panel.show();
     pushActive(context);
   };
 

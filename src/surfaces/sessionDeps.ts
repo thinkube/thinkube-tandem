@@ -11,6 +11,7 @@ import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
+import { listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -51,6 +52,12 @@ export interface SessionDeps {
   scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live
   /** §7quater: grounding reads the anchor dir; git ops run at gitRoot. */
   scope?: { gitRoot: string; prefix: string; projectId: string; label: string };
+  /** The thinking space's own display name, from the space listing — never
+   *  the repository or project label. What a tab is titled with. */
+  spaceName?: string;
+  /** The owner-and-slug key ("ownerKey/slug") this session was resolved
+   *  under — what a tab is addressed by. */
+  spaceKey?: string;
   /** Member scope id → its open repository; undefined = not open here. */
   resolveScope?: (
     scopeId: string,
@@ -59,4 +66,21 @@ export interface SessionDeps {
   projectDir?: string;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
+}
+
+/** The act that resolves a thinking space to the owner-and-slug key a tab
+ *  is addressed by, and the display name a tab is titled with — read from
+ *  the space listing, never the repository or project label, and never a
+ *  remembered active slug. The one place both ensureSession and
+ *  ensureWorkSession look this up, so the two owner kinds agree. */
+export function resolveSpaceHandle(
+  storeRoot: string,
+  ownerKey: string,
+  ownerId: string,
+  slug: string,
+  kind: SpaceOwnerKind = "repository",
+): { key: string; name: string } {
+  const name =
+    listThinkingSpaces(storeRoot, ownerId, kind).find((s) => s.slug === slug)?.label ?? slug;
+  return { key: `${ownerKey}/${slug}`, name };
 }

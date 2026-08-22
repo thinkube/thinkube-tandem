@@ -83,6 +83,18 @@ export class TandemSession {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
   }
 
+  /** The thinking space's own display name, exactly as given — never the
+   *  repository or project label. What a tab is titled with. */
+  get spaceName(): string | undefined {
+    return this.deps.spaceName;
+  }
+
+  /** The owner-and-slug key this session was resolved under — what a tab
+   *  is addressed by. */
+  get spaceKey(): string | undefined {
+    return this.deps.spaceKey;
+  }
+
   changed(message?: string): void {
     this.persist();
     this.deps.onChanged?.(message);
