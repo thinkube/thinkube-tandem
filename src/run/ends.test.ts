@@ -14,6 +14,30 @@ import assert from "node:assert/strict";
 import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
+import { execFileSync } from "node:child_process";
+import { dispatchTep } from "./dispatch";
+import { tepSlices } from "../dispatch/adapter";
+import { emptySpace } from "../core/schema";
+import { addAsk, addNode } from "../core/intent";
+import { SHAPES, repoInShape, scriptedWorker } from "./shapes";
+import type { RepoShape } from "./shapes";
+
+/** One ask, one promise, one criterion — the content is never the point. */
+function oneAsk(): { space: ReturnType<typeof emptySpace>; ids: string[] } {
+  let s = emptySpace();
+  const a = addAsk(s, "greet the user", "t");
+  assert.ok(a.ok);
+  s = a.space;
+  const n = addNode(s, {
+    sentence: "a greet module",
+    serves: [a.added.id],
+    needs: [],
+    acceptance: [{ id: "c1", text: "greet() returns 'hello'" }],
+    grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+  });
+  assert.ok(n.ok);
+  return { space: n.space, ids: [n.added.id] };
+}
 
 /** A clock and a tick the test drives by hand — no waiting, no flake. */
 function driven(): { now: () => number; pass: (ms: number) => void; every: (fn: () => void, ms: number) => { stop: () => void } } {
@@ -144,4 +168,72 @@ test("a repair that stops improving does end", async () => {
   });
   assert.equal(result.green, false);
   assert.ok(result.rounds <= 3, `it stopped instead of grinding: ${result.rounds} rounds`);
+});
+
+/**
+ * Two more invariants, stated as properties rather than as the incidents
+ * that taught them.
+ */
+test("a unit is never failed for a red it cannot reach", async () => {
+  // A standing test of the repository is already red, in a file no unit of
+  // this cut is cleared to change. Four units were once reworked, closed
+  // and failed for exactly this.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape, { standingRed: true });
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-unreachable" };
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      state,
+      supervisorRound: async () => null,
+      spaceName: "ends",
+      worker: scriptedWorker(shape, "honest").worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "ends" }),
+  );
+
+  assert.deepEqual(
+    [...state.units.values()].filter((u) => u.state === "failed").map((u) => `${u.id}: ${u.note ?? ""}`),
+    [],
+    "no unit was failed for the standing red it could not reach",
+  );
+  assert.ok(outcome.delivery, "and the run still reached a delivery");
+});
+
+test("nothing a unit wrote is lost from the branch", async () => {
+  // Even when the promise is not kept: the work stays where a person can
+  // pick it up, and the delivery says so.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape);
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-kept-work" };
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      state,
+      supervisorRound: async () => null,
+      spaceName: "ends",
+      worker: scriptedWorker(shape, "unchanging", false).worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "ends" }),
+  );
+
+  assert.ok(outcome.delivery?.withheld, "the promise was not kept");
+  const onBranch = execFileSync("git", ["-C", repo, "ls-tree", "-r", "--name-only", outcome.delivery!.branch])
+    .toString()
+    .split("\n");
+  assert.ok(onBranch.includes("src/greet.mjs"), `the work the coder wrote is on the branch: ${onBranch.join(" ")}`);
 });

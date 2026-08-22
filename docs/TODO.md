@@ -77,7 +77,7 @@ same phase starts before it.
 |---|---|---|---|
 | 6.1 | Decide the 58 unused exports and 5 unused files: wire, retire, or fold | the list is empty or every entry has a verdict | todo |
 | 6.2 | Reachability gate back on, with the product's real entry points | it passes, and fails when dead code returns | todo |
-| 6.3 | The invariants, as tests: a run always ends (done — `ends.test.ts`); a unit is never failed for what it cannot reach; nothing written is lost from the branch | three drives | doing |
+| 6.3 | The invariants, as tests: a run always ends; a unit is never failed for what it cannot reach; nothing written is lost from the branch | three drives, in `ends.test.ts` | done |
 | 6.4 | A stalled run says so and stops | done — watchdog and run log | done |
 | 6.5 | A unit is judged only by its own criteria | done | done |
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.3, 0.4, 0.5, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.2, 6.3, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.
