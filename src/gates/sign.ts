@@ -129,7 +129,7 @@ export function signCut(
 }
 
 /** The current hashing rule. Raised whenever what is hashed changes. */
-export const SIGNATURE_RULE = 2;
+const SIGNATURE_RULE = 2;
 
 export type SignatureVerdict =
   | { ok: true; unchecked?: string }
