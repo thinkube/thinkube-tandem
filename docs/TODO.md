@@ -49,7 +49,7 @@ same phase starts before it.
 | 3.3 | A promise landing in two repositories is refused before dispatch | driven | done |
 | 3.4 | The cut review shows which repository each promise lands in | visible before signing | done |
 | 3.5 | What cannot be driven is declared *unprovable* at signing, in the person's words | the list appears on the cut review | done |
-| 3.6 | Slice order puts a thin end-to-end path first | the ordering exists and is driven (`skeletonFirst`), but **nothing supplies the product's outer seam yet**, so it is not wired: a walking skeleton is a decision about how a cut is sliced, not a reordering of slices already cut | doing |
+| 3.6 | Slice order puts a thin end-to-end path first | **not implementable as written, and not for want of effort.** Reordering cannot create an end-to-end path: a slice that depends on three others cannot run before them. The graph's roots are not the product's seam either — measured, 7 roots, none of them the extension's entry. A walking skeleton is a decision made when the cut is SLICED, and the slicer groups promises by coupling, with no notion of a layer to put one of each in the first slice. Doing it means changing how promises are grouped, which is a design change this plan does not contain | todo |
 
 ## Phase 4 — the gate, and how repair works
 
@@ -68,7 +68,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 5.1 | A project gate runs the cross-repository drives after the deliveries land | **not built, deliberately.** A promise spanning two repositories is now refused before dispatch (3.3), so a project gate would judge an empty set. It becomes real work the day a cut is allowed to span repositories | todo |
+| 5.1 | A cut spanning repositories is accepted as one thing | a delivery is refused while another repository of the same cut is open or withheld, with those repositories named. (The cross-repository DRIVES stay unbuilt: a promise may not span repositories, so there are none to run) | done |
 | 5.2 | Until 5.1 exists, a cross-repository promise is refused before dispatch (3.3) and its repository is on the cut review (3.4) | driven | done |
 
 ## Phase 6 — the machine's own hygiene

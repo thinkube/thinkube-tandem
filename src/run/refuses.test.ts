@@ -18,7 +18,8 @@ import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { renderCutScreen } from "../gates/render";
-import { signCut, verifyCutSignature } from "../gates/sign";
+import { acceptDelivery, signCut, verifyCutSignature } from "../gates/sign";
+import type { Delivery } from "../core/schema";
 import { classMethodsIn, wrongAltitude } from "./altitude";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
@@ -463,4 +464,101 @@ test("the class methods come from the code map the machine already builds", () =
     { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
   ]);
   assert.deepEqual(classMethodsIn(path.join(dir, "absent.json")), [], "no map is never a refusal");
+});
+
+/**
+ * A cut that spans repositories is one piece of work. Accepting a third of
+ * it merges a third of a promise and leaves the rest to memory.
+ */
+const green = (id: string, cutId: string, branch: string): Delivery => ({
+  id,
+  cutId,
+  branch,
+  proofs: [{ kind: "probe", label: "it works", verdict: "green" }],
+});
+
+test("a delivery is not accepted while another repository of the same cut is open", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = green("d-api", "cut-1", "tandem/api/TEP-1");
+  const r = acceptDelivery(web, "2026-08-22T00:00:00Z", "advisory", [web, api]);
+  assert.equal(r.ok, false);
+  assert.match(r.ok ? "" : r.reason, /also lands in 1 other repository/);
+  assert.match(r.ok ? "" : r.reason, /tandem\/api\/TEP-1/);
+});
+
+test("a delivery is accepted once every repository of its cut is", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = { ...green("d-api", "cut-1", "tandem/api/TEP-1"), acceptedAt: "2026-08-22T00:00:00Z" };
+  const r = acceptDelivery(web, "2026-08-22T00:01:00Z", "advisory", [web, api]);
+  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+});
+
+test("a withheld sibling is named as withheld, not merely missing", () => {
+  const web = green("d-web", "cut-1", "tandem/web/TEP-1");
+  const api = { ...green("d-api", "cut-1", "tandem/api/TEP-1"), withheld: "two promises are not kept" };
+  const r = acceptDelivery(web, "2026-08-22T00:00:00Z", "advisory", [web, api]);
+  assert.match(r.ok ? "" : r.reason, /withheld/);
+});
+
+/**
+ * What reaches a person is about the work.
+ *
+ * Not a word list over arbitrary text — that would pass anything phrased
+ * carefully. These are the machine's OWN messages, produced by the real
+ * functions with real inputs, and read for the two things a person can do
+ * nothing with: the name of a tool, and the name of a part of the run.
+ */
+const INTERNALS =
+  /\b(oracle|probe|footprint|worktree|dag|frontier|knip|tsc|npx|Bash|Grep|Glob|NotebookEdit|eu-\d|#eu|mcp__|stdout|stderr|regex)\b/i;
+
+test("every refusal a person reads is about the work, not about the machine", async () => {
+  const said: string[] = [];
+
+  // The pre-flight refusals, from the real function.
+  const impossible = await refusedBeforeDispatchIn({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/panel.ts"],
+        workUnits: [{ footprint: ["src/panel.ts"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      },
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "one editor tab per thinking space",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "opening a space twice reveals the same tab" }],
+          grounding: { touchpoints: [{ path: "src/extension.ts", planned: false }], stamp: [] },
+        },
+      ],
+    },
+  });
+  said.push(...impossible);
+
+  // What acceptance refuses, in each of its shapes.
+  for (const d of [
+    { id: "d1", cutId: "c", branch: "tandem/TEP-1", proofs: [], withheld: "two promises are not kept" },
+    { id: "d2", cutId: "c", branch: "tandem/TEP-1", proofs: [{ kind: "probe" as const, label: "it works", verdict: "red" as const }] },
+  ] as Delivery[]) {
+    const r = acceptDelivery(d, "2026-08-22T00:00:00Z", "advisory", []);
+    if (!r.ok) said.push(r.reason);
+  }
+
+  // The altitude refusal, which has the most to explain.
+  const why = wrongAltitude({
+    criterion: "SpacePanel.reveal() sets the active tab",
+    methods: [{ className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" }],
+    exported: () => false,
+  });
+  if (why) said.push(why);
+
+  const offending = said.filter((line) => INTERNALS.test(line));
+  assert.deepEqual(offending, [], `these name the machine rather than the work:\n${offending.join("\n")}`);
+  assert.ok(said.length >= 4, `the drive read nothing: ${said.length}`);
 });

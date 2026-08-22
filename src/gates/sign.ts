@@ -165,10 +165,22 @@ export type AcceptResult =
 
 /** The human's second gate. Refused while evidence is missing or red; the
  *  docs gate blocks by default (advisory is the recorded escape hatch). */
+/**
+ * Accept a delivery — and, when its cut spans more than one repository,
+ * accept it as ONE thing.
+ *
+ * A cut landing in three repositories is built on three branches and opens
+ * three deliveries; accepting one of them merges a third of a promise and
+ * leaves the person to remember the rest. So a delivery of a cut whose
+ * other repositories have not delivered, or are withheld, is refused with
+ * those repositories named. Nothing is accepted piecemeal.
+ */
 export function acceptDelivery(
   delivery: Delivery,
   at: string,
   docsGateMode: "blocking" | "advisory" = "blocking",
+  /** The cut's other deliveries, when it spans repositories. */
+  siblings: readonly Delivery[] = [],
 ): AcceptResult {
   if (delivery.acceptedAt)
     return { ok: false, reason: "this delivery is already accepted" };
@@ -181,6 +193,18 @@ export function acceptDelivery(
     return {
       ok: false,
       reason: `proof outstanding: ${notGreen.map((p) => `${p.label} (${p.verdict})`).join(", ")}`,
+    };
+  const open = siblings.filter(
+    (d) => d.id !== delivery.id && d.cutId === delivery.cutId && !d.acceptedAt,
+  );
+  if (open.length)
+    return {
+      ok: false,
+      reason:
+        `this work also lands in ${open.length} other repository/repositories, and ${open
+          .map((d) => `${d.branch}${d.withheld ? " (withheld)" : ""}`)
+          .join(", ")} ${open.length === 1 ? "is" : "are"} not accepted yet. ` +
+        `It is one piece of work: accept it when every part of it is ready.`,
     };
   const docsUnmet = (delivery.undelivered ?? []).filter((u) =>
     u.includes("docs obligation unmet"),
