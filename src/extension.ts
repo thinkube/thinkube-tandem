@@ -47,10 +47,6 @@ import { parseDefectLog } from "./engine/defectStats";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 import * as nodeFs from "node:fs";
 
-// SL-8 replaces this with per-space tabs addressed through the register
-// below; SL-7 only gives SpacePanel its host-agnostic, per-space shape.
-let panel: SpacePanel | undefined;
-let panelKey: string | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
@@ -160,10 +156,12 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
 
 const sessions = new Map<string, TandemSession>();
 
-// The register of open thinking-space tabs, keyed by "ownerKey/slug". Its
-// factory is wired at the call site that actually opens a tab; until then
-// the register legitimately holds none, and disposing it is still correct.
-const spaceTabs = new SpaceTabs((key) => {
+// The register of open thinking-space tabs, keyed by "ownerKey/slug" — one
+// tab per key, reused while open, dropped once it reports itself closed.
+// Its factory needs the extension context to build a real webview panel,
+// so it is wired in `activate`; until then the register legitimately holds
+// none, and disposing it is still correct.
+let spaceTabs = new SpaceTabs((key) => {
   throw new Error(`no thinking-space tab factory wired yet for ${key}`);
 });
 
@@ -227,6 +225,7 @@ function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
   const s = activeSession(context);
+  const spaceName = s?.spaceName ?? "this space";
   if (s?.running && s.runState) {
     const v = s.runState.view();
     const done = v.units.filter((u) => u.state === "done").length;
@@ -234,7 +233,7 @@ function heartbeat(context: vscode.ExtensionContext): void {
       statusBar.text = `$(warning) Tandem: a worker needs your answer`;
       statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
     } else {
-      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
+      statusBar.text = `$(sync~spin) Tandem: building "${spaceName}" — ${done}/${v.units.length} units`;
       statusBar.backgroundColor = undefined;
     }
     statusBar.show();
@@ -243,7 +242,7 @@ function heartbeat(context: vscode.ExtensionContext): void {
   const grounding = s?.groundingView() ?? [];
   if (grounding.length) {
     const running = grounding.filter((g) => g.label !== "waiting").length;
-    statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${grounding.length} asks`;
+    statusBar.text = `$(sync~spin) Tandem: thinking about "${spaceName}" — ${running} of ${grounding.length} asks`;
     statusBar.backgroundColor = undefined;
     statusBar.show();
     return;
@@ -258,16 +257,24 @@ function heartbeat(context: vscode.ExtensionContext): void {
   updateStatusBar(project);
 }
 
-function pushActive(context: vscode.ExtensionContext, message?: string): void {
+/** Pushes ONE space's own change into ONE space's own tab — never into
+ *  whichever tab happens to be on top. `spaceKey` is the owner-and-slug key
+ *  the change came from; the delivery-ready notification, when raised,
+ *  opens THAT space, not whatever the workspace remembers as active. */
+function pushActive(context: vscode.ExtensionContext, message?: string, spaceKey?: string): void {
   heartbeat(context);
-  const s = activeSession(context);
+  if (!spaceKey) return;
+  const s = sessions.get(spaceKey);
   if (!s) return;
-  panel?.push(message);
+  spaceTabs.push(spaceKey, message);
   if (message?.startsWith("Delivery ready"))
     void vscode.window
       .showInformationMessage(`Tandem — ${message}`, "Open the space")
       .then((pick) => {
-        if (pick) void vscode.commands.executeCommand("thinkube-tandem.openSpace");
+        // Opens the space that finished — the key this push carries —
+        // never the workspace's remembered "active" one, and never the
+        // zero-argument command that reads that memory.
+        if (pick) spaceTabs.open(spaceKey).reveal();
       });
   else if (message?.startsWith("The run refused"))
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
@@ -308,7 +315,9 @@ async function ensureSession(
           vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
         ),
       openRepos: openProjects,
-      onChanged: (message) => pushActive(context, message),
+      // ensureWorkSession binds this to the session's OWN resolved key
+      // before wiring it in — never "the active session" read back later.
+      onChanged: (key, message) => pushActive(context, message, key),
       storageDir: context.globalStorageUri.fsPath,
     });
   }
@@ -375,7 +384,9 @@ async function ensureSession(
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
-    onChanged: (message) => pushActive(context, message),
+    // Bound to THIS session's own key — never "the active session" read
+    // back from workspaceState by whatever push happens to run later.
+    onChanged: (message) => pushActive(context, message, sessionKey),
   });
   sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
@@ -476,29 +487,41 @@ export function activate(context: vscode.ExtensionContext): void {
           ),
       );
     },
-    onClosed: (key: string) => {
-      if (panelKey === key) {
-        panel = undefined;
-        panelKey = undefined;
-      }
+    // The tab itself is already gone from the register the moment it
+    // reports isClosed() — nothing to remove here. The tree still needs
+    // telling, since a closed tab must stop showing as open in it.
+    onClosed: () => {
+      projectsTree?.refresh();
     },
   };
+  // The one register of open thinking-space tabs, keyed by owner and slug:
+  // reveals a space's tab when it is already open, builds a fresh
+  // SpacePanel — for that key's own session, never any other's — when it
+  // is not.
+  spaceTabs = new SpaceTabs((key) => {
+    const session = sessions.get(key);
+    if (!session) throw new Error(`no session resolved yet for thinking-space tab ${key}`);
+    const tab = new SpacePanel(
+      { key, name: session.spaceName ?? key, session },
+      makeVscodePanelHost(context.extensionUri),
+      hooks,
+    );
+    void tab.show();
+    return tab;
+  });
+  context.subscriptions.push({ dispose: () => spaceTabs.dispose() });
+
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
     const resolved = await ensureSession(context, true);
     if (!resolved) return;
     updateStatusBar(rememberedProject(context));
     projectsTree?.refresh();
-    if (!panel || panelKey !== resolved.key) {
-      panel = new SpacePanel(
-        { key: resolved.key, name: resolved.name, session: resolved.session },
-        makeVscodePanelHost(context.extensionUri),
-        hooks,
-      );
-      panelKey = resolved.key;
-    }
-    await panel.show();
-    pushActive(context);
+    // The session is already registered under resolved.key by ensureSession
+    // — the factory above reads it straight back out.
+    const tab = spaceTabs.open(resolved.key);
+    tab.reveal();
+    pushActive(context, undefined, resolved.key);
   };
 
   context.subscriptions.push(
@@ -513,7 +536,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerSpaceCommands(context, {
       openSpaceFor,
       refreshTree: () => projectsTree?.refresh(),
-      dropSession: (key) => void sessions.delete(key),
+      // Deleting a space drops its session and closes its tab in the same
+      // act — a tab left open over a dropped session is a tab over nothing.
+      dropSession: (key) => {
+        sessions.delete(key);
+        spaceTabs.close(key);
+      },
       deleteSpace: deleteThinkingSpace,
       costOfDeleting: deletionCost,
       sweepResidue: (ownerKey, cost) => sweepDeletedSpaceRuns(openProjects, ownerKey, cost),

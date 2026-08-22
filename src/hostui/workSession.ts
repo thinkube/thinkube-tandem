@@ -98,7 +98,10 @@ export async function ensureWorkSession(args: {
     gitRoot: string,
   ) => Promise<import("../dispatch/forge").Forge | undefined>;
   openRepos: () => EnabledProject[];
-  onChanged: (message?: string) => void;
+  /** Bound, below, to THIS resolution's own owner-and-slug key before it
+   *  ever reaches the session — a session's change must push into its own
+   *  space's tab, never whichever tab the host thinks is active. */
+  onChanged: (key: string, message?: string) => void;
   storageDir: string;
 }): Promise<
   { key: string; name: string; session: import("../surfaces/session").TandemSession } | undefined
@@ -157,7 +160,8 @@ export async function ensureWorkSession(args: {
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
-    onChanged: args.onChanged,
+    // Bound to THIS resolution's own key — never "the active session".
+    onChanged: (message) => args.onChanged(key, message),
   });
   args.sessions.set(key, s);
   return { key, name: spaceName, session: s };
