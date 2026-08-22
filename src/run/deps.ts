@@ -55,6 +55,8 @@ export interface DispatchDeps {
   /** Injectable for tests: how a unit sleeps waiting for another unit's
    *  commit — a wait nothing can fast-forward is a wait no test can reach. */
   waitSleep?: (ms: number, wake: (fn: () => void) => void) => Promise<void>;
+  /** How long this run may take before it stops and reports (ms). */
+  maxRunMs?: number;
   /** Injectable for tests: replaces the SDK worker. */
   worker?: (
     deps: Parameters<typeof runUnitWorker>[0],

@@ -33,6 +33,7 @@ interface Args {
   provision?: string;
   model: string;
   digest: boolean;
+  maxRunMs?: number;
 }
 
 export function parseArgs(argv: readonly string[]): Args | string {
@@ -43,7 +44,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
   const space = get("space");
   const repo = get("repo");
   if (!space || !repo)
-    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--no-digest]";
+    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--hours <n>] [--no-digest]";
   const suite = (get("suite") ?? "npm test").split(" ").filter(Boolean);
   return {
     space: path.resolve(space),
@@ -52,6 +53,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     suite,
     ...(get("prepare") ? { prepare: get("prepare")! } : {}),
     ...(get("provision") ? { provision: get("provision")! } : {}),
+    ...(get("hours") ? { maxRunMs: Math.round(Number(get("hours")) * 3_600_000) } : {}),
     model: get("model") ?? "sonnet",
     digest: !argv.includes("--no-digest"),
   };
@@ -141,6 +143,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       suiteCommand: args.suite,
       state: st,
       spaceName: path.basename(args.space),
+      ...(args.maxRunMs ? { maxRunMs: args.maxRunMs } : {}),
       storeDir: args.space,
       ...(known?.digest ? { digest: known.digest } : {}),
       ...(args.prepare ?? known?.prepare ? { prepare: args.prepare ?? known!.prepare } : {}),

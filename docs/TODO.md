@@ -17,7 +17,7 @@ same phase starts before it.
 | 0.1 | Re-homing off: a run's checks stay evidence, never installed into the repository's suite | a run delivers and the repository holds no new test file | done |
 | 0.2 | Checks do not ride the merge: a delivery does not add `probes/` to the project | after a delivery, the merged tree holds no probe | done |
 | 0.3 | Headless run survives this pod: link the existing `node_modules` instead of installing | a run reaches its first worker without being killed | todo |
-| 0.4 | Every run is bounded by wall clock, not only by silence | a run past its bound ends with a report | todo |
+| 0.4 | Every run is bounded by wall clock, not only by silence | a run past its bound ends with a report | done |
 | 0.5 | The headless entry uses the same scope planner as the editor | a two-repository cut runs the same way from both | todo |
 
 ## Phase 1 — decide A, then collapse the trees
@@ -77,7 +77,7 @@ same phase starts before it.
 |---|---|---|---|
 | 6.1 | Decide the 58 unused exports and 5 unused files: wire, retire, or fold | the list is empty or every entry has a verdict | todo |
 | 6.2 | Reachability gate back on, with the product's real entry points | it passes, and fails when dead code returns | todo |
-| 6.3 | The invariants, as tests: a run always ends; a unit is never failed for what it cannot reach; nothing written is lost from the branch | three drives | todo |
+| 6.3 | The invariants, as tests: a run always ends (done — `ends.test.ts`); a unit is never failed for what it cannot reach; nothing written is lost from the branch | three drives | doing |
 | 6.4 | A stalled run says so and stops | done — watchdog and run log | done |
 | 6.5 | A unit is judged only by its own criteria | done | done |
 
@@ -91,7 +91,7 @@ same phase starts before it.
 
 ---
 
-**Done so far:** 0.1, 0.2, 1.1, 1.6, 6.4, 6.5, the headless entry (0.3 to
+**Done so far:** 0.1, 0.2, 0.4, 1.1, 1.6, 6.4, 6.5, the headless entry (0.3 to
 0.5 remain), the 796 tests deleted and five written by the rule.
 
 **Not started:** everything in phases 1 through 5, which is the plan itself.

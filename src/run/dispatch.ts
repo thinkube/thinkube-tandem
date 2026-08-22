@@ -108,7 +108,13 @@ export async function dispatchTep(
   if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
 
-  const watch = watchForStall({ st, units: () => [...st.units.values()], log: (l) => st.log(l), defect }); // a silent run says so and stops
+  const watch = watchForStall({
+    st,
+    units: () => [...st.units.values()],
+    log: (l) => st.log(l),
+    defect,
+    ...(deps.maxRunMs ? { maxMs: deps.maxRunMs } : {}),
+  }); // a silent run says so and stops
   try {
   if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
   const dag = buildUnitDag(slices);
