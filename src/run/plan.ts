@@ -266,6 +266,8 @@ export async function writeDeliveryRecord(
     undelivered: string[];
     verifs: AcVerification[];
     acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
+    /** The checks themselves — kept here because the files are discarded. */
+    checks?: KeptCheck[];
   },
 ): Promise<void> {
   try {
@@ -286,6 +288,7 @@ export async function writeDeliveryRecord(
           proofs: record.proofs,
           undelivered: record.undelivered,
           trace,
+          ...(record.checks?.length ? { checks: record.checks } : {}),
         },
         null,
         2,
@@ -294,6 +297,36 @@ export async function writeDeliveryRecord(
   } catch {
     /* best-effort */
   }
+}
+
+/** A check whose file leaves the tree: what it proved, and its source. */
+export interface KeptCheck {
+  criterionId: string;
+  /** Where the check lived while the run drove it. */
+  path: string;
+  source: string;
+}
+
+/**
+ * Read the run's checks out of the tree so the delivery can carry them.
+ *
+ * A check that cannot be read is dropped rather than recorded empty: an
+ * empty source on the record would read as "this criterion was proven by
+ * nothing", which is worse than its absence.
+ */
+export async function keptChecks(
+  probes: readonly string[],
+  worktree: string,
+  criterionByProbe: ReadonlyMap<string, string>,
+): Promise<KeptCheck[]> {
+  const out: KeptCheck[] = [];
+  for (const rel of [...new Set(probes)]) {
+    const criterionId = criterionByProbe.get(rel);
+    if (!criterionId) continue;
+    const source = await fsp.readFile(path.join(worktree, rel), "utf8").catch(() => undefined);
+    if (source !== undefined) out.push({ criterionId, path: rel, source });
+  }
+  return out;
 }
 
 

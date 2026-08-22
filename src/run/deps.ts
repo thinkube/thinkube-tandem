@@ -11,7 +11,6 @@ import type { RunState } from "./state";
 import type { WorkerModelConfig } from "../engine/workerModel";
 import type { runUnitWorker, WorkerOutcome } from "./worker";
 import type { runReadRound } from "../derive/round";
-import type { rehomeProbes } from "./rehome";
 import type { OracleFactoryArgs } from "./oracle";
 
 export interface DispatchDeps {
@@ -63,8 +62,6 @@ export interface DispatchDeps {
   ) => Promise<WorkerOutcome>;
   /** Injectable for tests: replaces the supervisor's SDK round. */
   supervisorRound?: typeof runReadRound;
-  /** Injectable for tests: replaces the re-homing authoring round. */
-  rehome?: typeof rehomeProbes;
   /** Injectable for tests: replaces the check re-author (challenge and repair). */
   author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;

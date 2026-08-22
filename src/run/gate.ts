@@ -2,18 +2,19 @@
  * The closing gate: everything after the last unit — probes ride the
  * branch, the delivered tree is built, every check runs, assessments are
  * graded by a fresh reviewer, the honesty scan reads the diff, the
- * repository's own suite decides, standing checks re-home, and the
- * delivery is recorded and opened.
+ * repository's own suite decides, the checks are recorded on the delivery
+ * and discarded from the tree, and the delivery is opened.
  *
  * A red suite is not delivered. The work may satisfy its own checks and
  * still leave the repository's standing checks red; that delivery is
  * withheld — recorded, with the reason in intent terms — never handed over
  * red for the human to finish.
  */
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { Cut, Delivery, Proof, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
-import { resolveWorkerModel } from "../engine/workerModel";
 import { gradeAssessments, logRedChecks } from "./assess";
 import { copyRel } from "./oracle";
 import type { Exec } from "./oracle";
@@ -23,10 +24,11 @@ import {
   closingVerifications,
   confessedDeferrals,
   docsObligations,
+  keptChecks,
   writeDeliveryRecord,
 } from "./plan";
 import { porcelainPaths } from "./worker";
-import { criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
+import { criterionMapOf } from "./criteria";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { suiteFootprint, suiteVerdictOf } from "./suite";
@@ -252,37 +254,41 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
   }
 
-  // Re-home the delivery's standing checks: probes leave their delivery
-  // coordinates and join the repository's own suite at each promise's
-  // module test home, the criterion recording where its proof went on living.
-  const rehomedAnchors = await rehomeAtGate({
-    worktree,
-    space,
-    criterionByProbe,
-    model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, "code"),
-    ...(deps.digest ? { digest: deps.digest } : {}),
-    ...(deps.testConvention ? { testConvention: deps.testConvention } : {}),
-    suite: async () =>
-      (await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree)).code === 0,
-    exec,
-    log,
-    rehome: deps.rehome ?? rehomeProbes,
-  });
+  // A check proves a promise once; it does not join the repository's suite
+  // because it exists. Its source and its verdict are kept on the delivery
+  // record — where a person can read what was driven — and the file leaves
+  // the tree, so a delivery of N promises does not hand the repository N
+  // permanent tests to maintain forever.
+  const kept = await keptChecks([...g.sliceProbes.values()].flat(), worktree, criterionByProbe);
+  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
+  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
 
+  const recordPath = deps.storeDir ? path.join(deps.storeDir, "deliveries", `${tep}.json`) : undefined;
   if (deps.storeDir)
-    await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
+    await writeDeliveryRecord(deps.storeDir, {
+      tep,
+      branch,
+      baseSha: g.baseSha,
+      proofs,
+      undelivered,
+      verifs,
+      acResults,
+      checks: kept,
+    });
   undelivered.push(...docsObligations(slices, worktree));
 
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);
   await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
   const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
-  const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = rehomedAnchors.map((a) => ({
-    criterionId: a.criterionId,
-    path: a.path,
-    ...(a.test ? { test: a.test } : {}),
-    stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
-  }));
+  // A criterion's proof lives on the delivery record, not in a test file.
+  const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = recordPath
+    ? kept.map((c) => ({
+        criterionId: c.criterionId,
+        path: recordPath,
+        stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
+      }))
+    : [];
   const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
   let url: string | undefined;
   if (pushed.code === 0 && deps.forge) {

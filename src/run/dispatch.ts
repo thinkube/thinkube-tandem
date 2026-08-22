@@ -50,7 +50,7 @@ import { sliceBookkeeping } from "./plan";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
-import { criterionLookup } from "./rehome";
+import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
