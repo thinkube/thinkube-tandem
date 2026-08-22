@@ -122,54 +122,6 @@ function StepLog(props: {
   );
 }
 
-/**
- * Say documentation is not needed for this cut. Typing is required — the
- * gesture refuses a blank or whitespace-only reason, so the button stays
- * disabled until there is something to send.
- */
-function ExcuseDocs(props: {
-  docsExemption?: { reason: string };
-  phase: SpacePush["phase"];
-}): JSX.Element {
-  const [reason, setReason] = useState("");
-  const excused = props.docsExemption?.reason;
-  return (
-    <div data-excuse-docs-section style={{ marginTop: SP.sm }}>
-      {excused ? (
-        <div style={{ fontSize: FS.caption, color: C.quiet }}>
-          Documentation excused: {excused}
-        </div>
-      ) : (
-        <>
-          <textarea
-            data-excuse-docs-reason
-            rows={2}
-            style={{ width: "100%", fontSize: FS.caption, marginTop: SP.xs }}
-            placeholder="why documentation is not needed for this cut"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <button
-            data-excuse-docs
-            disabled={!can("excuse-docs")}
-            style={{ width: "100%", marginTop: SP.xs }}
-            title={
-              can("excuse-docs")
-                ? "Say documentation is not needed for this cut — you must type why."
-                : whyNot(props.phase)
-            }
-            onClick={() => {
-              if (reason.trim()) post({ action: "excuse-docs", text: reason });
-            }}
-          >
-            Documentation not needed
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 /** What the human alone can answer: a worker that cannot go on without them. */
 function Parked(props: { push: SpacePush }): JSX.Element | null {
   const parked = props.push.run?.parked ?? [];
@@ -212,6 +164,10 @@ export function Rail(props: {
 }): JSX.Element {
   const { push } = props;
   const ready = push.ready;
+  // The reason typed before signing. Held here rather than in a component
+  // of its own so the control lives in the same tree as the build section
+  // it belongs to — a page is judged by what it renders.
+  const [excuseReason, setExcuseReason] = useState("");
 
   return (
     <div
@@ -280,7 +236,40 @@ export function Rail(props: {
             >
               Read the cut review first
             </button>
-            <ExcuseDocs docsExemption={push.docsExemption} phase={push.phase} />
+            <div data-excuse-docs-section style={{ marginTop: SP.sm }}>
+              {push.docsExemption?.reason ? (
+                <div style={{ fontSize: FS.caption, color: C.quiet }}>
+                  Documentation excused: {push.docsExemption.reason}
+                </div>
+              ) : (
+                <textarea
+                  data-excuse-docs-reason
+                  rows={2}
+                  style={{ width: "100%", fontSize: FS.caption, marginTop: SP.xs }}
+                  placeholder="why documentation is not needed for this cut"
+                  value={excuseReason}
+                  onChange={(e) => setExcuseReason(e.target.value)}
+                />
+              )}
+              <button
+                data-excuse-docs
+                disabled={!can("excuse-docs") || !!push.docsExemption?.reason}
+                style={{ width: "100%", marginTop: SP.xs }}
+                title={
+                  can("excuse-docs")
+                    ? "Say documentation is not needed for this cut — you must type why."
+                    : whyNot(push.phase)
+                }
+                onClick={() => {
+                  if (excuseReason.trim())
+                    post({ action: "excuse-docs", text: excuseReason });
+                }}
+              >
+                {push.docsExemption?.reason
+                  ? "Documentation already excused"
+                  : "Documentation not needed"}
+              </button>
+            </div>
             <button
               data-build
               disabled={!can("build")}

@@ -374,7 +374,14 @@ test("recording where a proof lived does not invalidate the signature that autho
       },
     ],
   };
-  const signed = signCut(base, { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  // The cut carries a documentation exemption so signing turns on the drift
+  // question alone: this test is about the signature, not about docs.
+  const signed = signCut(
+    base,
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "internal drift check, no user-facing page" } },
+    "2026-08-22T00:00:00Z",
+    "t",
+  );
   assert.ok(signed.ok, signed.ok ? "" : signed.reason);
 
   const afterDelivery = {
@@ -414,7 +421,12 @@ test("a signature survives the repository moving, but not the promise moving", (
       },
     ],
   });
-  const signed = signCut(at("src/greet.ts", "aaa"), { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  const signed = signCut(
+    at("src/greet.ts", "aaa"),
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "internal drift check, no user-facing page" } },
+    "2026-08-22T00:00:00Z",
+    "t",
+  );
   assert.ok(signed.ok, signed.ok ? "" : signed.reason);
 
   // The repository moved: a new head, a re-read evidence line. Same promise.

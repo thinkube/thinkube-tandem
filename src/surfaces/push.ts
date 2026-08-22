@@ -103,6 +103,12 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       session.space.nodes.length > 0 && !(session.space.subjects ?? []).length
         ? "This space was thought through before subjects and claims existed. Its promises are kept and readable, but new work starts in a new thinking space — paste your asks there."
         : undefined,
+    // The exemption typed before signing, so the rail can say documentation
+    // is excused and print the reason back. Absent entirely when the session
+    // holds none — a surface never shows an empty excuse.
+    ...(session.space.pendingDocsExemption
+      ? { docsExemption: { reason: session.space.pendingDocsExemption.reason } }
+      : {}),
     repoName: session.repoName,
     activity: session.activity,
     pendingCheck: session.pendingCheck,
@@ -290,7 +296,12 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       // is telling the human this work is ready to go into the project.
       ...(() => {
         if (d.acceptedAt) return {};
-        const r = acceptDelivery(d, session.deps.now(), session.deps.docsGateMode ?? "blocking");
+        const r = acceptDelivery(
+          d,
+          session.deps.now(),
+          session.deps.docsGateMode ?? "blocking",
+          session.space.deliveries,
+        );
         return r.ok ? {} : { blocked: r.reason };
       })(),
       ...(d.url ? { url: d.url } : {}),

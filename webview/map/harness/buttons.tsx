@@ -35,6 +35,10 @@ for (const [phase, push] of Object.entries(pushes)) {
       buttons.push((/\bdisabled(=""|\b)/.test(attrs) ? "off " : "on  ") + (data || `"${text.slice(0, 30)}"`));
     }
     out[phase][tab] = buttons;
+    // The markup itself, kept beside the list: when a control the source
+    // renders is missing from the list, the page it was rendered into is
+    // the only thing that can say why.
+    out[phase][`${tab}-html`] = [html];
   }
 }
 process.stdout.write(JSON.stringify(out, null, 1));

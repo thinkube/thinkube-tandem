@@ -15,7 +15,9 @@ import {
 
 /** The repository root. These tests run from the compiled `out-test/` tree,
  *  so any read of authored source must resolve against the repo, never
- *  against the directory this module was loaded from. */
+ *  against the directory this module was loaded from.
+ *
+ */
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function pathOf(m: string | { path: string }): string {
@@ -137,7 +139,16 @@ test("parseWiringLedger: a fully valid entry parses to a clean verdict and reaso
 });
 
 test("engineWiring.ts imports no Node I/O, no vscode, no model client, and its header declares that contract", () => {
-  const src = readFileSync(path.join(REPO_ROOT, "src", "gates", "engineWiring.ts"), "utf8");
+  const gatesDir = path.join(REPO_ROOT, "src", "gates");
+  const modulePath = path.join(gatesDir, "engineWiring.ts");
+  assert.ok(
+    statSync(modulePath, { throwIfNoEntry: false }),
+    `the module this check reads is not in the tree it is run against.\n` +
+      `root: ${REPO_ROOT}\n` +
+      `src/gates holds: ${(readdirSync(gatesDir, { withFileTypes: true }) ?? []).map((d) => d.name).join(", ")}\n` +
+      `root holds: ${readdirSync(REPO_ROOT).join(", ")}`,
+  );
+  const src = readFileSync(modulePath, "utf8");
   const importLines = src
     .split("\n")
     .filter((l) => /^\s*import\b/.test(l) || /^\s*export\s+\*\s+from/.test(l));

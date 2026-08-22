@@ -168,6 +168,16 @@ test("the button table: every gated control is on exactly in its listed phases",
   });
 
   const harness = path.join(repoRoot, "out-test", "harness", "buttons.cjs");
+  // The rail that is built must be the rail that offers the controls: when
+  // the tree being built is not the tree the controls were written into, a
+  // missing control reads as a phase-table fault and is chased there.
+  const railPath = path.join(repoRoot, "webview", "map", "src", "Rail.tsx");
+  const railSource = fs.readFileSync(railPath, "utf8");
+  for (const action of Object.keys(TABLE))
+    assert.ok(
+      new RegExp(`data-${action}\\b`).test(railSource),
+      `the rail being built offers no "${action}" control at all — the surface under test is not the surface that was written; it reads:\n${railSource.slice(0, 1200)}`,
+    );
   const raw = execFileSync("node", [harness, fixturePath], { encoding: "utf8" });
   const table = JSON.parse(raw) as Record<string, Record<string, string[]>>;
 
@@ -191,7 +201,20 @@ test("the button table: every gated control is on exactly in its listed phases",
       assert.equal(
         isOn,
         wantOn,
-        `phase ${phase}, action ${action}: expected ${wantOn ? "on" : "off/absent"}, saw ${JSON.stringify(line)}`,
+        `phase ${phase}, action ${action}: expected ${wantOn ? "on" : "off/absent"}, saw ${JSON.stringify(line)}` +
+          `\nthe controls the surface rendered on this page:\n${buttons.join("\n")}` +
+          `\nthe markup around the control:\n${(() => {
+            const html = (table[phase][`work-html`] ?? [""])[0];
+            const i = html.indexOf(action);
+            if (i >= 0) return html.slice(Math.max(0, i - 400), i + 400);
+            const j = html.indexOf("data-build-section");
+            return (
+              `"${action}" is nowhere in the ${html.length} characters of markup; ` +
+              (j < 0
+                ? "and the build section is not there either"
+                : `the build section reads:\n${html.slice(j, j + 2500)}`)
+            );
+          })()}`,
       );
     }
   }
