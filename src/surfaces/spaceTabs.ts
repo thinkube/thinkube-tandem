@@ -10,6 +10,8 @@ export interface SpaceTab {
   reveal(): void;
   dispose(): void;
   isClosed(): boolean;
+  /** Deliver this space's own push payload to the tab. */
+  push?(payload: unknown): void;
 }
 
 export class SpaceTabs {
@@ -32,11 +34,21 @@ export class SpaceTabs {
     return !!tab && !tab.isClosed();
   }
 
-  /** Sends `send` only to the tab registered for `key`, if it is live. */
-  push(key: string, send: (tab: SpaceTab) => void): void {
+  /** Delivers `payload` only to the tab registered for `key`, if it is
+   *  live. A key with no open tab is a silent no-op. */
+  push(key: string, payload: unknown): void {
     const tab = this.tabs.get(key);
     if (!tab || tab.isClosed()) return;
-    send(tab);
+    tab.push?.(payload);
+  }
+
+  /** Closes and drops the tab registered for `key`, if any — the same act
+   *  that drops a deleted space's session must close its tab. */
+  close(key: string): void {
+    const tab = this.tabs.get(key);
+    if (!tab) return;
+    tab.dispose();
+    this.tabs.delete(key);
   }
 
   dispose(): void {
