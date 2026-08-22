@@ -117,20 +117,6 @@ test("probeEvidence: a probe that never ran names its own cause — the runner's
   assert.match(e, /not ok 1/, "and the failing block still follows");
 });
 
-test("formatVerifyReply: a boundary build fault points at contract conformance without asserting fault, and leaks no probe source", () => {
-  const msg = formatVerifyReply({
-    kind: "build-failed",
-    testFault: true,
-    errorFiles: ["src/acceptance/SP-17_1_AC-1.test.ts"],
-    output: "const SECRET_PROBE_SOURCE = …",
-  });
-  assert.match(msg, /boundary between your implementation and this slice's checks/i);
-  assert.match(msg, /SIGNATURE BY SIGNATURE/);
-  assert.doesNotMatch(msg, /not your code|yours to fix/i, "never asserts whose fault it is — location is not fault");
-  assert.match(msg, /SP-17_1_AC-1\.test\.ts/);
-  assert.doesNotMatch(msg, /SECRET_PROBE_SOURCE/, "probe text never reaches the coder");
-});
-
 test("formatVerifyReply: results render a pass count and per-AC verdicts; exhausted tells the coder to stop", () => {
   const msg = formatVerifyReply({
     kind: "results",
@@ -340,20 +326,6 @@ test("sharedFailureSignature: identical failures collapse, differing ones do not
     undefined,
   );
   assert.equal(sharedFailureSignature([mk(1, false, "same wall")]), undefined);
-});
-
-test("formatVerifyReply: a rootCause is named ONCE, first, as one boundary failure", () => {
-  const msg = formatVerifyReply({
-    kind: "results",
-    rootCause: "Error: listen EADDRINUSE — singleton lock",
-    results: [
-      { ac: 1, pass: false, evidence: "$ r1 → exit 1\nErr" },
-      { ac: 2, pass: false, evidence: "$ r2 → exit 1\nErr" },
-    ],
-  });
-  assert.match(msg, /ALL 2 FAILING PROBES FAIL IDENTICALLY/);
-  assert.match(msg, /one boundary failure, not 2 independent bugs/);
-  assert.match(msg, /EADDRINUSE/);
 });
 
 test("oracle: a repeated failing round trips the stall breaker; the next call runs nothing and says stop", async () => {

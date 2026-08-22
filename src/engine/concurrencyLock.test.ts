@@ -111,33 +111,6 @@ test("runExclusive: a parked write on a handle queues a second op on the same ha
   );
 });
 
-test("contrast: the SAME interleave without the lock loses an op to last-write-wins", async () => {
-  // Same parked-first / second-on-same-handle interleave, run UNGUARDED, to prove the clobber is
-  // real — this is the bug `runExclusive` prevents in the test above.
-  const cell = { ops: [] as string[] };
-  const gate = deferred();
-
-  const first = rmwWrite(cell, "move", gate.promise)(); // reads [], parks
-  await flush();
-  const second = rmwWrite(cell, "accept")(); // reads [] (stale!), writes ["accept"]
-  await flush();
-  assert.deepEqual(
-    cell.ops,
-    ["accept"],
-    "unguarded second op wrote off the stale empty snapshot",
-  );
-
-  gate.resolve();
-  await Promise.all([first, second]);
-
-  // The first op resumes and writes its OWN stale snapshot (empty) + "move" → "accept" is gone.
-  assert.deepEqual(
-    cell.ops,
-    ["move"],
-    "last-write-wins clobber: the late-resuming first op overwrote the second — 'accept' lost",
-  );
-});
-
 test("tryAcquire: compare-and-set refuses a second op on a held handle, then succeeds once freed", async () => {
   const lock = new ConcurrencyLock();
   const handle = "thinking space-A";

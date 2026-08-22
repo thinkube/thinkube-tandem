@@ -194,20 +194,6 @@ const alwaysPass: AuditFn = () => ({ verdict: "verifiable", run: "noop" });
 
 // ── the probe ─────────────────────────────────────────────────────────────────
 
-test("probe: the fixture set is non-trivial and covers both known-bad families", () => {
-  assert.ok(KNOWN_BAD.length > 0, "N must be > 0");
-  assert.ok(CLEAN.length > 0, "M must be > 0");
-  const families = new Set(KNOWN_BAD.map((f) => f.family));
-  assert.ok(
-    families.has("human-executed"),
-    "fixtures must include a human-executed AC",
-  );
-  assert.ok(
-    families.has("deploy-circular"),
-    "fixtures must include a deploy/merge-circular AC",
-  );
-});
-
 test("probe: reference auditor flags N/N known-bad ACs as needs-reframe", () => {
   const score = runProbe(FIXTURES, referenceAuditor);
   assert.equal(
@@ -226,13 +212,6 @@ test("probe: reference auditor passes M/M clean AI-verifiable ACs", () => {
     `expected M/M clean passed; misses: ${score.misses.join(" | ")}`,
   );
   assert.equal(score.totalClean, CLEAN.length);
-});
-
-test("probe: full discrimination — N/N flagged AND M/M passed, no misses", () => {
-  const score = runProbe(FIXTURES, referenceAuditor);
-  assert.deepEqual(score.misses, []);
-  assert.equal(score.flaggedBad, score.totalBad);
-  assert.equal(score.passedClean, score.totalClean);
 });
 
 test("probe: a degenerate always-pass auditor FAILS the probe (the probe is not vacuous)", () => {

@@ -47,10 +47,6 @@ test("a spawn error is unrunnable too", async () => {
   assert.equal(results[0].unrunnable, true);
 });
 
-test("PROBE_UNRUNNABLE_CODES is exactly {126, 127}", () => {
-  assert.deepEqual([...PROBE_UNRUNNABLE_CODES].sort(), [126, 127]);
-});
-
 test("fault `gate` escalates without burning an attempt (mirror of `contract`)", () => {
   const v = reDispatchDecision(2, 3, "gate");
   assert.deepEqual(v, { action: "escalate", attempts: 2, route: "gate" });

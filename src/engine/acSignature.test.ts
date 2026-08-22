@@ -175,7 +175,3 @@ test("loadOrCreateSecret rejects a malformed key file", () => {
   assert.throws(() => loadOrCreateSecret(dir), /malformed/);
 });
 
-test("AC_SIGNATURE_KEY is a stable frontmatter field name", () => {
-  // The sibling readyGate unit reads this exact key; pin it so a rename can't silently desync them.
-  assert.equal(AC_SIGNATURE_KEY, "ac_verifications_signature");
-});

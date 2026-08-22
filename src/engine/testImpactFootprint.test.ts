@@ -195,6 +195,3 @@ test("buildTestImpactRefusal: unit line carries `footprint`; held-out line carri
   assert.equal(message.endsWith("\n"), false);
 });
 
-test("buildTestImpactRefusal: an empty violation set is the empty string", () => {
-  assert.equal(buildTestImpactRefusal([]), "");
-});

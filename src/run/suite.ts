@@ -244,40 +244,20 @@ export function withSuite(
     invocations: () => inner.invocations(),
     last: () => inner.last(),
     verify: async () => grade(await inner.verify()),
+    // The slice's checks decide the unit. The repository's suite is run
+    // here for the coder to READ — never to judge it. A red belonging to a
+    // file this unit cannot touch is not a verdict on this unit, and three
+    // nights were lost to the machinery that tried to decide whose it was:
+    // ownership classes, waits for a tree that never came, units failed
+    // with every one of their own checks green. The gate judges the suite,
+    // once, on the delivered tree, where every file is reachable and the
+    // finisher and the closer can act.
     confirmGreen: async () => {
       const c = await inner.confirmGreen();
       if (!c.green) return c;
-      const result = await grade(c.result);
-      const green = !result.suite || suiteAcceptable(result.suite);
-      return { green, result };
+      return { green: true, result: await grade(c.result) };
     },
   };
-}
-
-/** Green for the coder: every red is a maintainer's to bring under, the
- *  runner's own failure to run the suite, or a break in files this unit
- *  does not own — which the closing gate holds. The tree's failures are
- *  not green: they are waited on. */
-export function suiteAcceptable(s: NonNullable<VerifyWithSuite["suite"]>): boolean {
-  return (
-    s.verdict.green ||
-    [...s.owners.values()].every((o) => o === "maintainer" || o === "environment" || o === "elsewhere")
-  );
-}
-
-/** The reds a unit is answerable for, and those the gate must still hold. */
-export function suiteReds(s: NonNullable<VerifyWithSuite["suite"]>): {
-  mine: SuiteFailure[];
-  held: SuiteFailure[];
-} {
-  const of = (...o: SuiteOwner[]) => s.verdict.failures.filter((f) => o.includes(s.owners.get(f) ?? "code"));
-  return { mine: of("code"), held: of("elsewhere", "tree") };
-}
-
-/** Only the tree's failures: wait, do not rework. */
-export function suiteWaitsForTree(s: NonNullable<VerifyWithSuite["suite"]>): boolean {
-  const owners = [...s.owners.values()];
-  return !s.verdict.green && owners.length > 0 && owners.every((o) => o === "tree");
 }
 
 /**

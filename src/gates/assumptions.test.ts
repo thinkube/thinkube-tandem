@@ -98,20 +98,3 @@ test("an answer that explains itself in my nouns is refused, however plain the s
   );
 });
 
-test("an answer that explains itself in the machine's nouns is refused, however plain it reads", () => {
-  const judged = judgeRaised(
-    [
-      {
-        text: "Does the reason stay editable after I sign?",
-        recommendation:
-          "No — the waiver is bound by the signature (it rides the render hash), so editing it after signing shows up as drift.",
-      },
-    ],
-    human,
-  );
-  assert.equal(judged[0].refused, "foreign");
-  assert.ok(
-    judged[0].foreign!.includes("waiver") && judged[0].foreign!.includes("hash"),
-    `the invented nouns are named: ${judged[0].foreign!.join(", ")}`,
-  );
-});

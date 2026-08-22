@@ -6,7 +6,7 @@
  * same oracle as the coder it replaces (THE-LADDER §4).
  */
 import { formatVerifyReply } from "../engine/verifyOracle";
-import { suiteAcceptable, suiteFootprint, suiteReds } from "./suite";
+import { suiteFootprint } from "./suite";
 import type { VerifyWithSuite } from "./suite";
 import type { VerifyOracle } from "../engine/verifyOracle";
 import type { AcVerification } from "../engine/core/closingGate";
@@ -76,8 +76,10 @@ export function unitCloser(a: {
         // hold it red too: a score that counts only probes cannot move when
         // the probes are green, so the closer stops on its no-progress rule
         // while the real failure sits in front of it, unnamed.
-        const standing = suite && !suiteAcceptable(suite) ? suiteReds(suite) : undefined;
-        const held = standing ? [...standing.mine, ...standing.held] : [];
+        // Everything the repository's suite still reports on this tree: the
+        // closer is the last actor, so it is shown all of it and may reach
+        // any file the evidence names — no ownership arithmetic.
+        const held = suite && !suite.verdict.green ? suite.verdict.failures : [];
         return {
           green: c.green,
           score: probeReds + held.length,

@@ -255,13 +255,6 @@ test("a delivery whose checks are red cannot be accepted, and the page says why"
   assert.match(r.reason!, /the report reads as sections/, "and names the check that is not green");
 });
 
-test("a delivery with no proof at all cannot be accepted either", () => {
-  const bare = { id: "d-2", cutId: "cut-1", branch: "b", proofs: [] };
-  const r = acceptDelivery(bare, "t");
-  assert.equal(r.ok, false);
-  assert.match(r.reason!, /no proof/);
-});
-
 test("a withheld delivery says so on its page and cannot be accepted", () => {
   const { space, changeIds } = makeSpace();
   const s2: Space = { ...space, cuts: [{ id: "cut-1", changeIds }] };

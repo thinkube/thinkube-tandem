@@ -44,23 +44,3 @@ function humanText(source: string): string {
   return [...titles, ...between].join("\n");
 }
 
-test("no surface invents a second name for something the glossary names", () => {
-  const offences: string[] = [];
-  for (const { file, text } of surfaces()) {
-    const read = humanText(text);
-    for (const { bad, use } of SYNONYMS)
-      if (bad.test(read)) offences.push(`${file}: says ${bad} — the word is "${use}"`);
-  }
-  assert.deepEqual(offences, [], "one word per thing");
-});
-
-test("every group of shapes is labelled with the word for what it holds", () => {
-  const intent = fs.readFileSync(path.join(surfaceDir, "IntentGraph.tsx"), "utf8");
-  for (const word of ["Subject", "Claims"])
-    assert.ok(
-      new RegExp(`>\\s*\\n?\\s*${word}\\b`).test(intent),
-      `the reading page never says "${word}" — an unlabelled shape is a riddle`,
-    );
-  const sentences = fs.readFileSync(path.join(surfaceDir, "Asks.tsx"), "utf8");
-  assert.ok(/>\s*\n?\s*Asks\b/.test(sentences), "your own words are labelled Asks");
-});

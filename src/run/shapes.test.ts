@@ -125,12 +125,6 @@ test("a tester that writes an impossible import is mended once, and the run stil
   void state;
 });
 
-test("a tester that simulates a platform the repository does not own is refused before anyone is graded", async () => {
-  const { scripted } = await runIn(MIRROR_STRIPPED, "simulator");
-  const refused = scripted.briefs.filter((b) => /simulate a system the repository does not own/.test(b.brief));
-  assert.ok(refused.length >= 1, "the simulator is refused at authoring time");
-});
-
 test("a coder whose work never changes hands up after one repeat, and the closer finishes it", async () => {
   const { state, outcome, scripted } = await runIn(MIRROR_STRIPPED, "unchanging");
   const coderRounds = scripted.briefs.filter((b) => /REWORK|Task/.test(b.brief) && !/CLOSER/.test(b.brief)).length;

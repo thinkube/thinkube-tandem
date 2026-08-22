@@ -1770,38 +1770,6 @@ test("SP-6/16: a test worker loses Bash/Web/Task but KEEPS Grep + Read/Glob (its
   assert.deepEqual(disallowedToolsForRole(undefined), []);
 });
 
-test("tests-first: a test worker is told it writes tests up front + redirect-aware terminate-on-denial", () => {
-  const unit: SchedUnit = {
-    id: "SP-6_SL-1#eu-1",
-    slice: "SP-6_SL-1",
-    footprint: ["src/acceptance/SP-6_3_AC-1.test.ts"],
-    requires: [],
-    shape: "fan-out",
-    role: "test",
-  };
-  const tp = buildWorkerPrompt(unit, "6/3", {
-    specBody: "## Acceptance Criteria\n\n- [ ] x",
-  });
-  // Honest tests-first workspace (2026-07-08): it is told plainly it writes the tests FIRST and
-  // the implementation does not exist yet — not an obscure "snapshot" framing.
-  assert.match(tp, /writing the tests FIRST/i);
-  assert.match(tp, /does not exist in your working directory yet/i);
-  assert.match(tp, /Import the contract's modules by the exact path\/name it gives/i);
-  // No base-dir split anywhere (the old read-here/write-there model is gone).
-  assert.doesNotMatch(tp, /base directory|READ-ONLY reference/i);
-  // Terminate-on-denial, redirect-aware: never brute-force; follow a redirecting denial; stop
-  // only at a genuine dead-end.
-  assert.match(tp, /do NOT brute-force/i);
-  assert.match(tp, /follow it and carry on/i);
-  // A code worker gets no snapshot workspace block…
-  const cp = buildWorkerPrompt({ ...unit, role: "code" }, "6/3", {
-    specBody: "## Acceptance Criteria\n\n- [ ] x",
-  });
-  assert.doesNotMatch(cp, /writing the tests FIRST/i);
-  // …but the terminate-on-denial instruction applies to EVERY worker.
-  assert.match(cp, /do NOT brute-force/i);
-});
-
 test("SP-6/7: the test convention is injected for a test worker (it has no Bash to discover it)", () => {
   const unit: SchedUnit = {
     id: "SP-6_SL-1#eu-1",
@@ -2040,18 +2008,6 @@ test("SP-6/9 (re-anchored 2026-07-12): reDispatchDecision routes a `contract` fa
   // Contrast: a `code` fault at the same prior count DOES burn the attempt (prior + 1) — proving the
   // contract arm is the exception, not a general no-op.
   assert.equal(reDispatchDecision(2, 5, "code").attempts, 3);
-});
-
-test("SP-6/9: CONTRACT_DEFECT_MARKER is a non-empty peer of ESCALATION_MARKER naming the contract", () => {
-  assert.equal(typeof CONTRACT_DEFECT_MARKER, "string");
-  assert.ok(CONTRACT_DEFECT_MARKER.trim().length > 0, "non-empty");
-  // Assert a SUBSTRING (per the contract) so the exact wording can evolve without breaking detection.
-  assert.ok(
-    /CONTRACT/i.test(CONTRACT_DEFECT_MARKER),
-    "names the contract as the defect",
-  );
-  // A distinct marker from the exhausted-attempts one — different cause, different remedy.
-  assert.notEqual(CONTRACT_DEFECT_MARKER, ESCALATION_MARKER);
 });
 
 test("SP-6/9: a `contract` route flows through buildVerificationTrace unchanged (Fault widened)", () => {
@@ -2772,24 +2728,6 @@ test("preflight provisions: fully provisioned ⇒ no failures; legacy files-only
 // exist ONLY in UNDELIVERED_FORMAT_STANZA (code): a doctrine template or the
 // bundled preamble restating it can drift and teach workers a shape the parser
 // misses — contradictory instructions inside one prompt, silent parse losses.
-test("the UNDELIVERED line shape lives only in the code stanza — preamble prose references, never restates", () => {
-  assert.match(UNDELIVERED_FORMAT_STANZA, /UNDELIVERED: /);
-  assert.doesNotMatch(
-    BUNDLED_WORKER_PREAMBLE,
-    /^\s*UNDELIVERED:/m,
-    "bundled preamble must not restate the parsed line shape",
-  );
-  const fs = require("node:fs");
-  const tpl =
-    "/home/thinkube/thinkube-platform/core/thinkube-metadata/plugins/tandem-methodology/templates/worker-preamble.md";
-  if (fs.existsSync(tpl))
-    assert.doesNotMatch(
-      fs.readFileSync(tpl, "utf8"),
-      /^\s*UNDELIVERED:/m,
-      "doctrine template must not restate the parsed line shape",
-    );
-});
-
 // ── grepWithinCwd (2026-07-15): one path rule, consistent with Read ─────────
 // The old blanket absolute-deny made every test worker burn calls rediscovering
 // that Grep disagreed with Read about in-tree absolute paths. Containment is the

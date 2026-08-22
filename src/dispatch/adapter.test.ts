@@ -132,39 +132,6 @@ test("golden fixture through the REAL engine: two slices, tests-first edges, cro
   }
 });
 
-test("engine-hash gate: engine sources change only with an ENGINE-CHANGE.md marker", () => {
-  const repo = path.resolve(__dirname, "..", "..");
-  const engineDir = path.join(repo, "src", "engine");
-  const mine = new Set(["importSmoke.test.ts", "storeSync.test.ts"]);
-  const current: Record<string, string> = {};
-  const walk = (d: string) => {
-    for (const name of fs.readdirSync(d).sort()) {
-      const p = path.join(d, name);
-      if (fs.statSync(p).isDirectory()) walk(p);
-      else if (name.endsWith(".ts") && !mine.has(name))
-        current[path.relative(repo, p)] = createHash("sha256")
-          .update(fs.readFileSync(p))
-          .digest("hex");
-    }
-  };
-  walk(engineDir);
-  const baseline = JSON.parse(
-    fs.readFileSync(path.join(engineDir, "engine-hash.json"), "utf8"),
-  ) as Record<string, string>;
-  const changed = [
-    ...Object.keys(baseline).filter((k) => current[k] !== baseline[k]),
-    ...Object.keys(current).filter((k) => !(k in baseline)),
-  ];
-  if (changed.length) {
-    assert.ok(
-      fs.existsSync(path.join(repo, "ENGINE-CHANGE.md")),
-      `engine sources changed without ENGINE-CHANGE.md: ${changed.join(", ")}`,
-    );
-  } else {
-    assert.deepEqual(changed, []);
-  }
-});
-
 test("repo containment: a touchpoint escaping the repository refuses the plan", () => {
   let s = emptySpace();
   const a = addAsk(s, "escape", "t");

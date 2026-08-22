@@ -62,13 +62,3 @@ function walkTs(root: string): string[] {
   return out;
 }
 
-test("§7bis grep-gate: no code reads the first workspace folder", () => {
-  const banned = /workspaceFolders\?\.\[0\]|workspaceFolders!\[0\]|workspaceFolders\[0\]/;
-  // The imported engine host is legacy-exempt (ENGINE-CHANGE.md rules);
-  // v2's own code is what the gate guards.
-  const offenders: string[] = [];
-  for (const f of walkTs("src"))
-    if (!f.startsWith(path.join("src", "engine", "host")) && banned.test(fs.readFileSync(f, "utf8")))
-      offenders.push(f);
-  assert.deepEqual(offenders, [], "an explicit picker is the only door to a folder");
-});

@@ -6,11 +6,9 @@ import * as path from "node:path";
 import {
   parseSuite,
   sourceOf,
-  suiteAcceptable,
   suiteFootprint,
   suiteOwner,
   suiteVerdictOf,
-  suiteWaitsForTree,
   withSuite,
 } from "./suite";
 import type { SuiteFailure } from "./suite";
@@ -97,36 +95,24 @@ function fakeOracle(results: VerifyResult, stateHash = "h1"): VerifyOracle {
   };
 }
 
-test("the oracle with the suite behind it: green checks run the suite once per state; a coder is green only when no red test is its own", async () => {
+test("the suite behind a slice INFORMS the coder and never judges the unit", async () => {
   const green: VerifyResult = { kind: "results", results: [{ ac: 1, pass: true, evidence: "" }] };
   let runs = 0;
-  let output = TAP;
   const oracle = withSuite(fakeOracle(green), {
-    run: async () => (runs++, suiteVerdictOf(1, output)),
+    run: async () => (runs++, suiteVerdictOf(1, TAP)),
     maintainHomes: () => [],
     pendingPlanned: () => [],
     footprint: () => ["src/surfaces/panel.ts"],
   });
   const r = await oracle.verify();
-  assert.equal(runs, 1, "the suite ran when the checks were green");
-  assert.ok(r.suite && !r.suite.verdict.green);
-  assert.match(r.suite!.stanza, /YOURS — your tree makes these standing checks fail/);
-  assert.match(r.suite!.stanza, /handleInbound/, "the red that names one of its own files is its own");
-  assert.match(r.suite!.stanza, /NOT YOURS — these name none of your files/, "and the one that names none of them is not");
+  assert.equal(runs, 1, "the suite ran once the slice's own checks were green");
+  assert.ok(r.suite && !r.suite.verdict.green, "and its reds are carried for the coder to read");
   const c = await oracle.confirmGreen();
-  assert.equal(runs, 1, "the same verified state does not run the suite twice");
-  assert.equal(c.green, false, "green checks and a red suite are not green");
-
-  // Only a maintainer's test home is red: green for the coder, the maintainer's to bring under.
-  const only = withSuite(fakeOracle(green, "h2"), {
-    run: async () => suiteVerdictOf(1, TAP.replace("out-test/engine/engineWiring.test.js", "out-test/gates/gates.test.js").split("# Subtest: knip")[0] + "# fail 1\n"),
-    maintainHomes: () => ["src/gates/gates.test.ts"],
-    pendingPlanned: () => [],
-  });
-  const c2 = await only.confirmGreen();
-  assert.equal(c2.green, true);
-  assert.ok(suiteAcceptable(c2.result.suite!));
-  assert.match(c2.result.suite!.stanza, /NOT YOURS/);
+  assert.equal(runs, 1, "the same verified state does not run it twice");
+  // The rule this replaces failed four units whose own checks were all
+  // green, for one standing red in files they were not cleared to touch.
+  // The gate judges the suite, once, where every file is reachable.
+  assert.equal(c.green, true, "a red the unit cannot reach never decides the unit");
 
   // Red checks: the suite is not run at all.
   const red: VerifyResult = { kind: "results", results: [{ ac: 1, pass: false, evidence: "boom" }] };
@@ -134,18 +120,7 @@ test("the oracle with the suite behind it: green checks run the suite once per s
   const notYet = withSuite(fakeOracle(red, "h3"), { run: async () => (ran++, suiteVerdictOf(0, "")), maintainHomes: () => [], pendingPlanned: () => [] });
   await notYet.verify();
   assert.equal(ran, 0, "the suite waits for the slice's own checks");
-
-  // The tree's failures alone: wait, do not rework.
-  const treeOnly = withSuite(fakeOracle(green, "h4"), {
-    run: async () => ({ green: false, summary: "", failures: [{ name: "x", detail: "Cannot find module 'src/surfaces/spaceTabs.ts'" }] }),
-    maintainHomes: () => [],
-    pendingPlanned: () => ["src/surfaces/spaceTabs.ts"],
-  });
-  const c4 = await treeOnly.confirmGreen();
-  assert.equal(c4.green, false);
-  assert.ok(suiteWaitsForTree(c4.result.suite!));
 });
-
 test("the finisher's footprint: the red tests' files, the production they are named after, and the files the runner names", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-suite-"));
   for (const f of ["src/surfaces/panel.test.ts", "src/surfaces/panel.ts", "src/extension.ts", "ENGINE-WIRING.md"]) {

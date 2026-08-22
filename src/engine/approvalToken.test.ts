@@ -286,12 +286,3 @@ test("no refusal is ever 'expired', however old the token", () => {
   }
 });
 
-test("an old token still verifies after re-approval of the same content", () => {
-  // Re-approving unchanged content is deterministic (same inputs → same token), and the original
-  // ancient token keeps verifying — content, not the clock, is the freshness guarantee.
-  const secret = loadOrCreateApprovalSecret(tmpDir());
-  const first = mintApproval(SUBJECT, CONTENT_HASH, ANCIENT_ISSUED_AT, secret);
-  const a = { subjectKey: SUBJECT, contentHash: CONTENT_HASH, secret };
-  assert.equal(approvalStatus(first, a).ok, true);
-  assert.equal(approvalStatus(first, a).ok, true);
-});

@@ -5,7 +5,7 @@
  * repaired and which failures are the environment's, not its own.
  */
 import { formatVerifyReply, VerifyOracle, VerifyResult } from "../engine/verifyOracle";
-import { suiteWaitsForTree, type VerifyWithSuite } from "./suite";
+import { type VerifyWithSuite } from "./suite";
 import { uninformative, type Diagnoser } from "./diagnose";
 import { failuresByOwner } from "./owner";
 
@@ -170,43 +170,17 @@ export async function confirmWaitingForTree(args: {
     const foreign =
       r.kind === "build-failed" ? r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/"))) : [];
     const onlyForeign = r.kind === "build-failed" && foreign.length > 0 && foreign.length === r.errorFiles.length;
-    const suite = (r as VerifyWithSuite).suite;
-    const suiteWaits = !!suite && suiteWaitsForTree(suite);
-    if (!planned.length && !onlyForeign && !suiteWaits) break;
+    if (!planned.length && !onlyForeign) break;
     if (!args.othersPending()) break;
     args.say(
       planned.length
         ? `a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`
-        : suiteWaits
-          ? "the repository's suite is red only where another unit's files are still to land — waiting for them"
-          : `the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
+        : `the build fails only in files you are not cleared for (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
     );
     await args.waitForCommit();
     confirm = await args.oracle.confirmGreen();
-  }
-  // The wait is over and the suite is still red — but the machine has
-  // already decided, red by red, that none of it is this unit's. Failing it
-  // now contradicts what the machine itself said one line earlier: four
-  // units with every one of their own checks green were reworked, closed
-  // and failed for one `knip` line the run had labelled "another unit will
-  // still create this file". A red nobody here can clear is carried to the
-  // closing gate, which sees the whole tree; it is never a unit's death.
-  const settled = suiteRedButNotThisUnit(confirm.result);
-  if (!confirm.green && settled) {
-    args.say(`the repository's suite is still red, and no red of it is this unit's — carried to the closing gate: ${settled}`);
-    return { ...confirm, green: true };
   }
   if (confirm.green || notReady(confirm.result).length) return confirm;
   return confirmWithRepair(args, confirm);
 }
 
-/** Every check of this unit passes, the suite does not, and no red of it is
- *  owned by this unit's code — named, for the record and the log. */
-function suiteRedButNotThisUnit(r: VerifyResult): string | undefined {
-  if (r.kind !== "results" || !r.results.every((x) => x.pass)) return undefined;
-  const suite = (r as VerifyWithSuite).suite;
-  if (!suite || suite.verdict.green || !suite.verdict.failures.length) return undefined;
-  const owners = [...suite.owners.values()];
-  if (owners.some((o) => o === "code")) return undefined;
-  return suite.verdict.failures.map((f) => `${f.name} [${suite.owners.get(f)}]`).join("; ").slice(0, 300);
-}
