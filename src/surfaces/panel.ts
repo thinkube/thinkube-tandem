@@ -8,18 +8,19 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { TandemSession } from "./session";
-import { phaseOf, refusedNow } from "./phase";
-import { spacePush } from "./panelPush";
+import { spacePush } from "./push";
+import { handleInbound } from "./inbound";
+import type { InboundAction } from "./inbound";
 
 export { spacePush };
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
+export function vs(): typeof vscodeTypes {
   return req("vscode") as typeof vscodeTypes;
 }
 
-interface PanelHostHooks {
+export interface PanelHostHooks {
   /** Host-side gesture: the QuickPick that rebinds the space to a repo. */
   onSwitchRepo?: () => Promise<void>;
 }
@@ -66,141 +67,6 @@ export function vscodePanelHost(extensionUri: vscodeTypes.Uri): PanelHost {
       );
     },
   };
-}
-
-interface InboundAction {
-  action: string;
-  text?: string;
-  kind?: string;
-  items?: string[];
-  unitId?: string;
-  questionId?: string;
-  pinKind?: string;
-  // answer-worker carries unitId + text; stop-run carries nothing.
-  changeIds?: string[];
-  deliveryId?: string;
-  proposalId?: string;
-  impactId?: string;
-  stepId?: string;
-  page?: number;
-  into?: string;
-}
-
-async function handleInbound(
-  session: TandemSession,
-  msg: InboundAction,
-  push: (message?: string) => void,
-  hooks?: PanelHostHooks,
-): Promise<void> {
-  // The host refuses what the phase does not allow — a press the surface
-  // let through by mistake never starts work it must not start.
-  const refusal = refusedNow(msg.action, phaseOf(session));
-  if (refusal) {
-    push(refusal);
-    return;
-  }
-  if (msg.action === "switch-repo") {
-    await hooks?.onSwitchRepo?.();
-    return;
-  }
-  let note: string | undefined;
-  if (msg.action === "save-draft") {
-    // Typing costs nothing and interrupts nothing: the words are kept and
-    // the surface is not told anything it does not already know.
-    session.saveDraft(msg.text ?? "");
-    return;
-  } else if (msg.action === "read-draft") {
-    push("Reading what you wrote…");
-    const r = await session.readDraft();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "keep-draft") {
-    const r = session.keepDraft();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "cancel-capture") {
-    session.cancelCapture();
-    note = "Cancelled.";
-  } else if (msg.action === "build") {
-    push("Building…");
-    const r = await session.build(msg.changeIds ?? []);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "think") {
-    const c = session.thinkingCost();
-    push(
-      c.subjects
-        ? `Thinking about ${c.subjects} object(s) — about ${c.rounds} rounds…`
-        : "Thinking…",
-    );
-    const r = await session.think();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "reframe" && msg.unitId && msg.text) {
-    push("Reading it again…");
-    const r = await session.reframe(msg.unitId, msg.text);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "amend" && msg.unitId && msg.text) {
-    push("Recording the amendment…");
-    const r = await session.amend(msg.unitId, msg.text);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "accept-delivery" && msg.deliveryId) {
-    const r = await session.acceptDelivery(msg.deliveryId);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "accept-question" && msg.questionId) {
-    push("Recording the decision…");
-    const r = await session.acceptQuestion(msg.questionId, msg.text);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
-    session.answerWorker(msg.unitId, msg.text);
-  } else if (msg.action === "dismiss-promise") {
-    const r = session.editModel({
-      kind: msg.action,
-      id: msg.unitId ?? "",
-      ...(msg.text ? { text: msg.text } : {}),
-    });
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "retry-model") {
-    push("Reading your list again…");
-    const r = await session.retryModel();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "read-log") {
-    session.readLog(msg.stepId ?? null);
-  } else if (msg.action === "stop-run") {
-    session.stopRun();
-  } else if (msg.action === "accept-impact" && msg.impactId) {
-    push("Re-deriving under the decision…");
-    const r = await session.decideImpact(msg.impactId, true);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "dismiss-impact" && msg.impactId) {
-    const r = await session.decideImpact(msg.impactId, false);
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "apply-all-impacts") {
-    const r = await session.applyAllImpacts();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "panic") {
-    const r = session.panic();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "open-cut-review") {
-    const doc = await vs().workspace.openTextDocument({
-      content: session.cutScreen(),
-      language: "markdown",
-    });
-    await vs().window.showTextDocument(doc, { preview: true });
-  } else if (msg.action === "propose-check") {
-    const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "accept-check") {
-    session.acceptCheck(
-      msg.changeIds?.[0] ?? "",
-      msg.text ?? "",
-      msg.kind === "assessment" ? "assessment" : "probe",
-    );
-  } else if (msg.action === "rerun") {
-    push("Starting the signed work again…");
-    const r = await session.rerun();
-    note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "reground") {
-    push("Re-grounding…");
-    await session.reground();
-  }
-  push(note);
 }
 
 export interface SpacePanelOptions extends PanelHostHooks {

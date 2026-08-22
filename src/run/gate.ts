@@ -29,7 +29,7 @@ import { porcelainPaths } from "./worker";
 import { criterionMapOf, rehomeAtGate, rehomeProbes } from "./rehome";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
-import { suiteVerdictOf } from "./suite";
+import { suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close } from "./closer";
 
@@ -183,7 +183,17 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         measure: async () => {
           const r = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
           const v = suiteVerdictOf(r.code, r.out, worktree);
-          return { green: v.green, score: v.failures.length, evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000) };
+          return {
+            green: v.green,
+            score: v.failures.length,
+            evidence: `${v.summary}\n${v.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n")}`.slice(0, 6000),
+            // The last actor's clearance grows with what fails it. At the
+            // gate this was computed once, at the start, so the closer was
+            // handed "full authority" and then had two of its edits
+            // restored by the guard because the files the failure named
+            // were not in a list made before the failure was read.
+            alsoOwn: suiteFootprint(v.failures, worktree),
+          };
         },
         exec,
         boundedExec: g.suiteExec,

@@ -5,7 +5,7 @@
  * repaired and which failures are the environment's, not its own.
  */
 import { formatVerifyReply, VerifyOracle, VerifyResult } from "../engine/verifyOracle";
-import { suiteWaitsForTree, type VerifyWithSuite } from "./suite";
+import { type VerifyWithSuite } from "./suite";
 import { uninformative, type Diagnoser } from "./diagnose";
 import { failuresByOwner } from "./owner";
 
@@ -170,16 +170,12 @@ export async function confirmWaitingForTree(args: {
     const foreign =
       r.kind === "build-failed" ? r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/"))) : [];
     const onlyForeign = r.kind === "build-failed" && foreign.length > 0 && foreign.length === r.errorFiles.length;
-    const suite = (r as VerifyWithSuite).suite;
-    const suiteWaits = !!suite && suiteWaitsForTree(suite);
-    if (!planned.length && !onlyForeign && !suiteWaits) break;
+    if (!planned.length && !onlyForeign) break;
     if (!args.othersPending()) break;
     args.say(
       planned.length
         ? `a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`
-        : suiteWaits
-          ? "the repository's suite is red only where another unit's files are still to land — waiting for them"
-          : `the build fails only outside this unit's footprint (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
+        : `the build fails only in files you are not cleared for (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
     );
     await args.waitForCommit();
     confirm = await args.oracle.confirmGreen();
@@ -187,3 +183,4 @@ export async function confirmWaitingForTree(args: {
   if (confirm.green || notReady(confirm.result).length) return confirm;
   return confirmWithRepair(args, confirm);
 }
+
