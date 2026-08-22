@@ -382,12 +382,13 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   // A check proves a promise once; it does not join the repository's suite
   // because it exists. Its source and its verdict are kept on the delivery
-  // record — where a person can read what was driven — and the file leaves
-  // the tree, so a delivery of N promises does not hand the repository N
-  // permanent tests to maintain forever.
+  // record — where a person can read what was driven — and when a delivery
+  // OPENS the file leaves the tree, so a delivery of N promises does not
+  // hand the repository N permanent tests to maintain forever. A WITHHELD
+  // run discards nothing: its checks are its evidence and the next run's
+  // material, and one withheld commit that deleted them cost the run after
+  // it fifty-three reds for files that no longer existed.
   const kept = await keptChecks([...g.sliceProbes.values()].flat(), worktree, criterionByProbe);
-  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
-  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
 
   const recordPath = deps.storeDir ? path.join(deps.storeDir, "deliveries", `${tep}.json`) : undefined;
   if (deps.storeDir)
@@ -428,6 +429,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     };
   }
 
+  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
+  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);
   await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
