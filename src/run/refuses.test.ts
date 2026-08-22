@@ -18,6 +18,7 @@ import { repairByAuthors } from "./authorRepair";
 import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { renderCutScreen } from "../gates/render";
+import { signCut, verifyCutSignature } from "../gates/sign";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
 
@@ -312,4 +313,72 @@ test("the cut review says where each promise lands and what cannot be proven", (
   assert.match(screen, /cannot prove these/);
   assert.match(screen, /looks right on a small screen/);
   assert.match(screen, /no one can drive a person's eyes/, "with the reason it cannot be driven");
+});
+
+test("recording where a proof lived does not invalidate the signature that authorised it", () => {
+  // The run writes a proof anchor onto each criterion when it delivers. If
+  // that counted as the promise changing, every second run of a cut would
+  // refuse itself — which is exactly what happened the first time the drift
+  // check was wired.
+  const base = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "greet the user",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "greet() returns hello" }],
+        grounding: { touchpoints: [{ path: "src/greet.ts", planned: true }], stamp: [] },
+      },
+    ],
+  };
+  const signed = signCut(base, { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  assert.ok(signed.ok, signed.ok ? "" : signed.reason);
+
+  const afterDelivery = {
+    ...base,
+    nodes: base.nodes.map((n) => ({
+      ...n,
+      acceptance: n.acceptance.map((a) => ({
+        ...a,
+        proof: { path: "deliveries/TEP-1.json", stamp: [{ root: "/repo", head: "abc", dirty: "" }] },
+      })),
+    })),
+  };
+  assert.deepEqual(verifyCutSignature(afterDelivery, signed.cut), { ok: true });
+
+  // But the promise's own words still cannot move under a signature.
+  const reworded = {
+    ...base,
+    nodes: base.nodes.map((n) => ({ ...n, acceptance: [{ id: "c1", text: "greet() returns anything" }] })),
+  };
+  assert.equal(verifyCutSignature(reworded, signed.cut).ok, false, "a criterion that was reworded is drift");
+});
+
+test("a signature survives the repository moving, but not the promise moving", () => {
+  const at = (path: string, stamp: string) => ({
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "greet the user",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "greet() returns hello" }],
+        grounding: {
+          touchpoints: [{ path, planned: true, evidence: `read at ${stamp}` }],
+          stamp: [{ root: "/repo", head: stamp, dirty: "" }],
+        },
+      },
+    ],
+  });
+  const signed = signCut(at("src/greet.ts", "aaa"), { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  assert.ok(signed.ok, signed.ok ? "" : signed.reason);
+
+  // The repository moved: a new head, a re-read evidence line. Same promise.
+  assert.deepEqual(verifyCutSignature(at("src/greet.ts", "bbb"), signed.cut), { ok: true });
+
+  // The promise now lands somewhere else. That is drift.
+  assert.equal(verifyCutSignature(at("src/other.ts", "aaa"), signed.cut).ok, false);
 });

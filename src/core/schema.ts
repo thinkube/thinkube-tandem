@@ -129,6 +129,13 @@ export interface Cut {
     at: string;
     renderHash: string;
     groundingHash: string;
+    /** Which rule computed those two hashes. When the machine changes what
+     *  it hashes — a new line on the cut review, a field no longer counted —
+     *  every older signature stops matching for a reason that has nothing to
+     *  do with the person or the promises. A signature from an older rule is
+     *  therefore not checked for drift, and says so, instead of refusing a
+     *  run for the machine's own change. */
+    rule?: number;
   };
 }
 

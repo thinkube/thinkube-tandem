@@ -23,8 +23,27 @@ function groundingHashOf(space: Space, cut: Cut): string {
       return JSON.stringify({
         id,
         sentence: n?.sentence,
-        grounding: n?.grounding,
-        acceptance: n?.acceptance,
+        // WHERE the promise lands, not when it was read there. A stamp
+        // records the tree's head at grounding time and an evidence line
+        // records what the grounder saw; both move whenever the repository
+        // moves, and neither is something a person signed. Hashing them made
+        // every commit invalidate every signature in the space.
+        grounding: (n?.grounding?.touchpoints ?? []).map((t) => ({
+          path: t.path,
+          symbol: t.symbol,
+          planned: t.planned,
+          scope: t.scope,
+        })),
+        // What a criterion SAYS is signed; where its proof later lived is
+        // evidence ABOUT it, written by the run after the fact. Hashing the
+        // proof made every delivery invalidate the signature that authorised
+        // it, so a second run of the same cut refused itself.
+        acceptance: (n?.acceptance ?? []).map((a) => ({
+          id: a.id,
+          text: a.text,
+          kind: a.kind,
+          probePath: a.probePath,
+        })),
         needs: n?.needs,
       });
     })
@@ -103,18 +122,28 @@ export function signCut(
         at,
         renderHash: sha(renderCutScreen(space, cut)),
         groundingHash: groundingHashOf(space, cut),
+        rule: SIGNATURE_RULE,
       },
     },
   };
 }
 
+/** The current hashing rule. Raised whenever what is hashed changes. */
+export const SIGNATURE_RULE = 2;
+
 export type SignatureVerdict =
-  | { ok: true }
+  | { ok: true; unchecked?: string }
   | { ok: false; drift: "render" | "grounding"; reason: string };
 
 /** Detects drift under a signature — which half moved, stated plainly. */
 export function verifyCutSignature(space: Space, cut: Cut): SignatureVerdict {
   if (!cut.signature) return { ok: false, drift: "render", reason: "the cut is not signed" };
+  if ((cut.signature.rule ?? 1) !== SIGNATURE_RULE)
+    return {
+      ok: true,
+      unchecked:
+        "this cut was signed before the machine changed what a signature covers, so drift cannot be told from that change — it is not checked",
+    };
   if (groundingHashOf(space, cut) !== cut.signature.groundingHash)
     return {
       ok: false,

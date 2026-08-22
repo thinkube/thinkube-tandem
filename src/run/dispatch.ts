@@ -153,6 +153,7 @@ export async function dispatchTep(
   // Only drift is judged here. Whether an unsigned cut may run at all is
   // the sign gate's question, asked before this one.
   const signed = cut.signature ? verifyCutSignature(space, cut) : { ok: true as const };
+  if (signed.ok && "unchecked" in signed && signed.unchecked) log(`${tep}: ${signed.unchecked}`);
   if (!signed.ok)
     return refuse(
       "signature-drift",
