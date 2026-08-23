@@ -81,11 +81,18 @@ same phase starts before it.
 | 6.4 | A stalled run says so and stops | done — watchdog and run log | done |
 | 6.5 | A unit is judged only by its own criteria | done | done |
 
+## Phase 8 — found by assessing the delivery against the intent
+
+| # | Work | Proof | State |
+|---|---|---|---|
+| 8.1 | The door proves the PACKAGING build, not only the test build: run 15's delivered branch fails `tsc -p ./` on an unused import, and no gate saw it — the proven `prepare` fact covers `tsconfig.test.json` alone | a branch that cannot package is red at the gate | todo |
+| 8.2 | The delivered branch's own fix for 8.1's instance: one unused import in src/run/dispatch.ts — the work side, on the branch awaiting accept, so it belongs to a run or the person, not to an out-of-band edit | the branch packages | todo |
+
 ## Phase 7 — the acceptance
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 7.1 | The machine delivers the four asks, headless, three times | **one delivery of three** (run 11: 78/78 green, zero machine-attention). Runs 12–14 each exposed and fixed a machine defect; run 14 reached the honest floor: one red, review-19, which demands an observation in the RUNNING editor. Run 11's reviewer judged the real-factory drive sufficient for it; run 14's did not — reviewer variance on the same tree, both verdicts in the ledger. Running again to fish for the lenient reviewer would be verdict-shopping, so the loop stops here. The way to zero is the person's: observe it in the editor, or re-ground review-19 as unverified (rule 3.5) and re-sign | doing |
+| 7.1 | The machine delivers the four asks, headless, three times | **done — runs 11, 15 and 16 delivered** (78, 77 and 77 proofs green; runs 15 and 16 at zero machine-attention, with the three running-product observations named on the delivery's face for the person). Honest bound on the claim: all three runs proved STANDING work at the gate — the fresh-worker path (testers authoring, coders building, the oracle grading) is unexercised under this machine, and a fresh cut is the next real test | done |
 | 7.2 | Attention events about the machine, counted per run | counted where the rows are written, said at the end of every run, and recorded on the delivery | done |
 | 7.3 | The stop rule, corrected and decided. As written it counted failures, not whether they were being fixed — and its fallback (v1's loop) no longer exists, so "stop" means a version rollback discarding this work. Runs 1 and 2 both failed for machine reasons; both produced a diagnosis, a fix and a drive within the hour, which is the loop working, not failing. Decision: continue, with a real trigger — stop if the SAME defect withholds a second run, or if a failure cannot be turned into a fix plus a drive within one iteration | the decision, recorded here | done |
 
