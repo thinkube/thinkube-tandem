@@ -33,11 +33,6 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
 }
 
 /** The stanza appended to a worker's brief when the oracle can answer. */
-/**
- * The brief names only the tools the worker really has. A tool promised
- * and not registered sends a careful worker looking for it and a careless
- * one inventing a call to it; either way the brief lied.
- */
 export function coderStanza(oracleAvailable: boolean, buildAvailable = false): string {
   if (!oracleAvailable) return "";
   return (
@@ -61,7 +56,7 @@ export function coderStanza(oracleAvailable: boolean, buildAvailable = false): s
       ? "\n\nA `build` tool is also available: the repository's own build over the current tree, " +
         "the compiler's words verbatim, in seconds — use it after edits, before `verify`. Lines in " +
         "files you are not cleared for are other units' in-flight work; ignore them."
-      : "\n\nThere is NO build tool: this repository has no build step, and `verify` is your whole feedback.") +
+      : "") +
     "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
     "or probe file, and never run a build, a test command or a package " +
     "manager — you have no shell. Work from the intent and the contract, and " +
