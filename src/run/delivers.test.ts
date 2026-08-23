@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { execFileSync } from "node:child_process";
 import { dispatchTep } from "./dispatch";
 import { RunState } from "./state";
@@ -150,6 +151,62 @@ test("a blinded coder is refused the checks, and a coder never writes one", () =
     refusedToolUse({ role: "test", blind: false }, "Write", "probes/x_AC-1.test.mjs"),
     undefined,
     "and the tester writes its own checks",
+  );
+});
+
+test("a delivered cut can be proven again — the record gives its checks back", async () => {
+  // A delivery consumes its checks. Run the same cut a second time — the
+  // person pressed run again, or the acceptance proves it three times —
+  // and the standing testers must not be asked for files a delivery
+  // deliberately removed. What the record kept comes back.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape);
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-store-"));
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-again" };
+  const once = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      state: new RunState(() => {}),
+      supervisorRound: async () => null,
+      spaceName: "delivers",
+      storeDir: store,
+      worker: scriptedWorker(shape, "honest").worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "delivers" }),
+  );
+  assert.ok(once.delivery && !once.delivery.withheld, "the first run delivered");
+
+  const again = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      state: new RunState(() => {}),
+      supervisorRound: async () => null,
+      spaceName: "delivers",
+      storeDir: store,
+      worker: scriptedWorker(shape, "honest").worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "delivers" }),
+  );
+  assert.ok(again.delivery, "the second run reached a delivery");
+  assert.equal(again.delivery?.withheld, undefined, `the second run was withheld: ${again.delivery?.withheld}`);
+  // The fixture has no remote, so the push proof is honestly red in both
+  // runs; the promises' own proofs are what the restore must keep green.
+  const still = again.delivery!.proofs.filter((p) => p.kind !== "ci" && p.verdict !== "green");
+  assert.deepEqual(
+    still.map((p) => `${p.label}: ${p.ref ?? ""}`),
+    [],
+    "every promise is proven again",
   );
 });
 
