@@ -65,22 +65,7 @@ export function extractDecisions(finalText: string): string[] {
     .filter((l) => /^DECISION:/i.test(l))
     .map((l) => l.replace(/^DECISION:\s*/i, "").trim())
     .filter(Boolean);
-  // A later decision about the same symbol replaces the earlier: a tester
-  // that changes its mind mid-round must not hand the coder both shapes.
-  const bySymbol = new Map<string, string>();
-  const out: string[] = [];
-  for (const d of all) {
-    const sym = /`([A-Za-z_$][\w$.]*)`/.exec(d)?.[1];
-    if (!sym) {
-      out.push(d);
-      continue;
-    }
-    const prior = bySymbol.get(sym);
-    if (prior !== undefined) out.splice(out.indexOf(prior), 1);
-    bySymbol.set(sym, d);
-    out.push(d);
-  }
-  return out;
+  return all;
 }
 
 /** What the tester decided, as the coder's contract. */

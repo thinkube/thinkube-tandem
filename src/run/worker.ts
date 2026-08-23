@@ -83,7 +83,7 @@ const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
  * Returns true when the unit changed something it was not cleared for,
  * which the caller turns into a halt.
  */
-export async function encloseWork(deps: {
+async function encloseWork(deps: {
   worktree: string;
   footprint: string[];
   alsoAllowed?: () => string[];

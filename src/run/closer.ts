@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
-import { runUnitWorker, porcelainPaths, encloseWork } from "./worker";
+import { runUnitWorker, porcelainPaths } from "./worker";
 import { formatBuild } from "./execs";
 import type { WorkerOutcome } from "./worker";
 
@@ -180,7 +180,6 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
   a.log(`🛟 ${a.subject}: every other actor is spent — the closer takes it, with full sight and authority`);
   const checkRoot = a.checks?.root;
   const checkPaths = a.checks?.paths ?? [];
-  const checkBaseline = checkRoot ? new Set(await porcelainPaths(checkRoot)) : new Set<string>();
   let best = before.score;
   let stale = 0;
   let round = 0;
@@ -227,9 +226,6 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
         ...(a.digest ? { digest: a.digest } : {}),
       }),
     );
-    // The checks live in their own tree, which no other fence watches: a
-    // production file written there is lost work, so it goes back at once.
-    if (checkRoot) await encloseWork({ worktree: checkRoot, footprint: [...checkPaths], baseline: checkBaseline, log: a.log });
     state = await a.measure();
     grant(state.alsoOwn);
     for (const r of rulingsIn(outcome.finalText)) {
