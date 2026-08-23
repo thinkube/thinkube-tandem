@@ -214,6 +214,20 @@ ready frontier.</p></td>
 its verdict is a delivery proof.</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>thinkubeTandem.prepareCommand</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>(machine-derived)</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The build step a
+single check needs before it can run (for example, compiling TypeScript
+test files). Normally you never set this: the machine reads it from the
+repository&#8217;s own manifests and caches it with the repository reading.
+Set it only to override what the machine derived. The machine also
+derives, and never asks you for, the provisioning step a fresh checkout
+needs (installing dependencies): each run provisions its worktree once,
+and every verify runner shares what that produced. A run whose build
+step fails on the untouched tree is refused before any worker starts,
+with the tool&#8217;s own output.</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>thinkubeTandem.docsGateMode</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>blocking</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Whether an unmet

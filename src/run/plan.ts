@@ -117,10 +117,35 @@ export async function claimRunLock(
  * This is a last resort, not a shape: the proved `runOne` always wins.
  */
 function defaultRunOne(probe: string): string {
-  const built = /\.tsx?$/.test(probe)
+  return `node --test ${builtTwin(probe)}`;
+}
+
+/**
+ * The path a check is actually loadable at: a TypeScript check names the
+ * compiled twin its build emits (`src/x_AC-1.test.ts` → `out-test/x_AC-1.test.js`),
+ * anything else stays where it sits.
+ */
+function builtTwin(probe: string): string {
+  return /\.tsx?$/.test(probe)
     ? probe.replace(/^src\//, "out-test/").replace(/\.tsx?$/, ".js")
     : probe;
-  return `node --test ${built}`;
+}
+
+/**
+ * A proved `runOne` wins on HOW a test is invoked, but never on whether the
+ * path it names can be loaded. A template that substitutes `<file>` without
+ * remapping TypeScript yields `node --test src/x_AC-1.test.ts`, which fails
+ * identically whatever the product does — reporting nothing about the
+ * criterion. When the template leaves a TypeScript path unmapped, the
+ * compiled twin is substituted instead.
+ */
+function runOneFor(runOne: string, probe: string): string {
+  if (!runOne) return defaultRunOne(probe);
+  const substituted = runOne.replace(/<file>/g, probe);
+  if (!/\.tsx?$/.test(probe)) return substituted;
+  // The template already remaps to built output: trust it as proved.
+  if (!/(^|[\s"'])[^\s"']*\.tsx?([\s"']|$)/.test(substituted)) return substituted;
+  return runOne.replace(/<file>/g, builtTwin(probe));
 }
 
 /**
@@ -165,7 +190,7 @@ export function sliceBookkeeping(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : defaultRunOne(p), env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOneFor(runOne, p), env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
