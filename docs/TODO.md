@@ -85,7 +85,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 7.1 | The machine delivers the four asks, headless, three times | the delivered change runs and does what was asked | todo |
+| 7.1 | The machine delivers the four asks, headless, three times | **one delivery of three** (run 11: 78/78 green, zero machine-attention). Runs 12–14 each exposed and fixed a machine defect; run 14 reached the honest floor: one red, review-19, which demands an observation in the RUNNING editor. Run 11's reviewer judged the real-factory drive sufficient for it; run 14's did not — reviewer variance on the same tree, both verdicts in the ledger. Running again to fish for the lenient reviewer would be verdict-shopping, so the loop stops here. The way to zero is the person's: observe it in the editor, or re-ground review-19 as unverified (rule 3.5) and re-sign | doing |
 | 7.2 | Attention events about the machine, counted per run | counted where the rows are written, said at the end of every run, and recorded on the delivery | done |
 | 7.3 | The stop rule, corrected and decided. As written it counted failures, not whether they were being fixed — and its fallback (v1's loop) no longer exists, so "stop" means a version rollback discarding this work. Runs 1 and 2 both failed for machine reasons; both produced a diagnosis, a fix and a drive within the hour, which is the loop working, not failing. Decision: continue, with a real trigger — stop if the SAME defect withholds a second run, or if a failure cannot be turned into a fix plus a drive within one iteration | the decision, recorded here | done |
 
