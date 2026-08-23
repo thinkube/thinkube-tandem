@@ -380,6 +380,72 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
     }
   }
+  // The ladder's last rung, for criteria as it already is for the suite:
+  // when the authors are spent — or, on a resumed run, were never there —
+  // the closer takes the unkept promises with the whole tree and full
+  // sight. Without it a resumed run fell straight from red to withheld
+  // with nobody left to try, which is a ladder with its last rung missing.
+  if (unkept.length && !g.state.halted) {
+    const rejudge = async (): Promise<Proof[]> => {
+      await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+      const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
+      for (const r of again) {
+        const probe = probeOfAc.get(r.ac);
+        const criterionId = probe ? criterionByProbe.get(probe) : undefined;
+        const proof = criterionId
+          ? proofs.find((p) => p.criterionId === criterionId)
+          : proofs.find((p) => p.label === ((probe && g.checkOf.get(probe)) || `check ${r.ac}`));
+        if (!proof) continue;
+        if (!r.pass) {
+          proof.verdict = "red";
+          proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
+          continue;
+        }
+        const wired = await provedByExecution({
+          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
+          subjects: subjectsOf(criterionId),
+          worktree,
+          exec: boundedExec,
+        });
+        proof.verdict = wired.executed === "no" ? "red" : "green";
+        proof.ref = (wired.executed !== "yes" ? wired.detail : r.evidence)?.slice(0, 300) ?? proof.ref;
+      }
+      return proofs.filter((p) => p.verdict !== "green");
+    };
+    const closed = await close({
+      subject: `${tep} (the unkept promises)`,
+      worktree,
+      footprint: slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)),
+      probeSources: [],
+      history: unkept.map((p) => `${p.label}: ${(p.ref ?? "").split("\n")[0]}`).slice(0, 20),
+      criteria: unkept.map((p, i) => ({ id: p.criterionId ?? `unkept-${i}`, text: p.label })),
+      ...(deps.digest ? { digest: deps.digest } : {}),
+      ...(deps.prepare ? { prepare: deps.prepare } : {}),
+      model: deps.model,
+      ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
+      measure: async () => {
+        const still = await rejudge();
+        return {
+          green: still.length === 0,
+          score: still.length,
+          evidence: still
+            .map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`)
+            .join("\n")
+            .slice(0, 8000),
+        };
+      },
+      exec,
+      boundedExec: g.suiteExec,
+      halted: () => g.state.halted,
+      log: (l) => log(l, "gate#closer"),
+      say: (t) => g.state.doing("gate#closer", t),
+      onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
+      defect: (e) => defect({ unit: "gate#closer", ...e }),
+      ...(deps.worker ? { worker: deps.worker } : {}),
+    });
+    unkept = proofs.filter((p) => p.verdict !== "green");
+    log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`);
+  }
   // A check proves a promise once; it does not join the repository's suite
   // because it exists. Its source and its verdict are kept on the delivery
   // record — where a person can read what was driven — and when a delivery
