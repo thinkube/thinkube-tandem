@@ -474,15 +474,24 @@ export async function dispatchTep(
       }
       // Everything cheaper is spent: the closer takes it, with full sight
       // and full authority (THE-LADDER §4). Only if IT cannot does the unit fail.
-      if (r.kind === "stalled" || r.kind === "exhausted" || attempt >= attempts) {
+      // A check that does not compile against the code, after the check
+      // repair has had its turn, is settled by the actor that can see both
+      // sides — never by a blind coder guessing at the check's shape.
+      const checkBroken = r.kind === "build-failed" && r.testFault;
+      if (r.kind === "stalled" || r.kind === "exhausted" || checkBroken || attempt >= attempts) {
         const closed = await closeUnit(next, oracle);
         if (closed) {
           ok = true;
           break;
         }
       }
-      if (r.kind === "stalled" || r.kind === "exhausted") {
-        failWith(next.id, `verify oracle ${r.kind} — the checks are not green, and the closer could not finish it`);
+      if (r.kind === "stalled" || r.kind === "exhausted" || checkBroken) {
+        failWith(
+          next.id,
+          checkBroken
+            ? `a check does not compile against the code, and neither the check repair nor the closer could settle it`
+            : `verify oracle ${r.kind} — the checks are not green, and the closer could not finish it`,
+        );
         break;
       }
       if (attempt < attempts) {
