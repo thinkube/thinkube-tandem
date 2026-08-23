@@ -46,6 +46,31 @@ export interface AcResult {
 export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([126, 127]);
 
 /**
+ * A red that says "the check was not there to run" is the gate's own
+ * failure, never a verdict on the code — but a missing CHECK exits with the
+ * runner's ordinary failure code, so the exit code alone cannot tell. One
+ * night, eight runs flooded the ledger with 460 "code" rows whose single
+ * cause was the machine judging a tree its checks were not in, and the
+ * attention counter — which watches the gate-infra class — saw none of it.
+ *
+ * The file the command runs is looked for in the output's own words. Only
+ * the CHECK file counts: an import the check cannot resolve stays a code
+ * red, because a module the coder never wrote fails exactly that way and
+ * that red is the honest verdict.
+ */
+export function checkItselfMissing(run: string, output: string): boolean {
+  const file = run
+    .split(/\s+/)
+    .filter((t) => t.includes("/") && !t.startsWith("-"))
+    .pop()
+    ?.replace(/^['"]|['"]$/g, "");
+  if (!file) return false;
+  const base = file.split("/").pop() ?? file;
+  if (!output.includes(base)) return false;
+  return /could not find|no such file|ENOENT|does not exist/i.test(output);
+}
+
+/**
  * Normalize the Spec frontmatter `ac_verifications` map (AC ordinal → { run, env }) into the
  * ordered `AcVerification[]` the runner executes. Tolerant: keys parse from string or number,
  * non-positive / non-integer ordinals and entries without a non-empty `run` are dropped; the
@@ -382,14 +407,15 @@ export async function runAcVerifications(
       });
     } else {
       const unrunnable =
-        cached.code !== null && PROBE_UNRUNNABLE_CODES.has(cached.code);
+        (cached.code !== null && PROBE_UNRUNNABLE_CODES.has(cached.code)) ||
+        (cached.code !== 0 && checkItselfMissing(v.run, cached.output));
       out.push({
         ac: v.ac,
         pass: cached.code === 0,
         evidence:
           acEvidence(v.run, cached.code, cached.output) +
           (unrunnable
-            ? "\n(probe unrunnable — command not found / not executable: a GATE defect, not a code failure)"
+            ? "\n(probe unrunnable — the runner or the check itself was not there: a GATE defect, not a code failure)"
             : ""),
         ...(unrunnable ? { unrunnable: true } : {}),
       });

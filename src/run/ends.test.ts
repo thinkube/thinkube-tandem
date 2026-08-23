@@ -15,6 +15,7 @@ import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
 import { filesNamedIn } from "./suite";
+import { runAcVerifications } from "../engine/core/closingGate";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -286,4 +287,38 @@ test("the closer is cleared for the files the compiler names", () => {
     "src/core/records.ts(96,10): error TS2305: Module has no exported member 'foldSpaces'.\n" +
     "src/gone/away.ts(1,1): error TS2307: file that does not exist here\n";
   assert.deepEqual(filesNamedIn(out, repo), ["src/core/records.ts"], "named, and only what really exists");
+});
+
+/**
+ * A red that says "the check was not there to run" is the gate's failure,
+ * never a code verdict. Eight runs once wrote 460 code rows whose single
+ * cause was the machine judging a tree its checks were not in — and the
+ * attention counter saw none of it, because a missing check exits like an
+ * ordinary failure.
+ */
+test("a check that was not there to run is the gate's red, not the code's", async () => {
+  const results = await runAcVerifications(
+    [
+      { ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" },
+      { ac: 2, run: "node --test probes/b_AC-2.test.mjs", env: "local" },
+    ],
+    "/nowhere",
+    async (run) =>
+      run.includes("a_AC-1")
+        ? { code: 1, output: "Could not find '/wt/probes/a_AC-1.test.mjs'" }
+        : { code: 1, output: "not ok 1 - greet returns hello\n  AssertionError: expected 'hello'" },
+  );
+  assert.equal(results[0].unrunnable, true, "a missing check is the gate's own failure");
+  assert.equal(results[1].unrunnable, undefined, "a check that ran and failed is the honest code red");
+});
+
+test("an import the check cannot resolve stays a code red", async () => {
+  // A module the coder never wrote fails exactly this way, and that red is
+  // the verdict the run exists to give.
+  const results = await runAcVerifications(
+    [{ ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" }],
+    "/nowhere",
+    async () => ({ code: 1, output: "Error: Cannot find module '../out/greet.js'\nimported from probes/a_AC-1.test.mjs" }),
+  );
+  assert.equal(results[0].unrunnable, undefined, JSON.stringify(results[0]));
 });
