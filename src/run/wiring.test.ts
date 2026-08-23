@@ -111,3 +111,17 @@ test("a subject is recognised wherever the build put it", () => {
   assert.equal(ranAmong("src/run/gate.ts", ["/tmp/wt/out-test/run/gate.js"]), true);
   assert.equal(ranAmong("src/run/gate.ts", ["/tmp/wt/out-test/run/other.js"]), false);
 });
+
+test("a promise landing in a document is not asked to execute", async () => {
+  // Two criteria about a markdown ledger were red forever: the trace
+  // demanded that ENGINE-WIRING.md execute, and a document cannot. Content
+  // is proven by the check's own assertions, not by a trace.
+  const verdict = await provedByExecution({
+    run: "true",
+    subjects: ["docs/ENGINE-WIRING.md", "data/table.json"],
+    worktree: "/nowhere",
+    exec: async () => ({ code: 0, output: "" }),
+  });
+  assert.equal(verdict.executed, "unknown");
+  assert.match(verdict.detail, /content, not code/);
+});

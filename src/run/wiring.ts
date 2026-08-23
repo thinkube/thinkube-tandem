@@ -29,10 +29,11 @@ export interface WiringVerdict {
   detail: string;
 }
 
-/** The extensions V8 can report execution for. A subject outside this set is
- *  data, not code: it is read by a drive, never executed, so coverage can
- *  never name it and its absence proves nothing about the drive's reach. */
-const EXECUTABLE_EXT_RE = /\.(m|c)?[jt]sx?$/;
+/** The extensions a runtime can execute a line of. A subject outside this
+ *  set is data, not code: it is read by a drive, never executed, so
+ *  coverage can never name it and its absence proves nothing about the
+ *  drive's reach. */
+const EXECUTABLE_EXT_RE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|sh|lua)$/i;
 
 /** Is this subject a file a runtime can execute a line of at all? */
 export function isExecutableSubject(subject: string): boolean {
