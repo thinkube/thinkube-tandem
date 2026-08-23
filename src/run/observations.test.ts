@@ -10,6 +10,7 @@ import { observationShaped } from "./observations";
 import { gradeAssessments } from "./assess";
 import { parseGroundedNodes } from "../derive/ground";
 import { emptySpace } from "../core/schema";
+import { rehouseChecks } from "./checkHomes";
 
 /**
  * An observation is not a check, at every layer it could enter as one:
@@ -85,4 +86,23 @@ test("grounding moves an observation-worded criterion to the unverified notes at
   );
   assert.equal(n!.unverified?.length, 1);
   assert.match(n!.unverified![0].text, /running extension/);
+});
+
+test("a check is born beside code, never beside a document", () => {
+  const slices = [
+    {
+      handle: "SL-5",
+      workUnits: [
+        { role: "code", footprint: ["ENGINE-WIRING.md", "src/gates/engineWiring.ts"] },
+        { role: "test", footprint: ["probes/x__SL-5_AC-1.test.mjs"] },
+      ],
+    },
+  ];
+  const moved = rehouseChecks(slices as never, ["src/a.ts", "src/a.test.ts"]);
+  assert.deepEqual(moved.map((m) => m.to), ["src/gates/engineWiring_AC-1.test.ts"]);
+});
+
+test("a slice that lands only in documents keeps its check where it was", () => {
+  const slices = [{ handle: "SL-9", workUnits: [{ role: "code", footprint: ["docs/x.md"] }, { role: "test", footprint: ["probes/x__SL-9_AC-1.test.mjs"] }] }];
+  assert.deepEqual(rehouseChecks(slices as never, ["src/a.ts", "src/a.test.ts"]), []);
 });

@@ -21,6 +21,9 @@
 import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
 
+/** Files a check can sit beside and import — source, in any language here. */
+const CODE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
+
 interface TestIdiom {
   /** The suffix this repository's tests wear: `.test.ts`, `_test.go`. */
   suffix: string;
@@ -107,10 +110,13 @@ export function rehouseChecks(
   const moved: { from: string; to: string }[] = [];
   for (const s of slices) {
     const units = s.workUnits ?? s.units ?? [];
+    // Beside CODE, never beside a document: a check minted next to a
+    // markdown file at the repository root was a home no test here has,
+    // and the tester that put it somewhere sensible was refused for it.
     const subject = units
       .filter((u) => (u.role ?? "code") === "code")
       .flatMap((u) => u.footprint)
-      .find((f) => !isTestPath(f));
+      .find((f) => !isTestPath(f) && CODE.test(f));
     if (!subject) continue;
     for (const u of units) {
       if ((u.role ?? "code") !== "test") continue;
