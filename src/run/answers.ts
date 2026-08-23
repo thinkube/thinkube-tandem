@@ -20,6 +20,30 @@ import { clearanceNote } from "./clearance";
  * among behaviors the asks do not decide — is ESCALATED to the human, in the
  * human's own words, never in the run's internals.
  */
+/** Repo-relative file paths an answer names, in the forms an answer writes
+ *  them: bare, backticked, or quoted. */
+function pathsNamed(text: string): string[] {
+  return [...new Set([...text.matchAll(/[\w./-]*[\w-]+\.(?:[cm]?[jt]sx?|py|rb|go|rs|json|md|adoc)\b/g)].map((m) => m[0]))];
+}
+
+/**
+ * An answer that sends a worker outside its own footprint.
+ *
+ * The guard restores anything a unit was not cleared for and fails the
+ * unit for it. So an answer naming files this unit may not write is not
+ * an answer — it is an instruction to be stopped, and the worker has no
+ * way to know that until the edit is reverted underneath it. Clearance
+ * has its own line (CLEAR), which actually opens the door; prose does not.
+ *
+ * Returns the paths the unit may not write, or nothing.
+ */
+export function outsideFootprint(text: string, footprint: readonly string[]): string[] {
+  if (!footprint.length) return [];
+  const mine = (p: string): boolean =>
+    footprint.some((f) => p === f || p.endsWith("/" + f) || f.endsWith("/" + p) || p.startsWith(f.replace(/\/$/, "") + "/"));
+  return pathsNamed(text).filter((p) => /\//.test(p) && !mine(p));
+}
+
 /** Text that shows the run's own machinery: a path, a tool, an error code,
  *  a probe. A person is asked about behavior, never about these. */
 function namesInternals(text: string): boolean {
@@ -103,6 +127,29 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
       }
       if (/^ANSWER:/i.test(first)) {
         const text = first.replace(/^ANSWER:\s*/i, "").trim();
+        // An answer that names files this unit may not write walks it into
+        // the guard: the edit is made, restored underneath it, and the unit
+        // fails for doing what it was told. The worker is told what it may
+        // write instead, which is the one fact it needs and cannot see.
+        const mine = a.footprintOf?.(slice) ?? [];
+        const stray = outsideFootprint(text, mine);
+        if (stray.length) {
+          a.log(`⛔ ${unit}: the answer named ${stray.join(", ")} — not this unit's to write; the worker is told what is`, unit);
+          a.defect({
+            slice,
+            unit,
+            activity: "worker question",
+            trigger: "supervisor",
+            type: "contract",
+            impact: "an answer would have sent the worker into the guard",
+            detail: `Q: ${question.slice(0, 300)}\nA named: ${stray.join(", ")}`,
+          });
+          answer(
+            `That answer named ${stray.join(", ")}, which this unit may not write — an edit there is restored and the unit fails for it. ` +
+              `What you may write is exactly: ${mine.join(", ")}. Keep your work inside that, and say UNDELIVERED with the reason if the promise cannot be kept from there.`,
+          );
+          return;
+        }
         a.log(`↩ ${unit}: the supervisor answered the worker's question`, unit);
         a.defect({
           slice,

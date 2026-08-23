@@ -65,6 +65,9 @@ export class RunState {
   parked = new Map<string, { question: string; answer: (a: string) => void }>();
   aborts = new Map<string, AbortController>();
   halted = false;
+  /** What the door judged: footprints and order, kept so the plan can be
+   *  re-judged against a changed door without running anything. */
+  plan?: { handle: string; criterionIds?: string[]; units: { role?: string; footprint: string[]; consumes?: string[] }[] }[];
 
   constructor(private onChange: () => void) {}
 

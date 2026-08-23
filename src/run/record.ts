@@ -18,14 +18,47 @@ import type { RunState, RunUnitView } from "./state";
 /** How much of each step's log survives the run that wrote it. */
 const KEPT_LINES = 400;
 
+/**
+ * The plan the door judged, in the only shape the door reads.
+ *
+ * A run's account said what the workers did and never what they were
+ * given, so a fault the door should have caught could only be found by
+ * running the whole thing again — an hour, to learn one fact. Kept here,
+ * every plan the machine has ever dispatched becomes a case the door can
+ * be re-judged against in milliseconds, and a rule that would have
+ * refused an old plan says so the moment it is written.
+ */
+export interface PlanRecord {
+  handle: string;
+  criterionIds?: string[];
+  units: { role?: string; footprint: string[]; consumes?: string[] }[];
+}
+
 export interface RunRecord {
   cutId: string;
   tepId?: string;
   /** When the run finished — the newest record is the one shown. */
   at: string;
   units: RunUnitView[];
+  /** What was dispatched, as the door saw it. */
+  plan?: PlanRecord[];
   logs: string[];
   stepLogs: Record<string, string[]>;
+}
+
+/** The plan as the record keeps it — footprints and order, nothing else. */
+export function planRecordOf(
+  slices: readonly { handle: string; criterionIds?: string[]; workUnits?: { role?: string; footprint: string[]; consumes?: string[] }[] }[],
+): PlanRecord[] {
+  return slices.map((s) => ({
+    handle: s.handle,
+    ...(s.criterionIds?.length ? { criterionIds: [...s.criterionIds] } : {}),
+    units: (s.workUnits ?? []).map((u) => ({
+      ...(u.role ? { role: u.role } : {}),
+      footprint: [...u.footprint],
+      ...(u.consumes?.length ? { consumes: [...u.consumes] } : {}),
+    })),
+  }));
 }
 
 const dirFor = (storeDir: string): string => path.join(storeDir, "runs");
@@ -53,6 +86,7 @@ export function saveRun(
     const full: RunRecord = {
       ...record,
       units: [...state.units.values()],
+      ...(state.plan?.length ? { plan: state.plan } : {}),
       logs: state.logs.slice(-KEPT_LINES),
       stepLogs: Object.fromEntries(
         [...state.stepLogs].map(([k, v]) => [k, v.slice(-KEPT_LINES)]),

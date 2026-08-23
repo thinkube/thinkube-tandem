@@ -75,6 +75,28 @@ function checkHomeIn(idiom: TestIdiom, subject: string, k: number): string {
   return `${rel}_AC-${k}${idiom.suffix}`;
 }
 
+/**
+ * The ordinals a check may take beside one module, once every plan already
+ * counted from one.
+ *
+ * A criterion's ordinal is its place within its own slice, and two slices
+ * that drive the same module both start at one. Beside the module they
+ * both drive, that is the same filename twice: the second tester finds the
+ * first one's checks at its own addresses, and whatever it does next is
+ * wrong — overwrite another unit's proof, or write outside the footprint
+ * its guard enforces and be stopped for it.
+ *
+ * So the ordinal is allocated across the whole plan, per module. The name
+ * still says only which criterion it proves; nothing of the run enters it.
+ */
+function nextFreeIn(taken: Set<string>, idiom: TestIdiom, subject: string, k: number): string {
+  let n = k;
+  let at = checkHomeIn(idiom, subject, n);
+  while (taken.has(at)) at = checkHomeIn(idiom, subject, ++n);
+  taken.add(at);
+  return at;
+}
+
 /** A unit of a plan, as far as this rehousing is concerned. */
 interface UnitLike {
   role?: string;
@@ -108,6 +130,11 @@ export function rehouseChecks(
   const idiom = inferTestIdiom(repoFiles);
   if (!idiom) return [];
   const moved: { from: string; to: string }[] = [];
+  // Every address already spoken for: what the repository holds, and what
+  // the slices before this one have just been given. A check this cut
+  // ALREADY WROTE is not among them — that address is its own, and minting
+  // onto it is the same check coming back rather than a collision.
+  const taken = new Set<string>(repoFiles.filter((f) => f && !alreadyWritten.has(f)));
   for (const s of slices) {
     const units = s.workUnits ?? s.units ?? [];
     // Beside CODE, never beside a document: a check minted next to a
@@ -123,7 +150,7 @@ export function rehouseChecks(
       u.footprint = u.footprint.map((f) => {
         const k = /_AC-(\d+)/.exec(f)?.[1];
         if (!isProbePath(f) || !k || alreadyWritten.has(f)) return f;
-        const to = checkHomeIn(idiom, subject, Number(k));
+        const to = nextFreeIn(taken, idiom, subject, Number(k));
         moved.push({ from: f, to });
         return to;
       });

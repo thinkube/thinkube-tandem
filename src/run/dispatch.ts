@@ -32,6 +32,7 @@ import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
+import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
@@ -161,6 +162,7 @@ export async function dispatchTep(
     log: (l) => log(`${tep}: ${l}`),
   });
   const dag = before.dag;
+  st.plan = planRecordOf(slices); // kept even when refused — that is the case a later rule must keep refusing
   if (before.refusal) return refuse(before.refusal.trigger, before.refusal.refusal, "gate");
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
