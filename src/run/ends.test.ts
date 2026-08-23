@@ -15,6 +15,7 @@ import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
 import { filesNamedIn } from "./suite";
+import { confirmWaitingForTree } from "./repair";
 import { runAcVerifications } from "../engine/core/closingGate";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -321,4 +322,32 @@ test("an import the check cannot resolve stays a code red", async () => {
     async () => ({ code: 1, output: "Error: Cannot find module '../out/greet.js'\nimported from probes/a_AC-1.test.mjs" }),
   );
   assert.equal(results[0].unrunnable, undefined, JSON.stringify(results[0]));
+});
+
+test("a unit never waits on another slice for a build its own change broke", async () => {
+  // The runner holds the base, which builds, plus this unit's files: a
+  // build error outside its clearance is its own doing, and waiting for
+  // another slice to mend it is waiting for nobody.
+  let waited = 0;
+  const result = {
+    kind: "build-failed" as const,
+    testFault: false,
+    errorFiles: ["src/extension.ts"],
+    output: "src/extension.ts(10,3): error TS2554: Expected 2 arguments, but got 1.",
+  };
+  const r = await confirmWaitingForTree({
+    oracle: { confirmGreen: async () => ({ green: false, result }) } as never,
+    slice: "SL-6",
+    repair: (async () => []) as never,
+    halted: () => false,
+    footprint: ["src/surfaces/spaceTabs.ts"],
+    pendingPlanned: () => [],
+    othersPending: () => true,
+    waitForCommit: async () => {
+      waited++;
+    },
+    say: () => {},
+  });
+  assert.equal(waited, 0, "no wait was taken");
+  assert.equal(r.green, false, "and the verdict is the unit's to act on");
 });

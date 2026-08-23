@@ -81,8 +81,11 @@ export async function verifyWithRepair(args: {
     const outside = r.errorFiles.filter((f) => !mine.some((m) => f === m || f.startsWith(m + "/")));
     if (outside.length && outside.length === r.errorFiles.length)
       notes.push(
-        "──── ENVIRONMENT (not your code) ────",
-        `The build fails only in files you are not cleared for: ${outside.join(", ")}. Another unit's work, or the committed base, does not compile right now. Do not change your files for this; verify again in a moment.`,
+        "──── YOUR CHANGE BROKE A FILE YOU ARE NOT CLEARED FOR ────",
+        `This runner holds the committed base — which builds — plus your files only. The build now fails in ${outside.join(", ")}, ` +
+          "so your change is what broke it: a signature those files call, an export they import. Keep those callers " +
+          "compiling from your side (an overload, an optional parameter, a default), or — if the promise truly requires " +
+          "changing them — say so and the supervisor can clear the path for you. Nobody else is going to fix it.",
       );
   }
   const repaired = await repairChecks(args, r);
@@ -164,19 +167,16 @@ export async function confirmWaitingForTree(args: {
   const notReady = (r: VerifyResult): string[] =>
     treeNotReady(r, args.pendingPlanned?.() ?? [], r.kind === "build-failed" ? r.errorFiles : []);
   let confirm = await args.oracle.confirmGreen();
+  // The one wait that remains: a module another unit will still CREATE. A
+  // build broken in a file this unit is not cleared for is this unit's
+  // own doing — the runner holds the base, which builds, plus its files —
+  // and waiting for another slice to mend it is waiting for nobody.
   for (let waits = 0; waits < 6 && !args.halted() && !confirm.green; waits++) {
     const r = confirm.result;
     const planned = notReady(r);
-    const foreign =
-      r.kind === "build-failed" ? r.errorFiles.filter((f) => !args.footprint.some((m) => f === m || f.startsWith(m + "/"))) : [];
-    const onlyForeign = r.kind === "build-failed" && foreign.length > 0 && foreign.length === r.errorFiles.length;
-    if (!planned.length && !onlyForeign) break;
+    if (!planned.length) break;
     if (!args.othersPending()) break;
-    args.say(
-      planned.length
-        ? `a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`
-        : `the build fails only in files you are not cleared for (${foreign.slice(0, 3).join(", ")}) — waiting for another slice to land`,
-    );
+    args.say(`a module the build needs is still being created by another unit (${planned.slice(0, 3).join(", ")}) — waiting for it to land`);
     await args.waitForCommit();
     confirm = await args.oracle.confirmGreen();
   }
