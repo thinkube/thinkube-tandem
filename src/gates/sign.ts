@@ -56,7 +56,7 @@ export type SignResult =
   | { ok: false; reason: string };
 
 /** The human's first gate. Binds render + grounding at the moment of the click. */
-import { danglingNeeds } from "../core/cutClosure";
+import { danglingNeeds, signedIds } from "../core/cutClosure";
 
 export function signCut(
   space: Space,
@@ -91,9 +91,9 @@ export function signCut(
       ok: false,
       reason: `the machine has not placed these promises in the code yet: ${ungrounded.map((n) => n!.sentence).join("; ")} — press the out-of-date badge to re-read the code`,
     };
-  const alreadySigned = new Set(
-    space.cuts.filter((c) => c.signature).flatMap((c) => c.changeIds),
-  );
+  // A withdrawn cut freezes nothing: its promises were released to be
+  // thought through again, and the same set must be signable as new work.
+  const alreadySigned = signedIds(space.cuts);
   const resigned = members.filter((n) => alreadySigned.has(n!.id));
   if (resigned.length)
     return {

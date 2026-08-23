@@ -218,3 +218,32 @@ test("withdrawing a cut clears the run it leaves behind", async () => {
   assert.ok(!g(repo, "branch", "--list").includes("TEP-9"), "and the branch");
   assert.ok(swept.removed.length >= 3, JSON.stringify(swept));
 });
+
+test("the promises of a withdrawn cut can be signed again as new work", () => {
+  // Withdrawing released them to be thought through again; a gate that
+  // still counts them as frozen refuses every signature that follows, and
+  // the person is left with a button that does nothing.
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a thing",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "it works" }],
+        grounding: { touchpoints: [{ path: "docs/x.md", planned: true }], stamp: [] },
+      },
+    ],
+    cuts: [
+      {
+        id: "cut-1",
+        changeIds: ["n1"],
+        signature: { at: "", renderHash: "", groundingHash: "" },
+        withdrawnAt: "2026-08-23T18:00:00Z",
+      },
+    ],
+  };
+  const r = signCut(space, { id: "cut-2", changeIds: ["n1"] }, "2026-08-23T18:01:00Z", "t");
+  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+});
