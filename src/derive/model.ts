@@ -98,6 +98,11 @@ function buildModelPrompt(sentences: string[], map = ""): string {
     `same thing said two ways — keep ONLY the later, and name the one it ` +
     `displaces in "replaces". Different attributes of one thing (bold AND ` +
     `bracketed) do not conflict; only mutually exclusive ones do.\n\n` +
+    `A subject's "name" is the words a sentence itself uses for it, copied ` +
+    `EXACTLY when a sentence names it — "The brief a worker receives" is ` +
+    `named "the brief a worker receives", never "the worker brief" — so the ` +
+    `name can be pointed at in the sentence. Only a subject no sentence ` +
+    `names gets a short name of your own.\n\n` +
     `For every claim also give:\n` +
     `- "quote": the words of the sentence it was read from, copied EXACTLY ` +
     `— character for character, no paraphrase. Omit it if you cannot copy ` +

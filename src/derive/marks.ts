@@ -51,13 +51,46 @@ export interface MarkedSentence {
 
 const escape = (n: string): string => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Every place this sentence names this subject. */
+/** Words that carry a name; articles and the like do not. */
+const STOP = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "its", "this", "that", "every"]);
+const contentWords = (name: string): string[] =>
+  name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w));
+
+/**
+ * Every place this sentence names this subject — by the name itself, or,
+ * when the sentence phrases it differently, by the shortest stretch of
+ * words that holds every word of the name. "the worker brief" is found at
+ * "brief a worker" in "The brief a worker receives…": a reader that saw
+ * the subject and a page that cannot point at it is a page saying no
+ * subject was found, which is false.
+ */
 function mentions(text: string, name: string): { at: number; to: number }[] {
   if (!name.trim()) return [];
   const out: { at: number; to: number }[] = [];
   const re = new RegExp(escape(name), "gi");
   for (const m of text.matchAll(re)) out.push({ at: m.index ?? 0, to: (m.index ?? 0) + m[0].length });
-  return out;
+  if (out.length) return out;
+  const words = contentWords(name);
+  if (!words.length) return out;
+  const tokens = [...text.matchAll(/[A-Za-z0-9][A-Za-z0-9'-]*/g)].map((m) => ({
+    word: m[0].toLowerCase().replace(/s$/, ""),
+    at: m.index ?? 0,
+    to: (m.index ?? 0) + m[0].length,
+  }));
+  const want = new Set(words.map((w) => w.replace(/s$/, "")));
+  let best: { at: number; to: number } | undefined;
+  for (let i = 0; i < tokens.length; i++) {
+    const seen = new Set<string>();
+    for (let j = i; j < tokens.length && j < i + words.length + 4; j++) {
+      if (want.has(tokens[j].word)) seen.add(tokens[j].word);
+      if (seen.size === want.size) {
+        const span = { at: tokens[i].at, to: tokens[j].to };
+        if (!best || span.to - span.at < best.to - best.at) best = span;
+        break;
+      }
+    }
+  }
+  return best ? [best] : out;
 }
 
 /** Split a stretch of text by the subject names inside it. */
