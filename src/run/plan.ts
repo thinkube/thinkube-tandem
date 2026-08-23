@@ -280,6 +280,8 @@ export async function writeDeliveryRecord(
     checks?: KeptCheck[];
     /** Attention events about the machine in this run. Target: zero. */
     machineAttention?: number;
+    /** What only the person can certify, on the delivery's face. */
+    observations?: string[];
   },
 ): Promise<void> {
   try {
@@ -314,6 +316,7 @@ export async function writeDeliveryRecord(
           trace,
           ...(checks.length ? { checks } : {}),
           machineAttention: record.machineAttention ?? 0,
+          ...(record.observations?.length ? { observations: record.observations } : {}),
         },
         null,
         2,

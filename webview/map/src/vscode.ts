@@ -65,6 +65,8 @@ interface DeliveryVM {
   blocked?: string;
   url?: string;
   undelivered?: string[];
+  /** What only the person can certify, by using the delivered thing. */
+  observations?: string[];
   /** Why the delivery was withheld, and the signed work to run again. */
   withheld?: string;
   rerun?: { id: string; tepId?: string };

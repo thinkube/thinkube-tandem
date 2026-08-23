@@ -294,6 +294,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         return r.ok ? {} : { blocked: r.reason };
       })(),
       ...(d.url ? { url: d.url } : {}),
+      ...(d.observations?.length ? { observations: d.observations } : {}),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
       ...(d.withheld ? { withheld: d.withheld } : {}),
       // The way back in, on every delivery that is not accepted: withheld,

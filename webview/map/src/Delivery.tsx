@@ -107,6 +107,16 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 <span style={{ fontSize: FS.caption, color: C.quiet }}>
                   Try it first — every “see it” line above is a way in.
                 </span>
+                {d.observations?.length ? (
+                  <div data-observations={d.id} style={{ fontSize: FS.body, marginTop: SP.sm }}>
+                    <strong>For you to certify — the machine cannot watch the running product:</strong>
+                    <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: 18 }}>
+                      {d.observations.map((o, i) => (
+                        <li key={i}>{o}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </>
             )}
           </div>

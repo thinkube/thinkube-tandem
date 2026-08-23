@@ -174,6 +174,11 @@ export interface Delivery {
   url?: string;
   /** Declared gaps from the run's workers — honest, never hidden. */
   undelivered?: string[];
+  /** What only the person can certify, by using the delivered thing: the
+   *  promises' unverified effects and every observation-shaped criterion,
+   *  each with its reason. On the delivery's face — never a check, never a
+   *  reason to withhold: the observation needs the delivery to exist. */
+  observations?: string[];
   /** Challenges ruled on during the run — every one, granted or not. */
   rulings?: Ruling[];
   /** Contract-completing choices the tester made where the contract was
