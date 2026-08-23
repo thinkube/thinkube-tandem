@@ -60,24 +60,87 @@ export function usesByFile(graphPath: string): Map<string, Set<string>> {
 }
 
 /**
- * Whether two sets of files are joined by use, in either direction — the
- * question is symmetric, because it does not matter which of the two
- * cannot see the other.
+ * Whether one set of files uses another — asymmetric, because which side
+ * uses which is exactly what says who has to go first.
  *
- * Returns the pair that joins them, for the sentence a person reads.
+ * Returns the pair, for the edge and for the sentence a person reads.
  */
-export function joinedByUse(
-  a: readonly string[],
-  b: readonly string[],
+function usesAcross(
+  user: readonly string[],
+  used: readonly string[],
   uses: Map<string, Set<string>>,
 ): { user: string; used: string } | undefined {
-  const inB = new Set(b);
-  for (const f of a) {
-    for (const used of uses.get(f) ?? []) if (inB.has(used)) return { user: f, used };
-  }
-  const inA = new Set(a);
-  for (const f of b) {
-    for (const used of uses.get(f) ?? []) if (inA.has(used)) return { user: f, used };
-  }
+  const theirs = new Set(used);
+  for (const f of user) for (const u of uses.get(f) ?? []) if (theirs.has(u)) return { user: f, used: u };
   return undefined;
+}
+
+/** A slice, as far as ordering is concerned. */
+interface Orderable {
+  handle: string;
+  workUnits?: { role?: string; footprint: string[]; consumes?: string[] }[];
+}
+
+/** What a slice's code units may write — production only, since a test
+ *  home is the tester's and is never what another slice calls. */
+function productionOf(s: Orderable): string[] {
+  return (s.workUnits ?? []).filter((u) => (u.role ?? "code") !== "test").flatMap((u) => u.footprint);
+}
+
+/**
+ * Put the coupled slices of a plan in order, from what the code map says
+ * rather than from what the reading happened to mention.
+ *
+ * Cross-slice order is derived today from `needs` — the model's own
+ * sentence that one promise needs another. When the model says it, the
+ * plan is ordered and everything works. When it does not, two slices that
+ * change what the other calls run side by side, and neither can ever be
+ * proven: each is graded on what is committed plus its own files, so one
+ * runner holds the new shape with the old caller and the other the old
+ * caller with the new shape.
+ *
+ * The map knows who uses whom, and that fact settles the order without
+ * asking anybody: the slice that OWNS the used file goes first, and its
+ * caller follows. The edge is written in the language the engine already
+ * reads — the caller consumes the file it calls — so nothing downstream
+ * learns a new word.
+ *
+ * Returns the edges it added, for the log, and the pairs that cannot be
+ * ordered at all: each using the other is a genuine knot, and no order
+ * exists to be found.
+ */
+export function orderCoupledSlices(
+  slices: readonly Orderable[],
+  uses: Map<string, Set<string>>,
+): { added: { after: string; before: string; user: string; used: string }[]; knots: { a: string; b: string; one: string; other: string }[] } {
+  const added: { after: string; before: string; user: string; used: string }[] = [];
+  const knots: { a: string; b: string; one: string; other: string }[] = [];
+  if (!uses.size) return { added, knots };
+  const production = new Map(slices.map((s) => [s.handle, productionOf(s)]));
+  for (let i = 0; i < slices.length; i++)
+    for (let j = i + 1; j < slices.length; j++) {
+      const a = slices[i];
+      const b = slices[j];
+      const mine = production.get(a.handle) ?? [];
+      const theirs = production.get(b.handle) ?? [];
+      const bUsesA = usesAcross(theirs, mine, uses);
+      const aUsesB = usesAcross(mine, theirs, uses);
+      // Each calling into the other cannot be ordered: whichever goes
+      // first is proven against the other's old shape.
+      if (bUsesA && aUsesB) {
+        knots.push({ a: a.handle, b: b.handle, one: bUsesA.user, other: aUsesB.user });
+        continue;
+      }
+      const join = bUsesA ?? aUsesB;
+      if (!join) continue;
+      const later = bUsesA ? b : a;
+      const earlier = bUsesA ? a : b;
+      const unit = (later.workUnits ?? []).find((u) => (u.role ?? "code") !== "test");
+      if (!unit) continue;
+      // Already ordered by the reading's own `needs` — nothing to add.
+      if ((unit.consumes ?? []).includes(join.used)) continue;
+      unit.consumes = [...new Set([...(unit.consumes ?? []), join.used])];
+      added.push({ after: later.handle, before: earlier.handle, user: join.user, used: join.used });
+    }
+  return { added, knots };
 }

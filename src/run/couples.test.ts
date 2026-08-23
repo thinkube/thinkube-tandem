@@ -22,6 +22,66 @@ import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
 
+/** A map file the door can read: file → the files it uses. */
+function mapWith(uses: Record<string, string[]>): string {
+  const at = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-map-")), "graph.json");
+  const files = [...new Set([...Object.keys(uses), ...Object.values(uses).flat()])];
+  const id = (f: string): string => f.replace(/[^\w]/g, "_");
+  fs.writeFileSync(
+    at,
+    JSON.stringify({
+      nodes: files.map((f) => ({ id: id(f), source_file: f })),
+      links: Object.entries(uses).flatMap(([from, tos]) =>
+        tos.map((to) => ({ relation: "imports", source: id(from), target: id(to), source_file: from })),
+      ),
+    }),
+  );
+  return at;
+}
+
+/** One slice owning one production file, responsible for one criterion. */
+function slice(handle: string, file: string, criterion: string) {
+  return {
+    handle,
+    status: "ready",
+    files: [file],
+    workUnits: [
+      { footprint: [file], execution: "serial", role: "code" } as {
+        footprint: string[];
+        execution: string;
+        role: string;
+        consumes?: string[];
+      },
+    ],
+    criterionIds: [criterion],
+  };
+}
+
+/** Two promises, one landing in each slice's own file. */
+function twoPromises() {
+  return {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a space's tab carries its own name",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "the tab shows the space's name" }],
+        grounding: { touchpoints: [{ path: "src/surfaces/panel.ts", planned: true }], stamp: [] },
+      },
+      {
+        id: "n2",
+        sentence: "opening a space twice reveals the same tab",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c2", text: "opening twice reveals one tab" }],
+        grounding: { touchpoints: [{ path: "src/extension.ts", planned: true }], stamp: [] },
+      },
+    ],
+  };
+}
+
 test("two slices driving one module never mint the same check", () => {
   // A tester found another unit's finished checks at its own addresses,
   // asked what to do, was told in prose to use later numbers, and the
@@ -63,65 +123,66 @@ test("a check is never minted onto a file the repository already has", () => {
   );
 });
 
-test("two slices that change what the other calls are refused before any worker", async () => {
+test("two slices that change what the other calls are put in order, not refused", async () => {
   // SL-5 changed a constructor it owned; its only call site was in another
   // unit's hands. Each is proven against what is committed plus its own
   // files, so SL-5's runner held the new constructor and the old call and
   // could not compile. It ground twenty rounds against a state no edit
   // inside its clearance could reach, and reported a broken verifier.
-  const graph = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-map-")), "graph.json");
-  fs.writeFileSync(
-    graph,
-    JSON.stringify({
-      nodes: [
-        { id: "ext", source_file: "src/extension.ts" },
-        { id: "panel", source_file: "src/surfaces/panel.ts" },
-      ],
-      links: [{ relation: "imports", source: "ext", target: "panel", source_file: "src/extension.ts" }],
-    }),
-  );
-  const slice = (handle: string, file: string, criterion: string) => ({
-    handle,
-    status: "ready",
-    files: [file],
-    workUnits: [{ footprint: [file], execution: "serial", role: "code" }],
-    criterionIds: [criterion],
-  });
+  //
+  // Refusing that plan only made the dead end arrive sooner: the person
+  // does not write the plan and has no control that splits or orders it.
+  // The map says which file calls which, and that settles the order.
+  const graph = mapWith({ "src/extension.ts": ["src/surfaces/panel.ts"] });
+  const slices = [
+    slice("SL-5", "src/surfaces/panel.ts", "c1"),
+    slice("SL-7", "src/extension.ts", "c2"),
+  ];
   const r = await refusedBeforeDispatch({
-    slices: [slice("SL-5", "src/surfaces/panel.ts", "c1"), slice("SL-7", "src/extension.ts", "c2")] as never,
-    space: {
-      ...emptySpace(),
-      nodes: [
-        {
-          id: "n1",
-          sentence: "a space's tab carries its own name",
-          serves: [],
-          needs: [],
-          acceptance: [{ id: "c1", text: "the tab shows the space's name" }],
-          grounding: { touchpoints: [{ path: "src/surfaces/panel.ts", planned: true }], stamp: [] },
-        },
-        {
-          id: "n2",
-          sentence: "opening a space twice reveals the same tab",
-          serves: [],
-          needs: [],
-          acceptance: [{ id: "c2", text: "opening twice reveals one tab" }],
-          grounding: { touchpoints: [{ path: "src/extension.ts", planned: true }], stamp: [] },
-        },
-      ],
-    } as never,
+    slices: slices as never,
+    space: twoPromises() as never,
     cut: { id: "cut-1", changeIds: ["n1", "n2"] } as never,
     repoRoot: "/nowhere",
     graphPath: graph,
     exec: async () => ({ code: 0, out: "" }),
     log: () => {},
   });
-  assert.ok(r.refusal, "the pair is refused");
-  assert.match(r.refusal!.refusal, /SL-5 and SL-7/);
-  assert.match(r.refusal!.refusal, /src\/extension\.ts uses src\/surfaces\/panel\.ts/);
-  assert.match(r.refusal!.refusal, /one piece of work, or one after the other/);
+  assert.equal(r.refusal, undefined, `the plan was refused instead of ordered: ${r.refusal?.refusal}`);
+  const caller = slices.find((s) => s.handle === "SL-7")!;
+  assert.deepEqual(
+    caller.workUnits[0].consumes,
+    ["src/surfaces/panel.ts"],
+    "the caller now waits for the file it calls",
+  );
+  const later = r.dag.find((u) => u.slice === "SL-7" && u.role !== "test")!;
+  assert.ok(
+    later.requires.some((x) => x.startsWith("SL-5")),
+    `the graph did not carry the edge: ${JSON.stringify(later.requires)}`,
+  );
 });
 
+test("two slices that each call into the other are refused — no order exists", async () => {
+  const graph = mapWith({
+    "src/extension.ts": ["src/surfaces/panel.ts"],
+    "src/surfaces/panel.ts": ["src/extension.ts"],
+  });
+  const r = await refusedBeforeDispatch({
+    slices: [
+      slice("SL-5", "src/surfaces/panel.ts", "c1"),
+      slice("SL-7", "src/extension.ts", "c2"),
+    ] as never,
+    space: twoPromises() as never,
+    cut: { id: "cut-1", changeIds: ["n1", "n2"] } as never,
+    repoRoot: "/nowhere",
+    graphPath: graph,
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  assert.ok(r.refusal, "a knot must be refused — no order undoes it");
+  assert.match(r.refusal!.refusal, /each change what the other calls/);
+  assert.match(r.refusal!.refusal, /one piece of work rather than two/);
+  assert.match(r.refusal!.refusal, /Say it as a single ask/);
+});
 test("two slices joined by use are allowed when one waits for the other", async () => {
   const graph = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-map-")), "graph.json");
   fs.writeFileSync(

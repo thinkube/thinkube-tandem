@@ -33,6 +33,16 @@ export interface RunWorkerDeps {
   alsoAllowed?: () => string[];
   /** Paths already dirty at unit start — exempt from containment. */
   baseline: Set<string>;
+  /**
+   * Ask the run's door for a path this unit is not cleared for.
+   *
+   * Most of what a worker reaches for outside its footprint is a file no
+   * other unit owns and nobody is touching — a table its own criterion
+   * cannot work without. Reverting that and explaining the protocol costs
+   * a round to reach the answer the door would have given at once. When
+   * the door is absent, every uncleared write is simply restored.
+   */
+  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
   abort: AbortController;
   onPark: (question: string, answer: (a: string) => void) => void;
   log: (line: string) => void;
@@ -98,6 +108,20 @@ async function encloseWork(deps: {
   if (!bad.length) return [];
   await revertPaths(deps.worktree, bad);
   return bad;
+}
+
+/** What this unit has changed that it is not cleared for — read, not restored. */
+async function outsideClearance(deps: {
+  worktree: string;
+  footprint: string[];
+  alsoAllowed?: () => string[];
+  baseline: Set<string>;
+}): Promise<string[]> {
+  return containmentViolations(
+    await porcelainPaths(deps.worktree),
+    [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
+    deps.baseline,
+  );
 }
 
 /**
@@ -380,6 +404,18 @@ export async function runUnitWorker(
               hooks: [
                 async (h: { tool_name?: string }) => {
                   if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
+                  // The door first, and only then the guard: a path nobody
+                  // owns and nobody is touching is granted, the work stands,
+                  // and the unit carries on. Reverting it would throw away a
+                  // correct change to ask a question with the same answer.
+                  const wanted = await outsideClearance(deps);
+                  if (wanted.length && deps.clearFor) {
+                    const ruling = await deps.clearFor(wanted);
+                    if (ruling.granted.length) {
+                      deps.footprint = [...new Set([...deps.footprint, ...ruling.granted])];
+                      deps.log(`⚖ cleared at the door for ${ruling.granted.join(", ")} — the work stands`);
+                    }
+                  }
                   const bad = await encloseWork(deps);
                   if (!bad.length) return {};
                   if (!warned) {

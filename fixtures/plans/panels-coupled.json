@@ -1,10 +1,6 @@
 {
   "expect": {
-    "refused": [
-      "SL-5 and SL-7",
-      "src/extension.ts uses src/surfaces/panel.ts",
-      "one piece of work, or one after the other"
-    ]
+    "refused": false
   },
   "repoFiles": [
     "src/extension.ts",
@@ -85,6 +81,16 @@
           ]
         }
       ]
+    }
+  ],
+  "ordered": [
+    {
+      "after": "SL-7",
+      "waitsFor": "SL-5"
+    },
+    {
+      "after": "SL-7",
+      "waitsFor": "SL-6"
     }
   ]
 }

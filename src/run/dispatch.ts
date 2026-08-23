@@ -389,6 +389,7 @@ export async function dispatchTep(
                 maxTurns: turns,
                 alsoAllowed: () => unionFor(tree, next.id)(),
                 baseline,
+                ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
                 abort,
                 onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
                 log: (line: string) => log(line, next.id),

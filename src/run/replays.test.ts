@@ -32,6 +32,9 @@ interface Fixture {
   /** What the door must say: phrases the refusal has to contain, or
    *  `false` for a plan that must be allowed to run. */
   expect: { refused: string[] } | { refused: false };
+  /** Order the door must have derived and added itself: the later slice,
+   *  and a handle of the one it now waits for. */
+  ordered?: { after: string; waitsFor: string }[];
   plan: PlanRecord[];
   /** The map, as file → the files it uses. */
   uses?: Record<string, string[]>;
@@ -107,6 +110,13 @@ for (const fx of fixtures())
     });
     if (fx.expect.refused === false) {
       assert.equal(r.refusal, undefined, `refused a plan that must run: ${r.refusal?.refusal}`);
+      for (const want of fx.ordered ?? []) {
+        const later = r.dag.filter((u) => u.slice === want.after && u.role !== "test");
+        assert.ok(
+          later.some((u) => u.requires.some((x) => x.startsWith(want.waitsFor))),
+          `${want.after} does not wait for ${want.waitsFor}: ${JSON.stringify(later.map((u) => u.requires))}`,
+        );
+      }
       return;
     }
     assert.ok(r.refusal, "a plan that must be refused was let through");
