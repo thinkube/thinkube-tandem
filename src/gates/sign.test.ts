@@ -13,6 +13,12 @@ import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
 import { renderCutScreen } from "./render";
 import { emptySpace } from "../core/schema";
 import { signedIds } from "../core/cutClosure";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { execFileSync } from "node:child_process";
+import { sweepSpaceResidue } from "../run/residue";
+
 import type { Delivery } from "../core/schema";
 
 /**
@@ -180,4 +186,35 @@ test("a withdrawn cut freezes nothing and is not the signed work waiting to run"
     { id: "cut-2", changeIds: ["n3"], signature: { at: "", renderHash: "", groundingHash: "" }, withdrawnAt: "2026-08-23T17:00:00Z" },
   ];
   assert.deepEqual([...signedIds(cuts)].sort(), ["n1", "n2"], "a withdrawn cut's promises are free");
+});
+
+test("withdrawing a cut clears the run it leaves behind", async () => {
+  // Think again withdrew a cut and left its branch, its worktree and two
+  // runner trees on the machine. The next cut mints its own number and
+  // never resumes that branch, so what is left is a tree nobody reopens.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-sweep-"));
+  const repo = path.join(base, "repo");
+  const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8" });
+  fs.mkdirSync(repo);
+  execFileSync("git", ["init", "-q", repo]);
+  g(repo, "config", "user.email", "t@t");
+  g(repo, "config", "user.name", "t");
+  fs.writeFileSync(path.join(repo, "a.txt"), "a\n");
+  g(repo, "add", "a.txt");
+  g(repo, "commit", "-qm", "seed");
+
+  const wtRoot = path.join(base, "repo-worktrees");
+  const wt = path.join(wtRoot, "space__TEP-9");
+  g(repo, "worktree", "add", "-q", "-b", "tandem/space/TEP-9", wt);
+  fs.mkdirSync(path.join(wtRoot, "oracle-runners", "space__TEP-9-SL-1"), { recursive: true });
+  fs.mkdirSync(path.join(wtRoot, "locks"), { recursive: true });
+  fs.writeFileSync(path.join(wtRoot, "locks", "space__TEP-9.json"), "{}");
+
+  const swept = await sweepSpaceResidue({ repoRoot: repo, teps: ["TEP-9"], branches: ["tandem/space/TEP-9"] });
+
+  assert.ok(!fs.existsSync(wt), "the run's tree is gone");
+  assert.ok(!fs.existsSync(path.join(wtRoot, "oracle-runners", "space__TEP-9-SL-1")), "and its runner trees");
+  assert.ok(!fs.existsSync(path.join(wtRoot, "locks", "space__TEP-9.json")), "and the lock that would refuse the next run");
+  assert.ok(!g(repo, "branch", "--list").includes("TEP-9"), "and the branch");
+  assert.ok(swept.removed.length >= 3, JSON.stringify(swept));
 });
