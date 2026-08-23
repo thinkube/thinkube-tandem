@@ -33,7 +33,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
-import { restoreChecksFromRecord } from "./plan";
+import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
@@ -155,6 +155,7 @@ export async function dispatchTep(
     cut,
     repoRoot: deps.repoRoot,
     branch,
+    ...(deps.storeDir ? { recordedChecks: recordedCheckPaths(deps.storeDir, tep) } : {}),
     ...(deps.graphPath ? { graphPath: deps.graphPath } : {}),
     exec,
     log: (l) => log(`${tep}: ${l}`),

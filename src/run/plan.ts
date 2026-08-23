@@ -10,7 +10,7 @@ import type { SliceForDag } from "../engine/core/dag";
 import type { AcVerification } from "../engine/orchestratorCore";
 import { buildVerificationTrace } from "../engine/core/trace";
 import { unmetDocsObligation } from "../engine/core/redispatch";
-import { accessSync } from "node:fs";
+import { accessSync, readFileSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import { isDocPath } from "../core/docs";
 import { isProbePath, isTestPath } from "./testHomes";
@@ -343,6 +343,18 @@ export async function writeDeliveryRecord(
  * sixty-four file-not-found reds. What the record kept is written back,
  * and only where nothing else has since claimed the path.
  */
+/** The check paths a cut's delivery record holds, or nothing. */
+export function recordedCheckPaths(storeDir: string, tep: string): string[] {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(path.join(storeDir, "deliveries", `${tep}.json`), "utf8"),
+    ) as { checks?: { path?: string }[] };
+    return (parsed.checks ?? []).map((c) => c.path).filter((x): x is string => !!x);
+  } catch {
+    return [];
+  }
+}
+
 export async function restoreChecksFromRecord(
   storeDir: string,
   tep: string,
