@@ -69,7 +69,9 @@ export function RunNote(props: { note: string; unrun?: { id: string; tepId?: str
           ? "The delivery was withheld."
           : /^The build stopped/.test(props.note)
             ? "The build stopped."
-            : "The build did not start."}
+            : /^This work is signed/.test(props.note)
+              ? "Nothing is running."
+              : "The build did not start."}
       </strong>
       <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{props.note}</div>
       {/* Signing happens once, so a run that refused itself would leave the
@@ -88,6 +90,17 @@ export function RunNote(props: { note: string; unrun?: { id: string; tepId?: str
           </button>
           <span style={{ fontSize: FS.caption, color: C.quiet }}>
             already signed — this starts the workers, nothing is decided again
+          </span>
+          <button
+            data-think-again
+            disabled={!can("think-again")}
+            title="Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
+            onClick={() => post({ action: "think-again" })}
+          >
+            Think {props.unrun.tepId ?? "it"} again
+          </button>
+          <span style={{ fontSize: FS.caption, color: C.quiet }}>
+            withdraws the signature — the promises are derived anew and signed as new work
           </span>
         </div>
       ) : null}

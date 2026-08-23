@@ -54,6 +54,7 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "open-cut-review": OPEN,
   build: OPEN,
   rerun: ["signed", "delivered"],
+  "think-again": ["signed"],
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],
   "reject-delivery": ["delivered"],

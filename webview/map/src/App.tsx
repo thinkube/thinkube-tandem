@@ -435,7 +435,7 @@ export function App(props: {
               <RunNote note={push.runNote} unrun={push.unrun} />
             ) : push.unrun && !push.running ? (
               <RunNote
-                note="This work is signed and nothing was delivered from it. Below is what its last run left."
+                note="This work is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it. Below is what it left."
                 unrun={push.unrun}
               />
             ) : null}

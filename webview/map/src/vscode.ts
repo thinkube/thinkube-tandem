@@ -226,6 +226,7 @@ export type WebToHost =
   | { action: "reject-delivery"; deliveryId: string }
   | { action: "panic" }
   | { action: "rerun" }
+  | { action: "think-again" }
   | { action: "accept-question"; questionId: string; text?: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }
@@ -256,7 +257,7 @@ export function noteAllowed(allowed: string[] | undefined): void {
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "stop-run",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "think-again", "stop-run",
   "accept-delivery", "reject-delivery", "panic", "switch-repo",
 ]);
 

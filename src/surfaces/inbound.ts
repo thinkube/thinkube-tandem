@@ -135,6 +135,10 @@ export async function handleInbound(
       msg.text ?? "",
       msg.kind === "assessment" ? "assessment" : "probe",
     );
+  } else if (msg.action === "think-again") {
+    push("Withdrawing the signed cut and thinking its promises through again…");
+    const r = await session.thinkAgain();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "rerun") {
     push("Starting the signed work again…");
     const r = await session.rerun();

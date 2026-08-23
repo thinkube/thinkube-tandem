@@ -125,6 +125,11 @@ export interface Cut {
   /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
   tepId?: string;
   /** Set when the human signs; binds the render AND the grounded members. */
+  /** When the person withdrew this signed cut to think again. A withdrawn
+   *  cut freezes nothing and runs nothing; its promises are derived anew
+   *  and signed as a new cut. Only a cut that delivered nothing can be
+   *  withdrawn. */
+  withdrawnAt?: string;
   signature?: {
     at: string;
     renderHash: string;

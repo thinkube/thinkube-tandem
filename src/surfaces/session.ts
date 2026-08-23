@@ -18,6 +18,7 @@ import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
 import { acceptDeliveryGesture, executeRun, rejectDeliveryGesture, signCutGesture } from "./runGate";
+import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
@@ -497,11 +498,16 @@ export class TandemSession {
     // work either. In all three the signed work is still there to run, and
     // the way back in must stay reachable.
     const delivered = new Set(this.space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
-    const c = [...this.space.cuts].reverse().find((x) => x.signature && !delivered.has(x.id));
+    const c = [...this.space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
     return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
   }
 
-  /** Start the signed work that never delivered, again. */
+  /** Think again: withdraw the signed cut that delivered nothing and derive
+   *  its promises anew (src/surfaces/thinkAgain.ts). */
+  thinkAgain(): Promise<{ ok: boolean; reason?: string }> {
+    return thinkAgainFlow(this, (ids) => this.subjectsOfAsk(ids), (ids) => this.rederiveSubjects(ids));
+  }
+
   async rerun(): Promise<{ ok: boolean; reason?: string }> {
     const c = this.unrunCut();
     if (!c) return { ok: false, reason: "there is no signed work waiting to run" };

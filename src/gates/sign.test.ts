@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
 import { renderCutScreen } from "./render";
 import { emptySpace } from "../core/schema";
+import { signedIds } from "../core/cutClosure";
 import type { Delivery } from "../core/schema";
 
 /**
@@ -169,4 +170,14 @@ test("a promise with neither a check nor an observation is still refused", () =>
   };
   const r = signCut(space, { id: "cut-1", changeIds: ["n1"] }, "2026-08-23T00:00:00Z", "t");
   assert.equal(r.ok, false);
+});
+
+test("a withdrawn cut freezes nothing and is not the signed work waiting to run", () => {
+  // Signed work that delivered nothing was a dead end: runnable, never
+  // re-thinkable. Withdrawing it releases its promises to be derived anew.
+  const cuts = [
+    { id: "cut-1", changeIds: ["n1", "n2"], signature: { at: "", renderHash: "", groundingHash: "" } },
+    { id: "cut-2", changeIds: ["n3"], signature: { at: "", renderHash: "", groundingHash: "" }, withdrawnAt: "2026-08-23T17:00:00Z" },
+  ];
+  assert.deepEqual([...signedIds(cuts)].sort(), ["n1", "n2"], "a withdrawn cut's promises are free");
 });

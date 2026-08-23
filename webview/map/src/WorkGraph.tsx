@@ -199,6 +199,39 @@ export function WorkGraph(props: {
           </span>
         </div>
       ) : null}
+      {push.unrun && !push.running ? (
+        <div
+          data-signed-idle
+          style={{
+            border: `1px solid ${C.ask}`,
+            borderRadius: 6,
+            padding: `${SP.sm}px ${SP.md}px`,
+            marginBottom: SP.md,
+            maxWidth: "44rem",
+            display: "flex",
+            alignItems: "center",
+            gap: SP.md,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: FS.body }}>
+            {push.unrun.tepId ?? "This work"} is signed and nothing is running. Its last run ended
+            without a delivery — if the window reloaded, the run ended with it.
+          </span>
+          <button
+            data-think-again
+            disabled={!can("think-again")}
+            style={{ fontWeight: 600 }}
+            title="Withdraw the signature and think these promises through again under everything decided since. Nothing delivered is touched; the asks stay as you wrote them."
+            onClick={() => post({ action: "think-again" })}
+          >
+            Think it through again
+          </button>
+          <span style={{ fontSize: FS.caption, color: C.quiet }}>
+            the promises are derived anew and come back for a new signature — to run the signed work as it is, use the run page
+          </span>
+        </div>
+      ) : null}
       </div>
     <div
       data-work-graph

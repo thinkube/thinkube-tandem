@@ -7,9 +7,9 @@
 import { Change } from "./schema";
 
 /** Promises already inside a SIGNED cut are records — never re-cut. */
-export function signedIds(cuts: readonly { changeIds: string[]; signature?: unknown }[]): Set<string> {
+export function signedIds(cuts: readonly { changeIds: string[]; signature?: unknown; withdrawnAt?: string }[]): Set<string> {
   const out = new Set<string>();
-  for (const c of cuts) if (c.signature) for (const id of c.changeIds) out.add(id);
+  for (const c of cuts) if (c.signature && !c.withdrawnAt) for (const id of c.changeIds) out.add(id);
   return out;
 }
 
