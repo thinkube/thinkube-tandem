@@ -241,6 +241,11 @@ export function Rail(props: {
             >
               Sign and build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
             </button>
+            {push.buildRefusal ? (
+              <div data-build-refusal style={{ fontSize: FS.body, color: C.bad, marginTop: SP.xs }}>
+                {push.buildRefusal}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

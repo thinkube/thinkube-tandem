@@ -198,9 +198,17 @@ export class TandemSession {
     return costOfThinking(this.space);
   }
 
+  /** Why the last press of Sign and build did nothing — shown under the
+   *  button until a press succeeds. A refusal that only scrolls past in
+   *  the header is a button that appears to do nothing. */
+  buildRefusal?: string;
+
   /** Commit: assumptions become decisions, whole components go into one cut. */
-  build(excluded: string[] = []): Promise<{ ok: boolean; reason?: string }> {
-    return buildFlow(this, excluded);
+  async build(excluded: string[] = []): Promise<{ ok: boolean; reason?: string }> {
+    const r = await buildFlow(this, excluded);
+    this.buildRefusal = r.ok ? undefined : r.reason;
+    if (!r.ok) this.changed(r.reason ?? "the build was refused");
+    return r;
   }
 
   /** What you are writing, before any of it is an ask. */

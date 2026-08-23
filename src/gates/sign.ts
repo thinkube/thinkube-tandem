@@ -72,7 +72,12 @@ export function signCut(
   // question is not signable — the cut screen names these before the click.
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const members = cut.changeIds.map((id) => byId.get(id)).filter((n) => !!n);
-  const unprovable = members.filter((n) => n!.acceptance.length === 0);
+  // A promise with no check is unsignable — unless everything it says is
+  // an observation the person certifies on the delivery. Then it has
+  // nothing to prove and is accepted knowingly, listed on the cut review;
+  // refusing it would demand a check for what the design says must never
+  // be a check.
+  const unprovable = members.filter((n) => n!.acceptance.length === 0 && !(n!.unverified?.length));
   if (unprovable.length)
     return {
       ok: false,

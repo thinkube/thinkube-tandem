@@ -164,6 +164,8 @@ export interface SpacePush {
   /** What can be committed right now. `thinking` means the machine is
    *  still deriving and nothing may be committed yet. */
   ready: { subjects: number; promises: number; asks: number; thinking: boolean };
+  /** Why the last Sign and build was refused — beside the button, until a press succeeds. */
+  buildRefusal?: string;
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */

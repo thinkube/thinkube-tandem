@@ -270,6 +270,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       ? { reason: session.modelFailure.reason, sentences: session.modelFailure.texts.length }
       : undefined,
     draft: session.space.draft ?? "",
+    ...(session.buildRefusal ? { buildRefusal: session.buildRefusal } : {}),
     pendingModel: session.pendingModel
       ? {
           subjects: session.pendingModel.subjects,

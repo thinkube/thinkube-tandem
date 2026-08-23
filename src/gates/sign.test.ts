@@ -137,3 +137,36 @@ test("a withheld sibling is named as withheld, not merely missing", () => {
   const r = acceptDelivery(web, "2026-08-22T00:00:00Z", "advisory", [web, api]);
   assert.match(r.ok ? "" : r.reason, /withheld/);
 });
+
+test("a promise whose every criterion is an observation signs — it has nothing to prove", () => {
+  // The rule that moves observations out of the checks left one promise
+  // with none, and the sign gate refused it for having no check — a gate
+  // demanding a check for what the design says must never be one.
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "say plainly what the machine cannot see about the tabs",
+        serves: [],
+        needs: [],
+        acceptance: [],
+        unverified: [{ text: "the tab strip shows two tabs", why: "only the running product can show it" }],
+        grounding: { touchpoints: [{ path: "src/x.ts", planned: false }], stamp: [] },
+      },
+    ],
+  };
+  const r = signCut(space, { id: "cut-1", changeIds: ["n1"] }, "2026-08-23T00:00:00Z", "t");
+  assert.equal(r.ok, true, r.ok ? "" : r.reason);
+  assert.doesNotMatch(renderCutScreen(space, { id: "cut-1", changeIds: ["n1"] }), /Nothing proves these yet/);
+  assert.match(renderCutScreen(space, { id: "cut-1", changeIds: ["n1"] }), /cannot prove these/);
+});
+
+test("a promise with neither a check nor an observation is still refused", () => {
+  const space = {
+    ...emptySpace(),
+    nodes: [{ id: "n1", sentence: "a thing", serves: [], needs: [], acceptance: [], grounding: { touchpoints: [{ path: "src/x.ts" }], stamp: [] } }],
+  };
+  const r = signCut(space, { id: "cut-1", changeIds: ["n1"] }, "2026-08-23T00:00:00Z", "t");
+  assert.equal(r.ok, false);
+});

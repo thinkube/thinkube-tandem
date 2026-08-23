@@ -56,7 +56,7 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     for (const s of needsFirst) lines.push(`  → ${s}`);
   }
 
-  const unprovable = members.filter((n) => n.acceptance.length === 0);
+  const unprovable = members.filter((n) => n.acceptance.length === 0 && !n.unverified?.length);
   if (unprovable.length) {
     lines.push(`Nothing proves these yet:`);
     for (const n of unprovable) lines.push(`  ⚠ ${n.sentence}`);
