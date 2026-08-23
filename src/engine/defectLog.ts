@@ -20,6 +20,8 @@ export interface DefectEntry {
   ts?: string;
   /** The Spec id (`<tep>/<sp>`) the observation belongs to. */
   spec: string;
+  /** The thinking space the run belonged to, as `<owner>/<space>/<user>`. */
+  space?: string;
   /** The slice handle, when the observation is slice-scoped. */
   slice?: string;
   /** The execution-unit id, when unit-scoped. */
@@ -57,9 +59,23 @@ export interface DefectEntry {
 }
 
 /** The month-keyed defect-log path under a thinking space dir. */
+/**
+ * The ledger is about the machine, not about any one piece of work, so it
+ * lives at the store's root — one file per month across every space — and
+ * a space's lifetime never touches it. A directory given as a space's
+ * (`<store>/spaces/<owner>/<space>/<user>`) resolves to that store; any
+ * other directory is taken as the root itself.
+ */
+export function ledgerRoot(dir: string): { root: string; space?: string } {
+  const parts = path.resolve(dir).split(path.sep);
+  const i = parts.lastIndexOf("spaces");
+  if (i <= 0) return { root: dir };
+  return { root: parts.slice(0, i).join(path.sep), space: parts.slice(i + 1).join("/") };
+}
+
 export function defectLogPath(thinkubeDir: string, when: Date): string {
   const ym = `${when.getUTCFullYear()}-${String(when.getUTCMonth() + 1).padStart(2, "0")}`;
-  return path.join(thinkubeDir, "defects", `${ym}.jsonl`);
+  return path.join(ledgerRoot(thinkubeDir).root, "defects", `${ym}.jsonl`);
 }
 
 /**
@@ -88,7 +104,8 @@ export function appendDefect(thinkubeDir: string, entry: DefectEntry): boolean {
   try {
     if (!thinkubeDir || typeof thinkubeDir !== "string") return false;
     const now = new Date();
-    const full: DefectEntry = { ts: entry.ts ?? now.toISOString(), version: toolVersion(), ...entry };
+    const { space } = ledgerRoot(thinkubeDir);
+    const full: DefectEntry = { ts: entry.ts ?? now.toISOString(), version: toolVersion(), ...(space ? { space } : {}), ...entry };
     // Keep `ts` first for human-scannable lines; JSON key order is cosmetic only.
     if (!full.ts) full.ts = now.toISOString();
     const file = defectLogPath(thinkubeDir, now);

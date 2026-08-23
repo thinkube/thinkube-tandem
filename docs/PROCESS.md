@@ -138,7 +138,7 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 | commits | the commit book | the branch | the branch |
 | run log | every actor, as it happens | the person, the next session | `<store>/runs/<tep>.log` |
 | delivery record | the repository gate | the person, the ledger | the space + the forge |
-| defect rows | every gate that refuses | the analysis | `<store>/defects/YYYY-MM.jsonl` |
+| defect rows | every gate that refuses | the analysis | `<store>/defects/YYYY-MM.jsonl` — the store's root, every space in one file, each row naming its space; a space's deletion never touches it |
 
 ## 5. Measures
 
