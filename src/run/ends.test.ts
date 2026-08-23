@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
+import { repairSuiteAtGate } from "./gateRepair";
 import { filesNamedIn } from "./suite";
 import { confirmWaitingForTree } from "./repair";
 import { runAcVerifications } from "../engine/core/closingGate";
@@ -350,4 +351,69 @@ test("a unit never waits on another slice for a build its own change broke", asy
   });
   assert.equal(waited, 0, "no wait was taken");
   assert.equal(r.green, false, "and the verdict is the unit's to act on");
+});
+
+test("Stop reaches the closer — its abort is handed to the run", async () => {
+  // Every other actor registers its abort the moment it starts. The closer
+  // never did, and it is the one that runs longest and last: pressing Stop
+  // during it aborted nothing and reported "Nothing to stop", while the
+  // halt flag it does read is only read between rounds. Twenty minutes of
+  // a person asking why the button did nothing.
+  const handed: AbortController[] = [];
+  await close({
+    subject: "the delivery",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "it works" }],
+    model: "sonnet",
+    measure: (() => {
+      let n = 0;
+      return async () => ({ green: n++ > 0, score: n > 1 ? 0 : 1, evidence: "" });
+    })(),
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    abortable: (ab) => handed.push(ab),
+    log: () => {},
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: async (deps) => {
+      // The controller the run was handed is the one the worker runs under.
+      assert.ok(handed.includes((deps as { abort: AbortController }).abort), "a different controller was handed out");
+      return { ok: true, finalText: "done" };
+    },
+  });
+  assert.ok(handed.length >= 1, "the closer never offered its abort to the run");
+});
+
+test("the finisher is fenced by nothing either — the argument was only half applied", async () => {
+  // The reason the closer is unfenced holds for the finisher word for word:
+  // the guard keeps PARALLEL workers off each other's files, and at the gate
+  // nobody runs beside it. Fenced, it spent six minutes discovering it could
+  // not write the file its own red named, failed, and the closer — allowed
+  // to — fixed the same red in one round.
+  let sawUnfenced: boolean | undefined;
+  const state = new RunState(() => {});
+  await repairSuiteAtGate({
+    tep: "TEP-1",
+    worktree: "/nowhere",
+    baseSha: "HEAD~1",
+    state,
+    verdict: { green: false, failures: [{ name: "a standing check", file: "docs/LEDGER.md", detail: "stale" }] },
+    deps: {
+      suiteCommand: ["true"],
+      worker: async (d: { unfenced?: boolean }) => {
+        sawUnfenced = d.unfenced;
+        return { ok: true, finalText: "done" };
+      },
+    } as never,
+    exec: async () => ({ code: 0, out: "" }),
+    suiteExec: async () => ({ code: 1, output: "still red" }),
+    log: () => {},
+    defect: () => {},
+  } as never);
+  assert.equal(sawUnfenced, true, "the guard still runs over the last actor at the gate");
 });

@@ -49,6 +49,8 @@ export async function repairUnkept(a: {
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   baseSha: string;
   halted: () => boolean;
+  /** Hand a closer round's abort to the run, so Stop can reach it. */
+  abortable?: (abort: AbortController) => void;
   doing: (text: string | undefined) => void;
   rulings: Ruling[];
   exec: Exec;
@@ -143,13 +145,31 @@ export async function repairUnkept(a: {
   // sight. Without it a resumed run fell straight from red to withheld
   // with nobody left to try, which is a ladder with its last rung missing.
   if (unkept.length && !a.halted()) {
+    /**
+     * Reviews that have already been asked again and did not move.
+     *
+     * A red assessment is re-graded because the closer's edits can change
+     * the tree under it. But the closer runs several rounds, and re-grading
+     * every red one in each of them asks the same reviewer the same
+     * question about a tree its last answer already covered. One criterion
+     * was graded five times across two runs and never once moved; the only
+     * thing that bought was ten minutes a person sat watching.
+     *
+     * So a review is asked again ONCE per repair. If it does not move, it
+     * is standing red, and the delivery says so by name.
+     */
+    const settled = new Set<string>();
     const rejudge = async (): Promise<Proof[]> => {
       await prepareAtGate(deps.prepare, worktree, boundedExec, log);
       // A red assessment is re-graded by a fresh reviewer over the repaired
       // tree, exactly as a check is re-run. Frozen first-pass verdicts held
       // three repaired promises red while the closer's edits could move
       // nothing but the tree.
-      const redReviews = new Set(proofs.filter((p) => p.kind === "assessment" && p.verdict !== "green").map((p) => p.label));
+      const redReviews = new Set(
+        proofs
+          .filter((p) => p.kind === "assessment" && p.verdict !== "green" && !settled.has(p.label))
+          .map((p) => p.label),
+      );
       if (redReviews.size) {
         const regradedAll = await gradeAssessments({
           space,
@@ -171,6 +191,12 @@ export async function repairUnkept(a: {
         for (const r of regradedAll.proofs) {
           const proof = proofs.find((p) => p.label === r.label);
           if (proof) {
+            // Asked again and unmoved: it is standing red, and asking a
+            // third time cannot learn anything the second did not.
+            if (proof.verdict === r.verdict && r.verdict !== "green") {
+              settled.add(proof.label);
+              log(`${tep}: "${proof.label.slice(0, 70)}" is red on a second reading — standing red, not asked again`);
+            }
             proof.verdict = r.verdict;
             if (r.ref) proof.ref = r.ref;
           }
@@ -225,6 +251,7 @@ export async function repairUnkept(a: {
       exec,
       boundedExec: a.suiteExec,
       halted: () => a.halted(),
+      ...(a.abortable ? { abortable: a.abortable } : {}),
       log: (l) => log(l, "gate#closer"),
       say: (t) => a.doing(t),
       onRuling: (r) => a.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),

@@ -84,6 +84,16 @@ export interface CloserArgs {
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   halted: () => boolean;
+  /**
+   * Hand each round's abort to the run, so Stop can reach it.
+   *
+   * Every other actor registers itself the moment it starts; the closer
+   * never did, and it is the one that runs longest and last. Pressing Stop
+   * during it aborted nothing and reported "Nothing to stop" — the halt
+   * flag was set, but it is only read between rounds, so the machine went
+   * on working with no sign it had heard.
+   */
+  abortable?: (abort: AbortController) => void;
   log: (line: string) => void;
   say: (text: string | undefined) => void;
   onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
@@ -189,6 +199,7 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
     round++;
     a.say(`the closer is working — round ${round}, ${state.score} thing(s) still red`);
     const abort = new AbortController();
+    a.abortable?.(abort);
     const footprint = [...owns, ...checkPaths.map((p) => path.join(checkRoot ?? "", p))];
     outcome = await worker(
       {

@@ -100,6 +100,14 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
         worktree: a.worktree,
         // The finisher owns test homes and production alike, like a maintainer.
         role: "test",
+        // Fenced by nothing, for the reason already accepted for the closer:
+        // the guard exists to keep parallel workers off each other's files,
+        // and at the gate nobody runs beside it. A fence here turns "bring
+        // the suite under" into a list, which can never contain the file the
+        // red test actually names — a red about a ledger it could not write
+        // cost six minutes of a finisher discovering it could not act, then
+        // the closer fixed it in one round because it was allowed to.
+        unfenced: true,
         footprint,
         baseline: new Set(await porcelainPaths(a.worktree)),
         abort,

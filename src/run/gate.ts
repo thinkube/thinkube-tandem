@@ -290,6 +290,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         exec,
         boundedExec: g.suiteExec,
         halted: () => g.state.halted,
+        abortable: (ab) => g.state.aborts.set("gate#closer", ab),
         log: (l) => log(l, "gate#closer"),
         say: (t) => g.state.doing("gate#closer", t),
         onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
@@ -356,6 +357,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
     halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
+    abortable: (ab) => g.state.aborts.set("gate#closer", ab),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
   });
   // A check proves a promise once; it does not join the repository's suite
