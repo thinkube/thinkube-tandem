@@ -20,6 +20,7 @@ import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 import { classMethodsIn, wrongAltitude } from "./altitude";
 import { rehouseChecks } from "./checkHomes";
+import { writeDeliveryRecord } from "./plan";
 import { acceptDelivery } from "../gates/sign";
 import type { Delivery } from "../core/schema";
 import * as os from "node:os";
@@ -562,4 +563,23 @@ test("a check an earlier run already wrote keeps its address", () => {
     ["probes/x__SL-1_AC-1.test.mjs"],
     "the plan still points at the check that exists",
   );
+});
+
+test("what an opened delivery recorded outlives every later failed run", async () => {
+  // A withheld run once overwrote a good record's fifty-eight check
+  // sources with entries at the wrong addresses, and the restore that
+  // depends on the record had nothing left to restore from.
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-record-"));
+  const base = { tep: "TEP-1", branch: "b", baseSha: "x", proofs: [], undelivered: [], verifs: [], acResults: [] };
+  await writeDeliveryRecord(store, {
+    ...base,
+    checks: [{ criterionId: "c1", path: "probes/a.test.mjs", source: "the real check" }],
+  } as never);
+  // The failed run writes its record without checks — and takes nothing.
+  await writeDeliveryRecord(store, base as never);
+  const kept = JSON.parse(fs.readFileSync(path.join(store, "deliveries", "TEP-1.json"), "utf8")) as {
+    checks?: { path: string; source: string }[];
+  };
+  assert.equal(kept.checks?.length, 1);
+  assert.equal(kept.checks?.[0].source, "the real check");
 });

@@ -489,7 +489,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       undelivered,
       verifs,
       acResults,
-      checks: kept,
+      // Only an opened delivery captures its checks; a withheld run keeps
+      // its files in the tree and must not replace what a delivery kept.
+      ...(unkept.length ? {} : { checks: kept }),
       machineAttention: g.machineAttention(),
     });
   undelivered.push(...docsObligations(slices, worktree));
