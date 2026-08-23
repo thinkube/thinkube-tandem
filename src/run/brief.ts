@@ -33,40 +33,27 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
 }
 
 /** The stanza appended to a worker's brief when the oracle can answer. */
-export function coderStanza(oracleAvailable: boolean, buildAvailable = false): string {
+export function coderStanza(oracleAvailable: boolean): string {
   if (!oracleAvailable) return "";
   return (
-    "\n\nA `verify` tool is available (tandem MCP): it runs this slice's " +
-    "acceptance checks against your CURRENT work in an isolated runner and " +
-    "returns per-criterion PASS/FAIL with evidence. Use it before declaring " +
-    "done — your completion is judged by its green, not by your claim." +
-    "\n\nOnce this slice's checks are green, `verify` also runs the REPOSITORY'S OWN " +
-    "SUITE on your tree — its standing checks (types, tests, size and reachability " +
-    "gates, frozen files) — and tells you which are red and whose they are. A red " +
-    "standing check that is YOURS must be fixed in your files before you are done; " +
-    "one that a maintainer brings under later, or that waits on another unit's file, " +
-    "is named as not yours." +
+    "\n\nYour completion is judged by `verify` going green, not by your claim. " +
+    "Once this slice's checks are green, `verify` also runs the repository's own " +
+    "standing checks on your tree and says which reds are yours: a red that is yours " +
+    "is fixed in your files before you are done; one a maintainer brings under later, " +
+    "or that waits on another unit's file, is named as not yours." +
     "\n\nHOW YOU ARE GRADED: on the committed base plus YOUR files only — another " +
     "unit's half-written work never enters your checks, and yours never enters " +
     "theirs. So a public signature you change must keep its existing callers " +
     "compiling (an overload, an optional parameter, a default): the callers " +
     "belong to other slices and are updated there. If the contract itself " +
     "requires breaking a signature, say so as UNDELIVERED with the callers named." +
-    (buildAvailable
-      ? "\n\nA `build` tool is also available: the repository's own build over the current tree, " +
-        "the compiler's words verbatim, in seconds — use it after edits, before `verify`. Lines in " +
-        "files you are not cleared for are other units' in-flight work; ignore them."
-      : "") +
-    "\n\nIt is your ONLY feedback channel. Never open, edit or create a test " +
-    "or probe file, and never run a build, a test command or a package " +
-    "manager — you have no shell. Work from the intent and the contract, and " +
-    "ask `verify` how you are doing." +
+    "\n\nThe tools you have are the ones you were given, no others. Never open, edit or " +
+    "create a test or probe file, and never run a build, a test command or a package " +
+    "manager — you have no shell. Work from the intent and the contract." +
     "\n\nIf a check is IMPOSSIBLE for any correct implementation, or plainly " +
-    "misreads its criterion, do not grind against it: call `challenge` with " +
-    "the check number and your argument in intent terms. An independent " +
-    "judge rules — granted, the check is re-authored from its criterion and " +
-    "the ruling is recorded on the delivery; denied, meet it as it stands. " +
-    "Two challenges per slice; a challenge is never a way to see the check."
+    "misreads its criterion, do not grind against it: challenge it, in intent terms. " +
+    "Granted, the check is re-authored from its criterion and the ruling is recorded on " +
+    "the delivery; denied, meet it as it stands. A challenge is never a way to see the check."
   );
 }
 

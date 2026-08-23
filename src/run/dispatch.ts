@@ -300,7 +300,7 @@ export async function dispatchTep(
     const oracleStanza = () =>
       role === "test"
         ? testerStanza(built) +
-          (maintain ? coderStanza(!!oracle, !!deps.prepare) : "") +
+          (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(
             testHomesOf(next.footprint),
             (next.units ?? []).flatMap(
@@ -308,7 +308,7 @@ export async function dispatchTep(
             ),
           )
         : clearanceStanza(next) +
-          coderStanza(!!oracle, !!deps.prepare) +
+          coderStanza(!!oracle) +
           decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
     // Dispatch-time audit: a decidable fact the brief lacks is missing at round zero.
     let disclosure = "";
