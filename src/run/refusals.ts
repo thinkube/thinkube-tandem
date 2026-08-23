@@ -97,6 +97,19 @@ function refusalsBeforeDispatch(a: {
           if (why) out.push(`"${c.text}" — the check for "${promise.sentence}" — ${why}`);
         }
 
+      // A seam a promise INTRODUCES is named with its shape, or the tester
+      // and the coder each guess one and the checks never compile against
+      // the code. A symbol with no parentheses is a name, not a seam.
+      const unshaped = (promise.grounding?.touchpoints ?? [])
+        .filter((t) => t.planned && t.symbol && /^[a-z][\w$]*$/.test(t.symbol.trim()))
+        .map((t) => `${t.path} › ${t.symbol}`);
+      if (unshaped.length)
+        out.push(
+          `"${promise.sentence}" introduces ${unshaped.join(", ")} without saying its shape — the arguments it takes ` +
+            `and what it returns. Name the signature in the promise, so the checks and the code are written to one seam ` +
+            `instead of two guesses.`,
+        );
+
       // The site a promise names must be inside the clearance of the unit
       // responsible for it. Otherwise the unit is asked to keep a promise
       // it cannot reach, and discovers it four rounds in.

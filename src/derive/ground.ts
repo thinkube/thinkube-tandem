@@ -90,6 +90,9 @@ function buildGroundingPrompt(args: {
         `them does not belong in this derivation.\n`
       : "") +
     `- "touchpoints": WHERE it lands: [{"path":"src/…","symbol":"functionOrSection",` +
+    `  — when the node INTRODUCES or CHANGES a function, "symbol" carries its SIGNATURE, ` +
+    `e.g. "pushActive(key: string, message: string): void": the checks and the code are both ` +
+    `written to that one seam, and a bare name makes each side guess a shape —` +
     `"evidence":"one short sentence: what is at this place now, and why the change lands here"}]. ` +
     `Paths are repo-relative. A file that does not exist yet is a legitimate touchpoint — the change creates it, ` +
     `and its evidence says why THIS location. You have the file open while you decide — ` +

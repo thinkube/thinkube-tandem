@@ -419,7 +419,10 @@ export async function dispatchTep(
         if (!ok && role === "test" && !(await missingProbes(tree, next.footprint)).length) {
           ok = true;
           undelivered.push(...(outcome.undelivered ?? []).map((u) => `${next.id}: ${u}`));
-          log(`✎ ${next.id}: all declared probes are written — its remaining doubt rides the delivery`, next.id);
+          // A doubt the tester names is a fact the coder must read: a gap
+          // in the contract is the one thing neither of them may guess at.
+          for (const u of outcome.undelivered ?? []) decisions.push({ unit: next.id, text: `THE TESTER'S DOUBT — ${u}` });
+          log(`✎ ${next.id}: all declared probes are written — its remaining doubt rides the delivery and the coder's brief`, next.id);
         }
         if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
         if (ok && role === "test") decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
