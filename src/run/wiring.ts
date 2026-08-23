@@ -85,13 +85,27 @@ export function ranAmong(subject: string, executed: readonly string[]): boolean 
  * `exec` is the run's own bounded runner, so a check that hangs here ends
  * the way every other command does.
  */
+/** Files a runtime can execute a line of. A document or a data file keeps
+ *  a promise by its content, and execution can neither prove nor refute
+ *  it — two criteria about a markdown ledger were once red forever because
+ *  the trace demanded that a document run. */
+const EXECUTABLE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|sh|lua)$/i;
+
 export async function provedByExecution(a: {
   run: string;
   subjects: readonly string[];
   worktree: string;
   exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
 }): Promise<WiringVerdict> {
-  if (!a.subjects.length) return { executed: "unknown", detail: "the promise names no file of its own to look for" };
+  const runnable = a.subjects.filter((s) => EXECUTABLE.test(s));
+  if (!runnable.length)
+    return {
+      executed: "unknown",
+      detail: a.subjects.length
+        ? `the promise lands in ${a.subjects.join(", ")} — content, not code; execution cannot prove or refute it, and the check's own verdict stands`
+        : "the promise names no file of its own to look for",
+    };
+  a = { ...a, subjects: runnable };
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tandem-wiring-"));
   try {
     // The recorder is an environment variable of the runtime itself, so a
