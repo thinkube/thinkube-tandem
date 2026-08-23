@@ -11,6 +11,19 @@ import { asksOfText } from "../derive/asks";
 import { readEverything } from "./modelFlow";
 import type { TandemSession } from "./session";
 
+/** What you are writing, before any of it is an ask. Kept with the space,
+ *  so closing the window mid-sentence loses nothing. */
+export function saveDraftFlow(s: TandemSession, text: string): void {
+  s.space = { ...s.space, draft: text };
+  s.persist();
+}
+
+/** The lines of the reading that are still draft: everything the reading
+ *  produced past the asks already recorded. */
+export function draftReadFlow(s: TandemSession): string[] {
+  return (s.space.proposal?.texts ?? []).slice(s.space.asks.length);
+}
+
 export function readDraftFlow(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
   if (!asksOfText(s.space.draft ?? "").length)
     return Promise.resolve({ ok: false, reason: "there is nothing written yet" });

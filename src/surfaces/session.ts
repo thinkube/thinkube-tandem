@@ -9,8 +9,7 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
-import { renderCutScreen, renderDeliveryPage } from "../gates/render";
-import { verifiedDoors } from "../gates/doors";
+import { renderCutScreen } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
@@ -20,6 +19,7 @@ import { proposeCheckGesture } from "./checkGesture";
 import {
   acceptDeliveryGesture,
   answerWorkerGesture,
+  deliveryPageOf,
   executeRun,
   rejectDeliveryGesture,
   rerunGesture,
@@ -28,7 +28,7 @@ import {
   unrunCutOf,
 } from "./runGate";
 import { applyModel, readEverything, readModel } from "./modelFlow";
-import { keepDraftFlow, readDraftFlow } from "./draftFlow";
+import { draftReadFlow, keepDraftFlow, readDraftFlow, saveDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { askState } from "../core/component";
@@ -226,8 +226,7 @@ export class TandemSession {
 
   /** What you are writing, before any of it is an ask. */
   saveDraft(text: string): void {
-    this.space = { ...this.space, draft: text };
-    this.persist();
+    saveDraftFlow(this, text);
   }
 
   /** Read the draft — one round, as often as you ask for it. */
@@ -242,7 +241,7 @@ export class TandemSession {
 
   /** The lines of the reading that are still draft. */
   draftRead(): string[] {
-    return (this.space.proposal?.texts ?? []).slice(this.space.asks.length);
+    return draftReadFlow(this);
   }
 
   /**
@@ -539,16 +538,7 @@ export class TandemSession {
   }
 
   deliveryPage(deliveryId: string): string | undefined {
-    const d = this.space.deliveries.find((x) => x.id === deliveryId);
-    if (!d) return undefined;
-    // Every walkthrough line names a door the machine verified renders.
-    const doors = verifiedDoors();
-    const experience = new Map<string, string>();
-    for (const n of this.space.nodes) {
-      const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
-      if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
-    }
-    return renderDeliveryPage(this.space, d, experience);
+    return deliveryPageOf(this, deliveryId);
   }
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →

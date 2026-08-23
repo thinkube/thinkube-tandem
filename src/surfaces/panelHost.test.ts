@@ -25,11 +25,46 @@ interface Recorded {
 const ACTIVE = Symbol("ViewColumn.Active");
 const ONE = Symbol("ViewColumn.One");
 
+/**
+ * The tree-view classes the extension's import chain subclasses and
+ * instantiates while it is still being required — `class X extends
+ * vscode.TreeItem` runs at module load, so these must exist before
+ * `require("../extension")` returns, or the load throws before any
+ * assertion below is reached.
+ */
+class StubTreeItem {
+  label: unknown;
+  collapsibleState: unknown;
+  constructor(label: unknown, collapsibleState?: unknown) {
+    this.label = label;
+    this.collapsibleState = collapsibleState;
+  }
+}
+
+class StubThemeIcon {
+  constructor(public readonly id: string) {}
+}
+
+class StubEventEmitter {
+  event = () => ({ dispose() {} });
+  fire() {}
+  dispose() {}
+}
+
 /** Install a stub `vscode` for the duration of one call, then restore. */
 function withStubVscode<T>(calls: Recorded[], run: () => T): T {
   const load = (Module as unknown as { _load: (...a: unknown[]) => unknown })._load;
   const stub = {
     ViewColumn: { Active: ACTIVE, One: ONE },
+    TreeItem: StubTreeItem,
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    ThemeIcon: StubThemeIcon,
+    EventEmitter: StubEventEmitter,
+    workspace: {
+      asRelativePath: (p: unknown) => String(p),
+      getConfiguration: () => ({ get: () => undefined }),
+      workspaceFolders: [],
+    },
     Uri: {
       joinPath: (base: unknown, ...parts: string[]) => ({
         fsPath: [String((base as { fsPath?: string })?.fsPath ?? "/ext"), ...parts].join("/"),

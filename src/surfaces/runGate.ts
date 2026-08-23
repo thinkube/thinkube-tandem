@@ -5,6 +5,8 @@
  * the forge. All state lands on the session's PRESENT space.
  */
 import { signCut, acceptDelivery } from "../gates/sign";
+import { renderDeliveryPage } from "../gates/render";
+import { verifiedDoors } from "../gates/doors";
 import { tepContentHash } from "../gates/approval";
 import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
@@ -292,6 +294,23 @@ export function stopRunGesture(s: TandemSession): number {
  * signed, so the same signed promises can run again against what was
  * learned by refusing.
  */
+/**
+ * The delivery's walkthrough page. Every line names a door the machine
+ * verified renders, so a delivery can never be walked through by way of a
+ * gesture that does not exist on any surface.
+ */
+export function deliveryPageOf(s: TandemSession, deliveryId: string): string | undefined {
+  const d = s.space.deliveries.find((x) => x.id === deliveryId);
+  if (!d) return undefined;
+  const doors = verifiedDoors();
+  const experience = new Map<string, string>();
+  for (const n of s.space.nodes) {
+    const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
+    if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
+  }
+  return renderDeliveryPage(s.space, d, experience);
+}
+
 export function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): { ok: boolean; reason?: string } {
   const d = s.space.deliveries.find((x) => x.id === deliveryId);
   if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
