@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { observationShaped } from "./observations";
 import { gradeAssessments } from "./assess";
-import { parseGroundedNodes } from "../derive/ground";
+import { parseGroundedNodes, runGrounding } from "../derive/ground";
 import { emptySpace } from "../core/schema";
 import { rehouseChecks } from "./checkHomes";
 
@@ -105,4 +105,35 @@ test("a check is born beside code, never beside a document", () => {
 test("a slice that lands only in documents keeps its check where it was", () => {
   const slices = [{ handle: "SL-9", workUnits: [{ role: "code", footprint: ["docs/x.md"] }, { role: "test", footprint: ["probes/x__SL-9_AC-1.test.mjs"] }] }];
   assert.deepEqual(rehouseChecks(slices as never, ["src/a.ts", "src/a.test.ts"]), []);
+});
+
+test("a seam named by a bare name is shaped at derivation, by the machine, before anything is sliced", async () => {
+  // The contract carries signatures. A grounding that names a function by
+  // its bare name gets one more round, for exactly those symbols; what comes
+  // back is the seam the tester and the coder are both written to.
+  const prompts: string[] = [];
+  const r = await runGrounding(
+    { model: "sonnet", repoRoot: process.cwd(), log: () => {} },
+    { id: "a1", text: "a delivery message opens its own space's tab" } as never,
+    { nextIndex: 1 },
+    async (_d, prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 1)
+        return JSON.stringify({
+          nodes: [
+            {
+              sentence: "a delivery message opens its own space's tab",
+              touchpoints: [{ path: "src/extension.ts", symbol: "pushActive" }],
+              acceptance: [{ text: "the message reaches that space's tab only" }],
+            },
+          ],
+          questions: [],
+        });
+      assert.match(prompt, /src\/extension\.ts › pushActive/, "the seam round is asked about exactly the bare name");
+      return "1: pushActive(key: string, message: string): void";
+    },
+  );
+  assert.equal(prompts.length, 2, "one grounding round, one seam round");
+  const sym = r.changes[0]?.grounding?.touchpoints[0]?.symbol;
+  assert.equal(sym, "pushActive(key: string, message: string): void");
 });

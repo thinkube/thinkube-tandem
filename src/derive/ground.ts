@@ -262,6 +262,56 @@ export interface GroundingResult {
  * Run the grounding round end to end: prompt, round, parse, stamp, resolve.
  * Empty on any failure — the ask stays captured and can be re-grounded.
  */
+/** A function named by a bare identifier — a name, not a seam. */
+const BARE_FUNCTION = /^[a-z_$][\w$]*$/;
+
+/**
+ * Ask for the signature of every function a node introduces or changes
+ * and named only by its bare name. One bounded round over the tree, for
+ * exactly those symbols; what it cannot shape stays a bare name and is
+ * said in the log, so the gap is on the record rather than in a guess.
+ */
+async function shapeSeams(
+  derived: DerivedNode[],
+  deps: RoundDeps,
+  round: (deps: RoundDeps, prompt: string) => Promise<string | null>,
+): Promise<void> {
+  const bare = derived.flatMap((n) =>
+    n.touchpoints.filter((t) => t.symbol && BARE_FUNCTION.test(t.symbol)).map((t) => ({ node: n, t })),
+  );
+  if (!bare.length) return;
+  const listed = bare.map(({ node, t }, i) => `${i + 1}. ${t.path} › ${t.symbol} — for: "${node.sentence}"${t.planned ? " (new)" : " (exists, changed)"}`);
+  const reply = await round(
+    { ...deps, maxTurns: 16 },
+    [
+      "You are completing the CONTRACT of a change before any worker starts. Each line below names a",
+      "function a promise introduces or changes, by name only. A name is not a seam: the tester writes",
+      "checks to a shape and the coder builds to a shape, and if the contract does not state one, each",
+      "guesses and the checks never compile against the code.",
+      "",
+      "For EACH line, state the function's SIGNATURE as it will be after the change — parameters with",
+      "types, and the return type — reading the file and its callers in this repository to keep every",
+      "existing caller compiling (an optional parameter, an overload, a default) unless the promise",
+      "itself requires breaking one. Write the signature, not a description.",
+      "",
+      listed.join("\n"),
+      "",
+      "Respond with EXACTLY one line per number and nothing else:",
+      "<number>: <signature, e.g. pushActive(key: string, message: string): void>",
+    ].join("\n"),
+  ).catch(() => null);
+  const shaped = new Map<number, string>();
+  for (const l of (reply ?? "").split("\n")) {
+    const m = /^\s*(\d+)\s*:\s*(.+?)\s*$/.exec(l);
+    if (m && m[2].includes("(")) shaped.set(Number(m[1]), m[2].replace(/^`+|`+$/g, ""));
+  }
+  bare.forEach(({ t }, i) => {
+    const sig = shaped.get(i + 1);
+    if (sig) t.symbol = sig;
+    else deps.log?.(`⚠ the contract still names ${t.path} › ${t.symbol} without its shape — a gap the checks and the code will meet`);
+  });
+}
+
 export async function runGrounding(
   deps: RoundDeps,
   ask: Ask,
@@ -301,6 +351,10 @@ export async function runGrounding(
   // The mechanical look behind the model's testability judgement: a probe
   // naming a symbol its touchpoints hold unexported becomes an assessment.
   downgradeUnreachable(derived, deps.repoRoot, deps.log);
+  // A seam named without its shape is the machine's gap to fill, here,
+  // before anything is sliced: the tester and the coder are written to one
+  // signature, never to two guesses, and the person is never asked.
+  await shapeSeams(derived, deps, round);
   const questions = parseGroundedQuestions(text).map((q) => ({
     askId: ask.id,
     text: q.text,
