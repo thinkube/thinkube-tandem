@@ -5,7 +5,7 @@ Every component of the webview was read in full: `App`, `Compose`,
 `Delivery`, `Markdown`, `nodeCard`, `world`, `type`, plus the two files
 that feed them — `push.ts` and `run/state.ts` — and the gesture registry.
 
-Forty-seven findings. Each one names the file and line that shows it.
+Forty-eight findings. Each one names the file and line that shows it.
 Nothing here is a fix. The plan at the end is ordered work, and each item
 says what would prove it done.
 
@@ -99,6 +99,26 @@ that is four identical lines. The name is in the payload and is not used.
 `WorkGraph.tsx:341` calls `onSelect`, which posts `select-unit`. The only
 visible consequence is the card's border colour (`WorkGraph.tsx:353`).
 Nothing anywhere shows the selected promise.
+
+**B11 — a re-run says "passed · no log yet" on the same card.**
+When a run resumes, every unit of a slice whose work already stands is
+marked done and **nothing is written to its log**
+(`dispatch.ts:217-222` — `st.set(u.id, "done")` with no `log` call). The
+surface then draws two chips from two different facts:
+
+- `chipFor` reads state `done` and says **passed** (`Run.tsx:42`)
+- `logChip` reads a count of 0 and says **no log yet**, with the hover
+  "This step has not written anything yet." (`Run.tsx:57-62`)
+
+Read together they contradict each other: a worker that passed with no
+log. Clicking the card then opens an empty panel titled with the unit id
+(B4, B6). And neither chip says the one true thing — this unit passed
+**in an earlier run**, and was not run again.
+
+Worse, the evidence is not merely unshown. `saveRun` writes one file per
+cut, `${cutId}.json` (`record.ts:88`), so a re-run **overwrites** the
+record of the run before it. The logs that would have justified "passed"
+are destroyed by the act of running again.
 
 ---
 
@@ -417,6 +437,15 @@ that reaches it. Machine output is separated from what a worker said.
 *Proven when:* no panel opens empty, no panel is titled with an id, and
 `gate#closer` is reachable by one gesture.
 Covers B4, B5, B6, B7.
+
+**4b. A reused unit says it was reused, and keeps its evidence.**
+A unit carried over from an earlier run reads as carried over — one
+chip, naming the run it passed in — instead of "passed" beside "no log
+yet". The record of a run is kept per run rather than per cut, so
+running again stops destroying the log that justifies the word "passed".
+*Proven when:* a resumed run shows no card claiming a pass with no
+evidence, and the earlier run's log is still readable after the re-run.
+Covers B11.
 
 **5. One action, one name.**
 The registry becomes the source of the label, the screen and the gesture.
