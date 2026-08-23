@@ -15,6 +15,8 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 const run = promisify(execFile);
 const git = (root: string, args: string[]) =>
@@ -39,10 +41,31 @@ export class StoreSyncService {
     void this.sync();
   }
 
+  /**
+   * A lock a dead git process left behind. Every sync after it fails the
+   * same way, and only the developer console hears — four days of records
+   * once went uncommitted behind one, and a space deleted that morning
+   * took them with it. A lock older than two of this service's intervals
+   * cannot belong to a live commit: it is removed, and said.
+   */
+  private clearStaleLock(): boolean {
+    const lock = path.join(this.storeRoot, ".git", "index.lock");
+    try {
+      const age = Date.now() - fs.statSync(lock).mtimeMs;
+      if (age < 2 * this.intervalMs) return false;
+      fs.rmSync(lock, { force: true });
+      this.log(`━━ store autosync: removed a stale index.lock (${Math.round(age / 60_000)} min old) left by a git process that died`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** One sync pass. Exposed for tests and for an explicit "sync now". */
   async sync(): Promise<"clean" | "synced" | "failed"> {
     if (this.syncing) return "clean";
     this.syncing = true;
+    this.clearStaleLock();
     try {
       const { stdout } = await git(this.storeRoot, ["status", "--porcelain"]);
       const dirty = stdout.trim().length > 0;
