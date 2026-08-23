@@ -111,6 +111,7 @@ export async function dispatchTep(
     "plan-roles",
     "signature-drift",
     "gate-infra",
+    "window-reload",
   ]);
   let machineAttention = 0;
 

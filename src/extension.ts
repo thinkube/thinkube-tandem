@@ -10,6 +10,7 @@ import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
+import { appendDefect } from "./engine/defectLog";
 import {
   createProduct,
   discoverProjects,
@@ -515,6 +516,29 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  // A run lives in this process. When the window reloads, the run dies
+  // with it — and a death nobody wrote down looks exactly like a run that
+  // is still going. Every in-flight run says so, in its own log and in the
+  // ledger, before the process goes.
+  for (const s of sessions.values())
+    if (s.running && s.runState) {
+      const open = [...s.runState.units.values()]
+        .filter((u) => u.state !== "done" && u.state !== "failed" && u.state !== "blocked")
+        .map((u) => `- ${u.id}: ${u.state}${u.activity ? ` — ${u.activity.text}` : ""}`)
+        .join("\n");
+      s.runState.log(
+        `⛔ the editor window is closing or reloading — this run ends here, unfinished. What was still open:\n${open || "- nothing: the run was between units"}\nRun again resumes what was committed.`,
+      );
+      appendDefect(s.deps.storeDir, {
+        spec: s.unrunCut()?.tepId ?? "run",
+        activity: "run",
+        trigger: "window-reload",
+        type: "gate",
+        impact: "run lost — the editor process ended",
+        detail: open.slice(0, 1500),
+      });
+      s.runState.halt();
+    }
   panel?.dispose();
   storeSync?.dispose();
 }
