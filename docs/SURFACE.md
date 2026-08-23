@@ -147,26 +147,6 @@ is working.
 
 ## C. Things that are not true
 
-**C8 — the gate card says "green" without the gate having run.**
-`Run.tsx:177-183`: the chip is `green` when `allDone`, which is
-`run.units.every((u) => u.state === "done")` (`Run.tsx:138`) — every
-WORKER finished. The gate's own verdict is never consulted. Its hover
-text is "Every check ran green at the gate", a claim about a gate that
-may not have started.
-
-Seen live: at 23:02 the last worker finished, every unit read done, and
-the card said green for twelve minutes. The gate then ran the
-repository's suite, found it red, and its finisher failed. The card had
-announced the opposite of what happened, before it happened.
-
-**C9 — a delivery report carries no identity.**
-`Delivery.tsx:44` renders `<Markdown text={d.page} />` and nothing else:
-no run, no TEP, no date. A report from a withheld run twenty-six minutes
-ago is drawn exactly like one from the run finishing now. With C8 above,
-a person reads a graph claiming the gate is green beside a report from a
-different run, and nothing on the screen distinguishes either from the
-truth.
-
 **C1 — `Fit` does not fit.**
 `world.tsx:119` — `fit: () => setT({ tx: 30, ty: 30, k: 1 })`. It reads
 neither the graph nor the viewport. The button says "Fit" and its
@@ -206,6 +186,26 @@ not understand links. Nothing in a delivery report is clickable.
 one first replaces its answer with yours". No component draws
 `push.questions`. Only its length is read, in that sentence and in
 `App.tsx:211`.
+
+**C8 — the gate card says "green" without the gate having run.**
+`Run.tsx:177-183`: the chip is `green` when `allDone`, which is
+`run.units.every((u) => u.state === "done")` (`Run.tsx:138`) — every
+WORKER finished. The gate's own verdict is never consulted. Its hover
+text is "Every check ran green at the gate", a claim about a gate that
+may not have started.
+
+Seen live: at 23:02 the last worker finished, every unit read done, and
+the card said green for twelve minutes. The gate then ran the
+repository's suite, found it red, and its finisher failed. The card had
+announced the opposite of what happened, before it happened.
+
+**C9 — a delivery report carries no identity.**
+`Delivery.tsx:44` renders `<Markdown text={d.page} />` and nothing else:
+no run, no TEP, no date. A report from a withheld run twenty-six minutes
+ago is drawn exactly like one from the run finishing now. With C8 above,
+a person reads a graph claiming the gate is green beside a report from a
+different run, and nothing on the screen distinguishes either from the
+truth.
 
 ---
 
