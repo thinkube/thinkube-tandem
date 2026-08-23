@@ -115,6 +115,10 @@ export interface SetupArgs {
   repoRoot?: string;
   provision?: string;
   prepare?: string;
+  /** Builds the product as shipped. Proved on the untouched tree like the
+   *  build step: a tree that does not ship before any worker touches it is
+   *  the environment's failure, refused with the compiler's words. */
+  build?: string;
   /** Runs one of the repository's own test files (`<file>` = its source
    *  path). Proved on one existing test before it is trusted; an answer
    *  that does not hold is dropped, never a reason to refuse the run. */
@@ -219,6 +223,19 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // Nothing the door lent or watched appear may ever be staged: the gate,
   // the closer and every slice commit run `git add -A` in this tree.
   await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
+  if (args.build) {
+    args.log(`proving the product build on the untouched tree: ${args.build}`);
+    const t0 = Date.now();
+    const b = await args.boundedExec(args.build, args.worktree);
+    args.log(`  ${b.code === 0 ? "held" : "did not hold"} in ${since(t0)}`);
+    if (b.code !== 0)
+      return {
+        runOne: "",
+        provisioned,
+        built,
+        refusal: `the repository's own product build (${args.build}) fails on the untouched tree — nothing this run delivers could ship:\n${tail(b.output)}`,
+      };
+  }
   return { provisioned, built, runOne: await proveRunOne(args) };
 }
 
@@ -293,18 +310,24 @@ export async function linkProvisioned(
   }
 }
 
-/** Build the delivered tree before the closing checks; a failure is spoken,
- *  and the checks still run — against an unbuilt tree, said so. */
+/**
+ * Build the delivered tree before the closing checks. A failure is spoken
+ * and RETURNED: the checks still run, so the person sees every verdict —
+ * but a tree that does not build is handed over to nobody. Three runs once
+ * reported deliveries of a branch the product build rejected, because this
+ * step only warned.
+ */
 export async function prepareAtGate(
   prepare: string | undefined,
   worktree: string,
   boundedExec: BoundedExec,
   log: (line: string) => void,
-): Promise<void> {
-  if (!prepare) return;
+): Promise<{ ok: boolean; words: string }> {
+  if (!prepare) return { ok: true, words: "" };
   const prep = await boundedExec(prepare, worktree);
   if (prep.code !== 0)
     log(
-      `⚠ the prepare command failed at the gate — checks run against an unbuilt tree: ${prep.output.split("\n").pop()?.slice(0, 160) ?? ""}`,
+      `⚠ the build failed at the gate — checks run against an unbuilt tree: ${prep.output.split("\n").pop()?.slice(0, 160) ?? ""}`,
     );
+  return { ok: prep.code === 0, words: prep.output.slice(-3000) };
 }

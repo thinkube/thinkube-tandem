@@ -250,3 +250,34 @@ test("a promise that is not kept is withheld, never handed over red", async () =
     `the withheld branch lost its checks: ${held.filter((p) => p.includes("test")).join(", ")}`,
   );
 });
+
+test("a tree that does not build as shipped is withheld, whatever the tests say", async () => {
+  // Three runs once reported deliveries of a branch the product build
+  // rejected: the gate proved the test build only. The product build is
+  // green on the untouched tree and red once the coder's file exists — so
+  // the door passes, every check passes, and the gate must still refuse.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape);
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-noship" };
+  const state = new RunState(() => {});
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      suiteCommand: ["node", "-e", "process.exit(0)"],
+      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      build: "test ! -e src/greet.mjs",
+      state,
+      supervisorRound: async () => null,
+      spaceName: "delivers",
+      worker: scriptedWorker(shape, "honest", false).worker as never,
+    } as never,
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "delivers" }),
+  );
+  assert.ok(outcome.delivery, "the run reached a terminal state");
+  assert.ok(outcome.delivery?.withheld, "and it was withheld");
+  assert.match(outcome.delivery!.withheld!, /does not build as shipped/);
+});

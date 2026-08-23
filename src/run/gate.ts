@@ -37,8 +37,8 @@ import type { RunState } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
-import { repairByAuthors } from "./authorRepair";
-import type { RedCriterion } from "./authorRepair";
+import { repairUnkept } from "./unkept";
+import { shellLine } from "./execs";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
@@ -93,7 +93,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices);
+  // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
+  // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+  const built = deps.build && deps.build !== deps.prepare ? await prepareAtGate(deps.build, worktree, boundedExec, log) : { ok: true, words: "" };
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
   // Assessments: a FRESH reviewer over the DELIVERED tree, fail-soft red.
   const graded = await gradeAssessments({
@@ -191,9 +194,35 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         }),
     })),
   );
+  // One judgement of the tree, used by every rung at this gate: the
+  // repository's suite AND the product build. A tree that does not build
+  // as shipped is red whatever the suite says — the suite may compile a
+  // different configuration than the one that ships the product — and the
+  // build's own words join the suite's failures, so the finisher and the
+  // closer repair it like any red, and a branch that still does not build
+  // is withheld, never handed over. Three runs once reported deliveries of
+  // a branch the product build rejected, because only the first judgement
+  // here looked at it and every re-judgement after a repair did not.
+  const judgeTree = async (cmd: string, cwd: string): Promise<{ code: number | null; output: string }> => {
+    const suite = await g.suiteExec(cmd, cwd);
+    if (!deps.build || deps.build === deps.prepare) return suite;
+    const b = await boundedExec(deps.build, cwd);
+    if (b.code === 0) return suite;
+    return {
+      code: suite.code === 0 ? b.code : suite.code,
+      output: `${suite.output}\nnot ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
+    };
+  };
   log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
-  const ran = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
-  let verdict = suiteVerdictOf(ran.code, ran.out, worktree);
+  const ran = await judgeTree(shellLine(deps.suiteCommand), worktree);
+  let verdict = suiteVerdictOf(ran.code, ran.output, worktree);
+  if (!built.ok && verdict.green)
+    verdict = {
+      ...verdict,
+      green: false,
+      summary: `the delivered tree does not build as shipped (${deps.build}); ${verdict.summary}`,
+      failures: [{ name: "the product build", detail: built.words, file: filesNamedIn(built.words, worktree)[0] }],
+    };
   if (!verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
     deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
@@ -206,7 +235,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       deps,
       state: g.state,
       exec,
-      suiteExec: g.suiteExec,
+      suiteExec: judgeTree,
       verdict,
       log,
       defect,
@@ -236,8 +265,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         model: deps.model,
         ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
         measure: async () => {
-          const r = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
-          const v = suiteVerdictOf(r.code, r.out, worktree);
+          const r = await judgeTree(shellLine(deps.suiteCommand), worktree);
+          const v = suiteVerdictOf(r.code, r.output, worktree);
           // Build first: an unbuildable tree is one failure, not many, so a
           // repair that breaks imports for a round is not read as a collapse.
           const built = deps.prepare ? await boundedExec(deps.prepare, worktree) : { code: 0, output: "" };
@@ -268,8 +297,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
-        const again = await exec(deps.suiteCommand[0], deps.suiteCommand.slice(1), worktree);
-        verdict = suiteVerdictOf(again.code, again.out, worktree);
+        const again = await judgeTree(shellLine(deps.suiteCommand), worktree);
+        verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
           await exec("git", ["add", "-A", "."], worktree);
           await exec("git", ["commit", "-m", `tandem: ${tep} — closed`], worktree);
@@ -323,171 +352,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // unkept. A delivery with a red proof asks the person to finish the work
   // and to decide which reds are acceptable, which is the machine's job.
   let unkept = proofs.filter((p) => p.verdict !== "green");
-  // Each red criterion goes back to the unit that wrote its code, as the
-  // next message in that unit's own session, with the drive's evidence and
-  // what changed in the tree since it stopped. Then the checks run again.
-  if (unkept.length && !g.state.halted) {
-    const unitOf = (criterionId?: string): string | undefined => {
-      if (!criterionId) return undefined;
-      for (const [slice, probes] of g.sliceProbes)
-        if (probes.some((p) => criterionByProbe.get(p) === criterionId))
-          return slices
-            .find((s) => s.handle === slice)
-            ?.workUnits.map((_, i) => `${slice}#eu-${i}`)
-            .find((id) => g.sessionOf(id));
-      return undefined;
-    };
-    const changedSince = (
-      await exec("git", ["-C", worktree, "diff", "--name-only", `${g.baseSha}..HEAD`], worktree)
-    ).out
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const reds: RedCriterion[] = [];
-    for (const p of unkept) {
-      const unit = unitOf(p.criterionId);
-      if (!unit) continue;
-      const slice = unit.split("#")[0];
-      reds.push({
-        unit,
-        text: p.label,
-        evidence: p.ref ?? "the check did not pass",
-        footprint: slices.find((s) => s.handle === slice)?.workUnits.flatMap((u) => u.footprint) ?? [],
-      });
-    }
-    if (reds.length) {
-      await repairByAuthors({
-        reds,
-        sessionOf: g.sessionOf,
-        changedSince,
-        worktree,
-        model: deps.model,
-        worker: g.worker,
-        log: (line) => log(line),
-        defect,
-      });
-      await prepareAtGate(deps.prepare, worktree, boundedExec, log);
-      const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
-      for (const r of again) {
-        const probe = probeOfAc.get(r.ac);
-        const criterionId = probe ? criterionByProbe.get(probe) : undefined;
-        const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
-        // By the criterion it proves; two checks can carry the same words.
-        const proof = criterionId
-          ? proofs.find((p) => p.criterionId === criterionId)
-          : proofs.find((p) => p.label === label);
-        if (!proof || !r.pass) continue;
-        const wired = await provedByExecution({
-          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
-          subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
-          worktree,
-          exec: boundedExec,
-        });
-        if (wired.executed === "no") continue;
-        proof.verdict = "green";
-        proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
-      }
-      unkept = proofs.filter((p) => p.verdict !== "green");
-      log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
-    }
-  }
-  // The ladder's last rung, for criteria as it already is for the suite:
-  // when the authors are spent — or, on a resumed run, were never there —
-  // the closer takes the unkept promises with the whole tree and full
-  // sight. Without it a resumed run fell straight from red to withheld
-  // with nobody left to try, which is a ladder with its last rung missing.
-  if (unkept.length && !g.state.halted) {
-    const rejudge = async (): Promise<Proof[]> => {
-      await prepareAtGate(deps.prepare, worktree, boundedExec, log);
-      // A red assessment is re-graded by a fresh reviewer over the repaired
-      // tree, exactly as a check is re-run. Frozen first-pass verdicts held
-      // three repaired promises red while the closer's edits could move
-      // nothing but the tree.
-      const redReviews = new Set(proofs.filter((p) => p.kind === "assessment" && p.verdict !== "green").map((p) => p.label));
-      if (redReviews.size) {
-        const regradedAll = await gradeAssessments({
-          space,
-          cut,
-          testerWt: worktree,
-          model: deps.workerModel?.workerModel ?? "sonnet",
-          ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
-          log,
-          only: (label) => redReviews.has(label),
-        });
-        observations.push(...regradedAll.observations.filter((o) => !observations.includes(o)));
-        // A promise the fresh reviewer now rules observable-only stops
-        // being an unkept proof: it moves to the person's list by name.
-        for (const o of regradedAll.observations) {
-          const label = o.slice(0, 60);
-          const stale = proofs.find((p) => p.kind === "assessment" && p.verdict !== "green" && p.label.includes(label.slice(0, 40)));
-          if (stale) stale.verdict = "green";
-        }
-        for (const r of regradedAll.proofs) {
-          const proof = proofs.find((p) => p.label === r.label);
-          if (proof) {
-            proof.verdict = r.verdict;
-            if (r.ref) proof.ref = r.ref;
-          }
-        }
-      }
-      const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
-      for (const r of again) {
-        const probe = probeOfAc.get(r.ac);
-        const criterionId = probe ? criterionByProbe.get(probe) : undefined;
-        const proof = criterionId
-          ? proofs.find((p) => p.criterionId === criterionId)
-          : proofs.find((p) => p.label === ((probe && g.checkOf.get(probe)) || `check ${r.ac}`));
-        if (!proof) continue;
-        if (!r.pass) {
-          proof.verdict = "red";
-          proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
-          continue;
-        }
-        const wired = await provedByExecution({
-          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
-          subjects: subjectsOf(criterionId),
-          worktree,
-          exec: boundedExec,
-        });
-        proof.verdict = wired.executed === "no" ? "red" : "green";
-        proof.ref = (wired.executed !== "yes" ? wired.detail : r.evidence)?.slice(0, 300) ?? proof.ref;
-      }
-      return proofs.filter((p) => p.verdict !== "green");
-    };
-    const closed = await close({
-      subject: `${tep} (the unkept promises)`,
-      worktree,
-      footprint: slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)),
-      probeSources: [],
-      history: unkept.map((p) => `${p.label}: ${(p.ref ?? "").split("\n")[0]}`).slice(0, 20),
-      criteria: unkept.map((p, i) => ({ id: p.criterionId ?? `unkept-${i}`, text: p.label })),
-      ...(deps.digest ? { digest: deps.digest } : {}),
-      ...(deps.prepare ? { prepare: deps.prepare } : {}),
-      model: deps.model,
-      ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
-      measure: async () => {
-        const still = await rejudge();
-        return {
-          green: still.length === 0,
-          score: still.length,
-          evidence: still
-            .map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`)
-            .join("\n")
-            .slice(0, 8000),
-        };
-      },
-      exec,
-      boundedExec: g.suiteExec,
-      halted: () => g.state.halted,
-      log: (l) => log(l, "gate#closer"),
-      say: (t) => g.state.doing("gate#closer", t),
-      onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
-      defect: (e) => defect({ unit: "gate#closer", ...e }),
-      ...(deps.worker ? { worker: deps.worker } : {}),
-    });
-    unkept = proofs.filter((p) => p.verdict !== "green");
-    log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`);
-  }
+  unkept = await repairUnkept({
+    tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
+    checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
+    halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
+    exec, boundedExec, suiteExec: g.suiteExec, log, defect,
+  });
   // A check proves a promise once; it does not join the repository's suite
   // because it exists. Its source and its verdict are kept on the delivery
   // record — where a person can read what was driven — and when a delivery

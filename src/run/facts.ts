@@ -26,6 +26,8 @@ export interface RepositoryFacts {
   prepare: string;
   /** How one of its own tests runs (`<file>` = its path), or "". */
   runOne: string;
+  /** How the product is built to ship, or "". */
+  build?: string;
   /** When the door proved these, so a reader can tell how old they are. */
   provenAt?: string;
 }
@@ -42,6 +44,7 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
       provision: parsed.provision ?? "",
       prepare: parsed.prepare ?? "",
       runOne: parsed.runOne ?? "",
+      ...(parsed.build ? { build: parsed.build } : {}),
       ...(parsed.provenAt ? { provenAt: parsed.provenAt } : {}),
     };
   } catch {

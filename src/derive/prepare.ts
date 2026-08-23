@@ -25,9 +25,15 @@ export interface Setup {
   /** Runs ONE of the repository's own test files, `<file>` standing for
    *  its source path; empty when the repository has no such way. */
   runOne: string;
+  /** Builds the PRODUCT as the repository ships it — its build, compile or
+   *  package step; empty when nothing is built to ship. Distinct from
+   *  `prepare`, which builds what a check imports: three runs once handed
+   *  over a branch whose test build passed and whose product build did
+   *  not, because only the first was ever asked for. */
+  build: string;
 }
 
-export const NO_SETUP: Setup = { provision: "", prepare: "", runOne: "" };
+export const NO_SETUP: Setup = { provision: "", prepare: "", runOne: "", build: "" };
 
 /** What steers a derivation besides the repository: an earlier answer to
  *  hold to unless the manifests changed, and the evidence of an answer that
@@ -44,7 +50,8 @@ function buildPreparePrompt(
   digest: string,
   ctx: SetupContext = {},
 ): string {
-  const show = (s: Setup) => `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}\nRUNONE: ${s.runOne || "NONE"}`;
+  const show = (s: Setup) =>
+    `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}\nRUNONE: ${s.runOne || "NONE"}\nBUILD: ${s.build || "NONE"}`;
   return (
     `Three questions about the repository at ${repoRoot}, answered from its ` +
     `own manifests and configs (the dependency manifests and lockfiles, ` +
@@ -78,12 +85,17 @@ function buildPreparePrompt(
     `Write <file> where the test's SOURCE path (relative to the repository ` +
     `root, e.g. src/a/b.test.ts) goes; if the runner needs the built ` +
     `counterpart instead, put the mapping in the command itself (a shell ` +
-    `substitution is fine). NONE if there is no way to run one file alone.\n\n` +
-    `Respond with EXACTLY three lines and nothing else — no explanation, no ` +
+    `substitution is fine). NONE if there is no way to run one file alone.\n` +
+    `4. BUILD — what single command builds the PRODUCT as this repository ` +
+    `ships it — its build, compile or package script (the one a release ` +
+    `runs), NOT the test build? A tree this command rejects cannot ship, ` +
+    `whatever the tests say. NONE only if nothing is built to ship.\n\n` +
+    `Respond with EXACTLY four lines and nothing else — no explanation, no ` +
     `code fences:\n` +
     `PROVISION: <the exact shell command, run from the repository root, or NONE>\n` +
     `PREPARE: <the exact shell command, run from the repository root, or NONE>\n` +
-    `RUNONE: <the exact shell command with <file> in it, or NONE>`
+    `RUNONE: <the exact shell command with <file> in it, or NONE>\n` +
+    `BUILD: <the exact shell command, run from the repository root, or NONE>`
   );
 }
 
@@ -94,7 +106,7 @@ function parseSetup(raw: string | null): Setup | undefined {
   if (!raw || !/^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:/im.test(raw)) return undefined;
   const setup: Setup = { ...NO_SETUP };
   for (const l of raw.split("\n")) {
-    const m = /^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
+    const m = /^\s*`*\s*(PROVISION|PREPARE|RUNONE|BUILD)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
     if (!m) continue;
     const cmd = m[2].replace(/^`+|`+$/g, "").trim();
     // A command is one line of sane length; an essay or NONE is not one.
@@ -103,6 +115,7 @@ function parseSetup(raw: string | null): Setup | undefined {
     const key = m[1].toUpperCase();
     if (key === "PROVISION") setup.provision = value;
     else if (key === "PREPARE") setup.prepare = value;
+    else if (key === "BUILD") setup.build = value;
     // A single-file command without its placeholder runs nothing in particular.
     else setup.runOne = value.includes("<file>") ? value : "";
   }

@@ -85,14 +85,14 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 8.1 | The door proves the PACKAGING build, not only the test build: run 15's delivered branch fails `tsc -p ./` on an unused import, and no gate saw it — the proven `prepare` fact covers `tsconfig.test.json` alone | a branch that cannot package is red at the gate | todo |
+| 8.1 | The door proves the PACKAGING build, not only the test build | done — a fourth fact, `build` (how the product ships), read from the repository, proved on the untouched tree at the door, and judged at the gate by every rung: a tree that does not build as shipped is red whatever the suite says, repaired like any red, withheld if it stays so. Driven: the product build green at the door and red once the coder's file exists ends withheld | done |
 | 8.2 | The delivered branch's own fix for 8.1's instance: one unused import in src/run/dispatch.ts — the work side, on the branch awaiting accept, so it belongs to a run or the person, not to an out-of-band edit | the branch packages | todo |
 
 ## Phase 7 — the acceptance
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 7.1 | The machine delivers the four asks, headless, three times | **done — runs 11, 15 and 16 delivered** (78, 77 and 77 proofs green; runs 15 and 16 at zero machine-attention, with the three running-product observations named on the delivery's face for the person). Honest bound on the claim: all three runs proved STANDING work at the gate — the fresh-worker path (testers authoring, coders building, the oracle grading) is unexercised under this machine, and a fresh cut is the next real test | done |
+| 7.1 | The machine delivers the four asks, headless, three times | **not met — retracted.** Runs 11, 15 and 16 reported deliveries, and all three handed over a branch that fails the product build (`tsc -p ./`, one unused import left by a merge). The gate proved the test build only and never ran the build that ships the extension, so 'delivered' was true of the checks and false of the product. A delivery that cannot package is not a delivery; the count restarts at zero once 8.1 makes the gate prove it | todo |
 | 7.2 | Attention events about the machine, counted per run | counted where the rows are written, said at the end of every run, and recorded on the delivery | done |
 | 7.3 | The stop rule, corrected and decided. As written it counted failures, not whether they were being fixed — and its fallback (v1's loop) no longer exists, so "stop" means a version rollback discarding this work. Runs 1 and 2 both failed for machine reasons; both produced a diagnosis, a fix and a drive within the hour, which is the loop working, not failing. Decision: continue, with a real trigger — stop if the SAME defect withholds a second run, or if a failure cannot be turned into a fix plus a drive within one iteration | the decision, recorded here | done |
 

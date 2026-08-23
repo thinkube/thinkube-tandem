@@ -32,6 +32,7 @@ interface Args {
   cut?: string;
   suite: string[];
   prepare?: string;
+  build?: string;
   provision?: string;
   model: string;
   digest: boolean;
@@ -46,7 +47,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
   const space = get("space");
   const repo = get("repo");
   if (!space || !repo)
-    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--provision <cmd>] [--model <name>] [--hours <n>] [--no-digest]";
+    return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--build <cmd>] [--provision <cmd>] [--model <name>] [--hours <n>] [--no-digest]";
   const suite = (get("suite") ?? "npm test").split(" ").filter(Boolean);
   return {
     space: path.resolve(space),
@@ -54,6 +55,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     ...(get("cut") ? { cut: get("cut")! } : {}),
     suite,
     ...(get("prepare") ? { prepare: get("prepare")! } : {}),
+    ...(get("build") ? { build: get("build")! } : {}),
     ...(get("provision") ? { provision: get("provision")! } : {}),
     ...(get("hours") ? { maxRunMs: Math.round(Number(get("hours")) * 3_600_000) } : {}),
     model: get("model") ?? "sonnet",
@@ -146,7 +148,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (told)
     process.stdout.write(
       `the repository's own setup facts, proved ${told.provenAt ?? "earlier"}: ` +
-        `install ${told.provision || "NONE"}; build ${told.prepare || "NONE"}; one test ${told.runOne || "NONE"}\n`,
+        `install ${told.provision || "NONE"}; prepare ${told.prepare || "NONE"}; one test ${told.runOne || "NONE"}; product build ${told.build || "NONE"}\n`,
     );
 
   // The repository's own facts: how it installs, builds and runs one test.
@@ -181,6 +183,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         ? { provision: args.provision ?? told?.provision ?? known!.provision }
         : {}),
       ...(told?.runOne ?? known?.runOne ? { runOne: told?.runOne ?? known!.runOne } : {}),
+      ...(args.build ?? told?.build ?? known?.build ? { build: args.build ?? told?.build ?? known!.build } : {}),
       ...(known ? { affected: (p: string) => known.affected(p) } : {}),
     },
     space,

@@ -16,6 +16,7 @@ import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
+import { factsOf } from "../run/facts";
 
 export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string } {
     const cut = {
@@ -141,6 +142,9 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       const prepare = s.deps.prepareCommand || known?.prepare || undefined;
       const provision = known?.provision || undefined;
       const runOne = known?.runOne || undefined;
+      // The product build — proved at the door, red at the gate — from the
+      // repository's own facts first, the reading second.
+      const build = factsOf(s.deps.round.repoRoot)?.build || known?.build || undefined;
       const suiteReds = known?.suiteReds;
       const rememberSuiteReds = known?.rememberSuiteReds;
       const resetup = known?.resetup;
@@ -158,6 +162,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         spaceName: path.basename(s.deps.storeDir),
         ...(digest ? { digest } : {}),
         ...(prepare ? { prepare } : {}),
+        ...(build ? { build } : {}),
         ...(provision ? { provision } : {}),
         ...(runOne ? { runOne } : {}),
         ...(suiteReds ? { suiteReds } : {}),

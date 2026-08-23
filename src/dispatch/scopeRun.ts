@@ -27,6 +27,8 @@ export async function dispatchScopePlan(args: {
    *  human's settings override) — same scope rule as the digest. */
   provision?: string;
   prepare?: string;
+  /** The product build, judged at the gate — anchor scope only, like prepare. */
+  build?: string;
   runOne?: string;
   suiteReds?: readonly string[];
   rememberSuiteReds?: (files: readonly string[]) => void;
@@ -94,6 +96,7 @@ export async function dispatchScopePlan(args: {
             : {}),
         ...(sc === "" && args.provision ? { provision: args.provision } : {}),
         ...(sc === "" && args.runOne ? { runOne: args.runOne } : {}),
+        ...(sc === "" && args.build ? { build: args.build } : {}),
         ...(sc === "" && args.suiteReds ? { suiteReds: args.suiteReds } : {}),
         ...(sc === "" && args.rememberSuiteReds ? { rememberSuiteReds: args.rememberSuiteReds } : {}),
         ...(sc === "" && args.resetup ? { resetup: args.resetup } : {}),

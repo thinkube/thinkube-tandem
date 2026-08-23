@@ -50,6 +50,9 @@ export interface DispatchDeps {
   /** Build/typecheck command run in the verify runner and the gate
    *  worktree before checks — the engine's own prepare seam. */
   prepare?: string;
+  /** Builds the PRODUCT as the repository ships it. Proved on the untouched
+   *  tree at the door; red at the gate withholds the delivery. */
+  build?: string;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
   /** Injectable for tests: how a unit sleeps waiting for another unit's

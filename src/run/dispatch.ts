@@ -167,7 +167,7 @@ export async function dispatchTep(
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
   const doSetup = () =>
-    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
+    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, build: deps.build, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   let ready = await doSetup();
   // A resumed branch an earlier run left half-committed is mended before the run refuses.
   if (ready.refusal && refreshed.resumed) {
@@ -186,8 +186,9 @@ export async function dispatchTep(
     provision: ready.corrected?.provision ?? deps.provision ?? "",
     prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
     runOne: ready.runOne,
+    ...(deps.build ? { build: deps.build } : {}),
   };
-  if (facts.provision || facts.prepare || facts.runOne)
+  if (facts.provision || facts.prepare || facts.runOne || facts.build)
     rememberFacts(deps.repoRoot, facts, new Date().toISOString());
   const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };

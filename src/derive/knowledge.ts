@@ -45,6 +45,8 @@ export interface Knowledge {
    *  checkout; the corrected answer is remembered. */
   /** How one of the repository's own tests runs (`<file>` = its path), unproven until the door proves it. */
   runOne: string;
+  /** How the product is built to ship; "" when nothing ships built. */
+  build: string;
   /** Test files red at an earlier gate of this repository. */
   suiteReds: string[];
   rememberSuiteReds: (files: readonly string[]) => void;
@@ -151,6 +153,7 @@ export async function knowledgeOf(args: {
     provision: settled.provision,
     prepare: settled.prepare,
     runOne: settled.runOne,
+    build: settled.build,
     suiteReds: parseReds(args.store?.load("suite@reds")),
     rememberSuiteReds: (files) => {
       const all = [...new Set([...parseReds(args.store?.load("suite@reds")), ...files])].slice(-40);
