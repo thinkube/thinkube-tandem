@@ -207,6 +207,34 @@ of them there — nothing has users.
   a screen. Everything this repository owns and can observe about the
   criterion is proved; what remains is VS Code's own behaviour, which
   this repository neither owns nor can influence.
+
+  **review-19 is recorded NOT VERIFIED, and this is its record.** The
+  criterion — "in the running extension, opening two thinking spaces
+  shows two tabs" — names the RUNNING extension, so satisfying it as
+  written requires launching a real editor and looking at the screen.
+  That is the case this repository already has a rule for: "a criterion
+  the machine cannot verify — it needs the running product, or acts on
+  the world — is recorded on the delivery as NOT VERIFIED, with the
+  reason why" (see "Self-awareness — state, limits, ground" below). The
+  rule also says the design phase should have marked it and the runtime
+  wall catches what design missed; this is the runtime wall catching it.
+
+  The reason, precisely: an editor cannot be launched from this tree.
+  `@vscode/test-electron` is absent from `package.json` and from
+  `node_modules` (only `@vscode/vsce`, the packaging tool, is
+  installed), and there is no display, no shell and no network to
+  install or run one. No content written into any file here changes
+  that, so no edit can turn this criterion green on its own terms.
+
+  What is NOT the reason: the product being wrong. The defect the
+  criterion points at — a fixed `ViewColumn.One` collapsing the second
+  space onto the first — was real, is fixed, and is proved by
+  `panelHost.test.ts` driving the real register, panel and host with no
+  fake link between them. Every seam this repository owns is observed;
+  only the editor's own rendering is not. The honest verdict is
+  therefore "unverifiable here", not "unmet" — and it is left visible
+  as NOT VERIFIED rather than closed, so a reviewer with an editor can
+  settle it in one minute by opening two spaces.
 - The retired-symbol importer gate's wiring verdict is held in
   ENGINE-WIRING.md, not here — that ledger is kept complete against the
   live tree by `src/gates/engineWiring.test.ts` and is the one place to
