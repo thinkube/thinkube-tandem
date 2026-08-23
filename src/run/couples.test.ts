@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
 import { outsideFootprint } from "./answers";
+import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
 
 test("two slices driving one module never mint the same check", () => {
@@ -209,4 +210,19 @@ test("an answer that names files a unit may not write is not passed on", () => {
     [],
     "an answer that names no file is left alone",
   );
+});
+
+test("the first write outside a clearance teaches; it does not end the unit", () => {
+  // A coder found that its own criterion needed one additive line in a
+  // table no slice owned. It knew the rule, quoted the half that says the
+  // run clears you and you make the change yourself, dropped the half that
+  // says ask first, and edited the file. The guard restored it and killed
+  // the unit — discarding an hour of correct work for a line the run would
+  // have granted.
+  const said = clearanceLesson(["src/surfaces/phase.ts"], ["src/gates/render.ts", "src/surfaces/inbound.ts"]);
+  assert.match(said, /src\/surfaces\/phase\.ts was restored/);
+  assert.match(said, /not a refusal/, "the change is reachable — only the order was wrong");
+  assert.match(said, /Say which file you need and which criterion requires it/);
+  assert.match(said, /src\/gates\/render\.ts, src\/surfaces\/inbound\.ts/, "it says what may be written");
+  assert.match(said, /again and the unit ends here/, "and that a second time is final");
 });

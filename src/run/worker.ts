@@ -80,8 +80,7 @@ const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
  * cleared to change, and RESTORE anything else. Extracted from the hook so
  * the wiring — porcelain, judgement, restore — is testable.
  *
- * Returns true when the unit changed something it was not cleared for,
- * which the caller turns into a halt.
+ * Returns the paths it restored, or nothing.
  */
 async function encloseWork(deps: {
   worktree: string;
@@ -89,17 +88,40 @@ async function encloseWork(deps: {
   alsoAllowed?: () => string[];
   baseline: Set<string>;
   log: (line: string) => void;
-}): Promise<boolean> {
+}): Promise<string[]> {
   const dirty = await porcelainPaths(deps.worktree);
   const bad = containmentViolations(
     dirty,
     [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
     deps.baseline,
   );
-  if (!bad.length) return false;
-  deps.log(`⛔ the guard restored ${bad.join(", ")} — an uncleared change; the unit fails`);
+  if (!bad.length) return [];
   await revertPaths(deps.worktree, bad);
-  return true;
+  return bad;
+}
+
+/**
+ * What the worker is told the first time it writes outside its clearance.
+ *
+ * The tree is already safe — the file was restored before this is read.
+ * What is left is a worker that believes it has made a change it has not,
+ * and the brief's own rule is what it needs: the clearance is asked for,
+ * and only then made. A unit once read "the run clears you and you make
+ * the change yourself", kept the conclusion, dropped the asking, and died
+ * for a single correct line it was entitled to write.
+ *
+ * So the first one teaches. Killing the unit there discards everything it
+ * built for a change the run would almost certainly have granted, and the
+ * guard has every fact needed to say so instead.
+ */
+export function clearanceLesson(bad: readonly string[], footprint: readonly string[]): string {
+  return (
+    `${bad.join(", ")} was restored: it is not yours to change, so that edit is gone and the file is as it was. ` +
+    `This is not a refusal of the change — it is the order. Say which file you need and which criterion requires it, ` +
+    `and the run rules on it and clears you; then you make the change yourself, in this session. ` +
+    `Until then what you may write is: ${footprint.join(", ")}. ` +
+    `Write outside it again and the unit ends here.`
+  );
 }
 
 /**
@@ -286,6 +308,8 @@ export async function runUnitWorker(
 
   let text = "";
   let containment = false;
+  /** The first uncleared write teaches; the second ends the unit. */
+  let warned = false;
   let sessionId: string | undefined;
   try {
     const stream = query({
@@ -356,10 +380,21 @@ export async function runUnitWorker(
               hooks: [
                 async (h: { tool_name?: string }) => {
                   if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
-                  if (await encloseWork(deps)) {
-                    containment = true;
-                    deps.abort.abort();
+                  const bad = await encloseWork(deps);
+                  if (!bad.length) return {};
+                  if (!warned) {
+                    warned = true;
+                    deps.log(`⚠ the guard restored ${bad.join(", ")} — not this unit's to change; it is told how to ask`);
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: "PostToolUse",
+                        additionalContext: clearanceLesson(bad, deps.footprint),
+                      },
+                    };
                   }
+                  deps.log(`⛔ the guard restored ${bad.join(", ")} — an uncleared change after being told; the unit fails`);
+                  containment = true;
+                  deps.abort.abort();
                   return {};
                 },
               ],

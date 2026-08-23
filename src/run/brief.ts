@@ -24,11 +24,14 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
   return (
     "\n\n──── WHAT YOU ARE CLEARED TO DO ────\n" +
     cleared.map((c) => `- ${say[c.action] ?? c.action.toUpperCase()} ${c.path}`).join("\n") +
-    "\nThis is the plan's expectation, not a limit on your judgement about the work itself. If a " +
-    "criterion you are responsible for needs a change somewhere you are NOT cleared for, ask — say " +
-    "which file and which criterion requires it. The run rules on it and clears you, waiting if " +
-    "another unit is changing that file at this moment; then you make the change yourself, in this " +
-    "session. Your promise is never handed to another slice."
+    "\nWriting anywhere else does not happen: the change is restored before your next step, so the " +
+    "edit you believe you made is gone. This is the ORDER, not a refusal — every file here is " +
+    "reachable, and the way to reach one is to ASK FIRST. Say which file you need and which " +
+    "criterion requires it. The run rules on it and clears you, waiting if another unit is changing " +
+    "that file at this moment; only then do you make the change yourself, in this session. Your " +
+    "promise is never handed to another slice.\n" +
+    "The list above is the plan's expectation and not a limit on your judgement about the work — " +
+    "but judgement about WHERE to write is settled by asking, never by deciding."
   );
 }
 
