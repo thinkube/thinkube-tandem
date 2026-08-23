@@ -1,147 +1,492 @@
-# The surface: what it is today, and what has to change
+# The surface, read line by line
 
-Read from the code on 23 August, not from memory. Every finding names the
-file and line that shows it. Nothing here is a fix; the plan at the end is
-ordered work, each item with the thing that would prove it.
+Every component of the webview was read in full: `App`, `Compose`,
+`Analysis`, `Asks`, `IntentGraph`, `WorkGraph`, `Run`, `Rail`,
+`Delivery`, `Markdown`, `nodeCard`, `world`, `type`, plus the two files
+that feed them — `push.ts` and `run/state.ts` — and the gesture registry.
 
-## What exists
+Forty-seven findings. Each one names the file and line that shows it.
+Nothing here is a fix. The plan at the end is ordered work, and each item
+says what would prove it done.
 
-Four tabs, one row, drawn once in `App.tsx:263`:
+The first audit of this surface looked at which actions reach the host.
+That is a list of wires, not a reading of a screen, and it missed
+everything below. This one starts from what a person sees.
 
-| Tab | Screen | What it holds |
+---
+
+## A. What is drawn
+
+Four tabs, one row, `App.tsx:263`.
+
+| Tab | Files | What it holds |
 |---|---|---|
-| 0 · Write | `App.tsx` | the draft, the reading of it |
-| 1 · Intent | `IntentGraph.tsx` | asks, subjects, claims |
-| 2 · Work | `WorkGraph.tsx` + `Rail.tsx` | promises, their checks, the cut review, Sign and build |
-| 3 · Orchestration | `Run.tsx` + `Delivery.tsx` | the workers, the delivery |
+| 0 · Write | `App.tsx`, `Compose.tsx`, `Analysis.tsx` | the box, the reading of it |
+| 1 · Intent | `Asks.tsx`, `IntentGraph.tsx` | asks, subjects, claims |
+| 2 · Work | `WorkGraph.tsx` | promises, where they land, what proves them |
+| 3 · Orchestration | `Run.tsx`, `Delivery.tsx` | the workers, the delivery |
 
-Twenty-eight actions reach the host. Twelve are in the gesture registry
-(`affordances.ts`); sixteen are not.
+A rail 320 pixels wide sits beside all four (`App.tsx:474`).
 
-## Findings
+Thirty actions reach the host (`vscode.ts:207-236`). Eighteen have a
+registry entry (`affordances.ts`). Five have no button anywhere.
 
-### 1. A worker's card says nothing
+---
 
-`Run.tsx:151` titles a card `u.sliceTitle ?? u.slice`, so it falls back to
-`SL-7`. The title is resolved in `push.ts:124`:
+## B. Things that show nothing
+
+**B1 — every card in a run is titled with a machine handle.**
+`push.ts:124` resolves a card's title with
 
 ```
 session.units.find((x) => x.id === u.slice)?.abstract?.title
 ```
 
-`u.slice` is a run handle — `SL-7`. `session.units` are the space's own
-unit records, whose ids are nothing of the kind. The lookup never matches,
-so **every** card in every run has fallen back to its handle. The person
-sees `SL-7` and `SL-7#eu-0`, which name a place in the machine and nothing
-about the work.
+`u.slice` is a run handle, `SL-7`. `session.units` are the space's unit
+records, whose ids are nothing of the kind. The lookup never matches, so
+`sliceTitle` is always undefined and every card in every run has fallen
+back to its handle — `Run.tsx:151`, `Run.tsx:159`, `Rail.tsx:50`. This is
+the whole of "SL-7 and SL-7#eu-0 tell nothing".
 
-### 2. The activity tag is raw worker text
+**B2 — three cards in a run carry the same title.**
+For one slice the surface draws a tester (`Run.tsx:151`), a coder (same
+line, same expression) and an auditor (`Run.tsx:159`). All three read
+`u.sliceTitle ?? u.slice`. Only the colour band differs. The comment at
+`Run.tsx:142-146` says the old defect was "drawing the same slice title
+on three different nodes, so no card said which one it was". The fix
+changed the maintainer only; the other three still collide.
 
-`Run.tsx:33` builds a chip from `u.activity.text` with no length rule, and
-the strings it renders are sentences: *"supervisor pre-flight — reading the
-brief against the checks"*. The chip is inside a fixed-width card, so the
-text overflows its node.
+**B3 — an audit card carries one chip and no criteria.**
+`Run.tsx:161-165`: the chip is `green` or `waiting`. Nothing says which
+criteria were graded, how many, or what any of them said. The card the
+person most wants to read is the emptiest one on the page.
 
-### 3. Zoomed out, state disappears
+**B4 — clicking an audit card or the gate card opens an empty panel.**
+`Run.tsx:343` posts `read-log` with the card's id for every card. Audit
+cards have id `audit:SL-7`; the gate card has id `gate`. No step in the
+run writes a log under either name — the run logs under unit ids, under
+`run`, and under `gate#closer`. `logTail` returns nothing, and the rail
+draws a panel titled `audit:SL-7` whose body is `(nothing yet)`.
 
-Zoom is one CSS transform over the whole canvas (`Run.tsx:298`). Nothing
-switches to a coarser drawing as it shrinks. A card's **role** is a colour
-band (`Run.tsx:149`), so roles stay legible; a card's **state** —
-running, passed, failed, waiting — exists only as small text inside the
-chip. Zoom out and the one thing a person is watching for is the first
-thing to go.
+**B5 — the closing gate's real log cannot be opened.**
+It is written under `gate#closer` (`gate.ts:293`, `unkept.ts:228`). No
+card has that id. There is no gesture that reaches it.
 
-### 4. One action, several labels
+**B6 — the log panel's title is a raw step id.**
+`Rail.tsx:43` — `<strong>{log.step}</strong>`. That is `SL-7#eu-0`, or
+`run`, or `gate#closer`. When the step is not a unit, `Rail.tsx:184`
+finds no unit and the whole explanatory block is skipped, so the panel is
+an untitled wall of text. Beside the title sits an empty `<div>` in a
+`space-between` row (`Rail.tsx:44`), left over from something removed.
+
+**B7 — the log body is one block of joined lines.**
+`Rail.tsx:98` — `log.lines.join("\n")` inside a `<pre>`. Worker prose,
+`[oracle]` blocks and `[suite]` blocks arrive as one stream with no
+separation, no entry boundaries, and no distinction between what a
+worker said and what a tool printed.
+
+**B8 — the rail is an empty column on two tabs.**
+`App.tsx:474` draws it always. On Write and Intent there is no run log,
+no parked worker, and `canBuild` is false, so `Rail.tsx:179-252` renders
+a 320-pixel bordered column containing nothing.
+
+**B9 — the in-flight list never says which subject.**
+`WorkGraph.tsx:120-124` draws one row per subject being thought about:
+`{g.label} — {g.current} of {g.total}`. With four subjects in flight
+that is four identical lines. The name is in the payload and is not used.
+
+**B10 — selecting a promise does nothing visible.**
+`WorkGraph.tsx:341` calls `onSelect`, which posts `select-unit`. The only
+visible consequence is the card's border colour (`WorkGraph.tsx:353`).
+Nothing anywhere shows the selected promise.
+
+---
+
+## C. Things that are not true
+
+**C1 — `Fit` does not fit.**
+`world.tsx:119` — `fit: () => setT({ tx: 30, ty: 30, k: 1 })`. It reads
+neither the graph nor the viewport. The button says "Fit" and its
+tooltip says "Fit everything on screen" (`world.tsx:139-140`). On a run
+of twenty cards it leaves most of them off screen.
+
+**C2 — the audit chip claims a check ran.**
+Its hover text is "Every check for this slice passed against the real
+state" (`Run.tsx:163`). The condition behind it is `graded()`,
+`Run.tsx:134-135`, which is true when every **code** unit of the slice
+reached `done`. It never looks at a check, and it ignores the tester and
+the maintainer — so a slice whose tester failed can show green.
+
+**C3 — a worker that finished is chipped "passed".**
+`Run.tsx:42` maps state `done` to the word `passed`. `done` means the
+worker stopped without failing. It is not a verdict.
+
+**C4 — the surface guesses at the person.**
+"Its last run ended without a delivery — if the window reloaded, the run
+ended with it" — `WorkGraph.tsx:219` and `App.tsx:438`. The surface does
+not know whether the window reloaded. The run's end is now written to the
+ledger on shutdown; the sentence was never updated to read it.
+
+**C5 — `Compose` names a button it does not have.**
+Its own header says "Nothing is recorded until you press Record"
+(`Compose.tsx:15`). The button is `Read N asks` (`Compose.tsx:194`).
+Recording happens on a different screen, under `Keep N asks`
+(`Analysis.tsx:188`).
+
+**C6 — "every 'see it' line above is a way in" points at inert text.**
+`Delivery.tsx:108`. The report is drawn by `Markdown.tsx`, which
+understands headings, list items, quotes, bold and code spans. It does
+not understand links. Nothing in a delivery report is clickable.
+
+**C7 — the rail sends the reader to a place that does not exist.**
+`Rail.tsx:204` — unanswered questions "are above the graph, and answering
+one first replaces its answer with yours". No component draws
+`push.questions`. Only its length is read, in that sentence and in
+`App.tsx:211`.
+
+---
+
+## D. Things that overflow, or vanish
+
+**D1 — a chip cannot wrap, and is given a sentence.**
+`nodeCard.tsx:60` sets `whiteSpace: "nowrap"` on every chip.
+`Run.tsx:33` builds the chip's text from the worker's raw activity line
+with no length rule — sentences such as "supervisor pre-flight — reading
+the brief against the checks". The card is 230 pixels wide
+(`nodeCard.tsx:9`). The chip runs straight out of it, over its
+neighbours. This is the overflow that was reported.
+
+**D2 — one notch of zoom-out erases every state.**
+`world.tsx:29` sets `far` below scale 0.62. `nodeCard.tsx:127` and
+`nodeCard.tsx:132` then drop the second line **and every chip**. What
+survives is the role band and the title — and by B1 the title is `SL-7`
+and by B2 three cards share it. Zoomed out, running, passed, failed and
+never-ran are indistinguishable. This is exactly the loss that was
+reported.
+
+**D3 — the work page's header may take 45% of the page.**
+`WorkGraph.tsx:161` — `maxHeight: "45%", overflowY: "auto"`. Two banners
+can occupy it (out-of-date, `:163`; signed-and-idle, `:202`), and the
+second may be scrolled out of sight.
+
+**D4 — the asks panel may take 16rem above the tab row.**
+`Asks.tsx:100` — `maxHeight: "16rem", overflowY: "auto"`, and it is drawn
+above the tabs (`App.tsx:240` vs `App.tsx:263`). This is the largest
+single cause of the tab row moving.
+
+**D5 — every delivery ever made is drawn in full, in one scroll.**
+`Delivery.tsx:32` reverses the list and renders each report's whole page.
+Nothing collapses an old one.
+
+**D6 — the observations list is laid out as a button.**
+`Delivery.tsx:110-119` puts the "for you to certify" list inside the flex
+row that holds Accept, Not this and Run again (`Delivery.tsx:45-53`,
+`alignItems: "center"`). The things a person must check before accepting
+are drawn after the Accept button, squashed beside it.
+
+---
+
+## E. The frame moves
+
+**E1 — three conditional blocks sit above the tab row.**
+The capture row (`App.tsx:155`, shown only on Write), the asks panel
+(`App.tsx:240`, shown only on Intent) and the legacy banner
+(`App.tsx:249`). The row's vertical position is therefore different on
+every tab, and different again as state changes.
+
+**E2 — the orchestration tab grows two buttons once a delivery exists.**
+`App.tsx:296` — the Workers / Delivery report switch is drawn only when
+`hasReport`. The control row is one shape before a delivery and another
+after it.
+
+**E3 — the tab changes under the person, twice.**
+`App.tsx:50` jumps to Orchestration whenever a run starts.
+`App.tsx:57-62` jumps to Work when the thinking finishes, and the flag
+that does it (`goingToWork`) survives navigating away, so the jump can
+arrive minutes later on a screen the person chose.
+
+**E4 — the host's message is invisible on three tabs of four.**
+`App.tsx:236` draws `push.message` inside the capture block, and
+`App.tsx:158` hides that block unless the tab is Write. Every refusal
+note the host returns through `note` is drawn where most people are not.
+
+**E5 — the thinking pill covers the row beneath it.**
+`App.tsx:106-131` is `position: fixed, top: 8, left: 50%`. On Write it
+sits over the "Asking in" row.
+
+---
+
+## F. One thing, many names
+
+**F1 — one action, several labels.**
 
 | Action | Labels in the product | Where |
 |---|---|---|
-| `retry-model` | "Read it again" / "Read what I wrote" | `IntentGraph.tsx` twice |
-| `think-again` | "Think …" / "Think it through again" | `Run.tsx`, `WorkGraph.tsx` |
-| `think` | "Work it out now" / unlabelled | `WorkGraph.tsx`, `App.tsx` |
-| `rerun` | "Run … again" | `Run.tsx`, `Delivery.tsx` |
-| `switch-repo` | "Choose project…" / unlabelled | `App.tsx` twice |
+| `think` | "Work it out now" · "See what this will build →" · "Keep this reading and see what it will build →" · "Working out what to build…" | `WorkGraph.tsx:143`, `IntentGraph.tsx:317-321` |
+| `think-again` | "Think it through again" · "Think TEP-… again" | `WorkGraph.tsx:228`, `Run.tsx:100` |
+| `retry-model` | "Read it again" · "Read what I wrote" | `IntentGraph.tsx:227`, `IntentGraph.tsx:250` |
+| `read-draft` | "Read N asks" · "Read it again" · "press Read" | `Compose.tsx:194`, `Analysis.tsx:178`, `App.tsx:376` |
+| `build` | "Sign and build N subjects" · "press Build" | `Rail.tsx:242`, `App.tsx:461` |
+| `rerun` | "Run TEP-… again" · "Run it again" | `Delivery.tsx:26`, `Run.tsx:89` |
+| `switch-repo` | "Choose project…" · "switch" | `App.tsx:98`, `App.tsx:152` |
 
-Two of these are duplicates of the same gesture on two screens, with
-different words. `switch-repo` says *project* where the tab bar, the
-commands and the docs say *repository*.
+"Read it again" is the label of **two different actions** —
+`retry-model` on Intent, `read-draft` on Write.
 
-### 5. Three vocabularies for one thing
+**F2 — the registry names eleven surfaces for four screens.**
+`affordances.ts`: "the writing page", "the work page", "the reading
+page", "the work graph", "the work graph's panel", "the intent graph",
+"orchestration graph", "run view", "map toolbar", "units map", "delivery
+page". None of these is a tab label.
 
-An action has an internal name (`think`), a button label ("Work it out
-now"), and a registry entry that names a surface and a gesture — and the
-registry covers twelve of twenty-eight. Instructions written from the code
-name the first, the person sees the second. Every instruction has to be
-translated by hand, and it has been, wrongly, several times today.
+**F3 — five registry entries describe a gesture the product does not
+have.**
 
-### 6. Orchestration is three screens sharing a tab
+| Entry | Registry says | The product has |
+|---|---|---|
+| `dismiss-promise` | "press Dismiss on a promise", on the work graph's panel | a button "Remove", in the orphans box on Intent (`IntentGraph.tsx:350`) |
+| `reground` | "press an out-of-date badge" | a button "Read the code again" in a banner; the badge (`WorkGraph.tsx:471`) is not clickable |
+| `build` | "press Build" | "Sign and build N subjects" |
+| `read-log` | "click a step … and page through it" | paging was removed; the panel scrolls |
+| `panic` | "map toolbar" | the capture row on Write (`App.tsx:224`) |
 
-`App.tsx:434-460` chooses between a live run, the remains of a dead run,
-and a delivery, by state. The three have different layouts, different
-controls, and different silences: when nothing is running, the tab shows
-what the last run left, with no line saying that nothing is running now —
-which is how a dead run and a working one came to look the same.
+**F4 — twelve of thirty actions have no registry entry, and five have no
+button at all.**
+Unregistered: `accept-check`, `accept-impact`, `accept-question`,
+`apply-all-impacts`, `cancel-capture`, `dismiss-impact`, `load`,
+`open-cut-review`, `pin`, `propose-check`, `rerun`, `switch-repo`.
+Of these, `load` is an internal handshake. The other four unreachable
+ones — `accept-impact`, `dismiss-impact`, `apply-all-impacts`,
+`accept-question` — plus `pin` have no gesture anywhere in the webview.
+The host handles the first three (`inbound.ts:110-119`), and `push.ts`
+computes and sends `impacts` on every push (`push.ts:155-160`) to a
+surface that never reads it.
 
-### 7. The tab row moves
+**F5 — two words for one thing, throughout.**
+*probes* (`Run.tsx:253`, `Rail.tsx:64`) against *checks* everywhere else.
+*project* (`App.tsx:92`, `App.tsx:98`) against *repository*
+(`App.tsx:148`). *forge* appears once, in a tooltip (`Delivery.tsx:92`),
+and nowhere else on the surface.
 
-The row is drawn once, but what sits above it is conditional: a legacy
-banner (`App.tsx:250`), the draft box, the reading strip. The row's
-vertical position therefore depends on the screen and its state, which is
-what makes the tabs feel like they move.
+**F6 — machine identifiers are used as words in sentences.**
+`WorkGraph.tsx:218` opens a sentence with `TEP-cmxela-12`.
+`Rail.tsx:201` says "mints a TEP number", unexplained.
+`App.tsx:209` says "N TEP(s)". `Delivery.tsx:26` and `Run.tsx:89,100`
+put one inside a button label. `Rail.tsx:63` prints a raw unit id
+(`SL-7#eu-0`) as the thing a worker waits for.
 
-### 8. Feedback lands where the gesture is not
+---
 
-Derivation shows its progress on the intent screen; the gesture that
-starts it sits on the work screen. A fixed pill at the top of every screen
-(`App.tsx:106`) does say *"the machine is …"*, so the fact is not hidden —
-but a person who pressed a button on one screen has no confirmation on the
-screen they are looking at.
+## G. A refusal that is not said
+
+**G1 — `post()` swallows a disallowed action silently.**
+`vscode.ts:284` — `if (!can(msg.action)) return;`. No message, no log,
+nothing on the screen. `can()` reads the `allowed` list from the last
+push, so a button rendered from an older push can be enabled while the
+post is dropped. Every report of "the button does nothing" is explained
+by this line.
+
+**G2 — `whyNot()` gives one sentence per phase, not per refusal.**
+`vscode.ts:272-281`. Every disabled control in phase `read` says "The
+reading is waiting for keep or edit", whatever it was actually refused
+for — and it says it only on hover.
+
+---
+
+## H. The same thing, drawn twice
+
+**H1 — a parked worker's question has two answer boxes.**
+On its card (`Run.tsx:346-368`) and in the rail (`Rail.tsx:126-156`).
+Two inputs, two Send buttons, no shared state: typing in one leaves the
+other empty.
+
+**H2 — the asks are drawn twice, in two shapes.**
+The Write tab's list (`App.tsx:332-359`) has no assumptions and no edit
+pencil. The Intent tab's panel (`Asks.tsx`) has both. Neither says the
+other exists; the Write copy sends the reader to Intent to edit.
+
+**H3 — the unplaced sentences are said twice, differently.**
+"I could not place N of your sentences" (`IntentGraph.tsx:99`) and "I
+could not say what N of your sentences are about" (`Analysis.tsx:170`).
+Same field, `model.missing`.
+
+**H4 — the signed-and-idle banner is said twice.**
+`WorkGraph.tsx:202-234` and `App.tsx:436-440`, in slightly different
+words, with different buttons attached.
+
+**H5 — progress is shown in five places at once.**
+The fixed pill (`App.tsx:106`), the capture bar (`App.tsx:182`), each
+subject's own line (`IntentGraph.tsx:129`), the working box
+(`IntentGraph.tsx:280`), and the work page's empty state
+(`WorkGraph.tsx:112`).
+
+---
+
+## I. Sentences that point the wrong way
+
+**I1** — `WorkGraph.tsx:148`: "write what you want on the intent page".
+Writing happens on 0 · Write.
+
+**I2** — `IntentGraph.tsx:255`: "write what you want above". On the
+Intent tab the box is hidden (`App.tsx:158`). "Above" is nothing.
+
+**I3** — `WorkGraph.tsx:231`: "use the run page". No tab has that name.
+
+**I4** — `WorkGraph.tsx:398`: a drifted check says "re-anchor". There is
+no gesture that re-anchors anything.
+
+---
+
+## J. Rules the surface breaks against its own `type.ts`
+
+`type.ts:12-18` states three rules: the word carries the meaning, nothing
+that carries meaning is italic, capitals are for captions only.
+
+**J1** — the written-in subject is italic, and it carries meaning:
+`Analysis.tsx:102-104`, and again in that page's own legend
+(`Analysis.tsx:153`).
+
+**J2** — in a delivery report a level-2 heading is drawn as a caption at
+11 pixels (`Markdown.tsx:106`) while a level-3 heading is 14
+(`Markdown.tsx:110`). The hierarchy inverts.
+
+**J3** — "red" is used as a state word for a person to read:
+`WorkGraph.tsx:400`. Colour is being asked to carry meaning as a name.
+
+**J4** — parenthetical plurals sit beside correct ones in the same files:
+`subject(s)` and `TEP(s)` (`App.tsx:209`) against `ask{s}` twelve lines
+later; `thing(s)` (`IntentGraph.tsx:338`); `sentence(s)` (`Asks.tsx:72`).
+
+**J5** — `Run.tsx:184` spreads `{ children: undefined }` or `{}` into the
+gate card. It does nothing either way.
+
+---
+
+## K. What the surface cannot show yet
+
+The request was for an audit card to show the criteria that were checked.
+That cannot be drawn today, and the reason is not in the webview.
+
+`RunUnitView` (`run/state.ts:20-44`) carries `what`, `id`, `slice`,
+`role`, `state`, `requires`, `waits`, `startedAt`, `question`, `note`,
+`activity`. `view()` (`run/state.ts:195-208`) adds `logs`, `parked` and
+`logCounts`. **There is no per-criterion field anywhere in the run
+view.** The oracle's verdicts exist only as text inside a step's log.
+
+So B3 is not a drawing problem. Until the dispatcher records each
+criterion's id, its sentence and its verdict on the run state, no card
+can show an AC, and the audit card has nothing to say but green or
+waiting. This is the first item of the plan for that reason.
+
+---
 
 ## The plan
 
-Ordered. Each item names the rule it serves and what would prove it.
+Ordered. Later items assume earlier ones. Each says what would prove it.
 
-**1. A card is named for the work, not for the machine.**
-Carry the promise's own sentence into the run view where the slice is
-built (the dispatcher knows both), and title the card with it; the handle
-stays underneath as the address. *Proven when:* a run's cards read as
-sentences a person wrote, and no card in any state falls back to `SL-…`.
+**1. Put the work's own words, and its verdicts, into the run view.**
+Fix the title lookup at its source so a card can be named for the promise
+rather than the handle, and add per-criterion results to `RunUnitView`:
+the criterion's id, its sentence, and what the oracle said. *Proven
+when:* no card in any run falls back to `SL-…`, and the run view of a
+finished run contains every criterion the oracle graded.
+Covers B1, B9, K.
 
-**2. State survives zoom.**
-State becomes a shape, not a sentence: the card's own fill or border says
-running, passed, failed, waiting, and stays legible at any scale. The chip
-keeps the detail for when it can be read. *Proven when:* at the smallest
-zoom the four states are distinguishable with the text unreadable.
+**2. A card says which one it is, and what state it is in at any zoom.**
+The tester, the coder and the auditor of one slice read differently.
+State becomes the card's own shape — fill or border — so it survives
+`far`, and the chip keeps the detail for when it can be read. An
+activity chip is clipped to the card at the source, with the sentence on
+hover. *Proven when:* at the smallest zoom the four states are
+distinguishable with all text unreadable, and no chip crosses a card's
+edge for any sentence a worker emits.
+Covers B2, C3, D1, D2.
 
-**3. An activity tag is one short line.**
-The worker's text is clipped to the card's width at the source, with the
-full sentence on hover and in the log. *Proven when:* no node's tag
-overflows its card, at any zoom, for any of the sentences the workers
-actually emit.
+**3. The audit card shows what it graded.**
+The criteria, how many passed, and which did not — from the data added in
+item 1. `graded()` stops claiming a check ran when it only counted
+finished workers, and stops ignoring the tester and the maintainer.
+*Proven when:* an audit card lists its criteria, and a slice with a
+failed tester cannot show green.
+Covers B3, C2.
 
-**4. One action, one name, everywhere.**
-The registry becomes the single source: label, screen, gesture. Buttons
-read their label from it; duplicates are removed or made explicit;
-`switch-repo` says repository. *Proven when:* every action reaching the
-host has exactly one registry entry, one label, and the drive that says so
-fails when a second label appears.
+**4. Every log has a title in words, and a body with structure.**
+The panel is titled for what the step is, not for its id. Steps with no
+log of their own are not clickable; the closing gate's log gets a card
+that reaches it. Machine output is separated from what a worker said.
+*Proven when:* no panel opens empty, no panel is titled with an id, and
+`gate#closer` is reachable by one gesture.
+Covers B4, B5, B6, B7.
 
-**5. The orchestration tab states what it is showing.**
-One frame, three contents, and a line at the top that says which: a run in
-flight, what a finished run left, or a delivery waiting for you. *Proven
-when:* with nothing running, the tab says nothing is running.
+**5. One action, one name.**
+The registry becomes the source of the label, the screen and the gesture.
+Buttons read their label from it. Its screen names become the four tab
+names. Its gestures are corrected to what the product does. Every action
+that reaches the host gets an entry or an explicit machine-only reason.
+*Proven when:* the drive that walks the registry fails if an action has
+two labels, no entry, or a screen name that is not a tab.
+Covers F1, F2, F3, F4.
 
-**6. The frame does not move.**
-The tab row is fixed; banners live below it. *Proven when:* the row's
-position is the same on every screen in every state.
+**6. A refusal is said, never swallowed.**
+`post()` reports a dropped action on the screen. `whyNot()` answers for
+the action asked about, not for the phase in general, and the reason is
+visible without hovering. *Proven when:* pressing any disabled or
+refused control produces a visible sentence naming that control.
+Covers G1, G2.
 
-**7. A gesture answers where it was pressed.**
-Every action that starts work leaves a line where the button is, until the
-work is visible elsewhere. *Proven when:* pressing a button on any screen
-changes something on that screen.
+**7. The frame stands still.**
+The tab row is fixed and everything conditional lives below it. The
+orchestration tab's own controls do not appear and disappear with the
+delivery. A tab changes only when the person changes it. The host's
+message is drawn where every screen can show it. *Proven when:* the tab
+row is at the same y on every tab in every state, and no state change
+moves the person to another tab.
+Covers D4, E1, E2, E3, E4, E5.
+
+**8. Nothing is drawn twice.**
+One answer box per parked worker. One list of asks. One sentence for the
+unplaced ones. One signed-and-idle banner. One place that shows progress.
+*Proven when:* each of those five things has exactly one site.
+Covers H1, H2, H3, H4, H5.
+
+**9. Every sentence points at something that exists.**
+Fit fits. The reload sentence reads the ledger instead of guessing. The
+"see it" lines are links, or the sentence goes. `Compose`'s header names
+the button it has. The rail stops pointing at questions nothing draws.
+The four misdirections in section I are corrected.
+*Proven when:* every instruction on the surface names a control that is
+on that screen.
+Covers C1, C4, C5, C6, C7, I1, I2, I3, I4.
+
+**10. Decide the unreachable features.**
+`impacts` and `questions` are computed and pushed on every change and
+never drawn; `accept-impact`, `dismiss-impact`, `apply-all-impacts`,
+`accept-question` and `pin` have no gesture. Each is either given a
+screen or removed from the payload, the message type and the host. There
+is no third option — a feature that only the machine can reach is a cost
+paid on every push for nothing.
+*Proven when:* every field in `SpacePush` is read by a component, and
+every action in `WebToHost` has a caller.
+Covers F4.
+
+**11. The surface obeys its own type rules, and stops wasting the page.**
+Nothing that carries meaning is italic. A report's headings do not invert.
+No colour is used as a state's name. Plurals are written out. The rail is
+not drawn when it holds nothing. The work header stops taking 45%. Old
+deliveries collapse. The observations list leaves the button row. The
+dead spread on the gate card goes, and so does the empty div beside the
+log title.
+*Proven when:* the type rules in `type.ts:12-18` hold everywhere, and no
+screen draws an empty container.
+Covers B8, B10, D3, D5, D6, J1, J2, J3, J4, J5.
+
+---
 
 ## What this does not cover
 
-The three graphs (intent, work, run) share no layout code and differ in
-their gestures. That is a fourth screen-level question — one drawing, one
-set of interactions — and it should be answered after 1 to 3, which are
-about a person being able to read a run at all.
+The three graphs — intent, work, run — share no layout code and differ in
+their gestures: one is a scrolling grid, one is a pannable world of framed
+sections, one is a pannable world of laid-out cards. Making them one
+drawing with one set of interactions is a larger question than any item
+above, and it should be answered after items 1 to 4, which are about a
+person being able to read a run at all.
