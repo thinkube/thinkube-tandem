@@ -239,14 +239,14 @@ export function Rail(props: {
             <div data-excuse-docs-section style={{ marginTop: SP.sm }}>
               {push.docsExemption?.reason ? (
                 <div style={{ fontSize: FS.caption, color: C.quiet }}>
-                  Documentation excused: {push.docsExemption.reason}
+                  Documentation exemption: {push.docsExemption.reason}
                 </div>
               ) : (
                 <textarea
                   data-excuse-docs-reason
                   rows={2}
                   style={{ width: "100%", fontSize: FS.caption, marginTop: SP.xs }}
-                  placeholder="why documentation is not needed for this cut"
+                  placeholder="the documentation exemption: why documentation is not needed for this cut"
                   value={excuseReason}
                   onChange={(e) => setExcuseReason(e.target.value)}
                 />
@@ -257,7 +257,7 @@ export function Rail(props: {
                 style={{ width: "100%", marginTop: SP.xs }}
                 title={
                   can("excuse-docs")
-                    ? "Say documentation is not needed for this cut — you must type why."
+                    ? "Record a documentation exemption for this cut — you must type why documentation is not needed."
                     : whyNot(push.phase)
                 }
                 onClick={() => {
@@ -266,8 +266,8 @@ export function Rail(props: {
                 }}
               >
                 {push.docsExemption?.reason
-                  ? "Documentation already excused"
-                  : "Documentation not needed"}
+                  ? "Documentation exemption recorded"
+                  : "Record a documentation exemption"}
               </button>
             </div>
             <button

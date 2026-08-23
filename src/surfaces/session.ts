@@ -491,19 +491,21 @@ export class TandemSession {
   }
 
   /**
-   * Before signing: say documentation is not needed for this cut, in your
-   * own words. A blank or whitespace-only reason is refused and nothing is
-   * recorded — the cut review page then carries the reason word for word.
+   * Before signing: record a documentation exemption for this cut — why
+   * documentation is not needed, in your own words. A blank or
+   * whitespace-only reason is refused and nothing is recorded; the cut
+   * review page then carries the reason word for word.
    */
   excuseDocs(reason: string): { ok: boolean; reason?: string } {
     const text = reason.trim();
     if (!text)
       return {
         ok: false,
-        reason: "documentation cannot be excused without a reason — type why it is not needed",
+        reason:
+          "a documentation exemption needs a reason: documentation cannot be excused without one — type why it is not needed",
       };
     this.space = { ...this.space, pendingDocsExemption: { reason: text } };
-    this.changed("Documentation excused for this cut.");
+    this.changed("Documentation exemption recorded for this cut.");
     return { ok: true };
   }
 

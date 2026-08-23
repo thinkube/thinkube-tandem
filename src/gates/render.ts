@@ -87,8 +87,9 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     for (const n of ungrounded) lines.push(`  ⚠ ${n.sentence}`);
   }
 
-  // Documentation always gets a line: where it lands, that it is excused
-  // in the human's own words, or that it is missing and blocks signing.
+  // Documentation always gets a line: where it lands, the documentation
+  // exemption in the human's own words, or that it is missing and blocks
+  // signing.
   // No signing moment is printed here — the reason alone must hash the
   // same before the click and after, or the signature would drift on
   // every re-render.
@@ -96,10 +97,12 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   if (docs.length) {
     lines.push(`Documentation lands at: ${docs.join(", ")}`);
   } else if (cut.docsExemption?.reason) {
-    lines.push(`Documentation is not needed — ${cut.docsExemption.reason}`);
+    lines.push(
+      `Documentation exemption — documentation is not needed: ${cut.docsExemption.reason}`,
+    );
   } else {
     lines.push(
-      `Documentation is missing — this cut cannot be signed until it is written or excused.`,
+      `Documentation is missing — this cut cannot be signed until it is written or excused by a documentation exemption.`,
     );
   }
   return lines.join("\n");

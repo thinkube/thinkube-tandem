@@ -123,7 +123,8 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "the work page, beside 'Read the cut review first'",
-      gesture: "press 'Documentation not needed' and type the reason — a blank reason is refused",
+      gesture:
+        "press 'Record a documentation exemption' and type the reason — a blank reason is refused",
     },
   },
 };

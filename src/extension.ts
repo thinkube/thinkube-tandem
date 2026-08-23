@@ -38,13 +38,16 @@ let storeSync: StoreSyncService | undefined;
  *  loads and rewrites the bundle HTML, computes CSP. SpacePanel itself
  *  never reaches any of this — a panel opened for one space never touches
  *  a panel any other space's SpacePanel created. */
-function makeVscodePanelHost(extensionUri: vscode.Uri): PanelHost {
+export function makeVscodePanelHost(extensionUri: vscode.Uri): PanelHost {
   return {
     createPanel(title: string): PanelLike {
+      // Active column, not a fixed one: each space's tab joins the group the
+      // human is looking at, so a second space opens as its own tab beside
+      // the first rather than replacing it in column one.
       const webviewPanel = vscode.window.createWebviewPanel(
         "thinkubeTandemSpace",
         title,
-        { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
+        { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         { enableScripts: true, localResourceRoots: [extensionUri], retainContextWhenHidden: true },
       );
       void renderBundleHtml(extensionUri, webviewPanel.webview).then((html) => {

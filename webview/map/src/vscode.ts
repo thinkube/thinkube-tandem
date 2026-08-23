@@ -109,8 +109,8 @@ export interface SpacePush {
   legacy?: string;
   signedTeps: number;
   repoName?: string;
-  /** Documentation excused for this cut, in the human's own words — absent
-   *  when nothing has been excused. */
+  /** The documentation exemption recorded for this cut, in the human's own
+   *  words — absent when the cut carries none. */
   docsExemption?: { reason: string };
   /** No repository chosen yet — the view renders the chooser state. */
   needsRepo?: boolean;
