@@ -5,7 +5,7 @@ Every component of the webview was read in full: `App`, `Compose`,
 `Delivery`, `Markdown`, `nodeCard`, `world`, `type`, plus the two files
 that feed them — `push.ts` and `run/state.ts` — and the gesture registry.
 
-Forty-eight findings. Each one names the file and line that shows it.
+Fifty-one findings. Each one names the file and line that shows it.
 Nothing here is a fix. The plan at the end is ordered work, and each item
 says what would prove it done.
 
@@ -134,9 +134,38 @@ So the log that justifies the word "passed" is on disk, in a file no
 screen and no gesture can open. That makes this the cheapest finding
 here to fix: the data does not need to be produced, only reached.
 
+**B12 — the closing gate does its work off the graph.**
+The gate runs two actors: the finisher (`gate#suite-1`) and then the
+closer (`gate#closer`, `gate.ts:244`). The finisher is seeded as a unit
+only when it starts, and the closer is never a unit at all — it writes
+to a step the graph has no card for (B5). So for the whole stretch
+between the last worker finishing and the finisher starting, and again
+for the entire closer, the surface shows a finished run and the machine
+is working.
+
 ---
 
 ## C. Things that are not true
+
+**C8 — the gate card says "green" without the gate having run.**
+`Run.tsx:177-183`: the chip is `green` when `allDone`, which is
+`run.units.every((u) => u.state === "done")` (`Run.tsx:138`) — every
+WORKER finished. The gate's own verdict is never consulted. Its hover
+text is "Every check ran green at the gate", a claim about a gate that
+may not have started.
+
+Seen live: at 23:02 the last worker finished, every unit read done, and
+the card said green for twelve minutes. The gate then ran the
+repository's suite, found it red, and its finisher failed. The card had
+announced the opposite of what happened, before it happened.
+
+**C9 — a delivery report carries no identity.**
+`Delivery.tsx:44` renders `<Markdown text={d.page} />` and nothing else:
+no run, no TEP, no date. A report from a withheld run twenty-six minutes
+ago is drawn exactly like one from the run finishing now. With C8 above,
+a person reads a graph claiming the gate is green beside a report from a
+different run, and nothing on the screen distinguishes either from the
+truth.
 
 **C1 — `Fit` does not fit.**
 `world.tsx:119` — `fit: () => setT({ tx: 30, ty: 30, k: 1 })`. It reads
