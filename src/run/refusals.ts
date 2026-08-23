@@ -164,6 +164,11 @@ export async function refusedBeforeDispatch(a: {
   repoRoot: string;
   /** The run's branch, whose earlier work may already hold the checks. */
   branch?: string;
+  /** Check paths a delivery record holds for this cut: a consumed check is
+   *  restored to its recorded address, so the plan must keep expecting it
+   *  there — renaming it after a delivery once turned a fully proven cut
+   *  into fifty-eight file-not-found reds. */
+  recordedChecks?: readonly string[];
   graphPath?: string;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   log: (line: string) => void;
@@ -181,7 +186,7 @@ export async function refusedBeforeDispatch(a: {
   const rehoused = rehouseChecks(
     a.slices,
     (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out.split("\n").map((l) => l.trim()),
-    new Set(onBranch),
+    new Set([...onBranch, ...(a.recordedChecks ?? [])]),
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
