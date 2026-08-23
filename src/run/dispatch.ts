@@ -33,6 +33,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
+import { restoreChecksFromRecord } from "./plan";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
@@ -193,6 +194,13 @@ export async function dispatchTep(
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
   const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
+  // A delivery consumed this cut's checks; a run after it puts them back
+  // from the record, so standing testers are not asked to have written
+  // files a delivery deliberately removed.
+  if (deps.storeDir) {
+    const back = await restoreChecksFromRecord(deps.storeDir, tep, worktree, [...sliceProbes.values()].flat());
+    if (back.length) log(`${tep}: ${back.length} check(s) restored from the delivery record`);
+  }
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   const specBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
