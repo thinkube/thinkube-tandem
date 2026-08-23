@@ -126,6 +126,11 @@ export async function handleInbound(
       language: "markdown",
     });
     await vs().window.showTextDocument(doc, { preview: true });
+  } else if (msg.action === "excuse-docs") {
+    // The reason is the whole point: a blank one is refused by the session
+    // and nothing is recorded, so the rail can say why it did not take.
+    const r = session.excuseDocs(msg.text ?? "");
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "propose-check") {
     const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
     note = r.ok ? undefined : r.reason;

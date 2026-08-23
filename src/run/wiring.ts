@@ -29,6 +29,16 @@ export interface WiringVerdict {
   detail: string;
 }
 
+/** The extensions V8 can report execution for. A subject outside this set is
+ *  data, not code: it is read by a drive, never executed, so coverage can
+ *  never name it and its absence proves nothing about the drive's reach. */
+const EXECUTABLE_EXT_RE = /\.(m|c)?[jt]sx?$/;
+
+/** Is this subject a file a runtime can execute a line of at all? */
+export function isExecutableSubject(subject: string): boolean {
+  return EXECUTABLE_EXT_RE.test(subject);
+}
+
 /** One coverage file as the V8 runtime writes it. */
 interface V8Coverage {
   result?: { url?: string; functions?: { ranges?: { count?: number }[] }[] }[];
@@ -92,6 +102,17 @@ export async function provedByExecution(a: {
   exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
 }): Promise<WiringVerdict> {
   if (!a.subjects.length) return { executed: "unknown", detail: "the promise names no file of its own to look for" };
+  // Only code can appear in an execution record. A promise landing in data —
+  // a ledger, a manifest, a document — is read by its drive, so coverage
+  // cannot speak to its reach either way, and silence here is not evidence.
+  const codeSubjects = a.subjects.filter(isExecutableSubject);
+  if (!codeSubjects.length)
+    return {
+      executed: "unknown",
+      detail:
+        `${a.subjects.join(", ")} is data, not code: a drive reads it rather than executing it, ` +
+        `so an execution record can never name it and its wiring is unproven here.`,
+    };
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tandem-wiring-"));
   try {
     // The recorder is an environment variable of the runtime itself, so a
@@ -107,12 +128,12 @@ export async function provedByExecution(a: {
             ? "the runtime this check runs under does not report what it executed, so its wiring is unproven"
             : `the check did not pass when re-run for its trace (exit ${r.code ?? "null"}), so nothing was recorded`,
       };
-    const hit = a.subjects.filter((s) => ranAmong(s, ran));
+    const hit = codeSubjects.filter((s) => ranAmong(s, ran));
     if (hit.length) return { executed: "yes", detail: `the drive executed ${hit.join(", ")}` };
     return {
       executed: "no",
       detail:
-        `the drive passed without executing a line of ${a.subjects.join(", ")} — the code this promise lands in. ` +
+        `the drive passed without executing a line of ${codeSubjects.join(", ")} — the code this promise lands in. ` +
         `A check that never reaches its subject is green for a stub as readily as for the real thing.`,
     };
   } finally {

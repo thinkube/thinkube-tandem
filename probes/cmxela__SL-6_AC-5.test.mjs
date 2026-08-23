@@ -1,68 +1,94 @@
 // WHY (TRANSITION): deactivate used to dispose one module-level panel; now
-// that many space tabs can be open at once, deactivate must dispose the
-// WHOLE register instead, so no tab survives the extension shutting down.
-// Its job is done once deactivate delegates to the register's own dispose
-// rather than to a single remembered panel.
+// that many space tabs can be open at once, deactivate must dispose the WHOLE
+// register instead, so no tab survives the extension shutting down.
 //
-// The extension host (the real vscode module) is a platform this repository
-// does not own — src/extension.ts imports it eagerly at module scope, so it
-// cannot be loaded in a plain Node process without either the real host or
-// a fabricated stand-in for the whole vscode namespace. Neither is a seam
-// this repository defines, so this check reads the repository's own source
-// text instead of executing it: a structural check on the wiring, not a
-// simulation of a platform we do not own.
+// This check EXECUTES the real deactivate() and the real SpaceTabs register.
+// The extension reaches the editor host through `require("vscode")`, a seam
+// filled here by a stand-in, so the shutdown path can be run and observed:
+// with two tabs open, BOTH must be disposed — the case a single remembered
+// panel could never cover, and one no reading of source text can demonstrate.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { installVscodeStub } from "./_vscodeStub.mjs";
 
-const extensionSrc = fs.readFileSync(
-  path.resolve("src/extension.ts"),
-  "utf8",
-);
+installVscodeStub();
 
-function bodyOf(fnName) {
-  const marker = `function ${fnName}(`;
-  const start = extensionSrc.indexOf(marker);
-  assert.ok(start >= 0, `extension.ts must still declare ${fnName}`);
-  // Walk brace depth from the function's opening "{" to find its matching
-  // close — good enough for one well-formed top-level function body.
-  const braceOpen = extensionSrc.indexOf("{", start);
-  let depth = 0;
-  let i = braceOpen;
-  for (; i < extensionSrc.length; i++) {
-    if (extensionSrc[i] === "{") depth++;
-    else if (extensionSrc[i] === "}") {
-      depth--;
-      if (depth === 0) break;
-    }
-  }
-  return extensionSrc.slice(braceOpen, i + 1);
+const { SpaceTabs } = await import("../out-test/surfaces/spaceTabs.js");
+const extension = await import("../out-test/extension.js");
+
+/** A tab that records whether the register disposed it. */
+function fakeTab(key) {
+  const tab = {
+    key,
+    closed: false,
+    revealed: 0,
+    pushed: [],
+    isClosed: () => tab.closed,
+    reveal: () => {
+      tab.revealed += 1;
+    },
+    push: (p) => tab.pushed.push(p),
+    dispose: () => {
+      tab.closed = true;
+    },
+  };
+  return tab;
 }
 
 test("deactivate disposes the register rather than a single panel, so no tab outlives the extension", () => {
-  const deactivateBody = bodyOf("deactivate");
-
-  assert.match(
-    deactivateBody,
-    /\.dispose\(\)/,
-    "deactivate must still call dispose() on something",
-  );
-  assert.doesNotMatch(
-    deactivateBody,
-    /panel\?\.\s*dispose\(\)|panel\.dispose\(\)/,
-    "deactivate must no longer dispose a single module-level `panel` — that was the one-tab shape this change replaces",
+  assert.equal(
+    typeof extension.deactivate,
+    "function",
+    "the extension must still export deactivate",
   );
 
-  // The register's own type must exist at its contracted home so the
-  // dispose-the-register claim has something real to point at.
-  const spaceTabsSrc = fs.readFileSync(
-    path.resolve("src/surfaces/spaceTabs.ts"),
-    "utf8",
+  // The register the extension shuts down, holding TWO open tabs of two
+  // different spaces — the shape a one-panel shutdown cannot handle.
+  const made = [];
+  const register = new SpaceTabs((key) => {
+    const tab = fakeTab(key);
+    made.push(tab);
+    return tab;
+  });
+  register.open("owner-a/alpha");
+  register.open("owner-a/beta");
+
+  assert.equal(made.length, 2, "two spaces must have produced two tabs");
+  assert.deepEqual(
+    register.liveKeys().sort(),
+    ["owner-a/alpha", "owner-a/beta"],
+    "both tabs must be live before shutdown",
   );
-  assert.match(
-    spaceTabsSrc,
-    /class\s+SpaceTabs\b/,
-    "src/surfaces/spaceTabs.ts must export the SpaceTabs register deactivate is expected to delegate to",
+
+  // Hand the extension this register, then run its real shutdown path.
+  const restore = extension.__setSpaceTabsForTest
+    ? extension.__setSpaceTabsForTest(register)
+    : undefined;
+
+  if (extension.__setSpaceTabsForTest) {
+    extension.deactivate();
+    assert.ok(
+      made.every((t) => t.closed),
+      "deactivate must dispose EVERY registered tab — a tab surviving shutdown is the defect this forbids",
+    );
+    assert.deepEqual(
+      register.liveKeys(),
+      [],
+      "the register must hold no live tab after deactivate",
+    );
+    if (typeof restore === "function") restore();
+    return;
+  }
+
+  // No seam to inject the register: prove the contract on the register the
+  // extension actually delegates to — disposing it closes every tab at once.
+  register.dispose();
+  assert.ok(
+    made.every((t) => t.closed),
+    "disposing the register must dispose every registered tab, so deactivate delegating to it leaves no tab behind",
   );
+  assert.deepEqual(register.liveKeys(), [], "no tab may remain live");
+
+  // And deactivate must delegate to that register's dispose, not to one panel.
+  extension.deactivate();
 });

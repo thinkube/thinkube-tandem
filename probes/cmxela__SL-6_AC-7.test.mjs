@@ -1,82 +1,87 @@
-// WHY (INVARIANT): once a space's tab is closed, the tree must stop
-// marking it open — an open dot left behind after the tab is gone would
-// lie about what is actually on screen. This must hold for as long as the
-// tree reads the open-space set.
+// WHY (INVARIANT): once a space's tab is closed, the tree must stop marking
+// it open — an open dot left behind after the tab is gone would lie about
+// what is actually on screen. This must hold for as long as the tree reads
+// the open-space set.
 //
-// The extension host (the real vscode module) is a platform this repository
-// does not own — src/hostui/projectsTree.ts imports it eagerly at module
-// scope (ProjectsTreeProvider extends vscode.TreeItem's family of classes),
-// so it cannot be loaded in a plain Node process without either the real
-// host or a fabricated stand-in for the whole vscode namespace. Neither is
-// a seam this repository defines, so this check reads the repository's own
-// source text instead of executing it: a structural check that the marking
-// logic is recomputed from a live open-space reader on every call, so a
-// closed tab's absence from that reader is what un-marks it.
+// This check EXECUTES the real ProjectsTreeProvider. The module reaches the
+// editor host only through a lazy `require("vscode")` accessor — a seam this
+// repository defines — so filling that seam with a stand-in lets the real
+// getChildren run twice, across a tab closing, and be observed. Reading the
+// source text instead could never show that the SECOND render changed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { installVscodeStub } from "./_vscodeStub.mjs";
 
-const treeSrc = fs.readFileSync(
-  path.resolve("src/hostui/projectsTree.ts"),
-  "utf8",
+installVscodeStub();
+
+const { ProjectsTreeProvider, ProductItem } = await import(
+  "../out-test/hostui/projectsTree.js"
 );
 
-function bodyOf(className) {
-  const marker = `class ${className}`;
-  const start = treeSrc.indexOf(marker);
-  assert.ok(start >= 0, `projectsTree.ts must still declare ${className}`);
-  const braceOpen = treeSrc.indexOf("{", start);
-  let depth = 0;
-  let i = braceOpen;
-  for (; i < treeSrc.length; i++) {
-    if (treeSrc[i] === "{") depth++;
-    else if (treeSrc[i] === "}") {
-      depth--;
-      if (depth === 0) break;
-    }
-  }
-  return treeSrc.slice(braceOpen, i + 1);
+const OWNER_ID = "repo-1";
+
+function repository() {
+  return {
+    card: { id: OWNER_ID, label: "Repo One", product: "Tandem" },
+    gitRoot: "/repo",
+    prefix: "",
+    anchorDir: "/repo",
+  };
 }
 
-test("a closed tab's space is no longer marked open because getChildren re-reads the open-space source on every call, never a value captured once", () => {
-  const providerBody = bodyOf("ProjectsTreeProvider");
-  const ctorMatch = providerBody.match(/constructor\s*\(([\s\S]*?)\)\s*\{/);
-  assert.ok(ctorMatch, "ProjectsTreeProvider must still declare a constructor");
+function isMarkedOpen(row) {
+  return row.description === "●";
+}
 
-  // The constructor must not snapshot the open-space source into a plain
-  // field at construction time — the tree is rebuilt from a live query on
-  // every render, so a tab closed between two renders must be reflected on
-  // the very next one. A `private readonly openSpaces = ...(fixed value)`
-  // captured once would let a closed tab's dot outlive the tab itself.
-  const ctorBodyStart = providerBody.indexOf("{", providerBody.indexOf("constructor"));
-  let depth = 0;
-  let j = ctorBodyStart;
-  for (; j < providerBody.length; j++) {
-    if (providerBody[j] === "{") depth++;
-    else if (providerBody[j] === "}") {
-      depth--;
-      if (depth === 0) break;
-    }
-  }
-  const ctorBody = providerBody.slice(ctorBodyStart, j + 1);
-  assert.doesNotMatch(
-    ctorBody,
-    /this\.\w+\s*=\s*\w+\(\)/,
-    "the constructor must not call an open-space reader and store its RESULT on `this` — that would freeze the open set at construction time instead of re-reading it on every render",
+test("a space whose tab was closed is no longer marked open in the tree", () => {
+  const spaces = [
+    { slug: "alpha", label: "Alpha" },
+    { slug: "beta", label: "Beta" },
+  ];
+
+  // The live set of open tabs. The tree is handed a READER of this set, not
+  // a snapshot of it — closing a tab mutates what the next render sees.
+  let open = ["alpha", "beta"];
+
+  const provider = new ProjectsTreeProvider(
+    () => ["Tandem"],
+    () => [repository()],
+    () => OWNER_ID,
+    () => spaces,
+    () => open,
+    () => [],
   );
 
-  // getChildren must mark a space open by testing membership (an open SET
-  // can drop an entry the moment its tab closes) rather than equality to
-  // one remembered value (which cannot represent "was open, now isn't"
-  // for anything but the single slug it already held).
-  const getChildrenStart = providerBody.indexOf("getChildren(");
-  assert.ok(getChildrenStart >= 0, "ProjectsTreeProvider must still declare getChildren");
-  const getChildrenBody = providerBody.slice(getChildrenStart);
+  const spaceRows = () => {
+    const product = provider.getChildren().find((r) => r instanceof ProductItem);
+    assert.ok(product, "the tree must render a product row");
+    const repoRow = provider
+      .getChildren(product)
+      .find((r) => r.project?.card?.id === OWNER_ID);
+    assert.ok(repoRow, "the tree must render the repository row");
+    const bySlug = new Map();
+    for (const row of provider.getChildren(repoRow)) {
+      const id = String(row.id ?? "");
+      bySlug.set(id.slice(id.indexOf("/") + 1), row);
+    }
+    return bySlug;
+  };
 
-  assert.match(
-    getChildrenBody,
-    /\.(includes|has)\(/,
-    "getChildren must mark a space open by testing membership in a freshly read open-space collection (.includes/.has), so a space dropped from that collection when its tab closes is no longer marked",
+  const before = spaceRows();
+  assert.ok(isMarkedOpen(before.get("alpha")), "alpha starts open");
+  assert.ok(isMarkedOpen(before.get("beta")), "beta starts open");
+
+  // The editor closed beta's tab. Nothing re-built the provider — only the
+  // open-space source changed.
+  open = ["alpha"];
+
+  const after = spaceRows();
+  assert.ok(
+    isMarkedOpen(after.get("alpha")),
+    "alpha's tab is still open and must still be marked",
+  );
+  assert.ok(
+    !isMarkedOpen(after.get("beta")),
+    "beta's tab was closed, so the very next render must stop marking it open — a dot outliving its tab is the defect this forbids",
   );
 });

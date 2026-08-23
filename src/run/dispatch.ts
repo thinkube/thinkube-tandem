@@ -276,7 +276,8 @@ export async function dispatchTep(
 
     const baseBrief =
       buildWorkerPrompt(next, tep, {
-        specBody,
+        // This run path renders one body and has no separate spec artifact,
+        // so the text rides a single field and appears once, under THE INTENT.
         tepBody: specBody,
         cwd: tree,
         testConvention:

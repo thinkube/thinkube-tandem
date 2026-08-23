@@ -1,39 +1,59 @@
-// WHY (INVARIANT): every ledger entry must carry a real, non-empty reasoning
-// sentence — an entry whose "why" is missing or blank is a placeholder, not
-// a verdict, and the reader must surface that rather than let it pass as
-// complete. This must hold for as long as the ledger format exists.
+// WHY (CRITERION): every entry in the REAL ENGINE-WIRING.md must parse to a
+// verdict drawn from wire, retire or fold, and to a non-empty reasoning
+// sentence. The subject of this promise is the ledger file in the tree, so
+// this check reads that file — a hand-written markdown fixture would prove the
+// parser's arithmetic while leaving the actual ledger unexamined.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, statSync } from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseWiringLedger } from "../out-test/gates/engineWiring.js";
 
-test("parseWiringLedger reports an entry whose reasoning sentence is missing or empty", () => {
-  const md = [
-    "# ENGINE-WIRING.md",
-    "",
-    "- `src/engine/silent.ts` — **retire**:",
-    "",
-  ].join("\n");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, "..");
+const KNOWN_VERDICTS = ["wire", "retire", "fold"];
 
-  const result = parseWiringLedger(md);
-  const entries = Array.isArray(result) ? result : result.entries;
-  const problems = Array.isArray(result) ? [] : result.errors || result.problems || [];
-
-  const silentEntry = entries.find((e) => e.path === "src/engine/silent.ts");
-
-  const reasonIsBlank =
-    !silentEntry ||
-    !silentEntry.reason ||
-    String(silentEntry.reason).trim() === "";
-
-  const flaggedInEntry =
-    silentEntry && (silentEntry.error || silentEntry.problem || silentEntry.invalid);
-  const flaggedSeparately = problems.some((p) =>
-    String(p.path || p.reason || p).includes("src/engine/silent.ts"),
+test("Every entry in the real ENGINE-WIRING.md parses to a verdict drawn from wire, retire or fold and a non-empty reasoning sentence", () => {
+  const ledgerPath = path.join(REPO_ROOT, "ENGINE-WIRING.md");
+  assert.ok(
+    statSync(ledgerPath, { throwIfNoEntry: false }),
+    `ENGINE-WIRING.md is not in the tree this check runs against (root: ${REPO_ROOT})`,
   );
 
-  assert.ok(reasonIsBlank, "sanity: the fixture's reasoning sentence is indeed empty");
+  const ledgerText = readFileSync(ledgerPath, "utf8");
+  const result = parseWiringLedger(ledgerText);
+  const entries = Array.isArray(result) ? result : result.entries;
+  const problems = Array.isArray(result)
+    ? []
+    : (result.errors ?? result.problems ?? []);
+
   assert.ok(
-    flaggedInEntry || flaggedSeparately,
-    "an entry with a missing or empty reasoning sentence must be reported, not accepted as complete",
+    entries.length > 0,
+    "the real ENGINE-WIRING.md must parse to at least one entry",
+  );
+
+  assert.deepEqual(
+    problems,
+    [],
+    `the real ENGINE-WIRING.md has entries the parser could not accept: ${JSON.stringify(problems)}`,
+  );
+
+  const badVerdicts = entries
+    .filter((e) => !KNOWN_VERDICTS.includes(e.verdict))
+    .map((e) => `${e.path} → "${e.verdict}"`);
+  assert.deepEqual(
+    badVerdicts,
+    [],
+    `these real ledger entries carry a verdict outside wire/retire/fold: ${badVerdicts.join(", ")}`,
+  );
+
+  const blankReasons = entries
+    .filter((e) => !e.reason || !e.reason.trim())
+    .map((e) => e.path);
+  assert.deepEqual(
+    blankReasons,
+    [],
+    `these real ledger entries carry an empty reasoning sentence: ${blankReasons.join(", ")}`,
   );
 });

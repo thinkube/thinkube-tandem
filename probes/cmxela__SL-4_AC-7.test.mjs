@@ -53,10 +53,40 @@ test("in a dispatched run observed through an injected worker fake, the tester's
     tepSlices({ space, cut, spaceName: "doubling7" }),
   );
 
-  const testerBriefs = scripted.briefs.filter((b) => /probes\//.test(b.unit));
-  assert.ok(testerBriefs.length > 0, "at least one tester unit ran");
+  // The tester units, by the test-shaped path they were dispatched for. A
+  // tester is identified by what its footprint IS — a test file — not by the
+  // directory it happens to land in: the dispatcher derives a check's home
+  // from its subject's path, so a probe home is `probes/…` for some cuts and
+  // beside the source for others, and a filter naming one directory silently
+  // matches nothing on the other shape. The closer's brief is a different
+  // artifact with its own shape — it is not a tester brief, and this promise
+  // is about what a tester is handed.
+  const testerBriefs = scripted.briefs.filter(
+    (b) => /\.test\.[cm]?[jt]sx?$/.test(b.unit) && !/You are the CLOSER/.test(b.brief),
+  );
+  assert.ok(
+    testerBriefs.length > 0,
+    `at least one tester unit must have run; units dispatched were: ${
+      scripted.briefs
+        .map(
+          (b) =>
+            `${b.unit}[closer=${/You are the CLOSER/.test(b.brief)},body×${
+              b.brief.split(tepBody).length - 1
+            }]`,
+        )
+        .join(", ") || "(none)"
+    }`,
+  );
+  assert.ok(
+    tepBody.trim(),
+    "the rendered TEP body must be non-empty for this fixture, or 'appears once' is vacuous",
+  );
   for (const b of testerBriefs) {
     const occurrences = b.brief.split(tepBody).length - 1;
-    assert.equal(occurrences, 1, `tester brief for ${b.unit} must contain the rendered TEP body exactly once, found ${occurrences}`);
+    assert.equal(
+      occurrences,
+      1,
+      `tester brief for ${b.unit} must contain the rendered TEP body exactly once, found ${occurrences}`,
+    );
   }
 });

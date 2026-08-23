@@ -3,6 +3,15 @@
 Reversible defaults picked mid-run, recorded for the PR review. Overrule any
 of them there — nothing has users.
 
+- **Execution-proof applies to code only; data subjects report `unknown`.**
+  `provedByExecution` reads a V8 coverage record, which names only executed
+  JavaScript. A promise landing in a data file — a ledger, a manifest, a
+  document — is READ by its drive and never executed, so coverage can never
+  name it. Reporting "no" there charged the author for the instrument's own
+  blind spot and made such a criterion unreachable however correct the code
+  was. A non-executable subject now answers `unknown`, which the module's
+  header already required; reach for real code is judged exactly as before.
+
 - **Acceptance requires all proofs green — no override path.** A red or
   pending proof blocks the accept click. If field use shows a legitimate
   "accept anyway" case, it gets added as an explicit, recorded act — not as
@@ -56,6 +65,18 @@ of them there — nothing has users.
   ENGINE-WIRING.md, not here — that ledger is kept complete against the
   live tree by `src/gates/engineWiring.test.ts` and is the one place to
   read or change its verdict.
+- A promise whose subject is a data file (ENGINE-WIRING.md, and any ledger
+  or manifest) cannot be graded by a coverage measure. Coverage counts
+  executed lines of code, and a markdown ledger has none — so a check that
+  reads and parses the real file scores zero against its own subject and
+  reads as never having reached it. Such a promise is graded by what the
+  check asserts about the file's content, never by a reach measure over the
+  file itself.
+- `src/engine/engine-hash.json` is proved against the tree by
+  `src/engine/engineHashPin.test.ts`, which recomputes each pin and names
+  any file whose hash has drifted along with its current value. An engine
+  edit refreshes the pin from that check's words; the pin is never copied
+  by hand from outside the repository.
 - Supervisor rounds resolve on the judge role (workerModelByRole raises it);
   ESCALATE falls through to the stalled park, DISCLOSE is ledgered.
 - Frontier concurrency default follows v1 (4), setting thinkubeTandem.maxConcurrent.

@@ -14,10 +14,9 @@ import {
 } from "./engineWiring";
 
 /** The repository root. These tests run from the compiled `out-test/` tree,
- *  so any read of authored source must resolve against the repo, never
- *  against the directory this module was loaded from.
- *
- */
+ *  which mirrors `src/` — this module compiles to `out-test/gates/`, so the
+ *  repo root is two levels up from it, and any read of authored source
+ *  resolves against the repo rather than the directory it was loaded from. */
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function pathOf(m: string | { path: string }): string {

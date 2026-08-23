@@ -77,6 +77,36 @@ test("a runtime that reports nothing is unknown, never a pass and never a failur
   assert.equal(verdict.executed, "unknown", verdict.detail);
 });
 
+// A promise can land in data — a ledger, a manifest, a document. A drive
+// READS such a file; no runtime executes a line of it, so an execution
+// record can never name it. Reporting "no" there charges a coder for the
+// instrument's blind spot, which this module's header forbids.
+test("a promise landing in data is unknown, never a failure for not being executed", async () => {
+  const dir = repo();
+  fs.writeFileSync(path.join(dir, "LEDGER.md"), "- `src/register.mjs` — **wire**: reason.\n");
+  const verdict = await provedByExecution({
+    run: "node --test src/register_AC-2.test.mjs",
+    subjects: ["LEDGER.md"],
+    worktree: dir,
+    exec,
+  });
+  assert.equal(verdict.executed, "unknown", verdict.detail);
+  assert.doesNotMatch(verdict.detail, /without executing a line of/);
+});
+
+// A mixed promise is judged on the code it names: the data file neither
+// proves nor disproves reach, so it must not drag a driven subject to "no".
+test("a promise naming both data and code is judged on the code it names", async () => {
+  const dir = repo();
+  const verdict = await provedByExecution({
+    run: "node --test src/register_AC-2.test.mjs",
+    subjects: ["LEDGER.md", "src/register.mjs"],
+    worktree: dir,
+    exec,
+  });
+  assert.equal(verdict.executed, "yes", verdict.detail);
+});
+
 test("a subject is recognised wherever the build put it", () => {
   assert.equal(ranAmong("src/run/gate.ts", ["/tmp/wt/out-test/run/gate.js"]), true);
   assert.equal(ranAmong("src/run/gate.ts", ["/tmp/wt/out-test/run/other.js"]), false);

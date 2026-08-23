@@ -65,3 +65,16 @@ only "THE INTENT — the north star" and treats that block as the embedded
 spec, and the intro line stops telling a worker to "read the parent spec"
 when nothing but the TEP was ever embedded. When the two bodies genuinely
 differ, both blocks still render, each exactly once, unchanged from before.
+
+# Engine hash: refreshed for the two edited entries
+
+`src/engine/engine-hash.json` now carries the current SHA-256 for the two
+engine files this document records as edited — `defectLog.ts` and
+`core/preflight.ts` — so the engine-hash gate reports no change on them
+instead of tripping on a difference the delivery already accounts for.
+
+The pin is no longer copied by hand. `src/engine/engineHashPin.test.ts`
+recomputes every entry from the bytes on disk and names each file whose
+recorded hash has drifted, together with the hash that file actually has —
+so the next engine edit is told to refresh its pin, and is told the value,
+by a check rather than by a reader noticing.

@@ -427,7 +427,7 @@
   },
   "scripts": {
     "compile": "tsc -p ./ && cd webview/map && npm run build",
-    "test": "tsc -p tsconfig.test.json && npm run --prefix webview/map build && node --test out-test/",
+    "test": "tsc -p tsconfig.test.json && npm run --prefix webview/map build && node --test --test-reporter=spec --recursive out-test/",
     "docs": "node scripts/docs-build.mjs"
   },
   "devDependencies": {
