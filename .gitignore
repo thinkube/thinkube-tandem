@@ -3,3 +3,6 @@ out/
 out-test/
 *.vsix
 media/
+
+# coverage output from a measuring run, never source
+coverage/
