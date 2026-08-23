@@ -132,7 +132,11 @@ export async function deriveSetup(
   ctx: SetupContext = {},
 ): Promise<Setup | undefined> {
   const raw = await round(
-    { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 8 },
+    // Manifests, test configuration and a nested package: a repository of
+    // ordinary shape needs more than a handful of reads to answer four
+    // questions, and a reading cut off mid-answer returned nothing — which
+    // the door then recorded as 'nothing needed'.
+    { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 24 },
     buildPreparePrompt(deps.repoRoot, map, digest, ctx),
   ).catch(() => null);
   return parseSetup(raw);

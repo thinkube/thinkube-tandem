@@ -137,11 +137,16 @@ export async function knowledgeOf(args: {
   let setup = parseSetupJson(args.store?.load(setupKey));
   if (!setup) {
     log("▸ asking the repository how a fresh checkout is made ready and how a single check runs");
-    setup =
-      (await deriveSetup(args.deps, args.round, map, digest, proven ? { previous: proven } : {})) ??
-      proven ??
-      { ...NO_SETUP };
-    args.store?.save(setupKey, JSON.stringify(setup));
+    const read = await deriveSetup(args.deps, args.round, map, digest, proven ? { previous: proven } : {});
+    if (read) {
+      setup = read;
+      args.store?.save(setupKey, JSON.stringify(setup));
+    } else {
+      // A reading that produced nothing is not an answer and is not
+      // remembered: the next run asks again instead of inheriting a blank.
+      log("⚠ the repository reading returned no setup facts — the proven facts stand, or the run proceeds with none and says so");
+      setup = proven ?? { ...NO_SETUP };
+    }
   }
   const settled: Setup = setup;
 
@@ -172,6 +177,9 @@ export async function knowledgeOf(args: {
       return again ?? proven ?? settled;
     },
     proveSetup: (s) => {
+      // 'Nothing needed' is never proven: a tree with no commands to run
+      // proves nothing, and recording it would make a blank the answer.
+      if (!s.provision && !s.prepare && !s.runOne) return;
       args.store?.save("setup@proven", JSON.stringify(s));
       args.store?.save(setupKey, JSON.stringify(s));
     },

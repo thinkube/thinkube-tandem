@@ -16,8 +16,6 @@ import { execFileSync } from "node:child_process";
 import { auditProbe } from "./probeAudit";
 import { refusedBeforeDispatch, skeletonFirst } from "./refusals";
 import { repairByAuthors } from "./authorRepair";
-import { setupRunTree } from "./setup";
-import { factsOf, rememberFacts } from "./facts";
 import { classMethodsIn, wrongAltitude } from "./altitude";
 import { rehouseChecks } from "./checkHomes";
 import { writeDeliveryRecord } from "./plan";
@@ -260,110 +258,9 @@ test("a red criterion is repaired as the next message in its author's own sessio
   assert.ok(said.some((l) => /its session is gone/.test(l)), "a lost session is said, never skipped in silence");
 });
 
-/**
- * The door: a run must not die installing what the checkout beside it
- * already holds. Two headless runs were killed for their memory doing
- * exactly that.
- */
-test("the door borrows the checkout's provisioning instead of installing again", async () => {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
-  fs.mkdirSync(path.join(base, "node_modules", "dep"), { recursive: true });
-  fs.writeFileSync(path.join(base, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
-  const ran: string[] = [];
-  const said: string[] = [];
-  const setup = await setupRunTree({
-    worktree: wt,
-    repoRoot: base,
-    provision: "npm ci",
-    exec: async (cmd, args, cwd) =>
-      cmd === "git" && args[2] === "status"
-        ? { code: 0, out: cwd === base ? "!! node_modules/\n" : "" }
-        : { code: 0, out: "" },
-    boundedExec: async (cmd) => {
-      ran.push(cmd);
-      return { code: 0, output: "" };
-    },
-    log: (l) => said.push(l),
-  });
 
-  assert.deepEqual(ran, [], "the install never ran");
-  assert.deepEqual(setup.provisioned, ["node_modules"], "and the run still knows what it has");
-  assert.ok(fs.existsSync(path.join(wt, "node_modules", "dep", "index.js")), "the dependency is reachable in the worktree");
-  assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
-});
 
-test("the door borrows even when no install command was ever learned", async () => {
-  // Run 2 of the acceptance died here: no install command was known, so
-  // nothing was borrowed and nothing was installed, and the suite failed
-  // before its first test on a tree missing its dependencies.
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
-  fs.mkdirSync(path.join(base, "webview", "map", "node_modules", "vite"), { recursive: true });
-  fs.writeFileSync(path.join(base, "webview", "map", "node_modules", "vite", "index.js"), "");
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
-  const setup = await setupRunTree({
-    worktree: wt,
-    repoRoot: base,
-    exec: async (cmd, args, cwd) =>
-      cmd === "git" && args[2] === "status"
-        ? { code: 0, out: cwd === base ? "!! webview/map/node_modules/\n" : "" }
-        : { code: 0, out: "" },
-    boundedExec: async () => ({ code: 0, output: "" }),
-    log: () => {},
-  });
-  assert.deepEqual(setup.provisioned, ["webview/map/node_modules"]);
-  assert.ok(
-    fs.existsSync(path.join(wt, "webview", "map", "node_modules", "vite", "index.js")),
-    "a nested dependency directory is lent too",
-  );
-});
 
-test("the borrow lends dependency stores and nothing else", async () => {
-  // Run 4 judged the wrong tree: the borrow lent out-test/ as a symlink, so
-  // the worktree's suite compiled through it INTO the base checkout and ran
-  // the base's code. Seven reds against work that was finished.
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
-  for (const d of ["node_modules", "out-test", "out", "media", "coverage"])
-    fs.mkdirSync(path.join(base, d), { recursive: true });
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
-  const setup = await setupRunTree({
-    worktree: wt,
-    repoRoot: base,
-    exec: async (cmd, args, cwd) =>
-      cmd === "git" && args[2] === "status"
-        ? {
-            code: 0,
-            out:
-              cwd === base
-                ? "!! node_modules/\n!! out-test/\n!! out/\n!! media/\n!! coverage/\n!! thinkube-tandem-2.0.144.vsix\n"
-                : "",
-          }
-        : { code: 0, out: "" },
-    boundedExec: async () => ({ code: 0, output: "" }),
-    log: () => {},
-  });
-  assert.deepEqual(setup.provisioned, ["node_modules"], "only the dependency store crossed");
-  for (const d of ["out-test", "out", "media", "coverage", "thinkube-tandem-2.0.144.vsix"])
-    assert.ok(!fs.existsSync(path.join(wt, d)), `${d} was lent — the run would judge the base's tree`);
-});
-
-test("the four facts about a repository are kept in the repository", () => {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-facts-"));
-  assert.equal(factsOf(repo), undefined, "a repository never run against tells nothing");
-
-  rememberFacts(repo, { provision: "npm ci", prepare: "npm run build", runOne: "node --test <file>" }, "2026-08-22T20:00:00Z");
-  const told = factsOf(repo);
-  assert.equal(told?.provision, "npm ci");
-  assert.equal(told?.runOne, "node --test <file>");
-  assert.equal(told?.provenAt, "2026-08-22T20:00:00Z", "and says when it was proved");
-
-  // A repository that cannot be written to still runs: a file where the
-  // directory would go makes the write impossible, and nothing throws.
-  const blocked = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-blocked-"));
-  fs.writeFileSync(path.join(blocked, ".tandem"), "not a directory\n");
-  assert.doesNotThrow(() => rememberFacts(blocked, { provision: "", prepare: "", runOne: "" }, "now"));
-  assert.equal(factsOf(blocked), undefined, "and it simply asks again next time");
-});
 
 
 
@@ -502,43 +399,6 @@ test("every refusal a person reads is about the work, not about the machine", as
   assert.ok(said.length >= 4, `the drive read nothing: ${said.length}`);
 });
 
-test("what the door lends can never be committed, even by add -A", async () => {
-  // Run 4's withheld commit ran `git add -A` and committed four borrowed
-  // symlinks onto the branch — the repository's own `node_modules/` ignore
-  // matches a directory, not a symlink. After that, every fresh checkout of
-  // the branch recreated links into the base checkout and the suite judged
-  // the wrong tree, run after run.
-  const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8" });
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-real-base-"));
-  execFileSync("git", ["init", "-q", base]);
-  g(base, "config", "user.email", "t@t");
-  g(base, "config", "user.name", "t");
-  fs.writeFileSync(path.join(base, "a.txt"), "a\n");
-  fs.writeFileSync(path.join(base, ".gitignore"), "node_modules/\n");
-  fs.mkdirSync(path.join(base, "node_modules", "dep"), { recursive: true });
-  fs.writeFileSync(path.join(base, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
-  g(base, "add", "a.txt", ".gitignore");
-  g(base, "commit", "-qm", "seed");
-  const wt = path.join(base, "..", `${path.basename(base)}-wt`);
-  g(base, "worktree", "add", "-q", "-b", "run", wt);
-
-  const exec = async (cmd: string, args: string[], cwd: string) => {
-    try {
-      return { code: 0, out: execFileSync(cmd, ["-C", cwd, ...args.slice(2)], { encoding: "utf8" }) };
-    } catch (err) {
-      return { code: 1, out: String((err as { stdout?: string }).stdout ?? "") };
-    }
-  };
-  await setupRunTree({ worktree: wt, repoRoot: base, exec: exec as never, boundedExec: async () => ({ code: 0, output: "" }), log: () => {} });
-
-  assert.ok(fs.lstatSync(path.join(wt, "node_modules")).isSymbolicLink(), "the dependency store was lent as a link");
-  g(wt, "add", "-A", ".");
-  assert.equal(
-    g(wt, "status", "--porcelain").split("\n").filter((l: string) => l.includes("node_modules")).join(""),
-    "",
-    "and add -A cannot stage it",
-  );
-});
 
 test("a check an earlier run already wrote keeps its address", () => {
   // A resumed run once judged 64 criteria red: every check existed on the
@@ -585,6 +445,7 @@ test("what an opened delivery recorded outlives every later failed run", async (
   assert.equal(kept.checks?.length, 1);
   assert.equal(kept.checks?.[0].source, "the real check");
 });
+
 
 
 

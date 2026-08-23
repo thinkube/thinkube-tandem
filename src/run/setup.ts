@@ -159,6 +159,11 @@ const since = (t0: number): string => `${((Date.now() - t0) / 1000).toFixed(0)}s
 
 async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   const provisioned: string[] = [];
+  if (!args.provision && !args.prepare && !args.runOne && !args.build)
+    args.log(
+      "⚠ no setup facts for this repository — nothing is installed or built before the checks run. " +
+        "If the checks need a build, every one of them will fail for that alone: the reading should be repeated, or the facts given.",
+    );
   let borrowed = false;
   // Borrowing does not wait for a known install command: the checkout the
   // run was started from holds the ground truth about what a ready tree
