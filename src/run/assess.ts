@@ -8,6 +8,7 @@
  */
 import { Proof, Space, Cut } from "../core/schema";
 import { RoundDeps, runReadRound } from "../derive/round";
+import { observationShaped } from "./observations";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 
 export interface AssessArgs {
@@ -27,22 +28,30 @@ export interface AssessArgs {
   only?: (label: string) => boolean;
 }
 
-/** The reviewer's word: the last line that starts with GREEN or RED. A
- *  reviewer that narrates before it decides is still read; one that never
- *  decides is red. */
-function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | undefined {
+/** The reviewer's word: the last line that starts with GREEN, RED or
+ *  OBSERVE. A reviewer that narrates before it decides is still read; one
+ *  that never decides is red. OBSERVE is for the one thing a reviewer over
+ *  a tree can never judge: behaviour that exists only in the RUNNING
+ *  product. That is not a red — it is the person's to certify, on the
+ *  delivery they are certifying it WITH — and it is not a green, because
+ *  nobody saw it. It rides the delivery's face by name. */
+function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | "OBSERVE" | undefined {
   if (!reply) return undefined;
   const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, "").toUpperCase());
   for (let i = lines.length - 1; i >= 0; i--) {
     if (/^GREEN\b/.test(lines[i])) return "GREEN";
     if (/^RED\b/.test(lines[i])) return "RED";
+    if (/^OBSERVE\b/.test(lines[i])) return "OBSERVE";
   }
   return undefined;
 }
 
-export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
+export async function gradeAssessments(
+  a: AssessArgs,
+): Promise<{ proofs: Proof[]; observations: string[] }> {
   const byId = new Map(a.space.nodes.map((n) => [n.id, n]));
   const proofs: Proof[] = [];
+  const observations: string[] = [];
   let ord = 0;
   for (const id of a.cut.changeIds) {
     const n = byId.get(id);
@@ -50,6 +59,16 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
     for (const c of n.acceptance) {
       if (c.kind !== "assessment") continue;
       ord++;
+      // The design rule decides before any reviewer is asked: an
+      // observation was never a check (src/run/observations.ts). The
+      // reviewer's OBSERVE verdict below stays for wordings the rule
+      // misses — two layers, because each catches what the other cannot.
+      const shaped = observationShaped(c.text);
+      if (shaped) {
+        observations.push(`${c.text} — ${shaped}`);
+        a.log?.(`assessment ${ord}: an observation, by design — it rides the delivery for the person`);
+        continue;
+      }
       if (a.only && !a.only(`review-${ord}: ${c.text.slice(0, 60)}`)) continue;
       const ask = a.space.asks.find((x) => n.serves.includes(x.id));
       const deps: RoundDeps = {
@@ -78,11 +97,21 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
           ...(proofs_.length ? [`WHAT ELSE PROVES IT: ${proofs_.join(", ")}`] : []),
           "",
           "You have a small number of tool uses. Read what the check names, then answer.",
-          "Your LAST line must be exactly GREEN or RED, then one plain-English",
-          "sentence saying why. Nothing after it.",
+          "Your LAST line must be exactly one of GREEN, RED or OBSERVE, then one",
+          "plain-English sentence saying why. Nothing after it.",
+          "OBSERVE is ONLY for a check that can be judged in the RUNNING product and",
+          "nowhere else — a person must see it happen. Everything the tree can show",
+          "you — code, wiring, tests that drive the real parts — you judge GREEN or",
+          "RED yourself; OBSERVE is never a way to avoid reading.",
         ].join("\n"),
       );
-      const green = verdictOf(reply) === "GREEN";
+      const verdict = verdictOf(reply);
+      if (verdict === "OBSERVE") {
+        observations.push(`${c.text} — ${(reply ?? "").split("\n").filter(Boolean).pop()?.replace(/^OBSERVE\S*\s*/i, "").slice(0, 200) ?? ""}`);
+        a.log?.(`assessment ${ord}: OBSERVE — only the running product can show it; it rides the delivery for the person`);
+        continue;
+      }
+      const green = verdict === "GREEN";
       if (!green) a.onRed?.(`review-${ord}`, (reply ?? "unreachable").slice(0, 300));
       proofs.push({
         kind: "assessment",
@@ -94,7 +123,7 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
       a.log?.(`assessment ${ord}: ${green ? "GREEN" : "RED"}`);
     }
   }
-  return proofs;
+  return { proofs, observations };
 }
 
 /** One journal line per red runnable check; infra exits stay their own class. */

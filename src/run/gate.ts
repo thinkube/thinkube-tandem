@@ -28,6 +28,7 @@ import {
 } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
+import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import type { WiringVerdict } from "./wiring";
 import { isTestPath } from "./testHomes";
@@ -95,7 +96,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
   // Assessments: a FRESH reviewer over the DELIVERED tree, fail-soft red.
-  const assessed = await gradeAssessments({
+  const graded = await gradeAssessments({
     space,
     cut,
     testerWt: worktree,
@@ -146,6 +147,16 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   const unproven = [...wiring.values()].filter((w) => w.executed === "unknown").length;
   if (unproven) log(`${tep}: ${unproven} check(s) ran under a runtime that does not report what it executed — their wiring is unproven`);
+  const assessed = graded.proofs;
+  // What only the running product can show is the person's to certify —
+  // ON the delivery, because the delivery is the thing they certify with.
+  // Holding the delivery back for it would demand the observation before
+  // the thing to observe exists. Two sources, deliberately: the design's
+  // own rule over the signed promises, and the reviewer's OBSERVE verdict
+  // for wordings the rule misses.
+  const observations = [...new Set([...observationsOf(space, cut), ...graded.observations])];
+  if (observations.length)
+    log(`${tep}: ${observations.length} observation(s) ride the delivery for the person to certify`);
   const proofs: Proof[] = assessed.concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
@@ -394,7 +405,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       // nothing but the tree.
       const redReviews = new Set(proofs.filter((p) => p.kind === "assessment" && p.verdict !== "green").map((p) => p.label));
       if (redReviews.size) {
-        const regraded = await gradeAssessments({
+        const regradedAll = await gradeAssessments({
           space,
           cut,
           testerWt: worktree,
@@ -403,7 +414,15 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
           log,
           only: (label) => redReviews.has(label),
         });
-        for (const r of regraded) {
+        observations.push(...regradedAll.observations.filter((o) => !observations.includes(o)));
+        // A promise the fresh reviewer now rules observable-only stops
+        // being an unkept proof: it moves to the person's list by name.
+        for (const o of regradedAll.observations) {
+          const label = o.slice(0, 60);
+          const stale = proofs.find((p) => p.kind === "assessment" && p.verdict !== "green" && p.label.includes(label.slice(0, 40)));
+          if (stale) stale.verdict = "green";
+        }
+        for (const r of regradedAll.proofs) {
           const proof = proofs.find((p) => p.label === r.label);
           if (proof) {
             proof.verdict = r.verdict;
@@ -492,6 +511,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       // Only an opened delivery captures its checks; a withheld run keeps
       // its files in the tree and must not replace what a delivery kept.
       ...(unkept.length ? {} : { checks: kept }),
+      ...(observations.length ? { observations } : {}),
       machineAttention: g.machineAttention(),
     });
   undelivered.push(...docsObligations(slices, worktree));
@@ -510,6 +530,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         cutId: cut.id,
         branch,
         proofs,
+        ...(observations.length ? { observations } : {}),
         withheld:
           `${unkept.length} of the cut's promises are not kept, so nothing is handed over. The branch holds the work:\n` +
           named.join("\n"),
@@ -543,6 +564,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         title: `Tandem delivery: ${tep}`,
         body:
           `Delivered by the tandem run for ${tep}.\n\n` +
+          (observations.length
+            ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
+            : "") +
           (undelivered.length ? `UNDELIVERED:\n${undelivered.map((u) => `- ${u}`).join("\n")}\n\n` : "") +
           `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}`).join("\n")}`,
       });
@@ -557,6 +581,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     cutId: cut.id,
     branch,
     proofs,
+    ...(observations.length ? { observations } : {}),
     ...(url ? { url } : {}),
     ...(undelivered.length ? { undelivered } : {}),
     ...(g.rulings.length ? { rulings: g.rulings } : {}),

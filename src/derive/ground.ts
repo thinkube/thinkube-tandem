@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { AcceptanceCriterion, Anchor, Ask, Change, Question, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
 import { RoundDeps, runReadRound } from "./round";
+import { observationShaped } from "../run/observations";
 import { downgradeUnreachable } from "./reachable";
 
 /** A question the round could not settle from the code, with the machine's
@@ -204,11 +205,21 @@ export function parseGroundedNodes(
         why: typeof u.why === "string" ? u.why.trim().slice(0, 200) : "",
       }))
       .filter((u) => u.text && u.why);
+    // The prompt above states the rule; this enforces it. A criterion the
+    // model worded as a check that only the running product can show is
+    // moved to the unverified notes AT BIRTH — an instruction asks, the
+    // parser guarantees. One such criterion reached a signed cut and no
+    // gate could then be honest about it: red withheld the delivery the
+    // observation needed, green claimed somebody saw what nobody saw.
+    const observed = acceptance.filter((c) => observationShaped(c.text));
+    const checks = acceptance.filter((c) => !observationShaped(c.text));
+    for (const c of observed)
+      unverified.push({ text: c.text.slice(0, 300), why: "only the running product can show it — the person certifies it on the delivery" });
     out.push({
       sentence,
       touchpoints,
       needsIndices,
-      acceptance,
+      acceptance: checks,
       ...(claim ? { claim } : {}),
       ...(unverified.length ? { unverified } : {}),
     });
