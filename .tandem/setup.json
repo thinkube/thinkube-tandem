@@ -1,0 +1,5 @@
+{
+  "provision": "npm ci",
+  "prepare": "npx tsc -p tsconfig.test.json",
+  "runOne": "node --test \"$(echo <file> | sed -e 's#^src/#out-test/#' -e 's#\\.ts$#.js#')\""
+}

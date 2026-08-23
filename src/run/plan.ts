@@ -105,6 +105,25 @@ export async function claimRunLock(
 }
 
 /**
+ * How to run one check when the door proved no command for this repository.
+ *
+ * A source a runtime cannot load is not a check: it fails identically
+ * whatever the product does, so it can never report the criterion it was
+ * written for. A TypeScript check therefore names the compiled twin its
+ * build emits — `src/x_AC-1.test.ts` is run as `out-test/x_AC-1.test.js` —
+ * and the caller is expected to have run the build. Any other path is run
+ * where it sits, which is what a no-build repository needs.
+ *
+ * This is a last resort, not a shape: the proved `runOne` always wins.
+ */
+function defaultRunOne(probe: string): string {
+  const built = /\.tsx?$/.test(probe)
+    ? probe.replace(/^src\//, "out-test/").replace(/\.tsx?$/, ".js")
+    : probe;
+  return `node --test ${built}`;
+}
+
+/**
  * Per-slice bookkeeping: its probe files, the verification each one stands
  * for, and the paths its commit will stage. The ordinal a check is known by
  * downstream is this list's ORDER — the probe filenames carry the same
@@ -146,7 +165,7 @@ export function sliceBookkeeping(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : `node --test ${p}`, env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : defaultRunOne(p), env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -189,6 +208,10 @@ function acOf(probe: string): number {
  * slice order, each with the ordinal the gate knows it by — and the way
  * back from that ordinal to the probe, so a result can be reported as the
  * check it ran rather than as its position in a list.
+ *
+ * Each probe is run the same way a single check is run, so a TypeScript
+ * probe names the compiled twin its build emits rather than a source no
+ * runtime can load.
  */
 export function closingVerifications(slices: SliceForDag[]): {
   verifs: AcVerification[];
@@ -200,7 +223,7 @@ export function closingVerifications(slices: SliceForDag[]): {
   for (const s of slices)
     for (const u of s.workUnits.filter((x) => x.role === "test"))
       for (const probe of u.footprint.filter(isProbePath)) {
-        verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
+        verifs.push({ ac: ++ord, run: defaultRunOne(probe), env: "local" });
         probeOfAc.set(ord, probe);
       }
   return { verifs, probeOfAc };

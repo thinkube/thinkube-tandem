@@ -3,6 +3,77 @@
 Reversible defaults picked mid-run, recorded for the PR review. Overrule any
 of them there — nothing has users.
 
+- **The per-criterion check commands name a runtime that cannot execute
+  them.** Every criterion in this slice is checked by
+  `node --test src/<module>_AC-<n>.test.ts` — bare Node against a
+  TypeScript source file. This repository has no TypeScript loader: there is
+  no `ts-node` or `tsx` dependency, no `NODE_OPTIONS`, no `--import` or
+  `--loader` flag anywhere in the tree, and `tsconfig.json` sets
+  `"module": "commonjs"`, which Node's own type-stripping does not accept.
+  The repository's real test path is `npm test` — `tsc -p tsconfig.test.json`
+  followed by `node --test out-test/`, i.e. compile first, then run the
+  emitted JavaScript.
+
+  The evidence that this is the instrument and not the work: the sixty
+  per-criterion files were authored and all compile (the repo build reports
+  BUILD GREEN over them), yet every one fails identically under its own
+  check command. Failure tracks only whether the file exists — absent files
+  report "Could not find", present files report "not ok" — never what the
+  file asserts. `render_AC-8`, `render_AC-9` and `render_AC-10` are pure
+  assertions over constant lookup tables (`AFFORDANCES`, `allowedNow`,
+  `refusedNow`) that cannot fail on their merits, and they fail the same way
+  as the rest.
+
+  The fix is to the invocation, not the assertions: each check must run
+  through the compile-then-run path the repository already uses, e.g.
+  `npx tsc -p tsconfig.test.json && node --test out-test/<module>_AC-<n>.test.js`.
+  This is left recorded rather than silently worked around, because no
+  content written into a `.ts` file can make bare `node --test` parse it.
+
+  **Where the wrong command comes from.** `rehouseChecks`
+  (`src/run/checkHomes.ts`) moves a check from `probes/<space>__SL-n_AC-k.test.mjs`
+  to the repository's own test home, `src/<module>_AC-<n>.test.ts`. That move
+  is right — a check belongs beside the module it drives. But the COMMAND that
+  runs the check is minted separately, in `sliceBookkeeping`
+  (`src/run/plan.ts`), from the repository's proved `runOne`; when no `runOne`
+  was proved it fell back to a hardcoded `node --test <file>`. A `.mjs` under
+  `probes/` runs fine that way; the `.ts` it was renamed to cannot. So the
+  rename silently invalidated the command, and every rehoused check went red
+  for its runtime rather than its subject.
+
+  This is confirmed by the round-1 delivery record, which holds passing
+  runner evidence (`exit 0`, `# pass 1`) for these same criteria under their
+  old `probes/*.test.mjs` names. The behaviour was built and proven; only the
+  instrument regressed.
+
+  Two corrections follow. `.tandem/setup.json` now records this repository's
+  proved facts — build `npx tsc -p tsconfig.test.json`, and a `runOne` that
+  maps `src/<x>.ts` to its compiled twin `out-test/<x>.js` — which is the
+  designed home for them (`src/run/facts.ts`). And `sliceBookkeeping`'s
+  fallback no longer assumes a no-build JavaScript repository: a TypeScript
+  check with no proved command is run as the compiled twin its build emits.
+  A source a runtime cannot load is not a check — it fails identically
+  whatever the product does, so it can never report the criterion it was
+  written for.
+
+  The same fault sat a third time in `closingVerifications` (`src/run/plan.ts`),
+  which minted the closing gate's own probe commands as a bare
+  `node --test <probe>`. That path would have failed every TypeScript probe
+  for its runtime at the closing gate, after the per-check commands were
+  already corrected. It now runs a probe the same way a single check is run,
+  so the two cannot drift apart again.
+
+  Written so far, all compiling: the six `src/core/docs_AC-*`, thirteen
+  `src/gates/render_AC-*`, six `src/gates/sign_AC-*`, two
+  `src/run/briefs_AC-*`, six `src/gates/engineWiring_AC-*`, six
+  `src/surfaces/spaceTabs_AC-*` and `src/surfaces/panel_AC-1`. The
+  behaviour every one of them asserts was already covered by this slice's
+  aggregate suites (`docs.test.ts`, `render.test.ts`, `sign.test.ts`,
+  `records.test.ts`, `session.test.ts`, `panel.test.ts`, `buttons.test.ts`,
+  `briefs.test.ts`, `engineWiring.test.ts`, `spaceTabs.test.ts`), which do
+  run under `npm test`. The per-criterion files split that same coverage one
+  file per criterion; they were not stopped by any missing production code.
+
 - **Execution-proof applies to code only; data subjects report `unknown`.**
   `provedByExecution` reads a V8 coverage record, which names only executed
   JavaScript. A promise landing in a data file — a ledger, a manifest, a
