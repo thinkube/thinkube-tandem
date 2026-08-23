@@ -123,5 +123,6 @@ test("a promise landing in a document is not asked to execute", async () => {
     exec: async () => ({ code: 0, output: "" }),
   });
   assert.equal(verdict.executed, "unknown");
-  assert.match(verdict.detail, /content, not code/);
+  assert.match(verdict.detail, /data, not code/);
+  assert.match(verdict.detail, /docs\/ENGINE-WIRING\.md/);
 });

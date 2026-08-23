@@ -36,7 +36,7 @@ export interface WiringVerdict {
 const EXECUTABLE_EXT_RE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|sh|lua)$/i;
 
 /** Is this subject a file a runtime can execute a line of at all? */
-export function isExecutableSubject(subject: string): boolean {
+function isExecutableSubject(subject: string): boolean {
   return EXECUTABLE_EXT_RE.test(subject);
 }
 

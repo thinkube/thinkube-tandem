@@ -15,8 +15,12 @@ import type * as vscodeTypes from "vscode";
 import { TandemSession } from "./session";
 import { spacePush } from "./push";
 
-// The panel is the surface that pushes space state, so the push payload is
-// addressable here as well as at its definition.
+/**
+ * The panel is the surface that pushes space state, so the push payload is
+ * addressable here as well as at its definition — the acceptance probes read
+ * it from the panel to check what a push carries.
+ * @public
+ */
 export { spacePush };
 import { handleInbound } from "./inbound";
 import type { InboundAction } from "./inbound";
