@@ -388,6 +388,29 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (unkept.length && !g.state.halted) {
     const rejudge = async (): Promise<Proof[]> => {
       await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+      // A red assessment is re-graded by a fresh reviewer over the repaired
+      // tree, exactly as a check is re-run. Frozen first-pass verdicts held
+      // three repaired promises red while the closer's edits could move
+      // nothing but the tree.
+      const redReviews = new Set(proofs.filter((p) => p.kind === "assessment" && p.verdict !== "green").map((p) => p.label));
+      if (redReviews.size) {
+        const regraded = await gradeAssessments({
+          space,
+          cut,
+          testerWt: worktree,
+          model: deps.workerModel?.workerModel ?? "sonnet",
+          ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
+          log,
+          only: (label) => redReviews.has(label),
+        });
+        for (const r of regraded) {
+          const proof = proofs.find((p) => p.label === r.label);
+          if (proof) {
+            proof.verdict = r.verdict;
+            if (r.ref) proof.ref = r.ref;
+          }
+        }
+      }
       const again = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
       for (const r of again) {
         const probe = probeOfAc.get(r.ac);

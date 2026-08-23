@@ -20,6 +20,11 @@ export interface AssessArgs {
   log?: (l: string) => void;
   round?: typeof runReadRound;
   onRed?: (label: string, ref: string) => void;
+  /** Grade only the assessments whose minted label this accepts. A repair
+   *  loop re-grades its reds, not the whole panel: a verdict frozen at the
+   *  gate's first pass once held three repaired promises red for an hour
+   *  while the closer's edits could not move it. */
+  only?: (label: string) => boolean;
 }
 
 /** The reviewer's word: the last line that starts with GREEN or RED. A
@@ -45,6 +50,7 @@ export async function gradeAssessments(a: AssessArgs): Promise<Proof[]> {
     for (const c of n.acceptance) {
       if (c.kind !== "assessment") continue;
       ord++;
+      if (a.only && !a.only(`review-${ord}: ${c.text.slice(0, 60)}`)) continue;
       const ask = a.space.asks.find((x) => n.serves.includes(x.id));
       const deps: RoundDeps = {
         model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
