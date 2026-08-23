@@ -272,7 +272,11 @@ export async function writeDeliveryRecord(
     undelivered: string[];
     verifs: AcVerification[];
     acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
-    /** The checks themselves — kept here because the files are discarded. */
+    /** The checks themselves — kept here because the files are discarded.
+     *  Passed only by an OPENED delivery: a withheld run once overwrote a
+     *  good record's fifty-eight sources with thirty-eight entries at the
+     *  wrong addresses, and the next run could restore nothing. Absent, the
+     *  record's existing checks are preserved. */
     checks?: KeptCheck[];
     /** Attention events about the machine in this run. Target: zero. */
     machineAttention?: number;
@@ -286,6 +290,18 @@ export async function writeDeliveryRecord(
     });
     const dir = path.join(storeDir, "deliveries");
     await fsp.mkdir(dir, { recursive: true });
+    // What an opened delivery captured outlives every later failed run.
+    const checks =
+      record.checks?.length
+        ? record.checks
+        : (() => {
+            try {
+              return (JSON.parse(readFileSync(path.join(dir, `${record.tep}.json`), "utf8")) as { checks?: KeptCheck[] })
+                .checks ?? [];
+            } catch {
+              return [];
+            }
+          })();
     await fsp.writeFile(
       path.join(dir, `${record.tep}.json`),
       JSON.stringify(
@@ -296,7 +312,7 @@ export async function writeDeliveryRecord(
           proofs: record.proofs,
           undelivered: record.undelivered,
           trace,
-          ...(record.checks?.length ? { checks: record.checks } : {}),
+          ...(checks.length ? { checks } : {}),
           machineAttention: record.machineAttention ?? 0,
         },
         null,
