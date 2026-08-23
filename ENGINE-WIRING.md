@@ -74,8 +74,10 @@ of any mismatch.
   scan supplies the setup steps for a repo that declares no recipe, the floor
   that stops a fresh worktree from running its gate with no dependencies
   installed — it arms together with `worktreeProvision.ts`, its only caller.
-- `src/engine/retiredSymbolFootprint.ts` — **wire**: as DECISIONS.md
-  records, the retired-symbol importer gate stays unwired until grounding
-  grows a `retires` declaration for symbol-deleting changes — it arms the
-  day that field exists on a cut's grounding, and the module is imported
-  and tested at that point.
+- `src/engine/retiredSymbolFootprint.ts` — **wire**: the reverse-dependency
+  scan needs a list of the symbols a change retires, and nothing in this
+  product produces one — a cut's grounding carries no `retires` field, so
+  its declared caller (`kanbanMcpServer.ts`'s footprint gate, per the
+  module header) has no input to hand it — it arms the day grounding
+  declares retired symbols, at which point the module is imported and
+  tested against that field.

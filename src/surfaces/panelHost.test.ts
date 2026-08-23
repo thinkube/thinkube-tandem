@@ -14,6 +14,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Module from "node:module";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { SpacePanel } from "./panel";
+import { SpaceTabs } from "./spaceTabs";
+import { TandemSession } from "./session";
 
 /** One recorded createWebviewPanel call, plus the panel handed back. */
 interface Recorded {
@@ -126,6 +132,99 @@ test("the real vscode panel host gives two thinking spaces two distinct panels, 
     ["Space A", "Space B"],
     "each panel must carry its own space's display name as its title",
   );
+});
+
+/** A session with just enough state to carry its own display name — the
+ *  name is a construction dep, exactly as the extension supplies it. */
+function bareSession(tag: string, spaceName: string): TandemSession {
+  return new TandemSession({
+    round: { model: "sonnet", repoRoot: "/repo" },
+    spaceName,
+    storeDir: fs.mkdtempSync(path.join(os.tmpdir(), `tandem-panelhost-${tag}-`)),
+    storageDir: fs.mkdtempSync(path.join(os.tmpdir(), `tandem-panelhost-${tag}-keys-`)),
+    now: () => "2026-08-23T00:00:00.000Z",
+    author: "t",
+    readCurrentStamp: async () => [],
+    knowledge: async () => ({
+      repoRoot: "/repo",
+      graph: { graphPath: "/g.json", stamp: { root: "/repo", head: "h", dirty: "" } },
+      map: "",
+      digest: "",
+      provision: "",
+      prepare: "",
+      resetup: async () => ({ provision: "", prepare: "", runOne: "" }),
+      proveSetup: () => {},
+      decisions: [],
+      ask: async () => "",
+      affected: async () => "",
+    }),
+  } as unknown as ConstructorParameters<typeof TandemSession>[0]);
+}
+
+/**
+ * The whole chain the extension actually builds, with no fake link in it:
+ * the real SpaceTabs register, whose factory builds a real SpacePanel per
+ * key, handed the real makeVscodePanelHost. The other checks each prove one
+ * link against a fake neighbour — a fake host under SpacePanel, fake tabs
+ * under the register, and the host called directly with no register or
+ * panel above it. A chain can have three sound links and still lose the
+ * second tab where they join, so this drives the composition itself: two
+ * space keys opened through the register must reach the real host as two
+ * createWebviewPanel calls, each carrying its own space's name.
+ */
+test("opening two thinking spaces through the real register, panel and host yields two distinct editor tabs, one per space", async () => {
+  const calls: Recorded[] = [];
+  const sessionA = bareSession("chain-a", "Space A");
+  const sessionB = bareSession("chain-b", "Space B");
+  const sessions = new Map([
+    ["owner/space-a", sessionA],
+    ["owner/space-b", sessionB],
+  ]);
+
+  const panels: SpacePanel[] = [];
+  await withStubVscode(calls, async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { makeVscodePanelHost } = require("../extension") as typeof import("../extension");
+    const host = makeVscodePanelHost({ fsPath: "/ext" } as never);
+    // The same factory shape activate() installs: resolve the key's own
+    // session, build that space's own SpacePanel, show it.
+    const tabs = new SpaceTabs((key) => {
+      const session = sessions.get(key);
+      if (!session) throw new Error(`no session for ${key}`);
+      const panel = new SpacePanel(
+        { key, name: session.spaceName ?? key, session },
+        host,
+      );
+      panels.push(panel);
+      void panel.show();
+      return panel;
+    });
+
+    tabs.open("owner/space-a");
+    tabs.open("owner/space-b");
+    // Opening an already-open key must not spend a third tab on it.
+    tabs.open("owner/space-a");
+
+    assert.equal(tabs.liveKeys().length, 2, "both spaces must hold a live tab at once");
+  });
+
+  assert.equal(
+    calls.length,
+    2,
+    "two spaces opened through the real chain must reach the editor as two separate webview panels — one collapsing into the other is the defect this criterion names",
+  );
+  assert.deepEqual(
+    calls.map((c) => c.title),
+    ["Space A", "Space B"],
+    "each editor tab must be titled with its own space's display name, so the human can tell the two apart",
+  );
+  assert.notEqual(panels[0], panels[1], "each space must own a distinct panel through the register");
+  for (const call of calls)
+    assert.equal(
+      call.showOptions.viewColumn,
+      ACTIVE,
+      `tab "${call.title}" must open in the active column; a fixed column stacks both spaces in one slot`,
+    );
 });
 
 test("the real vscode panel host pins no fixed view column, so a second space opens beside the first instead of replacing it", () => {

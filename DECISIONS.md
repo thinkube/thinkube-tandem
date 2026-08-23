@@ -116,17 +116,26 @@ of them there — nothing has users.
   tab. `src/surfaces/panelHost.test.ts` drives the real factory against a
   stub `vscode` and holds both properties: one distinct, own-titled panel
   per space, and no fixed column.
-  How far that evidence reaches, stated plainly: the check drives the
-  REAL `makeVscodePanelHost` — the same function the running extension
-  hands every `SpacePanel` — and asserts on the actual arguments reaching
-  `createWebviewPanel`. It is the last seam observable without an editor.
-  What it does not do is run VS Code: no `@vscode/test-electron` harness
-  exists here, and this tree has no editor, no display and no shell to
-  host one, so nobody has watched two tabs appear on a screen. The
-  criterion asks for the running extension; what is proved is the call
-  the running extension makes. Anything past that seam is the editor's
-  own behaviour, which this repository does not own and cannot observe.
-  Treat this as verified at the seam and UNVERIFIED in the editor.
+  How far that evidence reaches, stated plainly. The checks drive the
+  REAL chain, with no fake link in it: the real `SpaceTabs` register,
+  whose factory builds a real `SpacePanel` per space key, handed the real
+  `makeVscodePanelHost` — the same three collaborators `activate` wires
+  together. Opening two space keys through that chain is asserted to
+  reach `createWebviewPanel` twice, once per space, each call carrying
+  its own space's display name as the tab title and the ACTIVE view
+  column. Re-opening an already-open key spends no third tab. This
+  matters because each link was previously proved only against a fake
+  neighbour — a fake host under `SpacePanel`, fake tabs under the
+  register, the host called directly with neither above it — and a chain
+  of three sound links can still lose the second tab where they join.
+  The composition is now covered, so the only thing left unobserved is
+  the editor's own rendering of two panels it was correctly asked for.
+  What these checks do not do is run VS Code: no `@vscode/test-electron`
+  harness exists here, and this tree has no editor, no display, no shell
+  and no network to fetch one, so nobody has watched two tabs appear on
+  a screen. Everything this repository owns and can observe about the
+  criterion is proved; what remains is VS Code's own behaviour, which
+  this repository neither owns nor can influence.
 - The retired-symbol importer gate's wiring verdict is held in
   ENGINE-WIRING.md, not here — that ledger is kept complete against the
   live tree by `src/gates/engineWiring.test.ts` and is the one place to
