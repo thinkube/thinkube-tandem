@@ -57,9 +57,20 @@ class StubEventEmitter {
   dispose() {}
 }
 
+/**
+ * Where the stub currently records. `extension.ts` compiles to
+ * `const vscode = require("vscode")` at module scope, so the namespace it
+ * calls through is bound once, on first require, and never rebound — a
+ * second stub object handed to a later test would never be reached. One
+ * stub therefore lives for the whole file and every test points this sink
+ * at its own array, so each test still observes only its own calls.
+ */
+let sink: Recorded[] = [];
+
 /** Install a stub `vscode` for the duration of one call, then restore. */
 function withStubVscode<T>(calls: Recorded[], run: () => T): T {
   const load = (Module as unknown as { _load: (...a: unknown[]) => unknown })._load;
+  sink = calls;
   const stub = {
     ViewColumn: { Active: ACTIVE, One: ONE },
     TreeItem: StubTreeItem,
@@ -82,7 +93,7 @@ function withStubVscode<T>(calls: Recorded[], run: () => T): T {
         title: string,
         showOptions: { viewColumn: unknown; preserveFocus: boolean },
       ) {
-        calls.push({ viewType, title, showOptions });
+        sink.push({ viewType, title, showOptions });
         return {
           webview: {
             html: "",
@@ -236,6 +247,10 @@ test("the real vscode panel host pins no fixed view column, so a second space op
     host.createPanel("Space A");
     host.createPanel("Space B");
   });
+
+  // Without this the loop below passes vacuously on an empty recording,
+  // reporting green over a host that was never reached.
+  assert.equal(calls.length, 2, "both createPanel asks must reach the editor as recorded webview panels");
 
   for (const call of calls) {
     assert.notEqual(
