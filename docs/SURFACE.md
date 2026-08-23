@@ -115,10 +115,24 @@ log. Clicking the card then opens an empty panel titled with the unit id
 (B4, B6). And neither chip says the one true thing — this unit passed
 **in an earlier run**, and was not run again.
 
-Worse, the evidence is not merely unshown. `saveRun` writes one file per
-cut, `${cutId}.json` (`record.ts:88`), so a re-run **overwrites** the
-record of the run before it. The logs that would have justified "passed"
-are destroyed by the act of running again.
+The evidence exists. It is simply out of reach. Two files are written
+per run and they behave differently:
+
+- `runs/<tep>.log` is named per TEP and **appends**. Every run of that
+  TEP is in it, including the first run's log for each standing unit.
+- `runs/<cutId>.json` is named per CUT and is **rewritten** each run
+  (`record.ts:88`). A re-run replaces it, and it shrinks, because the
+  standing units contribute nothing this time round.
+
+The surface reads only the second. `logView()` goes through `runState`,
+which is the live run or `RunState.from(loadLastRun(...))`, and
+`loadLastRun` takes `.endsWith(".json")` (`record.ts:107`). Nothing in
+the product ever reads a `.log` back — `runLog.ts` is write-only, and
+says so.
+
+So the log that justifies the word "passed" is on disk, in a file no
+screen and no gesture can open. That makes this the cheapest finding
+here to fix: the data does not need to be produced, only reached.
 
 ---
 
@@ -438,13 +452,15 @@ that reaches it. Machine output is separated from what a worker said.
 `gate#closer` is reachable by one gesture.
 Covers B4, B5, B6, B7.
 
-**4b. A reused unit says it was reused, and keeps its evidence.**
+**4b. A reused unit says it was reused, and its log stays reachable.**
 A unit carried over from an earlier run reads as carried over — one
 chip, naming the run it passed in — instead of "passed" beside "no log
-yet". The record of a run is kept per run rather than per cut, so
-running again stops destroying the log that justifies the word "passed".
+yet". Its log is already on disk in the TEP's own `.log`; the surface
+reaches that file instead of showing an empty panel. Nothing new has to
+be produced, only read.
 *Proven when:* a resumed run shows no card claiming a pass with no
-evidence, and the earlier run's log is still readable after the re-run.
+evidence, and opening a carried-over unit shows the log from the run it
+passed in.
 Covers B11.
 
 **5. One action, one name.**
