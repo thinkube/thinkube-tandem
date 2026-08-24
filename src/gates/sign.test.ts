@@ -284,7 +284,13 @@ test("a redrawn page is not the promises changing", async () => {
       },
     ],
   };
-  const signed = signCut(space as never, { id: "cut-1", changeIds: ["n1"] }, "2026-01-01T00:00:00Z", "t", 1);
+  const signed = signCut(
+    space as never,
+    { id: "cut-1", changeIds: ["n1"], docsNotNeeded: "this promise has no page of its own to update" },
+    "2026-01-01T00:00:00Z",
+    "t",
+    1,
+  );
   assert.ok(signed.ok);
   const cut = signed.cut;
 
