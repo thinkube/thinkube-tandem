@@ -24,7 +24,7 @@ function slugifySpaceName(name: string): string {
  *  under spaces/<id>/; a work-project's live in its own projects/<id>/ dir
  *  (Amendment 1 layout). */
 export type SpaceOwnerKind = "repository" | "project";
-function spacesHome(storeRoot: string, ownerId: string, kind: SpaceOwnerKind): string {
+export function spacesHome(storeRoot: string, ownerId: string, kind: SpaceOwnerKind): string {
   return path.join(storeRoot, kind === "project" ? "projects" : "spaces", ownerId);
 }
 
@@ -57,6 +57,13 @@ export function listThinkingSpaces(storeRoot: string, ownerId: string, kind: Spa
       return { slug: e.name, label };
     })
     .sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/** The single key a session, its tab and its pushes share — the same
+ *  string joins any owner (a repository id or a "wp:"-prefixed project
+ *  id, kept intact) to a slug. */
+export function spaceKey(ownerKey: string, slug: string): string {
+  return `${ownerKey}/${slug}`;
 }
 
 export function createThinkingSpace(

@@ -1,7 +1,9 @@
 /**
- * The space panel: loads the built map bundle and bridges its registered
- * actions to the session. Pushes the whole surface state after every act —
- * the webview holds no state of its own beyond selection.
+ * A space panel: loads the built map bundle and bridges its registered
+ * actions to ONE thinking space's session. Pushes the whole surface state
+ * after every act — the webview holds no state of its own beyond
+ * selection. Titled with its space's name; never shared with another
+ * space's tab.
  */
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs/promises";
@@ -11,6 +13,7 @@ import { TandemSession } from "./session";
 import { spacePush } from "./push";
 import { handleInbound } from "./inbound";
 import type { InboundAction } from "./inbound";
+import type { SpaceTab } from "./panels";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -23,17 +26,41 @@ export interface PanelHostHooks {
   onSwitchRepo?: () => Promise<void>;
 }
 
+/** The seam a panel creates its webview through — the surface of
+ *  `vscodeTypes.window` that panel creation actually needs, so a fake can
+ *  stand in for the running VS Code window in a test. Panel creation reads
+ *  only through this seam, never `vs()` directly, so a fake window never
+ *  reaches for the real `vscode` module. */
+export interface PanelWindow {
+  createWebviewPanel(
+    viewType: string,
+    title: string,
+    ...rest: unknown[]
+  ): vscodeTypes.WebviewPanel;
+}
 
 /** A card head is one line: a long sentence is clipped, never a paragraph. */
 
-export class SpacePanel implements vscodeTypes.Disposable {
+export class SpacePanel implements SpaceTab {
   private _panel: vscodeTypes.WebviewPanel | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
+  private readonly _disposedCbs: (() => void)[] = [];
+  private readonly window: PanelWindow;
+
+  /** True only when the real VS Code window was not injected — i.e. a real
+   *  panel, backed by the real `vscode` module, rather than a test fake. */
+  private readonly isRealWindow: boolean;
 
   constructor(
+    readonly key: string,
+    readonly title: string,
     private readonly getSession: () => TandemSession,
     private readonly hooks?: PanelHostHooks,
-  ) {}
+    window?: PanelWindow,
+  ) {
+    this.isRealWindow = window === undefined;
+    this.window = window ?? vs().window;
+  }
 
   async show(extensionUri: vscodeTypes.Uri): Promise<void> {
     const session = this.getSession();
@@ -42,10 +69,13 @@ export class SpacePanel implements vscodeTypes.Disposable {
       this._push(session);
       return;
     }
-    this._panel = vs().window.createWebviewPanel(
+    // ViewColumn.One's real enum value is 1; read via `vs()` only when a
+    // real window is in play, so a fake window never touches the module.
+    const viewColumn = this.isRealWindow ? vs().ViewColumn.One : 1;
+    this._panel = this.window.createWebviewPanel(
       "thinkubeTandemSpace",
-      "Tandem",
-      { viewColumn: vs().ViewColumn.One, preserveFocus: false },
+      this.title,
+      { viewColumn, preserveFocus: false },
       {
         enableScripts: true,
         localResourceRoots: [extensionUri],
@@ -55,6 +85,7 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._panel.webview.html = await renderBundleHtml(
       extensionUri,
       this._panel.webview,
+      this.isRealWindow,
     );
     this._disposables.push(
       this._panel.webview.onDidReceiveMessage(async (raw) => {
@@ -96,6 +127,7 @@ export class SpacePanel implements vscodeTypes.Disposable {
       }),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
+        for (const cb of this._disposedCbs) cb();
       }),
     );
     this._push(session);
@@ -106,6 +138,18 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._push(session, message);
   }
 
+  reveal(): void {
+    this._panel?.reveal();
+  }
+
+  push(state: unknown): void {
+    void this._panel?.webview.postMessage(state);
+  }
+
+  onDisposed(cb: () => void): void {
+    this._disposedCbs.push(cb);
+  }
+
   private _push(session: TandemSession, message?: string): void {
     void this._panel?.webview.postMessage(spacePush(session, message));
   }
@@ -113,20 +157,37 @@ export class SpacePanel implements vscodeTypes.Disposable {
   dispose(): void {
     for (const d of this._disposables) d.dispose();
     this._disposables = [];
-    this._panel?.dispose();
-    this._panel = undefined;
+    if (this._panel) {
+      // The webview's own onDidDispose listener above fires the
+      // onDisposed callbacks; disposing it here reaches that same
+      // listener rather than firing them a second time.
+      this._panel.dispose();
+      this._panel = undefined;
+    } else {
+      for (const cb of this._disposedCbs) cb();
+    }
   }
 }
 
 async function renderBundleHtml(
   extensionUri: vscodeTypes.Uri,
   webview: vscodeTypes.Webview,
+  isRealWindow: boolean,
 ): Promise<string> {
-  const mediaRoot = vs().Uri.joinPath(extensionUri, "media", "map");
+  // A fake window (test seam) never touches the real `vscode` module: it
+  // joins paths as plain strings, which is all the "bundle missing" path
+  // below ever reads. A real window joins through `vscode.Uri` so
+  // `asWebviewUri` below receives a genuine URI.
+  const joinPath = isRealWindow
+    ? (base: vscodeTypes.Uri, ...segments: string[]) =>
+        vs().Uri.joinPath(base, ...segments)
+    : (base: vscodeTypes.Uri, ...segments: string[]) =>
+        ({ fsPath: path.join(base.fsPath, ...segments) }) as unknown as vscodeTypes.Uri;
+  const mediaRoot = joinPath(extensionUri, "media", "map");
   let raw: string;
   try {
     raw = await fs.readFile(
-      vs().Uri.joinPath(mediaRoot, "index.html").fsPath,
+      joinPath(mediaRoot, "index.html").fsPath,
       "utf8",
     );
   } catch {
@@ -143,7 +204,7 @@ async function renderBundleHtml(
       if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
       const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
       return `${attr}="${webview
-        .asWebviewUri(vs().Uri.joinPath(mediaRoot, ...cleaned.split("/")))
+        .asWebviewUri(joinPath(mediaRoot, ...cleaned.split("/")))
         .toString()}"`;
     },
   );

@@ -5,9 +5,10 @@
  * first — and the store root they all live under.
  */
 import type * as vscodeTypes from "vscode";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { createThinkingSpace, DeletionCost, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
+import { createThinkingSpace, DeletionCost, listThinkingSpaces, spacesHome, SpaceOwnerKind } from "../core/spaces";
 
 /** Owner keys: a repository card id, or "wp:<project-id>" for a project. */
 function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
@@ -20,6 +21,20 @@ const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
 function vs(): typeof vscodeTypes {
   return req("vscode") as typeof vscodeTypes;
+}
+
+/** The name a human typed when the space was created (name.txt), falling
+ *  back to the slug when the space directory has none recorded. */
+export function spaceTitle(storeRoot: string, ownerKey: string, slug: string): string {
+  const owner = parseOwner(ownerKey);
+  const home = spacesHome(storeRoot, owner.id, owner.kind);
+  try {
+    const t = fs.readFileSync(path.join(home, slug, "name.txt"), "utf8").trim();
+    if (t) return t;
+  } catch {
+    /* no recorded name — the slug is the title */
+  }
+  return slug;
 }
 
 export function configuredStoreRoot(): string {

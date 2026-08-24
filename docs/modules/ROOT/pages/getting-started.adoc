@@ -4,7 +4,10 @@
 == Open the space
 
 Click the Tandem icon in the activity bar (left edge), or run
-*Tandem: Open the Space* for the full-width editor panel.
+*Tandem: Open the Space*. Each thinking space opens in its own editor
+tab, titled with that space's name — opening a second space adds a
+second tab beside the first rather than replacing it, and reopening a
+space you already have open brings its existing tab forward.
 
 If your workspace has more than one folder, Tandem asks which repository
 you are working on — it never guesses. The choice shows in the status bar

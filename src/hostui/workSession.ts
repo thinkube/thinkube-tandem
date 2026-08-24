@@ -10,7 +10,7 @@
 import type * as vscodeTypes from "vscode";
 import { createRequire } from "node:module";
 import { EnabledProject } from "../core/identity";
-import { nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
+import { nextTepNumber, spaceKey as spaceKeyOf, thinkingSpaceDirs } from "../core/spaces";
 import {
   listWorkProjects,
   readContextScope,
@@ -94,14 +94,16 @@ export async function ensureWorkSession(args: {
     gitRoot: string,
   ) => Promise<import("../dispatch/forge").Forge | undefined>;
   openRepos: () => EnabledProject[];
-  onChanged: (message?: string) => void;
+  /** Carries the space key of the session that changed — never resolved
+   *  from any notion of "the active space" at push time. */
+  onChanged: (spaceKey: string, message?: string) => void;
   storageDir: string;
 }): Promise<import("../surfaces/session").TandemSession | undefined> {
   const wp = findWorkProject(args.storeRoot, args.ownerKey.slice(3));
   if (!wp) return undefined;
   const slug = await args.chooseSpace(args.ownerKey, args.interactive);
   if (!slug) return undefined;
-  const key = `${args.ownerKey}/${slug}`;
+  const key = spaceKeyOf(args.ownerKey, slug);
   const existing = args.sessions.get(key);
   if (existing) return existing;
   const author = args.author;
@@ -140,7 +142,7 @@ export async function ensureWorkSession(args: {
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
-    onChanged: args.onChanged,
+    onChanged: (message) => args.onChanged(key, message),
   });
   args.sessions.set(key, s);
   return s;
