@@ -238,6 +238,13 @@ export async function repairUnkept(a: {
       model: deps.model,
       ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
       measure: async () => {
+        // The closer changed the tree, so every standing red is a
+        // question about a file that has moved since it was asked. The
+        // rule that stops a review being asked five times is about ONE
+        // state of the tree; carried across a repair it froze a red the
+        // closer had already fixed, and withheld the delivery for a
+        // document that was correct on disk.
+        settled.clear();
         const still = await rejudge();
         return {
           green: still.length === 0,
