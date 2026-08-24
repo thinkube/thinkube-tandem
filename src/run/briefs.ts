@@ -28,5 +28,18 @@ export function renderTepBody(space: Space, cut: Cut): string {
     lines.push(`  ## Acceptance Criteria`);
     for (const ac of c!.acceptance) lines.push(`  - [ ] ${ac.text}`);
   }
+  lines.push(`## Documentation`);
+  const docsPaths = members
+    .flatMap((c) => c!.grounding?.touchpoints ?? [])
+    .map((t) => t.path)
+    .filter((p) => p.startsWith("docs/"));
+  if (cut.docsWaiver) {
+    lines.push(`- Not needed: ${cut.docsWaiver.reason}`);
+  } else if (docsPaths.length) {
+    lines.push(`This cut must land:`);
+    for (const p of docsPaths) lines.push(`- ${p}`);
+  } else {
+    lines.push(`- No documentation path is grounded and no waiver is recorded.`);
+  }
   return lines.join("\n");
 }
