@@ -73,5 +73,9 @@ export interface DispatchDeps {
   /** Injectable for tests: replaces the check re-author (challenge and repair). */
   author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
+  /** Injectable for tests: the run's own clock (epoch ms). One reading of
+   *  it mints both the run id and the produced-at stamp on its delivery, so
+   *  the two can never name different moments. Defaults to `Date.now`. */
+  now?: () => number;
 }
 

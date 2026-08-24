@@ -96,6 +96,35 @@ only implementation site is a file no clearance names is an impossible
 promise, and it is reported to the planner rather than discovered by a
 worker four rounds in.
 
+## The run's identity and its moment, on the delivery report
+
+Four different things name a piece of work, and only two of them name the
+ACT OF RUNNING it:
+
+| Word | Names | Set when |
+|---|---|---|
+| the cut | the signed selection of promises to build | the person signs (Gate 1) |
+| the TEP | the cut's minted, permanent identity (`TEP-<user>-<n>`) | the person signs (Gate 1) |
+| the delivery | the report handed back for one dispatch of a cut | the gate closes, kept or withheld |
+| **run id** | the one dispatch that produced a delivery — the same id heading that run's rows in the space's run log | one reading of the run's clock, at the start of `dispatchTep` |
+| **produced at** | the moment that run minted its delivery (ISO timestamp) | the same clock reading that minted the run id |
+
+A cut can be dispatched more than once — a withheld delivery, re-run
+after a fix — and every dispatch mints its own run id. The TEP names the
+promise; the run id names the ATTEMPT. `Delivery.runId` and
+`Delivery.producedAt` are optional: always minted by the gate on a
+current delivery, absent only on a record from before the field existed.
+`renderDeliveryPage` (`src/gates/render.ts`) prints them first, on every
+delivery page, in exactly this form:
+
+- carrying both: `Run \`<runId>\` — produced <producedAt>`
+- carrying neither: `produced by a run this space did not record`
+
+Every surface that shows a delivery's identity — the delivery page, the
+CLI journey's closing report (`closingReportOf`, `src/cli/journey.ts`),
+the run state the panel reads (`RunState.view().runId`) — reads these
+same two words and spells them the same way.
+
 ## What changes in the code
 
 - `WorkUnit.changes: { action: "create" | "change" | "delete"; path: string }[]`

@@ -43,6 +43,12 @@ import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
   tep: string;
+  /** This run's own id and the moment it was minted — one clock reading in
+   *  `dispatchTep`, stamped on every delivery this gate hands back, kept or
+   *  withheld. Optional only for a caller that predates the field —
+   *  `dispatchTep` always supplies both from its own single clock read. */
+  runId?: string;
+  producedAt?: string;
   /** How this repository runs ONE of its own tests, as PROVED at the door
    *  — not as configured. The gate judged every check with a hardcoded
    *  command and disagreed with the slice oracle that had just passed
@@ -95,6 +101,11 @@ const RED_SUITE_REFUSAL =
 
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
+  // `dispatchTep` always supplies both from its own single clock read; a
+  // caller that predates the field falls back here rather than failing —
+  // this gate must still stamp SOME identity on what it hands back.
+  const runId = g.runId ?? `${tep}@${Date.now().toString(36)}`;
+  const producedAt = g.producedAt ?? new Date().toISOString();
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, g.runOne ?? deps.runOne ?? "");
@@ -331,16 +342,20 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
-      await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
+      await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults, runId, producedAt });
     undelivered.push(...docsObligations(slices, worktree));
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
     // Withheld is still on the record: what was checked and why it stopped
-    // is readable; nothing was opened and it cannot be accepted.
+    // is readable; nothing was opened and it cannot be accepted. It carries
+    // the same run id and produced-at stamp as a delivered one — a
+    // withheld run is still a run, and its report still names itself.
     const withheld: Delivery = {
       id: `delivery-${tep}`,
       cutId: cut.id,
       branch,
+      runId,
+      producedAt,
       proofs,
       withheld: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
       ...(undelivered.length ? { undelivered } : {}),
@@ -385,6 +400,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       undelivered,
       verifs,
       acResults,
+      runId,
+      producedAt,
       // Only an opened delivery captures its checks; a withheld run keeps
       // its files in the tree and must not replace what a delivery kept.
       ...(unkept.length ? {} : { checks: kept }),
@@ -406,6 +423,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         id: `delivery-${tep}`,
         cutId: cut.id,
         branch,
+        runId,
+        producedAt,
         proofs,
         ...(observations.length ? { observations } : {}),
         withheld:
@@ -440,7 +459,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         branch,
         title: `Tandem delivery: ${tep}`,
         body:
-          `Delivered by the tandem run for ${tep}.\n\n` +
+          `Delivered by run ${runId} for ${tep}, produced at ${producedAt}.\n\n` +
           (observations.length
             ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
             : "") +
@@ -457,6 +476,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     id: `delivery-${tep}`,
     cutId: cut.id,
     branch,
+    runId,
+    producedAt,
     proofs,
     ...(observations.length ? { observations } : {}),
     ...(url ? { url } : {}),
