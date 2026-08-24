@@ -232,6 +232,44 @@ function isDeferralVocabulary(text: string): boolean {
   return !OTHER_MARKERS.test(text) && !/\bUNDELIVERED\s*:/.test(text);
 }
 
+
+/**
+ * The lines this run ADDED, per file, with the line number they landed on.
+ *
+ * Read from the diff git already has, so nothing has to judge whether a
+ * marker word means what it says: a line that was in the tree before is
+ * not this work's confession, whoever wrote it and why.
+ */
+async function addedLines(
+  worktree: string,
+  baseSha: string,
+  exec: Exec,
+): Promise<Map<string, Map<number, string>>> {
+  const out = new Map<string, Map<number, string>>();
+  const diff = (
+    await exec("git", ["-C", worktree, "diff", "--unified=0", "--diff-filter=d", `${baseSha}..HEAD`], worktree)
+  ).out;
+  let file = "";
+  let at = 0;
+  for (const line of diff.split("\n")) {
+    const f = /^\+\+\+ b\/(.+)$/.exec(line);
+    if (f) {
+      file = f[1];
+      continue;
+    }
+    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (h) {
+      at = Number(h[1]);
+      continue;
+    }
+    if (!file || !line.startsWith("+")) continue;
+    const rows = out.get(file) ?? new Map<number, string>();
+    rows.set(at++, line.slice(1));
+    out.set(file, rows);
+  }
+  return out;
+}
+
 export async function confessedDeferrals(args: {
   worktree: string;
   baseSha: string;
@@ -252,15 +290,33 @@ export async function confessedDeferrals(args: {
     .concat(args.extraPaths)
     .map((p) => p.trim())
     .filter(Boolean);
+  // Only the lines THIS RUN WROTE. The scan read whole files and handed a
+  // run its own repository back: the regular expression that defines the
+  // marker words, the code that formats the report, a fixture string —
+  // four confessions, none of them deferrals, in files the run had touched
+  // for unrelated reasons. A marker already in the tree is the
+  // repository's business; a marker this work added is this work
+  // confessing. The difference is what git already knows, and needs no
+  // opinion about which words mean what.
+  const written = await addedLines(args.worktree, args.baseSha, args.exec);
   for (const rel of [...new Set(delivered)]) {
     if (!isStubScannableFile(rel)) continue;
+    const mine = written.get(rel);
+    // A path named outside the diff (a check restored from a record) has
+    // no added lines to read, and is taken whole as it always was.
     let content = "";
-    try {
-      content = await fs.readFile(path.join(args.worktree, rel), "utf8");
-    } catch {
-      continue;
+    if (!mine) {
+      try {
+        content = await fs.readFile(path.join(args.worktree, rel), "utf8");
+      } catch {
+        continue;
+      }
     }
-    for (const h of scanStubMarkers(rel, content).filter((x) => !x.weak && !isDeferralVocabulary(x.text))) {
+    const hits = mine
+      ? [...mine].map(([line, text]) => ({ ...scanStubMarkers(rel, text)[0], file: rel, line }))
+          .filter((h): h is { file: string; line: number; text: string; weak: boolean } => !!h.text)
+      : scanStubMarkers(rel, content);
+    for (const h of hits.filter((x) => !x.weak && !isDeferralVocabulary(x.text))) {
       out.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
       args.onHit(h.file, h.line, h.text);
     }

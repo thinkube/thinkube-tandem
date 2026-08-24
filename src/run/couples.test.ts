@@ -18,7 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
-import { closingVerifications } from "./plan";
+import { closingVerifications, confessedDeferrals } from "./plan";
 import { missingProbes } from "./testHomes";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
@@ -338,4 +338,41 @@ test("a slice only stands if it satisfies the plan that is running now", async (
   );
   // The plan it was committed for still stands, and nothing re-runs.
   assert.deepEqual(await missingProbes(tree, planNow.slice(0, 10)), []);
+});
+
+test("the gate judges the lines this run wrote, not the ones it found", async () => {
+  // A run that touched the deferral machinery was handed its own source
+  // back as four confessions: the regular expression that DEFINES the
+  // marker words, the code that FORMATS the report, and a fixture. None
+  // was a deferral, and the delivery said the work was dishonest for them.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-confess-"));
+  const git = (...a: string[]) =>
+    require("node:child_process").execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  // Already in the tree: a line that TALKS about the vocabulary.
+  fs.writeFileSync(path.join(repo, "scan.ts"), 'const MARKERS = /\\b(TODO|FIXME)\\b/;\nexport const x = 1;\n');
+  git("add", "-A");
+  git("commit", "-qm", "base");
+  const base = git("rev-parse", "HEAD").trim();
+  // This run changes that file for an unrelated reason, and confesses in another.
+  fs.writeFileSync(path.join(repo, "scan.ts"), 'const MARKERS = /\\b(TODO|FIXME)\\b/;\nexport const x = 2;\n');
+  fs.writeFileSync(path.join(repo, "work.ts"), "export function pay() {\n  // TODO: the refund path is not built\n}\n");
+  git("add", "-A");
+  git("commit", "-qm", "the run");
+
+  const said = await confessedDeferrals({
+    worktree: repo,
+    baseSha: base,
+    exec: async (cmd, a, cwd) => ({
+      code: 0,
+      out: require("node:child_process").execFileSync(cmd, a, { cwd, encoding: "utf8" }),
+    }),
+    extraPaths: [],
+    onHit: () => {},
+  });
+  assert.equal(said.length, 1, `expected only the run's own confession, got:\n${said.join("\n")}`);
+  assert.match(said[0], /work\.ts:2 confesses a deferral/);
+  assert.doesNotMatch(said.join("\n"), /scan\.ts/, "the marker it found in the tree is not its confession");
 });

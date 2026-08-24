@@ -122,6 +122,7 @@ function buildGroundingPrompt(args: {
     `shutdown request for the current cluster to the platform API, and only after a confirmation (seen through a fake ` +
     `API)"; probe "without confirmation no request is sent"; unverified {"text":"the cluster shuts down when the button ` +
     `is pressed","why":"acts on the cluster this runs in"}.\n` +
+    `    A check may require WHAT THIS WORK CHANGES, or what the running product does. It may NEVER require that something the work does not touch agrees with something it does — a generated file matching its source, a built copy matching what it was built from, one repository agreeing with another. Nobody in the run is cleared to change the other side, so no order of work makes such a check true, and it is judged red at the end for a reason no worker could have acted on. Check what the SOURCE says.\n` +
     `- "unverified": optional — the effects of this node the machine cannot verify, each {"text":"…","why":"…"}.\n` +
     (args.decisions?.length
       ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
