@@ -597,3 +597,31 @@ Not chased to the bottom. What is known: the machinery is sound in
 isolation, `loadFolded` is given the same directory for both the store
 and the fold in both headless entry points, and the editor never meets
 this because it signs and runs in one session.
+
+**L3 — the deferral scan reads its own implementation as confessions.**
+The closing gate scans every delivered file for confessed deferrals —
+`TODO`, `FIXME`, `UNDELIVERED:` and friends. A run that changed the
+machinery implementing that scan was handed its own source back as four
+confessions:
+
+```
+src/run/plan.ts:241 confesses a deferral:
+  const OTHER_MARKERS = /\b(TODO|FIXME|XXX|HACK|…)\b/i;
+src/run/gate.ts:458  confesses a deferral: `UNDELIVERED:\n${…}`
+src/run/shapes.ts:176 confesses a deferral: "UNDELIVERED: none"
+```
+
+The first is the regular expression that DEFINES the vocabulary, the
+second is the code that FORMATS the report, the third is a fixture. None
+is a deferral. `isDeferralVocabulary` already exists to catch exactly
+this and only looks at the matched text, which in every case is the
+marker itself.
+
+The impact is bounded but real: a run cannot deliver a change that
+touches the deferral machinery, and it says so in words that read like
+the delivery is dishonest.
+
+Not fixed. Every rule that would separate "a marker word being defined"
+from "a marker word being confessed" is a heuristic, and this one sits
+in the gate that decides whether work is handed over. It is written down
+rather than guessed at.
