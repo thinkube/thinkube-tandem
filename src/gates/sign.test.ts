@@ -30,6 +30,8 @@ const green = (id: string, cutId: string, branch: string): Delivery => ({
   cutId,
   branch,
   proofs: [{ kind: "probe", label: "it works", verdict: "green" }],
+  runId: `${cutId}-run-${id}`,
+  producedAt: "2026-08-22T00:00:00Z",
 });
 
 test("recording where a proof lived does not invalidate the signature that authorised it", () => {

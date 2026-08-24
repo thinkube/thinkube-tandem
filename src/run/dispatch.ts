@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, sliceBookkeeping, tsOutLayoutOf } from "./plan";
+import { claimRunLock, isMachineAttention, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, sliceBookkeeping, tsOutLayoutOf } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -91,28 +91,9 @@ export async function dispatchTep(
   const env = scrubbedEnv();
   const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
 
-  /**
-   * Attention events ABOUT THE MACHINE — the number this design is judged
-   * by, counted where the rows are written rather than reconstructed later.
-   *
-   * A question about the WORK is legitimate and designed in. A stall, a
-   * crash, a run that refused itself, a unit failed for something it could
-   * not reach: each is a moment a person had to interpret the machine, and
-   * each is a defect of the machine.
-   */
-  const MACHINE_ATTENTION = new Set([
-    "watchdog",
-    "crash",
-    "run-lock",
-    "setup",
-    "worktree",
-    "refresh-conflict",
-    "plan-validation",
-    "plan-roles",
-    "signature-drift",
-    "gate-infra",
-    "window-reload",
-  ]);
+  // Attention events ABOUT THE MACHINE — the number this design is judged
+  // by, counted where the rows are written rather than reconstructed later
+  // (classification lives in ./plan as isMachineAttention).
   let machineAttention = 0;
 
   const defect = (entry: {
@@ -127,7 +108,7 @@ export async function dispatchTep(
     impact: string;
     detail: string;
   }): void => {
-    if (MACHINE_ATTENTION.has(entry.trigger)) machineAttention++;
+    if (isMachineAttention(entry.trigger)) machineAttention++;
     if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry });
   };
 

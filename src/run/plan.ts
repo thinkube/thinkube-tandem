@@ -18,6 +18,16 @@ import type { RunState } from "./state";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
+/** Triggers that count as attention events ABOUT THE MACHINE (the number this
+ *  design is judged by): a stall, a crash, a refusal, or a unit failed for
+ *  something it could not reach — never a legitimate question about the work. */
+const MACHINE_ATTENTION = new Set(["watchdog", "crash", "run-lock", "setup", "worktree", "refresh-conflict", "plan-validation", "plan-roles", "signature-drift", "gate-infra", "window-reload"]);
+
+/** Whether a defect's trigger counts as an attention event about the machine. */
+export function isMachineAttention(trigger: string): boolean {
+  return MACHINE_ATTENTION.has(trigger);
+}
+
 /**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per
  * in-flight run on a repository. A new dispatch whose footprints intersect
@@ -205,7 +215,7 @@ function acOf(probe: string): number {
  * prepended, the extension made `.js`. It is used only as a fallback; a
  * repository that proved its own `runOne` at the door keeps that answer.
  */
-export function defaultRunOne(probe: string, tsOut: TsOutLayout | undefined): string {
+function defaultRunOne(probe: string, tsOut: TsOutLayout | undefined): string {
   const p = probe.replace(/\\/g, "/");
   if (!tsOut || !/\.[cm]?tsx?$/.test(p)) return `node --test ${probe}`;
   const rel = p.startsWith(`${tsOut.rootDir}/`) ? p.slice(tsOut.rootDir.length + 1) : p;
