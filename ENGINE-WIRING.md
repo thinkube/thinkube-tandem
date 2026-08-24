@@ -20,7 +20,7 @@ ever names the export, not whether the barrel carries it.
 |---|---|---|
 | `WorktreeService.ts` | retire | No file outside `src/engine` imports it; it belonged to an earlier worktree-management path the run/gates architecture (`src/run/`) replaced. |
 | `worktreeProvision.ts` | retire | Imported only by `WorktreeService.ts`, itself unwired — a verdict on the parent is a verdict on this helper. |
-| `provisionDetect.ts` | retire | Imported only by `WorktreeService.ts`, itself unwired — a verdict on the parent is a verdict on this helper. |
+| `provisionDetect.ts` | retire | Imported only by `worktreeProvision.ts` (line 29, `detectProvisionSteps`), itself unwired and reachable only from `WorktreeService.ts` — a verdict on that chain is a verdict on this helper. |
 | `provisioningLeak.ts` | retire | No file outside `src/engine` imports it; the no-leak check it implements has no caller wiring it into a live gate. |
 | `openingGate.ts` | retire | No file outside `src/engine` imports it; it certified `ac_verifications` for the server-side `write_spec` flow, which the current run/gates architecture does not call. |
 | `acSignature.ts` | retire | Imported only by `openingGate.ts`, itself unwired — a verdict on the parent is a verdict on this helper. |
