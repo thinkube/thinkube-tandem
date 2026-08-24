@@ -21,6 +21,9 @@ export interface AssessArgs {
   log?: (l: string) => void;
   round?: typeof runReadRound;
   onRed?: (label: string, ref: string) => void;
+  /** The reviewer never reached a verdict — the machine could not judge,
+   *  which is its own failure and never the work's. */
+  ungraded?: (label: string, criterion: string) => void;
   /** Grade only the assessments whose minted label this accepts. A repair
    *  loop re-grades its reds, not the whole panel: a verdict frozen at the
    *  gate's first pass once held three repaired promises red for an hour
@@ -35,6 +38,23 @@ export interface AssessArgs {
  *  product. That is not a red — it is the person's to certify, on the
  *  delivery they are certifying it WITH — and it is not a green, because
  *  nobody saw it. It rides the delivery's face by name. */
+/**
+ * How much reading a reviewer does between check-ins.
+ *
+ * Not a budget it is expected to bump into: it is how far it goes before
+ * the machine looks in and asks whether it has an answer yet. A reviewer
+ * that is still reading is asked to carry on, however many times that
+ * takes. What ends the reading is that another round adds nothing —
+ * convergence, the same rule the closer stops on — never a count.
+ */
+const TURNS_PER_READ = 60;
+/**
+ * The backstop, and only that: a reviewer that keeps producing new text
+ * and never answers is not converging on anything. High enough that no
+ * honest reading reaches it.
+ */
+const RUNAWAY = 12;
+
 function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | "OBSERVE" | undefined {
   if (!reply) return undefined;
   const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, "").toUpperCase());
@@ -81,8 +101,9 @@ export async function gradeAssessments(
       // finding them and never reaches a verdict.
       const where = (n.grounding?.touchpoints ?? []).map((t) => t.path);
       const proofs_ = n.acceptance.map((x) => x.proof?.path).filter((x): x is string => !!x);
-      const reply = await (a.round ?? runReadRound)(
-        { ...deps, maxTurns: 24 },
+      const askReviewer = (turns: number, more?: string): Promise<string | null> =>
+        (a.round ?? runReadRound)(
+        { ...deps, maxTurns: turns },
         [
           "You are an INDEPENDENT REVIEWER grading one assessment check on a",
           "delivered change. You never built this code. Read the repository",
@@ -103,22 +124,61 @@ export async function gradeAssessments(
           "nowhere else — a person must see it happen. Everything the tree can show",
           "you — code, wiring, tests that drive the real parts — you judge GREEN or",
           "RED yourself; OBSERVE is never a way to avoid reading.",
+          ...(more ? ["", more] : []),
         ].join("\n"),
       );
-      const verdict = verdictOf(reply);
+      /**
+       * Read until it has an answer, not until a counter runs out.
+       *
+       * The reviewer was given a flat budget of tool uses. One spent its
+       * budget reading and was cut off mid-sentence; the round returned an
+       * error, and an error was recorded as RED. That withheld a delivery
+       * of twenty-four promises for a criterion the closer then checked by
+       * hand and found kept. A count is not a verdict.
+       *
+       * So it is asked again while it is still getting somewhere, and it
+       * stops when another reading buys nothing — the same rule the closer
+       * already runs on. Only the reviewer's own word is ever a verdict.
+       */
+      let reply = await askReviewer(TURNS_PER_READ);
+      let verdict = verdictOf(reply);
+      let last = reply ?? "";
+      for (let more = 0; !verdict && more < RUNAWAY; more++) {
+        a.log?.(`assessment ${ord}: still reading, no answer yet — asking it to carry on`);
+        const again = await askReviewer(
+          TURNS_PER_READ,
+          "You have not answered yet. What you have read already stands. Read only what you " +
+            "still need, then give your last line: GREEN, RED or OBSERVE, and one sentence.",
+        );
+        // It stops when another reading buys nothing — the same text back,
+        // or nothing at all. Never because a counter ran out.
+        if (!again || again === last) break;
+        last = again;
+        reply = again;
+        verdict = verdictOf(reply);
+      }
       if (verdict === "OBSERVE") {
         observations.push(`${c.text} — ${(reply ?? "").split("\n").filter(Boolean).pop()?.replace(/^OBSERVE\S*\s*/i, "").slice(0, 200) ?? ""}`);
         a.log?.(`assessment ${ord}: OBSERVE — only the running product can show it; it rides the delivery for the person`);
         continue;
       }
+      // No verdict after re-reading is the MACHINE failing to judge, not
+      // the work failing. It rides the delivery for the person to settle,
+      // named — never a red the work cannot answer.
+      if (!verdict) {
+        observations.push(`${c.text} — the machine could not grade this: the reviewer never reached a verdict. Judge it yourself.`);
+        a.log?.(`assessment ${ord}: the reviewer never reached a verdict — it rides the delivery for the person, not counted against the work`);
+        a.ungraded?.(`review-${ord}`, c.text);
+        continue;
+      }
       const green = verdict === "GREEN";
-      if (!green) a.onRed?.(`review-${ord}`, (reply ?? "unreachable").slice(0, 300));
+      if (!green) a.onRed?.(`review-${ord}`, (reply ?? "").slice(0, 300));
       proofs.push({
         kind: "assessment",
         criterionId: c.id,
         label: `review-${ord}: ${c.text.slice(0, 60)}`,
         verdict: green ? "green" : "red",
-        ...(reply ? { ref: reply.slice(0, 300) } : { ref: "the reviewer could not be reached — graded red, never assumed" }),
+        ...(reply ? { ref: reply.slice(0, 300) } : {}),
       });
       a.log?.(`assessment ${ord}: ${green ? "GREEN" : "RED"}`);
     }
