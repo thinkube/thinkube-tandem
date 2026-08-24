@@ -139,7 +139,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
  * Fold the latest snapshot of every author into ONE space. Deterministic
  * and total; contradictory decisions surface as a question.
  */
-export function foldSpaces(latest: SnapshotRecord[]): Space {
+function foldSpaces(latest: SnapshotRecord[]): Space {
   if (latest.length === 0) return emptySpace();
   if (latest.length === 1) return latest[0].space;
 
