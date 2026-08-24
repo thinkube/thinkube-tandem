@@ -98,6 +98,9 @@ function buildGroundingPrompt(args: {
     `and its evidence says why THIS location. You have the file open while you decide — ` +
     `the evidence is that reading, written down so nobody re-reads the file to reconstruct it. ` +
     `NEVER put line numbers in a path; anchors are structural.\n` +
+    `- DOCUMENTATION: every change must either name a "docs/" page as one of its touchpoints — the page ` +
+    `this change implies, existing or planned — or, when the change truly needs none, say so as a one-` +
+    `sentence "evidence" on a touchpoint explaining why no documentation is needed. Do not leave this silent.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
     `- "acceptance": what proves this node done, as observable statements — at least one per node, ` +
     `each carrying its LIFETIME as "kind": [{"text":"…","kind":"probe"}].\n` +

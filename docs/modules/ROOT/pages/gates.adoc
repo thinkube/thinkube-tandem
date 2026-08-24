@@ -8,7 +8,12 @@ Signing freezes a cut into a TEP. The gate refuses:
 * an empty cut;
 * a change with no acceptance criteria ("nothing proves this");
 * a change with no grounding (no place in the code);
-* an ask in the cut with an undecided question.
+* an ask in the cut with an undecided question;
+* a cut that writes no documentation and carries no reason for skipping
+  it. Documentation is required for every cut: ground a `docs/` path, or
+  say why documentation is not needed — the cut review page carries the
+  input for that reason, and the reason is bound by the signature like
+  everything else that was approved.
 
 The click mints `TEP-<you>-<n>` and a machine-local HMAC token bound to
 the pair you actually saw: the rendered cut screen plus the grounded

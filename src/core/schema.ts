@@ -130,6 +130,10 @@ export interface Cut {
    *  and signed as a new cut. Only a cut that delivered nothing can be
    *  withdrawn. */
   withdrawnAt?: string;
+  /** Recorded when the cut writes no docs/ path on purpose: the reason
+   *  documentation was not needed, and when it was recorded. Bound by the
+   *  signature like everything else that was approved. */
+  docsWaiver?: { reason: string; at: string };
   signature?: {
     at: string;
     renderHash: string;

@@ -13,6 +13,7 @@ import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync, readFileSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import { isProbePath, isTestPath, missingProbes } from "./testHomes";
+import { isDocsPath } from "../core/docsDuty";
 import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import type { Exec } from "./oracle";
@@ -485,7 +486,7 @@ export async function keptChecks(
 export function docsObligations(slices: SliceForDag[], worktree: string): string[] {
   const out: string[] = [];
   for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
+    const declaresDocs = (s.files ?? []).some((f) => isDocsPath(f));
     const note = unmetDocsObligation(
       {
         docs: declaresDocs ? "required" : undefined,

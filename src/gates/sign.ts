@@ -8,13 +8,14 @@
 import { createHash } from "node:crypto";
 import { Cut, Delivery, Space } from "../core/schema";
 import { renderCutScreen } from "./render";
+import { docsDutyOf } from "../core/docsDuty";
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
 /** The grounded half of the pair: members with their grounding, canonical. */
-function groundingHashOf(space: Space, cut: Cut): string {
+export function groundingHashOf(space: Space, cut: Cut): string {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const canonical = [...cut.changeIds]
     .sort()
@@ -48,7 +49,12 @@ function groundingHashOf(space: Space, cut: Cut): string {
       });
     })
     .join("\n");
-  return sha(canonical);
+  // The docs waiver's reason is part of what was approved — a cut signed
+  // with no documentation because of a stated reason has that reason bound
+  // by the signature exactly like the promises it stands beside; editing
+  // the reason after signing is drift, the same as editing a promise.
+  const waiver = cut.docsWaiver?.reason ? `\ndocsWaiver: ${cut.docsWaiver.reason}` : "";
+  return sha(canonical + waiver);
 }
 
 export type SignResult =
@@ -90,6 +96,15 @@ export function signCut(
     return {
       ok: false,
       reason: `the machine has not placed these promises in the code yet: ${ungrounded.map((n) => n!.sentence).join("; ")} — press the out-of-date badge to re-read the code`,
+    };
+  // Documentation is required for every cut: a cut that grounds no docs/
+  // path and carries no reason for skipping it is not signable.
+  const duty = docsDutyOf(members.filter((n): n is NonNullable<typeof n> => !!n), cut.docsWaiver);
+  if (duty.status === "unmet")
+    return {
+      ok: false,
+      reason:
+        "this cut writes no documentation and carries no reason for skipping it — ground a docs/ path, or record why documentation is not needed",
     };
   // A withdrawn cut freezes nothing: its promises were released to be
   // thought through again, and the same set must be signable as new work.
@@ -134,7 +149,7 @@ export function signCut(
 }
 
 /** The current hashing rule. Raised whenever what is hashed changes. */
-const SIGNATURE_RULE = 2;
+const SIGNATURE_RULE = 3;
 
 export type SignatureVerdict =
   | { ok: true; unchecked?: string }
