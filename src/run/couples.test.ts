@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
 import { closingVerifications } from "./plan";
+import { missingProbes } from "./testHomes";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
@@ -316,4 +317,25 @@ test("the gate runs a check the way the repository runs a test", () => {
   );
   // No fact proved: the plain command stands, as it always did.
   assert.equal(closingVerifications(slices as never).verifs[0].run, "node --test probes/x__SL-1_AC-1.test.mjs");
+});
+
+test("a slice only stands if it satisfies the plan that is running now", async () => {
+  // A slice was taken as done because an earlier run had committed it,
+  // while the plan had grown from ten checks to sixteen. The six the plan
+  // added were never written, the tester was marked done without running,
+  // and the failure surfaced two units later as a maintainer that could
+  // not reach green — naming nothing a person could act on.
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-standing-"));
+  fs.mkdirSync(path.join(tree, "src", "core"), { recursive: true });
+  for (let i = 1; i <= 10; i++)
+    fs.writeFileSync(path.join(tree, "src", "core", `schema_AC-${i}.test.ts`), "// written by the earlier run\n");
+  const planNow = Array.from({ length: 16 }, (_, i) => `src/core/schema_AC-${i + 1}.test.ts`);
+  const owed = await missingProbes(tree, planNow);
+  assert.deepEqual(
+    owed.map((f) => path.basename(f)),
+    ["schema_AC-11.test.ts", "schema_AC-12.test.ts", "schema_AC-13.test.ts", "schema_AC-14.test.ts", "schema_AC-15.test.ts", "schema_AC-16.test.ts"],
+    "the plan's own checks are what says whether an earlier run's work still stands",
+  );
+  // The plan it was committed for still stands, and nothing re-runs.
+  assert.deepEqual(await missingProbes(tree, planNow.slice(0, 10)), []);
 });

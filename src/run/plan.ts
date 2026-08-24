@@ -12,7 +12,7 @@ import { buildVerificationTrace } from "../engine/core/trace";
 import { unmetDocsObligation } from "../engine/core/redispatch";
 import { accessSync, readFileSync } from "node:fs";
 import type { Proof } from "../core/schema";
-import { isProbePath, isTestPath } from "./testHomes";
+import { isProbePath, isTestPath, missingProbes } from "./testHomes";
 import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import type { Exec } from "./oracle";
@@ -506,4 +506,34 @@ export function seedUnitViews(
     const why = requires.map((r) => whyWait(u, r));
     st.seed(u.id, u.slice, isMaintainUnit(u) ? "maintain" : ((u.role ?? "code") as "code" | "test"), requires, u.note, why);
   }
+}
+
+/**
+ * Which slices an earlier run of this cut left standing.
+ *
+ * A slice its earlier run committed is done on the record and nothing
+ * re-runs it; the gate re-proves it like all work. But it stands only if
+ * it satisfies THIS plan. One was taken as standing because its name
+ * appeared in an earlier run's commits, while the plan had grown from ten
+ * checks to sixteen — so the six the plan added were never written, its
+ * tester was marked done without ever running, and the failure surfaced
+ * two units later as a maintainer that could not reach green, naming
+ * nothing a person could act on.
+ *
+ * What this plan asks for is on disk, or the slice runs again.
+ */
+export async function standingSlices(
+  committed: readonly string[],
+  dag: readonly { slice: string; footprint: string[] }[],
+  worktree: string,
+  log: (line: string) => void,
+): Promise<Set<string>> {
+  const standing = new Set(committed.filter((sl) => dag.some((u) => u.slice === sl)));
+  for (const sl of [...standing]) {
+    const owes = await missingProbes(worktree, dag.filter((u) => u.slice === sl).flatMap((u) => u.footprint));
+    if (!owes.length) continue;
+    standing.delete(sl);
+    log(`${sl} was committed by an earlier run, but this plan asks for ${owes.length} check(s) it never wrote — it runs again`);
+  }
+  return standing;
 }

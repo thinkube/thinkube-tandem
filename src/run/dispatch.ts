@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -212,8 +212,7 @@ export async function dispatchTep(
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
 
-  // A slice an earlier run of this cut committed stands: done on the record, nothing re-runs; the gate re-proves it like all work.
-  const standing = new Set(refreshed.committedSlices.filter((sl) => dag.some((u) => u.slice === sl)));
+  const standing = await standingSlices(refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`));
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);
