@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, runStamp, seedUnitViews, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -51,6 +51,7 @@ import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
+export { runStamp } from "./plan";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
@@ -74,7 +75,7 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, apart from the next run of this cut
+  const stamp = runStamp(tep, Date.now()), runId = stamp.id; // one mint — the log, the defects and the delivery all read this
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
@@ -584,7 +585,7 @@ export async function dispatchTep(
       `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
     );
   return await closeGate({
-    tep, branch, baseSha, worktree, slices, space, cut, deps, runOne: runOneTest,
+    tep, branch, baseSha, worktree, slices, space, cut, deps, runOne: runOneTest, runId: stamp.id, producedAt: stamp.at,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

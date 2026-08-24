@@ -50,9 +50,13 @@ every live worker.
 The closing gate re-runs every probe from a clean environment, the
 honesty scan reads the delivered files for self-declared deferrals, the
 repository's own suite runs, and the branch becomes a pull request whose
-description carries the proofs, the tester's decisions and every
-UNDELIVERED line. A red suite is never delivered: work that leaves the
-suite red is withheld — the branch keeps it, the record keeps the
-verdict — rather than handed over for you to finish. The machine face —
-the structured verification trace — persists in the store beside the
-space.
+description opens with the run that produced it and when, then carries
+the proofs, the tester's decisions and every UNDELIVERED line. The
+delivery report opens the same way: the run's id and the moment it was
+produced, above its first section, so an older run's report is never
+read as the one that just finished — a delivery with no run stamp says
+so, instead of leaving the line out. A red suite is never delivered: work
+that leaves the suite red is withheld — the branch keeps it, the record
+keeps the verdict — rather than handed over for you to finish. The
+machine face — the structured verification trace — persists in the store
+beside the space.

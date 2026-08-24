@@ -19,6 +19,17 @@ import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
 
 /**
+ * Mint one run's identity: an id carrying the TEP it runs, distinct from
+ * every other run of the same TEP taken at a different moment, and the ISO
+ * form of that moment. Minted once, at the top of a run, and carried from
+ * there to every reader — the run log heading, the defect rows, the
+ * delivery — so none of them can drift into a different spelling of it.
+ */
+export function runStamp(tep: string, nowMs: number): { id: string; at: string } {
+  return { id: `${tep}@${nowMs.toString(36)}`, at: new Date(nowMs).toISOString() };
+}
+
+/**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per
  * in-flight run on a repository. A new dispatch whose footprints intersect
  * an in-flight run's — including a DIFFERENT project's in the same
@@ -279,6 +290,11 @@ export async function writeDeliveryRecord(
   storeDir: string,
   record: {
     tep: string;
+    /** The run that wrote this record, and when — so a second run of the
+     *  same TEP against the same store leaves a record naming itself, not
+     *  whichever run wrote there first. */
+    runId: string;
+    producedAt: string;
     branch: string;
     baseSha: string;
     proofs: Proof[];
@@ -322,6 +338,8 @@ export async function writeDeliveryRecord(
       JSON.stringify(
         {
           tep: record.tep,
+          runId: record.runId,
+          producedAt: record.producedAt,
           branch: record.branch,
           baseSha: record.baseSha,
           proofs: record.proofs,

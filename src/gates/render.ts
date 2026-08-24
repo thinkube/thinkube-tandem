@@ -109,6 +109,13 @@ export function renderDeliveryPage(
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`# Delivery — \`${delivery.branch}\``);
+  // Which run produced this page, and when — said before anything else, so
+  // an older run's report is never mistaken for the one that just finished.
+  lines.push(
+    delivery.runId && delivery.producedAt
+      ? `Run ${delivery.runId} — produced at ${delivery.producedAt}`
+      : "The producing run was not recorded.",
+  );
   if (delivery.withheld) {
     lines.push("");
     lines.push(`**Withheld — not accepted, nothing opened.** ${delivery.withheld}`);

@@ -48,6 +48,10 @@ export interface GateContext {
    *  command and disagreed with the slice oracle that had just passed
    *  them. */
   runOne?: string;
+  /** The run's identity, minted once at the top of dispatchTep and carried
+   *  from there — never re-derived here. */
+  runId: string;
+  producedAt: string;
   branch: string;
   baseSha: string;
   worktree: string;
@@ -94,7 +98,7 @@ const RED_SUITE_REFUSAL =
   "suite's verdict (if the repository was already red before, it must be green first)";
 
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
-  const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
+  const { tep, runId, producedAt, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, g.runOne ?? deps.runOne ?? "");
@@ -331,7 +335,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
-      await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
+      await writeDeliveryRecord(deps.storeDir, { tep, runId, producedAt, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
     undelivered.push(...docsObligations(slices, worktree));
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
@@ -341,6 +345,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       id: `delivery-${tep}`,
       cutId: cut.id,
       branch,
+      runId,
+      producedAt,
       proofs,
       withheld: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
       ...(undelivered.length ? { undelivered } : {}),
@@ -379,6 +385,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (deps.storeDir)
     await writeDeliveryRecord(deps.storeDir, {
       tep,
+      runId,
+      producedAt,
       branch,
       baseSha: g.baseSha,
       proofs,
@@ -406,6 +414,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         id: `delivery-${tep}`,
         cutId: cut.id,
         branch,
+        runId,
+        producedAt,
         proofs,
         ...(observations.length ? { observations } : {}),
         withheld:
@@ -441,6 +451,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         title: `Tandem delivery: ${tep}`,
         body:
           `Delivered by the tandem run for ${tep}.\n\n` +
+          `Run: ${runId}\nProduced at: ${producedAt}\n\n` +
           (observations.length
             ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
             : "") +
@@ -457,6 +468,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     id: `delivery-${tep}`,
     cutId: cut.id,
     branch,
+    runId,
+    producedAt,
     proofs,
     ...(observations.length ? { observations } : {}),
     ...(url ? { url } : {}),

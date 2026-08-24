@@ -174,6 +174,10 @@ export interface Delivery {
   id: string;
   cutId: string;
   branch: string;
+  /** The run that produced this delivery, and the moment it was produced.
+   *  Absent on a record from before this was tracked. */
+  runId?: string;
+  producedAt?: string;
   proofs: Proof[];
   /** The delivery's home on the forge (pull request URL). */
   url?: string;

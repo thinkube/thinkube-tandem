@@ -199,13 +199,14 @@ the card said green for twelve minutes. The gate then ran the
 repository's suite, found it red, and its finisher failed. The card had
 announced the opposite of what happened, before it happened.
 
-**C9 — a delivery report carries no identity.**
-`Delivery.tsx:44` renders `<Markdown text={d.page} />` and nothing else:
-no run, no TEP, no date. A report from a withheld run twenty-six minutes
-ago is drawn exactly like one from the run finishing now. With C8 above,
-a person reads a graph claiming the gate is green beside a report from a
-different run, and nothing on the screen distinguishes either from the
-truth.
+**C9 — settled.** A delivery report now opens by naming the run that
+produced it and when: `renderDeliveryPage` writes a line above the first
+`##` section — `Run <id> — produced at <ISO time>` when the delivery
+carries a run stamp, or "The producing run was not recorded." when it
+does not (`gates/render.ts`). The same identity rides the pull-request
+description above its proofs, and the headless run's finishing block
+(`cli/headless.ts` › `formatDeliveryBlock`), so a report from a withheld
+run twenty-six minutes ago is never drawn as the one finishing now.
 
 ---
 

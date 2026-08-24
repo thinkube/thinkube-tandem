@@ -126,6 +126,13 @@ export function repoInShape(
   }
   g(["add", "-A"]);
   g(["commit", "-qm", "seed"]);
+  // A bare remote named "origin", so the gate's own `git push -u origin
+  // <branch> --force` succeeds against this fixture exactly as it would
+  // against a real forge — a delivery test drives the real push, not a
+  // stand-in for it.
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-shape-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", bare], { encoding: "utf8" });
+  g(["remote", "add", "origin", bare]);
   return dir;
 }
 

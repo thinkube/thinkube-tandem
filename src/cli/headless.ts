@@ -24,7 +24,7 @@ import { tepSlices } from "../dispatch/adapter";
 import { planScopes } from "../dispatch/scopes";
 import { knowledgeOf } from "../derive/knowledge";
 import { factsOf } from "../run/facts";
-import type { Cut, Space } from "../core/schema";
+import type { Cut, Delivery, Space } from "../core/schema";
 
 interface Args {
   space: string;
@@ -61,6 +61,38 @@ export function parseArgs(argv: readonly string[]): Args | string {
     model: get("model") ?? "sonnet",
     digest: !argv.includes("--no-digest"),
   };
+}
+
+/**
+ * The block a finished run prints: which run produced the delivery and
+ * when, above the verdict — so a block still on screen from an earlier
+ * run is never read as the one that just ended. `main` prints exactly
+ * this text; a test drives it directly since `main` itself always makes
+ * a real model call and has no seam to script under test.
+ */
+export function formatDeliveryBlock(
+  cut: { tepId?: string; id: string },
+  outcome: { delivery?: Delivery; refusals: string[]; undelivered: string[] },
+): string {
+  const d = outcome.delivery;
+  const stamped = d?.runId && d?.producedAt;
+  return (
+    `\n── ${cut.tepId ?? cut.id} ──\n` +
+    (d
+      ? stamped
+        ? `run ${d.runId} — produced at ${d.producedAt}\n`
+        : "the producing run was not recorded\n"
+      : "") +
+    (d?.withheld
+      ? `withheld: ${d.withheld}\n`
+      : d
+        ? `delivered${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
+          `proofs: ${d.proofs.filter((p) => p.verdict === "green").length} green, ${d.proofs.filter((p) => p.verdict !== "green").length} not\n` +
+          d.proofs.filter((p) => p.verdict !== "green").map((p) => `  ✗ ${p.label}\n`).join("")
+        : `no delivery\n`) +
+    (outcome.refusals.length ? `refused: ${outcome.refusals.join("; ")}\n` : "") +
+    (outcome.undelivered.length ? `undelivered:\n${outcome.undelivered.map((u) => `  - ${u}`).join("\n")}\n` : "")
+  );
 }
 
 /** The cut to run: the one named, or the newest signed one. */
@@ -192,18 +224,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   );
 
   const d = outcome.delivery;
-  process.stdout.write(
-    `\n── ${cut.tepId ?? cut.id} ──\n` +
-      (d?.withheld
-        ? `withheld: ${d.withheld}\n`
-        : d
-          ? `delivered${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
-            `proofs: ${d.proofs.filter((p) => p.verdict === "green").length} green, ${d.proofs.filter((p) => p.verdict !== "green").length} not\n` +
-            d.proofs.filter((p) => p.verdict !== "green").map((p) => `  ✗ ${p.label}\n`).join("")
-          : `no delivery\n`) +
-      (outcome.refusals.length ? `refused: ${outcome.refusals.join("; ")}\n` : "") +
-      (outcome.undelivered.length ? `undelivered:\n${outcome.undelivered.map((u) => `  - ${u}`).join("\n")}\n` : ""),
-  );
+  process.stdout.write(formatDeliveryBlock(cut, outcome));
   return d && !d.withheld ? 0 : 1;
 }
 
