@@ -12,8 +12,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
+import { TandemSession, SessionDeps } from "../surfaces/session";
+import { spacePush } from "../surfaces/push";
 
 /**
  * The Rail is React source in `webview/map`, a separate npm package with
@@ -26,10 +29,10 @@ import { createRequire } from "node:module";
  * path webview/map/harness/buttons.tsx already uses to read this webview
  * without a browser — no fake DOM, no new rendering approach.
  */
-// __dirname is this compiled test's own directory under
-// out-test/src/gates/, mirroring its source location under src/gates/ —
-// one more ".." than the source's own depth reaches webview/map from there.
-const mapRoot = path.resolve(__dirname, "..", "..", "..", "webview", "map");
+// __dirname is this compiled test's own directory under out-test/gates/,
+// mirroring its source location under src/gates/ — the same depth, so ".."
+// per directory level plus one for out-test reaches webview/map.
+const mapRoot = path.resolve(__dirname, "..", "..", "webview", "map");
 const fromMap = createRequire(path.join(mapRoot, "package.json"));
 
 /** Compile one webview source file to commonjs and load it, resolving its
@@ -78,6 +81,16 @@ function loadFromMap(spec: string, cache: Map<string, unknown> = new Map()): Rec
   return exports;
 }
 
+function fakeDeps(dir: string): SessionDeps {
+  return {
+    round: { model: "fake-model", repoRoot: dir },
+    storeDir: path.join(dir, "store"),
+    storageDir: path.join(dir, "storage"),
+    now: () => "2026-08-24T00:00:00Z",
+    author: "t",
+  };
+}
+
 test("the build section renders the reason the push carries as the value of its box, not an empty box", () => {
   const React = fromMap("react") as {
     createElement: (type: unknown, props: unknown) => unknown;
@@ -90,26 +103,33 @@ test("the build section renders the reason the push carries as the value of its 
   };
 
   const reason = "internal rename, nothing a reader of the docs would ever see";
-  const push = {
-    kind: "space" as const,
-    running: false,
-    phase: "understood" as const,
-    allowed: ["build"],
-    signedTeps: 0,
-    questions: [],
-    decisions: [],
-    orphans: [],
-    sentences: [],
-    cost: { subjects: 0, rounds: 0 },
-    outOfDate: { promises: 0, subjects: 0, rounds: 0 },
-    ready: { subjects: 1, promises: 1, asks: 1, thinking: false },
-    draft: "",
-    impacts: [],
-    subjects: [],
-    cutCount: 1,
-    deliveries: [],
-    docsNotNeeded: reason,
-  };
+
+  // The push is built by the REAL production path — a session told the
+  // reason, rendered through `spacePush` — not a literal written here. A
+  // hand-built payload proves only that the Rail can render a field some
+  // test typed; it stays green even if `spacePush` stopped carrying the
+  // reason at all. Driving the actual builder is what makes this check
+  // reach the seam the promise lands in: session → push → box.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-rail-docs-"));
+  const session = new TandemSession(fakeDeps(dir));
+  session.sayDocsNotNeeded(reason);
+  const built = spacePush(session) as Record<string, unknown> & { docsNotNeeded?: string };
+
+  // The reason must be on the payload the production builder returned —
+  // this is the assertion a stubbed `spacePush` cannot survive.
+  assert.equal(
+    built.docsNotNeeded,
+    reason,
+    "the push the panel is actually sent must carry the reason before the Rail can render it",
+  );
+
+  // The build section only draws when the space has work ready to sign
+  // (`ready.subjects`), which an empty space does not. Standing that one
+  // field up lets the section render; every other field — the reason
+  // included — is the production builder's own output, so what is asserted
+  // below is still what `spacePush` produced.
+  const push = { ...built, ready: { subjects: 1, promises: 1, asks: 1, thinking: false } };
+  assert.equal(push.docsNotNeeded, reason, "the reason rendered is the one the builder produced");
 
   const html = renderToStaticMarkup(
     React.createElement(Rail as never, { push: push as never, canBuild: true }),

@@ -17,6 +17,60 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { TandemSession, SessionDeps } from "./session";
 import { RunState } from "../run/state";
+import { sessionStatusOf, statusLine } from "../hostui/hostDecisions";
+import { spacePush } from "./push";
+
+/**
+ * `extension.ts` imports `vscode`, which exists only inside the editor
+ * host. Standing this minimal double in the loader before it is required is
+ * what lets the REAL `heartbeat` be driven here: the rule that both spaces
+ * are reported is only worth proving where the host actually renders it.
+ */
+function installVscodeStub(): void {
+  const stub = {
+    ThemeColor: class {
+      constructor(public readonly id: string) {}
+    },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    window: {
+      createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
+      showInformationMessage: () => Promise.resolve(undefined),
+      showWarningMessage: () => Promise.resolve(undefined),
+    },
+    commands: { executeCommand: () => Promise.resolve(undefined) },
+    workspace: {
+      workspaceFolders: [],
+      asRelativePath: (p: string) => p,
+      getConfiguration: () => ({ get: () => undefined }),
+    },
+    TreeItem: class {
+      constructor(
+        public label: string,
+        public collapsibleState: number,
+      ) {}
+    },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    ThemeIcon: class {
+      constructor(public readonly icon: string) {}
+    },
+    EventEmitter: class {
+      event = () => ({ dispose: () => {} });
+      fire() {}
+      dispose() {}
+    },
+    Uri: { joinPath: (...p: unknown[]) => ({ fsPath: p.join("/") }) },
+    ViewColumn: { One: 1 },
+    ProgressLocation: { Notification: 15 },
+  };
+  const Mod = require("node:module") as {
+    _load(request: string, parent: unknown, isMain: boolean): unknown;
+  };
+  const realLoad = Mod._load;
+  Mod._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request === "vscode") return stub;
+    return realLoad.call(this, request, parent, isMain);
+  };
+}
 
 function fakeDeps(dir: string): SessionDeps {
   return {
@@ -65,4 +119,88 @@ test("a status line built from two sessions, one building and one parked on a qu
   // session's own state, and vice versa.
   assert.equal(building.runState.view().parked.length, 0);
   assert.equal(parked.runState.view().parked.length, 1);
+
+  // The line the host actually renders must say BOTH facts. Reporting only
+  // the parked space, or only the building one, is the failure this guards.
+  // Built through the SAME step the host uses to turn a session into a
+  // status row (`sessionStatusOf`), not a copy of it written here: a
+  // reimplementation in the test would stay green if the host's own
+  // mapping started reading only the active session.
+  const line = statusLine(all.map(sessionStatusOf));
+  assert.ok(line, "two live sessions must produce a status line");
+  assert.match(line!.text, /needs your answer/, "the parked space must be reported");
+  assert.match(line!.text, /building/, "the building space must be reported too");
+  assert.equal(line!.warning, true, "a space waiting on a person must show the warning colour");
+
+  // Order-independence: the same two states must be reported whichever
+  // session happens to be listed first.
+  const reversed = statusLine([...all].reverse().map(sessionStatusOf));
+  assert.equal(reversed!.text, line!.text, "the line must not depend on which space is active");
+
+  // The same two states must survive the real payload builder each space's
+  // own tab is sent. The status line and the per-space push read the same
+  // session state, and both must keep the two spaces apart: a push that
+  // reported the active session's run for every space would leave the line
+  // above green while every tab showed the wrong space's work.
+  const pushBuilding = spacePush(building) as { run?: { units: { state: string }[] } };
+  const pushParked = spacePush(parked) as {
+    run?: { units: { state: string }[]; parked?: unknown[] };
+  };
+
+  assert.ok(pushBuilding.run, "the building space's push must carry its own run");
+  assert.ok(pushParked.run, "the parked space's push must carry its own run");
+  assert.deepEqual(
+    pushBuilding.run!.units.map((u) => u.state),
+    ["running"],
+    "the building space's push must report it still running",
+  );
+  assert.notDeepEqual(
+    pushBuilding.run,
+    pushParked.run,
+    "two spaces in different states must produce two different pushes, not one shared state",
+  );
+
+  // The rule must hold where the host ACTUALLY renders it. Everything above
+  // drives the decision functions; this drives the real `heartbeat` in
+  // `extension.ts` — the code this promise lands in — over both sessions,
+  // and reads the status bar it wrote. A heartbeat that reported only the
+  // active session passes every assertion above and fails here.
+  installVscodeStub();
+  const ext = require("../extension") as typeof import("../extension");
+
+  const bar = {
+    text: "",
+    backgroundColor: undefined as unknown,
+    shown: 0,
+    show() {
+      bar.shown += 1;
+    },
+    hide() {},
+    dispose() {},
+  };
+  const fakeContext = {
+    workspaceState: { get: () => undefined, update: () => Promise.resolve() },
+    subscriptions: [],
+  };
+
+  ext.__setHostState({
+    sessions: [
+      ["repo-a/building", building],
+      ["repo-a/parked", parked],
+    ],
+    statusBar: bar as never,
+    context: fakeContext as never,
+  });
+
+  ext.heartbeat(fakeContext as never);
+
+  assert.match(bar.text, /needs your answer/, "the host's own status bar must report the parked space");
+  assert.match(bar.text, /building/, "the host's own status bar must report the building space too");
+  assert.ok(bar.backgroundColor, "a space waiting on a person must set the warning background");
+  assert.equal(bar.shown >= 1, true, "the status bar must be shown");
+  assert.equal(
+    bar.text,
+    line!.text,
+    "the line the host renders must be the same line the rule produced",
+  );
 });

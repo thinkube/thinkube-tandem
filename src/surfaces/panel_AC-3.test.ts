@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { TandemSession, SessionDeps } from "./session";
 import { spacePush } from "./push";
+import { SpacePanel } from "./panel";
 import { RunState } from "../run/state";
 
 function fakeDeps(dir: string): SessionDeps {
@@ -86,4 +87,40 @@ test("the push built from a session carries that session's own run state — a s
   assert.deepEqual(payloadRunning.run!.units.map((u) => u.id), ["u1"]);
   assert.equal(payloadIdle.run, undefined, "a session with no run must carry no run activity — not another session's");
   assert.notDeepEqual(payloadRunning.run, payloadIdle.run);
+});
+
+test("each SpacePanel pushes the payload of the ONE session it was built with, never another panel's", () => {
+  // The panel is what actually carries a payload to a webview. Two panels
+  // built from two sessions in different states must post different things.
+  const dirA = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-panel-a-"));
+  const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-panel-b-"));
+  const sessionA = new TandemSession(fakeDeps(dirA));
+  const sessionB = new TandemSession(fakeDeps(dirB));
+
+  sessionA.stageOf("ask-1")("reading the code", 2, 4);
+  sessionB.stageOf("ask-2")("reading the code", 1, 3);
+
+  function panelFor(session: TandemSession, sink: unknown[]): SpacePanel {
+    const panel = new SpacePanel(session, "Space");
+    (panel as unknown as { _panel: unknown })._panel = {
+      webview: {
+        postMessage(payload: unknown) {
+          sink.push(payload);
+          return Promise.resolve(true);
+        },
+      },
+    };
+    return panel;
+  }
+
+  const postedA: unknown[] = [];
+  const postedB: unknown[] = [];
+  panelFor(sessionA, postedA).pushFrom();
+  panelFor(sessionB, postedB).pushFrom();
+
+  const a = postedA[0] as { activity?: { askId?: string } };
+  const b = postedB[0] as { activity?: { askId?: string } };
+  assert.equal(a.activity?.askId, "ask-1", "panel A must carry session A's own activity");
+  assert.equal(b.activity?.askId, "ask-2", "panel B must carry session B's own activity");
+  assert.notDeepEqual(a.activity, b.activity, "two panels in different states must post different payloads");
 });

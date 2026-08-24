@@ -30,11 +30,11 @@ ever names the export, not whether the barrel carries it.
 | `dispatchGuard.ts` | retire | No file outside `src/engine` imports it; dispatch is guarded today by `src/run/dispatch.ts`'s own logic, not this module. |
 | `concurrencyLock.ts` | retire | Imported only by `dispatchGuard.ts`, itself unwired — a verdict on the parent is a verdict on this helper. |
 | `verificationRunnable.ts` | retire | No file outside `src/engine` imports it; the runnable-command precheck it implements has no caller wiring it into a live gate. |
-| `testImpactFootprint.ts` | fold | No file outside `src/engine` imports it, and its test-home rule (`isTestPath` in this file) is a second implementation of the same rule `src/run/testHomes.ts` already owns and the live run path calls — the duplicate should fold into that one rule rather than be wired in as a second source of truth. |
+| `testImpactFootprint.ts` | fold | No file outside `src/engine` imports it, and its `isTestPath` duplicates the test-home rule `src/run/testHomes.ts` already owns on the live run path. |
 | `retiredSymbolFootprint.ts` | retire | No file outside `src/engine` imports it; the reverse-dependency check for symbol retirement it implements has no caller wiring it into a live gate. |
 | `shipFresh.ts` | retire | No file outside `src/engine` imports it; it checked freshness of a hand-copied `dist/mcp/kanban.js` build artifact from a deploy path the current product does not use. |
-| `core/watchdog.ts` | retire | No file outside `src/engine` uses `finalizationVerdict`, `FinalizationState`, or `FINALIZATION_WEDGED_DIAGNOSIS`. It is re-exported by `orchestratorCore.ts`'s `export *`, but being re-exported by a barrel is not a product caller — no file outside `src/engine` imports those names. The live run's stall detection is a separate module, `src/run/watchdog.ts` (`watchForStall`), which `src/run/dispatch.ts` does import. |
-| `core/commit.ts` | retire | No file outside `src/engine` uses `commitPlan` or `resumeDecision`. It too is re-exported by `orchestratorCore.ts`'s `export *`, but that re-export is not a product caller — no file outside `src/engine` imports those names either. |
+| `core/watchdog.ts` | retire | No file outside `src/engine` uses `finalizationVerdict`, `FinalizationState`, or `FINALIZATION_WEDGED_DIAGNOSIS` (only `orchestratorCore.ts`'s `export *` barrel re-exports them), because the live run's stall detection is the separate `src/run/watchdog.ts`. |
+| `core/commit.ts` | retire | Nothing outside `src/engine` names `commitPlan` or `resumeDecision`. |
 
 ## Not on this list: `core/stubScan.ts`
 

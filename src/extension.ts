@@ -9,6 +9,13 @@ import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
 import { SpaceTabs } from "./surfaces/panels";
+import {
+  changeNotice,
+  sessionStatusOf,
+  spaceOpenMarker,
+  splitSessionKey,
+  statusLine,
+} from "./hostui/hostDecisions";
 import { spacePush } from "./surfaces/push";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
@@ -129,74 +136,53 @@ function updateStatusBar(project: EnabledProject | undefined): void {
 const storeRootOf = configuredStoreRoot;
 
 /**
+ * Stand up the module state that `activate` would otherwise set, so the
+ * decisions made here — the status line `heartbeat` renders, the notice and
+ * per-space push `pushChanged` raises — can be driven without an editor
+ * host. These two functions read module-level state (`sessions`, `tabs`,
+ * `statusBar`), which is what makes them the place a "the active session"
+ * regression would reappear; a check that could not reach them would have
+ * to reimplement their wiring and would stay green while they broke.
+ */
+export function __setHostState(state: {
+  sessions?: Iterable<[string, TandemSession]>;
+  tabs?: SpaceTabs;
+  statusBar?: vscode.StatusBarItem;
+  context?: vscode.ExtensionContext;
+}): void {
+  if (state.sessions) {
+    sessions.clear();
+    for (const [k, v] of state.sessions) sessions.set(k, v);
+  }
+  if (state.tabs) tabs = state.tabs;
+  if (state.statusBar) statusBar = state.statusBar;
+  if (state.context) extContext = state.context;
+}
+
+/**
  * The status line reports EVERY session's activity, not only the active
  * one's — several spaces can be building at once, each in its own tab.
- * A worker parked on a question always wins the line (it needs a person),
- * then the count of sessions still building, then the count still
- * grounding/asking, so nothing is hidden behind whichever space happened
- * to be opened last.
+ *
+ * Run states are said together: a space waiting on an answer and a space
+ * still building appear in the same line, so neither hides the other. The
+ * warning colour shows whenever any space needs a person. Only when no run
+ * is live does the line fall back to grounding, then to plain activity,
+ * counting spaces rather than quoting whichever one was opened last.
  */
-function heartbeat(context: vscode.ExtensionContext): void {
+export function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
-  const all = [...sessions.values()];
-  const parked = all.filter((s) => s.running && s.runState && s.runState.view().parked.length);
-  if (parked.length) {
-    statusBar.text =
-      parked.length === 1
-        ? `$(warning) Tandem: a worker needs your answer`
-        : `$(warning) Tandem: ${parked.length} workers need your answer`;
-    statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-    statusBar.show();
-    return;
-  }
-  const building = all.filter((s) => s.running && s.runState);
-  if (building.length) {
-    if (building.length === 1) {
-      const v = building[0].runState!.view();
-      const done = v.units.filter((u) => u.state === "done").length;
-      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
-    } else {
-      statusBar.text = `$(sync~spin) Tandem: building — ${building.length} spaces`;
-    }
-    statusBar.backgroundColor = undefined;
-    statusBar.show();
-    return;
-  }
-  const grounding = all.filter((s) => s.groundingView().length > 0);
-  if (grounding.length) {
-    if (grounding.length === 1) {
-      const g = grounding[0].groundingView();
-      const running = g.filter((row) => row.label !== "waiting").length;
-      statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${g.length} asks`;
-    } else {
-      statusBar.text = `$(sync~spin) Tandem: thinking — ${grounding.length} spaces`;
-    }
-    statusBar.backgroundColor = undefined;
-    statusBar.show();
-    return;
-  }
-  const busy = all.filter((s) => s.activity);
-  if (busy.length) {
-    if (busy.length === 1) {
-      const a = busy[0].activity!;
-      statusBar.text = `$(sync~spin) Tandem: ${a.label}… (${a.current}/${a.total})`;
-    } else {
-      statusBar.text = `$(sync~spin) Tandem: working — ${busy.length} spaces`;
-    }
-    statusBar.backgroundColor = undefined;
+  const line = statusLine([...sessions.values()].map(sessionStatusOf));
+  if (line) {
+    statusBar.text = line.text;
+    statusBar.backgroundColor = line.warning
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
     statusBar.show();
     return;
   }
   statusBar.backgroundColor = undefined;
   updateStatusBar(project);
-}
-
-/** Split "<ownerId>/<slug>" into its parts; a work-project owner key keeps
- *  its "wp:" prefix as part of ownerId. */
-function splitSessionKey(sessionKey: string): { ownerId: string; slug: string } {
-  const i = sessionKey.lastIndexOf("/");
-  return { ownerId: sessionKey.slice(0, i), slug: sessionKey.slice(i + 1) };
 }
 
 function labelForSessionKey(sessionKey: string): string {
@@ -210,21 +196,23 @@ function labelForSessionKey(sessionKey: string): string {
  *  session's OWN key — never "the active session". Pushes only to that
  *  key's tab (a no-op if the space has no open tab) and, for a
  *  delivery-ready notice, names that space and targets its own tab. */
-function pushChanged(sessionKey: string, message?: string): void {
+export function pushChanged(sessionKey: string, message?: string): void {
   if (extContext) heartbeat(extContext);
   const s = sessions.get(sessionKey);
   if (s) tabs?.pushTo(sessionKey, spacePush(s, message));
-  if (message?.startsWith("Delivery ready")) {
-    const label = labelForSessionKey(sessionKey);
-    void vscode.window
-      .showInformationMessage(`Tandem — ${label}: ${message}`, "Open the space")
-      .then((pick) => {
-        if (!pick) return;
-        const { ownerId, slug } = splitSessionKey(sessionKey);
-        void vscode.commands.executeCommand("thinkube-tandem.openThinkingSpace", ownerId, slug);
-      });
-  } else if (message?.startsWith("The run refused"))
-    void vscode.window.showWarningMessage(`Tandem — ${message}`);
+  const notice = changeNotice(sessionKey, labelForSessionKey(sessionKey), message);
+  if (!notice) return;
+  if (notice.kind === "warning") {
+    void vscode.window.showWarningMessage(notice.text);
+    return;
+  }
+  const open = notice.open;
+  void vscode.window
+    .showInformationMessage(notice.text, "Open the space")
+    .then((pick) => {
+      if (!pick || !open) return;
+      void vscode.commands.executeCommand(open.action, open.ownerId, open.slug);
+    });
 }
 
 async function ensureSession(
@@ -371,7 +359,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openProjects,
     () => activeOwnerKey(context),
     (ownerId, kind) => listThinkingSpaces(configuredStoreRoot(), ownerId, kind),
-    (ownerKey, slug) => (tabs?.keys() ?? []).includes(`${ownerKey}/${slug}`),
+    spaceOpenMarker(() => tabs?.keys() ?? []),
     () => listWorkProjects(configuredStoreRoot()),
   );
   context.subscriptions.push(
@@ -434,11 +422,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const sessionKey = `${ownerKey}/${slug}`;
     projectsTree?.refresh();
     // SpaceTab (the registry's own vocabulary) has no show(): only the real
-    // host surface builds or reveals its webview. open() either returns a
-    // fresh SpacePanel from the factory above or reveals an existing one;
-    // either way it is the same SpacePanel type this extension constructs.
-    const tab = tabs!.open(sessionKey, labelForSessionKey(sessionKey)) as SpacePanel;
-    await tab.show(context.extensionUri);
+    // host surface builds or reveals its webview. The factory above builds
+    // every tab, so what open() returns — fresh or already registered — is
+    // always the SpacePanel this extension constructed.
+    const tab = tabs?.open(sessionKey, labelForSessionKey(sessionKey));
+    if (tab instanceof SpacePanel) await tab.show(context.extensionUri);
     pushChanged(sessionKey);
   };
 

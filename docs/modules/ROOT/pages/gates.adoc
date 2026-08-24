@@ -28,9 +28,12 @@ proof: one per acceptance criterion, executed by the real closing gate,
 plus the repository's own test suite. Accepting:
 
 * is refused while any proof is not green;
-* is refused while a declared documentation obligation is unmet (the
-  docs gate blocks by default; `thinkubeTandem.docsGateMode: advisory`
-  is the recorded escape hatch);
+* is refused while a declared documentation obligation is unmet — unless
+  the cut already recorded why documentation is not needed. That is the
+  same recorded reason gate 1 accepted, read again here, so you are never
+  asked the same question twice. (`thinkubeTandem.docsGateMode: advisory`
+  turns the gate advisory for a whole space; it is not what answers this
+  question for a cut that already answered it.)
 * runs in the canonical order merge → stamp → retire: a refused merge
   aborts before anything is stamped; worktree cleanup is best-effort and
   never fails a landed accept.

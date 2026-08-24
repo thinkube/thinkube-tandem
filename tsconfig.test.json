@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "out-test",
-    "rootDir": ".",
+    "rootDir": "src",
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "lib": ["es2022", "dom", "dom.iterable"],
@@ -19,6 +19,6 @@
     },
     "typeRoots": ["node_modules/@types", "webview/map/node_modules/@types"]
   },
-  "include": ["src", "webview/map/src"],
+  "include": ["src"],
   "exclude": []
 }

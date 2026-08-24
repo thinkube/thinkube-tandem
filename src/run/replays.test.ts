@@ -24,10 +24,10 @@ import { rehouseChecks } from "./checkHomes";
 import { emptySpace } from "../core/schema";
 import type { PlanRecord } from "./record";
 
-// __dirname is this compiled test's own directory under out-test/src/run/,
-// mirroring its source location under src/run/ — one more ".." than the
-// source's own depth reaches fixtures/plans from there.
-const PLANS = path.join(__dirname, "..", "..", "..", "fixtures", "plans");
+// __dirname is this compiled test's own directory under out-test/run/,
+// mirroring its source location under src/run/ — the same depth, so ".."
+// per directory level plus one for out-test reaches fixtures/plans.
+const PLANS = path.join(__dirname, "..", "..", "fixtures", "plans");
 
 /** A recorded plan, with what the door needs around it. */
 interface Fixture {

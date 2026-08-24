@@ -9,6 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SpaceTabs } from "./panels";
+import { SpacePanel } from "./panel";
 
 interface FakeTab {
   key: string;
@@ -57,4 +58,29 @@ test("pushing before any tab has ever been opened does nothing and raises no err
   assert.doesNotThrow(() => {
     tabs.pushTo("repo-a/alpha", { kind: "space" });
   });
+});
+
+test("with a real SpacePanel open for one key, a push aimed at an unopened key reaches nothing and raises no error", () => {
+  // The production tab type must be as quiet as the double: an unopened key
+  // is a key the person closed a moment ago, not a fault.
+  const posted: unknown[] = [];
+  const tabs = new SpaceTabs((key) => {
+    const panel = new SpacePanel({} as never, key);
+    (panel as unknown as { _panel: unknown })._panel = {
+      webview: {
+        postMessage(payload: unknown) {
+          posted.push(payload);
+          return Promise.resolve(true);
+        },
+      },
+    };
+    return panel;
+  });
+
+  tabs.open("repo-a/alpha", "Alpha");
+
+  assert.doesNotThrow(() => {
+    tabs.pushTo("repo-a/never-opened", { kind: "space" });
+  });
+  assert.deepEqual(posted, [], "no open SpacePanel may receive a push aimed at a key with no tab");
 });

@@ -298,7 +298,14 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       // is telling the human this work is ready to go into the project.
       ...(() => {
         if (d.acceptedAt) return {};
-        const r = acceptDelivery(d, session.deps.now(), session.deps.docsGateMode ?? "blocking");
+        const cut = session.space.cuts.find((c) => c.id === d.cutId);
+        const r = acceptDelivery(
+          d,
+          session.deps.now(),
+          session.deps.docsGateMode ?? "blocking",
+          session.space.deliveries,
+          cut,
+        );
         return r.ok ? {} : { blocked: r.reason };
       })(),
       ...(d.url ? { url: d.url } : {}),

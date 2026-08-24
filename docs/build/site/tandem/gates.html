@@ -175,9 +175,12 @@ plus the repository&#8217;s own test suite. Accepting:</p>
 <p>is refused while any proof is not green;</p>
 </li>
 <li>
-<p>is refused while a declared documentation obligation is unmet (the
-docs gate blocks by default; <code>thinkubeTandem.docsGateMode: advisory</code>
-is the recorded escape hatch);</p>
+<p>is refused while a declared documentation obligation is unmet — unless
+the cut already recorded why documentation is not needed. That is the
+same recorded reason gate 1 accepted, read again here, so you are never
+asked the same question twice. (<code>thinkubeTandem.docsGateMode: advisory</code>
+turns the gate advisory for a whole space; it is not what answers this
+question for a cut that already answered it.)</p>
 </li>
 <li>
 <p>runs in the canonical order merge → stamp → retire: a refused merge
