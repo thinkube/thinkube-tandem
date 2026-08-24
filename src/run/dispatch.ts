@@ -13,7 +13,7 @@
  * proofs — never as silence.
  */
 import * as path from "node:path";
-import { Cut, Ruling, Space } from "../core/schema";
+import { Cut, newRunId, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, sliceBookkeeping } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, sliceBookkeeping, tsOutLayoutOf } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -55,9 +55,9 @@ import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
-/** Mints a run's identity: contains the TEP it was minted for, and varies
- *  with `at` so two runs of the same TEP never share an id. */
-export function newRunId(tep: string, at: number): string { return `${tep}@${at.toString(36)}`; }
+// A run's identity is minted here, but the minting itself is a pure
+// function of a name and a moment and lives with the Delivery it stamps.
+export { newRunId };
 
 export async function dispatchTep(
   deps: DispatchDeps,
@@ -196,7 +196,11 @@ export async function dispatchTep(
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
+  // How a check is launched when the repository proved no answer of its own:
+  // read from the repository's compiler config, so a check it compiles out of
+  // tree is run from the artifact instead of from a source no runner executes.
+  const tsOut = tsOutLayoutOf(worktree);
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest, tsOut);
   // A delivery consumed this cut's checks; a run after it puts them back
   // from the record, so standing testers are not asked to have written
   // files a delivery deliberately removed.
@@ -585,7 +589,7 @@ export async function dispatchTep(
     );
   return await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
-    runId, producedAt,
+    runId, producedAt, runOneTest, tsOut,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

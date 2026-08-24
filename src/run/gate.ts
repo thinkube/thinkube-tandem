@@ -26,6 +26,7 @@ import {
   keptChecks,
   writeDeliveryRecord,
 } from "./plan";
+import type { TsOutLayout } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { observationsOf } from "./observations";
@@ -54,6 +55,11 @@ export interface GateContext {
    *  every delivery this gate constructs, opened or withheld. */
   runId: string;
   producedAt: string;
+  /** How this repository runs one of its own tests, proved at the door, and
+   *  its test-build layout — the gate runs a check exactly the way each
+   *  slice ran it, never a command of its own. */
+  runOneTest?: string;
+  tsOut?: TsOutLayout;
   sliceProbes: Map<string, string[]>;
   sliceCommitted: Set<string>;
   checkOf: Map<string, string>;
@@ -96,7 +102,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  const { verifs, probeOfAc } = closingVerifications(slices);
+  const { verifs, probeOfAc } = closingVerifications(slices, g.runOneTest ?? "", g.tsOut);
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);

@@ -115,6 +115,9 @@ export function sliceBookkeeping(
    *  proved at the door. A check is run the way the repository runs a test,
    *  not the way one language does. */
   runOne = "",
+  /** The repository's test-build layout, so a check the repository compiles
+   *  is run from the artifact rather than from a source no runner executes. */
+  tsOut?: TsOutLayout,
 ): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
@@ -145,7 +148,11 @@ export function sliceBookkeeping(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : `node --test ${p}`, env: "local" })),
+      probes.map((p, i) => ({
+        ac: acOf(p) || i + 1,
+        run: runOne ? runOne.replace(/<file>/g, p) : defaultRunOne(p, tsOut),
+        env: "local",
+      })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -184,12 +191,73 @@ function acOf(probe: string): number {
 }
 
 /**
+ * How to run ONE check when the repository has told the run nothing.
+ *
+ * `node --test <file>` is the answer for a check a runtime executes as it
+ * is written — the `.test.mjs` convention the default brief describes. A
+ * TypeScript check is not that file: `node --test` cannot resolve a
+ * `.ts` source whose imports carry no extensions, so the check fails as a
+ * whole file and reports nothing about the criterion it holds. Such a
+ * repository compiles its tests out of tree, and the artifact of THIS
+ * check — same assertions, same criterion — is what a runner can execute.
+ *
+ * The mapping mirrors the compiler's own: `rootDir` stripped, `outDir`
+ * prepended, the extension made `.js`. It is used only as a fallback; a
+ * repository that proved its own `runOne` at the door keeps that answer.
+ */
+export function defaultRunOne(probe: string, tsOut: TsOutLayout | undefined): string {
+  const p = probe.replace(/\\/g, "/");
+  if (!tsOut || !/\.[cm]?tsx?$/.test(p)) return `node --test ${probe}`;
+  const rel = p.startsWith(`${tsOut.rootDir}/`) ? p.slice(tsOut.rootDir.length + 1) : p;
+  return `node --test ${tsOut.outDir}/${rel.replace(/\.[cm]?tsx?$/, ".js")}`;
+}
+
+/** Where a repository's TypeScript test build puts its output. */
+export interface TsOutLayout {
+  rootDir: string;
+  outDir: string;
+}
+
+/**
+ * Read the test build's layout from the repository's own tsconfig, so the
+ * fallback follows the compiler rather than guessing. Absent or unreadable
+ * config means the repository does not compile its tests, and a check runs
+ * from its source path as before.
+ */
+export function tsOutLayoutOf(repoRoot: string): TsOutLayout | undefined {
+  for (const name of ["tsconfig.test.json", "tsconfig.json"]) {
+    try {
+      const raw = readFileSync(path.join(repoRoot, name), "utf8");
+      // A tsconfig may carry comments and trailing commas; the two fields
+      // read here are plain strings, so they are matched directly rather
+      // than by parsing a dialect of JSON this run does not own.
+      const outDir = /"outDir"\s*:\s*"([^"]+)"/.exec(raw)?.[1];
+      const rootDir = /"rootDir"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? "src";
+      if (!outDir) continue;
+      const clean = (s: string): string => s.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+      return { rootDir: clean(rootDir), outDir: clean(outDir) };
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+/**
  * The closing gate's verification list: every probe the run authored, in
  * slice order, each with the ordinal the gate knows it by — and the way
  * back from that ordinal to the probe, so a result can be reported as the
  * check it ran rather than as its position in a list.
  */
-export function closingVerifications(slices: SliceForDag[]): {
+export function closingVerifications(
+  slices: SliceForDag[],
+  /** How this repository runs one of its own tests, proved at the door —
+   *  the same answer the per-slice oracle uses. Without it the gate ran a
+   *  command of its own invention, so a check the repository compiles was
+   *  green at every slice and a whole-file failure at the gate. */
+  runOne = "",
+  tsOut?: TsOutLayout,
+): {
   verifs: AcVerification[];
   probeOfAc: Map<number, string>;
 } {
@@ -199,7 +267,11 @@ export function closingVerifications(slices: SliceForDag[]): {
   for (const s of slices)
     for (const u of s.workUnits.filter((x) => x.role === "test"))
       for (const probe of u.footprint.filter(isProbePath)) {
-        verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
+        verifs.push({
+          ac: ++ord,
+          run: runOne ? runOne.replace(/<file>/g, probe) : defaultRunOne(probe, tsOut),
+          env: "local",
+        });
         probeOfAc.set(ord, probe);
       }
   return { verifs, probeOfAc };

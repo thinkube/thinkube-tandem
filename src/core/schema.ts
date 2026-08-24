@@ -210,6 +210,19 @@ export interface Delivery {
   rejectedAt?: string;
 }
 
+/**
+ * Mints a run's identity: it contains the TEP it was minted for, and varies
+ * with `at`, so two runs of the same TEP never share an id.
+ *
+ * It lives here, beside the `Delivery` it stamps, because it is a pure
+ * function of a name and a moment. The run loop re-exports it from
+ * `src/run/dispatch.ts`, where a run's identity is minted; reading one is
+ * then a question about the artifact, not about the whole run subsystem.
+ */
+export function newRunId(tep: string, at: number): string {
+  return `${tep}@${at.toString(36)}`;
+}
+
 /** One project's working graph. */
 /**
  * Something the machine could not settle from the code: a question with the
