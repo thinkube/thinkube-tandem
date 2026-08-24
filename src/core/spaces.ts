@@ -59,6 +59,26 @@ export function listThinkingSpaces(storeRoot: string, ownerId: string, kind: Spa
     .sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
+/** The human-chosen display name for one space (name.txt), or its slug when
+ *  no name was ever written — the same fallback listThinkingSpaces uses,
+ *  callable for a single known (owner, slug) without listing every space. */
+export function spaceLabel(
+  storeRoot: string,
+  ownerId: string,
+  slug: string,
+  kind: SpaceOwnerKind = "repository",
+): string {
+  try {
+    const t = fs
+      .readFileSync(path.join(spacesHome(storeRoot, ownerId, kind), slug, "name.txt"), "utf8")
+      .trim();
+    if (t) return t;
+  } catch {
+    /* slug is the label */
+  }
+  return slug;
+}
+
 export function createThinkingSpace(
   storeRoot: string,
   ownerId: string,

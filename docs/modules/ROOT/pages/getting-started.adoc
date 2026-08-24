@@ -3,8 +3,11 @@
 
 == Open the space
 
-Click the Tandem icon in the activity bar (left edge), or run
-*Tandem: Open the Space* for the full-width editor panel.
+Click the Tandem icon in the activity bar (left edge) to browse your
+repositories and their thinking spaces, then run *Tandem: Open the Space*
+(or click a space in the tree) to open it. Each thinking space opens in
+its own editor tab, titled with that space's name — opening one leaves
+every other space's tab open, so several can be open side by side.
 
 If your workspace has more than one folder, Tandem asks which repository
 you are working on — it never guesses. The choice shows in the status bar

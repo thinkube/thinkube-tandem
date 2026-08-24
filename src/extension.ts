@@ -8,6 +8,8 @@ import * as vscode from "vscode";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
+import { SpaceTabs } from "./surfaces/panels";
+import { spacePush } from "./surfaces/push";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
@@ -19,7 +21,7 @@ import {
   setCardProduct,
 } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
-import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
+import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, spaceLabel, thinkingSpaceDirs } from "./core/spaces";
 import {
   chooseThinkingSpace,
   configuredStoreRoot,
@@ -43,9 +45,16 @@ import {
 } from "./engine/host/active";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 
-let panel: SpacePanel | undefined;
+// One editor tab per open thinking space, keyed by "<ownerId>/<slug>" —
+// never a single module-level panel standing in for whichever space was
+// opened last.
+let tabs: SpaceTabs | undefined;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
+// Set once at activation — pushChanged is fixed to (sessionKey, message?)
+// by the shared contract, so the extension context it needs for the status
+// bar comes from here rather than a parameter.
+let extContext: vscode.ExtensionContext | undefined;
 
 function gitRemote(repoRoot: string): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -88,15 +97,6 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
 
 const sessions = new Map<string, TandemSession>();
 
-function activeSession(
-  context: vscode.ExtensionContext,
-  project?: EnabledProject,
-): TandemSession | undefined {
-  const ownerKey = project?.card.id ?? activeOwnerKey(context);
-  if (!ownerKey) return undefined;
-  const slug = context.workspaceState.get<string>(`tandem.space.${ownerKey}`);
-  return slug ? sessions.get(`${ownerKey}/${slug}`) : undefined;
-}
 let statusBar: vscode.StatusBarItem | undefined;
 
 function openProjects(): EnabledProject[] {
@@ -134,33 +134,62 @@ function updateStatusBar(project: EnabledProject | undefined): void {
 
 const storeRootOf = configuredStoreRoot;
 
+/**
+ * The status line reports EVERY session's activity, not only the active
+ * one's — several spaces can be building at once, each in its own tab.
+ * A worker parked on a question always wins the line (it needs a person),
+ * then the count of sessions still building, then the count still
+ * grounding/asking, so nothing is hidden behind whichever space happened
+ * to be opened last.
+ */
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
   const project = rememberedProject(context);
-  const s = activeSession(context);
-  if (s?.running && s.runState) {
-    const v = s.runState.view();
-    const done = v.units.filter((u) => u.state === "done").length;
-    if (v.parked.length) {
-      statusBar.text = `$(warning) Tandem: a worker needs your answer`;
-      statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-    } else {
-      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
-      statusBar.backgroundColor = undefined;
-    }
+  const all = [...sessions.values()];
+  const parked = all.filter((s) => s.running && s.runState && s.runState.view().parked.length);
+  if (parked.length) {
+    statusBar.text =
+      parked.length === 1
+        ? `$(warning) Tandem: a worker needs your answer`
+        : `$(warning) Tandem: ${parked.length} workers need your answer`;
+    statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
     statusBar.show();
     return;
   }
-  const grounding = s?.groundingView() ?? [];
-  if (grounding.length) {
-    const running = grounding.filter((g) => g.label !== "waiting").length;
-    statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${grounding.length} asks`;
+  const building = all.filter((s) => s.running && s.runState);
+  if (building.length) {
+    if (building.length === 1) {
+      const v = building[0].runState!.view();
+      const done = v.units.filter((u) => u.state === "done").length;
+      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
+    } else {
+      statusBar.text = `$(sync~spin) Tandem: building — ${building.length} spaces`;
+    }
     statusBar.backgroundColor = undefined;
     statusBar.show();
     return;
   }
-  if (s?.activity) {
-    statusBar.text = `$(sync~spin) Tandem: ${s.activity.label}… (${s.activity.current}/${s.activity.total})`;
+  const grounding = all.filter((s) => s.groundingView().length > 0);
+  if (grounding.length) {
+    if (grounding.length === 1) {
+      const g = grounding[0].groundingView();
+      const running = g.filter((row) => row.label !== "waiting").length;
+      statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${g.length} asks`;
+    } else {
+      statusBar.text = `$(sync~spin) Tandem: thinking — ${grounding.length} spaces`;
+    }
+    statusBar.backgroundColor = undefined;
+    statusBar.show();
+    return;
+  }
+  const busy = all.filter((s) => s.activity);
+  if (busy.length) {
+    if (busy.length === 1) {
+      const a = busy[0].activity!;
+      statusBar.text = `$(sync~spin) Tandem: ${a.label}… (${a.current}/${a.total})`;
+    } else {
+      statusBar.text = `$(sync~spin) Tandem: working — ${busy.length} spaces`;
+    }
     statusBar.backgroundColor = undefined;
     statusBar.show();
     return;
@@ -169,18 +198,38 @@ function heartbeat(context: vscode.ExtensionContext): void {
   updateStatusBar(project);
 }
 
-function pushActive(context: vscode.ExtensionContext, message?: string): void {
-  heartbeat(context);
-  const s = activeSession(context);
-  if (!s) return;
-  panel?.pushFrom(s, message);
-  if (message?.startsWith("Delivery ready"))
+/** Split "<ownerId>/<slug>" into its parts; a work-project owner key keeps
+ *  its "wp:" prefix as part of ownerId. */
+function splitSessionKey(sessionKey: string): { ownerId: string; slug: string } {
+  const i = sessionKey.lastIndexOf("/");
+  return { ownerId: sessionKey.slice(0, i), slug: sessionKey.slice(i + 1) };
+}
+
+function labelForSessionKey(sessionKey: string): string {
+  const { ownerId, slug } = splitSessionKey(sessionKey);
+  const kind = ownerId.startsWith("wp:") ? "project" : "repository";
+  const id = ownerId.startsWith("wp:") ? ownerId.slice(3) : ownerId;
+  return spaceLabel(configuredStoreRoot(), id, slug, kind);
+}
+
+/** The one entry point every session's onChanged calls, named by that
+ *  session's OWN key — never "the active session". Pushes only to that
+ *  key's tab (a no-op if the space has no open tab) and, for a
+ *  delivery-ready notice, names that space and targets its own tab. */
+function pushChanged(sessionKey: string, message?: string): void {
+  if (extContext) heartbeat(extContext);
+  const s = sessions.get(sessionKey);
+  if (s) tabs?.pushTo(sessionKey, spacePush(s, message));
+  if (message?.startsWith("Delivery ready")) {
+    const label = labelForSessionKey(sessionKey);
     void vscode.window
-      .showInformationMessage(`Tandem — ${message}`, "Open the space")
+      .showInformationMessage(`Tandem — ${label}: ${message}`, "Open the space")
       .then((pick) => {
-        if (pick) void vscode.commands.executeCommand("thinkube-tandem.openSpace");
+        if (!pick) return;
+        const { ownerId, slug } = splitSessionKey(sessionKey);
+        void vscode.commands.executeCommand("thinkube-tandem.openThinkingSpace", ownerId, slug);
       });
-  else if (message?.startsWith("The run refused"))
+  } else if (message?.startsWith("The run refused"))
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
 }
 
@@ -201,7 +250,16 @@ async function ensureSession(
       storeSync = new StoreSyncService(configuredStoreRoot(), (l) => console.log(l));
       storeSync.start();
     }
-    return ensureWorkSession({
+    // ensureWorkSession resolves the space's own slug and registers the
+    // session into `sessions` under its key before onChanged can ever
+    // fire, so the key is found by identity (never "the active one") at
+    // call time rather than threaded through as an extra parameter.
+    const keyOf = (s: TandemSession): string | undefined => {
+      for (const [k, v] of sessions) if (v === s) return k;
+      return undefined;
+    };
+    let onChangedSession: TandemSession | undefined;
+    const s = await ensureWorkSession({
       context,
       ownerKey: savedOwner,
       interactive,
@@ -215,9 +273,14 @@ async function ensureSession(
           vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
         ),
       openRepos: openProjects,
-      onChanged: (message) => pushActive(context, message),
+      onChanged: (message) => {
+        const key = onChangedSession && keyOf(onChangedSession);
+        if (key) pushChanged(key, message);
+      },
       storageDir: context.globalStorageUri.fsPath,
     });
+    onChangedSession = s;
+    return s;
   }
   let project = rememberedProject(context);
   if (!project && interactive) project = await chooseProject(context, openProjects);
@@ -272,7 +335,7 @@ async function ensureSession(
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
-    onChanged: (message) => pushActive(context, message),
+    onChanged: (message) => pushChanged(sessionKey, message),
   });
   sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
@@ -285,6 +348,7 @@ async function ensureSession(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extContext = context;
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
   statusBar.tooltip = "Switch the repository or project Tandem works on";
@@ -313,7 +377,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openProjects,
     () => activeOwnerKey(context),
     (ownerId, kind) => listThinkingSpaces(configuredStoreRoot(), ownerId, kind),
-    (ownerKey) => context.workspaceState.get<string>(`tandem.space.${ownerKey}`),
+    (ownerKey, slug) => (tabs?.keys() ?? []).includes(`${ownerKey}/${slug}`),
     () => listWorkProjects(configuredStoreRoot()),
   );
   context.subscriptions.push(
@@ -352,25 +416,36 @@ export function activate(context: vscode.ExtensionContext): void {
     updateConfigContext,
   });
 
-  const requireSession = (): TandemSession => {
-    const s = activeSession(context);
-    if (!s) throw new Error("no active Tandem session — open the space first");
-    return s;
-  };
   const hooks = {
     onSwitchRepo: async () => {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
     },
   };
+  // Every open thinking space gets its own tab, titled with that space's
+  // own name — never one module-level panel standing in for whichever
+  // space was opened last.
+  tabs = new SpaceTabs((key) => {
+    const s = sessions.get(key);
+    if (!s) throw new Error(`Tandem — no session for thinking space "${key}"`);
+    return new SpacePanel(s, labelForSessionKey(key), hooks);
+  });
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
     const s = await ensureSession(context, true);
     if (!s) return;
     updateStatusBar(rememberedProject(context));
+    const ownerKey = activeOwnerKey(context);
+    const slug = ownerKey ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`) : undefined;
+    if (!ownerKey || !slug) return;
+    const sessionKey = `${ownerKey}/${slug}`;
     projectsTree?.refresh();
-    if (!panel) panel = new SpacePanel(requireSession, hooks);
-    await panel.show(context.extensionUri);
-    pushActive(context);
+    // SpaceTab (the registry's own vocabulary) has no show(): only the real
+    // host surface builds or reveals its webview. open() either returns a
+    // fresh SpacePanel from the factory above or reveals an existing one;
+    // either way it is the same SpacePanel type this extension constructs.
+    const tab = tabs!.open(sessionKey, labelForSessionKey(sessionKey)) as SpacePanel;
+    await tab.show(context.extensionUri);
+    pushChanged(sessionKey);
   };
 
   context.subscriptions.push(
@@ -539,6 +614,6 @@ export function deactivate(): void {
       });
       s.runState.halt();
     }
-  panel?.dispose();
+  tabs?.disposeAll();
   storeSync?.dispose();
 }

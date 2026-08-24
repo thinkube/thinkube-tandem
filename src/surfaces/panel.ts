@@ -1,7 +1,9 @@
 /**
- * The space panel: loads the built map bundle and bridges its registered
- * actions to the session. Pushes the whole surface state after every act —
- * the webview holds no state of its own beyond selection.
+ * One thinking space's editor tab: loads the built map bundle and bridges
+ * its registered actions to the ONE session it was built with — never an
+ * "active session" lookup, so a tab always renders the space it belongs to,
+ * whichever space happens to be in front. Pushes the whole surface state
+ * after every act — the webview holds no state of its own beyond selection.
  */
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs/promises";
@@ -11,6 +13,7 @@ import { TandemSession } from "./session";
 import { spacePush } from "./push";
 import { handleInbound } from "./inbound";
 import type { InboundAction } from "./inbound";
+import type { SpaceTab } from "./panels";
 
 const req: NodeRequire =
   typeof require !== "undefined" ? require : createRequire(__filename);
@@ -26,25 +29,37 @@ export interface PanelHostHooks {
 
 /** A card head is one line: a long sentence is clipped, never a paragraph. */
 
-export class SpacePanel implements vscodeTypes.Disposable {
+export class SpacePanel implements vscodeTypes.Disposable, SpaceTab {
   private _panel: vscodeTypes.WebviewPanel | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
+  private _disposeCbs: (() => void)[] = [];
 
   constructor(
-    private readonly getSession: () => TandemSession,
+    private readonly session: TandemSession,
+    private readonly title: string,
     private readonly hooks?: PanelHostHooks,
   ) {}
 
+  /** Bring this tab to the front, or build it once, first show. */
+  reveal(): void {
+    this._panel?.reveal();
+  }
+
+  /** Fire when the host reports this tab was closed by hand. */
+  onDidDispose(cb: () => void): void {
+    this._disposeCbs.push(cb);
+  }
+
   async show(extensionUri: vscodeTypes.Uri): Promise<void> {
-    const session = this.getSession();
+    const session = this.session;
     if (this._panel) {
       this._panel.reveal();
-      this._push(session);
+      this._push();
       return;
     }
     this._panel = vs().window.createWebviewPanel(
       "thinkubeTandemSpace",
-      "Tandem",
+      this.title,
       { viewColumn: vs().ViewColumn.One, preserveFocus: false },
       {
         enableScripts: true,
@@ -59,12 +74,11 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._disposables.push(
       this._panel.webview.onDidReceiveMessage(async (raw) => {
         const msg = raw as InboundAction;
-        const session = this.getSession();
         const run = () =>
           handleInbound(
             session,
             msg,
-            (m) => this._push(this.getSession(), m),
+            (m) => this._push(m),
             this.hooks,
           );
         // Industry-standard liveness: a real progress notification with a
@@ -96,18 +110,24 @@ export class SpacePanel implements vscodeTypes.Disposable {
       }),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
+        for (const cb of this._disposeCbs) cb();
       }),
     );
-    this._push(session);
+    this._push();
   }
 
   /** Public so the session's onChanged hook can re-push mid-run. */
-  pushFrom(session: TandemSession, message?: string): void {
-    this._push(session, message);
+  pushFrom(message?: string): void {
+    this._push(message);
   }
 
-  private _push(session: TandemSession, message?: string): void {
-    void this._panel?.webview.postMessage(spacePush(session, message));
+  /** SpaceTab's push: deliver a payload already shaped for the webview. */
+  push(payload: unknown): void {
+    void this._panel?.webview.postMessage(payload);
+  }
+
+  private _push(message?: string): void {
+    void this._panel?.webview.postMessage(spacePush(this.session, message));
   }
 
   dispose(): void {
