@@ -146,6 +146,12 @@ export async function handleInbound(
   } else if (msg.action === "reground") {
     push("Re-grounding…");
     await session.reground();
+  } else if (msg.action === "docs-not-needed") {
+    // Typing costs nothing and interrupts nothing, same as save-draft: the
+    // words are kept and the surface is not told anything it does not
+    // already know.
+    session.sayDocsNotNeeded(msg.text ?? "");
+    return;
   }
   push(note);
 }

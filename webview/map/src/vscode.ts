@@ -166,6 +166,10 @@ export interface SpacePush {
   ready: { subjects: number; promises: number; asks: number; thinking: boolean };
   /** Why the last Sign and build was refused — beside the button, until a press succeeds. */
   buildRefusal?: string;
+  /** What the person wrote, at the moment of signing, for why this cut
+   *  needs no documentation — survives a reload instead of living only in
+   *  the webview's own memory. Absent when nothing was written. */
+  docsNotNeeded?: string;
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** The model the round proposed, waiting for you. */
@@ -233,6 +237,7 @@ export type WebToHost =
   | { action: "apply-all-impacts" }
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: "probe" | "assessment" }
+  | { action: "docs-not-needed"; text: string }
   | { action: "switch-repo" };
 
 interface VsCodeApi {
@@ -257,8 +262,8 @@ export function noteAllowed(allowed: string[] | undefined): void {
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "think-again", "stop-run",
-  "accept-delivery", "reject-delivery", "panic", "switch-repo",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "docs-not-needed", "build", "rerun",
+  "think-again", "stop-run", "accept-delivery", "reject-delivery", "panic", "switch-repo",
 ]);
 
 /** Whether the host would act on this action now. Non-shaping actions

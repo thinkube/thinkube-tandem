@@ -274,6 +274,10 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       : undefined,
     draft: session.space.draft ?? "",
     ...(session.buildRefusal ? { buildRefusal: session.buildRefusal } : {}),
+    // What the person wrote, at the moment of signing, for why this cut
+    // needs no documentation — carried so the box shows it after a reload
+    // instead of living only in the webview's own memory.
+    ...(session.docsNotNeeded ? { docsNotNeeded: session.docsNotNeeded } : {}),
     pendingModel: session.pendingModel
       ? {
           subjects: session.pendingModel.subjects,

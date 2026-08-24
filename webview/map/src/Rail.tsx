@@ -246,6 +246,17 @@ export function Rail(props: {
                 {push.buildRefusal}
               </div>
             ) : null}
+            {push.buildRefusal?.toLowerCase().includes("documentation") ||
+            push.docsNotNeeded !== undefined ? (
+              <input
+                data-docs-not-needed
+                type="text"
+                value={push.docsNotNeeded ?? ""}
+                placeholder="why documentation is not needed for this cut"
+                style={{ width: "100%", fontSize: FS.body, marginTop: SP.xs }}
+                onChange={(e) => post({ action: "docs-not-needed", text: e.target.value })}
+              />
+            ) : null}
           </section>
         ) : null}
 

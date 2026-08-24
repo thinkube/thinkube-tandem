@@ -17,11 +17,104 @@ import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { factsOf } from "../run/facts";
+import { assessCurrency } from "./currency";
+import { signedIds } from "../core/cutClosure";
+import { groundSubjectFlow } from "./subjectFlow";
+
+/** The subjects an ask reaches: the ask itself when it names a subject,
+ *  otherwise every subject its claims were read into. */
+export function subjectsOfAsk(s: TandemSession, id: string): string[] {
+  if ((s.space.subjects ?? []).some((x) => x.id === id)) return [id];
+  return [
+    ...new Set((s.space.claims ?? []).filter((c) => c.fromAsk === id).map((c) => c.subjectId)),
+  ];
+}
+
+/** Drop the unsigned promises of these subjects, then derive them again.
+ *  A promise belongs to a subject either by the claim it serves or by the
+ *  subject it was ground for — both, so nothing survives as a duplicate. */
+export async function rederiveSubjects(s: TandemSession, ids: string[]): Promise<void> {
+  const subjects = new Set(ids);
+  const claimIds = new Set(
+    (s.space.claims ?? []).filter((c) => subjects.has(c.subjectId)).map((c) => c.id),
+  );
+  const signed = signedIds(s.space.cuts);
+  const goes = new Set(
+    s.space.nodes
+      .filter(
+        (n) =>
+          !signed.has(n.id) &&
+          ((n.servesClaim && claimIds.has(n.servesClaim)) ||
+            n.serves.some((sv) => subjects.has(sv))),
+      )
+      .map((n) => n.id),
+  );
+  s.space = { ...s.space, nodes: s.space.nodes.filter((n) => !goes.has(n.id)) };
+  // A cut cannot hold a promise that no longer exists.
+  for (const id of goes) s.cutNodeIds.delete(id);
+  await groundSubjectFlow(s, ids);
+}
+
+/** Accept = ONE re-derivation of each subject the decision touches, under
+ *  every decision in force; the sibling implications go with it. */
+export async function decideImpactFlow(
+  s: TandemSession,
+  impactId: string,
+  accept: boolean,
+): Promise<{ ok: boolean; reason?: string }> {
+  const impacts = s.space.impacts ?? [];
+  const im = impacts.find((x) => x.id === impactId);
+  if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
+  if (!accept) {
+    s.space = { ...s.space, impacts: impacts.filter((x) => x.id !== impactId) };
+    s.changed("Dismissed — the definitions stay as they are.");
+    return { ok: true };
+  }
+  const covered = impacts.filter((x) => x.askId === im.askId).length;
+  s.space = { ...s.space, impacts: impacts.filter((x) => x.askId !== im.askId) };
+  const subjects = subjectsOfAsk(s, im.askId);
+  if (!subjects.length) return { ok: false, reason: "that ask is not part of any subject" };
+  await rederiveSubjects(s, subjects);
+  s.changed(
+    `Re-derived ${subjects.length} subject(s) under every decision in force` +
+      (covered > 1 ? ` — one pass covered ${covered} accepted implications` : "") + ".",
+  );
+  return { ok: true };
+}
+
+/** One press for every staged implication: each affected subject derives
+ *  again once, five at a time, progress on its own row. */
+export async function applyAllImpactsFlow(
+  s: TandemSession,
+): Promise<{ ok: boolean; reason?: string }> {
+  const impacts = s.space.impacts ?? [];
+  if (!impacts.length) return { ok: false, reason: "no implications are staged" };
+  const subjects = [...new Set(impacts.flatMap((im) => subjectsOfAsk(s, im.askId)))];
+  s.space = { ...s.space, impacts: [] };
+  if (!subjects.length) return { ok: false, reason: "those asks are not part of any subject" };
+  await rederiveSubjects(s, subjects);
+  s.changed(
+    `Applied ${impacts.length} implication(s): ${subjects.length} subject(s) re-derived once each.`,
+  );
+  return { ok: true };
+}
+
+/** Out of date only when a file the promise lands in changed. */
+export async function refreshStalenessFlow(s: TandemSession): Promise<void> {
+  const r = await assessCurrency(s.space, {
+    repoRoot: s.deps.round.repoRoot,
+    readCurrentStamp: s.deps.readCurrentStamp,
+    scopeDir: (scope) => s.deps.scopes?.().find((x) => x.id === scope)?.dir,
+  });
+  s.stale = r.stale;
+  s.proofDrift = r.proofDrift;
+}
 
 export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string } {
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      ...(s.docsNotNeeded ? { docsNotNeeded: s.docsNotNeeded } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
@@ -31,6 +124,7 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
     s.cutNodeIds.clear();
+    s.sayDocsNotNeeded("");
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
     void executeRun(s, r.cut.id);
     return { ok: true };

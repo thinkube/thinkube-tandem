@@ -5,6 +5,7 @@
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
+import { documentationOf } from "../core/cutClosure";
 
 
 
@@ -84,6 +85,20 @@ export function renderCutScreen(space: Space, cut: Cut): string {
   if (ungrounded.length) {
     lines.push(`Not grounded (no place in the code yet):`);
     for (const n of ungrounded) lines.push(`  ⚠ ${n.sentence}`);
+  }
+
+  // Documentation: named where it lands, or why it is not needed, or that
+  // the cut cannot be signed until one of those two exists — one of these
+  // three states, always, so the person never signs without an answer.
+  const docs = documentationOf(cut.changeIds, space.nodes);
+  if (docs.length) {
+    lines.push(`Documentation lands at: ${[...new Set(docs)].join(", ")}`);
+  } else if (cut.docsNotNeeded?.trim()) {
+    lines.push(`Documentation is not needed: ${cut.docsNotNeeded.trim()}`);
+  } else {
+    lines.push(
+      `This cut lands no documentation and cannot be signed until either documentation lands, or you write why documentation is not needed.`,
+    );
   }
   return lines.join("\n");
 }

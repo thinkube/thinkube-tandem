@@ -6,7 +6,6 @@
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
-import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
@@ -23,6 +22,13 @@ import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../core/cutClosure";
+import {
+  applyAllImpactsFlow,
+  decideImpactFlow,
+  rederiveSubjects,
+  refreshStalenessFlow,
+  subjectsOfAsk,
+} from "./runGate";
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
@@ -40,6 +46,21 @@ export class TandemSession {
   units: Unit[] = [];
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
+  /** Why documentation is not needed for the cut being built right now,
+   *  written by the person at the moment of signing — reaches both the cut
+   *  review page and the signed record, and is cleared once a cut is signed
+   *  because it answered that cut's own question, not the next one's.
+   *  Session-only, like the draft text: held for the life of this session so
+   *  a webview reload reads it back from the next push, never written to the
+   *  space before it is signed onto a cut. */
+  private _docsNotNeeded: string | undefined;
+  get docsNotNeeded(): string | undefined {
+    return this._docsNotNeeded;
+  }
+  sayDocsNotNeeded(reason: string): void {
+    this._docsNotNeeded = reason.trim() || undefined;
+    this.deps.onChanged?.();
+  }
   stale = new Set<string>();
   /** Criteria whose standing proof moved since it was bound — the test
    *  file changed after the anchor's stamp, so "proved" is out of date. */
@@ -355,93 +376,24 @@ export class TandemSession {
 
   /** What a decision touches. A question raised while grounding names its
    *  subject; one captured against a sentence names the ask it came from. */
-  private subjectsOfAsk(id: string): string[] {
-    if ((this.space.subjects ?? []).some((s) => s.id === id)) return [id];
-    return [
-      ...new Set(
-        (this.space.claims ?? []).filter((c) => c.fromAsk === id).map((c) => c.subjectId),
-      ),
-    ];
+  subjectsOfAsk(id: string): string[] {
+    return subjectsOfAsk(this, id);
   }
 
-  /** Drop the unsigned promises of these subjects, then derive them again.
-   *  A promise belongs to a subject either by the claim it serves or by the
-   *  subject it was ground for — both, so nothing survives as a duplicate. */
-  private async rederiveSubjects(ids: string[]): Promise<void> {
-    const subjects = new Set(ids);
-    const claimIds = new Set(
-      (this.space.claims ?? []).filter((c) => subjects.has(c.subjectId)).map((c) => c.id),
-    );
-    const signed = signedIds(this.space.cuts);
-    const goes = new Set(
-      this.space.nodes
-        .filter(
-          (n) =>
-            !signed.has(n.id) &&
-            ((n.servesClaim && claimIds.has(n.servesClaim)) ||
-              n.serves.some((sv) => subjects.has(sv))),
-        )
-        .map((n) => n.id),
-    );
-    this.space = { ...this.space, nodes: this.space.nodes.filter((n) => !goes.has(n.id)) };
-    // A cut cannot hold a promise that no longer exists.
-    for (const id of goes) this.cutNodeIds.delete(id);
-    await groundSubjectFlow(this, ids);
+  rederiveSubjects(ids: string[]): Promise<void> {
+    return rederiveSubjects(this, ids);
   }
 
-  /** Accept = ONE re-derivation of each subject the decision touches, under
-   *  every decision in force; the sibling implications go with it. */
-  async decideImpact(impactId: string, accept: boolean): Promise<{ ok: boolean; reason?: string }> {
-    const im = (this.space.impacts ?? []).find((x) => x.id === impactId);
-    if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
-    if (!accept) {
-      this.space = {
-        ...this.space,
-        impacts: (this.space.impacts ?? []).filter((x) => x.id !== impactId),
-      };
-      this.changed("Dismissed — the definitions stay as they are.");
-      return { ok: true };
-    }
-    const covered = (this.space.impacts ?? []).filter((x) => x.askId === im.askId).length;
-    this.space = {
-      ...this.space,
-      impacts: (this.space.impacts ?? []).filter((x) => x.askId !== im.askId),
-    };
-    const subjects = this.subjectsOfAsk(im.askId);
-    if (!subjects.length) return { ok: false, reason: "that ask is not part of any subject" };
-    await this.rederiveSubjects(subjects);
-    this.changed(
-      `Re-derived ${subjects.length} subject(s) under every decision in force` +
-        (covered > 1 ? ` — one pass covered ${covered} accepted implications` : "") + ".",
-    );
-    return { ok: true };
+  decideImpact(impactId: string, accept: boolean): Promise<{ ok: boolean; reason?: string }> {
+    return decideImpactFlow(this, impactId, accept);
   }
 
-  /** One press for every staged implication: each affected subject derives
-   *  again once, five at a time, progress on its own row. */
-  async applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
-    const impacts = this.space.impacts ?? [];
-    if (!impacts.length) return { ok: false, reason: "no implications are staged" };
-    const subjects = [...new Set(impacts.flatMap((im) => this.subjectsOfAsk(im.askId)))];
-    this.space = { ...this.space, impacts: [] };
-    if (!subjects.length) return { ok: false, reason: "those asks are not part of any subject" };
-    await this.rederiveSubjects(subjects);
-    this.changed(
-      `Applied ${impacts.length} implication(s): ${subjects.length} subject(s) re-derived once each.`,
-    );
-    return { ok: true };
+  applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
+    return applyAllImpactsFlow(this);
   }
 
-  /** A human pin — outranks the computed coupling. */
-  /** Out of date only when a file the promise lands in changed. */
-  async refreshStaleness(): Promise<void> {
-    const r = await assessCurrency(this.space, {
-      repoRoot: this.deps.round.repoRoot,
-      readCurrentStamp: this.deps.readCurrentStamp,
-      scopeDir: (scope) => this.deps.scopes?.().find((x) => x.id === scope)?.dir,
-    });
-    this.stale = r.stale;
-    this.proofDrift = r.proofDrift;
+  refreshStaleness(): Promise<void> {
+    return refreshStalenessFlow(this);
   }
 
   pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
@@ -472,6 +424,7 @@ export class TandemSession {
     return renderCutScreen(this.space, {
       id: `cut-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
+      ...(this._docsNotNeeded ? { docsNotNeeded: this._docsNotNeeded } : {}),
     });
   }
 
