@@ -564,3 +564,36 @@ sections, one is a pannable world of laid-out cards. Making them one
 drawing with one set of interactions is a larger question than any item
 above, and it should be answered after items 1 to 4, which are about a
 person being able to read a run at all.
+
+---
+
+## L. Found by the headless journey
+
+The journey driver (`src/cli/journey.ts`) runs the whole thing without a
+window. Two faults surfaced in its first two attempts, before any worker
+was dispatched — both invisible from the editor, because the editor keeps
+one session in memory and never exercises these paths.
+
+**L1 — a forge is optional in the type and required by the gate.**
+`SessionDeps.forge` is documented "absent means deliveries stay local
+branches". `runGate.ts:50-55` refuses to start a run without one. The
+first journey read the repository, derived eleven promises over ten
+minutes, and stopped at the last step for a missing setting — the whole
+cost of the journey paid for a note. The journey now resolves the forge
+first and refuses before it spends; the contradiction in the type is
+still there.
+
+**L2 — a cut signed in one process fails its own signature in the next.**
+`signCut` then `verifyCutSignature` agree in memory and across a JSON
+round trip (driven directly, both green). But a cut signed by a session
+and then loaded by `loadFolded` in a second process is refused: *"the
+render changed since the signature"*. The grounding half of the pair
+still matches, so the difference is in the render's other half —
+sentences, checks, needs, unverified — and no recorded state of that
+space reproduces the signed hash: every snapshot before and after the
+signature renders to the same value, and it is not the one stored.
+
+Not chased to the bottom. What is known: the machinery is sound in
+isolation, `loadFolded` is given the same directory for both the store
+and the fold in both headless entry points, and the editor never meets
+this because it signs and runs in one session.
