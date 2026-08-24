@@ -87,10 +87,6 @@
     {
       "after": "SL-7",
       "waitsFor": "SL-5"
-    },
-    {
-      "after": "SL-7",
-      "waitsFor": "SL-6"
     }
   ]
 }
