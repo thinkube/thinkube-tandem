@@ -322,6 +322,26 @@ export async function linkProvisioned(
  * reported deliveries of a branch the product build rejected, because this
  * step only warned.
  */
+/**
+ * What a failed build actually said, in the words the compiler used.
+ *
+ * This reported the LAST line of the output. A compiler's output ends in a
+ * blank line, so what it printed was the word "tree:" and nothing after
+ * it — a build failure with no reason, at the one gate where the reason
+ * decides whether ten promises are kept. The closer then spent rounds
+ * guessing at a message it was never shown, and said so.
+ *
+ * The lines that name a file and a position are what a person and a
+ * closer both need, so those come first; failing that, the last lines
+ * that say anything at all.
+ */
+export function buildComplaint(output: string): string {
+  const lines = output.split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  if (!lines.length) return "(the build failed and printed nothing)";
+  const named = lines.filter((l) => /\.[cm]?[jt]sx?[(:]\d+|error [A-Z]+\d+|\berror\b/i.test(l));
+  return (named.length ? named : lines).slice(0, 12).join("\n").slice(0, 2000);
+}
+
 export async function prepareAtGate(
   prepare: string | undefined,
   worktree: string,
@@ -330,9 +350,6 @@ export async function prepareAtGate(
 ): Promise<{ ok: boolean; words: string }> {
   if (!prepare) return { ok: true, words: "" };
   const prep = await boundedExec(prepare, worktree);
-  if (prep.code !== 0)
-    log(
-      `⚠ the build failed at the gate — checks run against an unbuilt tree: ${prep.output.split("\n").pop()?.slice(0, 160) ?? ""}`,
-    );
+  if (prep.code !== 0) log(`⚠ the build failed at the gate — checks run against an unbuilt tree:\n${buildComplaint(prep.output)}`);
   return { ok: prep.code === 0, words: prep.output.slice(-3000) };
 }
