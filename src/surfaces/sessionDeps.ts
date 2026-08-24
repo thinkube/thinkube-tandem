@@ -37,6 +37,10 @@ export interface SessionDeps {
   workerModel?: WorkerModelConfig;
   /** Frontier width for the run (v1 default 4). */
   maxConcurrent?: number;
+  /** Governs only an UNRECORDED docs question: a cut that already recorded
+   *  why documentation is not needed (`Cut.docsNotNeeded`) is never asked
+   *  again at accept, whatever this is set to — the sign gate's answer is
+   *  the accept gate's answer, and this setting decides nothing on its own. */
   docsGateMode?: "blocking" | "advisory";
   /** The round that reads the repository for the shared digest. */
   contextRound?: typeof runReadRound;

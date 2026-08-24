@@ -56,7 +56,7 @@ export type SignResult =
   | { ok: false; reason: string };
 
 /** The human's first gate. Binds render + grounding at the moment of the click. */
-import { danglingNeeds, signedIds } from "../core/cutClosure";
+import { danglingNeeds, documentationOf, signedIds } from "../core/cutClosure";
 
 export function signCut(
   space: Space,
@@ -114,6 +114,16 @@ export function signCut(
     return {
       ok: false,
       reason: `undecided question(s) on these asks: ${open.map((q) => q.text).join(" · ")} — decide them before signing`,
+    };
+  // A cut that documents nothing is refused, unless it records why
+  // documentation is not needed — that recorded reason is the only way
+  // past this, read by the accept gate too so the person is never asked
+  // the same question twice.
+  if (documentationOf(cut.changeIds, space.nodes).length === 0 && !cut.docsNotNeeded?.trim())
+    return {
+      ok: false,
+      reason:
+        "this cut lands no documentation — say where documentation lands, or write why documentation is not needed",
     };
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
@@ -186,6 +196,11 @@ export function acceptDelivery(
   docsGateMode: "blocking" | "advisory" = "blocking",
   /** The cut's other deliveries, when it spans repositories. */
   siblings: readonly Delivery[] = [],
+  /** The cut being delivered — read for its recorded `docsNotNeeded`
+   *  answer, the same one the sign gate already accepted. A cut that
+   *  recorded why documentation is not needed is never asked again here;
+   *  `docsGateMode` no longer decides that question on its own. */
+  cut?: Cut,
 ): AcceptResult {
   if (delivery.acceptedAt)
     return { ok: false, reason: "this delivery is already accepted" };
@@ -214,7 +229,7 @@ export function acceptDelivery(
   const docsUnmet = (delivery.undelivered ?? []).filter((u) =>
     u.includes("docs obligation unmet"),
   );
-  if (docsGateMode === "blocking" && docsUnmet.length)
+  if (docsGateMode === "blocking" && docsUnmet.length && !cut?.docsNotNeeded?.trim())
     return {
       ok: false,
       reason: `the docs gate blocks this accept: ${docsUnmet.join(" · ")}`,

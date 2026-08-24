@@ -9,7 +9,7 @@ import * as path from "node:path";
 import type { SliceForDag } from "../engine/core/dag";
 import type { AcVerification } from "../engine/orchestratorCore";
 import { buildVerificationTrace } from "../engine/core/trace";
-import { unmetDocsObligation } from "../engine/core/redispatch";
+import { isDocumentationPath } from "../core/cutClosure";
 import { accessSync, readFileSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import { isProbePath, isTestPath, missingProbes } from "./testHomes";
@@ -479,29 +479,37 @@ export async function keptChecks(
   return out;
 }
 
-/** Docs gate: a slice that declares documentation (a docs/ touchpoint)
- *  must have LANDED it — the engine's obligation check runs against the
- *  real tree, and an unmet obligation is UNDELIVERED on the page's face. */
+/** Docs gate: a slice that declares documentation (a path `isDocumentationPath`
+ *  recognizes — the same definition the sign gate reads) must have LANDED
+ *  it — checked against the real tree, and an unmet obligation is
+ *  UNDELIVERED on the page's face. A slice that declares no documentation
+ *  path at all has no obligation to check here.
+ *
+ *  The declared-path collection and the present/missing check are done
+ *  HERE, not by `unmetDocsObligation`: that function's own path-collector
+ *  only recognizes `docs/`-prefixed strings, so it can never name a
+ *  root-level document (ENGINE-WIRING.md) as missing. */
 export function docsObligations(slices: SliceForDag[], worktree: string): string[] {
+  const exists = (rel: string): boolean => {
+    try {
+      accessSync(path.join(worktree, rel));
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const out: string[] = [];
   for (const s of slices) {
-    const declaresDocs = (s.files ?? []).some((f) => f.startsWith("docs/"));
-    const note = unmetDocsObligation(
-      {
-        docs: declaresDocs ? "required" : undefined,
-        files: s.files,
-        work_units: s.workUnits,
-      },
-      (rel) => {
-        try {
-          accessSync(path.join(worktree, rel));
-          return true;
-        } catch {
-          return false;
-        }
-      },
-    );
-    if (note) out.push(`${s.handle}: ${note}`);
+    const declared = [
+      ...(s.files ?? []),
+      ...s.workUnits.flatMap((u) => u.footprint ?? []),
+    ].filter(isDocumentationPath);
+    const missing = [...new Set(declared)].filter((p) => !exists(p));
+    if (missing.length)
+      out.push(
+        `${s.handle}: docs obligation unmet: declared doc-module path(s) not present in the ` +
+          `landed tree: ${missing.join(", ")}. The documentation must land with the slice before it can reach Done.`,
+      );
   }
   return out;
 }

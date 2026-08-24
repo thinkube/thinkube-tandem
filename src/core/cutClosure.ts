@@ -74,6 +74,30 @@ export function removeWithDependents(
     : {};
 }
 
+/** Is `p` a documentation path — under a `docs/` directory (anywhere in
+ *  the path), or a markdown document at the repository root (no directory
+ *  separator, `.md` extension)? The one definition of "this is
+ *  documentation" shared by the sign gate and the delivery-side docs
+ *  obligation, so a root-level document like ENGINE-WIRING.md counts in
+ *  both places instead of only under a check that was never widened. */
+export function isDocumentationPath(p: string): boolean {
+  if (/(^|\/)docs\//.test(p)) return true;
+  return !p.includes("/") && p.toLowerCase().endsWith(".md");
+}
+
+/** The documentation touchpoints landed by the cut's own promises — the
+ *  paths, not the full anchors. What the sign gate reads to decide whether
+ *  this cut documents anything. */
+export function documentationOf(cutIds: readonly string[], nodes: readonly Change[]): string[] {
+  const inCut = new Set(cutIds);
+  const out: string[] = [];
+  for (const n of nodes) {
+    if (!inCut.has(n.id)) continue;
+    for (const t of n.grounding?.touchpoints ?? []) if (isDocumentationPath(t.path)) out.push(t.path);
+  }
+  return out;
+}
+
 /** Sign-gate backstop: members whose needs point outside the cut. */
 export function danglingNeeds(
   cutIds: readonly string[],

@@ -8,7 +8,9 @@ Signing freezes a cut into a TEP. The gate refuses:
 * an empty cut;
 * a change with no acceptance criteria ("nothing proves this");
 * a change with no grounding (no place in the code);
-* an ask in the cut with an undecided question.
+* an ask in the cut with an undecided question;
+* a cut that documents nothing — a recorded reason why documentation is
+  not needed is the only way past this refusal.
 
 The click mints `TEP-<you>-<n>` and a machine-local HMAC token bound to
 the pair you actually saw: the rendered cut screen plus the grounded
