@@ -100,15 +100,18 @@ export function toolVersion(): string {
 }
 let cachedVersion = "";
 
-export function appendDefect(thinkubeDir: string, entry: DefectEntry): boolean {
+export function appendDefect(thinkubeDir: string, entry: DefectEntry, now?: () => number): boolean {
   try {
     if (!thinkubeDir || typeof thinkubeDir !== "string") return false;
-    const now = new Date();
+    // The run's own clock, when handed one, dates both the row and the
+    // month file it lands in — so a scripted run never splits its stamp
+    // across the scripted moment and the wall clock's own idea of "now".
+    const when = new Date(now ? now() : Date.now());
     const { space } = ledgerRoot(thinkubeDir);
-    const full: DefectEntry = { ts: entry.ts ?? now.toISOString(), version: toolVersion(), ...(space ? { space } : {}), ...entry };
+    const full: DefectEntry = { ts: entry.ts ?? when.toISOString(), version: toolVersion(), ...(space ? { space } : {}), ...entry };
     // Keep `ts` first for human-scannable lines; JSON key order is cosmetic only.
-    if (!full.ts) full.ts = now.toISOString();
-    const file = defectLogPath(thinkubeDir, now);
+    if (!full.ts) full.ts = when.toISOString();
+    const file = defectLogPath(thinkubeDir, when);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify(full)}\n`, "utf8");
     return true;

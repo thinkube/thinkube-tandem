@@ -109,6 +109,15 @@ export function renderDeliveryPage(
   const members = cut ? nodesOf(space, cut.changeIds) : [];
   const lines: string[] = [];
   lines.push(`# Delivery — \`${delivery.branch}\``);
+  // Which run produced this page, and when — before any section of the
+  // report, so a stale page can never be read as the newest run's. Absent
+  // is not a default state: it is said plainly, because an old record
+  // stays readable and still cannot pass for the newest.
+  lines.push(
+    delivery.runId && delivery.producedAt
+      ? `Run \`${delivery.runId}\` — produced ${delivery.producedAt}`
+      : "produced by a run this space did not record",
+  );
   if (delivery.withheld) {
     lines.push("");
     lines.push(`**Withheld — not accepted, nothing opened.** ${delivery.withheld}`);

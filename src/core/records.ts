@@ -139,7 +139,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
  * Fold the latest snapshot of every author into ONE space. Deterministic
  * and total; contradictory decisions surface as a question.
  */
-function foldSpaces(latest: SnapshotRecord[]): Space {
+export function foldSpaces(latest: SnapshotRecord[]): Space {
   if (latest.length === 0) return emptySpace();
   if (latest.length === 1) return latest[0].space;
 
@@ -202,8 +202,26 @@ function foldSpaces(latest: SnapshotRecord[]): Space {
     }
     for (const d of space.deliveries) {
       const existing = merged.deliveries.find((x) => x.id === d.id);
-      if (!existing) merged.deliveries.push(d);
-      else if (!existing.acceptedAt && d.acceptedAt) existing.acceptedAt = d.acceptedAt;
+      if (!existing) {
+        merged.deliveries.push(d);
+        continue;
+      }
+      // Two runs of the same cut hand back deliveries under the same id —
+      // the newer run's report is the one kept, by its own produced-at
+      // stamp, never by which record was seen first. Acceptance facts
+      // either author recorded travel onto whichever delivery survives, so
+      // an accept made against the older report is not lost.
+      const newer =
+        (d.producedAt ?? "") > (existing.producedAt ?? "") ? d : existing;
+      const older = newer === d ? existing : d;
+      const acceptedAt = newer.acceptedAt ?? older.acceptedAt;
+      const rejectedAt = newer.rejectedAt ?? older.rejectedAt;
+      const idx = merged.deliveries.indexOf(existing);
+      merged.deliveries[idx] = {
+        ...newer,
+        ...(acceptedAt ? { acceptedAt } : {}),
+        ...(rejectedAt ? { rejectedAt } : {}),
+      };
     }
   }
 

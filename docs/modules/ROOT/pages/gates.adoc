@@ -19,8 +19,11 @@ cryptographically rather than by convention.
 
 == Gate 2 — Accept
 
-A delivery page lists every proof: one per acceptance criterion, executed
-by the real closing gate, plus the repository's own test suite. Accepting:
+A delivery page opens by naming the run that produced it and when — or
+says plainly that the run was never recorded, for an old delivery that
+predates the field — before any other section. It then lists every
+proof: one per acceptance criterion, executed by the real closing gate,
+plus the repository's own test suite. Accepting:
 
 * is refused while any proof is not green;
 * is refused while a declared documentation obligation is unmet (the

@@ -114,7 +114,10 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),
     // The chart names each worker by the slice it builds, in the words the
-    // human named it — the worker id stays available underneath.
+    // human named it — the worker id stays available underneath. `runId`
+    // rides along in the spread: the same id that will land on the
+    // delivery this run mints, so what is watched can be matched against
+    // what is reported.
     run: (() => {
       const v = session.runState?.view();
       if (!v) return undefined;

@@ -232,7 +232,6 @@ function isDeferralVocabulary(text: string): boolean {
   return !OTHER_MARKERS.test(text) && !/\bUNDELIVERED\s*:/.test(text);
 }
 
-
 /**
  * The lines this run ADDED, per file, with the line number they landed on.
  *
@@ -324,7 +323,6 @@ export async function confessedDeferrals(args: {
   return out;
 }
 
-
 /**
  * The delivery's MACHINE FACE persists beside the space: the engine's
  * structured verification trace plus the run facts — the delivery page is
@@ -341,6 +339,11 @@ export async function writeDeliveryRecord(
     undelivered: string[];
     verifs: AcVerification[];
     acResults: Parameters<typeof buildVerificationTrace>[0]["acResults"];
+    /** The run that produced this record, and when — the same id and
+     *  stamp the gate put on the delivery it handed back. Optional only
+     *  for a caller that predates the field; the gate always supplies it. */
+    runId?: string;
+    producedAt?: string;
     /** The checks themselves — kept here because the files are discarded.
      *  Passed only by an OPENED delivery: a withheld run once overwrote a
      *  good record's fifty-eight sources with thirty-eight entries at the
@@ -382,6 +385,8 @@ export async function writeDeliveryRecord(
           baseSha: record.baseSha,
           proofs: record.proofs,
           undelivered: record.undelivered,
+          ...(record.runId ? { runId: record.runId } : {}),
+          ...(record.producedAt ? { producedAt: record.producedAt } : {}),
           trace,
           ...(checks.length ? { checks } : {}),
           machineAttention: record.machineAttention ?? 0,
@@ -473,7 +478,6 @@ export async function keptChecks(
   }
   return out;
 }
-
 
 /** Docs gate: a slice that declares documentation (a docs/ touchpoint)
  *  must have LANDED it — the engine's obligation check runs against the

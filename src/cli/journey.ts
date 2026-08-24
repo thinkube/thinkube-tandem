@@ -26,6 +26,7 @@ import { knowledgeOf } from "../derive/knowledge";
 import { factsOf } from "../run/facts";
 import { Forge, forgeFor } from "../dispatch/forge";
 import { execFile } from "node:child_process";
+import type { Delivery } from "../core/schema";
 
 interface Args {
   asks: string;
@@ -119,6 +120,36 @@ async function forgeOf(repoRoot: string): Promise<Forge | undefined> {
       return (await res.json()) as unknown;
     },
   });
+}
+
+/**
+ * The closing report's own decision, pure: which delivery is being
+ * reported, and whether it is the outcome of the run that just finished.
+ *
+ * A space can hold a delivery an EARLIER run left behind — the run just
+ * watched may have refused before dispatch, or delivered nothing at all.
+ * Printing the newest delivery's proofs as "this run's outcome" without
+ * checking whose run produced it reports a stranger's work as this run's.
+ * So the report always names the run that produced what it is showing,
+ * and says so plainly when that differs from the run just watched.
+ */
+export function closingReportOf(deliveries: readonly Delivery[], justFinishedRunId: string): string {
+  const delivered = deliveries[deliveries.length - 1];
+  if (!delivered) return "no delivery was produced\n";
+  const produced =
+    delivered.runId && delivered.producedAt
+      ? `run ${delivered.runId} — produced ${delivered.producedAt}`
+      : "produced by a run this space did not record";
+  const stale = delivered.runId !== undefined && delivered.runId !== justFinishedRunId;
+  const heading = stale
+    ? `this delivery is from an earlier run, not the one just finished — ${produced}\n`
+    : `${produced}\n`;
+  return (
+    heading +
+    (delivered.withheld
+      ? `withheld: ${delivered.withheld}\n`
+      : `delivered — ${delivered.proofs.length} proof(s)${delivered.undelivered?.length ? `, ${delivered.undelivered.length} promise(s) undelivered` : ""}\n`)
+  );
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -251,14 +282,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   const delivered = session.space.deliveries[session.space.deliveries.length - 1];
-  process.stdout.write(
-    `\n── ${args.space} ──\n` +
-      (!delivered
-        ? "no delivery was produced\n"
-        : delivered.withheld
-          ? `withheld: ${delivered.withheld}\n`
-          : `delivered — ${delivered.proofs.length} proof(s)${delivered.undelivered?.length ? `, ${delivered.undelivered.length} promise(s) undelivered` : ""}\n`),
-  );
+  const justFinishedRunId = session.runState?.view()?.runId ?? "";
+  process.stdout.write(`\n── ${args.space} ──\n` + closingReportOf(session.space.deliveries, justFinishedRunId));
   return delivered && !delivered.withheld ? 0 : 1;
 }
 

@@ -74,7 +74,15 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, apart from the next run of this cut
+  // One reading of the run's clock mints both facts: the id heading this
+  // run's rows in the log, and the produced-at stamp its delivery carries.
+  // Two separate reads could straddle a clock tick and name two moments as
+  // if they were one.
+  const now = deps.now ?? Date.now;
+  const producedAtMs = now();
+  const producedAt = new Date(producedAtMs).toISOString();
+  const runId = `${tep}@${producedAtMs.toString(36)}`; // one run's rows, apart from the next run of this cut
+  st.setRunId(runId);
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
@@ -102,17 +110,8 @@ export async function dispatchTep(
    * each is a defect of the machine.
    */
   const MACHINE_ATTENTION = new Set([
-    "watchdog",
-    "crash",
-    "run-lock",
-    "setup",
-    "worktree",
-    "refresh-conflict",
-    "plan-validation",
-    "plan-roles",
-    "signature-drift",
-    "gate-infra",
-    "window-reload",
+    "watchdog", "crash", "run-lock", "setup", "worktree", "refresh-conflict",
+    "plan-validation", "plan-roles", "signature-drift", "gate-infra", "window-reload",
   ]);
   let machineAttention = 0;
 
@@ -129,7 +128,7 @@ export async function dispatchTep(
     detail: string;
   }): void => {
     if (MACHINE_ATTENTION.has(entry.trigger)) machineAttention++;
-    if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry });
+    if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry }, now);
   };
 
   const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
@@ -566,9 +565,7 @@ export async function dispatchTep(
           failWith(u.id, `crashed: ${why.split("\n")[0].slice(0, 200)}`);
           await finishUnit(u.id, u.slice, false);
         })
-        .finally(() => {
-          inflight.delete(u.id);
-        });
+        .finally(() => inflight.delete(u.id));
       inflight.set(u.id, p);
     }
     if (inflight.size === 0) break;
@@ -590,6 +587,8 @@ export async function dispatchTep(
     sessionOf: (unit: string) => sessions.get(unit),
     worker,
     machineAttention: () => machineAttention,
+    runId,
+    producedAt,
   });
   } finally {
     watch.stop();

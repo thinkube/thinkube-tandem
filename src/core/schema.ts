@@ -174,6 +174,14 @@ export interface Delivery {
   id: string;
   cutId: string;
   branch: string;
+  /** The run that produced this delivery — the same id that heads that
+   *  run's rows in the space's run log. Always minted by the gate; absent
+   *  only on a record from before this field existed, which stays readable
+   *  and is never read as the newest run's. */
+  runId?: string;
+  /** When that run produced this delivery (ISO timestamp), read from the
+   *  same clock reading that minted `runId` — one moment names both. */
+  producedAt?: string;
   proofs: Proof[];
   /** The delivery's home on the forge (pull request URL). */
   url?: string;

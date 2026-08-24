@@ -89,6 +89,9 @@ export async function dispatchScopePlan(args: {
         spaceName: args.spaceName,
         storeDir: deps.storeDir,
         supervisorRound: runReadRound,
+        // The session's own clock reaches the run: a delivery's produced-at
+        // and the acceptedAt later stamped on it come from the one source.
+        now: () => new Date(deps.now()).getTime(),
         ...(sc === "" && args.prepare
           ? { prepare: args.prepare }
           : deps.prepareCommand

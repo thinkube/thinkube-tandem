@@ -68,20 +68,30 @@ export class RunState {
   /** What the door judged: footprints and order, kept so the plan can be
    *  re-judged against a changed door without running anything. */
   plan?: { handle: string; criterionIds?: string[]; units: { role?: string; footprint: string[]; consumes?: string[] }[] }[];
+  /** This run's own id — the same id that will land on the delivery it
+   *  mints, so the person watching the run can match it against the report. */
+  private _runId?: string;
 
   constructor(private onChange: () => void) {}
 
   /** A finished run, read back from disk: the same state, with nothing
    *  live in it — no aborts to cancel and nobody left to answer. */
   static from(
-    record: { units: RunUnitView[]; logs: string[]; stepLogs: Record<string, string[]> },
+    record: { units: RunUnitView[]; logs: string[]; stepLogs: Record<string, string[]>; runId?: string },
     onChange: () => void,
   ): RunState {
     const s = new RunState(onChange);
     for (const u of record.units) s.units.set(u.id, { ...u, question: undefined });
     s.logs = [...record.logs];
     s.stepLogs = new Map(Object.entries(record.stepLogs).map(([k, v]) => [k, [...v]]));
+    s._runId = record.runId;
     return s;
+  }
+
+  /** Name this run with the id that will land on its delivery. */
+  setRunId(id: string): void {
+    this._runId = id;
+    this.onChange();
   }
 
   seed(
@@ -201,12 +211,15 @@ export class RunState {
     parked: { unitId: string; question: string }[];
     /** How many lines each step holds — the surface pages them on demand. */
     logCounts: Record<string, number>;
+    /** This run's own id, once named — the same id its delivery will carry. */
+    runId?: string;
   } {
     return {
       units: [...this.units.values()],
       logs: this.logs.slice(-40),
       logCounts: Object.fromEntries([...this.stepLogs].map(([k, v]) => [k, v.length])),
       parked: [...this.parked.entries()].map(([unitId, p]) => ({ unitId, question: p.question })),
+      ...(this._runId ? { runId: this._runId } : {}),
     };
   }
 }
