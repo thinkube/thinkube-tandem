@@ -81,7 +81,6 @@ export function buildWorkerPrompt(
   unit: SchedUnit,
   specNumber: string,
   context?: {
-    specBody?: string;
     sliceBody?: string;
     testConvention?: string;
     /** SP-12: the repo-declared, non-mutating build-and-test command a CODE-author runs to
@@ -99,9 +98,9 @@ export function buildWorkerPrompt(
      *  Rendered VERBATIM under the `EXAMPLE TEST` marker into a `role: "test"` prompt ONLY; omitted
      *  entirely (block + marker) when absent/blank, and NEVER rendered for a code unit. */
     exampleTest?: string;
-    /** Full-intention threading (context tranche, 2026-07-14): the parent TEP body, rendered
-     *  VERBATIM for BOTH roles as "THE INTENT — the north star". Workers were starved of the
-     *  why behind their slice; the TEP is the artifact that carries it. */
+    /** Full-intention threading: the parent TEP body, rendered VERBATIM for BOTH roles, once,
+     *  as this run's intent. Workers were starved of the why behind their slice; the TEP is
+     *  the artifact that carries it. */
     tepBody?: string;
     /** Full-intention threading: every SIBLING execution unit's `note`, labeled by the note's
      *  author role, so a code worker knows what the test-author will assert and a test worker
@@ -256,13 +255,13 @@ export function buildWorkerPrompt(
           `- Never run package managers or build/test commands (\`npm install\`, \`npm test\`, \`tsc\`, …). The worktree has no toolchain for you by design — \`verify\` is the whole feedback loop, and reaching for these is denied.\n`
         : `- The held-out \`acceptance/\` probes are graded by the closing gate, not by you: do not build or run them.\n`)
     : "";
-  // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
-  // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
-  // reach.
+  // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there.
+  // Embed the TEP + slice so it has full context inline rather than hunting the filesystem for a
+  // spec it cannot reach.
   //
-  // FULL SPEC FOR BOTH ROLES (context tranche, 2026-07-14 — deliberately REVERSING the SP-6 AC1
+  // FULL CONTEXT FOR BOTH ROLES (context tranche, 2026-07-14 — deliberately REVERSING the SP-6 AC1
   // "exam held out" doctrine for code units): the `stripAcceptanceCriteria` call is REMOVED for
-  // code roles, so a code worker now reads the FULL spec body INCLUDING the acceptance criteria.
+  // code roles, so a code worker now reads the FULL slice body INCLUDING the acceptance criteria.
   // WHY: across every observed run there were ZERO cases of rubric-gaming (a coder optimising to
   // the checkbox text instead of the behaviour) — while context STARVATION failures repeated
   // (workers building to a guessed intent and missing criteria they were never shown). The grade
@@ -273,19 +272,15 @@ export function buildWorkerPrompt(
   // from code workers, implementation source from test workers.
   const viewOf = (body: string): string =>
     (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
-  const intentSpec = viewOf(context?.specBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const specBlock = intentSpec
-    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
-    : "";
   const sliceBlock = intentSlice
     ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
     : "";
-  // Full-intention threading (context tranche): the parent TEP — the WHY behind the spec —
-  // rendered verbatim for BOTH roles. The spec approximates the TEP; when they diverge the
-  // TEP is the star the delivery is eventually judged against (the intent check).
+  // Full-intention threading (context tranche): the parent TEP — the WHY behind the slice —
+  // rendered verbatim for BOTH roles, once, as this run's intent. When the slice and the TEP
+  // diverge the TEP is the star the delivery is eventually judged against (the intent check).
   const tepBlock = context?.tepBody?.trim()
-    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${context.tepBody.trim()}\n`
+    ? `\n──── THIS RUN'S INTENT (the parent TEP this slice implements) ────\n${context.tepBody.trim()}\n`
     : "";
   // Sibling awareness (context tranche): every sibling unit's task note, labeled by its
   // author role — a code worker sees what the test-author will assert; a test worker sees
@@ -311,13 +306,13 @@ export function buildWorkerPrompt(
   // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
   // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
   const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
-  const hasCtx = specBlock || sliceBlock;
+  const hasCtx = tepBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
     `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
     (hasCtx
-      ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
-      : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+      ? `Your working directory holds the code, not the thinking space; your context is embedded below rather than left for you to find.\n`
+      : `(Full context was not provided for this dispatch; work from the footprint and any note above.)\n`) +
     `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +
     contractBlock +
@@ -331,7 +326,6 @@ export function buildWorkerPrompt(
     workspaceBlock +
     consumesBlock +
     tepBlock +
-    specBlock +
     sliceBlock +
     siblingBlock +
     `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +

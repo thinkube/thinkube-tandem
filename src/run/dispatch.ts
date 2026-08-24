@@ -205,7 +205,7 @@ export async function dispatchTep(
     if (back.length) log(`${tep}: ${back.length} check(s) restored from the delivery record`);
   }
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
-  const specBody = renderTepBody(space, cut);
+  const tepBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
@@ -286,8 +286,7 @@ export async function dispatchTep(
 
     const baseBrief =
       buildWorkerPrompt(next, tep, {
-        specBody,
-        tepBody: specBody,
+        tepBody,
         cwd: tree,
         testConvention:
           deps.testConvention ??
