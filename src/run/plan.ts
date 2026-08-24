@@ -268,6 +268,10 @@ export async function writeDeliveryRecord(
     tep: string;
     branch: string;
     baseSha: string;
+    /** The run that produced this delivery, and the moment it did — the
+     *  injected clock's own value, carried verbatim. */
+    runId: string;
+    producedAt: string;
     proofs: Proof[];
     undelivered: string[];
     verifs: AcVerification[];
@@ -311,6 +315,8 @@ export async function writeDeliveryRecord(
           tep: record.tep,
           branch: record.branch,
           baseSha: record.baseSha,
+          runId: record.runId,
+          producedAt: record.producedAt,
           proofs: record.proofs,
           undelivered: record.undelivered,
           trace,

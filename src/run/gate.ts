@@ -50,6 +50,10 @@ export interface GateContext {
   space: Space;
   cut: Cut;
   deps: DispatchDeps;
+  /** The run's identity and the moment it produced its work — stamped onto
+   *  every delivery this gate constructs, opened or withheld. */
+  runId: string;
+  producedAt: string;
   sliceProbes: Map<string, string[]>;
   sliceCommitted: Set<string>;
   checkOf: Map<string, string>;
@@ -326,7 +330,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
-      await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults });
+      await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, runId: g.runId, producedAt: g.producedAt, proofs, undelivered, verifs, acResults });
     undelivered.push(...docsObligations(slices, worktree));
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
@@ -336,6 +340,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       id: `delivery-${tep}`,
       cutId: cut.id,
       branch,
+      runId: g.runId,
+      producedAt: g.producedAt,
       proofs,
       withheld: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
       ...(undelivered.length ? { undelivered } : {}),
@@ -376,6 +382,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       tep,
       branch,
       baseSha: g.baseSha,
+      runId: g.runId,
+      producedAt: g.producedAt,
       proofs,
       undelivered,
       verifs,
@@ -401,6 +409,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         id: `delivery-${tep}`,
         cutId: cut.id,
         branch,
+        runId: g.runId,
+        producedAt: g.producedAt,
         proofs,
         ...(observations.length ? { observations } : {}),
         withheld:
@@ -435,7 +445,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         branch,
         title: `Tandem delivery: ${tep}`,
         body:
-          `Delivered by the tandem run for ${tep}.\n\n` +
+          `Delivered by the tandem run for ${tep}.\n` +
+          `run: ${g.runId}\n` +
+          `produced at: ${g.producedAt}\n\n` +
           (observations.length
             ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
             : "") +
@@ -452,6 +464,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     id: `delivery-${tep}`,
     cutId: cut.id,
     branch,
+    runId: g.runId,
+    producedAt: g.producedAt,
     proofs,
     ...(observations.length ? { observations } : {}),
     ...(url ? { url } : {}),

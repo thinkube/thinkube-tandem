@@ -6,14 +6,14 @@
  * refuses a blinded author any test-shaped path. Each slice's coder is
  * graded by a black-box VERIFY ORACLE over the committed base plus its own
  * files; the oracle's green — never the worker's claim — completes a unit
- * (MANDATORY-GREEN). Every failure has
- * an owner and the owner gets the repair loop; a stopped run stops every
- * limb; ready units run concurrently on the engine's frontier; a finished
- * slice is committed on the branch. Every failure lands as an artifact —
- * UNDELIVERED, containment, red proofs — never as silence.
+ * (MANDATORY-GREEN). Every failure has an owner and the owner gets the
+ * repair loop; a stopped run stops every limb; ready units run concurrently
+ * on the engine's frontier; a finished slice is committed on the branch.
+ * Every failure lands as an artifact — UNDELIVERED, containment, red
+ * proofs — never as silence.
  */
 import * as path from "node:path";
-import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
+import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
 import { buildWorkerPrompt } from "../engine/core/preflight";
@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, sliceBookkeeping } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -46,24 +46,19 @@ import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, testerStanza } from "./brief";
-import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
-import type { DispatchDeps } from "./deps";
-export type { DispatchDeps } from "./deps";
+import type { DispatchDeps, DispatchOutcome } from "./deps";
+export type { DispatchDeps, DispatchOutcome } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
-export interface DispatchOutcome {
-  delivery?: Delivery;
-  refusals: string[];
-  undelivered: string[];
-  url?: string;
-  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
-  proofAnchors?: (ProofAnchor & { criterionId: string })[];
-}
+/** Mints a run's identity: contains the TEP it was minted for, and varies
+ *  with `at` so two runs of the same TEP never share an id. */
+export function newRunId(tep: string, at: number): string { return `${tep}@${at.toString(36)}`; }
+
 export async function dispatchTep(
   deps: DispatchDeps,
   space: Space,
@@ -74,7 +69,11 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const runId = `${tep}@${Date.now().toString(36)}`; // one run's rows, apart from the next run of this cut
+  // Minted once here and carried onto every delivery this run produces,
+  // opened or withheld. A caller that already minted one (a press spanning
+  // several scopes) hands it in on `deps`.
+  const producedAt = deps.producedAt ?? deps.now?.() ?? new Date().toISOString();
+  const runId = deps.runId ?? newRunId(tep, Date.parse(producedAt));
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
@@ -586,6 +585,7 @@ export async function dispatchTep(
     );
   return await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
+    runId, producedAt,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

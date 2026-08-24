@@ -12,6 +12,18 @@ import type { WorkerModelConfig } from "../engine/workerModel";
 import type { runUnitWorker, WorkerOutcome } from "./worker";
 import type { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
+import type { Delivery, ProofAnchor } from "../core/schema";
+
+/** What a run hands back: the delivery it reached, what it refused, what it
+ *  could not deliver, and where each criterion's proof went on living. */
+export interface DispatchOutcome {
+  delivery?: Delivery;
+  refusals: string[];
+  undelivered: string[];
+  url?: string;
+  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
+  proofAnchors?: (ProofAnchor & { criterionId: string })[];
+}
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -73,5 +85,15 @@ export interface DispatchDeps {
   /** Injectable for tests: replaces the check re-author (challenge and repair). */
   author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
+  /** The injectable clock: an ISO timestamp, read fresh at mint time. Every
+   *  delivery this run produces carries this value verbatim as its
+   *  producedAt — never reformatted. */
+  now?: () => string;
+  /** Set by a caller that already minted this run's identity (one press
+   *  spanning several scopes) — used as-is instead of minting a fresh one. */
+  runId?: string;
+  /** Set alongside `runId`: the moment that run was minted, used as-is
+   *  instead of reading the clock again. */
+  producedAt?: string;
 }
 

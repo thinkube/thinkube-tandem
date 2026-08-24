@@ -9,7 +9,7 @@ import { Cut, Delivery, Space } from "../core/schema";
 import { SessionDeps } from "../surfaces/session";
 import { tepSlices } from "./adapter";
 import { qualifyProbes, qualifySpace, ScopePlan } from "./scopes";
-import { dispatchTep, DispatchOutcome } from "../run/dispatch";
+import { dispatchTep, DispatchOutcome, newRunId } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { runReadRound } from "../derive/round";
 
@@ -46,6 +46,12 @@ export async function dispatchScopePlan(args: {
   const deps = args.deps;
   const dispatch = deps.dispatch ?? dispatchTep;
   let last: DispatchOutcome | undefined;
+  // One press spanning several scopes names ONE run: minted once, here,
+  // before any scope dispatches — every scope's delivery carries this same
+  // id and stamp, so sibling reports of one piece of work never read as
+  // three different runs.
+  const producedAt = deps.now();
+  const runId = newRunId(args.cut.tepId ?? args.cut.id, Date.parse(producedAt));
   for (const sc of order) {
     const target =
       sc === ""
@@ -89,6 +95,8 @@ export async function dispatchScopePlan(args: {
         spaceName: args.spaceName,
         storeDir: deps.storeDir,
         supervisorRound: runReadRound,
+        runId,
+        producedAt,
         ...(sc === "" && args.prepare
           ? { prepare: args.prepare }
           : deps.prepareCommand

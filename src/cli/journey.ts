@@ -237,13 +237,18 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (!(await step("signing and building", () => session.build()))) return 1;
 
   const delivered = session.space.deliveries[session.space.deliveries.length - 1];
+  const runNote = delivered
+    ? delivered.runId && delivered.producedAt
+      ? ` (run ${delivered.runId} — produced at ${delivered.producedAt})`
+      : " (run was not recorded)"
+    : "";
   process.stdout.write(
     `\n── ${args.space} ──\n` +
       (!delivered
         ? "no delivery was produced\n"
         : delivered.withheld
-          ? `withheld: ${delivered.withheld}\n`
-          : `delivered — ${delivered.proofs.length} proof(s)${delivered.undelivered?.length ? `, ${delivered.undelivered.length} promise(s) undelivered` : ""}\n`),
+          ? `withheld${runNote}: ${delivered.withheld}\n`
+          : `delivered${runNote} — ${delivered.proofs.length} proof(s)${delivered.undelivered?.length ? `, ${delivered.undelivered.length} promise(s) undelivered` : ""}\n`),
   );
   return delivered && !delivered.withheld ? 0 : 1;
 }

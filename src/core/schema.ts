@@ -175,6 +175,13 @@ export interface Delivery {
   cutId: string;
   branch: string;
   proofs: Proof[];
+  /** The run that produced this delivery — minted once per dispatch and
+   *  carried onto everything it produces, opened or withheld. Absent on a
+   *  delivery from before run stamping existed. */
+  runId?: string;
+  /** When the run that produced this delivery ran, from the injected clock.
+   *  Absent on a delivery from before run stamping existed. */
+  producedAt?: string;
   /** The delivery's home on the forge (pull request URL). */
   url?: string;
   /** Declared gaps from the run's workers — honest, never hidden. */

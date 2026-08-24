@@ -192,12 +192,14 @@ export async function main(argv: readonly string[]): Promise<number> {
   );
 
   const d = outcome.delivery;
+  const runNote = (dd: NonNullable<typeof d>): string =>
+    dd.runId && dd.producedAt ? ` (run ${dd.runId} — produced at ${dd.producedAt})` : " (run was not recorded)";
   process.stdout.write(
     `\n── ${cut.tepId ?? cut.id} ──\n` +
       (d?.withheld
-        ? `withheld: ${d.withheld}\n`
+        ? `withheld${runNote(d)}: ${d.withheld}\n`
         : d
-          ? `delivered${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
+          ? `delivered${runNote(d)}${d.url ? `: ${d.url}` : " (no forge configured — the branch holds the work)"}\n` +
             `proofs: ${d.proofs.filter((p) => p.verdict === "green").length} green, ${d.proofs.filter((p) => p.verdict !== "green").length} not\n` +
             d.proofs.filter((p) => p.verdict !== "green").map((p) => `  ✗ ${p.label}\n`).join("")
           : `no delivery\n`) +

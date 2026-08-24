@@ -139,7 +139,7 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
  * Fold the latest snapshot of every author into ONE space. Deterministic
  * and total; contradictory decisions surface as a question.
  */
-function foldSpaces(latest: SnapshotRecord[]): Space {
+export function foldSpaces(latest: SnapshotRecord[]): Space {
   if (latest.length === 0) return emptySpace();
   if (latest.length === 1) return latest[0].space;
 
@@ -201,9 +201,29 @@ function foldSpaces(latest: SnapshotRecord[]): Space {
       if (!merged.impacts.some((x) => x.id === im.id)) merged.impacts.push(im);
     }
     for (const d of space.deliveries) {
-      const existing = merged.deliveries.find((x) => x.id === d.id);
-      if (!existing) merged.deliveries.push(d);
-      else if (!existing.acceptedAt && d.acceptedAt) existing.acceptedAt = d.acceptedAt;
+      const idx = merged.deliveries.findIndex((x) => x.id === d.id);
+      if (idx < 0) {
+        merged.deliveries.push(d);
+        continue;
+      }
+      const existing = merged.deliveries[idx];
+      // The acceptance fact is never lost to a later run's report: it
+      // carries forward onto whichever record of the two ends up kept.
+      const acceptedAt = existing.acceptedAt ?? d.acceptedAt;
+      // Between two records of the same delivery id, the one whose run
+      // produced it LAST wins — never the first record's copy, so the
+      // folded space never presents an older run's report as current. A
+      // stamped delivery beats an unstamped one with the same id; between
+      // two stamped deliveries, the later producedAt wins.
+      const newer =
+        existing.producedAt && d.producedAt
+          ? d.producedAt > existing.producedAt
+            ? d
+            : existing
+          : d.producedAt && !existing.producedAt
+            ? d
+            : existing;
+      merged.deliveries[idx] = acceptedAt ? { ...newer, acceptedAt } : newer;
     }
   }
 
