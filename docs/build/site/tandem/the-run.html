@@ -147,23 +147,33 @@ the implementation-in-progress does not exist. Blinding is structural,
 not a promise in a prompt. Finished probes persist in a durable store.</p>
 </li>
 <li>
+<p><strong>Roles own paths.</strong> Every test-shaped path a promise lands in — an
+existing test the change tightens, a standing check that is itself the
+deliverable — belongs to the tester,
+who brings it under the criteria before the code exists, and records
+every choice the contract forced (a name, a literal, a rule) as a
+<code>DECISION</code>. The coder&#8217;s footprint holds production paths only; it never
+reads or writes a test. A plan that hands a coder a test is refused
+before any worker starts.</p>
+</li>
+<li>
 <p><strong>The coder builds against the brief</strong>, with your ask verbatim as the
-north star and your decisions in force attached. It has a real
-<code>verify</code> tool: an isolated runner overlays its current work with the
-held-out probes and returns per-criterion PASS/FAIL with evidence.</p>
+north star, your decisions in force attached, and the tester&#8217;s
+decisions as contract. It has a real <code>verify</code> tool: an isolated runner
+overlays its current work with the held-out probes and returns
+per-criterion PASS/FAIL with evidence.</p>
 </li>
 <li>
 <p><strong>Green is decided by the oracle, not the worker.</strong> A unit completes
 only when the checks are green for its current state
 (MANDATORY-GREEN). Not green routes a bounded rework carrying the
-oracle&#8217;s evidence; a unit already green completes without spending a
-worker at all (grade-first).</p>
+oracle&#8217;s evidence.</p>
 </li>
 <li>
 <p><strong>A supervisor with both sides of the wall</strong> audits whether the brief
 contains every fact the checks require — before the coder spends
-anything, and again when rounds stall. A disclosure is by definition a
-contract gap and is recorded in the defect ledger.</p>
+anything, and again when the same failure repeats. A disclosure is by
+definition a contract gap and is recorded in the defect ledger.</p>
 </li>
 <li>
 <p><strong>Containment.</strong> A worker that writes outside its declared footprint has
@@ -174,8 +184,11 @@ the stray paths reverted and the run halts, named.</p>
 <code>maxConcurrent</code> setting); slices commit on the branch as they finish.</p>
 </li>
 <li>
-<p><strong>Parked workers.</strong> A worker that genuinely needs you parks with a
-question; answer in the run view and it resumes.</p>
+<p><strong>A worker&#8217;s question goes to the machine first.</strong> The supervisor, who
+sees the brief, the checks and the repository, answers whatever the run
+itself can decide and the worker resumes. Only a question about intent
+— a choice among behaviours your asks do not decide — reaches you, in
+your own words; you are never asked about files, names or tools.</p>
 </li>
 </ul>
 </div>
@@ -186,10 +199,18 @@ question; answer in the run view and it resumes.</p>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The closing gate re-runs every probe from a clean environment, the
-honesty scan reads the delivered files for self-declared deferrals, and
-the branch becomes a pull request whose description carries the proofs
-and every UNDELIVERED line. The machine face — the structured
-verification trace — persists in the store beside the space.</p>
+honesty scan reads the delivered files for self-declared deferrals, the
+repository&#8217;s own suite runs, and the branch becomes a pull request whose
+description opens with the run that produced it and when, then carries
+the proofs, the tester&#8217;s decisions and every UNDELIVERED line. The
+delivery report opens the same way: the run&#8217;s id and the moment it was
+produced, above its first section, so an older run&#8217;s report is never
+read as the one that just finished — a delivery with no run stamp says
+so, instead of leaving the line out. A red suite is never delivered: work
+that leaves the suite red is withheld — the branch keeps it, the record
+keeps the verdict — rather than handed over for you to finish. The
+machine face — the structured verification trace — persists in the store
+beside the space.</p>
 </div>
 </div>
 </div>

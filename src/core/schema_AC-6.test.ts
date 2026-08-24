@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { dispatchTep } from "../run/dispatch";
+import { execFileSync } from "node:child_process";
+import { dispatchTep, runStamp } from "../run/dispatch";
+import { closeGate } from "../run/gate";
 import { RunState } from "../run/state";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "./schema";
@@ -60,6 +62,77 @@ test("no source file in the repository exceeds its module-size limit after this 
   walk(path.join(repo, "src"));
   if (fs.existsSync(path.join(repo, "webview", "map", "src"))) walk(path.join(repo, "webview", "map", "src"));
   assert.deepEqual(offenders, []);
+
+  // Staying under the limit is only half the promise. A file can shed lines
+  // by dropping the seam its readers need, which is the one way of passing
+  // the size rule that the size rule must not reward. So the two files this
+  // promise lands in are driven here, not merely counted: dispatch.ts must
+  // still serve the mint, and gate.ts must still be the module that carries
+  // a stamp onto a delivery.
+  const at = Date.parse("2026-08-24T10:00:00.000Z");
+  const stamp = runStamp("TEP-size", at);
+  assert.equal(stamp.id.includes("TEP-size"), true, `dispatch.ts no longer serves the mint: ${JSON.stringify(stamp)}`);
+  assert.equal(stamp.at, "2026-08-24T10:00:00.000Z", `dispatch.ts's mint lost the produced-at time: ${JSON.stringify(stamp)}`);
+});
+
+test("the closing gate carries the stamp it is given onto the delivery it builds", async () => {
+  // gate.ts is driven, never merely named. A reference that only asks
+  // whether the export is a function executes no line of the module's body,
+  // so it is satisfied by a stub as readily as by the real gate — the exact
+  // reading the wiring trace exists to refuse. This runs the gate over a
+  // real tree and reads the stamp off what it returns.
+  const shape = SHAPES[0] as RepoShape;
+  const worktree = repoInShape(shape);
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-store-"));
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-gate-stamp" };
+  const stamp = runStamp(cut.tepId, Date.parse("2026-08-24T10:00:00.000Z"));
+  const state = new RunState(() => {});
+  // The run's own exec reports a command's exit code; it never throws. A
+  // stub that throws would end the drive at the first `git push` to a
+  // fixture with no remote, before the gate ever built its delivery.
+  const exec = async (cmd: string, args: string[], cwd: string) => {
+    try {
+      const out = execFileSync(cmd, args, { cwd, encoding: "utf8" as const, stdio: ["ignore", "pipe", "pipe"] });
+      return { code: 0, out, err: "" };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string; stderr?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "", err: e.stderr ?? String(err) };
+    }
+  };
+
+  const outcome = await closeGate({
+    tep: cut.tepId,
+    runId: stamp.id,
+    producedAt: stamp.at,
+    branch: `tandem/${cut.tepId}`,
+    baseSha: (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim(),
+    worktree,
+    slices: tepSlices({ space, cut, spaceName: "delivers" }),
+    space,
+    cut,
+    deps: { repoRoot: worktree, model: "sonnet", suiteCommand: ["node", "-e", "process.exit(0)"], storeDir: store },
+    sliceProbes: new Map(),
+    sliceCommitted: new Set(),
+    checkOf: new Map(),
+    undelivered: [],
+    rulings: [],
+    decisions: [],
+    exec,
+    boundedExec: async () => ({ code: 0, output: "" }),
+    suiteExec: async () => ({ code: 0, output: "" }),
+    state,
+    sessionOf: () => undefined,
+    worker: (async () => ({ ok: true })) as never,
+    machineAttention: () => 0,
+    log: () => {},
+    defect: () => {},
+  } as never);
+
+  const d = outcome.delivery as unknown as { runId?: string; producedAt?: string } | undefined;
+  assert.ok(d, "the closing gate produced no delivery to carry a stamp");
+  assert.equal(d!.runId, stamp.id, `gate.ts did not carry the run id onto the delivery: ${JSON.stringify(d)}`);
+  assert.equal(d!.producedAt, stamp.at, `gate.ts did not carry the produced-at time onto the delivery: ${JSON.stringify(d)}`);
 });
 
 test("one run's identity is spelled identically in the run log heading, the defect rows and the delivery", async () => {

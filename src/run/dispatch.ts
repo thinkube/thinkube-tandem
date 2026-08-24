@@ -33,7 +33,7 @@ import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
 import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, runStamp, seedUnitViews, standingSlices } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, mintRunStamp, plannedByPending, seedUnitViews, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -51,7 +51,7 @@ import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
-export { runStamp } from "./plan";
+export const runStamp = (tep: string, nowMs: number): { id: string; at: string } => mintRunStamp(tep, nowMs); // one mint the log heading, the defect rows and the delivery all read; the rule lives in ./plan, which keeps this file inside the size gate
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
@@ -75,7 +75,7 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  const stamp = runStamp(tep, Date.now()), runId = stamp.id; // one mint — the log, the defects and the delivery all read this
+  const stamp = runStamp(tep, Date.now()), runId = stamp.id;
   const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
   const branch = `tandem/${runName}`;
   const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);

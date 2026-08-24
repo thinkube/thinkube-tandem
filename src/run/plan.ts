@@ -25,7 +25,7 @@ import * as fsp from "node:fs/promises";
  * there to every reader — the run log heading, the defect rows, the
  * delivery — so none of them can drift into a different spelling of it.
  */
-export function runStamp(tep: string, nowMs: number): { id: string; at: string } {
+export function mintRunStamp(tep: string, nowMs: number): { id: string; at: string } {
   return { id: `${tep}@${nowMs.toString(36)}`, at: new Date(nowMs).toISOString() };
 }
 
