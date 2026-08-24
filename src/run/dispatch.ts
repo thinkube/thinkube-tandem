@@ -16,7 +16,7 @@ import * as path from "node:path";
 import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { frontier } from "./frontier";
-import { buildWorkerPrompt } from "../engine/core/preflight";
+import { buildWorkerPrompt, preflightProvisionFailures } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
 import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
@@ -209,6 +209,30 @@ export async function dispatchTep(
   // brief under a single field name (buildWorkerPrompt's `tepBody`) and rendered under
   // one heading — no separate spec-body copy of the same text is threaded alongside it.
   const tepBody = renderTepBody(space, cut);
+  // The provisions half of the RUN PREFLIGHT, asked BEFORE any worker dispatches: a brief
+  // whose intent artifact, slice contract, note or footprint resolves empty starves its
+  // worker in a way that only surfaces as a red gate rounds later, at full token cost.
+  // A missing SEPARATE spec body is not among these — the TEP body is the one embedded
+  // intent artifact, so only ITS absence is a missing provision.
+  {
+    const contractOf = new Map(slices.map((s) => [s.handle, s.contract]));
+    const unitCount = new Map(slices.map((s) => [s.handle, (s.workUnits ?? []).length]));
+    const missing = preflightProvisionFailures({
+      tepBody,
+      implementsRef: cut.tepId,
+      units: dag.map((u) => ({
+        id: u.id,
+        slice: u.slice,
+        ...(u.note !== undefined ? { note: u.note } : {}),
+        footprint: u.footprint ?? [],
+        hasAuthoredUnits: (unitCount.get(u.slice) ?? 0) > 0,
+        multiUnitSlice: (unitCount.get(u.slice) ?? 0) > 1,
+        ...(contractOf.get(u.slice) !== undefined ? { sliceContract: contractOf.get(u.slice) } : {}),
+      })),
+    });
+    if (missing.length)
+      return refuse("preflight-provisions", `the run is not provisioned to dispatch:\n${missing.join("\n")}`, "gate");
+  }
   const undelivered: string[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
