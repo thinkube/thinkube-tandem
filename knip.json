@@ -2,7 +2,8 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/cli/headless.ts"
+        "src/cli/headless.ts",
+        "src/cli/journey.ts"
       ],
       "project": [
         "src/**/*.ts",
