@@ -6,7 +6,6 @@
  */
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
-import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen, renderDeliveryPage } from "../gates/render";
@@ -32,7 +31,17 @@ import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../cor
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
-import { addCheckFlow, decideQuestionFlow, panicFlow } from "./captureFlows";
+import { addCheckFlow } from "./captureFlows";
+import {
+  acceptQuestionFlow,
+  applyAllImpactsFlow,
+  decideImpactFlow,
+  panicSessionFlow,
+  rederiveSubjectsFlow,
+  refreshStalenessFlow,
+  regroundFlow,
+  subjectsOfAskFlow,
+} from "./impactFlow";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { loadLastRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
@@ -305,29 +314,12 @@ export class TandemSession {
   }
 
   /** Out-of-date promises re-derive the subject they belong to. */
-  async reground(): Promise<void> {
-    await this.refreshStaleness();
-    const staleSubjects = new Set(
-      this.space.nodes
-        .filter((n) => this.stale.has(n.id) && n.servesClaim)
-        .map((n) => (this.space.claims ?? []).find((c) => c.id === n.servesClaim)?.subjectId)
-        .filter((id): id is string => !!id),
-    );
-    if (!staleSubjects.size) return;
-    await this.rederiveSubjects([...staleSubjects]);
-    await this.refreshStaleness();
-    this.changed("Re-read the code and refreshed the out-of-date promises.");
+  reground(): Promise<void> {
+    return regroundFlow(this);
   }
 
   panic(): { ok: boolean; reason?: string } {
-    if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
-    const r = panicFlow(this.space);
-    if ("reason" in r) return { ok: false, reason: r.reason };
-    this.space = r.space;
-    this.cutNodeIds = new Set();
-    this.stale = new Set();
-    this.changed("Cleared the derived thinking — your asks are untouched; re-ground when ready.");
-    return { ok: true };
+    return panicSessionFlow(this);
   }
 
   decisionsInForce(): string[] {
@@ -341,116 +333,39 @@ export class TandemSession {
    * wording) becomes a DECISION — recorded, injected into every later
    * round, and the affected ask re-grounds under it immediately.
    */
-  async acceptQuestion(
-    questionId: string,
-    editedText?: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
-    const r = decideQuestionFlow({
-      space: this.space,
-      questionId,
-      editedText,
-      now: this.deps.now(),
-      author: this.author,
-    });
-    if ("reason" in r) return { ok: false, reason: r.reason };
-    this.space = r.space;
-    this.changed(
-      r.staged
-        ? "Decision in force — its implication is staged below; accept it to re-derive."
-        : "Decision in force.",
-    );
-    return { ok: true };
+  acceptQuestion(questionId: string, editedText?: string): Promise<{ ok: boolean; reason?: string }> {
+    return acceptQuestionFlow(this, questionId, editedText);
   }
 
   /** What a decision touches. A question raised while grounding names its
    *  subject; one captured against a sentence names the ask it came from. */
-  private subjectsOfAsk(id: string): string[] {
-    if ((this.space.subjects ?? []).some((s) => s.id === id)) return [id];
-    return [
-      ...new Set(
-        (this.space.claims ?? []).filter((c) => c.fromAsk === id).map((c) => c.subjectId),
-      ),
-    ];
+  subjectsOfAsk(id: string): string[] {
+    return subjectsOfAskFlow(this, id);
   }
 
   /** Drop the unsigned promises of these subjects, then derive them again.
    *  A promise belongs to a subject either by the claim it serves or by the
    *  subject it was ground for — both, so nothing survives as a duplicate. */
-  private async rederiveSubjects(ids: string[]): Promise<void> {
-    const subjects = new Set(ids);
-    const claimIds = new Set(
-      (this.space.claims ?? []).filter((c) => subjects.has(c.subjectId)).map((c) => c.id),
-    );
-    const signed = signedIds(this.space.cuts);
-    const goes = new Set(
-      this.space.nodes
-        .filter(
-          (n) =>
-            !signed.has(n.id) &&
-            ((n.servesClaim && claimIds.has(n.servesClaim)) ||
-              n.serves.some((sv) => subjects.has(sv))),
-        )
-        .map((n) => n.id),
-    );
-    this.space = { ...this.space, nodes: this.space.nodes.filter((n) => !goes.has(n.id)) };
-    // A cut cannot hold a promise that no longer exists.
-    for (const id of goes) this.cutNodeIds.delete(id);
-    await groundSubjectFlow(this, ids);
+  private rederiveSubjects(ids: string[]): Promise<void> {
+    return rederiveSubjectsFlow(this, ids);
   }
 
   /** Accept = ONE re-derivation of each subject the decision touches, under
    *  every decision in force; the sibling implications go with it. */
-  async decideImpact(impactId: string, accept: boolean): Promise<{ ok: boolean; reason?: string }> {
-    const im = (this.space.impacts ?? []).find((x) => x.id === impactId);
-    if (!im) return { ok: false, reason: `no staged impact '${impactId}'` };
-    if (!accept) {
-      this.space = {
-        ...this.space,
-        impacts: (this.space.impacts ?? []).filter((x) => x.id !== impactId),
-      };
-      this.changed("Dismissed — the definitions stay as they are.");
-      return { ok: true };
-    }
-    const covered = (this.space.impacts ?? []).filter((x) => x.askId === im.askId).length;
-    this.space = {
-      ...this.space,
-      impacts: (this.space.impacts ?? []).filter((x) => x.askId !== im.askId),
-    };
-    const subjects = this.subjectsOfAsk(im.askId);
-    if (!subjects.length) return { ok: false, reason: "that ask is not part of any subject" };
-    await this.rederiveSubjects(subjects);
-    this.changed(
-      `Re-derived ${subjects.length} subject(s) under every decision in force` +
-        (covered > 1 ? ` — one pass covered ${covered} accepted implications` : "") + ".",
-    );
-    return { ok: true };
+  decideImpact(impactId: string, accept: boolean): Promise<{ ok: boolean; reason?: string }> {
+    return decideImpactFlow(this, impactId, accept);
   }
 
   /** One press for every staged implication: each affected subject derives
    *  again once, five at a time, progress on its own row. */
-  async applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
-    const impacts = this.space.impacts ?? [];
-    if (!impacts.length) return { ok: false, reason: "no implications are staged" };
-    const subjects = [...new Set(impacts.flatMap((im) => this.subjectsOfAsk(im.askId)))];
-    this.space = { ...this.space, impacts: [] };
-    if (!subjects.length) return { ok: false, reason: "those asks are not part of any subject" };
-    await this.rederiveSubjects(subjects);
-    this.changed(
-      `Applied ${impacts.length} implication(s): ${subjects.length} subject(s) re-derived once each.`,
-    );
-    return { ok: true };
+  applyAllImpacts(): Promise<{ ok: boolean; reason?: string }> {
+    return applyAllImpactsFlow(this);
   }
 
-  /** A human pin — outranks the computed coupling. */
-  /** Out of date only when a file the promise lands in changed. */
-  async refreshStaleness(): Promise<void> {
-    const r = await assessCurrency(this.space, {
-      repoRoot: this.deps.round.repoRoot,
-      readCurrentStamp: this.deps.readCurrentStamp,
-      scopeDir: (scope) => this.deps.scopes?.().find((x) => x.id === scope)?.dir,
-    });
-    this.stale = r.stale;
-    this.proofDrift = r.proofDrift;
+  /** A human pin — outranks the computed coupling. Out of date only when a
+   *  file the promise lands in changed. */
+  refreshStaleness(): Promise<void> {
+    return refreshStalenessFlow(this);
   }
 
   pendingCheck: { changeId: string; text: string; kind: "probe" | "assessment" } | undefined; // proposal awaiting accept
