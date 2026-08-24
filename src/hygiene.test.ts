@@ -19,7 +19,10 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { gatedActions } from "./surfaces/phase";
 
-const repo = path.resolve(__dirname, "..");
+// __dirname is this compiled test's own directory under out-test/src/…,
+// mirroring its source location under src/ — one more ".." than the
+// source's own depth reaches the repository root from there.
+const repo = path.resolve(__dirname, "..", "..");
 const SIZE_LIMIT = 600;
 
 test(`module size: no file exceeds ${SIZE_LIMIT} lines (the imported engine is exempt)`, () => {

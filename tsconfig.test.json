@@ -2,9 +2,23 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "out-test",
+    "rootDir": ".",
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "react": ["webview/map/node_modules/react"],
+      "react/*": ["webview/map/node_modules/react/*"],
+      "react-dom": ["webview/map/node_modules/react-dom"],
+      "react-dom/*": ["webview/map/node_modules/react-dom/*"]
+    },
+    "typeRoots": ["node_modules/@types", "webview/map/node_modules/@types"]
   },
-  "include": ["src"],
+  "include": ["src", "webview/map/src"],
   "exclude": []
 }

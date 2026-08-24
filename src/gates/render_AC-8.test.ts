@@ -26,7 +26,10 @@ import { createRequire } from "node:module";
  * path webview/map/harness/buttons.tsx already uses to read this webview
  * without a browser — no fake DOM, no new rendering approach.
  */
-const mapRoot = path.resolve(__dirname, "..", "..", "webview", "map");
+// __dirname is this compiled test's own directory under
+// out-test/src/gates/, mirroring its source location under src/gates/ —
+// one more ".." than the source's own depth reaches webview/map from there.
+const mapRoot = path.resolve(__dirname, "..", "..", "..", "webview", "map");
 const fromMap = createRequire(path.join(mapRoot, "package.json"));
 
 /** Compile one webview source file to commonjs and load it, resolving its
