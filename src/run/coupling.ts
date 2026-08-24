@@ -121,8 +121,18 @@ export function orderCoupledSlices(
     for (let j = i + 1; j < slices.length; j++) {
       const a = slices[i];
       const b = slices[j];
-      const mine = production.get(a.handle) ?? [];
-      const theirs = production.get(b.handle) ?? [];
+      // Only what each slice owns ALONE. A file both of them are cleared
+      // for is shared ownership, not a coupling between them: the door's
+      // queue already serialises two units writing one file. Compared
+      // whole, a shared file was found using another shared file and
+      // reported as each slice calling into the other — "sign.ts and
+      // sign.ts call into each other's work" — and the knot that cannot
+      // be ordered refused a re-run of work that had already been built.
+      const both = new Set(
+        (production.get(a.handle) ?? []).filter((f) => (production.get(b.handle) ?? []).includes(f)),
+      );
+      const mine = (production.get(a.handle) ?? []).filter((f) => !both.has(f));
+      const theirs = (production.get(b.handle) ?? []).filter((f) => !both.has(f));
       const bUsesA = usesAcross(theirs, mine, uses);
       const aUsesB = usesAcross(mine, theirs, uses);
       // Each calling into the other cannot be ordered: whichever goes

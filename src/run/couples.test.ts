@@ -444,3 +444,34 @@ test("a reviewer that never answers is the machine's failure, not the work's", a
   assert.match(graded.observations[0], /could not grade this/);
   assert.match(graded.observations[0], /Judge it yourself/);
 });
+
+test("two slices sharing a file are not a knot", async () => {
+  // Comparing each slice's whole footprint found a SHARED file using
+  // another shared file and reported it both ways round — "sign.ts and
+  // sign.ts call into each other's work". Five such knots refused a
+  // re-run of work that had already been built and proved. A file both
+  // slices are cleared for is shared ownership; the door's queue already
+  // serialises two units writing one file.
+  const graph = mapWith({ "src/gates/sign.ts": ["src/core/schema.ts"] });
+  const shared = (handle: string) => ({
+    handle,
+    status: "ready",
+    files: ["src/gates/sign.ts", "src/core/schema.ts"],
+    workUnits: [
+      { footprint: ["src/gates/sign.ts", "src/core/schema.ts"], execution: "serial", role: "code" } as {
+        footprint: string[]; execution: string; role: string; consumes?: string[];
+      },
+    ],
+    criterionIds: [],
+  });
+  const r = await refusedBeforeDispatch({
+    slices: [shared("SL-2"), shared("SL-3")] as never,
+    space: emptySpace() as never,
+    cut: { id: "cut-1", changeIds: [] } as never,
+    repoRoot: "/nowhere",
+    graphPath: graph,
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  assert.equal(r.refusal, undefined, `sharing a file was called a knot: ${r.refusal?.refusal}`);
+});
