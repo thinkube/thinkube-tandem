@@ -170,7 +170,12 @@ export async function main(argv: readonly string[]): Promise<number> {
     storeDir: args.space,
     storageDir: path.join(args.space, ".local"),
     now: () => new Date().toISOString(),
-    author: process.env.TANDEM_AUTHOR ?? "headless",
+    // The TEP number is counted per author, and the run's branch is named
+    // for the TEP. Two spaces under one author therefore both mint number
+    // one and land on the SAME branch: the second run resumed the first's
+    // work, took its slices as standing, and inherited a plan it did not
+    // satisfy. The space names itself.
+    author: process.env.TANDEM_AUTHOR ?? path.basename(args.space),
     suiteCommand: args.suite,
     ...(args.prepare ?? told?.prepare ?? known?.prepare
       ? { prepareCommand: args.prepare ?? told?.prepare ?? known!.prepare }
