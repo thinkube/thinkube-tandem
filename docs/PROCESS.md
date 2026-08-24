@@ -120,8 +120,9 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 - **Attends:** no.
 
 ### G8 — Accept (the person)
-- **Evidence:** the delivery page: what was promised, what was proven, what
-  was not, and where each proof lives.
+- **Evidence:** the delivery page: the run that produced it and the moment it
+  was produced, then what was promised, what was proven, what was not, and
+  where each proof lives.
 - **Passes when:** the person accepts. The merge follows.
 - **Fails →** reject returns the cut to `signed`; it can run again.
 - **Attends:** yes — the second and last designed attention point.

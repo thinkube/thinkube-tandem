@@ -22,6 +22,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { emptySpace, Space } from "./schema";
+import type { Delivery } from "./schema";
 
 export interface SnapshotRecord {
   at: string;
@@ -136,6 +137,36 @@ function rewriteIds(space: Space, ren: Map<string, string>): Space {
 }
 
 /**
+ * Between two records of the SAME delivery, the one whose run produced it
+ * LAST stands. A stamped delivery beats an unstamped one with the same id;
+ * between two stamped, the later produced-at wins; between two unstamped,
+ * the one already held stands.
+ *
+ * The person's own decisions — acceptance and refusal — are facts about the
+ * delivery, not about the run that reported it, so they ride onto whichever
+ * copy wins rather than being lost with the copy that does not.
+ *
+ * It is one function because two surfaces settle the same pair: the fold
+ * across authors' records, and the session's `onDelivery` as each run
+ * reports. Two copies of this rule drifted, and the same delivery read
+ * differently depending on which surface you looked at.
+ */
+export function settleDelivery(held: Delivery, incoming: Delivery): Delivery {
+  const wins =
+    incoming.producedAt && held.producedAt
+      ? incoming.producedAt > held.producedAt
+      : !!incoming.producedAt || !held.producedAt;
+  const winner = wins ? incoming : held;
+  const acceptedAt = held.acceptedAt ?? incoming.acceptedAt;
+  const rejectedAt = held.rejectedAt ?? incoming.rejectedAt;
+  return {
+    ...winner,
+    ...(acceptedAt ? { acceptedAt } : {}),
+    ...(rejectedAt ? { rejectedAt } : {}),
+  };
+}
+
+/**
  * Fold the latest snapshot of every author into ONE space. Deterministic
  * and total; contradictory decisions surface as a question.
  */
@@ -206,24 +237,7 @@ export function foldSpaces(latest: SnapshotRecord[]): Space {
         merged.deliveries.push(d);
         continue;
       }
-      const existing = merged.deliveries[idx];
-      // The acceptance fact is never lost to a later run's report: it
-      // carries forward onto whichever record of the two ends up kept.
-      const acceptedAt = existing.acceptedAt ?? d.acceptedAt;
-      // Between two records of the same delivery id, the one whose run
-      // produced it LAST wins — never the first record's copy, so the
-      // folded space never presents an older run's report as current. A
-      // stamped delivery beats an unstamped one with the same id; between
-      // two stamped deliveries, the later producedAt wins.
-      const newer =
-        existing.producedAt && d.producedAt
-          ? d.producedAt > existing.producedAt
-            ? d
-            : existing
-          : d.producedAt && !existing.producedAt
-            ? d
-            : existing;
-      merged.deliveries[idx] = acceptedAt ? { ...newer, acceptedAt } : newer;
+      merged.deliveries[idx] = settleDelivery(merged.deliveries[idx], d);
     }
   }
 

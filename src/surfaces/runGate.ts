@@ -15,6 +15,7 @@ import { saveRun } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
+import { settleDelivery } from "../core/records";
 import * as path from "node:path";
 import { factsOf } from "../run/facts";
 
@@ -179,9 +180,14 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
             (d) => d.cutId !== delivery.cutId || d.acceptedAt || d.id === delivery.id,
           );
           const at = kept.findIndex((d) => d.id === delivery.id);
+          // Between the delivery held for this cut and the one arriving,
+          // the run that produced it LAST stands — settled by the same rule
+          // the fold applies to the same pair, so the two surfaces can never
+          // disagree about one delivery id.
+          const settled = at >= 0 ? settleDelivery(kept[at], delivery) : delivery;
           s.space = {
             ...s.space,
-            deliveries: at >= 0 ? kept.map((d, i) => (i === at ? delivery : d)) : [...kept, delivery],
+            deliveries: at >= 0 ? kept.map((d, i) => (i === at ? settled : d)) : [...kept, settled],
           };
           s.changed(note);
         },

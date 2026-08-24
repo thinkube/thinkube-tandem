@@ -34,3 +34,48 @@ test("renderDeliveryPage opens with the run id and produced-at time, before any 
     "both appear before any section heading (## ...)",
   );
 });
+
+test("two deliveries of the same cut and branch differing only in run render pages whose opening lines differ", () => {
+  const space = emptySpace();
+  const base = {
+    id: "delivery-TEP-1",
+    cutId: "cut-1",
+    branch: "tandem/TEP-1",
+    proofs: [],
+  };
+  const first = {
+    ...base,
+    runId: "TEP-1@run-one",
+    producedAt: "2026-08-24T10:00:00.000Z",
+  } as unknown as Delivery;
+  const second = {
+    ...base,
+    runId: "TEP-1@run-two",
+    producedAt: "2026-08-24T15:30:00.000Z",
+  } as unknown as Delivery;
+
+  const pageOne = renderDeliveryPage(space, first);
+  const pageTwo = renderDeliveryPage(space, second);
+
+  // The identity line is what tells the two reports apart. Same cut, same
+  // branch, same proofs — only the run differs, and the opening must say so.
+  const openingOf = (page: string): string =>
+    page
+      .split("\n")
+      .slice(0, 2)
+      .join("\n");
+
+  assert.notEqual(
+    openingOf(pageOne),
+    openingOf(pageTwo),
+    "the opening lines of the two pages are identical — the run is not named",
+  );
+  assert.ok(openingOf(pageOne).includes("TEP-1@run-one"), "the first page names its own run");
+  assert.ok(openingOf(pageOne).includes("2026-08-24T10:00:00.000Z"), "and its own moment");
+  assert.ok(openingOf(pageTwo).includes("TEP-1@run-two"), "the second page names its own run");
+  assert.ok(openingOf(pageTwo).includes("2026-08-24T15:30:00.000Z"), "and its own moment");
+  assert.ok(
+    !openingOf(pageTwo).includes("TEP-1@run-one"),
+    "the second page's opening still carries the first run's id",
+  );
+});

@@ -23,7 +23,7 @@ plain English or does not belong in the product.
 | **slice** | A computed slice of the signed TEP — the engine's unit of validation and dispatch. Never authored. |
 | **slice brief** | The per-worker instruction assembled at dispatch: anchors resolved against the worker's worktree, exact signatures, the probes, the footprint, the neighbors' contracts. Assembled, never authored. |
 | **footprint** | The files a worker may touch. |
-| **delivery** | Branch + proof + the human's acceptance-as-merge, on whatever forge hosts the project. |
+| **delivery** | Branch + proof + the human's acceptance-as-merge, on whatever forge hosts the project. It names the run that produced it and the moment it was produced, so a report from an earlier run is never mistaken for the one just finished. |
 | **proof** | Evidence on a delivery: probe runs, suite verdicts, CI verdicts (image built, deploy healthy). |
 | **gate** | One of the two human signatures: sign the cut, accept the delivery. |
 | **abstract** | The human face of an artifact: a stamped, decision-sized render. Default view. |

@@ -9,7 +9,9 @@ plans.
   spaces/<repo>/space.json        the space — asks, changes, cuts,
                                   questions, decisions, deliveries
   spaces/<repo>/digests/<ask>.md  the cited context digest per ask
-  spaces/<repo>/deliveries/       machine faces: verification traces
+  spaces/<repo>/deliveries/       machine faces: verification traces,
+                                  each naming the run that produced it
+                                  and the moment it was produced
   spaces/<repo>/defects/          find-time defect rows (JSONL, monthly)
 
 Three disciplines guard it:
