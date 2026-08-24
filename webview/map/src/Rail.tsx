@@ -157,6 +157,31 @@ function Parked(props: { push: SpacePush }): JSX.Element | null {
 }
 
 /**
+ * Submit a not-needed reason: post the waive-docs action carrying it, or
+ * post nothing at all when there is no reason in the box.
+ *
+ * A rule kept inside an onClick is a rule nothing can ask about — a static
+ * render throws the handler away, so "a blank reason posts nothing" would
+ * only ever be checked by a person typing into the running product. It
+ * lives here, beside the control it belongs to, as a plain function of
+ * what was typed.
+ *
+ * Whitespace is not a reason: the text is trimmed, an empty result posts
+ * nothing, and what IS posted is the trimmed text — never the raw box, so
+ * a reason cannot arrive at the host padded with spaces it did not mean.
+ * Returns what was posted, or undefined when nothing was.
+ */
+export function submitDocsWaiver(
+  reason: string,
+  send: (msg: { action: "waive-docs"; text: string }) => void = post,
+): string | undefined {
+  const trimmed = reason.trim();
+  if (!trimmed) return undefined;
+  send({ action: "waive-docs", text: trimmed });
+  return trimmed;
+}
+
+/**
  * The not-needed reason: recorded before signing, when this cut writes no
  * documentation on purpose. A blank or whitespace-only reason posts
  * nothing — the host records a waiver only for a stated reason.
@@ -180,11 +205,7 @@ function DocsWaiver(props: { phase: SpacePush["phase"] }): JSX.Element {
         disabled={!can("waive-docs")}
         style={{ width: "100%", marginTop: SP.xs }}
         title="Documentation is not needed for this cut, for the reason above."
-        onClick={() => {
-          const trimmed = reason.trim();
-          if (!trimmed) return;
-          post({ action: "waive-docs", text: trimmed });
-        }}
+        onClick={() => submitDocsWaiver(reason)}
       >
         Documentation not needed
       </button>

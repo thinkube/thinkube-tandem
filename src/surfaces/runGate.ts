@@ -50,19 +50,61 @@ export function waiveDocsGesture(s: TandemSession, reason: string): { ok: boolea
   return { ok: true };
 }
 
+/**
+ * Why a run could not start, and the one gesture that recovers it.
+ *
+ * Each cause gets the action that WORKS for it. "Sign it again" is not
+ * one of them for any: the sign gate refuses promises already in a signed
+ * work order, so naming it would send a person to a button that answers
+ * "already in a signed work order" and leave them with nowhere to go.
+ * The gesture that does exist for signed promises is "think again" — it
+ * withdraws the signed cut, which releases its promises to be derived and
+ * signed anew.
+ *
+ * The reason is never handed over in the token machinery's own words:
+ * "content-mismatch" names an internal, and the person is never asked
+ * about internals.
+ */
+export function whyRefused(reason: string | undefined): string {
+  switch (reason) {
+    case "content-mismatch":
+      // A redrawn page no longer reaches here — the approval is bound to
+      // the grounded half, and a signature that still verifies is honoured
+      // (src/gates/approval.ts). So this is the promises themselves having
+      // moved since they were approved.
+      return (
+        "the promises changed after they were approved, so what would run is not what was signed — " +
+        'press "Think it through again" to withdraw this signed work and derive its promises anew, then sign what they say now'
+      );
+    case "subject-mismatch":
+      return (
+        "the approval on file belongs to a different piece of work — " +
+        'press "Think it through again" to withdraw this signed work and sign it in its own right'
+      );
+    case "bad-signature":
+      // The promises are already in a signed work order, which the sign
+      // gate refuses to sign a second time. Sending the person back to the
+      // cut review to sign is advice that gate cannot accept, so the way
+      // out named here is the withdrawal that releases them first.
+      return (
+        "the approval for this work is missing or unreadable, so nothing here was approved — " +
+        'press "Think it through again" to withdraw this signed work and derive its promises anew, then sign what they say now'
+      );
+    case "unsigned":
+      return "this cut was never signed — read the cut review and sign it";
+    case "unknown TEP":
+      return "this space has no record of the work order this run belongs to — think it through again and sign it as new work";
+    default:
+      return `${reason ?? "the approval could not be checked"} — press "Think it through again" to withdraw this signed work and sign it anew`;
+  }
+}
+
 export async function executeRun(s: TandemSession, cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = s.space.cuts.find((c) => c.id === cutId);
     if (!cut || s.running) return undefined;
     const approval = cut.tepId ? s.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
     if (!approval.approved) {
-      // The approval binds the GROUNDED half of the pair — where the
-      // promises land, what proves them — never the cut screen's own
-      // wording, so a redraw of that page never lands here. What does is
-      // the promises themselves moving after they were signed. A signed
-      // promise cannot be signed twice (signCut refuses it), so the way
-      // back in is "think again": withdraw this signed work and derive
-      // its promises anew, then sign what they say now.
-      s.runNote = `The build could not start: ${approval.reason} — think the cut through again, then sign it.`;
+      s.runNote = `The build could not start: ${whyRefused(approval.reason)}`;
       s.changed(s.runNote);
       return undefined;
     }

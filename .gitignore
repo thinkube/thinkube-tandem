@@ -6,3 +6,10 @@ media/
 
 # coverage output from a measuring run, never source
 coverage/
+
+# Compiled output beside a TypeScript source. The surface is built by vite
+# from .tsx/.ts only; a .js emitted next to its source shadows the module a
+# bundler resolves, so the harness would execute the stale copy and the
+# original would attribute to nothing.
+webview/map/src/*.js
+webview/map/src/*.js.map

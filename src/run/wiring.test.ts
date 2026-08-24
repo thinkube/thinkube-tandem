@@ -82,6 +82,58 @@ test("a subject is recognised wherever the build put it", () => {
   assert.equal(ranAmong("src/run/gate.ts", ["/tmp/wt/out-test/run/other.js"]), false);
 });
 
+/**
+ * A repository whose subject is compiled into a bundle, the way the surface
+ * is: one executed file, a source map naming the originals inside it, and a
+ * module that is NOT in the bundle at all.
+ */
+function bundledRepo(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wiring-bundle-"));
+  fs.mkdirSync(path.join(dir, "src"));
+  fs.mkdirSync(path.join(dir, "out"));
+  fs.writeFileSync(path.join(dir, "src", "untouched.ts"), `export const never = () => "no";\n`);
+  // The bundle: the originals' own text is gone, exactly as a bundler leaves
+  // it. Only the map records which files it was built from.
+  fs.writeFileSync(
+    path.join(dir, "out", "bundle.cjs"),
+    `"use strict";\nfunction shaped(){return "waive-docs";}\nconsole.log(shaped());\n` +
+      `//# sourceMappingURL=bundle.cjs.map\n`,
+  );
+  fs.writeFileSync(
+    path.join(dir, "out", "bundle.cjs.map"),
+    JSON.stringify({ version: 3, sources: ["../src/vscode.ts", "../src/Rail.tsx"], mappings: "" }),
+  );
+  return dir;
+}
+
+// INVARIANT: a module the drive really ran is credited even though a bundler
+// inlined it. V8 can only name the file it executed; without the map the
+// originals attribute to nothing and a fully-driven promise reads as dead.
+test("a subject a bundler inlined is credited to the original the source map names", async () => {
+  const dir = bundledRepo();
+  const verdict = await provedByExecution({
+    run: "node out/bundle.cjs",
+    subjects: ["src/vscode.ts", "src/Rail.tsx"],
+    worktree: dir,
+    exec,
+  });
+  assert.equal(verdict.executed, "yes", verdict.detail);
+});
+
+// INVARIANT: this credits only what the bundle is actually made of. A module
+// absent from the map is still unexecuted — the map may add what ran, never
+// invent it, or the gate would pass a stub it never reached.
+test("a module the bundle does not contain is still not executed", async () => {
+  const dir = bundledRepo();
+  const verdict = await provedByExecution({
+    run: "node out/bundle.cjs",
+    subjects: ["src/untouched.ts"],
+    worktree: dir,
+    exec,
+  });
+  assert.equal(verdict.executed, "no", verdict.detail);
+});
+
 test("a promise landing in a document is not asked to execute", async () => {
   // Two criteria about a markdown ledger were red forever: the trace
   // demanded that ENGINE-WIRING.md execute, and a document cannot. Content

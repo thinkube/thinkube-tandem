@@ -34,9 +34,65 @@ interface V8Coverage {
   result?: { url?: string; functions?: { ranges?: { count?: number }[] }[] }[];
 }
 
-/** Every file the recorded run actually executed a line of. */
+/** Where a file says its source map lives, if it says. */
+function mapRefOf(text: string): string | undefined {
+  // The last such comment wins, as the runtime resolves it.
+  const refs = [...text.matchAll(/\/[/*]#\s*sourceMappingURL=([^\s*]+)/g)];
+  return refs.length ? refs[refs.length - 1][1] : undefined;
+}
+
+/**
+ * The original files a bundle inlines, as its source map names them.
+ *
+ * A bundler compiles many modules into one file, and V8 records only the
+ * file it executed. Under a bundle the originals attribute to nothing, so
+ * a promise landing in a bundled module reads as never executed however
+ * thoroughly the drive ran it. The source map is the only record of which
+ * originals that one file is made of.
+ *
+ * Absent, unreadable or malformed map: nothing is credited. This may only
+ * ever ADD what genuinely ran, never invent it.
+ */
+async function inlinedSources(file: string): Promise<string[]> {
+  const text = await fs.readFile(file, "utf8").catch(() => "");
+  if (!text) return [];
+  const ref = mapRefOf(text);
+  if (!ref) return [];
+  let mapText: string;
+  const inline = /^data:application\/json[^,]*;base64,(.*)$/.exec(ref);
+  if (inline) {
+    mapText = Buffer.from(inline[1], "base64").toString("utf8");
+  } else if (/^data:/.test(ref)) {
+    mapText = decodeURIComponent(ref.slice(ref.indexOf(",") + 1));
+  } else {
+    mapText = await fs.readFile(path.resolve(path.dirname(file), ref), "utf8").catch(() => "");
+  }
+  if (!mapText) return [];
+  let map: { sources?: unknown; sourceRoot?: unknown };
+  try {
+    map = JSON.parse(mapText) as { sources?: unknown; sourceRoot?: unknown };
+  } catch {
+    return [];
+  }
+  const sources = Array.isArray(map.sources) ? map.sources : [];
+  const root = typeof map.sourceRoot === "string" ? map.sourceRoot : "";
+  const base = path.dirname(file);
+  return sources
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .map((s) => {
+      const joined = root ? `${root.replace(/\/$/, "")}/${s.replace(/^\.\//, "")}` : s;
+      const bare = joined.startsWith("file://") ? joined.slice("file://".length) : joined;
+      return path.isAbsolute(bare) ? bare : path.resolve(base, bare);
+    });
+}
+
+/**
+ * Every file the recorded run actually executed a line of — including the
+ * originals a bundle inlines, which V8 cannot name on its own.
+ */
 async function executedFiles(dir: string): Promise<string[]> {
   const out = new Set<string>();
+  const ranFiles = new Set<string>();
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   for (const n of names) {
     if (!n.endsWith(".json")) continue;
@@ -51,8 +107,17 @@ async function executedFiles(dir: string): Promise<string[]> {
       const url = entry.url ?? "";
       if (!url.startsWith("file://")) continue;
       const ran = (entry.functions ?? []).some((f) => (f.ranges ?? []).some((r) => (r.count ?? 0) > 0));
-      if (ran) out.add(url.slice("file://".length));
+      if (ran) {
+        const file = url.slice("file://".length);
+        out.add(file);
+        ranFiles.add(file);
+      }
     }
+  }
+  // Only files that actually ran are asked what they are made of, so this
+  // credits the originals behind executed code and nothing else.
+  for (const file of ranFiles) {
+    for (const src of await inlinedSources(file)) out.add(src);
   }
   return [...out];
 }

@@ -255,12 +255,30 @@ let allowedNow: string[] | undefined;
 export function noteAllowed(allowed: string[] | undefined): void {
   allowedNow = allowed;
 }
+/** An action this surface can actually send. Typing the shaping list
+ *  against the union makes a name that no message carries a compile
+ *  error, rather than a control that is enabled in no phase and silently
+ *  dropped by `post`. "capture-many" is sent by the capture flow, which
+ *  does not go through `post`. */
+type Shaping = WebToHost["action"] | "capture-many";
+
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
   "dismiss-impact", "apply-all-impacts", "open-cut-review", "waive-docs", "build", "rerun", "think-again", "stop-run",
   "accept-delivery", "reject-delivery", "panic", "switch-repo",
-]);
+] satisfies Shaping[] as string[]);
+
+/**
+ * The shaping actions this surface can send, as data.
+ *
+ * The phase table and this list must name the same actions, and a check
+ * that proves it has to reach both by running them. Reading this module's
+ * source text for the names instead would agree just as readily with a
+ * stub that spells them, so the set itself is exported rather than
+ * recovered with a regex.
+ */
+export const SHAPING_ACTIONS: readonly string[] = [...SHAPING];
 
 /** Whether the host would act on this action now. Non-shaping actions
  *  (reading a log, selecting, answering a worker, saving text) are always on. */

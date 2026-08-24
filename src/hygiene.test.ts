@@ -64,28 +64,28 @@ test("nothing in this repository is unreachable from the product's own entry poi
   assert.equal(out, "", `unreachable code:\n${out}`);
 });
 
-test("every shaping action the surface can send is gated by a phase", () => {
-  // A control's action lives in two places that must agree: the surface's
-  // own list of what is shaping, and the phase table that says when the
-  // host acts on it. They fail in opposite directions and neither speaks —
-  // an action absent from the table is refused in NO phase and enabled in
-  // none either, so the host always acts on it and its button is dead
-  // forever. A unit that built a new control found this from the inside,
-  // could not fix it (the table is not its to write), edited it anyway,
-  // and the guard ended it.
-  const src = fs.readFileSync(path.join(repo, "webview", "map", "src", "vscode.ts"), "utf8");
-  const block = /const SHAPING = new Set\(\[([\s\S]*?)\]\)/.exec(src);
-  assert.ok(block, "the surface no longer declares which actions are shaping");
-  const shaping = [...block[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort();
-  const gated = gatedActions().sort();
-  assert.deepEqual(
-    shaping.filter((a) => !gated.includes(a)),
-    [],
-    "the surface can send these, and no phase governs them",
-  );
-  assert.deepEqual(
-    gated.filter((a) => !shaping.includes(a)),
-    [],
-    "the phase table governs these, and the surface never sends them",
-  );
+// A control's action lives in two places that must agree: the surface's
+// own list of what is shaping, and the phase table that says when the host
+// acts on it. They fail in opposite directions and neither speaks — an
+// action absent from the table is refused in NO phase and enabled in none
+// either, so the host always acts on it and its button is dead forever. A
+// unit that built a new control found this from the inside, could not fix
+// it (the table is not its to write), edited it anyway, and the guard
+// ended it.
+//
+// That comparison lives in src/surfaces/phase_AC-1.test.ts, which reads
+// the surface's set from the RUNNING module by way of the harness bundle.
+// The copy that stood here recovered the names with a regex over
+// vscode.ts source text, so it passed without executing the surface — as
+// green for a stub that spells the same names as for the real list. Two
+// checks of one rule, one of which cannot see its own subject, is worse
+// than one that can.
+//
+// gatedActions is still imported below by that drive, not by this file.
+
+test("the phase table is reachable and non-empty", () => {
+  // The size and reachability rules above are this file's own subject.
+  // This one guards the premise phase_AC-1 rests on: a table that went
+  // empty would make its set-equality hold vacuously.
+  assert.notDeepEqual(gatedActions(), [], "no action is governed by any phase");
 });
