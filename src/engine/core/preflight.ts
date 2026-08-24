@@ -2,13 +2,14 @@ import { loadTemplate } from "../promptTemplates";
 import { BUNDLED_WORKER_PREAMBLE, UNDELIVERED_FORMAT_STANZA, stripSatisfies } from "./redispatch";
 import { SchedUnit } from "./dag";
 import { WorkUnit } from "./base";
-// ── RUN PREFLIGHT provisions (context tranche, 2026-07-14 — the pure half) ─────
+// ── RUN PREFLIGHT provisions (the pure half) ─────
 //
-// Workers were starved: prompts dispatched with an unresolvable TEP, an empty spec body,
-// a multi-unit slice with no contract, a unit with no note — and the starvation surfaced
-// only as a red gate rounds later, at full token cost. This pure check names every missing
-// provision BEFORE any worker dispatches; the shell's instruments half (dispatcher smoke,
-// harness smoke, store writability) is I/O and lives in `OrchestratorService.defaultPreflight`.
+// A worker's brief carries one embedded intent artifact: the rendered TEP body. A prompt
+// dispatched with an unresolvable TEP, a multi-unit slice with no contract, or a unit with
+// no note starves the worker in a way that only surfaces as a red gate rounds later, at
+// full token cost. This pure check names every missing provision BEFORE any worker
+// dispatches; the shell's instruments half (dispatcher smoke, harness smoke, store
+// writability) is I/O and lives in `OrchestratorService.defaultPreflight`.
 
 /** One about-to-dispatch unit as the provisions check sees it. */
 export interface PreflightUnit {
@@ -29,29 +30,25 @@ export interface PreflightUnit {
 
 /**
  * The provisions half of the RUN PREFLIGHT: verify every about-to-dispatch unit's prompt
- * inputs resolve NON-EMPTY — the parent TEP body (via the spec's `implements`), the spec
- * body, the slice contract for multi-unit slices, the unit note, and a non-empty footprint.
- * Returns one human-readable failure line per missing piece (empty = provisioned). Pure.
+ * inputs resolve NON-EMPTY — the parent TEP body (via the spec's `implements`, the one
+ * embedded intent artifact every worker prompt carries), the slice contract for multi-unit
+ * slices, the unit note, and a non-empty footprint. Returns one human-readable failure line
+ * per missing piece (empty = provisioned). Pure.
  */
 export function preflightProvisionFailures(input: {
-  specBody: string;
   tepBody: string;
   /** The spec frontmatter's `implements` value, for the failure message. */
   implementsRef?: unknown;
   units: PreflightUnit[];
 }): string[] {
   const failures: string[] = [];
-  if (!input.specBody.trim())
-    failures.push(
-      "spec body is empty — the spec doc could not be read (or has no content); every worker prompt embeds it.",
-    );
   if (!input.tepBody.trim())
     failures.push(
       `parent TEP body unresolvable (spec frontmatter implements: ${
         typeof input.implementsRef === "string" && input.implementsRef.trim()
           ? JSON.stringify(input.implementsRef)
           : "unset"
-      }) — worker prompts thread the TEP as the north star; fix the spec's \`implements\` or the TEP file.`,
+      }) — every worker prompt embeds the TEP as its one intent artifact; fix the spec's \`implements\` or the TEP file.`,
     );
   const contractFlagged = new Set<string>();
   for (const u of input.units) {
@@ -81,7 +78,10 @@ export function buildWorkerPrompt(
   unit: SchedUnit,
   specNumber: string,
   context?: {
-    specBody?: string;
+    /** The slice's own body text, rendered under its own heading (verbatim for a test unit,
+     *  with `satisfies:` lines stripped for a code unit). Distinct from {@link tepBody}: when a
+     *  caller passes the SAME text for both, the slice heading is suppressed rather than
+     *  repeating a line the intent heading already rendered. */
     sliceBody?: string;
     testConvention?: string;
     /** SP-12: the repo-declared, non-mutating build-and-test command a CODE-author runs to
@@ -99,9 +99,11 @@ export function buildWorkerPrompt(
      *  Rendered VERBATIM under the `EXAMPLE TEST` marker into a `role: "test"` prompt ONLY; omitted
      *  entirely (block + marker) when absent/blank, and NEVER rendered for a code unit. */
     exampleTest?: string;
-    /** Full-intention threading (context tranche, 2026-07-14): the parent TEP body, rendered
-     *  VERBATIM for BOTH roles as "THE INTENT — the north star". Workers were starved of the
-     *  why behind their slice; the TEP is the artifact that carries it. */
+    /** The worker's ONE embedded intent artifact — the parent TEP body — rendered under a single
+     *  "THE INTENT — the north star" heading for both roles: verbatim for a test unit, with
+     *  `satisfies:` lines stripped for a code unit (the same withholding applied to every other
+     *  intent copy in this brief). This is the whole of what the worker is told to build to; no
+     *  separate spec-body block is threaded alongside it. */
     tepBody?: string;
     /** Full-intention threading: every SIBLING execution unit's `note`, labeled by the note's
      *  author role, so a code worker knows what the test-author will assert and a test worker
@@ -256,36 +258,34 @@ export function buildWorkerPrompt(
           `- Never run package managers or build/test commands (\`npm install\`, \`npm test\`, \`tsc\`, …). The worktree has no toolchain for you by design — \`verify\` is the whole feedback loop, and reaching for these is denied.\n`
         : `- The held-out \`acceptance/\` probes are graded by the closing gate, not by you: do not build or run them.\n`)
     : "";
-  // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
-  // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
-  // reach.
+  // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT
+  // there. The TEP body is embedded inline, under one heading, as the worker's whole intent
+  // artifact — there is nothing to hunt for on a filesystem it cannot reach.
   //
-  // FULL SPEC FOR BOTH ROLES (context tranche, 2026-07-14 — deliberately REVERSING the SP-6 AC1
-  // "exam held out" doctrine for code units): the `stripAcceptanceCriteria` call is REMOVED for
-  // code roles, so a code worker now reads the FULL spec body INCLUDING the acceptance criteria.
-  // WHY: across every observed run there were ZERO cases of rubric-gaming (a coder optimising to
-  // the checkbox text instead of the behaviour) — while context STARVATION failures repeated
-  // (workers building to a guessed intent and missing criteria they were never shown). The grade
-  // still cannot be gamed structurally: the held-out probe SOURCE remains invisible to code
-  // workers (the tester-worktree isolation is unchanged) and the closing gate derives the grade
-  // only from independently-authored evidence. `satisfies` ordinals stay stripped — they are
-  // grader bookkeeping, not intent. The two artifacts still withheld are exactly: probe source
-  // from code workers, implementation source from test workers.
+  // FULL INTENT FOR BOTH ROLES (deliberately REVERSING the "exam held out" doctrine for code
+  // units): a code worker reads the FULL intent body INCLUDING the acceptance criteria, with
+  // only `satisfies:` ordinals stripped (grader bookkeeping, not intent) — the same
+  // withholding a test unit skips, since it renders the intent verbatim. WHY: across every
+  // observed run there were ZERO cases of rubric-gaming (a coder optimising to the checkbox
+  // text instead of the behaviour) — while context STARVATION failures repeated (workers
+  // building to a guessed intent and missing criteria they were never shown). The grade still
+  // cannot be gamed structurally: the held-out probe SOURCE remains invisible to code workers
+  // (the tester-worktree isolation is unchanged) and the closing gate derives the grade only
+  // from independently-authored evidence. The two artifacts still withheld are exactly: probe
+  // source from code workers, implementation source from test workers.
   const viewOf = (body: string): string =>
     (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
-  const intentSpec = viewOf(context?.specBody ?? "");
+  const intentTep = viewOf(context?.tepBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const specBlock = intentSpec
-    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
-    : "";
-  const sliceBlock = intentSlice
-    ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
-    : "";
-  // Full-intention threading (context tranche): the parent TEP — the WHY behind the spec —
-  // rendered verbatim for BOTH roles. The spec approximates the TEP; when they diverge the
-  // TEP is the star the delivery is eventually judged against (the intent check).
-  const tepBlock = context?.tepBody?.trim()
-    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${context.tepBody.trim()}\n`
+  // One heading carries the intent. A caller that also supplies the SAME text as `sliceBody`
+  // (or any other body field) must not see that line rendered twice — the slice heading only
+  // appears when it says something the intent heading did not already say.
+  const sliceBlock =
+    intentSlice && intentSlice !== intentTep
+      ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
+      : "";
+  const tepBlock = intentTep
+    ? `\n──── THE INTENT — the north star (the parent TEP this spec implements) ────\n${intentTep}\n`
     : "";
   // Sibling awareness (context tranche): every sibling unit's task note, labeled by its
   // author role — a code worker sees what the test-author will assert; a test worker sees
@@ -311,13 +311,12 @@ export function buildWorkerPrompt(
   // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
   // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
   const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
-  const hasCtx = specBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
     `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
-    (hasCtx
-      ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
-      : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+    (tepBlock
+      ? `The thinking space/specs dir is NOT in this worktree; your intent is embedded below in THE INTENT section — that is the whole of what you are told to build to.\n`
+      : `(Your intent was not supplied for this dispatch — proceed from the SPEC CONTRACT and Acceptance Criteria below.)\n`) +
     `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +
     contractBlock +
@@ -331,7 +330,6 @@ export function buildWorkerPrompt(
     workspaceBlock +
     consumesBlock +
     tepBlock +
-    specBlock +
     sliceBlock +
     siblingBlock +
     `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
