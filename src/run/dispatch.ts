@@ -589,7 +589,7 @@ export async function dispatchTep(
     );
   return await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
-    runId, producedAt, runOneTest, tsOut,
+    runId, producedAt, runOneTest, runOne: runOneTest, tsOut,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

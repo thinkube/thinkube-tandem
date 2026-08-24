@@ -44,6 +44,11 @@ import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
   tep: string;
+  /** How this repository runs ONE of its own tests, as PROVED at the door
+   *  — not as configured. The gate judged every check with a hardcoded
+   *  command and disagreed with the slice oracle that had just passed
+   *  them. */
+  runOne?: string;
   branch: string;
   baseSha: string;
   worktree: string;
@@ -102,7 +107,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  const { verifs, probeOfAc } = closingVerifications(slices, g.runOneTest ?? "", g.tsOut);
+  const { verifs, probeOfAc } = closingVerifications(slices, g.runOneTest ?? g.runOne ?? deps.runOne ?? "", g.tsOut);
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);

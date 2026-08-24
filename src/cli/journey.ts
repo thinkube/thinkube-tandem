@@ -236,6 +236,15 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   if (!(await step("signing and building", () => session.build()))) return 1;
 
+  // Signing starts the run and does not wait for it: the gesture exists to
+  // make a panel responsive, so `build()` returns the moment the workers
+  // are dispatched. A journey that returned there reported "no delivery"
+  // while the run it had just started was still on its first worker.
+  if (session.running) {
+    say("the workers are running — waiting for the delivery");
+    while (session.running) await new Promise((r) => setTimeout(r, 5000));
+  }
+
   const delivered = session.space.deliveries[session.space.deliveries.length - 1];
   const runNote = delivered
     ? delivered.runId && delivered.producedAt

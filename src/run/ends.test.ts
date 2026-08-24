@@ -15,6 +15,7 @@ import { RunState } from "./state";
 import { watchForStall } from "./watchdog";
 import { close, convergenceScore } from "./closer";
 import { repairSuiteAtGate } from "./gateRepair";
+import { buildComplaint } from "./setup";
 import { filesNamedIn } from "./suite";
 import { confirmWaitingForTree } from "./repair";
 import { runAcVerifications } from "../engine/core/closingGate";
@@ -416,4 +417,28 @@ test("the finisher is fenced by nothing either — the argument was only half ap
     defect: () => {},
   } as never);
   assert.equal(sawUnfenced, true, "the guard still runs over the last actor at the gate");
+});
+
+test("a build that fails at the gate says what the compiler said", () => {
+  // This reported the LAST line of the output, and a compiler's output
+  // ends in a blank line — so a run withheld ten promises with the words
+  // "checks run against an unbuilt tree:" and nothing after the colon.
+  // The closer spent rounds guessing at a message nobody had shown it.
+  const tsc = [
+    "",
+    "> thinkube-tandem@2.0.1 compile",
+    "> tsc -p ./",
+    "",
+    "src/run/state.ts(41,3): error TS2564: Property 'plan' has no initializer.",
+    "src/gates/render.ts(88,7): error TS2322: Type 'string' is not assignable.",
+    "",
+    "",
+  ].join("\n");
+  const said = buildComplaint(tsc);
+  assert.match(said, /state\.ts\(41,3\): error TS2564/);
+  assert.match(said, /render\.ts\(88,7\)/);
+  assert.doesNotMatch(said, /^\s*$/, "a failure that says nothing is the defect this replaces");
+  // Output with no error-shaped line still says something rather than nothing.
+  assert.equal(buildComplaint("\n\nkilled by signal\n\n"), "killed by signal");
+  assert.match(buildComplaint("\n\n\n"), /printed nothing/);
 });

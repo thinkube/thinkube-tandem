@@ -18,6 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
+import { closingVerifications } from "./plan";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
@@ -286,4 +287,33 @@ test("the first write outside a clearance teaches; it does not end the unit", ()
   assert.match(said, /Say which file you need and which criterion requires it/);
   assert.match(said, /src\/gates\/render\.ts, src\/surfaces\/inbound\.ts/, "it says what may be written");
   assert.match(said, /again and the unit ends here/, "and that a second time is final");
+});
+
+test("the gate runs a check the way the repository runs a test", () => {
+  // Ten promises passed their slice's oracle and were judged red at the
+  // closing gate, all ten identically. The oracle used the command the
+  // door PROVED for this repository; the gate used a hardcoded
+  // `node --test <path>` on the TypeScript source, which this repository
+  // never runs — its tests are compiled first. The two disagreed about
+  // the same files, and the delivery was withheld on the gate's answer.
+  const slices = [
+    {
+      handle: "SL-1",
+      status: "ready",
+      files: [],
+      workUnits: [
+        { role: "code", footprint: ["src/core/schema.ts"], execution: "serial" },
+        { role: "test", footprint: ["probes/x__SL-1_AC-1.test.mjs"], execution: "serial" },
+      ],
+    },
+  ];
+  const runOne = `node --test "out-test/$(echo '<file>' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`;
+  const withFact = closingVerifications(slices as never, runOne);
+  assert.equal(
+    withFact.verifs[0].run,
+    `node --test "out-test/$(echo 'probes/x__SL-1_AC-1.test.mjs' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`,
+    "the gate ignored the repository's own way of running one test",
+  );
+  // No fact proved: the plain command stands, as it always did.
+  assert.equal(closingVerifications(slices as never).verifs[0].run, "node --test probes/x__SL-1_AC-1.test.mjs");
 });

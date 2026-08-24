@@ -251,10 +251,13 @@ export function tsOutLayoutOf(repoRoot: string): TsOutLayout | undefined {
  */
 export function closingVerifications(
   slices: SliceForDag[],
-  /** How this repository runs one of its own tests, proved at the door —
-   *  the same answer the per-slice oracle uses. Without it the gate ran a
-   *  command of its own invention, so a check the repository compiles was
-   *  green at every slice and a whole-file failure at the gate. */
+  /** How this repository runs ONE of its own tests (`<file>` = its path),
+   *  proved at the door — the same answer the per-slice oracle uses.
+   *  Without it the gate ran a command of its own invention (a hardcoded
+   *  `node --test <path>`), so a repository whose tests are compiled first
+   *  — or whose sources are not what its runner takes — had every check
+   *  fail here after passing in its own slice, identically, for a reason
+   *  no worker could act on. Ten promises were withheld exactly that way. */
   runOne = "",
   tsOut?: TsOutLayout,
 ): {
