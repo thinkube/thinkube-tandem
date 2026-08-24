@@ -24,6 +24,8 @@ import * as path from "node:path";
 import { TandemSession } from "../surfaces/session";
 import { knowledgeOf } from "../derive/knowledge";
 import { factsOf } from "../run/facts";
+import { Forge, forgeFor } from "../dispatch/forge";
+import { execFile } from "node:child_process";
 
 interface Args {
   asks: string;
@@ -88,6 +90,37 @@ function digestStore(dir: string): { load: (k: string) => string | undefined; sa
   };
 }
 
+
+/**
+ * The repository's forge, from its own remote — the same resolution the
+ * editor does, including a credentialed https remote whose token doubles
+ * as the forge token.
+ */
+async function forgeOf(repoRoot: string): Promise<Forge | undefined> {
+  const remoteRaw = await new Promise<string>((resolve) =>
+    execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"], (err, out) =>
+      resolve(err ? "" : out.trim()),
+    ),
+  );
+  if (!remoteRaw) return undefined;
+  const creds = /^https?:\/\/([^/@:]+):([^/@]+)@/.exec(remoteRaw);
+  const remote = creds ? remoteRaw.replace(`${creds[1]}:${creds[2]}@`, "") : remoteRaw;
+  return forgeFor(remote, {
+    ...(process.env.TANDEM_GITEA_TOKEN || creds?.[2]
+      ? { giteaToken: process.env.TANDEM_GITEA_TOKEN || creds![2] }
+      : {}),
+    http: async (method, url, token, payload) => {
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
+      });
+      if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
+      return (await res.json()) as unknown;
+    },
+  });
+}
+
 export async function main(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv);
   if (typeof args === "string") {
@@ -101,6 +134,24 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   fs.mkdirSync(args.space, { recursive: true });
 
+  // The repository's own forge, resolved exactly as the editor resolves
+  // it. The run refuses to start without one, so a journey that did not
+  // look for it stopped at the last step with a note about a setting —
+  // having already paid for the whole derivation.
+  const forge = await forgeOf(args.repo).catch((e: unknown) => {
+    say(`no forge could be resolved: ${e instanceof Error ? e.message : String(e)}`);
+    return undefined;
+  });
+  if (forge) say(`the delivery would open on ${args.repo}'s own forge`);
+  // The run refuses to start without a forge, and derivation is the
+  // expensive half. Refusing here costs nothing; refusing after it has
+  // been paid for is the whole cost of the journey for a note about a
+  // setting — which is exactly what the first headless journey did.
+  if (!forge && !args.stopAfter) {
+    say("⛔ no forge is reachable for this repository, so a run could not start — nothing was derived");
+    return 2;
+  }
+
   const told = factsOf(args.repo);
   const known = await knowledgeOf({
     deps: { model: args.model, repoRoot: args.repo, log: (l) => say(`  ${l}`) },
@@ -112,6 +163,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     return undefined;
   });
 
+  /** The stage each subject was last reported on, so a repeat is silent. */
+  const stageSaid = new Map<string, string>();
   const session = new TandemSession({
     round: { model: args.model, volumeModel: args.worker, repoRoot: args.repo },
     storeDir: args.space,
@@ -123,9 +176,29 @@ export async function main(argv: readonly string[]): Promise<number> {
       ? { prepareCommand: args.prepare ?? told?.prepare ?? known!.prepare }
       : {}),
     workerModel: { workerModel: args.worker },
+    ...(forge ? { forge } : {}),
     ...(known ? { knowledge: async () => known } : {}),
+    // Working out what to build is the longest step and the quietest: its
+    // progress arrives as a change with no message, so a plain listener
+    // prints nothing for minutes and the run looks hung. The stage each
+    // subject is on is said whenever it moves.
     onChanged: (message) => {
       if (message) say(message);
+      for (const g of session.groundingView()) {
+        const at = `${g.label} ${g.current}/${g.total}`;
+        if (stageSaid.get(g.askId) === at) continue;
+        stageSaid.set(g.askId, at);
+        say(`  · ${g.askId}: ${at}`);
+      }
+      // The whole-cut passes — looking for what is still missing, shaping
+      // the seams — report here and nowhere else. Without this the last
+      // several minutes of thinking are a blank screen.
+      const a = session.activity;
+      const now = a ? `${a.label} ${a.current}/${a.total}` : "";
+      if (now && stageSaid.get("*activity*") !== now) {
+        stageSaid.set("*activity*", now);
+        say(`  · ${now}`);
+      }
     },
   });
 
