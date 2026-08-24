@@ -75,7 +75,7 @@ same phase starts before it.
 
 | # | Work | Proof | State |
 |---|---|---|---|
-| 6.1 | Decide the unused exports and files: wire, retire, or fold | the list is empty: 4 files retired, 62 exports folded, `verifyCutSignature` wired (it was never called — a signed cut could drift unnoticed) | done |
+| 6.1 | Decide the unused exports and files: wire, retire, or fold | the standing list now lives in `ENGINE-WIRING.md` (17 imported engine modules with no product caller, each with a verdict); earlier round: 4 files retired, 62 exports folded, `verifyCutSignature` wired (it was never called — a signed cut could drift unnoticed) | done |
 | 6.2 | Reachability gate back on, with the product's real entry points | it passes, and fails when dead code returns | done |
 | 6.3 | The invariants, as tests: a run always ends; a unit is never failed for what it cannot reach; nothing written is lost from the branch | three drives, in `ends.test.ts` | done |
 | 6.4 | A stalled run says so and stops | done — watchdog and run log | done |
