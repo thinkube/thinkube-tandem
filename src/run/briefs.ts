@@ -13,6 +13,7 @@ export function renderTepBody(space: Space, cut: Cut): string {
   const asks = space.asks.filter((a) => askIds.has(a.id));
   const lines: string[] = [];
   lines.push(`# ${cut.tepId ?? cut.id}`);
+  if (cut.docsNotNeeded) lines.push(`Documentation is not needed: ${cut.docsNotNeeded}`);
   lines.push(`## The asks (verbatim)`);
   for (const a of asks) lines.push(`- ${a.text.trim()}`);
   const decided = space.questions.filter((q) => q.decided);

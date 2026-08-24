@@ -124,6 +124,10 @@ export interface Cut {
   changeIds: string[];
   /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
   tepId?: string;
+  /** The TEP's own record of why documentation was not needed for this
+   *  cut's promises. Set only when the person wrote a reason at signing;
+   *  its presence is what lets a cut that lands no documentation sign. */
+  docsNotNeeded?: string;
   /** Set when the human signs; binds the render AND the grounded members. */
   /** When the person withdrew this signed cut to think again. A withdrawn
    *  cut freezes nothing and runs nothing; its promises are derived anew

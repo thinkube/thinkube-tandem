@@ -11,12 +11,12 @@ import { ApprovalStore } from "../engine/approvalStore";
 
 export function tepContentHash(
   space: Space,
-  cut: { changeIds: string[]; tepId?: string },
+  cut: { changeIds: string[]; tepId?: string; docsNotNeeded?: string },
 ): string {
   const render = renderCutScreen(space, { id: "pair", changeIds: cut.changeIds });
   const sig = signCut(space, { id: "pair", changeIds: cut.changeIds }, "t", "x");
   const grounding = sig.ok ? sig.cut.signature!.groundingHash : "";
-  return approvalContentHash(`${render}\u0000${grounding}`);
+  return approvalContentHash(`${render}\u0000${grounding} ${cut.docsNotNeeded ?? ""}`);
 }
 
 export function tepApprovalOf(
