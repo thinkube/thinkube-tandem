@@ -585,7 +585,7 @@ export async function dispatchTep(
       `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
     );
   return await closeGate({
-    tep, branch, baseSha, worktree, slices, space, cut, deps,
+    tep, branch, baseSha, worktree, slices, space, cut, deps, runOne: runOneTest,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

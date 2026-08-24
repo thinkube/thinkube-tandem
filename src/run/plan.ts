@@ -189,7 +189,16 @@ function acOf(probe: string): number {
  * back from that ordinal to the probe, so a result can be reported as the
  * check it ran rather than as its position in a list.
  */
-export function closingVerifications(slices: SliceForDag[]): {
+export function closingVerifications(
+  slices: SliceForDag[],
+  /** How this repository runs ONE of its own tests (`<file>` = its path),
+   *  proved at the door. The gate ran a hardcoded `node --test <path>`
+   *  instead, so a repository whose tests are compiled first — or whose
+   *  sources are not what its runner takes — had every check fail here
+   *  after passing in its own slice, identically, for a reason no worker
+   *  could act on. Ten promises were withheld exactly that way. */
+  runOne = "",
+): {
   verifs: AcVerification[];
   probeOfAc: Map<number, string>;
 } {
@@ -199,7 +208,11 @@ export function closingVerifications(slices: SliceForDag[]): {
   for (const s of slices)
     for (const u of s.workUnits.filter((x) => x.role === "test"))
       for (const probe of u.footprint.filter(isProbePath)) {
-        verifs.push({ ac: ++ord, run: `node --test ${probe}`, env: "local" });
+        verifs.push({
+          ac: ++ord,
+          run: runOne ? runOne.replace(/<file>/g, probe) : `node --test ${probe}`,
+          env: "local",
+        });
         probeOfAc.set(ord, probe);
       }
   return { verifs, probeOfAc };
