@@ -5,6 +5,7 @@
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
+import { docsDutyOf } from "../core/docsDuty";
 
 
 
@@ -41,6 +42,20 @@ export function renderCutScreen(space: Space, cut: Cut): string {
       lines.push(
         `      checked by: ${c.text}${c.kind === "assessment" ? " — graded by an independent reviewer" : " — runnable test"}`,
       );
+  }
+
+  // The documentation duty, stated before you sign: every docs/ path this
+  // cut will write, or the recorded reason none is needed, or — when
+  // neither is true — what to do about it.
+  const duty = docsDutyOf(members, cut.docsWaiver);
+  if (duty.status === "documented") {
+    lines.push(`Documentation: ${duty.paths.join(", ")}`);
+  } else if (duty.status === "waived") {
+    lines.push(`Documentation: not needed — ${duty.reason}`);
+  } else {
+    lines.push(
+      `Documentation: missing — this cut writes no docs/ path. Ground one, or record a reason it is not needed (waive it).`,
+    );
   }
 
   const needsFirst = [

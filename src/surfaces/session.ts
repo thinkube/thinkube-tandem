@@ -17,7 +17,13 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, executeRun, rejectDeliveryGesture, signCutGesture } from "./runGate";
+import {
+  acceptDeliveryGesture,
+  executeRun,
+  rejectDeliveryGesture,
+  signCutGesture,
+  waiveDocsGesture,
+} from "./runGate";
 import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
@@ -40,6 +46,9 @@ export class TandemSession {
   units: Unit[] = [];
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
+  /** Recorded on the cut review, before signing: why this cut writes no
+   *  documentation. Carried into the cut object signCut receives. */
+  pendingDocsWaiver: { reason: string; at: string } | undefined;
   stale = new Set<string>();
   /** Criteria whose standing proof moved since it was bound — the test
    *  file changed after the anchor's stamp, so "proved" is out of date. */
@@ -472,7 +481,13 @@ export class TandemSession {
     return renderCutScreen(this.space, {
       id: `cut-${this.space.cuts.length + 1}`,
       changeIds: [...this.cutNodeIds],
+      ...(this.pendingDocsWaiver ? { docsWaiver: this.pendingDocsWaiver } : {}),
     });
+  }
+
+  /** Record why this cut writes no documentation, before signing. */
+  waiveDocs(reason: string): { ok: boolean; reason?: string } {
+    return waiveDocsGesture(this, reason);
   }
 
   /** Gate 1. On success the run starts — nothing between the gates is human. */

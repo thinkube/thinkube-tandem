@@ -126,6 +126,9 @@ export async function handleInbound(
       language: "markdown",
     });
     await vs().window.showTextDocument(doc, { preview: true });
+  } else if (msg.action === "waive-docs" && msg.text) {
+    const r = session.waiveDocs(msg.text);
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "propose-check") {
     const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
     note = r.ok ? undefined : r.reason;

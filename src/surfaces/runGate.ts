@@ -6,6 +6,7 @@
  */
 import { signCut, acceptDelivery } from "../gates/sign";
 import { tepContentHash } from "../gates/approval";
+import { docsWaiverFrom } from "../core/docsDuty";
 import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
@@ -22,6 +23,7 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      ...(s.pendingDocsWaiver ? { docsWaiver: s.pendingDocsWaiver } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
@@ -31,17 +33,36 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
     s.cutNodeIds.clear();
+    s.pendingDocsWaiver = undefined;
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
     void executeRun(s, r.cut.id);
     return { ok: true };
   }
+
+/** Record why this cut writes no documentation, before signing — the
+ *  reason is carried into the cut object signCut receives. An empty or
+ *  whitespace-only reason records nothing. */
+export function waiveDocsGesture(s: TandemSession, reason: string): { ok: boolean; reason?: string } {
+  const waiver = docsWaiverFrom(reason, s.deps.now());
+  if (!waiver) return { ok: false, reason: "a reason is needed to say why documentation is not needed" };
+  s.pendingDocsWaiver = waiver;
+  s.changed("Recorded — documentation is not needed for this cut.");
+  return { ok: true };
+}
 
 export async function executeRun(s: TandemSession, cutId: string): Promise<DispatchOutcome | undefined> {
     const cut = s.space.cuts.find((c) => c.id === cutId);
     if (!cut || s.running) return undefined;
     const approval = cut.tepId ? s.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
     if (!approval.approved) {
-      s.runNote = `The build could not start: ${approval.reason} — re-sign the cut.`;
+      // The approval binds the GROUNDED half of the pair — where the
+      // promises land, what proves them — never the cut screen's own
+      // wording, so a redraw of that page never lands here. What does is
+      // the promises themselves moving after they were signed. A signed
+      // promise cannot be signed twice (signCut refuses it), so the way
+      // back in is "think again": withdraw this signed work and derive
+      // its promises anew, then sign what they say now.
+      s.runNote = `The build could not start: ${approval.reason} — think the cut through again, then sign it.`;
       s.changed(s.runNote);
       return undefined;
     }

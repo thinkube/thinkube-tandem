@@ -1,22 +1,32 @@
 /**
  * The minted-approval helpers over the engine's token machinery: the
- * signed PAIR's content hash (the render the human read + the grounded
- * members underneath), and the token verdict a dispatch consults.
+ * approval's content hash, and the token verdict a dispatch consults.
+ *
+ * Bound to the grounded half alone -- the promises, where they land, what
+ * proves them -- never to the cut screen's own wording. The screen is
+ * redrawn whenever it gains a line (as it did for the Documentation
+ * line): that is the page changing, not the promises, and it must not
+ * re-arm a gate a person already signed. signCut and verifyCutSignature
+ * draw the same line between the two halves; this hash follows it rather
+ * than deriving its own from the render.
  */
 import { Cut, Space } from "../core/schema";
-import { renderCutScreen } from "./render";
 import { signCut } from "./sign";
 import { approvalContentHash, approvalStatus } from "../engine/approvalToken";
 import { ApprovalStore } from "../engine/approvalStore";
 
 export function tepContentHash(
   space: Space,
-  cut: { changeIds: string[]; tepId?: string },
+  cut: { changeIds: string[]; tepId?: string; docsWaiver?: { reason: string; at: string } },
 ): string {
-  const render = renderCutScreen(space, { id: "pair", changeIds: cut.changeIds });
-  const sig = signCut(space, { id: "pair", changeIds: cut.changeIds }, "t", "x");
+  const sig = signCut(
+    space,
+    { id: "pair", changeIds: cut.changeIds, ...(cut.docsWaiver ? { docsWaiver: cut.docsWaiver } : {}) },
+    "t",
+    "x",
+  );
   const grounding = sig.ok ? sig.cut.signature!.groundingHash : "";
-  return approvalContentHash(`${render}\u0000${grounding}`);
+  return approvalContentHash(grounding);
 }
 
 export function tepApprovalOf(

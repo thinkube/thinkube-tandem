@@ -211,6 +211,7 @@ export type WebToHost =
   | { action: "cancel-capture" }
   | { action: "reground" }
   | { action: "open-cut-review" }
+  | { action: "waive-docs"; text: string }
   | { action: "answer-worker"; unitId: string; text: string }
   | { action: "retry-model" }
   | { action: "reframe"; unitId: string; text: string }
@@ -257,7 +258,7 @@ export function noteAllowed(allowed: string[] | undefined): void {
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "think-again", "stop-run",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "waive-docs", "build", "rerun", "think-again", "stop-run",
   "accept-delivery", "reject-delivery", "panic", "switch-repo",
 ]);
 

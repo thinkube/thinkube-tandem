@@ -7,6 +7,7 @@
  * box you write them in, and what was read from them on the reading page.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { can, post, SpacePush, whyNot } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
 
@@ -155,6 +156,42 @@ function Parked(props: { push: SpacePush }): JSX.Element | null {
   );
 }
 
+/**
+ * The not-needed reason: recorded before signing, when this cut writes no
+ * documentation on purpose. A blank or whitespace-only reason posts
+ * nothing — the host records a waiver only for a stated reason.
+ */
+function DocsWaiver(props: { phase: SpacePush["phase"] }): JSX.Element {
+  const [reason, setReason] = useState("");
+  return (
+    <div data-docs-waiver style={{ marginTop: SP.sm }}>
+      <input
+        data-docs-waiver-reason
+        type="text"
+        value={reason}
+        disabled={!can("waive-docs")}
+        placeholder="why documentation is not needed"
+        style={{ width: "100%", fontSize: FS.body }}
+        title={can("waive-docs") ? "Recorded on the cut review, in place of a docs/ path." : whyNot(props.phase)}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => setReason(e.target.value)}
+      />
+      <button
+        data-waive-docs
+        disabled={!can("waive-docs")}
+        style={{ width: "100%", marginTop: SP.xs }}
+        title="Documentation is not needed for this cut, for the reason above."
+        onClick={() => {
+          const trimmed = reason.trim();
+          if (!trimmed) return;
+          post({ action: "waive-docs", text: trimmed });
+        }}
+      >
+        Documentation not needed
+      </button>
+    </div>
+  );
+}
+
 export function Rail(props: {
   push: SpacePush;
   /** Build lives on the work page and nowhere else: pressing it is the one
@@ -232,6 +269,7 @@ export function Rail(props: {
             >
               Read the cut review first
             </button>
+            <DocsWaiver phase={push.phase} />
             <button
               data-build
               disabled={!can("build")}
