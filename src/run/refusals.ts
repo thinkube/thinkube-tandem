@@ -47,21 +47,27 @@ function clearanceOf(slice: SliceForDag): string[] {
 }
 
 /**
- * The knot no order can undo: two slices each calling into the other.
+ * Two slices that each use something the other owns.
  *
- * Every other coupling the map finds is REPAIRED rather than refused —
- * the order is derived from what uses what, and the plan runs. This one
- * has no order to derive: whichever goes first is proven against the
- * other's old shape. It is one piece of work rather than two, and only
- * the person's own sentence can make it so.
+ * This was a refusal: no order exists, so build it as one piece of work.
+ * That was too strong, and it refused a plan that had already run and
+ * delivered twenty-two of its twenty-four promises. A slice commits when
+ * it finishes, so the second of a coupled pair does see the first's work
+ * — the coupling is a risk to watch, not an impossibility.
+ *
+ * It is also not what the sentence claimed. The two files named are the
+ * USER side of two different edges pointing opposite ways; neither
+ * imports the other, and a reader sent to look at them found nothing.
+ *
+ * So it is said and watched. The ordering repair still adds every edge it
+ * can derive; what is left over is reported, and the run decides by
+ * running.
  */
-function knotRefusals(knots: readonly { a: string; b: string; one: string; other: string }[]): string[] {
+export function knotWarnings(knots: readonly { a: string; b: string; one: string; other: string }[]): string[] {
   return knots.map(
     (k) =>
-      `${k.a} and ${k.b} each change what the other calls — ${k.one} and ${k.other} call into each other's work. ` +
-      `Neither can go first: each is proven against what is committed plus its own files, so whichever runs first is ` +
-      `judged against the other's old shape. No order works, which makes this one piece of work rather than two. ` +
-      `Say it as a single ask and it will be built as one.`,
+      `${k.a} and ${k.b} each use something the other owns (${k.one}, ${k.other}) — whichever runs second sees the ` +
+      `first's work only once it is committed. Watched, not refused.`,
   );
 }
 
@@ -80,13 +86,10 @@ function refusalsBeforeDispatch(a: {
   methods?: readonly ClassMethod[];
   /** Whether a name is something a module hands out. */
   exported?: (symbol: string) => boolean;
-  /** Pairs the map found that no order can undo. */
-  knots?: readonly { a: string; b: string; one: string; other: string }[];
 }): string[] {
   const out: string[] = [];
   const slices = a.slices as SliceLike[];
 
-  out.push(...knotRefusals(a.knots ?? []));
 
   for (const s of slices) {
     const cleared = clearanceOf(s);
@@ -224,6 +227,7 @@ export async function refusedBeforeDispatch(a: {
   const coupling = orderCoupledSlices(a.slices, a.graphPath ? usesByFile(a.graphPath) : new Map());
   for (const e of coupling.added)
     a.log(`plan: ${e.after} waits for ${e.before} — ${e.user} calls ${e.used}, so it is built against the finished shape`);
+  for (const w of knotWarnings(coupling.knots)) a.log(`plan: ${w}`);
 
   // The plan's units are built AFTER the rehousing and the ordering, so
   // every unit carries the path its check is really born at and every edge
@@ -246,7 +250,6 @@ export async function refusedBeforeDispatch(a: {
   const impossible = refusalsBeforeDispatch({
     slices: a.slices,
     space: a.space,
-    knots: coupling.knots,
     methods: a.graphPath ? classMethodsIn(a.graphPath) : [],
     exported: exportedIn(
       a.repoRoot,

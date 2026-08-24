@@ -262,3 +262,41 @@ test("the promises of a withdrawn cut can be signed again as new work", () => {
   const r = signCut(space, { id: "cut-2", changeIds: ["n1"] }, "2026-08-23T18:01:00Z", "t");
   assert.equal(r.ok, true, r.ok ? "" : r.reason);
 });
+
+test("a redrawn page is not the promises changing", async () => {
+  // The signature covers two halves. The grounded half is the substance —
+  // every sentence, where it lands, every check's own words, what each
+  // needs. The other is the PAGE those facts are drawn on, and it moves
+  // whenever the drawing code moves: nobody signs a wording, and nobody
+  // changed one on purpose. Refusing on it stopped a re-run of a cut whose
+  // work was already built and proved, saying "the promises changed after
+  // they were signed" about promises that had not.
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a space opens in its own tab",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "opening twice reveals one tab" }],
+        grounding: { touchpoints: [{ path: "src/a.ts", planned: false }], stamp: [] },
+      },
+    ],
+  };
+  const signed = signCut(space as never, { id: "cut-1", changeIds: ["n1"] }, "2026-01-01T00:00:00Z", "t", 1);
+  assert.ok(signed.ok);
+  const cut = signed.cut;
+
+  // The page is redrawn: same facts, a hash that no longer matches.
+  const redrawn = { ...cut, signature: { ...cut.signature!, renderHash: "0000000000000000" } };
+  const v = verifyCutSignature({ ...space, cuts: [redrawn] } as never, redrawn);
+  assert.equal(v.ok, true, "a redrawn page refused a cut whose promises are unchanged");
+  assert.match((v as { unchecked?: string }).unchecked ?? "", /the page was redrawn, not the work/);
+
+  // The substance moving is still refused, and says which half.
+  const moved = { ...space, nodes: [{ ...space.nodes[0], sentence: "something else entirely" }] };
+  const g = verifyCutSignature({ ...moved, cuts: [cut] } as never, cut);
+  assert.equal(g.ok, false);
+  assert.equal((g as { drift?: string }).drift, "grounding");
+});

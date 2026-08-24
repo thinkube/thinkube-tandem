@@ -19,7 +19,9 @@ import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
 import { closingVerifications, confessedDeferrals } from "./plan";
+import { knotWarnings } from "./refusals";
 import { missingProbes } from "./testHomes";
+import { gradeAssessments } from "./assess";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
@@ -163,7 +165,13 @@ test("two slices that change what the other calls are put in order, not refused"
   );
 });
 
-test("two slices that each call into the other are refused — no order exists", async () => {
+test("two slices that each use the other's work are watched, not refused", async () => {
+  // This was refused as an unorderable knot. It refused a plan that had
+  // already run and delivered twenty-two of its twenty-four promises: a
+  // slice commits when it finishes, so the second of a coupled pair does
+  // see the first's work. The sentence was wrong too — the two files it
+  // named were the user side of two different edges, and neither imported
+  // the other.
   const graph = mapWith({
     "src/extension.ts": ["src/surfaces/panel.ts"],
     "src/surfaces/panel.ts": ["src/extension.ts"],
@@ -180,10 +188,10 @@ test("two slices that each call into the other are refused — no order exists",
     exec: async () => ({ code: 0, out: "" }),
     log: () => {},
   });
-  assert.ok(r.refusal, "a knot must be refused — no order undoes it");
-  assert.match(r.refusal!.refusal, /each change what the other calls/);
-  assert.match(r.refusal!.refusal, /one piece of work rather than two/);
-  assert.match(r.refusal!.refusal, /Say it as a single ask/);
+  assert.equal(r.refusal, undefined, `a coupling that a run can survive was refused: ${r.refusal?.refusal}`);
+  const said = knotWarnings([{ a: "SL-5", b: "SL-7", one: "src/extension.ts", other: "src/surfaces/panel.ts" }]);
+  assert.match(said[0], /each use something the other owns/);
+  assert.match(said[0], /Watched, not refused/);
 });
 test("two slices joined by use are allowed when one waits for the other", async () => {
   const graph = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-map-")), "graph.json");
@@ -375,4 +383,102 @@ test("the gate judges the lines this run wrote, not the ones it found", async ()
   assert.equal(said.length, 1, `expected only the run's own confession, got:\n${said.join("\n")}`);
   assert.match(said[0], /work\.ts:2 confesses a deferral/);
   assert.doesNotMatch(said.join("\n"), /scan\.ts/, "the marker it found in the tree is not its confession");
+});
+
+test("a reviewer still reading is asked to carry on, never graded red", async () => {
+  // A reviewer spent its flat budget of tool uses reading and was cut off
+  // mid-sentence. The round returned an error, the error was recorded as
+  // RED, and a delivery of twenty-four promises was withheld for a
+  // criterion the closer then checked by hand and found kept. A count of
+  // tool uses is not a verdict.
+  const asked: string[] = [];
+  const space = {
+    ...emptySpace(),
+    asks: [{ id: "ask-1", text: "the tabs carry their space's name", author: "t", at: "now" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "each space opens in its own tab",
+        serves: ["ask-1"],
+        needs: [],
+        acceptance: [{ id: "c1", text: "the preflight no longer fails a run for a missing spec body", kind: "assessment" }],
+        grounding: { touchpoints: [{ path: "src/a.ts", planned: false }], stamp: [] },
+      },
+    ],
+  };
+  const run = async (_d: unknown, prompt: string): Promise<string | null> => {
+    asked.push(prompt);
+    // Cut off before a verdict the first time; answers when asked to finish.
+    return asked.length === 1 ? null : "I read the preflight. It carries no spec-body provision.\nGREEN it is kept";
+  };
+  const graded = await gradeAssessments({
+    space: space as never,
+    cut: { id: "cut-1", changeIds: ["n1"] } as never,
+    testerWt: "/nowhere",
+    model: "sonnet",
+    round: run as never,
+  } as never);
+  assert.equal(asked.length, 2, "it was not asked to carry on");
+  assert.match(asked[1], /You have not answered yet/);
+  assert.equal(graded.proofs.length, 1);
+  assert.equal(graded.proofs[0].verdict, "green", "the reviewer's own word decides, not the counter");
+});
+
+test("a reviewer that never answers is the machine's failure, not the work's", async () => {
+  let saidUngraded = "";
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "each space opens in its own tab",
+        serves: [],
+        needs: [],
+        acceptance: [{ id: "c1", text: "the notice names the space it came from", kind: "assessment" }],
+      },
+    ],
+  };
+  const graded = await gradeAssessments({
+    space: space as never,
+    cut: { id: "cut-1", changeIds: ["n1"] } as never,
+    testerWt: "/nowhere",
+    model: "sonnet",
+    round: (async () => null) as never,
+    ungraded: (label: string) => { saidUngraded = label; },
+  } as never);
+  assert.deepEqual(graded.proofs, [], "no verdict was invented in either direction");
+  assert.equal(saidUngraded, "review-1", "the machine did not report its own failure");
+  assert.match(graded.observations[0], /could not grade this/);
+  assert.match(graded.observations[0], /Judge it yourself/);
+});
+
+test("two slices sharing a file are not a knot", async () => {
+  // Comparing each slice's whole footprint found a SHARED file using
+  // another shared file and reported it both ways round — "sign.ts and
+  // sign.ts call into each other's work". Five such knots refused a
+  // re-run of work that had already been built and proved. A file both
+  // slices are cleared for is shared ownership; the door's queue already
+  // serialises two units writing one file.
+  const graph = mapWith({ "src/gates/sign.ts": ["src/core/schema.ts"] });
+  const shared = (handle: string) => ({
+    handle,
+    status: "ready",
+    files: ["src/gates/sign.ts", "src/core/schema.ts"],
+    workUnits: [
+      { footprint: ["src/gates/sign.ts", "src/core/schema.ts"], execution: "serial", role: "code" } as {
+        footprint: string[]; execution: string; role: string; consumes?: string[];
+      },
+    ],
+    criterionIds: [],
+  });
+  const r = await refusedBeforeDispatch({
+    slices: [shared("SL-2"), shared("SL-3")] as never,
+    space: emptySpace() as never,
+    cut: { id: "cut-1", changeIds: [] } as never,
+    repoRoot: "/nowhere",
+    graphPath: graph,
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  assert.equal(r.refusal, undefined, `sharing a file was called a knot: ${r.refusal?.refusal}`);
 });

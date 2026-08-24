@@ -165,11 +165,28 @@ export function verifyCutSignature(space: Space, cut: Cut): SignatureVerdict {
       drift: "grounding",
       reason: "the grounded members changed since the signature",
     };
+  // The grounded half held, so WHAT WAS APPROVED has not changed: the
+  // sentences, where each lands, every check's own words, and what each
+  // needs are all as they were signed. What is left in the render is the
+  // page those facts are drawn on — its wording, its ordering, its
+  // sections — and that moves whenever the drawing code moves, which
+  // nobody signed and nobody changed on purpose.
+  //
+  // This file has learned the same lesson twice above: hashing the
+  // grounding stamp made every commit invalidate every signature, and
+  // hashing the proof path made every delivery invalidate the signature
+  // that authorised it. A render hash is the third, and it refused a
+  // re-run of a cut whose work was already built and proved.
+  //
+  // So it is said, never refused. A difference here is worth knowing —
+  // the page a person read is not the page they would read now — and it
+  // is not the promises changing.
   if (sha(renderCutScreen(space, cut)) !== cut.signature.renderHash)
     return {
-      ok: false,
-      drift: "render",
-      reason: "the render changed since the signature",
+      ok: true,
+      unchecked:
+        "the cut reads differently now than when it was signed, though every promise, where it lands and what proves it are unchanged — " +
+        "the page was redrawn, not the work",
     };
   return { ok: true };
 }

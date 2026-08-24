@@ -130,6 +130,17 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         impact: "assessment check red",
         detail: `${label} — ${ref}`.slice(0, 400),
       }),
+    // A reviewer that never reached a verdict is the machine failing to
+    // judge. It is counted as an attention event about the machine, which
+    // is the number this design is judged by, and never against the work.
+    ungraded: (label, criterion) =>
+      defect({
+        activity: "closing gate",
+        trigger: "gate-infra",
+        type: "gate",
+        impact: "the machine could not grade a review — it rides the delivery for the person",
+        detail: `${label} — ${criterion}`.slice(0, 400),
+      }),
   });
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
   const criterionByProbe = criterionMapOf(slices);
