@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
 import { closingVerifications, confessedDeferrals } from "./plan";
+import { knotWarnings } from "./refusals";
 import { missingProbes } from "./testHomes";
 import { gradeAssessments } from "./assess";
 import { outsideFootprint } from "./answers";
@@ -164,7 +165,13 @@ test("two slices that change what the other calls are put in order, not refused"
   );
 });
 
-test("two slices that each call into the other are refused — no order exists", async () => {
+test("two slices that each use the other's work are watched, not refused", async () => {
+  // This was refused as an unorderable knot. It refused a plan that had
+  // already run and delivered twenty-two of its twenty-four promises: a
+  // slice commits when it finishes, so the second of a coupled pair does
+  // see the first's work. The sentence was wrong too — the two files it
+  // named were the user side of two different edges, and neither imported
+  // the other.
   const graph = mapWith({
     "src/extension.ts": ["src/surfaces/panel.ts"],
     "src/surfaces/panel.ts": ["src/extension.ts"],
@@ -181,10 +188,10 @@ test("two slices that each call into the other are refused — no order exists",
     exec: async () => ({ code: 0, out: "" }),
     log: () => {},
   });
-  assert.ok(r.refusal, "a knot must be refused — no order undoes it");
-  assert.match(r.refusal!.refusal, /each change what the other calls/);
-  assert.match(r.refusal!.refusal, /one piece of work rather than two/);
-  assert.match(r.refusal!.refusal, /Say it as a single ask/);
+  assert.equal(r.refusal, undefined, `a coupling that a run can survive was refused: ${r.refusal?.refusal}`);
+  const said = knotWarnings([{ a: "SL-5", b: "SL-7", one: "src/extension.ts", other: "src/surfaces/panel.ts" }]);
+  assert.match(said[0], /each use something the other owns/);
+  assert.match(said[0], /Watched, not refused/);
 });
 test("two slices joined by use are allowed when one waits for the other", async () => {
   const graph = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-map-")), "graph.json");
