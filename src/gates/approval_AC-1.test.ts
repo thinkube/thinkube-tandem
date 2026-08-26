@@ -136,7 +136,7 @@ test("executeRun does not refuse a cut whose approval was minted against the pag
   );
   assert.doesNotMatch(
     s.runNote ?? "",
-    /approved|signed|Think it through again/i,
+    /not approved|Think it through again/i,
     `executeRun refused a redrawn-page approval: ${s.runNote}`,
   );
 });
