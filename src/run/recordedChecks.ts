@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
-import type { KeptCheck } from "./plan";
+import type { KeptCheck } from "./deliveryRecord";
 
 /** The check paths a cut's delivery record holds, or nothing. */
 export function recordedCheckPaths(storeDir: string, tep: string): string[] {
