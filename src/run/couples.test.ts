@@ -22,6 +22,7 @@ import { closingVerifications, confessedDeferrals } from "./plan";
 import { knotWarnings } from "./refusals";
 import { missingProbes } from "./testHomes";
 import { gradeAssessments } from "./assess";
+import { provedByExecution } from "./wiring";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
@@ -481,4 +482,28 @@ test("two slices sharing a file are not a knot", async () => {
     log: () => {},
   });
   assert.equal(r.refusal, undefined, `sharing a file was called a knot: ${r.refusal?.refusal}`);
+});
+
+test("a wiring no-verdict names what did execute", async () => {
+  // Six of these once came back within one second — execs that plainly
+  // never ran a check — and the bare sentence gave nothing to notice that
+  // with: three hand reproductions said yes while the run said no.
+  const dirHolder = { files: ["out-test/hygiene.test.js", "out-test/run/state.js"] };
+  const v = await provedByExecution({
+    run: "node --test out-test/x.test.js",
+    subjects: ["src/surfaces/phase.ts"],
+    worktree: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wire-")),
+    exec: async (cmd: string) => {
+      // Simulate a run whose coverage saw other files, never the subject.
+      const m = /NODE_V8_COVERAGE='([^']+)'/.exec(cmd)!;
+      fs.writeFileSync(
+        path.join(m[1], "coverage-1.json"),
+        JSON.stringify({ result: dirHolder.files.map((f) => ({ url: `file:///w/${f}`, functions: [{ ranges: [{ count: 1 }] }] })) }),
+      );
+      return { code: 0, output: "ok" };
+    },
+  });
+  assert.equal(v.executed, "no");
+  assert.match(v.detail, /exit 0 in \d+ms/, "the verdict hides its exit and timing");
+  assert.match(v.detail, /it did execute: /, "the verdict hides what the trace saw");
 });

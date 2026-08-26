@@ -132,19 +132,32 @@ export function renderDeliveryPage(
   // claim as true because its promises were in the cut, and said "1 of 1
   // now true" over a hundred red checks and a run that never dispatched.
   const inCut = new Set(members.map((n) => n.id));
-  const green = new Set(
-    delivery.proofs.filter((p) => p.verdict === "green").map((p) => p.label.trim()),
-  );
-  const red = new Map(
-    delivery.proofs
-      .filter((p) => p.verdict !== "green")
-      .map((p) => [p.label.trim(), p.verdict] as const),
-  );
+  /**
+   * A criterion is matched to its proof by ID, not by its words.
+   *
+   * A runnable check's proof is labelled with the criterion's own text, so
+   * matching on text worked for those. A REVIEW's proof is labelled
+   * `review-3: ` plus the first sixty characters — it can never equal the
+   * criterion, so every claim proved only by review read "nothing proved
+   * it" while the same page listed its green review underneath. A person
+   * was told four asks were unproved over a page of evidence that they
+   * were kept.
+   *
+   * Both kinds carry `criterionId`. The text is kept only as a fallback
+   * for a proof written before ids were on them.
+   */
+  const verdictOfCriterion = new Map<string, string>();
+  for (const p of delivery.proofs) {
+    if (p.criterionId) verdictOfCriterion.set(p.criterionId, p.verdict);
+    verdictOfCriterion.set(`text:${p.label.trim()}`, p.verdict);
+  }
+  const verdictFor = (a: { id?: string; text: string }): string | undefined =>
+    (a.id ? verdictOfCriterion.get(a.id) : undefined) ?? verdictOfCriterion.get(`text:${a.text.trim()}`);
   /** A promise is kept when every check on it is green. */
   const kept = (n: Change): boolean =>
-    inCut.has(n.id) && n.acceptance.length > 0 && n.acceptance.every((a) => green.has(a.text.trim()));
+    inCut.has(n.id) && n.acceptance.length > 0 && n.acceptance.every((a) => verdictFor(a) === "green");
   const failing = (n: Change): string[] =>
-    n.acceptance.filter((a) => red.has(a.text.trim())).map((a) => a.text);
+    n.acceptance.filter((a) => (verdictFor(a) ?? "green") !== "green").map((a) => a.text);
   const built = inCut;
   const subjects = space.subjects ?? [];
   const claims = space.claims ?? [];

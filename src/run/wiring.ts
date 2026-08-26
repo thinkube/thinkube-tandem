@@ -111,7 +111,9 @@ export async function provedByExecution(a: {
     // The recorder is an environment variable of the runtime itself, so a
     // check runs exactly the way it ran when it went green — no flags of
     // ours in its command, nothing about its runner assumed.
+    const t0 = Date.now();
     const r = await a.exec(`NODE_V8_COVERAGE='${dir}' ${a.run}`, a.worktree);
+    const took = Date.now() - t0;
     const ran = await executedFiles(dir);
     if (!ran.length)
       return {
@@ -123,11 +125,19 @@ export async function provedByExecution(a: {
       };
     const hit = a.subjects.filter((s) => ranAmong(s, ran));
     if (hit.length) return { executed: "yes", detail: `the drive executed ${hit.join(", ")}` };
+    // The verdict carries its own evidence. Six of these once came back
+    // within a single second — execs that plainly never ran a check — and
+    // the bare sentence gave a person nothing to notice that with: three
+    // hand reproductions said yes while the run said no, and the
+    // difference took a day to find. Exit code, duration and what DID
+    // execute make the next such disagreement one look instead of an
+    // archaeology.
     return {
       executed: "no",
       detail:
         `the drive passed without executing a line of ${a.subjects.join(", ")} — the code this promise lands in. ` +
-        `A check that never reaches its subject is green for a stub as readily as for the real thing.`,
+        `A check that never reaches its subject is green for a stub as readily as for the real thing. ` +
+        `(exit ${r.code ?? "null"} in ${took}ms; it did execute: ${ran.slice(0, 5).join(", ")}${ran.length > 5 ? ` and ${ran.length - 5} more` : ""})`,
     };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
