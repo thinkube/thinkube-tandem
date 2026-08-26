@@ -33,14 +33,21 @@ const PHASES: readonly Phase[] = [
 const repo = path.resolve(__dirname, "..", "..");
 const bundle = path.join(repo, "out-test", "harness", "buttons.cjs");
 
+// Read on FIRST USE inside a test, never at module load. Called at the top
+// level, a harness that cannot be built throws before any test body runs:
+// the module aborts, `phase` is imported and none of it ever executes, and
+// the drive reaches its subject on paper only. Inside a test, the same
+// failure is a named failing test and the in-process drives below still
+// run their subject.
+let shapingCache: string[] | undefined;
 function shapingActions(): string[] {
+  if (shapingCache) return shapingCache;
   const table = JSON.parse(renderedTable(repo, bundle)) as Record<string, unknown>;
   const list = table["shaping:actions"];
   assert.ok(Array.isArray(list), "the surface no longer reports which actions are shaping");
-  return list as string[];
+  shapingCache = list as string[];
+  return shapingCache;
 }
-
-const shapingList = shapingActions();
 
 // The phase table is host code with no TSX and no vscode import, so it is
 // driven HERE, in this process, and not only inside the harness child.
@@ -63,7 +70,7 @@ test("the phase table answers for every action it governs, in this process", () 
 // INVARIANT: the two lists are set-equal. Stated in both directions so a
 // failure says WHICH side is missing the name, not merely that they differ.
 test("every action the surface can send is governed by a phase, and every governed action can be sent", () => {
-  const shaping = [...shapingList].sort();
+  const shaping = [...shapingActions()].sort();
   const gated = [...gatedActions()].sort();
   assert.deepEqual(
     shaping.filter((a) => !gated.includes(a)),
@@ -80,6 +87,6 @@ test("every action the surface can send is governed by a phase, and every govern
 // INVARIANT: the gesture this work adds is on BOTH sides. The set-equality
 // above holds vacuously if waive-docs is missing from each, so name it.
 test("waive-docs is both a shaping action of the surface and an action the phase table governs", () => {
-  assert.ok(shapingList.includes("waive-docs"), "the surface cannot send waive-docs");
+  assert.ok(shapingActions().includes("waive-docs"), "the surface cannot send waive-docs");
   assert.ok(gatedActions().includes("waive-docs"), "no phase governs waive-docs");
 });

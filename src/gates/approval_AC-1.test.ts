@@ -10,12 +10,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { tepApprovalOf, tepContentHash } from "./approval";
 import { signCut } from "./sign";
 import { renderCutScreen } from "./render";
 import { emptySpace, Space } from "../core/schema";
 import { mintApproval, approvalContentHash, ApprovalToken } from "../engine/approvalToken";
 import { ApprovalStore } from "../engine/approvalStore";
+import { executeRun } from "../surfaces/runGate";
+import { TandemSession } from "../surfaces/session";
 
 const SECRET = Buffer.from("a-test-secret");
 
@@ -88,6 +93,52 @@ test("a cut approved against the review page as it read before this work still d
 
   const verdict = tepApprovalOf(space, storeOf({ [`tep:${tepId}`]: oldToken }), SECRET, tepId);
   assert.deepEqual(verdict, { approved: true });
+});
+
+/**
+ * A session holding one signed cut, with the approval minted the OLD way —
+ * over the bytes of the rendered page, as the gate did before this work.
+ *
+ * No forge and no scope resolver, so executeRun stops at the guard that
+ * follows the approval check. That is the point: the run must get PAST the
+ * approval and fail for the missing forge instead, which is what proves the
+ * approval did not refuse it. Its stores are real directories because the
+ * session mints its secret and token store on disk.
+ */
+function sessionWithOldApproval(): { s: TandemSession; cutId: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-approval-"));
+  const { space, tepId } = signedSpace();
+  const cut = space.cuts[0];
+  const s = new TandemSession({
+    round: { model: "m", volumeModel: "m", repoRoot: dir },
+    storeDir: dir,
+    storageDir: dir,
+    now: () => "2026-08-22T00:00:00Z",
+    author: "t",
+  });
+  s.space = space;
+  // Minted over the RENDERED page, exactly as it was before this work.
+  s.mintTepApproval(tepId, approvalContentHash(renderCutScreen(space, cut) + "\n(no Documentation line yet)"));
+  return { s, cutId: cut.id };
+}
+
+// INVARIANT: the dispatch path itself — not merely the helper it consults —
+// lets a pre-existing approval through after the page gained the
+// Documentation line. The criterion names executeRun, so executeRun is what
+// runs here: it must stop for the absent forge, never for the approval.
+test("executeRun does not refuse a cut whose approval was minted against the page as it read before this work", async () => {
+  const { s, cutId } = sessionWithOldApproval();
+  await executeRun(s, cutId);
+  assert.match(
+    s.runNote ?? "",
+    /no forge is reachable/,
+    `the run stopped for something other than the missing forge: ${s.runNote}`,
+  );
+  assert.doesNotMatch(
+    s.runNote ?? "",
+    /approved|signed|Think it through again/i,
+    `executeRun refused a redrawn-page approval: ${s.runNote}`,
+  );
 });
 
 // INVARIANT: the escape hatch is not a hole. A cut whose grounded members

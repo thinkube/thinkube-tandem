@@ -27,15 +27,19 @@ const bundle = path.join(repo, "out-test", "harness", "buttons.cjs");
  * SSR build, which costs seconds, and every drive below reads the same
  * table.
  */
+let tableCache: Record<string, Record<string, string[]>> | undefined;
 function controlTable(): Record<string, Record<string, string[]>> {
-  return JSON.parse(renderedTable(repo, bundle)) as Record<string, Record<string, string[]>>;
+  // Built on FIRST USE inside a test, never at module load: a harness that
+  // cannot be built would otherwise throw before any test body runs, so the
+  // module aborts and no drive here ever reaches the surface it renders.
+  if (!tableCache)
+    tableCache = JSON.parse(renderedTable(repo, bundle)) as Record<string, Record<string, string[]>>;
+  return tableCache;
 }
-
-const table = controlTable();
 
 /** Every control row for a phase, across all tabs. */
 function rowsFor(phase: string): string[] {
-  return Object.values(table[phase] ?? {}).flat();
+  return Object.values(controlTable()[phase] ?? {}).flat();
 }
 
 // INVARIANT: in a phase where the host acts on waive-docs, the render
@@ -44,7 +48,7 @@ function rowsFor(phase: string): string[] {
 test("the cut-review state renders a reason input and a waive-docs control, both on where the host allows it", () => {
   const allowing = (["drafting", "read", "understood", "signed", "running", "delivered"] as Phase[])
     .filter((p) => allowedNow(p).includes("waive-docs"))
-    .filter((p) => table[p]);
+    .filter((p) => controlTable()[p]);
   assert.notDeepEqual(allowing, [], "no rendered phase allows waive-docs");
 
   for (const phase of allowing) {
@@ -66,7 +70,7 @@ test("the cut-review state renders a reason input and a waive-docs control, both
 test("the waive-docs control and its reason box are off in the phases the host refuses them in", () => {
   const refusing = (["drafting", "read", "understood", "signed", "running", "delivered"] as Phase[])
     .filter((p) => !allowedNow(p).includes("waive-docs"))
-    .filter((p) => table[p]);
+    .filter((p) => controlTable()[p]);
   assert.notDeepEqual(refusing, [], "every rendered phase allows waive-docs — nothing is being refused");
 
   for (const phase of refusing) {

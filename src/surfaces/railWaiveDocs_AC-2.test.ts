@@ -22,18 +22,22 @@ const bundle = path.join(repo, "out-test", "harness", "buttons.cjs");
 
 type Posted = { action: "waive-docs"; text: string } | null;
 
+// Read on FIRST USE inside a test, never at module load: a harness that
+// cannot be built would otherwise throw before any test body runs, and a
+// file whose drives never run reaches its subject on paper only.
+let sentCache: Record<string, Posted> | undefined;
 function gestures(): Record<string, Posted> {
+  if (sentCache) return sentCache;
   const table = JSON.parse(renderedTable(repo, bundle)) as Record<string, unknown>;
   const g = table["gestures:waive-docs"];
   assert.ok(g, "the harness no longer records what the reason box sends");
-  return g as Record<string, Posted>;
+  sentCache = g as Record<string, Posted>;
+  return sentCache;
 }
-
-const sent = gestures();
 
 // INVARIANT: a real reason posts waive-docs carrying that very text.
 test("submitting a non-empty reason posts a waive-docs action carrying that text", () => {
-  const posted = sent[JSON.stringify("no user-facing change")];
+  const posted = gestures()[JSON.stringify("no user-facing change")];
   assert.deepEqual(posted, { action: "waive-docs", text: "no user-facing change" });
 });
 
@@ -42,7 +46,7 @@ test("submitting a non-empty reason posts a waive-docs action carrying that text
 test("a blank or whitespace-only reason posts nothing", () => {
   for (const blank of ["", "   ", "\t\n "]) {
     assert.equal(
-      sent[JSON.stringify(blank)],
+      gestures()[JSON.stringify(blank)],
       null,
       `a reason of ${JSON.stringify(blank)} posted something — a waiver needs a stated reason`,
     );
@@ -52,7 +56,7 @@ test("a blank or whitespace-only reason posts nothing", () => {
 // INVARIANT: what is posted is the TRIMMED text, never the raw box, so a
 // reason cannot arrive at the host padded with spaces it did not mean.
 test("a padded reason is posted trimmed, not as it was typed", () => {
-  assert.deepEqual(sent[JSON.stringify("  padded reason  ")], {
+  assert.deepEqual(gestures()[JSON.stringify("  padded reason  ")], {
     action: "waive-docs",
     text: "padded reason",
   });

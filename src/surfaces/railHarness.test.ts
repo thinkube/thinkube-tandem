@@ -30,12 +30,64 @@ function words(err: unknown): string {
 }
 
 /**
- * The harness output as JSON text. Builds the bundle if it is not there
- * yet — the extension's own `npm test` compiles `src` but does not run
- * vite, so a check must not assume the bundle already exists.
+ * Every source the bundle is built from, so staleness can be decided by
+ * comparing their times against the bundle's.
+ */
+function harnessSources(repo: string): string[] {
+  const roots = [
+    path.join(repo, "webview", "map", "src"),
+    path.join(repo, "webview", "map", "harness"),
+    path.join(repo, "src", "surfaces"),
+  ];
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && /\.(tsx?|jsx?)$/.test(entry.name)) found.push(full);
+    }
+  };
+  for (const root of roots) if (fs.existsSync(root)) walk(root);
+  return found;
+}
+
+/**
+ * Whether the bundle predates any source it is built from. A bundle left
+ * by an earlier round is the one way this drive can run the WRONG surface
+ * and still be green: the checks would render code that no longer matches
+ * the files the promise lands in, and report on a product that is not the
+ * one in the tree. Rebuilding on staleness — not merely on absence — is
+ * what makes "the real surface ran" true rather than likely.
+ */
+function stale(bundle: string, repo: string): boolean {
+  if (!fs.existsSync(bundle)) return true;
+  const built = fs.statSync(bundle).mtimeMs;
+  return harnessSources(repo).some((f) => fs.statSync(f).mtimeMs > built);
+}
+
+/**
+ * The harness output as JSON text. Builds the bundle when it is missing or
+ * older than any source it is built from — the extension's own `npm test`
+ * compiles `src` but does not run vite, so a check must neither assume the
+ * bundle exists nor trust one an earlier round left behind.
+ *
+ * The bundle is LOADED HERE, in this process, never spawned as a child.
+ * Coverage instruments the process running the checks and nothing it
+ * spawns, so a harness run with `execFileSync` executed the surface
+ * modules somewhere nothing measured: every drive over its output was
+ * green without a line of Rail.tsx or vscode.ts being seen to run, which
+ * is as true for a stub as for the real surface. Loaded in-process the
+ * same bundle runs the same code, and its source map — which the harness
+ * build emits for exactly this reason — attributes those lines back to
+ * the real `webview/map` files.
+ *
+ * The bundle is a CJS script that writes its JSON to stdout as it loads
+ * and takes no argument, so stdout is captured across the load and the
+ * module cache is cleared first: a second call must re-run the render,
+ * not return an empty string because the module was already loaded.
  */
 export function renderedTable(repo: string, bundle: string): string {
-  if (!fs.existsSync(bundle)) {
+  if (stale(bundle, repo)) {
     try {
       execFileSync("npm", ["run", "--prefix", path.join(repo, "webview", "map"), "buttons"], {
         cwd: repo,
@@ -46,11 +98,28 @@ export function renderedTable(repo: string, bundle: string): string {
       throw new Error(`the surface harness could not be built, so the render cannot be read:\n${words(err)}`);
     }
   }
+  const chunks: string[] = [];
+  const realWrite = process.stdout.write.bind(process.stdout);
+  // The harness reads argv[2] as an optional fixture of pushes. Run in
+  // this process, argv[2] is whatever the test runner was given, which is
+  // not a fixture — it is trimmed so the harness builds its pushes from
+  // the host's own phase table, which is what every drive here expects.
+  const realArgv = process.argv;
+  process.argv = realArgv.slice(0, 2);
+  (process.stdout as NodeJS.WriteStream).write = ((chunk: string | Uint8Array): boolean => {
+    chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
   try {
-    return execFileSync("node", [bundle], { cwd: repo, encoding: "utf8" });
+    delete require.cache[require.resolve(bundle)];
+    require(bundle);
   } catch (err) {
     throw new Error(`the surface harness could not be run:\n${words(err)}`);
+  } finally {
+    (process.stdout as NodeJS.WriteStream).write = realWrite;
+    process.argv = realArgv;
   }
+  return chunks.join("");
 }
 
 const repo = path.resolve(__dirname, "..", "..");

@@ -426,8 +426,9 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./ && cd webview/map && npm run build",
-    "test": "tsc -p tsconfig.test.json && npm run --prefix webview/map build && npm run --prefix webview/map buttons && node --test out-test/",
+    "webview:install": "node scripts/webview-install.mjs",
+    "compile": "npm run webview:install && tsc -p ./ && cd webview/map && npm run build",
+    "test": "npm run webview:install && tsc -p tsconfig.test.json && npm run --prefix webview/map build && npm run --prefix webview/map buttons && node --test out-test/",
     "docs": "node scripts/docs-build.mjs"
   },
   "devDependencies": {
