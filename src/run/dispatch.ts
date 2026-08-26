@@ -31,7 +31,7 @@ import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
 import { rememberFacts } from "./facts";
-import { recordedCheckPaths, restoreChecksFromRecord } from "./plan";
+import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
@@ -155,7 +155,7 @@ export async function dispatchTep(
     cut,
     repoRoot: deps.repoRoot,
     branch,
-    ...(deps.storeDir ? { recordedChecks: recordedCheckPaths(deps.storeDir, tep) } : {}),
+    ...(deps.storeDir ? { recordedChecks: recordedCheckPaths(deps.storeDir, tep), recordedHomes: recordedCheckHomes(deps.storeDir, tep) } : {}),
     ...(deps.graphPath ? { graphPath: deps.graphPath } : {}),
     exec,
     log: (l) => log(`${tep}: ${l}`),

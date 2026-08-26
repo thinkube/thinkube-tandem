@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
 import { closingVerifications, confessedDeferrals } from "./plan";
+import { pinRecordedChecks } from "./checkHomes";
 import { knotWarnings } from "./refusals";
 import { missingProbes } from "./testHomes";
 import { gradeAssessments } from "./assess";
@@ -517,4 +518,42 @@ test("a wiring no-verdict names what did execute", async () => {
   // The worktree prefix is common to every entry and says nothing; repeated
   // five times it filled the line and pushed out the names themselves.
   assert.doesNotMatch(v.detail, new RegExp(wt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the verdict repeats the worktree prefix on every path");
+});
+
+test("a resumed plan keeps every check at its recorded address", () => {
+  // A resumed run rebuilds its plan from a space the run itself has
+  // written into, so the same promises regroup and every check is minted
+  // a fresh address. One resume renamed six criteria's checks out from
+  // under their finished work: the plan expected files that did not
+  // exist, a tester wrote new checks beside the wrong module, and the
+  // gate graded six promises against checks that never drove their
+  // subjects — in one second, exit 0.
+  const slices = [
+    {
+      handle: "SL-2",
+      criterionIds: ["c-render", "c-rail"],
+      workUnits: [
+        { role: "code", footprint: ["src/gates/render.ts"] },
+        // The regrouped plan minted both beside render.ts…
+        { role: "test", footprint: ["src/gates/render_AC-1.test.ts"] },
+        { role: "test", footprint: ["src/gates/render_AC-2.test.ts"] },
+      ],
+    },
+  ];
+  const moved = pinRecordedChecks(
+    slices as never,
+    // …but the record knows the rail criterion's check lives elsewhere.
+    new Map([["c-rail", "src/surfaces/railWaiveDocs_AC-1.test.ts"]]),
+    new Set(["src/surfaces/railWaiveDocs_AC-1.test.ts", "src/gates/render_AC-1.test.ts"]),
+  );
+  assert.deepEqual(moved, [{ from: "src/gates/render_AC-2.test.ts", to: "src/surfaces/railWaiveDocs_AC-1.test.ts" }]);
+  assert.deepEqual(
+    slices[0].workUnits.filter((u) => u.role === "test").map((u) => u.footprint[0]),
+    ["src/gates/render_AC-1.test.ts", "src/surfaces/railWaiveDocs_AC-1.test.ts"],
+    "the recorded address wins; the unrecorded one keeps the plan's",
+  );
+  // A recorded address no longer on the branch cannot win — there is
+  // nothing there to run.
+  const gone = pinRecordedChecks(slices as never, new Map([["c-render", "src/x_AC-1.test.ts"]]), new Set());
+  assert.deepEqual(gone, []);
 });

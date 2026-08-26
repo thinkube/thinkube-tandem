@@ -25,7 +25,7 @@ import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
-import { rehouseChecks } from "./checkHomes";
+import { pinRecordedChecks, rehouseChecks } from "./checkHomes";
 import { verifyCutSignature } from "../gates/sign";
 
 interface SliceLike extends SliceForDag {
@@ -196,6 +196,8 @@ export async function refusedBeforeDispatch(a: {
    *  there — renaming it after a delivery once turned a fully proven cut
    *  into fifty-eight file-not-found reds. */
   recordedChecks?: readonly string[];
+  /** Criterion → the address its check was recorded at. */
+  recordedHomes?: Map<string, string>;
   graphPath?: string;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   log: (line: string) => void;
@@ -210,6 +212,24 @@ export async function refusedBeforeDispatch(a: {
         .map((l) => l.trim())
         .filter(Boolean)
     : [];
+  // A check's identity is the CRITERION it proves, never the address one
+  // plan happened to mint. A resumed run rebuilds its plan from the space,
+  // and the space has moved under it — the run itself wrote records into
+  // it — so the same promises regroup into different slices and every
+  // check is minted a fresh address. One resume renamed six criteria's
+  // checks out from under their finished work: the plan expected files
+  // that did not exist, a tester wrote new checks beside the wrong module,
+  // and the gate then graded six promises against checks that never drove
+  // their subjects. The delivery record knows where each criterion's check
+  // really lives; a recorded address that is still on the branch wins over
+  // anything the new plan minted. Pinned BEFORE the rehousing: the true
+  // ordinal is in the original probe's own name, and the rehouser shifts
+  // ordinals when addresses are taken — reading the criterion off a
+  // shifted name bound six checks to the wrong criteria all over again.
+  const pinned = pinRecordedChecks(a.slices, a.recordedHomes ?? new Map(), new Set(onBranch));
+  if (pinned.length)
+    a.log(`${pinned.length} check(s) kept at their recorded address, e.g. ${pinned[0].to}`);
+
   const rehoused = rehouseChecks(
     a.slices,
     (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out.split("\n").map((l) => l.trim()),
@@ -217,6 +237,7 @@ export async function refusedBeforeDispatch(a: {
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
+
 
   // Cross-slice order is derived from `needs` — the reading's own sentence
   // that one promise needs another. When the reading says it, the plan is
