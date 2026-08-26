@@ -426,6 +426,33 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
     await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
     const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
+    // A person's Stop is not a verdict on the work. A run stopped
+    // mid-grading once recorded every interrupted check as red — exit 124,
+    // "[stopped]" — and withheld with "34 promises are not kept", which
+    // reads as the work failing thirty-four times when what happened is
+    // one person pressing one button. Stopped work is ungraded, not bad.
+    if (g.state.halted) {
+      log(`${tep}: stopped by the person — ${unkept.length} promise(s) were still being graded; nothing is judged from a stop`);
+      return {
+        refusals: [],
+        undelivered,
+        delivery: {
+          id: `delivery-${tep}`,
+          cutId: cut.id,
+          branch,
+          runId,
+          producedAt,
+          proofs,
+          ...(observations.length ? { observations } : {}),
+          withheld:
+            `the run was stopped while ${unkept.length} promise(s) were still being graded — nothing was judged from the stop. ` +
+            `The branch holds the work; run it again to finish the grading.`,
+          ...(undelivered.length ? { undelivered } : {}),
+          ...(g.rulings.length ? { rulings: g.rulings } : {}),
+          ...(g.decisions.length ? { decisions: g.decisions } : {}),
+        },
+      };
+    }
     log(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
     return {
       refusals: [],

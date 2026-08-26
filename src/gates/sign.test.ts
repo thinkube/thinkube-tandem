@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
-import { renderCutScreen } from "./render";
+import { renderCutScreen, renderDeliveryPage } from "./render";
 import { emptySpace } from "../core/schema";
 import { signedIds } from "../core/cutClosure";
 import * as fs from "node:fs";
@@ -305,4 +305,49 @@ test("a redrawn page is not the promises changing", async () => {
   const g = verifyCutSignature({ ...moved, cuts: [cut] } as never, cut);
   assert.equal(g.ok, false);
   assert.equal((g as { drift?: string }).drift, "grounding");
+});
+
+test("a claim proved by review reads as proved", async () => {
+  // A runnable check's proof is labelled with the criterion's own text, so
+  // matching a claim to its proof BY TEXT worked for those. A review's
+  // proof is labelled "review-3: " plus the first sixty characters — it can
+  // never equal the criterion. So every claim proved only by review read
+  // "NOT true yet; nothing proved it" while the same page listed its green
+  // review directly underneath, and a person was told four asks were
+  // unproved over a page of evidence that they were kept.
+  const space = {
+    ...emptySpace(),
+    subjects: [{ id: "s1", name: "Documentation", from: [] }],
+    claims: [{ id: "cl1", subjectId: "s1", text: "is required by default for every cut", fromAsk: "ask-1" }],
+    nodes: [
+      {
+        id: "n1",
+        sentence: "a cut with no documentation cannot sign",
+        serves: ["ask-1"],
+        servesClaim: "cl1",
+        needs: [],
+        acceptance: [
+          { id: "c1", text: "the gates page states the rule, and sign.ts enforces it", kind: "assessment" },
+        ],
+      },
+    ],
+  };
+  const delivery = {
+    id: "d1",
+    cutId: "cut-1",
+    branch: "b",
+    proofs: [
+      {
+        kind: "assessment" as const,
+        criterionId: "c1",
+        // The label a reviewer's proof really carries: never the criterion.
+        label: "review-1: the gates page states the rule, and sign.ts enfo",
+        verdict: "green" as const,
+      },
+    ],
+  };
+  const page = renderDeliveryPage({ ...space, cuts: [{ id: "cut-1", changeIds: ["n1"] }] } as never, delivery as never);
+  assert.match(page, /Documentation — 1 of 1 now true/);
+  assert.match(page, /✓ is required by default for every cut/);
+  assert.doesNotMatch(page, /nothing proved it/);
 });
