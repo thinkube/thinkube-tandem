@@ -197,12 +197,21 @@ export async function provedByExecution(a: {
     // difference took a day to find. Exit code, duration and what DID
     // execute make the next such disagreement one look instead of an
     // archaeology.
+    //
+    // The executed paths are shown relative to the worktree, and how many
+    // there were is said BEFORE naming any: a reader whose message is cut
+    // short still learns the one fact that separates the two cases. An
+    // absolute path repeated five times filled the whole line with a prefix
+    // common to every entry, and "0 files" — the signature of a command
+    // that matched nothing and exited 0 — read the same as a real run.
+    const shown = ran.map((f) => (f.startsWith(a.worktree) ? path.relative(a.worktree, f) : f));
     return {
       executed: "no",
       detail:
         `the drive passed without executing a line of ${a.subjects.join(", ")} — the code this promise lands in. ` +
         `A check that never reaches its subject is green for a stub as readily as for the real thing. ` +
-        `(exit ${r.code ?? "null"} in ${took}ms; it did execute: ${ran.slice(0, 5).join(", ")}${ran.length > 5 ? ` and ${ran.length - 5} more` : ""})`,
+        `(exit ${r.code ?? "null"} in ${took}ms; it executed ${shown.length} file(s): ` +
+        `${shown.slice(0, 5).join(", ")}${shown.length > 5 ? ` and ${shown.length - 5} more` : ""})`,
     };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});

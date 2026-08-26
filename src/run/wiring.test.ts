@@ -140,7 +140,7 @@ test("a promise landing in a document is not asked to execute", async () => {
   // is proven by the check's own assertions, not by a trace.
   const verdict = await provedByExecution({
     run: "true",
-    subjects: ["docs/ENGINE-WIRING.md", "data/table.json"],
+    subjects: ["ENGINE-WIRING.md", "data/table.json"],
     worktree: "/nowhere",
     exec: async () => ({ code: 0, output: "" }),
   });

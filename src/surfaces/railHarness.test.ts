@@ -88,6 +88,31 @@ function stale(bundle: string, repo: string): boolean {
  */
 export function renderedTable(repo: string, bundle: string): string {
   if (stale(bundle, repo)) {
+    // The surface is a separate npm package with its own react and vite; an
+    // install at the repository root does not reach it. On a clean checkout
+    // webview/map has no node_modules, so `vite build` cannot run and the
+    // bundle is never produced. Installing first is what makes this build
+    // possible at all rather than only when a previous run left the tools
+    // behind.
+    //
+    // The install is skipped when the binaries the build invokes are already
+    // present. It reaches the network, and a runner without one would
+    // otherwise fail here even though every tool the build needs is on disk
+    // — a failure about fetching packages, in a check about the surface.
+    const bin = path.join(repo, "webview", "map", "node_modules", ".bin");
+    if (!["vite", "tsc"].every((b) => fs.existsSync(path.join(bin, b)))) {
+      try {
+        execFileSync("node", [path.join(repo, "scripts", "webview-install.mjs")], {
+          cwd: repo,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (err) {
+        throw new Error(
+          `the surface's dependencies could not be installed, so the render cannot be read:\n${words(err)}`,
+        );
+      }
+    }
     try {
       execFileSync("npm", ["run", "--prefix", path.join(repo, "webview", "map"), "buttons"], {
         cwd: repo,

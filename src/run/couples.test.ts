@@ -489,21 +489,32 @@ test("a wiring no-verdict names what did execute", async () => {
   // never ran a check — and the bare sentence gave nothing to notice that
   // with: three hand reproductions said yes while the run said no.
   const dirHolder = { files: ["out-test/hygiene.test.js", "out-test/run/state.js"] };
+  // The coverage URLs sit UNDER this worktree, as a real run's do — that is
+  // what lets the verdict quote them by their short, repository-relative
+  // name instead of repeating one long prefix on every entry.
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wire-"));
   const v = await provedByExecution({
     run: "node --test out-test/x.test.js",
     subjects: ["src/surfaces/phase.ts"],
-    worktree: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wire-")),
+    worktree: wt,
     exec: async (cmd: string) => {
       // Simulate a run whose coverage saw other files, never the subject.
       const m = /NODE_V8_COVERAGE='([^']+)'/.exec(cmd)!;
       fs.writeFileSync(
         path.join(m[1], "coverage-1.json"),
-        JSON.stringify({ result: dirHolder.files.map((f) => ({ url: `file:///w/${f}`, functions: [{ ranges: [{ count: 1 }] }] })) }),
+        JSON.stringify({ result: dirHolder.files.map((f) => ({ url: `file://${path.join(wt, f)}`, functions: [{ ranges: [{ count: 1 }] }] })) }),
       );
       return { code: 0, output: "ok" };
     },
   });
   assert.equal(v.executed, "no");
   assert.match(v.detail, /exit 0 in \d+ms/, "the verdict hides its exit and timing");
-  assert.match(v.detail, /it did execute: /, "the verdict hides what the trace saw");
+  // How MANY files ran is stated before any is named: a command that
+  // matched nothing and exited 0 reads as "0 file(s)", which no real run
+  // does, and that fact survives a message cut short.
+  assert.match(v.detail, /it executed 2 file\(s\): /, "the verdict hides how much the trace saw");
+  assert.match(v.detail, /out-test\/hygiene\.test\.js/, "the verdict does not name a file that ran");
+  // The worktree prefix is common to every entry and says nothing; repeated
+  // five times it filled the line and pushed out the names themselves.
+  assert.doesNotMatch(v.detail, new RegExp(wt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the verdict repeats the worktree prefix on every path");
 });
