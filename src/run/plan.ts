@@ -412,43 +412,6 @@ export async function writeDeliveryRecord(
  * sixty-four file-not-found reds. What the record kept is written back,
  * and only where nothing else has since claimed the path.
  */
-/** The check paths a cut's delivery record holds, or nothing. */
-export function recordedCheckPaths(storeDir: string, tep: string): string[] {
-  try {
-    const parsed = JSON.parse(
-      readFileSync(path.join(storeDir, "deliveries", `${tep}.json`), "utf8"),
-    ) as { checks?: { path?: string }[] };
-    return (parsed.checks ?? []).map((c) => c.path).filter((x): x is string => !!x);
-  } catch {
-    return [];
-  }
-}
-
-export async function restoreChecksFromRecord(
-  storeDir: string,
-  tep: string,
-  worktree: string,
-  wanted: readonly string[],
-): Promise<string[]> {
-  let checks: KeptCheck[];
-  try {
-    const raw = await fsp.readFile(path.join(storeDir, "deliveries", `${tep}.json`), "utf8");
-    checks = (JSON.parse(raw) as { checks?: KeptCheck[] }).checks ?? [];
-  } catch {
-    return [];
-  }
-  const restored: string[] = [];
-  for (const rel of wanted) {
-    const kept = checks.find((c) => c.path === rel);
-    if (!kept) continue;
-    const dst = path.join(worktree, rel);
-    if (await fsp.access(dst).then(() => true, () => false)) continue;
-    await fsp.mkdir(path.dirname(dst), { recursive: true });
-    await fsp.writeFile(dst, kept.source);
-    restored.push(rel);
-  }
-  return restored;
-}
 
 export interface KeptCheck {
   criterionId: string;

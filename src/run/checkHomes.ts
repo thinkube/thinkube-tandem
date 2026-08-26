@@ -165,3 +165,45 @@ export function rehouseChecks(
   }
   return moved;
 }
+
+/**
+ * Keep every check at the address its delivery record names.
+ *
+ * The record binds each CRITERION to the file that proves it. The plan
+ * binds a criterion to a probe by its ordinal — the `_AC-k` in the file's
+ * own name against the k-th criterion the slice carries. Where the record
+ * knows a criterion's check and that file is still on the branch, the
+ * plan's minted address gives way: the work that exists wins over the
+ * name a regrouped plan invented for it.
+ *
+ * Returns what moved, for the log.
+ */
+export function pinRecordedChecks(
+  slices: readonly SliceLike[],
+  recorded: ReadonlyMap<string, string>,
+  onBranch: ReadonlySet<string>,
+): { from: string; to: string }[] {
+  if (!recorded.size) return [];
+  const moved: { from: string; to: string }[] = [];
+  for (const s of slices) {
+    const ids = (s as { criterionIds?: string[] }).criterionIds ?? [];
+    for (const u of s.workUnits ?? s.units ?? []) {
+      if ((u.role ?? "code") !== "test") continue;
+      u.footprint = u.footprint.map((f) => {
+        const k = /_AC-(\d+)\./.exec(f)?.[1];
+        const cid = k ? ids[Number(k) - 1] : undefined;
+        const home = cid ? recorded.get(cid) : undefined;
+        if (!home || home === f || !onBranch.has(home)) return f;
+        moved.push({ from: f, to: home });
+        return home;
+      });
+      if (u.cleared)
+        u.cleared = u.cleared.map((c) => {
+          const hit = moved.find((m) => m.from === c.path);
+          return hit ? { ...c, path: hit.to } : c;
+        });
+    }
+    if (s.files) s.files = s.files.map((f) => moved.find((m) => m.from === f)?.to ?? f);
+  }
+  return moved;
+}
