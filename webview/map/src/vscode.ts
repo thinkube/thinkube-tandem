@@ -12,7 +12,7 @@
 import { can, noteAllowed } from "../../../src/surfaces/surfaceContract";
 import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
-export { can, noteAllowed, SHAPING, whyNot } from "../../../src/surfaces/surfaceContract";
+export { can, noteAllowed, whyNot } from "../../../src/surfaces/surfaceContract";
 export type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
 interface VsCodeApi {
