@@ -10,5 +10,11 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "../../src/surfaces/graphCore", "../../src/gates", "../../src/core"]
+  "include": [
+    "src",
+    "../../src/surfaces/graphCore",
+    "../../src/surfaces/surfaceContract.ts",
+    "../../src/gates",
+    "../../src/core"
+  ]
 }

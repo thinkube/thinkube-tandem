@@ -15,6 +15,9 @@ export interface InboundAction {
   unitId?: string;
   questionId?: string;
   pinKind?: string;
+  /** exempt-docs carries the person's words for why documentation is not
+   *  needed — its own field, never the generic `text`. */
+  reason?: string;
   // answer-worker carries unitId + text; stop-run carries nothing.
   changeIds?: string[];
   deliveryId?: string;
@@ -118,7 +121,7 @@ export async function handleInbound(
     const r = await session.applyAllImpacts();
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "exempt-docs") {
-    const r = session.exemptDocs(msg.text ?? "");
+    const r = session.exemptDocs(msg.reason ?? "");
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "panic") {
     const r = session.panic();

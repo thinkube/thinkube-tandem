@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
-import { SpacePanels } from "./surfaces/panels";
+import { NoticeHost, notifyForSpace, SpacePanels } from "./surfaces/panels";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
@@ -171,6 +171,17 @@ function heartbeat(context: vscode.ExtensionContext): void {
   updateStatusBar(project);
 }
 
+/** The live editor's own gestures — the seam between this entry point and
+ *  the notification rule, so the rule can be driven against a test editor. */
+export function editorNoticeHost(): NoticeHost {
+  return {
+    info: (text, action) =>
+      Promise.resolve(vscode.window.showInformationMessage(text, action)),
+    warn: (text) => void vscode.window.showWarningMessage(text),
+    run: (command, ...args) => void vscode.commands.executeCommand(command, ...args),
+  };
+}
+
 /** key is "<ownerKey>/<slug>" — the space this change came from, never
  *  whichever space is remembered as active. */
 function pushActive(context: vscode.ExtensionContext, key: string, message?: string): void {
@@ -178,25 +189,7 @@ function pushActive(context: vscode.ExtensionContext, key: string, message?: str
   const s = sessions.get(key);
   if (!s) return;
   panels.pushTo(key, s, message);
-  if (message?.startsWith("Delivery ready"))
-    void vscode.window
-      .showInformationMessage(`Tandem — ${message}`, "Open the space")
-      .then((pick) => {
-        // Opens the tab for the space the delivery came from, not
-        // whichever space is remembered as active — a background
-        // delivery never displaces the foreground tab.
-        if (pick) {
-          const [ownerKey, slug] = key.split("/");
-          if (ownerKey && slug)
-            void vscode.commands.executeCommand(
-              "thinkube-tandem.openThinkingSpace",
-              ownerKey,
-              slug,
-            );
-        }
-      });
-  else if (message?.startsWith("The run refused"))
-    void vscode.window.showWarningMessage(`Tandem — ${message}`);
+  void notifyForSpace(editorNoticeHost(), key, message);
 }
 
 async function ensureSession(

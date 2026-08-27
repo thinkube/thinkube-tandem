@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { gatedActions } from "./surfaces/phase";
+import { can, noteAllowed, SHAPING } from "./surfaces/surfaceContract";
 
 const repo = path.resolve(__dirname, "..");
 const SIZE_LIMIT = 600;
@@ -73,10 +74,11 @@ test("every shaping action the surface can send is gated by a phase", () => {
   // forever. A unit that built a new control found this from the inside,
   // could not fix it (the table is not its to write), edited it anyway,
   // and the guard ended it.
-  const src = fs.readFileSync(path.join(repo, "webview", "map", "src", "vscode.ts"), "utf8");
-  const block = /const SHAPING = new Set\(\[([\s\S]*?)\]\)/.exec(src);
-  assert.ok(block, "the surface no longer declares which actions are shaping");
-  const shaping = [...block[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort();
+  //
+  // The set is imported, not read as text: what must agree with the phase
+  // table is the set the surface actually consults, not a spelling in a
+  // file that a regex happens to match.
+  const shaping = [...SHAPING].sort();
   const gated = gatedActions().sort();
   assert.deepEqual(
     shaping.filter((a) => !gated.includes(a)),
@@ -88,4 +90,19 @@ test("every shaping action the surface can send is gated by a phase", () => {
     [],
     "the phase table governs these, and the surface never sends them",
   );
+});
+
+test("the surface's own gate refuses a shaping action the host does not allow now", () => {
+  // The set only matters because can() reads it. Drive the real function:
+  // a shaping action outside the allowed list is off, the same action
+  // inside it is on, and a non-shaping action is always on.
+  noteAllowed(["build"]);
+  assert.equal(can("build"), true, "an allowed shaping action is on");
+  assert.equal(can("exempt-docs"), false, "a shaping action the host does not allow now is off");
+  assert.equal(can("read-log"), true, "a non-shaping action is never gated");
+
+  // Before the first push nothing is known, so nothing is refused here —
+  // the host still refuses on its side.
+  noteAllowed(undefined);
+  assert.equal(can("exempt-docs"), true, "with no push yet the surface refuses nothing");
 });
