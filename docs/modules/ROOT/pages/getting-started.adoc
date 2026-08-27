@@ -1,0 +1,57 @@
+= Getting started
+:page-type: how-to
+
+== Open the space
+
+Click the Tandem icon in the activity bar (left edge), or run
+*Tandem: Open the Space*. Each thinking space you open gets its own
+editor tab, titled with that space's name — opening a second thinking
+space opens a second tab and leaves the first one open, so several
+thinking spaces stay open at the same time.
+
+If your workspace has more than one folder, Tandem asks which repository
+you are working on — it never guesses. The choice shows in the status bar
+("Tandem: <repo>") and can be changed any time from there, from the
+`<repo> ▾` button in the map, or with *Tandem: Switch Project /
+Repository*. Each repository gets its own space.
+
+== Say what you want
+
+Type into the capture box, in your own words, as many lines as you need
+(Enter sends; Shift+Enter breaks a line). What you type is classified:
+
+* an *ask* ("add a clear button to the toolbar") is grounded — the
+  machine reads the repository and comes back with changes: sentences,
+  the files they land in, and acceptance criteria;
+* a *question* ("where does the toolbar render?") gets an answer and is
+  recorded nowhere;
+* a *statement* ("we always deploy through the platform CI") becomes a
+  decision in force that every later derivation builds under.
+
+== Decide what the code cannot
+
+If the repository supports more than one reading of your ask, a question
+appears with a recommended answer. Press *Accept* to take the
+recommendation, or edit it first — your wording wins. The decision
+re-grounds the ask immediately and rides every later worker brief.
+Questions never block silently, and the sign gate refuses a cut whose
+asks still have open questions.
+
+== Cut and sign
+
+Add units to the cut. If the grouping is wrong, pin: *Merge into one
+slice* or *Split out*. The cut screen shows what ships, what it needs
+first, and refuses to sign anything unprovable or ungrounded. Signing is
+also refused for a cut that neither lands documentation nor carries a
+recorded reason why documentation is not needed — record that reason
+before signing if none applies. *Sign* mints your TEP with a
+content-bound approval token — edit anything under the signature and the
+token stops matching until you sign again.
+
+== Watch it build, then accept
+
+The run starts on its own; see xref:the-run.adoc[]. When the delivery
+arrives, its page lists every proof (green or red, with evidence) and
+every UNDELIVERED item. *Accept* merges it on your forge; a delivery
+with a red proof, or with an unmet documentation obligation, refuses to
+be accepted.

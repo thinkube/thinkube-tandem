@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The two gates :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="tandem" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-menu is-active" data-panel="menu">
+  <nav class="nav-menu">
+    <button class="nav-menu-toggle" aria-label="Toggle expand/collapse all" style="display: none"></button>
+    <h3 class="title"><a href="index.html">Thinkube Tandem</a></h3>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="0">
+    <button class="nav-item-toggle"></button>
+    <span class="nav-text">Thinkube Tandem</span>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="index.html">What Tandem is</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="getting-started.html">Getting started</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
+  </li>
+  <li class="nav-item is-current-page" data-depth="1">
+    <a class="nav-link" href="gates.html">The two gates</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="the-run.html">The run and the orchestration graph</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="configuration.html">Configuration and settings</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="store.html">The store</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="defects.html">The defect ledger</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="troubleshooting.html">When something goes wrong</a>
+  </li>
+</ul>
+  </li>
+</ul>
+  </nav>
+</div>
+<div class="nav-panel-explore" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube Tandem</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+    <li class="component is-current">
+      <div class="title"><a href="index.html">Thinkube Tandem</a></div>
+    </li>
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li>Thinkube Tandem</li>
+    <li><a href="gates.html">The two gates</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/ROOT/pages/gates.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The two gates</h1>
+<div class="sect1">
+<h2 id="_gate_1_sign"><a class="anchor" href="#_gate_1_sign"></a>Gate 1 — Sign</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Signing freezes a cut into a TEP. The gate refuses:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>an empty cut;</p>
+</li>
+<li>
+<p>a change with no acceptance criteria ("nothing proves this");</p>
+</li>
+<li>
+<p>a change with no grounding (no place in the code);</p>
+</li>
+<li>
+<p>an ask in the cut with an undecided question;</p>
+</li>
+<li>
+<p>a cut that neither lands documentation nor carries a recorded
+exemption &#8212; documentation is required for every cut at signing, and
+the only way past it is an exemption with a reason.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The click mints <code>TEP-&lt;you&gt;-&lt;n&gt;</code> and a machine-local HMAC token bound to
+the pair you actually saw: the rendered cut screen plus the grounded
+content underneath it &#8212; the documentation decision included. There is
+no expiry — instead, any edit to the signed content makes the token stop
+matching, and dispatch refuses until you sign again. What runs is exactly
+what you approved, enforced cryptographically rather than by convention.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_gate_2_accept"><a class="anchor" href="#_gate_2_accept"></a>Gate 2 — Accept</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A delivery page opens by naming the run that produced it and when &#8212; or
+says plainly that the run was never recorded, for an old delivery that
+predates the field &#8212; before any other section. It then lists every
+proof: one per acceptance criterion, executed by the real closing gate,
+plus the repository&#8217;s own test suite. Accepting:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>is refused while any proof is not green;</p>
+</li>
+<li>
+<p>is refused while a declared documentation obligation is unmet (the
+docs gate blocks by default; <code>thinkubeTandem.docsGateMode: advisory</code>
+is the recorded escape hatch for a documentation obligation that
+slipped through to a delivery &#8212; documentation itself is already
+required at signing, with a recorded exemption as the only way past
+it there);</p>
+</li>
+<li>
+<p>runs in the canonical order merge → stamp → retire: a refused merge
+aborts before anything is stamped; worktree cleanup is best-effort and
+never fails a landed accept.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Everything that did NOT arrive is printed on the page — UNDELIVERED
+items, confessions found by the honesty scan, unmet obligations. Red is
+shown as red; there is no override.</p>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../_/js/site.js" data-ui-root-path="../_"></script>
+<script async src="../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

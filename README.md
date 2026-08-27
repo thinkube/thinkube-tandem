@@ -23,4 +23,4 @@ for you, and the machine's data one gesture away.
 ## Status
 
 v2, under construction — build order step 1 (core schema and intent
-contract). The v1 prototype is archived at `thinkube/thinkube-tandem-v1`.
+contract).

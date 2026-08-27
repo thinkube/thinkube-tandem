@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.180",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -19,14 +19,429 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [],
-  "contributes": {},
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "thinkube-tandem",
+          "title": "Tandem",
+          "icon": "resources/tk_ai.svg"
+        }
+      ]
+    },
+    "views": {
+      "thinkube-tandem": [
+        {
+          "id": "tandemProjects",
+          "name": "Projects",
+          "contextualTitle": "Tandem Projects"
+        },
+        {
+          "id": "claudeConfigTree",
+          "name": "Configuration",
+          "contextualTitle": "Claude Code Configuration"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "thinkube-ai.claude.openHere",
+        "title": "Open Here",
+        "category": "Claude Code"
+      },
+      {
+        "command": "thinkube-tandem.openSpace",
+        "title": "Tandem: Open the Space"
+      },
+      {
+        "command": "thinkube-tandem.switchProject",
+        "title": "Tandem: Switch Repository"
+      },
+      {
+        "command": "thinkube.refreshConfig",
+        "title": "Refresh Configuration",
+        "category": "Thinkube Tandem",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "thinkube.addHook",
+        "title": "Add Hook",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.deleteHook",
+        "title": "Delete Hook",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addCommand",
+        "title": "Add Command",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openCommand",
+        "title": "Open Command",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteCommand",
+        "title": "Delete Command",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addSkill",
+        "title": "Add Skill",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openSkill",
+        "title": "Open Skill",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteSkill",
+        "title": "Delete Skill",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addAgent",
+        "title": "Add Agent",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.openAgent",
+        "title": "Open Agent",
+        "category": "Thinkube Tandem"
+      },
+      {
+        "command": "thinkube.deleteAgent",
+        "title": "Delete Agent",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.addMcpServer",
+        "title": "Add MCP Server",
+        "category": "Thinkube Tandem",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube.deleteMcpServer",
+        "title": "Remove MCP Server",
+        "category": "Thinkube Tandem",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "thinkube.editPermissions",
+        "title": "Edit Permissions",
+        "category": "Thinkube Tandem",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "thinkube.initializeConfig",
+        "title": "Initialize Claude Config",
+        "category": "Thinkube Tandem",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "thinkube.switchProject",
+        "title": "Set Active Project",
+        "category": "Thinkube Tandem",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "thinkube-tandem.showDefects",
+        "title": "Tandem: Show Defects"
+      },
+      {
+        "command": "thinkube-tandem.openDocs",
+        "title": "Tandem: Open the Docs"
+      },
+      {
+        "command": "thinkube-tandem.newProduct",
+        "title": "New Product",
+        "icon": "$(add)",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.newProject",
+        "title": "New here…",
+        "icon": "$(new-folder)",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.refreshProjects",
+        "title": "Refresh Projects",
+        "icon": "$(refresh)",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.activateProject",
+        "title": "Tandem: Activate Repository"
+      },
+      {
+        "command": "thinkube-tandem.setProduct",
+        "title": "Set Product…",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.openThinkingSpace",
+        "title": "Tandem: Open Thinking Space"
+      },
+      {
+        "command": "thinkube-tandem.newThinkingSpace",
+        "title": "Tandem: New Thinking Space",
+        "icon": "$(add)"
+      },
+      {
+        "command": "thinkube-tandem.deleteThinkingSpace",
+        "title": "Delete Thinking Space",
+        "icon": "$(trash)",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.toggleProjectDone",
+        "title": "Mark Done / Reopen",
+        "category": "Tandem"
+      },
+      {
+        "command": "thinkube-tandem.setContextScope",
+        "title": "Choose Repositories to Read…",
+        "category": "Tandem"
+      }
+    ],
+    "configuration": {
+      "title": "Thinkube Tandem",
+      "properties": {
+        "thinkubeTandem.storeRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Root of the tandem store — spaces persist at <root>/spaces/<workspace>. Empty uses ~/thinkube-tandem-store."
+        },
+        "thinkubeTandem.groundingModel": {
+          "type": "string",
+          "default": "opus",
+          "description": "Model for the grounding round (judgment stage)."
+        },
+        "thinkubeTandem.volumeModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Cheaper model for volume rounds (classification, naming, coverage/criteria/decisions tail, answers, check proposals, repository digest)."
+        },
+        "thinkubeTandem.suiteCommand": {
+          "type": "string",
+          "default": "npm test",
+          "description": "Command that runs the project's test suite — its verdict is a delivery proof."
+        },
+        "thinkubeTandem.giteaToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for the platform's Gitea forge. Unused for github.com remotes."
+        },
+        "thinkubeTandem.workerModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Base model every run worker resolves to (never inherited from the environment)."
+        },
+        "thinkubeTandem.workerModelByRole": {
+          "type": "object",
+          "default": {},
+          "description": "Per-role model overrides that RAISE a role above the base (e.g. {\"judge\": \"opus\"})."
+        },
+        "thinkubeTandem.maxConcurrent": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "description": "Concurrent workers on the run's ready frontier."
+        },
+        "thinkubeTandem.docsGateMode": {
+          "type": "string",
+          "enum": [
+            "blocking",
+            "advisory"
+          ],
+          "default": "blocking",
+          "description": "Governs accepting a delivery only: whether an unmet documentation obligation blocks the merge. Documentation is required for every cut at signing regardless of this setting — the only way past it there is a recorded exemption with a reason."
+        },
+        "thinkubeTandem.controlUrl": {
+          "type": "string",
+          "default": "",
+          "description": "thinkube-control base URL for the template catalog and instantiation. Empty reads the connected MCP server's config."
+        },
+        "thinkubeTandem.controlToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for thinkube-control. Empty reads the connected MCP server's config."
+        },
+        "thinkubeTandem.prepareCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Build/typecheck command run in the isolated check runner and the closing-gate worktree before probes execute (e.g. 'npx tsc -p tsconfig.test.json' for a TypeScript repo whose tests import compiled output). Empty = no build step."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "thinkube.refreshConfig",
+          "when": "view == claudeConfigTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube.switchProject",
+          "when": "view == claudeConfigTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "thinkube-tandem.newProduct",
+          "when": "view == tandemProjects",
+          "group": "navigation@0"
+        },
+        {
+          "command": "thinkube-tandem.refreshProjects",
+          "when": "view == tandemProjects",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "thinkube.addHook",
+          "when": "view == claudeConfigTree && viewItem == hooks-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteHook",
+          "when": "view == claudeConfigTree && viewItem == hook",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addCommand",
+          "when": "view == claudeConfigTree && viewItem == commands-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteCommand",
+          "when": "view == claudeConfigTree && viewItem == command",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addSkill",
+          "when": "view == claudeConfigTree && viewItem == skills-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteSkill",
+          "when": "view == claudeConfigTree && viewItem == skill",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addAgent",
+          "when": "view == claudeConfigTree && viewItem == agents-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteAgent",
+          "when": "view == claudeConfigTree && viewItem == agent",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.addMcpServer",
+          "when": "view == claudeConfigTree && viewItem == mcp-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "thinkube.deleteMcpServer",
+          "when": "view == claudeConfigTree && viewItem == mcp-server",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube.editPermissions",
+          "when": "view == claudeConfigTree && viewItem == permissions-section",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube-tandem.newProject",
+          "when": "view == tandemProjects && viewItem == tandem-product",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube-tandem.setProduct",
+          "when": "view == tandemProjects && viewItem == tandem-repository",
+          "group": "1_edit"
+        },
+        {
+          "command": "thinkube-tandem.deleteThinkingSpace",
+          "when": "view == tandemProjects && viewItem =~ /tandem-thinking-space/",
+          "group": "inline"
+        },
+        {
+          "command": "thinkube-tandem.toggleProjectDone",
+          "when": "view == tandemProjects && viewItem =~ /tandem-work-project/",
+          "group": "1_edit"
+        },
+        {
+          "command": "thinkube-tandem.setContextScope",
+          "when": "view == tandemProjects && viewItem == tandem-thinking-space-project",
+          "group": "1_edit"
+        }
+      ],
+      "explorer/context": [
+        {
+          "submenu": "claude.code.submenu",
+          "group": "navigation@30",
+          "when": "explorerResourceIsFolder"
+        }
+      ],
+      "claude.code.submenu": [
+        {
+          "command": "thinkube-ai.claude.openHere",
+          "group": "1_session@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "thinkube-ai.claude.openHere",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "tandemProjects",
+        "contents": "No products yet. A product groups your repositories (the v1 drill-down: product → repository → thinking spaces).\n[New Product](command:thinkube-tandem.newProduct)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "claude.code.submenu",
+        "label": "Claude Code"
+      }
+    ]
+  },
   "scripts": {
-    "compile": "tsc -p ./",
-    "test": "tsc -p tsconfig.test.json && node --test out-test/"
+    "compile": "tsc -p ./ && cd webview/map && npm run build",
+    "test": "tsc -p tsconfig.test.json && npm run --prefix webview/map build && node --test out-test/",
+    "docs": "node scripts/docs-build.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.9.2",
+    "antora": "^3.1.15",
+    "asciidoctor-kroki": "^0.18.1",
+    "knip": "^6.31.0",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.222",
+    "yaml": "^2.9.0",
+    "zod": "^4.0.0"
   }
 }

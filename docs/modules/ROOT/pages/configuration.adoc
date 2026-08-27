@@ -1,0 +1,66 @@
+= Configuration and settings
+:page-type: reference
+
+== The Configuration tree
+
+Below the space in the Tandem container, the *Configuration* view manages
+Claude Code configuration per scope (project or user): hooks, commands,
+skills, agents, MCP servers, permissions, and installed plugins — with
+add / open / delete from the tree and its context menus. The view follows
+your active project.
+
+== Choosing the repository
+
+Tandem never assumes which folder of a multi-root workspace you mean.
+The active repository is chosen once and remembered per workspace:
+
+* the status-bar item `Tandem: <repo>`;
+* the `<repo> ▾` button in the map;
+* *Tandem: Switch Project / Repository* in the command palette.
+
+Each repository has its own session and its own space in the store.
+
+== Settings
+
+[cols="1,1,2"]
+|===
+|Setting |Default |Meaning
+
+|`thinkubeTandem.storeRoot` |`~/thinkube-tandem-store` |Root of the
+store; spaces persist at `<root>/spaces/<repo>`.
+
+|`thinkubeTandem.groundingModel` |`opus` |Model for the derivation
+rounds (judgment work).
+
+|`thinkubeTandem.workerModel` |`sonnet` |Base model for run workers —
+never inherited from the environment.
+
+|`thinkubeTandem.workerModelByRole` |`{}` |Per-role raises, e.g.
+`{"judge": "opus"}`.
+
+|`thinkubeTandem.maxConcurrent` |`4` |Concurrent workers on the run's
+ready frontier.
+
+|`thinkubeTandem.suiteCommand` |`npm test` |The project's test suite;
+its verdict is a delivery proof.
+
+|`thinkubeTandem.prepareCommand` |_(machine-derived)_ |The build step a
+single check needs before it can run (for example, compiling TypeScript
+test files). Normally you never set this: the machine reads it from the
+repository's own manifests and caches it with the repository reading.
+Set it only to override what the machine derived. The machine also
+derives, and never asks you for, the provisioning step a fresh checkout
+needs (installing dependencies): each run provisions its worktree once,
+and every verify runner shares what that produced. A run whose build
+step fails on the untouched tree is refused before any worker starts,
+with the tool's own output.
+
+|`thinkubeTandem.docsGateMode` |`blocking` |Governs accepting a delivery
+only: whether an unmet documentation obligation still blocks the merge.
+Documentation is required for every cut at signing regardless of this
+setting; the only way past it there is a recorded exemption with a
+reason.
+
+|`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
+(github.com remotes use the `gh` CLI instead).
+|===

@@ -1,0 +1,141 @@
+/**
+ * Which units may start right now — the engine's answer, not a second one.
+ *
+ * This product used to filter the DAG itself, and its filter had no
+ * footprint clause: two units writing the same file could be dispatched
+ * into the same worktree at the same moment, and the loser's work vanished
+ * with no error. The only thing standing between that and a corrupted run
+ * was that changes sharing a file were merged into one unit beforehand —
+ * which is exactly what produced a single worker carrying 71 promises.
+ *
+ * The engine already had the right answer: deps done, footprint disjoint
+ * from everything running, and the longest dependency chain first. It was
+ * written, tested and never called. This is the wiring, plus the one thing
+ * the engine has no notion of — a unit waiting on work that failed.
+ */
+import { readyFrontier, SchedUnit } from "../engine/core/dag";
+
+export function frontier(
+  dag: SchedUnit[],
+  state: {
+    /** Units not yet dispatched. */
+    pending: Set<string>;
+    /** Unit ids that have landed. */
+    done: Set<string>;
+    /** Unit ids that failed — anything waiting on one can never run. */
+    failed: Set<string>;
+    /** Files held by units running right now. */
+    running: string[];
+  },
+): SchedUnit[] {
+  return readyFrontier(
+    dag.filter((u) => state.pending.has(u.id)),
+    {
+      done: state.done,
+      running: new Set(state.running),
+      blocked: new Set(
+        dag.filter((u) => u.requires.some((r) => state.failed.has(r))).map((u) => u.id),
+      ),
+    },
+  );
+}
+
+/**
+ * Can anything still land — is there a unit that could deliver the file
+ * somebody is waiting for?
+ *
+ * A unit waits while "others are pending", and pending was read as "not
+ * done and not failed". That reading made a run wait for two hours on
+ * itself: three units waited for files owned by units that were waiting
+ * behind them, and every one of those was, by that reading, pending.
+ *
+ * A unit can land only if it is neither failed nor waiting, every unit it
+ * requires has landed or can land in turn, and NO FILE IT MUST CHANGE IS
+ * held by a unit that is itself asleep. A cycle answers no, which is the
+ * whole point.
+ *
+ * That last clause is the second half of the same defect. The dependency
+ * graph is not the only thing that stops a unit from starting: the
+ * scheduler refuses to launch a unit that shares a file with one that is
+ * running. A sleeping unit is still "running", and it will not finish
+ * while it waits — so a pending unit sharing a file with it can never
+ * begin, and the sleeper waits for work that unit was going to do. Five
+ * coders sat in exactly that for half an hour, waiting on three units the
+ * scheduler could not launch, because each shared a file with a sleeper.
+ */
+function canLand(
+  dag: readonly { id: string; slice: string; requires: string[]; footprint?: string[] }[],
+  state: {
+    done: ReadonlySet<string>;
+    failed: ReadonlySet<string>;
+    waiting: ReadonlySet<string>;
+    /** What each running unit is changing, so a file held by a sleeper is
+     *  seen for what it is: a door that will not open. */
+    live?: ReadonlyMap<string, readonly string[]>;
+  },
+): (id: string) => boolean {
+  const byId = new Map(dag.map((u) => [u.id, u]));
+  const memo = new Map<string, boolean>();
+  const heldByASleeper = (u: { id: string; footprint?: string[] }): boolean =>
+    [...(state.live ?? [])].some(
+      ([id, paths]) => id !== u.id && state.waiting.has(id) && (u.footprint ?? []).some((p) => paths.includes(p)),
+    );
+  const walk = (id: string, seen: Set<string>): boolean => {
+    if (state.done.has(id)) return true;
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    if (seen.has(id)) return false; // a cycle lands nothing
+    if (state.failed.has(id) || state.waiting.has(id)) return false;
+    const u = byId.get(id);
+    if (!u) return false;
+    if (heldByASleeper(u)) return false;
+    seen.add(id);
+    const ok = u.requires.filter((r) => byId.has(r)).every((r) => walk(r, seen));
+    seen.delete(id);
+    memo.set(id, ok);
+    return ok;
+  };
+  return (id) => walk(id, new Set());
+}
+
+/** Which units outside this slice are still able to land something — named,
+ *  because "waiting for another unit" with no name is unreadable when the
+ *  answer is nobody. Empty means waiting buys nothing. */
+export function whoCanLand(
+  dag: readonly { id: string; slice: string; requires: string[]; footprint?: string[] }[],
+  slice: string,
+  state: {
+    done: ReadonlySet<string>;
+    failed: ReadonlySet<string>;
+    waiting: ReadonlySet<string>;
+    live?: ReadonlyMap<string, readonly string[]>;
+  },
+): string[] {
+  const can = canLand(dag, state);
+  return dag
+    .filter((u) => u.slice !== slice && !state.done.has(u.id) && !state.failed.has(u.id) && can(u.id))
+    .map((u) => u.id);
+}
+
+/** Why a ready unit is not launched: a file it shares with a running unit.
+ *  The graph draws edges, not overlaps; the card says the overlap. */
+export function overlapWaits(
+  dag: readonly { id: string; footprint: string[]; requires: string[] }[],
+  pending: ReadonlySet<string>,
+  ready: readonly { id: string }[],
+  live: ReadonlyMap<string, { paths: string[] }>,
+  done: ReadonlySet<string>,
+): [string, string][] {
+  const runningPaths = new Map<string, string>();
+  for (const [id, v] of live) for (const p of v.paths) runningPaths.set(p, id);
+  const out: [string, string][] = [];
+  for (const id of pending) {
+    const u = dag.find((x) => x.id === id);
+    if (!u || ready.some((r) => r.id === id)) continue;
+    const shared = u.footprint.filter((p) => runningPaths.has(p));
+    const unmet = u.requires.filter((r) => !done.has(r));
+    if (shared.length && !unmet.length)
+      out.push([id, `waiting: shares ${shared.slice(0, 3).join(", ")}${shared.length > 3 ? "…" : ""} with ${[...new Set(shared.map((p) => runningPaths.get(p)))].join(", ")}`]);
+  }
+  return out;
+}

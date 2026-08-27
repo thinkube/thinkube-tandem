@@ -1,0 +1,28 @@
+{
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/cli/headless.ts",
+        "src/cli/journey.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "!src/engine/**"
+      ],
+      "ignoreDependencies": [
+        "@vscode/vsce",
+        "antora",
+        "asciidoctor-kroki"
+      ]
+    },
+    "webview/map": {
+      "entry": [
+        "harness/buttons.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "harness/**/*.{ts,tsx}"
+      ]
+    }
+  }
+}

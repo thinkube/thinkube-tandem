@@ -1,0 +1,38 @@
+= What Tandem is
+:page-type: concept
+
+Tandem is pair development for a team of two — one human, one AI — over a
+git repository. You say what you want in your own words; the machine
+grounds it in the real code; you sign exactly what you saw; workers build
+it under verification you never have to take on faith; you accept the
+delivery by reading its proofs.
+
+== The shape
+
+Everything moves through one surface (the space) and two decisions that
+are always yours:
+
+. *Sign* — freezing a cut of grounded changes into a TEP. Nothing is
+  built before this.
+. *Accept* — merging a delivery whose proofs are green. Nothing lands
+  after the build without this.
+
+Between the gates the machine is autonomous, and it is not trusted: probes
+are written by workers that cannot see the implementation, completion is
+decided by a black-box oracle rather than a worker's claim, files outside
+a worker's declared footprint are reverted, and everything that could not
+be delivered is written on the delivery's face.
+
+== The vocabulary
+
+ask:: Your words, kept verbatim. Everything derives from asks; asks are
+never machine-edited.
+change:: One grounded intention — a sentence, the file(s) it lands in,
+and the acceptance criteria that prove it.
+unit:: Changes clustered by code coupling; the thing you add to a cut.
+cut:: The set of changes you are about to freeze.
+TEP:: A signed cut — named `TEP-<you>-<n>`, bound by a cryptographic
+token to exactly what you saw when you signed.
+slice:: The engine's dispatch unit inside a TEP: one coder, its held-out
+probe authors, a footprint.
+delivery:: A branch plus its proofs, offered for your accept.

@@ -14,12 +14,14 @@ plain English or does not belong in the product.
 | **touchpoint** | One place a change lands — a structural anchor, never a line number. |
 | **anchor** | A path plus an optional symbol path (`src/x.ts › reduce › case "grow"`). Line numbers are rendered from anchors at the moment of use, never stored. |
 | **stamp** | A fingerprint of the repo state an artifact was true for. Machine-checkable; every artifact carries one. |
-| **node** | One grounded intended change: a sentence for the human, grounding underneath, edges to what it needs and the ask it serves, and the checks that will prove it. |
+| **change** | One grounded intended change: a sentence for the human, grounding underneath, edges to what it needs and the ask it serves, and the acceptance criteria that will prove it. |
 | **unit** | Nodes clustered by real coupling — shared touchpoints and edges, never by which ask they came from. |
-| **check** | What proves a node done, bound to the node at derivation. |
+| **acceptance criterion (AC)** | What proves a change done, bound to it at derivation; a probe is its executable form. |
 | **probe** | A held-out test authored blind to the implementation; a check's executable form. |
-| **cut** | A signed selection of nodes to build now. The signature binds the rendered summary and the exact grounded member list — the pair. |
-| **work order** | The per-worker instruction assembled from the cut at dispatch: anchors resolved against the worker's worktree, exact signatures, the probe, the footprint, the neighbors' contracts. Assembled, never authored. |
+| **cut** | The selection of changes you are shaping to build now. Signing it mints a **TEP**. |
+| **TEP** | What you sign: the recorded, author-numbered commitment (`TEP-<user>-<n>`) — a Tandem Enhancement Proposal in the literal sense. Same role it always had; now a rendered record, and nothing translates it — it dispatches. |
+| **slice** | A computed slice of the signed TEP — the engine's unit of validation and dispatch. Never authored. |
+| **slice brief** | The per-worker instruction assembled at dispatch: anchors resolved against the worker's worktree, exact signatures, the probes, the footprint, the neighbors' contracts. Assembled, never authored. |
 | **footprint** | The files a worker may touch. |
 | **delivery** | Branch + proof + the human's acceptance-as-merge, on whatever forge hosts the project. |
 | **proof** | Evidence on a delivery: probe runs, suite verdicts, CI verdicts (image built, deploy healthy). |
@@ -32,8 +34,10 @@ plain English or does not belong in the product.
 
 ## Retired vocabulary
 
-These v1 terms do not appear in v2 code, UI, or records (a suite test
-enforces the unambiguous ones): **TEP**, **spec** (as an artifact),
-**slice** (as an artifact), **Thinky**, **scratchpad**, **kanban**.
-Their functions live on under the names above: a signed cut replaces the
-TEP; work orders replace specs and slices; capture replaces Thinky.
+Per the terminology decision records (SPEC.md Part IV): the engine's
+vocabulary is the brand's — **TEP**, **slice**, **acceptance** are
+canonical. Retired with their referents (suite-enforced): **Spec** (as an
+artifact — the word survives only inside imported engine speech),
+**Thinky**, **scratchpad**, **kanban** (as UI names), **constraint**
+(→ decision), **item** (→ change), **check** (→ acceptance criterion),
+**work order** (→ slice brief).

@@ -3,7 +3,10 @@
   "compilerOptions": {
     "outDir": "out-test",
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    // The surface contract names DOM types, so the DOM lib joins the test
+    // build; the extension host's own build (tsconfig.json) never loads it.
+    "lib": ["es2022", "dom", "dom.iterable"]
   },
   "include": ["src"],
   "exclude": []

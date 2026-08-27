@@ -1,0 +1,27 @@
+{
+  "name": "thinkube-tandem-map",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The Tandem space surface: capture, units map, the two gates. Built standalone into ../../media/map/.",
+  "scripts": {
+    "build": "tsc --noEmit -p . && vite build",
+    "watch": "vite build --watch",
+    "buttons": "vite build --config harness/vite.config.ts"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
+    "elkjs": "^0.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

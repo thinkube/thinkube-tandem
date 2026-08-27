@@ -1,0 +1,50 @@
+= The space — asks, changes, units
+:page-type: concept
+
+The space is the one surface between you and the machine. It renders in
+the sidebar (the Tandem icon), and each thinking space you open (*Tandem:
+Open the Space*) gets its own editor tab, titled with that space's name.
+Opening a second thinking space opens a second tab and leaves the first
+one open — several thinking spaces stay open at the same time. Every tab
+shows the same live state for the space it was opened for.
+
+== What derivation does with an ask
+
+Behind one captured ask runs a pipeline of rounds, each fail-soft:
+
+. *Contextualize* — one bounded, cited reading of the repository,
+  persisted per ask, so later rounds build on an established reading.
+. *Ground* — the ask becomes changes: sentences with real landing files
+  and acceptance criteria. Line numbers are refused by design — anchors
+  are structural (file, symbol), so they survive edits.
+. *Gap-close* — a judge with exactly two outcomes: the set covers the
+  ask, or here are the missing changes, concrete and grounded.
+. *Impact* — the adjacent code that must move too (callers,
+  configuration, documentation).
+. *Intent coverage* — every clause of your ask must be served by some
+  change; an unserved clause comes back as a question with a
+  recommendation, never silence.
+. *Assessment* — vague acceptance criteria are rewritten to observable
+  ones (closed verdicts: observable / vague / untestable).
+. *Challenger* — contradictions between the changes and your decisions
+  in force are raised as questions. It never changes anything.
+
+== Units and pins
+
+Changes cluster into units by real code coupling (same file is decisive).
+The clustering is code, not a model — and your pins outrank it:
+*Merge into one slice* forces a union; *Split out* severs a pair.
+
+== Staleness and re-grounding
+
+Every grounded change carries a fingerprint of the repository state it
+was true for. When the code moves underneath, the change is marked stale;
+press the stale badge to re-ground. A signed TEP whose content drifted
+refuses dispatch until re-signed.
+
+== Panic
+
+The *Panic* button (behind a confirm) clears everything derived — changes,
+units, open questions, unsigned cuts — and keeps what is yours: your asks
+and your settled decisions. It is refused once any TEP was signed in the
+space.
