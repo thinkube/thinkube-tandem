@@ -8,14 +8,17 @@ Signing freezes a cut into a TEP. The gate refuses:
 * an empty cut;
 * a change with no acceptance criteria ("nothing proves this");
 * a change with no grounding (no place in the code);
-* an ask in the cut with an undecided question.
+* an ask in the cut with an undecided question;
+* a cut that neither lands documentation nor carries a recorded
+  exemption — documentation is required for every cut at signing, and
+  the only way past it is an exemption with a reason.
 
 The click mints `TEP-<you>-<n>` and a machine-local HMAC token bound to
 the pair you actually saw: the rendered cut screen plus the grounded
-content underneath it. There is no expiry — instead, any edit to the
-signed content makes the token stop matching, and dispatch refuses until
-you sign again. What runs is exactly what you approved, enforced
-cryptographically rather than by convention.
+content underneath it — the documentation decision included. There is
+no expiry — instead, any edit to the signed content makes the token stop
+matching, and dispatch refuses until you sign again. What runs is exactly
+what you approved, enforced cryptographically rather than by convention.
 
 == Gate 2 — Accept
 
@@ -28,7 +31,10 @@ plus the repository's own test suite. Accepting:
 * is refused while any proof is not green;
 * is refused while a declared documentation obligation is unmet (the
   docs gate blocks by default; `thinkubeTandem.docsGateMode: advisory`
-  is the recorded escape hatch);
+  is the recorded escape hatch for a documentation obligation that
+  slipped through to a delivery — documentation itself is already
+  required at signing, with a recorded exemption as the only way past
+  it there);
 * runs in the canonical order merge → stamp → retire: a refused merge
   aborts before anything is stamped; worktree cleanup is best-effort and
   never fails a landed accept.

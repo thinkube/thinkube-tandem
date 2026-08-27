@@ -268,7 +268,7 @@
             "advisory"
           ],
           "default": "blocking",
-          "description": "Whether an unmet documentation obligation blocks accepting a delivery. Blocking by default — advisory let undocumented work reach Done."
+          "description": "Governs accepting a delivery only: whether an unmet documentation obligation blocks the merge. Documentation is required for every cut at signing regardless of this setting — the only way past it there is a recorded exemption with a reason."
         },
         "thinkubeTandem.controlUrl": {
           "type": "string",

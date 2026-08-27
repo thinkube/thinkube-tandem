@@ -11,10 +11,11 @@ import { ApprovalStore } from "../engine/approvalStore";
 
 export function tepContentHash(
   space: Space,
-  cut: { changeIds: string[]; tepId?: string },
+  cut: { changeIds: string[]; tepId?: string; docsExemption?: { reason: string; at: string } },
 ): string {
-  const render = renderCutScreen(space, { id: "pair", changeIds: cut.changeIds });
-  const sig = signCut(space, { id: "pair", changeIds: cut.changeIds }, "t", "x");
+  const pair: Cut = { id: "pair", changeIds: cut.changeIds, docsExemption: cut.docsExemption };
+  const render = renderCutScreen(space, pair);
+  const sig = signCut(space, pair, "t", "x");
   const grounding = sig.ok ? sig.cut.signature!.groundingHash : "";
   return approvalContentHash(`${render}\u0000${grounding}`);
 }

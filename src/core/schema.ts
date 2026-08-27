@@ -130,6 +130,12 @@ export interface Cut {
    *  and signed as a new cut. Only a cut that delivered nothing can be
    *  withdrawn. */
   withdrawnAt?: string;
+  /** The recorded reason documentation is not needed for this cut. Set
+   *  before signing, by the person's own words — the only way past the
+   *  documentation rule for a cut that grounds no docs/ touchpoint. Once
+   *  the cut is signed, this reason is covered by the signature: a later
+   *  edit to it is drift, not a quiet change. */
+  docsExemption?: { reason: string; at: string };
   signature?: {
     at: string;
     renderHash: string;

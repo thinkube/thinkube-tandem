@@ -35,8 +35,9 @@ the unit; re-sign to re-run.
 
 |"docs gate blocks this accept"
 |A change declared a `docs/` file that never landed
-|Deliver the documentation (a new ask), or set
-`thinkubeTandem.docsGateMode: advisory` — on the record.
+|Deliver the documentation (a new ask). Documentation is required for
+every cut at signing; the only way past it there is a recorded
+exemption with a reason, entered before you sign.
 
 |The run seems stuck on a unit
 |The worker may be parked with a question

@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import { Cut, Delivery, Space } from "../core/schema";
 import { renderCutScreen } from "./render";
+import { docsDuty } from "../core/docsDuty";
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -48,7 +49,12 @@ function groundingHashOf(space: Space, cut: Cut): string {
       });
     })
     .join("\n");
-  return sha(canonical);
+  // The documentation decision — landed docs paths, an exemption reason, or
+  // neither — is part of what was approved, and must move this hash exactly
+  // as a sentence or a landing does: it is what the person signed too.
+  const duty = docsDuty(space, cut);
+  const docsLine = JSON.stringify({ state: duty.state, landings: duty.landings, reason: duty.reason });
+  return sha(`${canonical}\n${docsLine}`);
 }
 
 export type SignResult =
@@ -115,6 +121,18 @@ export function signCut(
       ok: false,
       reason: `undecided question(s) on these asks: ${open.map((q) => q.text).join(" · ")} — decide them before signing`,
     };
+  // The one rule: a cut either lands documentation or carries a recorded
+  // reason why it does not need to. Neither is refused — never advisory,
+  // never silently waved through — because a signature is the moment the
+  // documentation decision is made, not something to discover at accept.
+  const duty = docsDuty(space, cut);
+  if (duty.state === "missing")
+    return {
+      ok: false,
+      reason:
+        "this cut lands no documentation and carries no recorded reason why documentation is not needed — " +
+        "ground a docs/ page or record a documentation exemption before signing",
+    };
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
   ).length;
@@ -134,7 +152,7 @@ export function signCut(
 }
 
 /** The current hashing rule. Raised whenever what is hashed changes. */
-const SIGNATURE_RULE = 2;
+const SIGNATURE_RULE = 3;
 
 export type SignatureVerdict =
   | { ok: true; unchecked?: string }
@@ -185,8 +203,11 @@ export type AcceptResult =
   | { ok: true; delivery: Delivery }
   | { ok: false; reason: string };
 
-/** The human's second gate. Refused while evidence is missing or red; the
- *  docs gate blocks by default (advisory is the recorded escape hatch). */
+/** The human's second gate. Refused while evidence is missing or red.
+ *  Documentation is no longer this gate's decision: signing already
+ *  refused a cut with neither a landed doc nor a recorded exemption, so
+ *  `docsGateMode` here governs accepting a delivery only — whether a
+ *  documentation obligation that still slipped through blocks the merge. */
 /**
  * Accept a delivery — and, when its cut spans more than one repository,
  * accept it as ONE thing.
