@@ -241,7 +241,12 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
     grant(state.alsoOwn);
     for (const r of rulingsIn(outcome.finalText)) {
       const crit = a.criteria.find((c) => r.includes(c.text.slice(0, 30))) ?? a.criteria[0];
-      a.onRuling({ criterionId: crit?.id ?? "closer", unit: a.subject, granted: true, reason: `the closer corrected a check: ${r.slice(0, 300)}` });
+      // The ruling is stored WHOLE. It is the record a person reads at
+      // Accept to judge whether a corrected check was strengthened or
+      // appeased, and a 300-character cut once ended one mid-sentence —
+      // with "nothing was deleted, no assertion was loosened" in the half
+      // that was thrown away.
+      a.onRuling({ criterionId: crit?.id ?? "closer", unit: a.subject, granted: true, reason: `the closer corrected a check: ${r.slice(0, 4000)}` });
       a.log(`⚖ ${a.subject}: the closer corrected a check — ${r.slice(0, 160)}`);
     }
     if (state.green) break;
