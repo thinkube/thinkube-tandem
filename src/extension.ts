@@ -24,6 +24,7 @@ import {
   chooseThinkingSpace,
   configuredStoreRoot,
   registerSpaceCommands,
+  spaceTitle,
 } from "./hostui/spaceOps";
 import { chooseProject, newProjectFlow, retireTepWorktrees, sweepDeletedSpaceRuns } from "./hostui/projectOps";
 import { placeCommands } from "./hostui/placeCommands";
@@ -368,7 +369,24 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!s) return;
     updateStatusBar(rememberedProject(context));
     projectsTree?.refresh();
-    if (!panel) panel = new SpacePanel(requireSession, hooks);
+    const ownerKey = activeOwnerKey(context);
+    const slug = ownerKey
+      ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`)
+      : undefined;
+    const key = ownerKey && slug ? `${ownerKey}/${slug}` : "unknown";
+    // v1 shell: one panel in total, rebuilt when the resolved space changes
+    // so its title always names the space it now shows. SL-7 replaces this
+    // with a per-space registry so several spaces stay open at once.
+    if (!panel || panel.currentKey !== key) {
+      panel?.dispose();
+      panel = new SpacePanel({
+        key,
+        title:
+          ownerKey && slug ? spaceTitle(configuredStoreRoot(), ownerKey, slug) : "Tandem",
+        getSession: requireSession,
+        hooks,
+      });
+    }
     await panel.show(context.extensionUri);
     pushActive(context);
   };

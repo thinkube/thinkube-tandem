@@ -23,17 +23,70 @@ export interface PanelHostHooks {
   onSwitchRepo?: () => Promise<void>;
 }
 
+/** The surface of a webview panel that SpacePanel actually drives — small
+ *  enough for a test double to implement without a real editor window. */
+export interface WebviewPanelLike {
+  webview: {
+    html: string;
+    postMessage(message: unknown): Thenable<boolean> | void;
+    onDidReceiveMessage(
+      listener: (e: unknown) => unknown,
+    ): vscodeTypes.Disposable;
+    asWebviewUri(uri: vscodeTypes.Uri): vscodeTypes.Uri;
+    readonly cspSource: string;
+  };
+  reveal(): void;
+  onDidDispose(listener: () => unknown): vscodeTypes.Disposable;
+  dispose(): void;
+}
+
+/** Where a SpacePanel gets its webview panel from — the real editor by
+ *  default, a fake in tests. The seam a panel never re-titles through:
+ *  one call, one viewType, one title, made once per panel. */
+export interface PanelHost {
+  createPanel(viewType: string, title: string, options: unknown): WebviewPanelLike;
+}
+
+function defaultHost(): PanelHost {
+  return {
+    createPanel: (viewType, title, options) =>
+      vs().window.createWebviewPanel(
+        viewType,
+        title,
+        { viewColumn: vs().ViewColumn.One, preserveFocus: false },
+        options as vscodeTypes.WebviewPanelOptions & vscodeTypes.WebviewOptions,
+      ) as unknown as WebviewPanelLike,
+  };
+}
 
 /** A card head is one line: a long sentence is clipped, never a paragraph. */
 
 export class SpacePanel implements vscodeTypes.Disposable {
-  private _panel: vscodeTypes.WebviewPanel | undefined;
+  private readonly key: string;
+  private readonly title: string;
+  /** The space this panel was built for — read-only, never reassigned. */
+  get currentKey(): string {
+    return this.key;
+  }
+  private readonly getSession: () => TandemSession;
+  private readonly hooks?: PanelHostHooks;
+  private readonly host: PanelHost;
+  private _panel: WebviewPanelLike | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
 
-  constructor(
-    private readonly getSession: () => TandemSession,
-    private readonly hooks?: PanelHostHooks,
-  ) {}
+  constructor(opts: {
+    key: string;
+    title: string;
+    getSession: () => TandemSession;
+    hooks?: PanelHostHooks;
+    host?: PanelHost;
+  }) {
+    this.key = opts.key;
+    this.title = opts.title;
+    this.getSession = opts.getSession;
+    this.hooks = opts.hooks;
+    this.host = opts.host ?? defaultHost();
+  }
 
   async show(extensionUri: vscodeTypes.Uri): Promise<void> {
     const session = this.getSession();
@@ -42,10 +95,11 @@ export class SpacePanel implements vscodeTypes.Disposable {
       this._push(session);
       return;
     }
-    this._panel = vs().window.createWebviewPanel(
+    this._panel = this.host.createPanel(
       "thinkubeTandemSpace",
-      "Tandem",
-      { viewColumn: vs().ViewColumn.One, preserveFocus: false },
+      // A panel is built for one thinking space and titled with its name
+      // once, here — never re-derived, never rebound to another space.
+      this.title,
       {
         enableScripts: true,
         localResourceRoots: [extensionUri],
@@ -118,17 +172,28 @@ export class SpacePanel implements vscodeTypes.Disposable {
   }
 }
 
+/** A filesystem join that never touches the real `vscode` module: the
+ *  panel's HTML rendering must run the same way whether the extension
+ *  Uri is a real one or a test double, so `show()` stays independent of
+ *  `vscode` except where it truly needs the live editor (default host,
+ *  progress notifications). */
+function joinUri(base: vscodeTypes.Uri, ...segments: string[]): vscodeTypes.Uri {
+  const fsPath = path.join(base.fsPath, ...segments);
+  return { ...base, fsPath, path: fsPath, toString: () => fsPath } as vscodeTypes.Uri;
+}
+
 async function renderBundleHtml(
   extensionUri: vscodeTypes.Uri,
-  webview: vscodeTypes.Webview,
+  webview: WebviewPanelLike["webview"],
 ): Promise<string> {
-  const mediaRoot = vs().Uri.joinPath(extensionUri, "media", "map");
+  // extensionUri may be a test double with no real filesystem path (a
+  // host-agnostic show() has nothing to render against): that is the same
+  // "bundle missing" case as a real extension whose media folder is absent.
+  let mediaRoot: vscodeTypes.Uri | undefined;
   let raw: string;
   try {
-    raw = await fs.readFile(
-      vs().Uri.joinPath(mediaRoot, "index.html").fsPath,
-      "utf8",
-    );
+    mediaRoot = joinUri(extensionUri, "media", "map");
+    raw = await fs.readFile(joinUri(mediaRoot, "index.html").fsPath, "utf8");
   } catch {
     return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
   }
@@ -143,7 +208,7 @@ async function renderBundleHtml(
       if (/^https?:|^data:/.test(ref)) return `${attr}="${ref}"`;
       const cleaned = ref.replace(/^\.\//, "").replace(/^\//, "");
       return `${attr}="${webview
-        .asWebviewUri(vs().Uri.joinPath(mediaRoot, ...cleaned.split("/")))
+        .asWebviewUri(joinUri(mediaRoot!, ...cleaned.split("/")))
         .toString()}"`;
     },
   );

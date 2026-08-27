@@ -5,6 +5,7 @@
  * first — and the store root they all live under.
  */
 import type * as vscodeTypes from "vscode";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { createThinkingSpace, DeletionCost, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
@@ -14,6 +15,23 @@ function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
   return ownerKey.startsWith("wp:")
     ? { id: ownerKey.slice(3), kind: "project" }
     : { id: ownerKey, kind: "repository" };
+}
+
+/** The name a thinking space is known by: what the human wrote in
+ *  name.txt when they created it, or the directory slug when no name was
+ *  ever recorded (a space made before naming, or read by slug alone). A
+ *  panel titles itself with this and never re-derives it later. */
+export function spaceTitle(storeRoot: string, ownerKey: string, slug: string): string {
+  const owner = parseOwner(ownerKey);
+  const home = owner.kind === "project" ? "projects" : "spaces";
+  const nameFile = path.join(storeRoot, home, owner.id, slug, "name.txt");
+  try {
+    const t = fs.readFileSync(nameFile, "utf8").trim();
+    if (t) return t;
+  } catch {
+    /* no name.txt — the slug is the title */
+  }
+  return slug;
 }
 
 const req: NodeRequire =

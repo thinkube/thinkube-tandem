@@ -2,8 +2,11 @@
 :page-type: concept
 
 The space is the one surface between you and the machine. It renders in
-the sidebar (the Tandem icon) and as a full editor panel (*Tandem: Open
-the Space*). Both show the same live state.
+the sidebar (the Tandem icon), and each thinking space you open (*Tandem:
+Open the Space*) gets its own editor tab, titled with that space's name.
+Opening a second thinking space opens a second tab and leaves the first
+one open — several thinking spaces stay open at the same time. Every tab
+shows the same live state for the space it was opened for.
 
 == What derivation does with an ask
 
