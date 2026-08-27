@@ -201,6 +201,10 @@ export interface SpacePush {
   subjects: SubjectVM[];
   cutCount: number;
   deliveries: DeliveryVM[];
+  /** The one rule's verdict for the pending cut, carried by the push so the
+   *  rail states it rather than working it out again: landed with its
+   *  paths, exempt with its reason, or missing. */
+  documentation: { state: "landed" | "exempt" | "missing"; landings: string[]; reason?: string };
   message?: string;
 }
 
@@ -233,6 +237,7 @@ export type WebToHost =
   | { action: "apply-all-impacts" }
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: "probe" | "assessment" }
+  | { action: "exempt-docs"; reason: string }
   | { action: "switch-repo" };
 
 interface VsCodeApi {
@@ -257,8 +262,8 @@ export function noteAllowed(allowed: string[] | undefined): void {
 const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "build", "rerun", "think-again", "stop-run",
-  "accept-delivery", "reject-delivery", "panic", "switch-repo",
+  "dismiss-impact", "apply-all-impacts", "open-cut-review", "exempt-docs", "build", "rerun", "think-again",
+  "stop-run", "accept-delivery", "reject-delivery", "panic", "switch-repo",
 ]);
 
 /** Whether the host would act on this action now. Non-shaping actions

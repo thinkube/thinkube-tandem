@@ -117,6 +117,9 @@ export async function handleInbound(
   } else if (msg.action === "apply-all-impacts") {
     const r = await session.applyAllImpacts();
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "exempt-docs") {
+    const r = session.exemptDocs(msg.text ?? "");
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "panic") {
     const r = session.panic();
     note = r.ok ? undefined : r.reason;

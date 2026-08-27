@@ -18,10 +18,47 @@ import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { factsOf } from "../run/facts";
 
-export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string } {
+/** A gesture's verdict: it succeeded, or it refused and says why. The two
+ *  cases are separate so a caller reading `reason` after `ok` is false gets
+ *  a string, never a possibly-absent one. */
+export type GestureResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Signed work that never delivered, if there is any.
+ *
+ * Only an ACCEPTED delivery ends a cut. A delivery that was withheld
+ * delivered nothing; one that is open and undecided — or that cannot be
+ * accepted, because a check or a review is red — is not the end of the work
+ * either. In all three the signed work is still there to run, and the way
+ * back in must stay reachable.
+ */
+export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
+  const delivered = new Set(space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
+  const c = [...space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
+  return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+}
+
+/**
+ * Record why documentation is not needed for the cut about to be signed.
+ * The reason is trimmed and kept on the session until signCutGesture mints
+ * the cut and puts it there. A reason that is empty or only whitespace says
+ * nothing, so it is refused and nothing is recorded — otherwise the
+ * documentation rule could be waved through with a blank field.
+ */
+export function exemptDocsGesture(s: TandemSession, reason: string): GestureResult {
+  const trimmed = reason.trim();
+  if (!trimmed) return { ok: false, reason: "a documentation exemption needs a reason" };
+  s.docsExemptionReason = trimmed;
+  s.changed("Documentation exemption recorded — it travels onto the cut you sign.");
+  return { ok: true };
+}
+
+export function signCutGesture(s: TandemSession): GestureResult {
+    const reason = s.docsExemptionReason;
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      ...(reason ? { docsExemption: { reason, at: s.deps.now() } } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
     if (!r.ok) return r;
@@ -31,6 +68,7 @@ export function signCutGesture(s: TandemSession): { ok: boolean; reason?: string
     // no-expiry, edit-re-arms discipline the engine's gates verify.
     s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
     s.cutNodeIds.clear();
+    s.docsExemptionReason = undefined;
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
     void executeRun(s, r.cut.id);
     return { ok: true };

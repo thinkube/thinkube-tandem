@@ -164,6 +164,10 @@ export function Rail(props: {
 }): JSX.Element {
   const { push } = props;
   const ready = push.ready;
+  const doc = push.documentation;
+  const docSettled = doc.state === "landed" || doc.state === "exempt";
+  const [docReason, setDocReason] = useState("");
+  const docReasonReady = docReason.trim().length > 0;
 
   return (
     <div
@@ -232,12 +236,48 @@ export function Rail(props: {
             >
               Read the cut review first
             </button>
+            {doc.state === "landed" ? (
+              <div data-docs-landed style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.sm }}>
+                Lands documentation: {doc.landings.join(", ")}
+              </div>
+            ) : doc.state === "exempt" ? (
+              <div data-docs-exempt style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.sm }}>
+                Documentation not needed: {doc.reason}
+              </div>
+            ) : (
+              <div data-docs-exemption style={{ marginTop: SP.sm }}>
+                <label htmlFor="docs-exemption-reason" style={label}>
+                  This lands no documentation — say why it is not needed
+                </label>
+                <textarea
+                  id="docs-exemption-reason"
+                  data-docs-exemption-reason
+                  rows={2}
+                  style={{ width: "100%", fontSize: FS.body, marginTop: 2 }}
+                  placeholder="documentation is not needed here because…"
+                  value={docReason}
+                  onChange={(e) => setDocReason(e.target.value)}
+                  onBlur={() => {
+                    if (docReasonReady) post({ action: "exempt-docs", reason: docReason });
+                  }}
+                />
+              </div>
+            )}
             <button
               data-build
-              disabled={!can("build")}
+              disabled={!can("build") || !(docSettled || docReasonReady)}
               style={{ ...btn, width: "100%", marginTop: SP.sm }}
-              title={can("build") ? "Sign this work and start the workers." : whyNot(push.phase)}
-              onClick={() => post({ action: "build" })}
+              title={
+                !docSettled && !docReasonReady
+                  ? "Say why documentation is not needed, or ground a docs/ page, before signing."
+                  : can("build")
+                    ? "Sign this work and start the workers."
+                    : whyNot(push.phase)
+              }
+              onClick={() => {
+                if (!docSettled && docReasonReady) post({ action: "exempt-docs", reason: docReason });
+                post({ action: "build" });
+              }}
             >
               Sign and build {ready.subjects} subject{ready.subjects === 1 ? "" : "s"}
             </button>

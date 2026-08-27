@@ -5,6 +5,8 @@
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
+import { docsDuty } from "../core/docsDuty";
+import { verifiedDoors } from "./doors";
 
 
 
@@ -85,6 +87,19 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     lines.push(`Not grounded (no place in the code yet):`);
     for (const n of ungrounded) lines.push(`  ⚠ ${n.sentence}`);
   }
+
+  // The documentation decision, stated before you sign: the doc pages this
+  // work lands, or that documentation is not needed and the reason given —
+  // the one rule (docsDuty) says which, so this is never worked out twice.
+  const duty = docsDuty(space, cut);
+  if (duty.state === "landed") {
+    lines.push(`Documentation — lands:`);
+    for (const p of duty.landings) lines.push(`  • ${p}`);
+  } else if (duty.state === "exempt") {
+    lines.push(`Documentation — not needed: ${duty.reason}`);
+  } else {
+    lines.push(`Documentation — missing: this cut owes documentation and carries no exemption`);
+  }
   return lines.join("\n");
 }
 
@@ -100,6 +115,18 @@ export function renderCutScreen(space: Space, cut: Cut): string {
  * license length: the budget above still holds, in lines that say
  * something.
  */
+/** The walkthrough line for each promise: every one names a door the
+ *  machine verified renders, matched by the promise's own sentence. */
+export function doorsBySentence(nodes: readonly Change[]): ReadonlyMap<string, string> {
+  const doors = verifiedDoors();
+  const experience = new Map<string, string>();
+  for (const n of nodes) {
+    const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
+    if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
+  }
+  return experience;
+}
+
 export function renderDeliveryPage(
   space: Space,
   delivery: Delivery,

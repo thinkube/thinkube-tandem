@@ -9,15 +9,14 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
-import { renderCutScreen, renderDeliveryPage } from "../gates/render";
-import { verifiedDoors } from "../gates/doors";
+import { doorsBySentence, renderCutScreen, renderDeliveryPage } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, executeRun, rejectDeliveryGesture, signCutGesture } from "./runGate";
+import { acceptDeliveryGesture, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, signCutGesture, unrunCutOf } from "./runGate";
 import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
@@ -205,11 +204,16 @@ export class TandemSession {
   buildRefusal?: string;
 
   /** Commit: assumptions become decisions, whole components go into one cut. */
-  async build(excluded: string[] = []): Promise<{ ok: boolean; reason?: string }> {
+  async build(excluded: string[] = []): Promise<GestureResult> {
     const r = await buildFlow(this, excluded);
-    this.buildRefusal = r.ok ? undefined : r.reason;
-    if (!r.ok) this.changed(r.reason ?? "the build was refused");
-    return r;
+    // A refusal always carries words: the button shows them under itself,
+    // so a refusal with nothing to say would read as a button doing nothing.
+    this.buildRefusal = undefined;
+    if (r.ok) return { ok: true };
+    const reason = r.reason ?? "the build was refused";
+    this.buildRefusal = reason;
+    this.changed(reason);
+    return { ok: false, reason };
   }
 
   /** What you are writing, before any of it is an ask. */
@@ -475,8 +479,21 @@ export class TandemSession {
     });
   }
 
+  /** The recorded reason documentation is not needed for the cut about to be
+   *  signed. Kept here, not on a node, because it belongs to the cut that
+   *  does not exist until the sign gesture builds it — signCutGesture reads
+   *  this and puts it on the cut it mints. */
+  docsExemptionReason: string | undefined;
+
+  /** "Documentation is not needed here" — with a reason, recorded before
+   *  signing so it travels onto the cut. An empty or whitespace-only reason
+   *  is refused and nothing is recorded, because a blank reason is not one. */
+  exemptDocs(reason: string): GestureResult {
+    return exemptDocsGesture(this, reason);
+  }
+
   /** Gate 1. On success the run starts — nothing between the gates is human. */
-  signCut(): { ok: boolean; reason?: string } {
+  signCut(): GestureResult {
     return signCutGesture(this);
   }
 
@@ -492,14 +509,7 @@ export class TandemSession {
    * one button that could have started it already spent.
    */
   unrunCut(): { id: string; tepId?: string } | undefined {
-    // Only an ACCEPTED delivery ends a cut. A delivery that was withheld
-    // delivered nothing; one that is open and undecided — or that cannot be
-    // accepted, because a check or a review is red — is not the end of the
-    // work either. In all three the signed work is still there to run, and
-    // the way back in must stay reachable.
-    const delivered = new Set(this.space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
-    const c = [...this.space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
-    return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+    return unrunCutOf(this.space);
   }
 
   /** Think again: withdraw the signed cut that delivered nothing and derive
@@ -533,14 +543,7 @@ export class TandemSession {
   deliveryPage(deliveryId: string): string | undefined {
     const d = this.space.deliveries.find((x) => x.id === deliveryId);
     if (!d) return undefined;
-    // Every walkthrough line names a door the machine verified renders.
-    const doors = verifiedDoors();
-    const experience = new Map<string, string>();
-    for (const n of this.space.nodes) {
-      const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
-      if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
-    }
-    return renderDeliveryPage(this.space, d, experience);
+    return renderDeliveryPage(this.space, d, doorsBySentence(this.space.nodes));
   }
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
@@ -585,10 +588,9 @@ export class TandemSession {
       const last = loadLastRun(this.deps.storeDir);
       if (last && !this.runState)
         this.runState = RunState.from(last, () => this.deps.onChanged?.());
-        void this.refreshStaleness().then(() => this.deps.onChanged?.());
+      void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {
       this.space = emptySpace();
     }
-  
   }
 }

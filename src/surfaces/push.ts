@@ -8,6 +8,7 @@ import { TandemSession } from "./session";
 import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
+import { docsDuty } from "../core/docsDuty";
 
 const TITLE_CLIP = 64;
 
@@ -285,6 +286,15 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         }
       : undefined,
     cutCount: session.cutNodeIds.size,
+    // The one rule's verdict for the cut about to be signed — the rail
+    // states this rather than working it out again from the promises.
+    documentation: docsDuty(session.space, {
+      id: "pending",
+      changeIds: [...session.cutNodeIds],
+      ...(session.docsExemptionReason
+        ? { docsExemption: { reason: session.docsExemptionReason, at: session.deps.now() } }
+        : {}),
+    }),
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,
       page: session.deliveryPage(d.id) ?? "",
