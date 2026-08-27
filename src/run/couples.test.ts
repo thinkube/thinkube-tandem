@@ -24,6 +24,7 @@ import { knotWarnings } from "./refusals";
 import { missingProbes } from "./testHomes";
 import { gradeAssessments } from "./assess";
 import { provedByExecution } from "./wiring";
+import { platformImitations } from "./probeAudit";
 import { outsideFootprint } from "./answers";
 import { clearanceLesson } from "./worker";
 import { emptySpace } from "../core/schema";
@@ -545,4 +546,31 @@ test("a resumed plan keeps every check at its recorded address", () => {
   // nothing there to run.
   const gone = pinRecordedChecks(slices as never, new Map([["c-render", "src/x_AC-1.test.ts"]]), new Set());
   assert.deepEqual(gone, []);
+});
+
+test("production imitating the platform is said, by file and line", () => {
+  // The simulator rule reads checks and knows a simulator by loader
+  // interception. So the imitation moved to production: a hand-built
+  // object literal cast to the platform's own type, keeping a test double
+  // alive past the injected seam — steered there by the supervisor. Found
+  // in a delivered panel.ts, invisible to every rule that existed.
+  const hits = platformImitations(
+    "src/surfaces/panel.ts",
+    [
+      'import type * as vscodeTypes from "vscode";',
+      "function joinUri(base: vscodeTypes.Uri, ...segments: string[]): vscodeTypes.Uri {",
+      "  const fsPath = path.join(base.fsPath, ...segments);",
+      "  return { ...base, fsPath, path: fsPath, toString: () => fsPath } as vscodeTypes.Uri;",
+      "}",
+    ].join("\n"),
+  );
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].line, 4);
+  assert.match(hits[0].detail, /manufacturing a vscode object/);
+  assert.match(hits[0].detail, /widen the seam instead/);
+  // A relative import's namespace is the repository's own — not a platform.
+  assert.deepEqual(
+    platformImitations("src/a.ts", 'import type * as own from "./schema";\nconst x = {} as own.Cut;'),
+    [],
+  );
 });
