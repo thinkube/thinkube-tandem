@@ -71,8 +71,11 @@ export class SpacePanel implements vscodeTypes.Disposable {
   private readonly getSession: () => TandemSession;
   private readonly hooks?: PanelHostHooks;
   private readonly host: PanelHost;
+  private readonly onDisposed?: () => void;
+  private _disposedReported = false;
   private _panel: WebviewPanelLike | undefined;
   private _disposables: vscodeTypes.Disposable[] = [];
+  private _disposeListeners: (() => void)[] = [];
 
   constructor(opts: {
     key: string;
@@ -80,12 +83,32 @@ export class SpacePanel implements vscodeTypes.Disposable {
     getSession: () => TandemSession;
     hooks?: PanelHostHooks;
     host?: PanelHost;
+    /** Told once, from whichever comes first: the tab's own close, or this
+     *  instance's own dispose() — so the registry can drop this space and
+     *  open a fresh tab next time. Never fired twice for one panel. */
+    onDisposed?: () => void;
   }) {
     this.key = opts.key;
     this.title = opts.title;
     this.getSession = opts.getSession;
     this.hooks = opts.hooks;
     this.host = opts.host ?? defaultHost();
+    this.onDisposed = opts.onDisposed;
+  }
+
+  /** Fires onDisposed exactly once per instance, however it is reached. */
+  private _reportDisposed(): void {
+    if (this._disposedReported) return;
+    this._disposedReported = true;
+    this.onDisposed?.();
+    for (const cb of this._disposeListeners) cb();
+  }
+
+  /** Lets a registry (SpacePanels) learn this panel was disposed without
+   *  knowing about the constructor's onDisposed field — the only channel
+   *  a registry has for dropping a key when its panel's tab is closed. */
+  onDidDispose(cb: () => void): void {
+    this._disposeListeners.push(cb);
   }
 
   async show(extensionUri: vscodeTypes.Uri): Promise<void> {
@@ -150,6 +173,9 @@ export class SpacePanel implements vscodeTypes.Disposable {
       }),
       this._panel.onDidDispose(() => {
         this._panel = undefined;
+        // The tab was closed in the running editor — nothing on disk
+        // records this; only the live window knows its tabs closed.
+        this._reportDisposed();
       }),
     );
     this._push(session);
@@ -169,6 +195,7 @@ export class SpacePanel implements vscodeTypes.Disposable {
     this._disposables = [];
     this._panel?.dispose();
     this._panel = undefined;
+    this._reportDisposed();
   }
 }
 

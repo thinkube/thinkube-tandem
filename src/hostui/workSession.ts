@@ -94,7 +94,9 @@ export async function ensureWorkSession(args: {
     gitRoot: string,
   ) => Promise<import("../dispatch/forge").Forge | undefined>;
   openRepos: () => EnabledProject[];
-  onChanged: (message?: string) => void;
+  /** Carries the space key the change came from — never the remembered
+   *  active space — so the panel registry can push to the right tab. */
+  onChanged: (spaceKey: string, message?: string) => void;
   storageDir: string;
 }): Promise<import("../surfaces/session").TandemSession | undefined> {
   const wp = findWorkProject(args.storeRoot, args.ownerKey.slice(3));
@@ -140,7 +142,7 @@ export async function ensureWorkSession(args: {
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
-    onChanged: args.onChanged,
+    onChanged: (message) => args.onChanged(key, message),
   });
   args.sessions.set(key, s);
   return s;

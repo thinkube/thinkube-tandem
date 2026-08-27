@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
+import { SpacePanels } from "./surfaces/panels";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
@@ -44,7 +45,7 @@ import {
 } from "./engine/host/active";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
 
-let panel: SpacePanel | undefined;
+let panels: SpacePanels;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
@@ -170,16 +171,29 @@ function heartbeat(context: vscode.ExtensionContext): void {
   updateStatusBar(project);
 }
 
-function pushActive(context: vscode.ExtensionContext, message?: string): void {
+/** key is "<ownerKey>/<slug>" — the space this change came from, never
+ *  whichever space is remembered as active. */
+function pushActive(context: vscode.ExtensionContext, key: string, message?: string): void {
   heartbeat(context);
-  const s = activeSession(context);
+  const s = sessions.get(key);
   if (!s) return;
-  panel?.pushFrom(s, message);
+  panels.pushTo(key, s, message);
   if (message?.startsWith("Delivery ready"))
     void vscode.window
       .showInformationMessage(`Tandem — ${message}`, "Open the space")
       .then((pick) => {
-        if (pick) void vscode.commands.executeCommand("thinkube-tandem.openSpace");
+        // Opens the tab for the space the delivery came from, not
+        // whichever space is remembered as active — a background
+        // delivery never displaces the foreground tab.
+        if (pick) {
+          const [ownerKey, slug] = key.split("/");
+          if (ownerKey && slug)
+            void vscode.commands.executeCommand(
+              "thinkube-tandem.openThinkingSpace",
+              ownerKey,
+              slug,
+            );
+        }
       });
   else if (message?.startsWith("The run refused"))
     void vscode.window.showWarningMessage(`Tandem — ${message}`);
@@ -216,7 +230,7 @@ async function ensureSession(
           vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
         ),
       openRepos: openProjects,
-      onChanged: (message) => pushActive(context, message),
+      onChanged: (spaceKey, message) => pushActive(context, spaceKey, message),
       storageDir: context.globalStorageUri.fsPath,
     });
   }
@@ -273,7 +287,7 @@ async function ensureSession(
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
-    onChanged: (message) => pushActive(context, message),
+    onChanged: (message) => pushActive(context, sessionKey, message),
   });
   sessions.set(sessionKey, s);
   // Units loaded unnamed (or renamed past their render) get titles at open,
@@ -353,16 +367,32 @@ export function activate(context: vscode.ExtensionContext): void {
     updateConfigContext,
   });
 
-  const requireSession = (): TandemSession => {
-    const s = activeSession(context);
-    if (!s) throw new Error("no active Tandem session — open the space first");
-    return s;
+  // A panel's session getter is bound to the one space key it was opened
+  // for — never to whichever space is remembered as active, so a panel
+  // never drifts onto another space's session.
+  const sessionForKey = (key: string): (() => TandemSession) => {
+    return () => {
+      const s = sessions.get(key);
+      if (!s) throw new Error("no active Tandem session — open the space first");
+      return s;
+    };
   };
   const hooks = {
     onSwitchRepo: async () => {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
     },
   };
+  // One panel per thinking space: opening a space never disposes another
+  // space's panel — each is made once per key and reused after that.
+  panels = new SpacePanels(
+    (key, title) =>
+      new SpacePanel({
+        key,
+        title,
+        getSession: sessionForKey(key),
+        hooks,
+      }),
+  );
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
     const s = await ensureSession(context, true);
@@ -374,21 +404,11 @@ export function activate(context: vscode.ExtensionContext): void {
       ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`)
       : undefined;
     const key = ownerKey && slug ? `${ownerKey}/${slug}` : "unknown";
-    // v1 shell: one panel in total, rebuilt when the resolved space changes
-    // so its title always names the space it now shows. SL-7 replaces this
-    // with a per-space registry so several spaces stay open at once.
-    if (!panel || panel.currentKey !== key) {
-      panel?.dispose();
-      panel = new SpacePanel({
-        key,
-        title:
-          ownerKey && slug ? spaceTitle(configuredStoreRoot(), ownerKey, slug) : "Tandem",
-        getSession: requireSession,
-        hooks,
-      });
-    }
-    await panel.show(context.extensionUri);
-    pushActive(context);
+    const title =
+      ownerKey && slug ? spaceTitle(configuredStoreRoot(), ownerKey, slug) : "Tandem";
+    const spacePanel = panels.open(key, title) as SpacePanel;
+    await spacePanel.show(context.extensionUri);
+    pushActive(context, key);
   };
 
   context.subscriptions.push(
@@ -403,7 +423,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerSpaceCommands(context, {
       openSpaceFor,
       refreshTree: () => projectsTree?.refresh(),
-      dropSession: (key) => void sessions.delete(key),
+      // The deleted space's own panel is disposed and dropped; every
+      // other open space's panel is untouched.
+      dropSession: (key) => {
+        sessions.delete(key);
+        panels.dispose(key);
+      },
       deleteSpace: deleteThinkingSpace,
       costOfDeleting: deletionCost,
       sweepResidue: (ownerKey, cost) => sweepDeletedSpaceRuns(openProjects, ownerKey, cost),
@@ -557,6 +582,6 @@ export function deactivate(): void {
       });
       s.runState.halt();
     }
-  panel?.dispose();
+  panels?.disposeAll();
   storeSync?.dispose();
 }
