@@ -14,21 +14,9 @@ import { isDocsPath } from "../core/docsDuty";
 import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import * as fsp from "node:fs/promises";
-import {
-  confessedDeferrals,
-  keptChecks,
-  recordedCheckPaths,
-  restoreChecksFromRecord,
-  writeDeliveryRecord,
-} from "./deliveryRecord";
+import { confessedDeferrals, keptChecks, writeDeliveryRecord } from "./deliveryRecord";
 
-export {
-  confessedDeferrals,
-  keptChecks,
-  recordedCheckPaths,
-  restoreChecksFromRecord,
-  writeDeliveryRecord,
-};
+export { confessedDeferrals, keptChecks, writeDeliveryRecord };
 
 /**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per

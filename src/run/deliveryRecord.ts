@@ -195,55 +195,12 @@ export async function writeDeliveryRecord(
   }
 }
 
-/** A check whose file leaves the tree: what it proved, and its source. */
 /**
- * Put a delivery's recorded checks back into a tree.
+ * A check whose file leaves the tree: what it proved, and its source.
  *
- * A delivery consumes its checks — the sources live on the record, the
- * files leave the tree. A run of the same cut after that (the person ran
- * it again, or the acceptance loop proves it three times) finds standing
- * testers and no check files, which once turned a fully-delivered cut into
- * sixty-four file-not-found reds. What the record kept is written back,
- * and only where nothing else has since claimed the path.
+ * Reading these back into a tree is `src/run/recordedChecks.ts`, which owns
+ * the record's check side; this module owns the record's shape.
  */
-/** The check paths a cut's delivery record holds, or nothing. */
-export function recordedCheckPaths(storeDir: string, tep: string): string[] {
-  try {
-    const parsed = JSON.parse(
-      readFileSync(path.join(storeDir, "deliveries", `${tep}.json`), "utf8"),
-    ) as { checks?: { path?: string }[] };
-    return (parsed.checks ?? []).map((c) => c.path).filter((x): x is string => !!x);
-  } catch {
-    return [];
-  }
-}
-
-export async function restoreChecksFromRecord(
-  storeDir: string,
-  tep: string,
-  worktree: string,
-  wanted: readonly string[],
-): Promise<string[]> {
-  let checks: KeptCheck[];
-  try {
-    const raw = await fsp.readFile(path.join(storeDir, "deliveries", `${tep}.json`), "utf8");
-    checks = (JSON.parse(raw) as { checks?: KeptCheck[] }).checks ?? [];
-  } catch {
-    return [];
-  }
-  const restored: string[] = [];
-  for (const rel of wanted) {
-    const kept = checks.find((c) => c.path === rel);
-    if (!kept) continue;
-    const dst = path.join(worktree, rel);
-    if (await fsp.access(dst).then(() => true, () => false)) continue;
-    await fsp.mkdir(path.dirname(dst), { recursive: true });
-    await fsp.writeFile(dst, kept.source);
-    restored.push(rel);
-  }
-  return restored;
-}
-
 export interface KeptCheck {
   criterionId: string;
   /** Where the check lived while the run drove it. */
