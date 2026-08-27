@@ -133,6 +133,50 @@ test("every check source has a compiled counterpart, so none can report green wi
   );
 });
 
+/**
+ * INVARIANT: a check invoked at a path that is not there reports GREEN.
+ *
+ * The check above proves every compiled twin exists right now. It cannot
+ * prove what happens when one does not, and that is the half that bites: a
+ * gate naming an address the tree does not hold gets exit 0 with nothing
+ * run, and records a pass. Six promises were once graded that way — exit 0
+ * in about a tenth of a second, one file on the trace, every criterion
+ * green over code no drive had reached.
+ *
+ * So the hole is demonstrated rather than described: `node --test` is given
+ * a path that certainly does not exist, and the silence is asserted. A
+ * runner that starts failing loudly on a missing file would turn this red,
+ * and that is the day the check above stops being load-bearing.
+ */
+test("a check run at a path the tree does not hold exits green having run nothing", () => {
+  const absent = path.join(repo, "out-test", "no-such-check_AC-0.test.js");
+  assert.equal(fs.existsSync(absent), false, "the fixture path must not exist");
+  let code = 0;
+  let output = "";
+  try {
+    output = execFileSync("node", ["--test", absent], {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, NODE_OPTIONS: "" },
+    });
+  } catch (err) {
+    const e = err as { status?: number; stdout?: string; stderr?: string };
+    code = e.status ?? 1;
+    output = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+  }
+  assert.equal(
+    code,
+    0,
+    "the runner now fails on a missing check file — the compiled-twin rule above is no longer the only thing standing between a mis-addressed check and a silent green",
+  );
+  assert.doesNotMatch(
+    output,
+    /^ok \d/m,
+    "a path that does not exist reported a passing test, which nothing here can explain",
+  );
+});
+
 // INVARIANT: the two lists are set-equal. Stated in both directions so a
 // failure says WHICH side is missing the name, not merely that they differ.
 test("every action the surface can send is governed by a phase, and every governed action can be sent", () => {
