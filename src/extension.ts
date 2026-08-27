@@ -105,7 +105,7 @@ function openProjects(): EnabledProject[] {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const seen = new Map<string, EnabledProject>();
   for (const f of folders)
-    for (const p of discoverProjects(f.uri.fsPath))
+    for (const p of discoverProjects(f.uri.fsPath, configuredStoreRoot()))
       if (!seen.has(p.card.id)) seen.set(p.card.id, p);
   return [...seen.values()];
 }
@@ -542,7 +542,7 @@ export function activate(context: vscode.ExtensionContext): void {
           createProduct(storeRootOf(), typed);
           product = typed.trim();
         }
-        const r = setCardProduct(project.anchorDir, product);
+        const r = setCardProduct(project.anchorDir, product, configuredStoreRoot());
         if (!r.ok) void vscode.window.showErrorMessage(`Tandem: ${r.reason}`);
         projectsTree?.refresh();
       },

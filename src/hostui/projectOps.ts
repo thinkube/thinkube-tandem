@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { EnabledProject, mintCard, scopesNotOpen } from "../core/identity";
+import { configuredStoreRoot } from "./spaceOps";
 import { sweepSpaceResidue } from "../run/residue";
 
 /** Git repositories nested inside a root — the root itself is never a
@@ -79,7 +80,7 @@ export async function newProjectFlow(
     label: label.trim(),
     product,
     ...(remote ? { remote } : {}),
-  });
+  }, configuredStoreRoot());
   if (!minted.ok) {
     void vscode.window.showErrorMessage(`Tandem: ${minted.reason}`);
     return;
@@ -208,7 +209,7 @@ export async function chooseProject(
       label,
       ...(product ? { product } : {}),
       ...(remote ? { remote } : {}),
-    });
+    }, configuredStoreRoot());
     if (!minted.ok) {
       void vscode.window.showErrorMessage(`Tandem: ${minted.reason}`);
       return undefined;

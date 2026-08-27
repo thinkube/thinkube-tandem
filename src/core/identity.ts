@@ -1,22 +1,22 @@
 /**
- * Identity discipline (SPEC §7ter): identity is a minted, immutable id
- * stored in the project's own card — `.tandem/space.yaml`, written once at
- * enablement. It travels with the repo through renames and clones, it is
- * read mechanically from the artifact, and the remote URL is recorded
- * beside it as a hint, never resolved. A directory without a card is not
- * enabled. Every name — folder basename, product grouping, display title —
- * is a label: set by the human, rendered everywhere, resolved nowhere.
+ * Identity discipline (SPEC §7ter): identity is a minted, immutable id in
+ * the project's card, written once at enablement. The card is kept in the
+ * STORE, beside the spaces filed under it, and found again from what the
+ * repository itself says: its remote, and the anchor's path inside it (see
+ * ./cards). A repository with no card in the store is not enabled. Every
+ * name — folder basename, product grouping, display title — is a label:
+ * set by the human, rendered everywhere, resolved nowhere.
  *
  * A project is a declared set of scopes (§7quater): a scope is
  * (repo identity, optional path prefix). Single-repo project: one scope,
- * no prefix. Monorepo sub-project: the card lives in the subtree and the
- * prefix is derived mechanically from where the card sits relative to the
- * enclosing git root. Multirepo: the anchor card lists the other scopes.
+ * no prefix. Monorepo sub-project: the card names the subtree as its
+ * prefix. Multirepo: the anchor card lists the other scopes.
  */
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { StoredCard, allCards, matchCard, putCard, remoteOf } from "./cards";
 
 /** One member scope of a project (beyond the anchor). */
 export interface ProjectScope {
@@ -29,7 +29,7 @@ export interface ProjectScope {
   label?: string;
 }
 
-/** The project card — `.tandem/space.yaml` at the anchor scope. */
+/** The project card, as the rest of the extension reads it. */
 export interface SpaceCard {
   /** Minted at enablement, immutable, mechanical. Never a spelling. */
   id: string;
@@ -58,8 +58,65 @@ export function mintId(label: string, rand: () => string = () => randomBytes(3).
   return `${root}-${rand()}`;
 }
 
-/** Read a card at `dir` (the anchor scope directory). Absent → not enabled. */
-function readCard(dir: string): SpaceCard | undefined {
+/**
+ * Read the card for an anchor directory. The STORE is the record; a
+ * `.tandem/space.yaml` left by an older install is imported into it once
+ * and then never needed again — a machine that is reinstalled restores its
+ * store and every clone re-links itself, which a file in the working tree
+ * could never do.
+ */
+function readCard(dir: string, storeRoot: string, seen?: Lookup): SpaceCard | undefined {
+  const gitRoot = findGitRoot(dir) ?? dir;
+  if (linkedWorktree(gitRoot)) return undefined;
+  const prefix = path.relative(gitRoot, dir).split(path.sep).join("/");
+  const cards = seen ? seen.cards : allCards(storeRoot);
+  const remote = seen ? seen.remote(gitRoot) : remoteOf(gitRoot);
+  const stored = matchCard(cards, remote, prefix, dir);
+  if (stored)
+    return {
+      id: stored.id,
+      label: stored.label,
+      ...(stored.product ? { product: stored.product } : {}),
+      ...(stored.remote ? { remote: stored.remote } : {}),
+      ...(stored.scopes ? { scopes: stored.scopes } : {}),
+    };
+  const legacy = readLegacyCard(dir);
+  if (!legacy) return undefined;
+  const known = remote || legacy.remote || "";
+  const imported = {
+    id: legacy.id,
+    label: legacy.label,
+    ...(legacy.product ? { product: legacy.product } : {}),
+    ...(known ? { remote: known } : { at: path.resolve(dir) }),
+    prefix,
+    ...(legacy.scopes ? { scopes: legacy.scopes } : {}),
+  };
+  putCard(storeRoot, imported);
+  seen?.cards.push(imported);
+  retireLegacyCard(dir);
+  return legacy;
+}
+
+/** The store and the remotes read once, for a walk that visits many
+ *  directories under one repository. */
+interface Lookup {
+  cards: StoredCard[];
+  remote: (gitRoot: string) => string;
+}
+
+/** Drop the working-tree card once the store holds it. `.tandem` itself
+ *  stays: it also carries proved facts, conventions and prompts, which are
+ *  the repository's own and not a person's grouping. */
+function retireLegacyCard(dir: string): void {
+  try {
+    fs.rmSync(path.join(dir, CARD_RELPATH));
+  } catch {
+    /* a card that cannot be removed is simply read again and re-imported */
+  }
+}
+
+/** A card an older install left in the working tree. Read once, to import. */
+function readLegacyCard(dir: string): SpaceCard | undefined {
   try {
     const raw = parseYaml(fs.readFileSync(path.join(dir, CARD_RELPATH), "utf8")) as Record<string, unknown>;
     if (typeof raw?.id !== "string" || !raw.id.trim()) return undefined;
@@ -90,18 +147,32 @@ function readCard(dir: string): SpaceCard | undefined {
 export function mintCard(
   dir: string,
   init: { label: string; product?: string; remote?: string },
+  storeRoot: string,
   rand?: () => string,
 ): { ok: true; card: SpaceCard } | { ok: false; reason: string } {
-  if (readCard(dir))
+  if (readCard(dir, storeRoot))
     return { ok: false, reason: "already enabled — a card exists and identity is immutable" };
+  if (linkedWorktree(findGitRoot(dir) ?? dir))
+    return {
+      ok: false,
+      reason: "this is a git worktree — enable the repository it belongs to instead",
+    };
   const card: SpaceCard = {
     id: mintId(init.label, rand),
     label: init.label,
     ...(init.product ? { product: init.product } : {}),
     ...(init.remote ? { remote: init.remote } : {}),
   };
-  fs.mkdirSync(path.join(dir, path.dirname(CARD_RELPATH)), { recursive: true });
-  fs.writeFileSync(path.join(dir, CARD_RELPATH), stringifyYaml(card));
+  const gitRoot = findGitRoot(dir) ?? dir;
+  const prefix = path.relative(gitRoot, dir).split(path.sep).join("/");
+  const remote = init.remote || remoteOf(gitRoot);
+  putCard(storeRoot, {
+    id: card.id,
+    label: card.label,
+    ...(card.product ? { product: card.product } : {}),
+    ...(remote ? { remote } : { at: path.resolve(dir) }),
+    prefix,
+  });
   return { ok: true, card };
 }
 
@@ -113,6 +184,24 @@ export interface EnabledProject {
   gitRoot: string;
   /** Path prefix of the anchor inside the git root ("" = whole repo). */
   prefix: string;
+}
+
+/**
+ * A linked git worktree: a second checkout of a repository already
+ * identified elsewhere. Its `.git` is a FILE pointing back at the real
+ * repository, where the main checkout has a directory.
+ *
+ * It answers with the same remote and the same prefix as its repository,
+ * so a card matched on those alone would claim every worktree a run has
+ * open — one project drawn as twenty. A worktree carries no identity of
+ * its own: the repository it belongs to already has one.
+ */
+function linkedWorktree(gitRoot: string): boolean {
+  try {
+    return fs.statSync(path.join(gitRoot, ".git")).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** Walk upward from `dir` to the enclosing git root ('.git' entry). */
@@ -131,10 +220,21 @@ function findGitRoot(dir: string): string | undefined {
  * card plus any subtree cards (monorepo sub-projects), each with its
  * mechanical prefix. Pure filesystem walk, bounded by depth.
  */
-export function discoverProjects(folder: string, maxDepth = 4): EnabledProject[] {
+export function discoverProjects(folder: string, storeRoot: string, maxDepth = 4): EnabledProject[] {
   const out: EnabledProject[] = [];
+  const remotes = new Map<string, string>();
+  const seen: Lookup = {
+    cards: allCards(storeRoot),
+    remote: (gitRoot) => {
+      const hit = remotes.get(gitRoot);
+      if (hit !== undefined) return hit;
+      const r = remoteOf(gitRoot);
+      remotes.set(gitRoot, r);
+      return r;
+    },
+  };
   const walk = (dir: string, depth: number): void => {
-    const card = readCard(dir);
+    const card = readCard(dir, storeRoot, seen);
     if (card) {
       const gitRoot = findGitRoot(dir) ?? dir;
       out.push({
@@ -217,12 +317,20 @@ export function createProduct(
 export function setCardProduct(
   dir: string,
   product: string,
+  storeRoot: string,
 ): { ok: true } | { ok: false; reason: string } {
-  const card = readCard(dir);
+  const card = readCard(dir, storeRoot);
   if (!card) return { ok: false, reason: "not an enabled project (no card)" };
-  fs.writeFileSync(
-    path.join(dir, CARD_RELPATH),
-    stringifyYaml({ ...card, product: product.trim() }),
-  );
+  const gitRoot = findGitRoot(dir) ?? dir;
+  const prefix = path.relative(gitRoot, dir).split(path.sep).join("/");
+  const remote = card.remote || remoteOf(gitRoot);
+  putCard(storeRoot, {
+    id: card.id,
+    label: card.label,
+    product: product.trim(),
+    ...(remote ? { remote } : { at: path.resolve(dir) }),
+    prefix,
+    ...(card.scopes ? { scopes: card.scopes } : {}),
+  });
   return { ok: true };
 }

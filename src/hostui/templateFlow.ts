@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { mintCard } from "../core/identity";
+import { configuredStoreRoot } from "./spaceOps";
 import { thinkingSpaceDirs } from "../core/spaces";
 import { readContextScope, writeContextScope } from "../core/workProjects";
 
@@ -200,7 +201,7 @@ async function newAppFromTemplate(args: {
       );
     });
   if (!fs.existsSync(dest)) return;
-  const minted = mintCard(dest, { label: appName, product: args.product });
+  const minted = mintCard(dest, { label: appName, product: args.product }, configuredStoreRoot());
   if (minted.ok) {
     if (!(vsc.workspace.workspaceFolders ?? []).some((f) => f.uri.fsPath === dest))
       vsc.workspace.updateWorkspaceFolders(vsc.workspace.workspaceFolders?.length ?? 0, 0, {
