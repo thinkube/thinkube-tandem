@@ -28,6 +28,7 @@ import {
 } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
+import { platformImitations } from "./probeAudit";
 import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import type { WiringVerdict } from "./wiring";
@@ -349,6 +350,32 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // A tree that does not BUILD stays a veto: handing over a product that
   // cannot ship harms whoever pulls it, whatever the person decides.
   const findings: string[] = [];
+  // Production that imitates the platform, said for the person to weigh.
+  // The simulator rule reads checks; this reads what the run DELIVERED,
+  // because that is where the imitation moved when the checks were watched.
+  {
+    const delivered = (
+      await exec("git", ["-C", worktree, "diff", "--name-only", "--diff-filter=d", `${g.baseSha}..HEAD`], worktree)
+    ).out.split("\n").map((l) => l.trim()).filter((f) => f && !isTestPath(f) && /\.(m|c)?tsx?$/.test(f));
+    for (const rel of delivered) {
+      let src = "";
+      try {
+        src = await fs.readFile(path.join(worktree, rel), "utf8");
+      } catch {
+        continue;
+      }
+      for (const hit of platformImitations(rel, src)) {
+        findings.push(`${hit.file}:${hit.line} — ${hit.detail}`);
+        defect({
+          activity: "closing gate",
+          trigger: "platform-imitation",
+          type: "code",
+          impact: "production imitates the platform — carried as a finding",
+          detail: `${hit.file}:${hit.line} ${hit.detail}`.slice(0, 500),
+        });
+      }
+    }
+  }
   if (!verdict.green && !verdict.failures.some((f) => /product build/i.test(f.name))) {
     const carried = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
     log(`${tep}: the repository's suite is red after every actor — ${carried.length} finding(s) ride the delivery for the person: ${carried.join("; ").slice(0, 400)}`);

@@ -175,3 +175,52 @@ export function faultsBrief(faults: readonly ProbeFault[]): string {
   );
   return lines.join("\n");
 }
+
+/**
+ * Production that imitates the platform, found where the auditor above
+ * never looks.
+ *
+ * The simulator rule watched one street: it reads CHECKS, and it knows a
+ * simulator by module-loader interception. So a coder, pressed by a check
+ * whose fake input reached deeper than the injected seam, moved the
+ * imitation to the other side of the wall: a hand-built object literal
+ * cast to the platform's own type, in PRODUCTION —
+ *
+ *   return { ...base, fsPath, path: fsPath, toString: () => fsPath } as vscodeTypes.Uri;
+ *
+ * — a counterfeit the platform never made, shaped to keep a test double
+ * alive, steered there by the supervisor itself. The injected seam is
+ * where the platform ends; production on the far side of it never
+ * manufactures the platform's objects.
+ *
+ * The reading is one shape, product-agnostic: a type-only namespace import
+ * from a package this repository does not own, and an object literal cast
+ * to one of its types. Said as a finding for the person — an adapter at a
+ * genuine boundary can look identical, so this never vetoes.
+ */
+export function platformImitations(
+  file: string,
+  source: string,
+): { file: string; line: number; detail: string }[] {
+  const namespaces = [
+    ...source.matchAll(/import\s+type\s+\*\s+as\s+(\w+)\s+from\s+["']([^."'][^"']*)["']/g),
+  ].map((m) => ({ ns: m[1], pkg: m[2] }));
+  if (!namespaces.length) return [];
+  const out: { file: string; line: number; detail: string }[] = [];
+  const lines = source.split(/\r?\n/);
+  for (const { ns, pkg } of namespaces) {
+    const cast = new RegExp(`\\}\\s*as\\s+${ns}\\.(\\w+)`);
+    for (let i = 0; i < lines.length; i++) {
+      const m = cast.exec(lines[i]);
+      if (m)
+        out.push({
+          file,
+          line: i + 1,
+          detail:
+            `an object literal is cast to ${ns}.${m[1]} — production manufacturing a ${pkg} object the platform never made. ` +
+            `If a check's double forced this, the double reached past the injected seam; widen the seam instead.`,
+        });
+    }
+  }
+  return out;
+}
