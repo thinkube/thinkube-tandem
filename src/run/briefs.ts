@@ -4,6 +4,7 @@
  * criteria — the north star every brief carries.
  */
 import { Cut, Space } from "../core/schema";
+import { docsDuty } from "../core/docsDuty";
 
 /** The TEP rendered for briefs: the asks' words plus the grounded slices. */
 export function renderTepBody(space: Space, cut: Cut): string {
@@ -27,6 +28,16 @@ export function renderTepBody(space: Space, cut: Cut): string {
       lines.push(`  - lands at ${t.path}${t.symbol ? ` › ${t.symbol}` : ""}${t.planned ? " (new file)" : ""}`);
     lines.push(`  ## Acceptance Criteria`);
     for (const ac of c!.acceptance) lines.push(`  - [ ] ${ac.text}`);
+  }
+  lines.push(`## Documentation`);
+  const duty = docsDuty(space, cut);
+  if (duty.state === "exempt") {
+    lines.push(`- documentation is not needed for this cut — ${duty.reason}`);
+  } else if (duty.state === "landed") {
+    lines.push(`- this cut must land documentation at:`);
+    for (const p of duty.landings) lines.push(`  - ${p}`);
+  } else {
+    lines.push(`- this cut owes documentation: no docs/ page is grounded and no exemption is recorded`);
   }
   return lines.join("\n");
 }
