@@ -32,7 +32,10 @@ of them there — nothing has users.
 
 - **knip governs v2-authored code only.** The imported engine's public
   surface is canonical v1 API — pinned by the split-fidelity manifest, not
-  by usage analysis. Un-exporting it would alter imported code (I1).
+  by usage analysis. Un-exporting it would alter imported code (I1). The
+  engine's own uncalled surface is judged instead in ENGINE-WIRING.md, a
+  ledger derived from the source tree (`src/derive/engineWiring.ts`), not
+  by knip.
 
 - **Probes are authored as `.test.mjs` node:test modules** run directly with
   `node --test` — no build step, so probes run identically in any target
