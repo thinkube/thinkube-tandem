@@ -50,7 +50,12 @@ test("recording where a proof lived does not invalidate the signature that autho
       },
     ],
   };
-  const signed = signCut(base, { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  const signed = signCut(
+    base,
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "no docs promised in this cut", at: "2026-08-22T00:00:00Z" } },
+    "2026-08-22T00:00:00Z",
+    "t",
+  );
   assert.ok(signed.ok, signed.ok ? "" : signed.reason);
 
   const afterDelivery = {
@@ -90,7 +95,12 @@ test("a signature survives the repository moving, but not the promise moving", (
       },
     ],
   });
-  const signed = signCut(at("src/greet.ts", "aaa"), { id: "cut-1", changeIds: ["n1"] }, "2026-08-22T00:00:00Z", "t");
+  const signed = signCut(
+    at("src/greet.ts", "aaa"),
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "no docs promised in this cut", at: "2026-08-22T00:00:00Z" } },
+    "2026-08-22T00:00:00Z",
+    "t",
+  );
   assert.ok(signed.ok, signed.ok ? "" : signed.reason);
 
   // The repository moved: a new head, a re-read evidence line. Same promise.
@@ -163,7 +173,12 @@ test("a promise whose every criterion is an observation signs — it has nothing
       },
     ],
   };
-  const r = signCut(space, { id: "cut-1", changeIds: ["n1"] }, "2026-08-23T00:00:00Z", "t");
+  const r = signCut(
+    space,
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "no docs promised in this cut", at: "2026-08-23T00:00:00Z" } },
+    "2026-08-23T00:00:00Z",
+    "t",
+  );
   assert.equal(r.ok, true, r.ok ? "" : r.reason);
   assert.doesNotMatch(renderCutScreen(space, { id: "cut-1", changeIds: ["n1"] }), /Nothing proves these yet/);
   assert.match(renderCutScreen(space, { id: "cut-1", changeIds: ["n1"] }), /cannot prove these/);
@@ -269,7 +284,13 @@ test("a redrawn page is not the promises changing", async () => {
       },
     ],
   };
-  const signed = signCut(space as never, { id: "cut-1", changeIds: ["n1"] }, "2026-01-01T00:00:00Z", "t", 1);
+  const signed = signCut(
+    space as never,
+    { id: "cut-1", changeIds: ["n1"], docsExemption: { reason: "no docs promised in this cut", at: "2026-01-01T00:00:00Z" } },
+    "2026-01-01T00:00:00Z",
+    "t",
+    1,
+  );
   assert.ok(signed.ok);
   const cut = signed.cut;
 
