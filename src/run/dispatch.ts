@@ -286,7 +286,6 @@ export async function dispatchTep(
 
     const baseBrief =
       buildWorkerPrompt(next, tep, {
-        specBody,
         tepBody: specBody,
         cwd: tree,
         testConvention:

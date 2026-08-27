@@ -50,3 +50,13 @@ it. The brief now says what is cleared, that the guard restores an
 uncleared change, and — new, and load-bearing — that a unit needing a
 change elsewhere ASKS, is cleared, and makes the change itself. Its promise
 is never handed to another slice. The vocabulary is fixed in docs/WORDS.md.
+
+# Engine change
+
+`core/preflight.ts` › `buildWorkerPrompt`: the separate spec-body slot
+(`context.specBody`) and its "PARENT SPEC" heading are gone. The spec body
+and the parent TEP body were the same rendered text passed under two keys,
+so a worker's brief printed that text twice under two headings. The
+function now takes only `context.tepBody`, rendered once under "THE
+INTENT — the north star", and the caller in `src/run/dispatch.ts` passes
+`renderTepBody`'s result under that one key.

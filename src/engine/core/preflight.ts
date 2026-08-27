@@ -81,7 +81,6 @@ export function buildWorkerPrompt(
   unit: SchedUnit,
   specNumber: string,
   context?: {
-    specBody?: string;
     sliceBody?: string;
     testConvention?: string;
     /** SP-12: the repo-declared, non-mutating build-and-test command a CODE-author runs to
@@ -257,27 +256,19 @@ export function buildWorkerPrompt(
         : `- The held-out \`acceptance/\` probes are graded by the closing gate, not by you: do not build or run them.\n`)
     : "";
   // The worker runs in a worktree of the CODE repo — the thinking space/specs dir is NOT there. Embed the
-  // spec + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
+  // TEP + slice so it has full context inline rather than hunting the filesystem for a spec it cannot
   // reach.
   //
-  // FULL SPEC FOR BOTH ROLES (context tranche, 2026-07-14 — deliberately REVERSING the SP-6 AC1
-  // "exam held out" doctrine for code units): the `stripAcceptanceCriteria` call is REMOVED for
-  // code roles, so a code worker now reads the FULL spec body INCLUDING the acceptance criteria.
-  // WHY: across every observed run there were ZERO cases of rubric-gaming (a coder optimising to
-  // the checkbox text instead of the behaviour) — while context STARVATION failures repeated
-  // (workers building to a guessed intent and missing criteria they were never shown). The grade
-  // still cannot be gamed structurally: the held-out probe SOURCE remains invisible to code
-  // workers (the tester-worktree isolation is unchanged) and the closing gate derives the grade
-  // only from independently-authored evidence. `satisfies` ordinals stay stripped — they are
-  // grader bookkeeping, not intent. The two artifacts still withheld are exactly: probe source
-  // from code workers, implementation source from test workers.
+  // FULL SLICE FOR BOTH ROLES: a code worker reads the FULL slice body INCLUDING the acceptance
+  // criteria, never a version with them stripped. The grade cannot be gamed structurally: the
+  // held-out probe SOURCE remains invisible to code workers (the tester-worktree isolation is
+  // unchanged) and the closing gate derives the grade only from independently-authored evidence.
+  // `satisfies` ordinals stay stripped — they are grader bookkeeping, not intent. The two
+  // artifacts withheld are exactly: probe source from code workers, implementation source from
+  // test workers.
   const viewOf = (body: string): string =>
     (isTest ? (body ?? "") : stripSatisfies(body ?? "")).trim();
-  const intentSpec = viewOf(context?.specBody ?? "");
   const intentSlice = viewOf(context?.sliceBody ?? "");
-  const specBlock = intentSpec
-    ? `\n──── PARENT SPEC (SP-${specNumber}) ────\n${intentSpec}\n`
-    : "";
   const sliceBlock = intentSlice
     ? `\n──── YOUR SLICE (${unit.slice}) ────\n${intentSlice}\n`
     : "";
@@ -311,13 +302,13 @@ export function buildWorkerPrompt(
   // file never breaks a run. The UNDELIVERED line format the orchestrator PARSES is pinned
   // separately in code below (UNDELIVERED_FORMAT_STANZA), never editable via template.
   const preamble = loadTemplate("worker-preamble") ?? BUNDLED_WORKER_PREAMBLE;
-  const hasCtx = specBlock || sliceBlock;
+  const hasCtx = tepBlock || sliceBlock;
   return (
     `You are an autonomous Tandem worker for execution unit ${unit.id} of slice ${unit.slice}.\n` +
     `Do only THIS unit's work — write only within its footprint: ${fp}.\n` +
     (hasCtx
-      ? `The thinking space/specs dir is NOT in this worktree; your spec + slice are embedded below — use them, don't search the filesystem for specs/.\n`
-      : `(Read the parent spec/slice for context if available — note the specs dir may not be in this worktree.)\n`) +
+      ? `The thinking space/specs dir is NOT in this worktree; your intent is embedded below — use it, don't search the filesystem for specs/.\n`
+      : `(No spec or slice context was provided for this dispatch; work from the task and contract above — note the specs dir may not be in this worktree.)\n`) +
     `\n${preamble.trim()}\n\n${UNDELIVERED_FORMAT_STANZA}\n` +
     `\n${task}\n` +
     contractBlock +
@@ -331,7 +322,6 @@ export function buildWorkerPrompt(
     workspaceBlock +
     consumesBlock +
     tepBlock +
-    specBlock +
     sliceBlock +
     siblingBlock +
     `\nWork autonomously to the intent (goal / design / behaviour) described above — build what "correct" means here. Make reasonable engineering decisions and do NOT ask for confirmation. ` +
