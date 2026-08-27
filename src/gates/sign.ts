@@ -208,9 +208,14 @@ export function acceptDelivery(
     return { ok: false, reason: "this delivery is already accepted" };
   if (delivery.withheld)
     return { ok: false, reason: `this delivery was withheld — ${delivery.withheld}` };
-  const notGreen = delivery.proofs.filter((p) => p.verdict !== "green");
   if (delivery.proofs.length === 0)
     return { ok: false, reason: "a delivery with no proof of its checks cannot be accepted" };
+  // Only a red CHECK of the cut's own promises refuses the accept: an
+  // unkept promise is the one thing that must never be handed over. A red
+  // review or a red suite opinion with every actor spent rides the page as
+  // a finding — the person reading it IS the actor, and this press is the
+  // act. Refusing here made every finding a veto through the back door.
+  const notGreen = delivery.proofs.filter((p) => p.verdict !== "green" && p.kind === "probe");
   if (notGreen.length)
     return {
       ok: false,

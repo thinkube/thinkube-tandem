@@ -118,6 +118,14 @@ export function renderDeliveryPage(
       ? `Run \`${delivery.runId}\` — produced ${delivery.producedAt}`
       : "produced by a run this space did not record",
   );
+  // What the machine could not settle, before anything else: the person
+  // deciding this page is the only actor left for these, and a finding
+  // buried under the proofs is a finding nobody weighed.
+  if (delivery.findings?.length) {
+    lines.push("");
+    lines.push("## For you to weigh — the machine could not settle these");
+    for (const f of delivery.findings) lines.push(`- ⚠ ${f}`);
+  }
   if (delivery.withheld) {
     lines.push("");
     lines.push(`**Withheld — not accepted, nothing opened.** ${delivery.withheld}`);

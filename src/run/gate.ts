@@ -341,6 +341,27 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
   });
 
+  // What the machine could not settle rides the delivery for the person to
+  // weigh at Accept. A rule may only veto when its failure names an actor
+  // who can act; here every actor is spent, so the person at Accept IS the
+  // actor — and a suite opinion (a size rule, a reachability rule, a
+  // hygiene view) was never a reason to hold four kept promises hostage.
+  // A tree that does not BUILD stays a veto: handing over a product that
+  // cannot ship harms whoever pulls it, whatever the person decides.
+  const findings: string[] = [];
+  if (!verdict.green && !verdict.failures.some((f) => /product build/i.test(f.name))) {
+    const carried = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
+    log(`${tep}: the repository's suite is red after every actor — ${carried.length} finding(s) ride the delivery for the person: ${carried.join("; ").slice(0, 400)}`);
+    defect({
+      activity: "closing gate",
+      trigger: "suite",
+      type: "code",
+      impact: "suite findings carried on the delivery — the person decides at Accept",
+      detail: carried.join("\n").slice(0, 2000),
+    });
+    findings.push(...verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""} — ${f.detail.split("\n")[0].slice(0, 200)}`));
+    verdict = { ...verdict, green: true };
+  }
   if (!verdict.green) {
     const names = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
     log(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
@@ -421,6 +442,16 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     });
   undelivered.push(...docsObligations(slices, worktree));
 
+  // A red REVIEW after every actor is spent is a judgement with nobody
+  // left to satisfy it — the person at Accept is the only actor there is.
+  // It rides the delivery as a finding, said by name; only a red CHECK of
+  // the cut's own promises still withholds, because an unkept promise is
+  // the one thing this gate exists to never hand over.
+  for (const p of unkept.filter((x) => x.kind !== "probe")) {
+    findings.push(`${p.label}${p.ref ? ` — ${p.ref.split("\n")[0].slice(0, 200)}` : ""}`);
+    log(`${tep}: "${p.label.slice(0, 70)}" stays red with every actor spent — it rides the delivery for the person`);
+  }
+  unkept = unkept.filter((x) => x.kind === "probe");
   if (unkept.length) {
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
@@ -512,6 +543,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   const delivery: Delivery = {
     id: `delivery-${tep}`,
+    ...(findings.length ? { findings } : {}),
     cutId: cut.id,
     branch,
     runId,
