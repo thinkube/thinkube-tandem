@@ -351,3 +351,27 @@ test("a claim proved by review reads as proved", async () => {
   assert.match(page, /✓ is required by default for every cut/);
   assert.doesNotMatch(page, /nothing proved it/);
 });
+
+test("a finding is weighed by the person; only a red check refuses the accept", () => {
+  // Every rule that fired at the gate held veto power, so a suite opinion
+  // — a size rule, a reachability view — could hold four kept promises
+  // hostage with every actor spent. The person at Accept is the only
+  // actor left for such findings, and this press is the act.
+  const base = {
+    id: "d1", cutId: "c1", branch: "b",
+    findings: ["module size: plan.ts is 616 lines"],
+    proofs: [
+      { kind: "probe" as const, label: "the tab shows the name", verdict: "green" as const },
+      { kind: "assessment" as const, label: "review-14: one sentence each", verdict: "red" as const },
+      { kind: "suite" as const, label: "repo suite", verdict: "red" as const },
+    ],
+  };
+  assert.equal(acceptDelivery(base as never, "now").ok, true, "a finding became a veto through the back door");
+  const redCheck = {
+    ...base,
+    proofs: [...base.proofs, { kind: "probe" as const, label: "opening twice reveals one tab", verdict: "red" as const }],
+  };
+  const r = acceptDelivery(redCheck as never, "now");
+  assert.equal(r.ok, false, "an unkept promise must still refuse");
+  assert.match((r as { reason: string }).reason, /opening twice reveals one tab/);
+});

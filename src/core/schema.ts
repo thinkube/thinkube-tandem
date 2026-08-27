@@ -175,6 +175,11 @@ export interface Ruling {
 }
 
 export interface Delivery {
+  /** What the machine could not settle with every actor spent — a suite
+   *  opinion still red, a review nobody left could satisfy. Said by name
+   *  for the person to weigh at Accept; never a reason to withhold kept
+   *  promises. */
+  findings?: string[];
   id: string;
   cutId: string;
   branch: string;
