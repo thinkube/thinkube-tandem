@@ -32,6 +32,5 @@ accept, merge. Two vetoes hold a delivery back — an unkept promise and a
 product that does not build; everything else the machine cannot settle
 rides the delivery as a finding for the person to weigh.
 
-Known and not yet built: the webview audit's ordered plan
-([docs/SURFACE.md](docs/SURFACE.md), 51 findings, none of the twelve items
-started).
+Known and not yet built: the surface work, carried as asks in the store's
+`surface-asks.txt` — fourteen changes to what a person sees, none started.

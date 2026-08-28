@@ -34,7 +34,6 @@ not for what is true.
 | File | What it holds |
 |---|---|
 | [TODO.md](TODO.md) | the work, in order, each item traced to a gate in PROCESS, a rule in RULES, a drive in ACCEPTANCE, or a field defect. If something is missing here it is missing from the design. |
-| [SURFACE.md](SURFACE.md) | the line-by-line audit of the webview — 51 findings, each naming a file and line, and an ordered plan. Findings, not fixes. |
 | [../DECISIONS.md](../DECISIONS.md) | decisions taken during the unattended core build. |
 | [../ENGINE-WIRING.md](../ENGINE-WIRING.md), [../ENGINE-CHANGE.md](../ENGINE-CHANGE.md) | the ledger of what the inherited engine subtree still carries and what has moved off it. |
 
