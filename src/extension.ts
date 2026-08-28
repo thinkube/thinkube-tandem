@@ -13,6 +13,7 @@ import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
 import { configureDocsRoots, userDocsRoots } from "./core/docsDuty";
+import { followSpace } from "./hostui/storeWatch";
 import {
   createProduct,
   discoverProjects,
@@ -89,6 +90,7 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
   }
 }
 
+const watches = new Map<string, { dispose(): void }>();
 const sessions = new Map<string, TandemSession>();
 
 function activeSession(
@@ -288,6 +290,17 @@ async function ensureSession(
     onChanged: (message) => pushActive(context, sessionKey, message),
   });
   sessions.set(sessionKey, s);
+  // The space follows what is written to it, whoever wrote: a server
+  // acting on the person's behalf, or a run started outside this window.
+  watches.get(sessionKey)?.dispose();
+  watches.set(
+    sessionKey,
+    followSpace(vscode, {
+      storeDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).storeDir,
+      session: s,
+      onReloaded: () => pushActive(context, sessionKey),
+    }),
+  );
   // Units loaded unnamed (or renamed past their render) get titles at open,
   // not only after the next act.
   if (!storeSync) {
