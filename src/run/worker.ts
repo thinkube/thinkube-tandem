@@ -138,6 +138,28 @@ async function outsideClearance(deps: {
  * built for a change the run would almost certainly have granted, and the
  * guard has every fact needed to say so instead.
  */
+/**
+ * The tools no worker gets, whatever its role — every door out of the
+ * fence, not only the front one. Monitor is here because it runs shell
+ * commands in an until-loop: with it, a fence on Bash fences nothing —
+ * a blinded worker once used it to walk the runner worktrees, rebuild
+ * one by hand, and commit its own work.
+ */
+export const FENCED_TOOLS = [
+  "WebFetch",
+  "WebSearch",
+  "Task",
+  "Agent",
+  "Workflow",
+  "Monitor",
+  "Skill",
+  "AskUserQuestion",
+  "ExitPlanMode",
+  "EnterPlanMode",
+  "EnterWorktree",
+  "ExitWorktree",
+] as const;
+
 export function clearanceLesson(bad: readonly string[], footprint: readonly string[]): string {
   return (
     `${bad.join(", ")} was restored: it is not yours to change, so that edit is gone and the file is as it was. ` +
@@ -351,17 +373,7 @@ export async function runUnitWorker(
         // relative write land outside the footprint: none of those, ever.
         disallowedTools: [
           ...(deps.role === "test" || deps.blind ? ["Bash"] : []),
-          "WebFetch",
-          "WebSearch",
-          "Task",
-          "Agent",
-          "Workflow",
-          "Skill",
-          "AskUserQuestion",
-          "ExitPlanMode",
-          "EnterPlanMode",
-          "EnterWorktree",
-          "ExitWorktree",
+          ...FENCED_TOOLS,
         ],
         hooks: {
           PreToolUse: [

@@ -75,19 +75,27 @@ export const defaultExec: Exec = makeExec(5 * 60 * 1000);
  * Create or re-point a detached snapshot worktree at `ref`'s current commit.
  * Reuse = re-snapshot: hard reset + `clean -fd` (no -x — provisioning like
  * node_modules survives), so every use grades a fresh base.
+ *
+ * A directory that exists but is not a registered worktree — a husk, left
+ * by a pruned registration or an interrupted add — is removed and rebuilt.
+ * Without that, `git worktree add` refuses it forever ("already exists"),
+ * and a husk permanently blocks its own repair: every verify round runs in
+ * a tree with no source and reports the emptiness as the code's failure.
+ * A worker once proved the repair by hand, from inside a run, through a
+ * tool it should not have had; the machine does it here instead.
  */
-async function ensureSnapshot(
+export async function ensureSnapshot(
   repoRoot: string,
   ref: string,
   dir: string,
   exec: Exec,
-): Promise<boolean> {
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const sha = (await exec("git", ["-C", repoRoot, "rev-parse", ref], repoRoot)).out.trim();
   const reg = await exec("git", ["-C", repoRoot, "worktree", "list", "--porcelain"], repoRoot);
   if (reg.out.includes(`worktree ${dir}`)) {
     await exec("git", ["-C", dir, "reset", "--hard", sha], dir);
     await exec("git", ["-C", dir, "clean", "-fd"], dir);
-    return true;
+    return { ok: true };
   }
   await fs.mkdir(path.dirname(dir), { recursive: true });
   const add = await exec(
@@ -95,7 +103,25 @@ async function ensureSnapshot(
     ["-C", repoRoot, "worktree", "add", "--detach", dir, sha],
     repoRoot,
   );
-  return add.code === 0;
+  if (add.code === 0) return { ok: true };
+  // Only a husk is removed: an unregistered directory with no .git entry
+  // belongs to no run and holds nothing a run has not already recorded.
+  const husk = await fs
+    .lstat(path.join(dir, ".git"))
+    .then(() => false)
+    .catch(() => true);
+  if (husk) {
+    await fs.rm(dir, { force: true, recursive: true }).catch(() => {});
+    await exec("git", ["-C", repoRoot, "worktree", "prune"], repoRoot);
+    const again = await exec(
+      "git",
+      ["-C", repoRoot, "worktree", "add", "--detach", dir, sha],
+      repoRoot,
+    );
+    if (again.code === 0) return { ok: true };
+    return { ok: false, reason: `the runner worktree could not be rebuilt: ${again.out.slice(-300)}` };
+  }
+  return { ok: false, reason: `the runner worktree could not be created: ${add.out.slice(-300)}` };
 }
 
 /** Fresh code worktree on the run branch + detached tester snapshot.
@@ -359,7 +385,12 @@ export function sliceOracleFactory(
           .join("\n");
       },
       resetRunner: async () => {
-        await ensureSnapshot(a.repoRoot, a.branch, runnerDir, a.exec);
+        // A runner that cannot be provisioned is the MACHINE's failure and
+        // must say so: carried on silently, every check dies in an empty
+        // tree and the red is pinned on work that was correct — a round no
+        // worker can win from inside its clearance.
+        const snap = await ensureSnapshot(a.repoRoot, a.branch, runnerDir, a.exec);
+        if (!snap.ok) throw new Error(`infrastructure, not the work: ${snap.reason}`);
         if (a.provisioned?.length) await linkProvisioned(runnerDir, a.worktree, a.provisioned);
         for (const rel of a.pruneIn?.(slice) ?? []) await fs.rm(path.join(runnerDir, rel), { force: true }).catch(() => {});
       },

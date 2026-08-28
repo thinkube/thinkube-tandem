@@ -199,6 +199,17 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     const after = await ignoredEntries(args.worktree, args.exec);
     for (const e of after) if (!before.has(e)) provisioned.push(e);
   }
+  // What a READY TREE HAS, never a diff of what this call changed.
+  //
+  // Every runner worktree is given these stores by linkProvisioned, so the
+  // list must mean "the dependencies a runner needs", whatever their
+  // history. Derived as a before/after diff of the install, one swallowed
+  // failure upstream put a store on both sides of the diff and the list
+  // came back empty — no fresh runner was linked, its build died with the
+  // runner's own words, and the failure was pinned on the code. Reading
+  // the finished tree makes the list right regardless of how it got ready.
+  for (const e of await ignoredEntries(args.worktree, args.exec))
+    if (isDependencyStore(e) && !provisioned.includes(e)) provisioned.push(e);
   const built: string[] = [];
   if (args.prepare) {
     const before = await ignoredEntries(args.worktree, args.exec);
@@ -211,7 +222,14 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
       // this tree: drop it and pay for the real install once.
       if (borrowed) {
         args.log("  the borrowed provisioning does not build here — installing instead");
-        for (const rel of provisioned) await fs.rm(path.join(args.worktree, rel), { force: true }).catch(() => {});
+        // rm -rf semantics: a borrowed store may be a symlink (unlinked,
+        // never followed) or a real directory left by an earlier run. The
+        // plain force-rm THROWS EISDIR on a directory, and the swallowed
+        // throw left the store in place — so the install's before/after
+        // diff saw it on both sides and recorded nothing, and no runner
+        // was ever given its dependencies again.
+        for (const rel of provisioned)
+          await fs.rm(path.join(args.worktree, rel), { force: true, recursive: true }).catch(() => {});
         return proveTree(args, false);
       }
       return {

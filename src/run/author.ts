@@ -6,6 +6,7 @@
  * criterion, a delivery's checks merged into the suite — where the fence
  * is a simple allowlist and the result is the round's final text.
  */
+import { FENCED_TOOLS } from "./worker";
 import { collectText } from "../derive/round";
 import * as path from "node:path";
 
@@ -58,21 +59,7 @@ export async function runAuthoringRound(
           allowedTools: ["Read", "Grep", "Glob", "Write", "Edit"],
           // A tool that moves the session's working directory would let a
           // relative write land outside the fence: none of those.
-          disallowedTools: [
-            "Bash",
-            "WebFetch",
-            "WebSearch",
-            "Task",
-            "Agent",
-            "Workflow",
-            "Skill",
-            "AskUserQuestion",
-            "ExitPlanMode",
-            "EnterPlanMode",
-            "EnterWorktree",
-            "ExitWorktree",
-            "NotebookEdit",
-          ],
+          disallowedTools: ["Bash", ...FENCED_TOOLS, "NotebookEdit"],
           additionalDirectories: [deps.cwd],
           hooks: {
             PreToolUse: [
