@@ -3,7 +3,8 @@
     ".": {
       "entry": [
         "src/cli/headless.ts",
-        "src/cli/journey.ts"
+        "src/cli/journey.ts",
+        "src/mcp/server.ts"
       ],
       "project": [
         "src/**/*.ts",
