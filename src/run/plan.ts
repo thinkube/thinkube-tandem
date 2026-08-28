@@ -469,10 +469,22 @@ export function docsObligations(slices: SliceForDag[], worktree: string): string
   return out;
 }
 
-/** A code-role unit whose whole footprint is test homes: the slice's
- *  maintainer, worked and briefed as a tester. */
+/**
+ * A code-role unit whose whole footprint is test-shaped: the slice's
+ * maintainer, worked and briefed as a tester.
+ *
+ * A check born in the repository's own idiom is named `<stem>_AC-<k>`, so
+ * it answers to `isProbePath` as well as `isTestPath` — a maintainer that
+ * brings one standing test under the criteria alongside one new check owns
+ * both shapes at once. Requiring every path to be a test that is NOT a
+ * probe therefore read such a unit as a coder: the plan refused itself
+ * before dispatch, and had it passed, the unit would have been briefed as
+ * a coder and then refused again for reading a check.
+ *
+ * The tester is separated by its ROLE, never by the shape of its paths.
+ */
 export function isMaintainUnit(u: { role?: string; footprint: readonly string[] }): boolean {
-  return (u.role ?? "code") === "code" && u.footprint.length > 0 && u.footprint.every((p) => isTestPath(p) && !isProbePath(p));
+  return (u.role ?? "code") === "code" && u.footprint.length > 0 && u.footprint.every((p) => isTestPath(p));
 }
 
 /** The plan's role invariant: no coder holds a test-shaped path (a
