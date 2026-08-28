@@ -47,8 +47,13 @@ function followSpace(
   vs: typeof vscodeTypes,
   args: { storeDir: string; session: Followable; onReloaded: () => void; quietMs?: number },
 ): { dispose(): void } {
-  const pattern = new vs.RelativePattern(args.storeDir, "records/*.json");
-  const watcher = vs.workspace.createFileSystemWatcher(pattern, false, false, true);
+  // BOTH of the space's written faces. The records carry the asks, the
+  // promises and the cuts; a run's progress is written separately, under
+  // runs/. Watching only the records meant a space followed everything
+  // except the one thing a person most wants to watch happen.
+  const watchers = ["records/*.json", "runs/*"].map((glob) =>
+    vs.workspace.createFileSystemWatcher(new vs.RelativePattern(args.storeDir, glob), false, false, true),
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const settle = (): void => {
     if (timer) clearTimeout(timer);
@@ -59,12 +64,14 @@ function followSpace(
       args.onReloaded();
     }, args.quietMs ?? 400);
   };
-  watcher.onDidCreate(settle);
-  watcher.onDidChange(settle);
+  for (const w of watchers) {
+    w.onDidCreate(settle);
+    w.onDidChange(settle);
+  }
   return {
     dispose(): void {
       if (timer) clearTimeout(timer);
-      watcher.dispose();
+      for (const w of watchers) w.dispose();
     },
   };
 }

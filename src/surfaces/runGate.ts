@@ -11,7 +11,7 @@ import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState, silentVerdict } from "../run/state";
-import { saveRun } from "../run/record";
+import { saveRun, stopWasRequested } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
@@ -116,10 +116,35 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     // a file.
     let lastWrite = 0;
     let pending: ReturnType<typeof setTimeout> | undefined;
+    // How this run ended, once it has. Written with every save, so a
+    // surface that did not start the run still learns what happened to it
+    // — a refusal, a withholding, a stop — instead of watching a record
+    // that says "running" forever.
+    const startedAt = s.deps.now();
+    let endedAs: "refused" | "withheld" | "delivered" | "halted" | undefined;
     const keep = (): void => {
       if (!s.runState) return;
-      saveRun(s.deps.storeDir, { cutId, tepId: cut.tepId, at: s.deps.now() }, s.runState);
+      saveRun(
+        s.deps.storeDir,
+        {
+          cutId,
+          tepId: cut.tepId,
+          at: s.deps.now(),
+          owner: { pid: process.pid, at: startedAt },
+          state: s.running ? "running" : (endedAs ?? "halted"),
+          ...(s.runNote ? { note: s.runNote } : {}),
+        },
+        s.runState,
+      );
       lastWrite = Date.now();
+    };
+    /** The run ends, and says so where anyone can read it. */
+    const settle = (state: NonNullable<typeof endedAs>, note?: string): void => {
+      s.running = false;
+      endedAs = state;
+      s.runNote = note;
+      keep();
+      s.changed(note);
     };
     let lastBeat = Date.now();
     s.runState = new RunState(() => {
@@ -138,6 +163,18 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     const pulse = setInterval(() => {
       const st = s.runState;
       if (!st) return;
+      // A stop asked for by somebody who is not driving. Stopping used to
+      // be a method call on an object in one process's memory, so the
+      // person could only stop a run their own window had started — a run
+      // driven from anywhere else could not be reached at all. The request
+      // is written where the owner reads it, and the owner ends itself.
+      if (stopWasRequested(s.deps.storeDir, cutId, startedAt)) {
+        st.log("⛔ stopped: a stop was asked for from outside this run");
+        st.halt();
+        settle("halted", "The build was stopped.");
+        clearInterval(pulse);
+        return;
+      }
       const verdict = silentVerdict({
         running: s.running,
         lastBeatMs: lastBeat,
@@ -150,10 +187,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       st.log(`⛔ ${verdict}`);
       appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "silent-stall", impact: "run stopped by its heartbeat", detail: verdict });
       st.halt();
-      s.running = false;
-      s.runNote = `The build stopped: ${verdict}`;
-      keep();
-      s.changed(s.runNote);
+      settle("halted", `The build stopped: ${verdict}`);
     }, 60 * 1000);
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
@@ -176,15 +210,13 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
       }
       const plan = planScopes(s.space, cut);
       if (!plan.ok) {
-        s.running = false;
-        s.runNote = `The build could not start: ${plan.reason}.`;
+        settle("refused", `The build could not start: ${plan.reason}.`);
         s.changed(s.runNote);
         return undefined;
       }
       const anchorRefusal = s.deps.anchorless ? refuseAnchorless(plan, s.space) : undefined;
       if (anchorRefusal) {
-        s.running = false;
-        s.runNote = anchorRefusal;
+        settle("refused", anchorRefusal);
         s.changed(anchorRefusal);
         return undefined;
       }
@@ -266,13 +298,10 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         },
         changed: (m) => s.changed(m),
       });
-      if (last?.delivery?.withheld) {
-        s.runNote = `The delivery was withheld: ${last.delivery.withheld}`;
-        s.changed(s.runNote);
-      } else if (last?.refusals.length && !last.delivery) {
-        s.runNote = `The build stopped: ${last.refusals.join(" · ")}`;
-        s.changed(s.runNote);
-      } else if (last?.delivery) s.runNote = undefined;
+      if (last?.delivery?.withheld) settle("withheld", `The delivery was withheld: ${last.delivery.withheld}`);
+      else if (last?.refusals.length && !last.delivery)
+        settle("refused", `The build stopped: ${last.refusals.join(" · ")}`);
+      else if (last?.delivery) settle("delivered", undefined);
       return last;
     } catch (err) {
       // A crash is a stop with a cause — on the run's log, in the ledger,

@@ -11,6 +11,7 @@ import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
 import { knownSpaces } from "./attach";
+import { requestStop } from "../run/record";
 
 export interface ToolCall {
   session: TandemSession;
@@ -196,11 +197,19 @@ export function toolTable(): ToolDef[] {
     {
       name: "stop_run",
       action: "stop-run",
-      description: "Stop the run this server started.",
+      description:
+        "Ask the run to stop, whoever is driving it. The process that owns the run reads the request and ends itself.",
       inputSchema: IN_SPACE,
       run: (c) => {
-        c.session.runState?.halt();
-        return "stop requested";
+        const cut = c.session.unrunCut();
+        if (!cut) return "there is no run to stop";
+        // Written, not called: the run may be driven by another process,
+        // and one process must never reach into another's to end it.
+        const asked = requestStop(c.storeDir, cut.id, new Date().toISOString());
+        if (c.session.running) c.session.runState?.halt();
+        return asked
+          ? "stop asked for — the run ends at its next heartbeat"
+          : "could not write the stop request; no run record to ask";
       },
     },
     {

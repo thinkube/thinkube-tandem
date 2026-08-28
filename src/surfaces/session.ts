@@ -27,7 +27,7 @@ import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
 import { addCheckFlow, decideQuestionFlow, panicFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
-import { loadLastRun } from "../run/record";
+import { readRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 export type { SessionDeps } from "./sessionDeps";
@@ -583,11 +583,14 @@ export class TandemSession {
       });
       this.space = repairClaimIds(folded.space);
       this.cutNodeIds = new Set(folded.cut);
-      // A delivery on the record and an orchestration page saying nothing
-      // ran are the same run told two ways. The last one is read back.
-      const last = loadLastRun(this.deps.storeDir);
-      if (last && !this.runState)
-        this.runState = RunState.from(last, () => this.deps.onChanged?.());
+      // A run this session does not drive is read from disk every time,
+      // situation and all: a surface that did not start a run shows what
+      // its driver shows. Never while this session runs — its own state
+      // is ahead of the file.
+      if (!this.runState || !this.running) {
+        const seen = readRun(this.deps.storeDir, () => this.deps.onChanged?.());
+        if (seen) Object.assign(this, { runState: seen.state, running: seen.running, runNote: seen.note });
+      }
       void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {
       this.space = emptySpace();
