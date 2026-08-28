@@ -69,6 +69,9 @@
     <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
   </li>
   <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="identity.html">Projects and identity</a>
+  </li>
+  <li class="nav-item" data-depth="1">
     <a class="nav-link" href="gates.html">The two gates</a>
   </li>
   <li class="nav-item" data-depth="1">
@@ -123,40 +126,84 @@
 </aside>
 <article class="doc">
 <h1 class="page">The store</h1>
+<div id="preamble">
+<div class="sectionbody">
 <div class="paragraph">
-<p>The store is a sidecar git repository (default
-<code>~/thinkube-tandem-store</code>), separate from your code: your thinking never
-pollutes the project&#8217;s history, and the project never sees half-formed
-plans.</p>
+<p>The store is a sidecar git repository (default <code>~/thinkube-tandem-store</code>),
+separate from your code: your thinking never pollutes the project&#8217;s
+history, and the project never sees half-formed plans.</p>
 </div>
+<div class="paragraph">
+<p>It is also the only thing that has to survive. Restore the store on a new
+machine and every space, every delivery and every record comes back — and
+re-attaches itself to the right repository, because the store carries the
+identity too. See <a href="identity.html" class="xref page">Projects and identity</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_is_in_it"><a class="anchor" href="#_what_is_in_it"></a>What is in it</h2>
+<div class="sectionbody">
 <div class="literalblock">
 <div class="content">
-<pre>spaces/&lt;repo&gt;/space.json        the space — asks, changes, cuts,
-                                questions, decisions, deliveries
-spaces/&lt;repo&gt;/digests/&lt;ask&gt;.md  the cited context digest per ask
-spaces/&lt;repo&gt;/deliveries/       machine faces: verification traces
-spaces/&lt;repo&gt;/defects/          find-time defect rows (JSONL, monthly)</pre>
+<pre>cards/&lt;id&gt;.yaml                 one project's identity: its minted id,
+                                its labels, and how to find the
+                                repository it belongs to
+spaces/&lt;project-id&gt;/            every thinking space of one project
+  &lt;space-name&gt;/
+    name.txt                    the space's name as you typed it
+    &lt;author&gt;/
+      runs/&lt;TEP&gt;.log            the run log, written as it happens
+      runs/cut-&lt;TEP&gt;.json       the signed cut
+      deliveries/&lt;TEP&gt;.json     the delivery and its proofs
+      digests/&lt;ask&gt;.md          the cited context digest per ask
+      graphs/                   the derived graph
+      records/                  the space's history, snapshot by snapshot
+  tep-counter-&lt;author&gt;.txt      the author's TEP numbering
+products/&lt;name&gt;.yaml            a product grouping label
+defects/&lt;YYYY-MM&gt;.jsonl         the defect ledger — see below
+headless/                       runs started from the command line</pre>
 </div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_defect_ledger_lives_at_the_root"><a class="anchor" href="#_the_defect_ledger_lives_at_the_root"></a>The defect ledger lives at the root</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><code>defects/&lt;YYYY-MM&gt;.jsonl</code> sits at the store&#8217;s root, not inside a space.
+Every space writes to the same monthly file and every row names the space
+it came from.</p>
 </div>
 <div class="paragraph">
-<p>Three disciplines guard it:</p>
+<p>That placement is deliberate: the ledger is how the methodology learns,
+and deleting a space must never delete the evidence of what went wrong in
+it. A row outlives its space.</p>
 </div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_three_disciplines_guard_it"><a class="anchor" href="#_three_disciplines_guard_it"></a>Three disciplines guard it</h2>
+<div class="sectionbody">
 <div class="ulist">
 <ul>
 <li>
-<p><strong>Autosync.</strong> The store commits and pushes itself every five minutes
-when dirty — the pushed remote is the backup.</p>
+<p><strong>Autosync.</strong> The store commits and pushes itself every five minutes when
+dirty — the pushed remote is the backup. A stale git lock left by a dead
+process is detected and cleared rather than failing every sync after it.</p>
 </li>
 <li>
-<p><strong>Secret scan.</strong> Every write is scanned for secret-shaped content
-(tokens, keys, private key blocks); a hit refuses the write and names
-the pattern. Nothing secret-shaped reaches disk.</p>
+<p><strong>Secret scan.</strong> Every write is scanned for secret-shaped content (tokens,
+keys, private key blocks); a hit refuses the write and names the
+pattern. Nothing secret-shaped reaches disk.</p>
 </li>
 <li>
 <p><strong>Verbatim asks.</strong> Your words are stored as typed and never
 machine-edited.</p>
 </li>
 </ul>
+</div>
+</div>
 </div>
 </article>
   </div>

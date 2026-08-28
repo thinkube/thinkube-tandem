@@ -1,23 +1,52 @@
 = The store
 :page-type: reference
 
-The store is a sidecar git repository (default
-`~/thinkube-tandem-store`), separate from your code: your thinking never
-pollutes the project's history, and the project never sees half-formed
-plans.
+The store is a sidecar git repository (default `~/thinkube-tandem-store`),
+separate from your code: your thinking never pollutes the project's
+history, and the project never sees half-formed plans.
 
-  spaces/<repo>/space.json        the space — asks, changes, cuts,
-                                  questions, decisions, deliveries
-  spaces/<repo>/digests/<ask>.md  the cited context digest per ask
-  spaces/<repo>/deliveries/       machine faces: verification traces
-  spaces/<repo>/defects/          find-time defect rows (JSONL, monthly)
+It is also the only thing that has to survive. Restore the store on a new
+machine and every space, every delivery and every record comes back — and
+re-attaches itself to the right repository, because the store carries the
+identity too. See xref:identity.adoc[].
 
-Three disciplines guard it:
+== What is in it
 
-* *Autosync.* The store commits and pushes itself every five minutes
-  when dirty — the pushed remote is the backup.
-* *Secret scan.* Every write is scanned for secret-shaped content
-  (tokens, keys, private key blocks); a hit refuses the write and names
-  the pattern. Nothing secret-shaped reaches disk.
+  cards/<id>.yaml                 one project's identity: its minted id,
+                                  its labels, and how to find the
+                                  repository it belongs to
+  spaces/<project-id>/            every thinking space of one project
+    <space-name>/
+      name.txt                    the space's name as you typed it
+      <author>/
+        runs/<TEP>.log            the run log, written as it happens
+        runs/cut-<TEP>.json       the signed cut
+        deliveries/<TEP>.json     the delivery and its proofs
+        digests/<ask>.md          the cited context digest per ask
+        graphs/                   the derived graph
+        records/                  the space's history, snapshot by snapshot
+    tep-counter-<author>.txt      the author's TEP numbering
+  products/<name>.yaml            a product grouping label
+  defects/<YYYY-MM>.jsonl         the defect ledger — see below
+  headless/                       runs started from the command line
+
+== The defect ledger lives at the root
+
+`defects/<YYYY-MM>.jsonl` sits at the store's root, not inside a space.
+Every space writes to the same monthly file and every row names the space
+it came from.
+
+That placement is deliberate: the ledger is how the methodology learns,
+and deleting a space must never delete the evidence of what went wrong in
+it. A row outlives its space.
+
+== Three disciplines guard it
+
+* *Autosync.* The store commits and pushes itself every five minutes when
+  dirty — the pushed remote is the backup. A stale git lock left by a dead
+  process is detected and cleared rather than failing every sync after it.
+* *Secret scan.* Every write is scanned for secret-shaped content (tokens,
+  keys, private key blocks); a hit refuses the write and names the
+  pattern. Nothing secret-shaped reaches disk.
 * *Verbatim asks.* Your words are stored as typed and never
   machine-edited.

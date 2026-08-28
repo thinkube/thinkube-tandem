@@ -69,6 +69,9 @@
     <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
   </li>
   <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="identity.html">Projects and identity</a>
+  </li>
+  <li class="nav-item" data-depth="1">
     <a class="nav-link" href="gates.html">The two gates</a>
   </li>
   <li class="nav-item" data-depth="1">
@@ -125,16 +128,25 @@
 <h1 class="page">The defect ledger</h1>
 <div class="paragraph">
 <p>Every point where the run CATCHES a defect appends one structured row to
-the space&#8217;s <code>defects/</code> ledger: a containment violation, a unit whose
-checks never went green, a gate that could not run (exit 126/127 — an
-infrastructure defect, not a code verdict), a supervisor disclosure
-(by definition a contract gap), a confession found by the honesty scan.</p>
+the ledger: a containment violation, a unit whose checks never went green,
+a gate that could not run (exit 126/127 — an infrastructure defect, not a
+code verdict), a supervisor disclosure (by definition a contract gap), a
+confession found by the honesty scan, a finding carried to the delivery.</p>
 </div>
 <div class="paragraph">
-<p>Run <strong>Tandem: Show Defects</strong> to render the ledger as a table. The rows are
-find-time facts (what surfaced it, what it cost); reading them monthly is
-how the methodology learns — recurring rows are process defects, not
-code defects.</p>
+<p>The ledger is one file per month at the store&#8217;s root —
+<code>defects/&lt;YYYY-MM&gt;.jsonl</code> — shared by every space, with each row naming
+the space it came from. It is not kept inside the space, so deleting a
+space never deletes the record of what went wrong in it.</p>
+</div>
+<div class="paragraph">
+<p>Run <strong>Tandem: Show Defects</strong> to render it as a table.</p>
+</div>
+<div class="paragraph">
+<p>The rows are find-time facts: what surfaced the defect, and what it cost.
+Reading them monthly is how the methodology learns. A row that recurs is a
+process defect, not a code defect — and the fix belongs in the process,
+not in one more check.</p>
 </div>
 </article>
   </div>

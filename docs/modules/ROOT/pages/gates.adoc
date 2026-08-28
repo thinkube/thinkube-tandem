@@ -28,7 +28,10 @@ predates the field — before any other section. It then lists every
 proof: one per acceptance criterion, executed by the real closing gate,
 plus the repository's own test suite. Accepting:
 
-* is refused while any proof is not green;
+* is refused for a delivery that was withheld, or one with no proof at
+  all;
+* is refused while any acceptance criterion of the cut is red — an
+  unkept promise is the one thing that is never handed over;
 * is refused while a declared documentation obligation is unmet (the
   docs gate blocks by default; `thinkubeTandem.docsGateMode: advisory`
   is the recorded escape hatch for a documentation obligation that
@@ -41,4 +44,31 @@ plus the repository's own test suite. Accepting:
 
 Everything that did NOT arrive is printed on the page — UNDELIVERED
 items, confessions found by the honesty scan, unmet obligations. Red is
-shown as red; there is no override.
+shown as red; there is no override on a red promise.
+
+== Findings — what the machine could not settle
+
+Not every red thing is a veto. A delivery also carries *findings*: things
+the machine noticed, could not settle, and has no actor left to route to
+— a standing test that stayed red after every repairer was spent, a
+review that disagreed, a size or reachability opinion, production code
+that imitates the editor platform.
+
+These get their own section on the delivery page and they do **not**
+block Accept. That is deliberate. A rule may veto only when its failure
+names somebody who can still act; by the time you are reading the page,
+that somebody is you. Holding four kept promises hostage to a hygiene
+opinion nobody can act on serves nobody — so the machine says what it
+saw, in full, and the judgement is yours.
+
+Two things still veto, and only two: an unkept promise, and a product
+that does not build. The second is not a matter of taste — handing over
+something that cannot ship harms whoever pulls it, whatever you decide.
+
+== Observations — what only the running product can show
+
+Some acceptance criteria cannot be driven by any check: they are about
+what the product *looks like* or *feels like* when it runs. These are
+recorded as observations rather than graded green, listed on the
+delivery, and left for you to confirm by using the thing. The machine
+never marks an observation proven on its own account.

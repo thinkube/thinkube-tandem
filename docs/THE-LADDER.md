@@ -241,7 +241,9 @@ runs:
 - Checks are written before the code, by an actor that is not the coder.
 - The coder never writes a check.
 - Green is decided by execution, never by a worker's own account.
-- The repository's own suite is law, and a red suite is never handed over.
+- An unkept promise is never handed over, and a product that cannot build
+  is never handed over. Everything else the machine could not settle rides
+  the delivery as a finding, for the person to weigh.
 - Everything is on the record: rulings, transfers, widenings, undelivered
   work, and every defect row carrying the version that produced it.
 - Run again resumes: committed work stands, the base merges in.

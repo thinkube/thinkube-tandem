@@ -25,6 +25,10 @@ plain English or does not belong in the product.
 | **footprint** | The files a worker may touch. |
 | **delivery** | Branch + proof + the human's acceptance-as-merge, on whatever forge hosts the project. |
 | **proof** | Evidence on a delivery: probe runs, suite verdicts, CI verdicts (image built, deploy healthy). |
+| **veto** | A failure that stops a delivery being handed over. There are exactly two: an unkept promise, and a product that does not build. |
+| **finding** | Something the machine could not settle and no remaining actor can act on, carried on the delivery for the person to weigh at Accept. A finding never blocks the press. |
+| **observation** | A criterion only the running product can show. It is carried for the person to certify, never machine-graded green. |
+| **card** | A project's identity — its minted id and labels. Kept in the store and matched back to a repository by that repository's own remote and the anchor's path inside it. |
 | **gate** | One of the two human signatures: sign the cut, accept the delivery. |
 | **abstract** | The human face of an artifact: a stamped, decision-sized render. Default view. |
 | **machine face** | The artifact's data itself. Always one gesture away from its abstract. |

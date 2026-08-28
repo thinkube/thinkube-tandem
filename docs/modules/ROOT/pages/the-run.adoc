@@ -51,8 +51,20 @@ The closing gate re-runs every probe from a clean environment, the
 honesty scan reads the delivered files for self-declared deferrals, the
 repository's own suite runs, and the branch becomes a pull request whose
 description carries the proofs, the tester's decisions and every
-UNDELIVERED line. A red suite is never delivered: work that leaves the
-suite red is withheld — the branch keeps it, the record keeps the
-verdict — rather than handed over for you to finish. The machine face —
-the structured verification trace — persists in the store beside the
-space.
+UNDELIVERED line. The machine face — the structured verification trace —
+persists in the store beside the space.
+
+A run ends in exactly one of three states:
+
+delivered:: every promise kept and the product builds. Anything the
+machine could not settle rides the page as a finding for you to weigh;
+see xref:gates.adoc[].
+withheld:: a promise could not be kept after every repairer was spent,
+or the product does not build. The branch keeps the work and the record
+keeps the verdict; nothing is handed over for you to finish, and the way
+back in is offered.
+halted:: the run went quiet long enough that the watchdog ended it, and
+said which units were open and what each was waiting for.
+
+A withheld run is still a run and its report still names itself. The
+delivery is never silently downgraded and never silently abandoned.

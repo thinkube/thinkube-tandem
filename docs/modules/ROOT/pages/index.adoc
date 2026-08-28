@@ -36,3 +36,11 @@ token to exactly what you saw when you signed.
 slice:: The engine's dispatch unit inside a TEP: one coder, its held-out
 probe authors, a footprint.
 delivery:: A branch plus its proofs, offered for your accept.
+finding:: Something the machine noticed, could not settle, and has no
+actor left to route to. It rides the delivery for you to weigh; it never
+blocks the accept.
+observation:: An acceptance criterion only the running product can show.
+Carried for you to confirm by using the thing, never graded green by the
+machine.
+project:: One repository, or one subtree of it, with a minted identity
+that your spaces hang from — see xref:identity.adoc[].

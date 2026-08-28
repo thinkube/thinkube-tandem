@@ -15,12 +15,23 @@ Everything the machine derives carries a stamp proving what repo state it
 was true for, and every artifact has two faces: a decision-sized abstract
 for you, and the machine's data one gesture away.
 
-- Founding document: the `FOUNDING.md` of the tandem store — the eight
-  constraints this tool is built under.
-- Vocabulary: [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md). One meaning per
-  word, enforced where enforceable.
+## Documentation
+
+- **Using Tandem:** the Antora site under [docs/](docs/) — start at
+  `docs/modules/ROOT/pages/index.adoc`.
+- **Changing Tandem:** [docs/README.md](docs/README.md) maps the internal
+  set. `PROCESS.md` is the operating design, `RULES.md` the eight rules
+  and what each one deletes, `TERMINOLOGY.md` the canonical vocabulary.
+- **The specification:** `SPEC.md` in the tandem store — always that file,
+  evolved by edits, never replaced by a successor document.
 
 ## Status
 
-v2, under construction — build order step 1 (core schema and intent
-contract).
+v2, in use. Runs go end to end: sign, dispatch, closing gate, delivery,
+accept, merge. Two vetoes hold a delivery back — an unkept promise and a
+product that does not build; everything else the machine cannot settle
+rides the delivery as a finding for the person to weigh.
+
+Known and not yet built: the webview audit's ordered plan
+([docs/SURFACE.md](docs/SURFACE.md), 51 findings, none of the twelve items
+started).

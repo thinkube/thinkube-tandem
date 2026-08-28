@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>The two gates :: Tandem Methodology (preview)</title>
+    <title>Projects and identity :: Tandem Methodology (preview)</title>
     <meta name="generator" content="Antora 3.1.15">
     <link rel="stylesheet" href="../_/css/site.css">
   </head>
@@ -68,10 +68,10 @@
   <li class="nav-item" data-depth="1">
     <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
   </li>
-  <li class="nav-item" data-depth="1">
+  <li class="nav-item is-current-page" data-depth="1">
     <a class="nav-link" href="identity.html">Projects and identity</a>
   </li>
-  <li class="nav-item is-current-page" data-depth="1">
+  <li class="nav-item" data-depth="1">
     <a class="nav-link" href="gates.html">The two gates</a>
   </li>
   <li class="nav-item" data-depth="1">
@@ -115,130 +115,141 @@
 <nav class="breadcrumbs" aria-label="breadcrumbs">
   <ul>
     <li>Thinkube Tandem</li>
-    <li><a href="gates.html">The two gates</a></li>
+    <li><a href="identity.html">Projects and identity</a></li>
   </ul>
 </nav>
-<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/ROOT/pages/gates.adoc">Edit this Page</a></div>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/ROOT/pages/identity.adoc">Edit this Page</a></div>
 </div>
   <div class="content">
 <aside class="toc sidebar" data-title="Contents" data-levels="2">
   <div class="toc-menu"></div>
 </aside>
 <article class="doc">
-<h1 class="page">The two gates</h1>
-<div class="sect1">
-<h2 id="_gate_1_sign"><a class="anchor" href="#_gate_1_sign"></a>Gate 1 — Sign</h2>
+<h1 class="page">Projects and identity</h1>
+<div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>Signing freezes a cut into a TEP. The gate refuses:</p>
+<p>A thinking space belongs to a project, and a project is one repository (or
+one subtree of one). For your spaces to still be there tomorrow, Tandem
+has to be able to look at a repository and know which project it is. That
+link is the <strong>card</strong>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_a_card_is"><a class="anchor" href="#_what_a_card_is"></a>What a card is</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A card holds a project&#8217;s minted id, its label, its product grouping, and
+enough to find the repository again. You never write one by hand — it is
+minted once, when you enable a project.</p>
+</div>
+<div class="paragraph">
+<p>The id is minted at that moment and never changes. The label is yours and
+you can rename it whenever you like; renaming never moves the spaces,
+because nothing is keyed by the name. Enabling the same repository twice
+is refused: identity is immutable, and a second card would split one
+project&#8217;s history in two.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_where_the_card_lives_and_why"><a class="anchor" href="#_where_the_card_lives_and_why"></a>Where the card lives, and why</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The card is kept in the store, at <code>cards/&lt;id&gt;.yaml</code> — beside the spaces
+filed under it, not inside your repository.</p>
+</div>
+<div class="paragraph">
+<p>It used to live in the repository, at <code>.tandem/space.yaml</code>. That was
+wrong in a way that only showed up at the worst moment. The file was
+untracked, so it never travelled with a clone, and committing it would
+have put your private grouping and labels into a product&#8217;s source. Worse:
+restore a machine and the store came back whole — every space, every
+delivery, every record — while every repository on the new machine was a
+stranger to it. Nothing was deleted. It was unreachable, which to a person
+is the same thing.</p>
+</div>
+<div class="paragraph">
+<p>Keeping the card in the store fixes that, because the store is the thing
+that gets backed up and restored.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_how_a_repository_is_matched_back_to_its_card"><a class="anchor" href="#_how_a_repository_is_matched_back_to_its_card"></a>How a repository is matched back to its card</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>From what the repository itself can always say about itself:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>an empty cut;</p>
+<p>its <strong>git remote</strong>, and</p>
 </li>
 <li>
-<p>a change with no acceptance criteria ("nothing proves this");</p>
-</li>
-<li>
-<p>a change with no grounding (no place in the code);</p>
-</li>
-<li>
-<p>an ask in the cut with an undecided question;</p>
-</li>
-<li>
-<p>a cut that neither lands documentation nor carries a recorded
-exemption — documentation is required for every cut at signing, and
-the only way past it is an exemption with a reason.</p>
+<p>the <strong>path of the project inside it</strong> (empty for a whole repository, or
+something like <code>packages/web</code> for a subtree).</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>The click mints <code>TEP-&lt;you&gt;-&lt;n&gt;</code> and a machine-local HMAC token bound to
-the pair you actually saw: the rendered cut screen plus the grounded
-content underneath it — the documentation decision included. There is
-no expiry — instead, any edit to the signed content makes the token stop
-matching, and dispatch refuses until you sign again. What runs is exactly
-what you approved, enforced cryptographically rather than by convention.</p>
+<p>So a fresh clone — new machine, different directory, different everything
+— re-attaches itself to its own spaces on sight. The remote is compared by
+what it points at, not by how it is spelled: <code>git@github.com:you/thing.git</code>
+and <code><a href="https://github.com/you/thing" class="bare">https://github.com/you/thing</a></code> are one repository.</p>
+</div>
+<div class="paragraph">
+<p>A repository with no remote at all is matched by where it sits on disk,
+and re-links itself if you move it.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_gate_2_accept"><a class="anchor" href="#_gate_2_accept"></a>Gate 2 — Accept</h2>
+<h2 id="_worktrees_are_not_projects"><a class="anchor" href="#_worktrees_are_not_projects"></a>Worktrees are not projects</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>A delivery page opens by naming the run that produced it and when — or
-says plainly that the run was never recorded, for an old delivery that
-predates the field — before any other section. It then lists every
-proof: one per acceptance criterion, executed by the real closing gate,
-plus the repository&#8217;s own test suite. Accepting:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>is refused for a delivery that was withheld, or one with no proof at
-all;</p>
-</li>
-<li>
-<p>is refused while any acceptance criterion of the cut is red — an
-unkept promise is the one thing that is never handed over;</p>
-</li>
-<li>
-<p>is refused while a declared documentation obligation is unmet (the
-docs gate blocks by default; <code>thinkubeTandem.docsGateMode: advisory</code>
-is the recorded escape hatch for a documentation obligation that
-slipped through to a delivery — documentation itself is already
-required at signing, with a recorded exemption as the only way past
-it there);</p>
-</li>
-<li>
-<p>runs in the canonical order merge → stamp → retire: a refused merge
-aborts before anything is stamped; worktree cleanup is best-effort and
-never fails a landed accept.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Everything that did NOT arrive is printed on the page — UNDELIVERED
-items, confessions found by the honesty scan, unmet obligations. Red is
-shown as red; there is no override on a red promise.</p>
+<p>A git worktree — a second checkout of a repository you already have — is a
+temporary view, not a project. It reports the same remote and the same
+path as the repository it came from, so a naive match would show one
+project once per open worktree. Tandem tells them apart and gives a
+worktree no identity of its own; enabling one is refused, and points you
+at the repository it belongs to.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_findings_what_the_machine_could_not_settle"><a class="anchor" href="#_findings_what_the_machine_could_not_settle"></a>Findings — what the machine could not settle</h2>
+<h2 id="_tandem_in_your_repository"><a class="anchor" href="#_tandem_in_your_repository"></a><code>.tandem/</code> in your repository</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Not every red thing is a veto. A delivery also carries <strong>findings</strong>: things
-the machine noticed, could not settle, and has no actor left to route to
-— a standing test that stayed red after every repairer was spent, a
-review that disagreed, a size or reachability opinion, production code
-that imitates the editor platform.</p>
+<p>A card left by an older version is imported into the store the first time
+that project is seen, and then removed from the working tree. You do not
+have to do anything.</p>
 </div>
 <div class="paragraph">
-<p>These get their own section on the delivery page and they do <strong>not</strong>
-block Accept. That is deliberate. A rule may veto only when its failure
-names somebody who can still act; by the time you are reading the page,
-that somebody is you. Holding four kept promises hostage to a hygiene
-opinion nobody can act on serves nobody — so the machine says what it
-saw, in full, and the judgement is yours.</p>
+<p>The <code>.tandem/</code> directory itself stays, because it holds things that really
+are the repository&#8217;s own and belong with the source:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">setup.json</dt>
+<dd>
+<p>the four facts the door proved about this repository — how to
+install it, how to prepare it, how to run one test, how to build it.</p>
+</dd>
+<dt class="hdlist1">conventions.json</dt>
+<dd>
+<p>the repository&#8217;s own conventions, when it declares any.</p>
+</dd>
+<dt class="hdlist1">prompts/</dt>
+<dd>
+<p>your per-repository prompt overrides.</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
-<p>Two things still veto, and only two: an unkept promise, and a product
-that does not build. The second is not a matter of taste — handing over
-something that cannot ship harms whoever pulls it, whatever you decide.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_observations_what_only_the_running_product_can_show"><a class="anchor" href="#_observations_what_only_the_running_product_can_show"></a>Observations — what only the running product can show</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Some acceptance criteria cannot be driven by any check: they are about
-what the product <strong>looks like</strong> or <strong>feels like</strong> when it runs. These are
-recorded as observations rather than graded green, listed on the
-delivery, and left for you to confirm by using the thing. The machine
-never marks an observation proven on its own account.</p>
+<p>Those are facts about the code, not about your grouping — so they stay
+with the code.</p>
 </div>
 </div>
 </div>

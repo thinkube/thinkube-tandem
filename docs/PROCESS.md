@@ -97,14 +97,28 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 ### G6 — Repository gate (once, on the whole tree; the only judge of criteria)
 - **Evidence:** the whole repository suite, every criterion's check, the
   assessments, the stub scan, the docs obligation, the execution traces.
-- **Passes when:** the suite is green, every criterion has a green proof,
-  no stub marker survives, and every promise's drive executed its code.
+- **Passes when:** every promise's check is green and its drive executed
+  the code, and the product builds.
+- **Two vetoes, and only two.** A rule may withhold only when its failure
+  names an actor who can still act. By the time this gate has spent every
+  rung, one actor remains — the person at Accept — so a rule that merely
+  holds an opinion has no one left to route to, and holding four kept
+  promises hostage to it serves nobody. What still vetoes:
+  **an unkept promise** (a red check of the cut's own criteria), because
+  an unkept promise must never be handed over; and **a product that does
+  not build**, because handing over something that cannot ship harms
+  whoever pulls it, whatever the person decides.
+- **Everything else becomes a finding** and rides the delivery for the
+  person to weigh at G8: a red standing suite once every actor is spent, a
+  red review, a size or reachability or hygiene opinion, production that
+  imitates the platform. The delivery says so on its face, in a section of
+  its own; nothing is hidden and nothing is silently downgraded.
 - **Fails →** each red criterion returns to the unit that owns it, **as the
   next message in that worker's own session** (resume), with the drive's
   evidence and what changed in the tree since it stopped. Then the check
-  repair, then the closer with the whole tree. If it still fails, the
-  delivery is **withheld** with every unkept promise named, and the way back
-  in is offered.
+  repair, then the closer with the whole tree. If a promise is still unkept
+  after that, the delivery is **withheld** with every unkept promise named,
+  and the way back in is offered.
 - **Records:** every repair writes which stage it implicates — the author's
   own slip, a brief that lacked a fact, a check that misreads its criterion,
   a clearance that could not reach the site, or a criterion at the wrong
@@ -122,8 +136,12 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 ### G8 — Accept (the person)
 - **Evidence:** the delivery page: which run produced it and when, at the
   top before any other section; what was promised, what was proven, what
-  was not, and where each proof lives.
+  was not, the findings the machine could not settle, and where each proof
+  lives.
 - **Passes when:** the person accepts. The merge follows.
+- **Refuses:** a delivery that was withheld, one with no proof at all, and
+  one carrying a red check of the cut's own promises. A finding never
+  refuses the press — weighing it is what this gate is for.
 - **Fails →** reject returns the cut to `signed`; it can run again.
 - **Attends:** yes — the second and last designed attention point.
 
