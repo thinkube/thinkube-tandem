@@ -4,7 +4,7 @@
  * dispatches one batch per repository; accepting merges the delivery on
  * the forge. All state lands on the session's PRESENT space.
  */
-import { signCut, acceptDelivery } from "../gates/sign";
+import { signCut, acceptDelivery, SIGNATURE_RULE } from "../gates/sign";
 import { tepContentHash } from "../gates/approval";
 import { planScopes, refuseAnchorless } from "../dispatch/scopes";
 import { dispatchScopePlan } from "../dispatch/scopeRun";
@@ -78,11 +78,24 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     const cut = s.space.cuts.find((c) => c.id === cutId);
     if (!cut || s.running) return undefined;
     const approval = cut.tepId ? s.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
-    if (!approval.approved) {
+    // An approval binds the CONTENT the person approved. When the machine
+    // changes what a signature covers, that content moves without anybody
+    // touching the work, and the token mismatches for a reason the person
+    // did not cause and cannot see. The signature already has the rule that
+    // says so; the token has no room for one, so the cut's own rule answers
+    // for it. Older rule, content-mismatch: attributable to the change, and
+    // the run proceeds saying the drift was not checked. Same rule: a real
+    // mismatch, and the refusal stands.
+    const staleRule = (cut.signature?.rule ?? 1) !== SIGNATURE_RULE;
+    if (!approval.approved && !(staleRule && approval.reason === "content-mismatch")) {
       s.runNote = `The build could not start: ${approval.reason} — re-sign the cut.`;
       s.changed(s.runNote);
       return undefined;
     }
+    if (!approval.approved)
+      s.changed(
+        `${cut.tepId} was approved before the machine changed what a signature covers — running it, with the drift since then unchecked.`,
+      );
     // A project space resolves a forge PER REPOSITORY BATCH; only a
     // plain repository session needs the anchor forge.
     if (!s.deps.forge && !s.deps.resolveScope) {

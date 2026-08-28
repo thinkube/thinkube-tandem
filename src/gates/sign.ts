@@ -156,8 +156,10 @@ export function signCut(
   };
 }
 
-/** The current hashing rule. Raised whenever what is hashed changes. */
-const SIGNATURE_RULE = 3;
+/** The current hashing rule. Raised whenever what is hashed changes — most
+ *  recently when the documentation duty stopped counting a maintainer note
+ *  as documentation, which moved the landings a signature covers. */
+export const SIGNATURE_RULE = 4;
 
 export type SignatureVerdict =
   | { ok: true; unchecked?: string }
