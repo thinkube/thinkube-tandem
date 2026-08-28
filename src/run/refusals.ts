@@ -25,7 +25,7 @@ import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
-import { pinRecordedChecks, rehouseChecks } from "./checkHomes";
+import { pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 import { verifyCutSignature } from "../gates/sign";
 
 interface SliceLike extends SliceForDag {
@@ -230,9 +230,12 @@ export async function refusedBeforeDispatch(a: {
   if (pinned.length)
     a.log(`${pinned.length} check(s) kept at their recorded address, e.g. ${pinned[0].to}`);
 
+  const repoFiles = (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out
+    .split("\n")
+    .map((l) => l.trim());
   const rehoused = rehouseChecks(
     a.slices,
-    (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out.split("\n").map((l) => l.trim()),
+    repoFiles,
     new Set([...onBranch, ...(a.recordedChecks ?? [])]),
   );
   if (rehoused.length)
@@ -257,6 +260,22 @@ export async function refusedBeforeDispatch(a: {
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return { dag, refusal: { trigger: "plan-validation", refusal: `the engine refused the plan: ${JSON.stringify(verdict)}` } };
+
+  // A check the repository's own build never compiles cannot fail, because
+  // it never runs — and the unit holding it is failed for work that was
+  // correct. The fix is a build configuration no worker is cleared for, so
+  // the placement is refused here, before anybody spends a round on it.
+  const stranded = unreachableCheckHomes(a.slices, repoFiles);
+  if (stranded.where.length)
+    return {
+      dag,
+      refusal: {
+        trigger: "plan-check-homes",
+        refusal:
+          `these checks are born where this repository runs no test of its own, so nothing would compile or run them — ` +
+          `refused before dispatch: ${stranded.where.join(", ")}. Its tests live under ${stranded.roots.join(", ")}.`,
+      },
+    };
 
   const misowned = coderTestPaths(a.slices);
   if (misowned.length)

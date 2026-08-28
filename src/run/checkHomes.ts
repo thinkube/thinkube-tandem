@@ -207,3 +207,50 @@ export function pinRecordedChecks(
   }
   return moved;
 }
+
+/**
+ * The source roots where the repository keeps tests it actually runs.
+ *
+ * A repository compiles and runs one tree, not every tree it contains.
+ * Here the suite is `tsc -p tsconfig.test.json && … && node --test
+ * out-test/`, and that config includes `src` — so a check written under
+ * `webview/map/src/` is compiled by nothing, emits no `.js`, and matches
+ * nothing the runner looks at. It cannot fail, because it never runs.
+ *
+ * The roots are read from the repository rather than assumed: wherever it
+ * already keeps a test of its own, a new one can live too.
+ */
+function testRootsOf(repoFiles: readonly string[]): string[] {
+  const roots = new Set<string>();
+  for (const f of repoFiles)
+    if (f && isTestPath(f) && !isProbePath(f)) roots.add(f.split("/")[0]);
+  return [...roots].sort();
+}
+
+/**
+ * Checks born where the repository runs no test of its own — refused
+ * before dispatch, naming the roots that do run.
+ *
+ * The cost of not refusing: a unit whose production code was correct and
+ * whose checks were sound was failed anyway, because those checks sat in
+ * a tree no build compiles. The worker could not fix it — the fix is a
+ * build configuration outside any worker's clearance — so it declared
+ * UNDELIVERED, the closer stopped, and five maintainers blocked behind it.
+ *
+ * A repository that keeps no tests at all refuses nothing: there is no
+ * evidence to judge a placement against, and inventing one would refuse
+ * every check in a repository whose first test this run is writing.
+ */
+export function unreachableCheckHomes(
+  slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
+  repoFiles: readonly string[],
+): { where: string[]; roots: string[] } {
+  const roots = testRootsOf(repoFiles);
+  if (!roots.length) return { where: [], roots };
+  const where: string[] = [];
+  for (const s of slices)
+    for (const u of s.workUnits ?? [])
+      for (const f of u.footprint)
+        if (isTestPath(f) && !roots.includes(f.split("/")[0])) where.push(`${s.handle}: ${f}`);
+  return { where: [...new Set(where)], roots };
+}
