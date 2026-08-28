@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { coderTestPaths, isMaintainUnit } from "./plan";
-import { unreachableCheckHomes } from "./checkHomes";
+import { rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 
 /**
  * A maintainer owns test-shaped paths — that is what it is for. A check
@@ -97,4 +97,36 @@ test("production paths are never judged as check homes", () => {
     { handle: "SL-2", workUnits: [{ role: "code", footprint: ["webview/map/src/Rail.tsx"] }] },
   ];
   assert.deepEqual(unreachableCheckHomes(slices, repoFiles).where, []);
+});
+
+/**
+ * A slice whose work spans two trees mints its check where the repository
+ * can run it.
+ *
+ * SL-14 changed a view under webview/map/src/ and its host under
+ * src/surfaces/. Taking whichever code file came first put the check in
+ * the view's tree, which no build compiles — so it emitted no runnable
+ * file and failed a unit whose code was right. The fix was a build
+ * configuration no worker is cleared for, so the round was unwinnable.
+ */
+test("a check is minted beside code the repository can run a test for", () => {
+  const repoFiles = [
+    "src/hygiene.test.ts",
+    "src/surfaces/inbound.test.ts",
+    "src/surfaces/panel.ts",
+    "webview/map/src/Rail.tsx",
+  ];
+  const slices = [
+    {
+      handle: "SL-14",
+      workUnits: [
+        { role: "code", footprint: ["webview/map/src/Rail.tsx", "src/surfaces/panel.ts"] },
+        { role: "test", footprint: ["probes/rail_AC-1.test.ts"] },
+      ],
+    },
+  ];
+  rehouseChecks(slices as never, repoFiles);
+  const home = (slices[0].workUnits[1] as { footprint: string[] }).footprint[0];
+  assert.equal(home.split("/")[0], "src", `minted at ${home}, which nothing compiles`);
+  assert.deepEqual(unreachableCheckHomes(slices as never, repoFiles).where, []);
 });

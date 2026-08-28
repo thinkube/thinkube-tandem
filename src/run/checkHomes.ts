@@ -129,6 +129,7 @@ export function rehouseChecks(
 ): { from: string; to: string }[] {
   const idiom = inferTestIdiom(repoFiles);
   if (!idiom) return [];
+  const runnable = testRootsOf(repoFiles);
   const moved: { from: string; to: string }[] = [];
   // Every address already spoken for: what the repository holds, and what
   // the slices before this one have just been given. A check this cut
@@ -140,10 +141,21 @@ export function rehouseChecks(
     // Beside CODE, never beside a document: a check minted next to a
     // markdown file at the repository root was a home no test here has,
     // and the tester that put it somewhere sensible was refused for it.
-    const subject = units
+    //
+    // And beside code the repository can RUN a test for. A slice whose
+    // work spans two trees — a view under webview/, its host under src/ —
+    // used to take whichever file came first, so a check could be minted
+    // into a tree no build compiles. It emitted no runnable file, matched
+    // nothing the runner looked at, and failed a unit whose code was
+    // correct; the fix was a build configuration no worker is cleared for.
+    // The subject is chosen from a runnable root when the slice touches
+    // one, and only otherwise from anywhere.
+    const codeFiles = units
       .filter((u) => (u.role ?? "code") === "code")
       .flatMap((u) => u.footprint)
-      .find((f) => !isTestPath(f) && CODE.test(f));
+      .filter((f) => !isTestPath(f) && CODE.test(f));
+    const subject =
+      codeFiles.find((f) => runnable.includes(f.split("/")[0])) ?? codeFiles[0];
     if (!subject) continue;
     for (const u of units) {
       if ((u.role ?? "code") !== "test") continue;
