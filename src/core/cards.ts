@@ -41,13 +41,30 @@ export interface StoredCard {
 
 const CARDS_DIR = "cards";
 
-/** The remote a repository names for itself, or "" — never resolved. */
+/**
+ * A remote with any credential taken out of it.
+ *
+ * A repository provisioned against a private forge often carries the
+ * credential inline — `https://user:token@host/org/repo.git` — and a card
+ * is written to the store, which is a git repository with a remote of its
+ * own. Reading the URL verbatim therefore copies a live secret out of the
+ * machine. Nothing here needs it: `sameRemote` already ignores credentials
+ * when deciding whether two URLs name the same repository.
+ */
+export function withoutCredentials(url: string): string {
+  return url.replace(/^([a-z+]+:\/\/)[^@/]*@/i, "$1");
+}
+
+/** The remote a repository names for itself, or "" — never resolved, and
+ *  never carrying the credential it may have been cloned with. */
 export function remoteOf(gitRoot: string): string {
   try {
-    return execFileSync("git", ["-C", gitRoot, "remote", "get-url", "origin"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    return withoutCredentials(
+      execFileSync("git", ["-C", gitRoot, "remote", "get-url", "origin"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim(),
+    );
   } catch {
     return "";
   }
@@ -103,7 +120,21 @@ export function allCards(storeRoot: string): StoredCard[] {
 export function putCard(storeRoot: string, card: StoredCard): void {
   const dir = path.join(storeRoot, CARDS_DIR);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${card.id}.yaml`), stringifyYaml(card));
+  // The last gate before a secret leaves the machine: a remote reaches a
+  // card from several callers, and the store has a remote of its own.
+  const safe: StoredCard = {
+    ...card,
+    ...(card.remote ? { remote: withoutCredentials(card.remote) } : {}),
+    ...(card.scopes
+      ? {
+          scopes: card.scopes.map((s) => ({
+            ...s,
+            ...(s.remote ? { remote: withoutCredentials(s.remote) } : {}),
+          })),
+        }
+      : {}),
+  };
+  fs.writeFileSync(path.join(dir, `${card.id}.yaml`), stringifyYaml(safe));
 }
 
 /**

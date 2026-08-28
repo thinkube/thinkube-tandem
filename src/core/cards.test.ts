@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { allCards, matchCard, putCard, sameRemote } from "./cards";
+import { allCards, matchCard, putCard, sameRemote, withoutCredentials } from "./cards";
 import { discoverProjects, mintCard } from "./identity";
 
 /** A git repository on disk, with the remote it names for itself. */
@@ -174,4 +174,29 @@ test("a card the store cannot read costs one project, never the editor", () => {
   const held = allCards(store);
   assert.equal(held.length, 1);
   assert.equal(held[0].id, "good-1");
+});
+
+test("a credential in a remote never reaches the store", () => {
+  const store = storeAt();
+  const withToken = "https://tkadmin:abc123secret@git.example.com/team/thing.git";
+
+  assert.equal(
+    withoutCredentials(withToken),
+    "https://git.example.com/team/thing.git",
+  );
+  // ssh remotes carry no credential, and their user@host is not one.
+  assert.equal(
+    withoutCredentials("git@github.com:team/thing.git"),
+    "git@github.com:team/thing.git",
+  );
+
+  putCard(store, { id: "t-1", label: "Thing", remote: withToken, prefix: "" });
+  const held = allCards(store)[0];
+  assert.equal(held.remote, "https://git.example.com/team/thing.git");
+
+  const raw = fs.readFileSync(path.join(store, "cards", "t-1.yaml"), "utf8");
+  assert.equal(raw.includes("abc123secret"), false, "the card file holds no secret");
+
+  // Stripped or not, it is still the same repository.
+  assert.equal(sameRemote(withToken, held.remote!), true);
 });
