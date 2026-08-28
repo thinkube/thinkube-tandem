@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { Cut, Delivery, Space } from "../core/schema";
 import { renderCutScreen } from "./render";
-import { docsDuty } from "../core/docsDuty";
+import { docsDuty, docsRootsInForce } from "../core/docsDuty";
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -126,13 +126,18 @@ export function signCut(
   // never silently waved through — because a signature is the moment the
   // documentation decision is made, not something to discover at accept.
   const duty = docsDuty(space, cut);
-  if (duty.state === "missing")
+  if (duty.state === "missing") {
+    const roots = docsRootsInForce();
+    const where = roots.length
+      ? `ground a change in ${roots.join(" or ")}`
+      : "ground a documentation page";
     return {
       ok: false,
       reason:
         "this cut lands no documentation and carries no recorded reason why documentation is not needed — " +
-        "ground a docs/ page or record a documentation exemption before signing",
+        `${where}, or record a documentation exemption before signing`,
     };
+  }
   const mine = space.cuts.filter(
     (c) => c.tepId?.startsWith(`TEP-${author}-`) && c.signature,
   ).length;

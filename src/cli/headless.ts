@@ -23,6 +23,7 @@ import { dispatchTep } from "../run/dispatch";
 import { tepSlices } from "../dispatch/adapter";
 import { planScopes } from "../dispatch/scopes";
 import { knowledgeOf } from "../derive/knowledge";
+import { configureDocsRoots, userDocsRoots } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import type { Cut, Space } from "../core/schema";
 
@@ -144,6 +145,9 @@ export async function main(argv: readonly string[]): Promise<number> {
   // The repository's own facts, if it has already told a run: no flag, no
   // reading, no model call. A repository that has never been run against
   // falls through to the reading below.
+  // The same documentation duty the editor applies, from the same
+  // repository — a run without a window must not judge it differently.
+  configureDocsRoots(userDocsRoots(args.repo));
   const told = factsOf(args.repo);
   if (told)
     process.stdout.write(

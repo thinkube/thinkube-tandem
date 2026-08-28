@@ -23,6 +23,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { TandemSession } from "../surfaces/session";
 import { knowledgeOf } from "../derive/knowledge";
+import { configureDocsRoots, userDocsRoots } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import { Forge, forgeFor } from "../dispatch/forge";
 import { execFile } from "node:child_process";
@@ -183,6 +184,9 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 2;
   }
 
+  // The same documentation duty the editor applies, from the same
+  // repository — a run without a window must not judge it differently.
+  configureDocsRoots(userDocsRoots(args.repo));
   const told = factsOf(args.repo);
   const known = await knowledgeOf({
     deps: { model: args.model, repoRoot: args.repo, log: (l) => say(`  ${l}`) },

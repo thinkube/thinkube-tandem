@@ -12,6 +12,7 @@ import { NoticeHost, notifyForSpace, SpacePanels } from "./surfaces/panels";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
+import { configureDocsRoots, userDocsRoots } from "./core/docsDuty";
 import {
   createProduct,
   discoverProjects,
@@ -238,6 +239,10 @@ async function ensureSession(
   if (existing) return existing;
   const config = vscode.workspace.getConfiguration("thinkubeTandem");
   const storeRoot = configuredStoreRoot();
+  // What this repository publishes to its readers, found from its own
+  // documentation system, so the duty at signing names the pages a person
+  // reads rather than any file that happens to sit under docs/.
+  configureDocsRoots(userDocsRoots(project.gitRoot));
   const forge = await resolveForge(
     project.gitRoot,
     config.get<string>("giteaToken", ""),
