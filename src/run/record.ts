@@ -164,13 +164,23 @@ export function runIsLive(
   return alive(r.owner.pid);
 }
 
-/** Is this pid a live process on this machine? */
+/** Is this pid a live process on this machine? A ZOMBIE is not: a killed
+ *  driver lingers defunct until something reaps it, and it answers the
+ *  signal-0 probe — which held a space at "a run is already in flight"
+ *  with nothing running and no way to start one. */
 function livePid(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
+  }
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const state = stat.slice(stat.lastIndexOf(")") + 2).trim()[0];
+    return state !== "Z" && state !== "X";
+  } catch {
+    // No /proc (not Linux): the signal probe is the best answer there is.
+    return true;
   }
 }
 
