@@ -13,7 +13,8 @@ import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
 import { configureDocsRoots, userDocsRoots } from "./core/docsDuty";
-import { followSpace } from "./hostui/storeWatch";
+import { followFor } from "./hostui/storeWatch";
+import { registerServer } from "./hostui/mcpRegister";
 import {
   createProduct,
   discoverProjects,
@@ -292,15 +293,11 @@ async function ensureSession(
   sessions.set(sessionKey, s);
   // The space follows what is written to it, whoever wrote: a server
   // acting on the person's behalf, or a run started outside this window.
-  watches.get(sessionKey)?.dispose();
-  watches.set(
-    sessionKey,
-    followSpace(vscode, {
-      storeDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).storeDir,
-      session: s,
-      onReloaded: () => pushActive(context, sessionKey),
-    }),
-  );
+  followFor(vscode, watches, sessionKey, {
+    storeDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).storeDir,
+    session: s,
+    onReloaded: () => pushActive(context, sessionKey),
+  });
   // Units loaded unnamed (or renamed past their render) get titles at open,
   // not only after the next act.
   if (!storeSync) {
@@ -311,6 +308,9 @@ async function ensureSession(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // The server that drives a space from outside this window is part of the
+  // product, so the product keeps its own registration correct.
+  registerServer(context.globalStorageUri.fsPath);
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
   statusBar.tooltip = "Switch the repository or project Tandem works on";

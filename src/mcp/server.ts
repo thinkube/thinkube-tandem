@@ -14,7 +14,9 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import * as path from "node:path";
 import { attach } from "./attach";
+import type { Attached } from "./attach";
 import { machineMay } from "./boundary";
 import { toolTable } from "./tools";
 import type { ToolCall } from "./tools";
@@ -30,18 +32,22 @@ export async function main(argv: readonly string[]): Promise<number> {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  const repo = get("repo") ?? process.env.TANDEM_REPO;
-  const space = get("space") ?? process.env.TANDEM_SPACE;
-  if (!repo || !space) {
-    say("usage: --repo <enabled project dir> --space <thinking space name>");
-    return 2;
-  }
-  const bound = await attach({ repo, space, onChanged: (m) => m && say(`· ${m}`) });
-  if (!bound.ok) {
-    say(`cannot attach: ${bound.reason}`);
-    return 1;
-  }
-  say(`attached to ${bound.project.card.label} / ${space} as ${bound.session.author}`);
+  // A space is named per call, never pinned at launch: one server serves
+  // every space the store knows, so switching spaces is an argument rather
+  // than a re-registration and a restart.
+  const defaultRepo = get("repo") ?? process.env.TANDEM_REPO;
+  const sessions = new Map<string, Attached & { ok: true }>();
+  const bind = async (repo: string, space: string): Promise<Attached> => {
+    const key = `${path.resolve(repo)}::${space}`;
+    const held = sessions.get(key);
+    if (held) return held;
+    const r = await attach({ repo, space, onChanged: (m) => m && say(`· ${m}`) });
+    if (r.ok) {
+      sessions.set(key, r);
+      say(`attached to ${r.project.card.label} / ${space} as ${r.session.author}`);
+    }
+    return r;
+  };
 
   const table = toolTable();
   const server = new Server(
@@ -64,16 +70,33 @@ export async function main(argv: readonly string[]): Promise<number> {
         isError: true,
         content: [{ type: "text" as const, text: `no such tool: ${req.params.name}` }],
       };
-    // The boundary, before the session is touched at all.
+    // The boundary, before any space is opened at all.
     const may = machineMay(tool.action);
     if (!may.ok)
       return { isError: true, content: [{ type: "text" as const, text: may.reason }] };
+    const args = (req.params.arguments ?? {}) as ToolCall["args"];
     try {
+      if (tool.spaceless) return { content: [{ type: "text" as const, text: await tool.run({ args } as ToolCall) }] };
+      const space = typeof args.space === "string" ? args.space : "";
+      const repo = typeof args.repo === "string" ? args.repo : defaultRepo;
+      if (!space || !repo)
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: "name the space (and the project directory, unless the server was started with --repo). list_spaces shows both.",
+            },
+          ],
+        };
+      const bound = await bind(repo, space);
+      if (!bound.ok)
+        return { isError: true, content: [{ type: "text" as const, text: bound.reason }] };
       const text = await tool.run({
         session: bound.session,
         project: bound.project,
         storeDir: bound.storeDir,
-        args: (req.params.arguments ?? {}) as ToolCall["args"],
+        args,
       });
       return { content: [{ type: "text" as const, text }] };
     } catch (e) {

@@ -10,6 +10,7 @@ import type { TandemSession } from "../surfaces/session";
 import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
+import { knownSpaces } from "./attach";
 
 export interface ToolCall {
   session: TandemSession;
@@ -22,12 +23,20 @@ export interface ToolDef {
   name: string;
   /** The boundary action this performs. */
   action: string;
+  /** True when the tool answers without opening a space — listing what
+   *  spaces exist cannot itself require naming one. */
+  spaceless?: boolean;
   description: string;
   inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[] };
   run(c: ToolCall): Promise<string> | string;
 }
 
-const NO_ARGS = { type: "object" as const, properties: {} };
+/** Which space to act on. Named per call so one server serves them all. */
+const WHERE = {
+  space: { type: "string", description: "the thinking space's name, as list_spaces reports it" },
+  repo: { type: "string", description: "the project directory; omitted when the server has a default" },
+};
+const IN_SPACE = { type: "object" as const, properties: { ...WHERE }, required: ["space"] };
 
 function str(c: ToolCall, key: string): string {
   const v = c.args[key];
@@ -97,32 +106,48 @@ function deliveryReport(c: ToolCall): string {
 export function toolTable(): ToolDef[] {
   return [
     {
+      name: "list_spaces",
+      action: "read-space",
+      spaceless: true,
+      description:
+        "Every enabled project the store knows and the thinking spaces filed under each. Start here: the other tools name a space.",
+      inputSchema: { type: "object", properties: {} },
+      run: () =>
+        knownSpaces()
+          .map(
+            (p) =>
+              `${p.label} (${p.project})${p.at ? ` at ${p.at}` : ""}\n` +
+              (p.spaces.length ? p.spaces.map((s) => `    · ${s}`).join("\n") : "    (no spaces yet)"),
+          )
+          .join("\n") || "the store knows no enabled project",
+    },
+    {
       name: "read_space",
       action: "read-space",
       description:
         "The thinking space: its asks, how many promises were derived, what phase it is in, open questions, and whether a signed cut is waiting.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: spaceReport,
     },
     {
       name: "read_run",
       action: "read-run",
       description: "The current or last run: every unit and its state, and the run's note.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: runReport,
     },
     {
       name: "read_delivery",
       action: "read-delivery",
       description: "The latest delivery: its proofs, its findings, and whether it was withheld.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: deliveryReport,
     },
     {
       name: "read_log",
       action: "read-log",
       description: "The tail of a step's log. Give the step id, or omit it for the run's own log.",
-      inputSchema: { type: "object", properties: { step: { type: "string" } } },
+      inputSchema: { type: "object", properties: { ...WHERE, step: { type: "string" } }, required: ["space"] },
       run: (c) => {
         c.session.readLog(str(c, "step") || null);
         const v = c.session.logView();
@@ -134,7 +159,7 @@ export function toolTable(): ToolDef[] {
       action: "save-draft",
       description:
         "Put text in the capture box, one ask per line. This DRAFTS only — turning drafted words into asks is the person's act, and this server cannot do it.",
-      inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+      inputSchema: { type: "object", properties: { ...WHERE, text: { type: "string" } }, required: ["space", "text"] },
       run: (c) => {
         c.session.saveDraft(str(c, "text"));
         return `drafted ${str(c, "text").split("\n").filter((l) => l.trim()).length} line(s) — the person keeps them, or does not`;
@@ -144,7 +169,7 @@ export function toolTable(): ToolDef[] {
       name: "reground",
       action: "reground",
       description: "Read the code again and re-place every promise that has drifted.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: async (c) => {
         await c.session.reground();
         return "re-grounded";
@@ -154,7 +179,7 @@ export function toolTable(): ToolDef[] {
       name: "rerun",
       action: "rerun",
       description: "Start the signed work again. Refused when nothing is signed, or a run is in flight.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: async (c) => {
         const r = await c.session.rerun();
         return r.ok ? "run started" : `refused: ${r.reason}`;
@@ -164,7 +189,7 @@ export function toolTable(): ToolDef[] {
       name: "stop_run",
       action: "stop-run",
       description: "Stop the run this server started.",
-      inputSchema: NO_ARGS,
+      inputSchema: IN_SPACE,
       run: (c) => {
         c.session.runState?.halt();
         return "stop requested";
@@ -176,8 +201,8 @@ export function toolTable(): ToolDef[] {
       description: "Answer a parked worker's question, by unit id.",
       inputSchema: {
         type: "object",
-        properties: { unit: { type: "string" }, text: { type: "string" } },
-        required: ["unit", "text"],
+        properties: { ...WHERE, unit: { type: "string" }, text: { type: "string" } },
+        required: ["space", "unit", "text"],
       },
       run: (c) =>
         c.session.answerWorker(str(c, "unit"), str(c, "text"))

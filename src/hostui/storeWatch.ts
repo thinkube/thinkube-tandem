@@ -43,7 +43,7 @@ export function shouldFollow(s: Followable): boolean {
  * rounds appends many, and re-folding per file would redraw the surface
  * faster than a person can read it.
  */
-export function followSpace(
+function followSpace(
   vs: typeof vscodeTypes,
   args: { storeDir: string; session: Followable; onReloaded: () => void; quietMs?: number },
 ): { dispose(): void } {
@@ -67,4 +67,16 @@ export function followSpace(
       watcher.dispose();
     },
   };
+}
+
+/** One watch per open space, replacing any it had. The map is the caller's
+ *  so a window that closes a space can drop its watch with it. */
+export function followFor(
+  vs: typeof vscodeTypes,
+  watches: Map<string, { dispose(): void }>,
+  key: string,
+  args: { storeDir: string; session: Followable; onReloaded: () => void },
+): void {
+  watches.get(key)?.dispose();
+  watches.set(key, followSpace(vs, args));
 }

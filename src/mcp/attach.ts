@@ -19,7 +19,8 @@ import { TandemSession } from "../surfaces/session";
 import { currentAuthor } from "../core/author";
 import { discoverProjects } from "../core/identity";
 import type { EnabledProject } from "../core/identity";
-import { nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
+import { listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
+import { allCards } from "../core/cards";
 import { configureDocsRoots, userDocsRoots } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import { Forge, forgeFor } from "../dispatch/forge";
@@ -122,4 +123,23 @@ export async function attach(args: AttachArgs): Promise<Attached> {
   });
   session.load();
   return { ok: true, session, project, storeDir: dirs.storeDir };
+}
+
+/**
+ * Every enabled project the store knows, with the thinking spaces filed
+ * under each. The store is the register — a project is enabled because a
+ * card names it, not because a folder happens to be open somewhere.
+ */
+export function knownSpaces(storeRoot = storeRootOf()): {
+  project: string;
+  label: string;
+  at?: string;
+  spaces: string[];
+}[] {
+  return allCards(storeRoot).map((c) => ({
+    project: c.id,
+    label: c.product ? `${c.product} / ${c.label}` : c.label,
+    ...(c.at ? { at: c.at } : {}),
+    spaces: listThinkingSpaces(storeRoot, c.id).map((s) => s.slug),
+  }));
 }
