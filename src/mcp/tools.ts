@@ -178,11 +178,19 @@ export function toolTable(): ToolDef[] {
     {
       name: "rerun",
       action: "rerun",
-      description: "Start the signed work again. Refused when nothing is signed, or a run is in flight.",
+      description:
+        "Start the signed work again and return at once. A run takes an hour; watch it with read_run. Refused when nothing is signed, or a run is in flight.",
       inputSchema: IN_SPACE,
-      run: async (c) => {
-        const r = await c.session.rerun();
-        return r.ok ? "run started" : `refused: ${r.reason}`;
+      run: (c) => {
+        // STARTED, not awaited. session.rerun() resolves when the whole
+        // build ends, so awaiting it here holds the tool call open for the
+        // length of the run and the client abandons it — while the run
+        // itself carries on, unreachable. What the caller needs back is
+        // that it began; read_run says the rest.
+        if (c.session.running) return "refused: a run is already in flight";
+        if (!c.session.unrunCut()) return "refused: there is no signed work waiting to run";
+        void c.session.rerun();
+        return "run started — watch it with read_run; it takes about an hour";
       },
     },
     {

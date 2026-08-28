@@ -113,7 +113,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
-  const built = deps.build && deps.build !== deps.prepare ? await prepareAtGate(deps.build, worktree, boundedExec, log) : { ok: true, words: "" };
+  // Prepares the tree so the checks can run. NOT a judgement: what the
+  // build says at the END is the only reading that decides anything.
+  if (deps.build && deps.build !== deps.prepare) await prepareAtGate(deps.build, worktree, boundedExec, log);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
   // Assessments: a FRESH reviewer over the DELIVERED tree, fail-soft red.
   const graded = await gradeAssessments({
@@ -242,15 +244,15 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     };
   };
   log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
+  // judgeTree runs the product build EVERY time it judges, and folds a
+  // failure into the output as a named "not ok", so the verdict below is
+  // always about the tree as it stands now. An earlier reading of the
+  // build must never override it: the gate spends an hour between its
+  // first measurement and this judgement — checks, assessments, reviews,
+  // the finisher — and a tree repaired in that hour was still reported as
+  // not building, withholding work that built perfectly well.
   const ran = await judgeTree(shellLine(deps.suiteCommand), worktree);
   let verdict = suiteVerdictOf(ran.code, ran.output, worktree);
-  if (!built.ok && verdict.green)
-    verdict = {
-      ...verdict,
-      green: false,
-      summary: `the delivered tree does not build as shipped (${deps.build}); ${verdict.summary}`,
-      failures: [{ name: "the product build", detail: built.words, file: filesNamedIn(built.words, worktree)[0] }],
-    };
   if (!verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
     deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
