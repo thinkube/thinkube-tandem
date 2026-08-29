@@ -20,7 +20,7 @@ import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import { runScopedSuite, withSuite } from "./suite";
-import { linkProvisioned } from "./setup";
+import { linkProvisioned } from "./linkProvisioned";
 import { evidenceKey } from "./owner";
 import { clearanceNote } from "./clearance";
 import type { ClearanceRuling } from "./clearance";

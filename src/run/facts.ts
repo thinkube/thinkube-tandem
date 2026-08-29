@@ -66,6 +66,21 @@ export interface RepositoryFacts {
    * is read at the moment of use, never copied here.
    */
   downstream?: string;
+  /**
+   * What each PART of this project answers to, when it has an answer of
+   * its own — keyed by the part's repository-relative root.
+   *
+   * One repository is often several toolchains: todo is a python backend
+   * and a node frontend, thinkube-control adds a go proxy, this extension
+   * has its webview beside it. A single repository-wide `runOne` runs the
+   * wrong runner for every part but one — a check in the frontend judged
+   * by pytest is red for a reason no worker can act on, which is the
+   * failure this whole evening has been about.
+   *
+   * Absent, or absent for a part, means the repository-wide commands
+   * above apply — the single-toolchain case stays exactly as it was.
+   */
+  parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   /** When the door proved these, so a reader can tell how old they are. */
   provenAt?: string;
 }
@@ -91,6 +106,7 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
         ? { dependencies: parsed.dependencies.filter((x) => typeof x === "string") }
         : {}),
       ...(typeof parsed.downstream === "string" ? { downstream: parsed.downstream } : {}),
+      ...(parsed.parts && typeof parsed.parts === "object" ? { parts: parsed.parts } : {}),
       ...(parsed.provenAt ? { provenAt: parsed.provenAt } : {}),
     };
   } catch {
@@ -123,6 +139,7 @@ export function rememberFacts(repoRoot: string, facts: RepositoryFacts, at: stri
 function factsAfterRun(
   known: RepositoryFacts | undefined,
   proved: {
+    parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
     provision: string;
     prepare: string;
     runOne: string;
@@ -140,6 +157,11 @@ function factsAfterRun(
     runOne: proved.runOne,
     ...(proved.build ? { build: proved.build } : {}),
     ...(proved.suite ? { suite: proved.suite } : known?.suite ? { suite: known.suite } : {}),
+    ...(proved.parts && Object.keys(proved.parts).length
+      ? { parts: proved.parts }
+      : known?.parts
+        ? { parts: known.parts }
+        : {}),
     ...(proved.downstream
       ? { downstream: proved.downstream }
       : known?.downstream
@@ -181,14 +203,17 @@ export function rememberWhatHeld(
     built: readonly string[];
     provisioned?: readonly string[];
     downstream?: string;
+    parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
     corrected?: { provision: string; prepare: string };
   },
   told: { provision?: string; prepare?: string; build?: string },
   at: string,
 ): void {
   const facts = factsAfterRun(known, {
+    ...(ready.parts ? { parts: ready.parts } : {}),
     ...(ready.provisioned ? { provisioned: ready.provisioned } : {}),
     ...(ready.downstream ? { downstream: ready.downstream } : {}),
+    ...(ready.parts && Object.keys(ready.parts).length ? { parts: ready.parts } : {}),
     provision: ready.corrected?.provision ?? told.provision ?? "",
     prepare: ready.corrected?.prepare ?? told.prepare ?? "",
     runOne: ready.runOne ?? "",

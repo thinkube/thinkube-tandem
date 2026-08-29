@@ -99,3 +99,24 @@ export function missing(name: RepositoryFact["name"]): string {
     `repository again.`
   );
 }
+
+/**
+ * The single-check command for whichever part owns a file.
+ *
+ * The deepest part whose root contains the check wins, so a check under
+ * `frontend/` is run by the frontend's runner even when the repository has
+ * one of its own. A part with no command of its own falls back to the
+ * repository's — the single-toolchain case, unchanged.
+ */
+export function runnerFor(
+  wide: Proved,
+  parts: Record<string, { runOne?: string }> = {},
+): (checkPath: string) => Proved {
+  const owned = Object.entries(parts)
+    .filter(([root, p]) => root !== "." && p.runOne)
+    .sort(([a], [b]) => b.length - a.length);
+  return (checkPath) => {
+    const hit = owned.find(([root]) => checkPath === root || checkPath.startsWith(`${root}/`));
+    return hit ? (hit[1].runOne as Proved) : wide;
+  };
+}

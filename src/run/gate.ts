@@ -42,7 +42,7 @@ import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from 
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
 import { repairUnkept } from "./unkept";
-import type { Proved } from "./proved";
+import { runnerFor, type Proved } from "./proved";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
@@ -60,6 +60,9 @@ export interface GateContext {
   /** Ran one of this repository's own tests here — the promise veto rests
    *  on it, so the gate is given what the door proved, never a candidate. */
   runOne: Proved;
+  /** Per-part single-check commands, so a check is run by the runner of
+   *  the part that owns it — the gate judges the same way the slices did. */
+  parts?: Record<string, { runOne?: string }>;
   /** Ran this repository's whole suite here — or absent, when no such
    *  command runs in a worktree. Absent removes the standing-suite veto,
    *  exactly as no product build removes that one; the door has already
@@ -120,7 +123,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const producedAt = g.producedAt ?? new Date().toISOString();
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  const { verifs, probeOfAc } = closingVerifications(slices, g.runOne);
+  const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);

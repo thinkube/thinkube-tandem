@@ -35,6 +35,8 @@ import { isProbePath, isTestPath } from "./testHomes";
 import { releaseBorrowed, removeOwned } from "./ownTree";
 import { askForTheSuite, proveSuite } from "./suiteCommand";
 import { proved, type Proved } from "./proved";
+import { linkProvisioned } from "./linkProvisioned";
+import { tail } from "./toolWords";
 import { repairStandingTree } from "./refresh";
 
 export type BoundedExec = (
@@ -74,6 +76,15 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 export interface TreeSetup {
   /** Ran one of this repository's own tests here; absent when nothing held. */
   runOne?: Proved;
+  /**
+   * Per PART, where a part answers differently — keyed by the part's
+   * repository-relative root. A check is run by the command of the part
+   * that owns it: pytest for the backend, a node runner for the frontend.
+   * One command for a repository with two toolchains ran the wrong runner
+   * for every part but one, and the resulting red said nothing any worker
+   * could act on.
+   */
+  parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   /** Ran this repository's whole suite here; absent when nothing held. */
   suite?: Proved;
   /** Provisioned this tree here; absent when the repository needs none. */
@@ -94,16 +105,6 @@ export interface TreeSetup {
   /** The setup that finally held, when a first answer had to be corrected. */
   corrected?: { provision: string; prepare: string };
 }
-
-/** The end of a tool's output, with the lines that name a failure kept even
- *  when a summary follows them — a reader must see WHAT failed, not only
- *  that something did. */
-const tail = (output: string, n = 900): string => {
-  const lines = output.trim().split("\n");
-  const named = lines.filter((l) => /^not ok|\b(FAIL|FAILED|Error|error:)\b/.test(l)).slice(-8);
-  const last = lines.slice(-6);
-  return [...new Set([...named, ...last])].join("\n").slice(-n);
-};
 
 export interface SetupArgs {
   worktree: string;
@@ -140,6 +141,9 @@ export interface SetupArgs {
   dependencies?: string[];
   /** How this repository runs its whole suite. */
   suite?: string;
+  /** The parts this project is made of, and what each was told. The door
+   *  proves each part's own single-check command in that part's tree. */
+  partCommands?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   /**
    * This repository already proved that suite command, in an earlier run.
    *
@@ -328,6 +332,15 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // an empty string. An empty string was accepted by every consumer and
   // executed by one of them.
   const ranOne = await proveRunOne(args);
+  // Each part's own command, proved in its own tree on one of its own
+  // tests. A part with nothing to prove it on yet keeps what it was told —
+  // the first check written there proves it in use.
+  const parts: Record<string, { provision?: string; prepare?: string; runOne?: string }> = {};
+  for (const [root, told] of Object.entries(args.partCommands ?? {})) {
+    if (root === "." || !told.runOne) continue;
+    const held = await proveRunOne({ ...args, runOne: told.runOne }, root);
+    parts[root] = { ...told, ...(held ? { runOne: held } : {}) };
+  }
   const ranSuite = args.suite
     ? args.suiteProvenBefore
       ? args.suite
@@ -337,6 +350,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     provisioned,
     built,
     ...(ranOne ? { runOne: proved(ranOne, true) } : {}),
+    ...(Object.keys(parts).length ? { parts } : {}),
     ...(ranSuite ? { suite: proved(ranSuite, true) } : {}),
     // Provision, prepare and build reached here only by exiting zero above.
     ...(args.provision ? { provision: proved(args.provision, true) } : {}),
@@ -348,18 +362,32 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
 /** The single-test command, tried on one of the repository's own tests.
  *  Held → kept; failed or nothing to try it on → "" (the gate's whole suite
  *  still stands behind every slice), with the reason said. */
-async function proveRunOne(args: SetupArgs): Promise<string> {
+async function proveRunOne(args: SetupArgs, part = "."): Promise<string> {
   if (!args.runOne) return "";
   const listed = (await args.exec("git", ["-C", args.worktree, "ls-files"], args.worktree)).out.split("\n").map((l) => l.trim());
-  const sample = listed.filter((f) => f && isTestPath(f) && !isProbePath(f)).sort((a, b) => a.length - b.length)[0];
+  // A part's command is proved on a test OF THAT PART, in that part's own
+  // directory. Proving the frontend's runner against a backend test says
+  // nothing about either, and the wrong runner's "no such file" would be
+  // read as the command not holding at all.
+  const under = (f: string): boolean => part === "." || f === part || f.startsWith(`${part}/`);
+  const sample = listed
+    .filter((f) => f && isTestPath(f) && !isProbePath(f) && under(f))
+    .sort((a, b) => a.length - b.length)[0];
   if (!sample) {
-    args.log("  no test of the repository's own to prove the single-test command on — slices run without it");
+    args.log(
+      part === "."
+        ? "  no test of the repository's own to prove the single-test command on — slices run without it"
+        : `  ${part} has no test of its own yet — its command proves itself on the first check written there`,
+    );
     return "";
   }
-  const cmd = args.runOne.replace(/<file>/g, sample);
-  args.log(`proving the single-test command on ${sample}: ${cmd}`);
+  // The command is written for the part's own tree: `<file>` is the path as
+  // that part's runner takes it, and the command runs where that part is.
+  const inPart = part === "." ? sample : sample.slice(part.length + 1);
+  const cmd = args.runOne.replace(/<file>/g, inPart);
+  args.log(`proving ${part === "." ? "the" : `${part}'s`} single-test command on ${sample}: ${cmd}`);
   const t0 = Date.now();
-  const r = await args.boundedExec(cmd, args.worktree);
+  const r = await args.boundedExec(cmd, part === "." ? args.worktree : `${args.worktree}/${part}`);
   // Held means the runner RAN the test — green, or red in the runner's own
   // words. A red test on the base is the base's business; a command that
   // cannot run one file at all is not a way to run one.
@@ -395,26 +423,6 @@ async function excludeFromGit(worktree: string, entries: readonly string[], exec
   }
 }
 
-/** Make a runner share the worktree's provisioning: each produced entry is
- *  linked in where the runner lacks it. Idempotent; a snapshot reset keeps
- *  ignored entries, so links survive it. */
-export async function linkProvisioned(
-  runnerDir: string,
-  worktree: string,
-  provisioned: readonly string[],
-): Promise<void> {
-  for (const rel of provisioned) {
-    const dst = path.join(runnerDir, rel);
-    try {
-      await fs.lstat(dst);
-      continue;
-    } catch {
-      /* absent — link it */
-    }
-    await fs.mkdir(path.dirname(dst), { recursive: true });
-    await fs.symlink(path.join(worktree, rel), dst).catch(() => {});
-  }
-}
 
 /**
  * Build the delivered tree before the closing checks. A failure is spoken
@@ -459,7 +467,13 @@ export async function prepareAtGate(
 function setupArgsFor(a: {
   worktree: string;
   repoRoot: string;
-  known?: { suite?: string; builds?: string[]; dependencies?: string[] };
+  partCommands?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
+  known?: {
+    suite?: string;
+    builds?: string[];
+    dependencies?: string[];
+    parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
+  };
   told: { provision?: string; prepare?: string; build?: string; runOne?: string; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
@@ -477,6 +491,7 @@ function setupArgsFor(a: {
     ...(suite ? { suite } : {}),
     ...(a.known?.suite === suite ? { suiteProvenBefore: true } : {}),
     ...(a.known?.dependencies?.length ? { dependencies: a.known.dependencies } : {}),
+    ...(a.partCommands ? { partCommands: a.partCommands } : {}),
     ...(a.known?.builds?.length ? { builds: a.known.builds } : {}),
     ...(a.told.provision ? { provision: a.told.provision } : {}),
     ...(a.told.prepare ? { prepare: a.told.prepare } : {}),
@@ -500,7 +515,12 @@ export async function openTheDoor(a: {
   worktree: string;
   repoRoot: string;
   tep: string;
-  known?: { suite?: string; builds?: string[]; dependencies?: string[] };
+  known?: {
+    suite?: string;
+    builds?: string[];
+    dependencies?: string[];
+    parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
+  };
   told: {
     provision?: string;
     prepare?: string;
@@ -528,6 +548,7 @@ export async function openTheDoor(a: {
       setupArgsFor({
         worktree: a.worktree,
         repoRoot: a.repoRoot,
+        ...(a.known?.parts ? { partCommands: a.known.parts } : {}),
         ...(a.known ? { known: a.known } : {}),
         told: { ...a.told, ...(suite ? { suite } : {}) },
         exec: a.exec,

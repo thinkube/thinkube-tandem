@@ -38,7 +38,7 @@ export function recordedCheckHomes(storeDir: string, tep: string): Map<string, s
   }
 }
 
-export async function restoreChecksFromRecord(
+async function restoreChecksFromRecord(
   storeDir: string,
   tep: string,
   worktree: string,
@@ -62,4 +62,24 @@ export async function restoreChecksFromRecord(
     restored.push(rel);
   }
   return restored;
+}
+
+/**
+ * Put back the checks a delivery took with it.
+ *
+ * A delivery records its checks and, until tonight, removed them from the
+ * tree. A later run of the same cut would then ask a standing tester to
+ * have written files that were deliberately deleted — and grade it for
+ * their absence. The record is the only place they still existed, so the
+ * run restores them before anyone is judged.
+ */
+export async function putBackDeliveredChecks(
+  storeDir: string,
+  tep: string,
+  worktree: string,
+  probes: readonly string[],
+  log: (line: string) => void,
+): Promise<void> {
+  const back = await restoreChecksFromRecord(storeDir, tep, worktree, probes);
+  if (back.length) log(`${tep}: ${back.length} check(s) restored from the delivery record`);
 }

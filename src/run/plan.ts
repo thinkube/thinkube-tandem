@@ -20,6 +20,16 @@ import * as fsp from "node:fs/promises";
 import type { Proved } from "./proved";
 
 /**
+ * How to run ONE check, for the part that owns it.
+ *
+ * A repository is often several toolchains — a python backend beside a
+ * node frontend — and one command runs the wrong runner for every part
+ * but one. The check's own path decides which command it gets; the caller
+ * knows the parts, so it answers.
+ */
+export type RunnerFor = (checkPath: string) => Proved;
+
+/**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per
  * in-flight run on a repository. A new dispatch whose footprints intersect
  * an in-flight run's — including a DIFFERENT project's in the same
@@ -123,7 +133,7 @@ export function sliceBookkeeping(
    * an unkept promise. The machine's ignorance was reported as the
    * person's work failing.
    */
-  runOne: Proved,
+  runOne: RunnerFor,
 ): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
@@ -154,7 +164,7 @@ export function sliceBookkeeping(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne.replace(/<file>/g, p), env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne(p).replace(/<file>/g, p), env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -206,7 +216,7 @@ export function closingVerifications(
    *  sources are not what its runner takes — had every check fail here
    *  after passing in its own slice, identically, for a reason no worker
    *  could act on. Ten promises were withheld exactly that way. */
-  runOne: Proved,
+  runOne: RunnerFor,
 ): {
   verifs: AcVerification[];
   probeOfAc: Map<number, string>;
@@ -219,7 +229,7 @@ export function closingVerifications(
       for (const probe of u.footprint.filter(isProbePath)) {
         verifs.push({
           ac: ++ord,
-          run: runOne.replace(/<file>/g, probe),
+          run: runOne(probe).replace(/<file>/g, probe),
           env: "local",
         });
         probeOfAc.set(ord, probe);

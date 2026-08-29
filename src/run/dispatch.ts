@@ -30,8 +30,9 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { whatWeKnow } from "./whatWeKnow";
+import { runnerFor } from "./proved";
 import { briefWithInherited, briefWithNames } from "./contractNames";
-import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
+import { putBackDeliveredChecks, recordedCheckHomes, recordedCheckPaths } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
@@ -183,14 +184,9 @@ export async function dispatchTep(
   const runOneTest = know.runOne;
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
-  // A delivery consumed this cut's checks; a run after it puts them back
-  // from the record, so standing testers are not asked to have written
-  // files a delivery deliberately removed.
-  if (deps.storeDir) {
-    const back = await restoreChecksFromRecord(deps.storeDir, tep, worktree, [...sliceProbes.values()].flat());
-    if (back.length) log(`${tep}: ${back.length} check(s) restored from the delivery record`);
-  }
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runnerFor(runOneTest, ready.parts));
+  if (deps.storeDir)
+    await putBackDeliveredChecks(deps.storeDir, tep, worktree, [...sliceProbes.values()].flat(), log);
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   const specBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
@@ -584,6 +580,7 @@ export async function dispatchTep(
   return await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     runOne: know.runOne, suite: know.suite,
+    ...(ready.parts ? { parts: ready.parts } : {}),
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

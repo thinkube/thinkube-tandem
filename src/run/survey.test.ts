@@ -17,6 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { downstreamOf, partsOf } from "./survey";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { proved, runnerFor } from "./proved";
 
 function repo(remote?: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "survey-"));
@@ -122,4 +123,33 @@ test("a thinkube.yaml that exists but does not parse is named, never silently ab
   assert.ok(read && "unreadable" in read, "a broken declaration is a finding");
   assert.match(read.unreadable, /does not parse/);
   assert.equal(thinkubeDeclaration(repo()), undefined, "and a repo that makes none is undefined");
+});
+
+/**
+ * A check is run by the runner of the PART that owns it.
+ *
+ * One repository is often several toolchains — todo is a python backend
+ * beside a node frontend, control adds a go proxy. A single repository-wide
+ * command ran the wrong runner for every part but one: a frontend check
+ * judged by pytest is red for a reason no worker can act on, and that red
+ * counted as a promise not kept.
+ */
+test("each part's checks get that part's own runner, and the rest keep the repository's", () => {
+  const wide = proved("node --test <file>", true)!;
+  const forCheck = runnerFor(wide, {
+    ".": { runOne: "node --test <file>" },
+    backend: { runOne: "pytest <file>" },
+    "frontend/ui": { runOne: "vitest run <file>" },
+  });
+
+  assert.equal(forCheck("backend/app_AC-1.test.py"), "pytest <file>", "the backend's own runner");
+  assert.equal(forCheck("frontend/ui/card_AC-2.test.ts"), "vitest run <file>", "the deepest part wins");
+  assert.equal(forCheck("src/core/schema_AC-1.test.ts"), wide, "a file no part claims keeps the repository's");
+  assert.equal(forCheck("backendish/x.test.ts"), wide, "a name that merely starts the same is not that part");
+});
+
+test("a repository with one toolchain is unchanged — no parts, one runner", () => {
+  const wide = proved("npm test -- <file>", true)!;
+  const forCheck = runnerFor(wide);
+  assert.equal(forCheck("anything/at/all.test.ts"), wide);
 });

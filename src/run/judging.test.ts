@@ -16,7 +16,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
-import { proved } from "./proved";
+import { proved, runnerFor } from "./proved";
 import { closingVerifications, confessedDeferrals } from "./plan";
 import { pinRecordedChecks } from "./checkHomes";
 import { knotWarnings } from "./refusals";
@@ -58,7 +58,7 @@ test("the gate judges this run's work, by this repository's own way of running a
     },
   ];
   const runOne = `node --test "out-test/$(echo '<file>' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`;
-  const withFact = closingVerifications(slices as never, proved(runOne, true)!);
+  const withFact = closingVerifications(slices as never, runnerFor(proved(runOne, true)!));
   assert.equal(
     withFact.verifs[0].run,
     `node --test "out-test/$(echo 'probes/x__SL-1_AC-1.test.mjs' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`,
