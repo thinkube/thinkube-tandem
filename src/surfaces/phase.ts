@@ -58,6 +58,9 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "think-again": ["signed"],
   "stop-run": ["running"],
   "accept-delivery": ["delivered"],
+  // Attesting is what a person does AFTER the work is theirs — the answer
+  // to a promise nothing here could settle arrives once they have used it.
+  attest: ["delivered"],
   "reject-delivery": ["delivered"],
   panic: ["drafting", "read", "understood"],
   "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],

@@ -310,6 +310,21 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       })(),
       ...(d.url ? { url: d.url } : {}),
       ...(d.observations?.length ? { observations: d.observations } : {}),
+      // Promises answered somewhere this run cannot reach — the pipeline
+      // the merge fired, the cluster, a person's own machine. Shown with
+      // WHERE the answer comes from, so a delivery that is not finished
+      // says which part of it is still out, instead of looking incomplete.
+      ...(() => {
+        const pending = d.proofs
+          .filter((p) => p.verdict === "pending" && p.settledBy)
+          .map((p) => ({
+            ...(p.criterionId ? { criterionId: p.criterionId } : {}),
+            text: p.label,
+            settledBy: p.settledBy!,
+            ...(p.ref ? { ref: p.ref } : {}),
+          }));
+        return pending.length ? { pending } : {};
+      })(),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
       ...(d.withheld ? { withheld: d.withheld } : {}),
       // The way back in, on every delivery that is not accepted: withheld,

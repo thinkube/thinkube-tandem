@@ -242,3 +242,75 @@ export async function watchGitopsAfterAccept(a: {
   }
   a.log("the pipeline did not settle within the watch — its promises stay pending; read them again later");
 }
+
+/**
+ * The component's own validation, after its delivery is accepted.
+ *
+ * A playbook repository proves nothing in a worktree: what "deployed and
+ * working" means is written in the component's own `18_test.yaml`, and it
+ * runs against the live cluster. That is the one downstream Tandem can
+ * execute itself — reading the recap as the verdict, never deploying,
+ * never rolling back.
+ *
+ * Which component: the one whose directory the delivery's promises landed
+ * in. A cut that touched no component has nothing to validate.
+ */
+export async function validateComponentsAfterAccept(a: {
+  repoRoot: string;
+  /** Repository-relative paths the delivered promises landed in. */
+  landed: readonly string[];
+  delivery: Delivery;
+  update: (d: Delivery, note: string) => void;
+  log: (line: string) => void;
+  findPlaybook?: (repoRoot: string, dir: string) => string | undefined;
+  run?: Parameters<typeof runClusterValidation>[0]["exec"];
+}): Promise<void> {
+  const pending = a.delivery.proofs.filter((p) => p.verdict === "pending" && p.settledBy);
+  if (!pending.length) return;
+  const find = a.findPlaybook ?? defaultFindPlaybook;
+  const dirs = [...new Set(a.landed.map((f) => path.posix.dirname(f)))];
+  const playbooks = [...new Set(dirs.map((d) => find(a.repoRoot, d)).filter((x): x is string => !!x))];
+  if (!playbooks.length) {
+    a.log(
+      "no component validation playbook covers what this cut changed — its promises stay pending, " +
+        "and that is a fact about this repository, not about the work",
+    );
+    return;
+  }
+  let d = a.delivery;
+  for (const playbook of playbooks) {
+    a.log(`validating on the live cluster: ${playbook}`);
+    const r = await runClusterValidation({
+      repoRoot: a.repoRoot,
+      playbook,
+      ...(a.run ? { exec: a.run } : {}),
+    });
+    d = {
+      ...d,
+      proofs: d.proofs.map((p) =>
+        p.verdict === "pending" && p.settledBy
+          ? r.verdict === "unjudged"
+            ? { ...p, ref: `still pending — ${r.detail}`.slice(0, 300) }
+            : { ...p, verdict: r.verdict, ref: r.detail.slice(0, 300) }
+          : p,
+      ),
+    };
+    a.update(d, `${playbook}: ${r.verdict}`);
+  }
+}
+
+/** The `18_test` playbook that governs a directory, walking up to the
+ *  component root — the convention this platform documents. */
+function defaultFindPlaybook(repoRoot: string, dir: string): string | undefined {
+  let here = dir;
+  for (let up = 0; up < 4 && here && here !== "."; up++) {
+    for (const name of ["18_test.yaml", "18_test.yml"]) {
+      const rel = path.posix.join(here, name);
+      if (fs.existsSync(path.join(repoRoot, rel))) return rel;
+    }
+    for (const n of fs.existsSync(path.join(repoRoot, here)) ? fs.readdirSync(path.join(repoRoot, here)) : [])
+      if (/^18_test.*\.ya?ml$/.test(n)) return path.posix.join(here, n);
+    here = path.posix.dirname(here);
+  }
+  return undefined;
+}

@@ -21,6 +21,9 @@ export interface InboundAction {
   // answer-worker carries unitId + text; stop-run carries nothing.
   changeIds?: string[];
   deliveryId?: string;
+  /** attest: which promise the person is answering, and their verdict. */
+  criterionId?: string;
+  held?: boolean;
   proposalId?: string;
   impactId?: string;
   stepId?: string;
@@ -85,6 +88,9 @@ export async function handleInbound(
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
+    const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "reject-delivery" && msg.deliveryId) {
     const r = session.rejectDelivery(msg.deliveryId);

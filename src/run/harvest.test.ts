@@ -9,7 +9,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attest, controlUrlOf, readPipeline, runClusterValidation, stampPending } from "./harvest";
+import {
+  attest,
+  controlUrlOf,
+  readPipeline,
+  runClusterValidation,
+  stampPending,
+  validateComponentsAfterAccept,
+} from "./harvest";
 import type { Delivery } from "../core/schema";
 
 const delivered = (): Delivery =>
@@ -116,4 +123,68 @@ test("an attestation closes the one pending proof it names, in the person's word
 
   const missing = attest(d, "c9", { held: true, by: "cmxela", at: "now" });
   assert.ok("refused" in missing, "attesting nothing pending is refused, not invented");
+});
+
+/**
+ * A component proves itself on the live cluster, and only there.
+ *
+ * A playbook repository proves nothing in a worktree: what "deployed and
+ * working" means is written in the component's own 18_test.yaml, against
+ * the running cluster. Tandem runs that one itself after the delivery is
+ * accepted — and nothing else in the component's directory, however the
+ * files were named.
+ */
+test("the component whose code the cut touched is the one validated", async () => {
+  const ran: string[] = [];
+  const d = {
+    ...delivered(),
+    proofs: [
+      {
+        kind: "staged" as const,
+        label: "keycloak answers on its route",
+        verdict: "pending" as const,
+        settledBy: "the component's 18_test.yaml on the live cluster",
+        criterionId: "c1",
+      },
+    ],
+  };
+  let last: Delivery = d as Delivery;
+  await validateComponentsAfterAccept({
+    repoRoot: "/repo",
+    landed: ["ansible/40_thinkube/core/keycloak/10_deploy.yaml"],
+    delivery: d as Delivery,
+    update: (x) => (last = x),
+    log: () => {},
+    findPlaybook: (_r, dir) =>
+      dir.endsWith("keycloak") ? "ansible/40_thinkube/core/keycloak/18_test.yaml" : undefined,
+    run: async (_c, args) => {
+      ran.push(args[0]);
+      return { code: 0, out: "PLAY RECAP\ntkamd1 : ok=29 failed=0\n" };
+    },
+  });
+
+  assert.deepEqual(ran, ["ansible/40_thinkube/core/keycloak/18_test.yaml"], "its own validation, nothing else");
+  assert.equal(last.proofs[0].verdict, "green");
+  assert.match(last.proofs[0].ref ?? "", /validated on the live cluster/);
+});
+
+test("a cut that touches no component leaves its promises pending, and says why", async () => {
+  const said: string[] = [];
+  let touched = false;
+  await validateComponentsAfterAccept({
+    repoRoot: "/repo",
+    landed: ["scripts/tk_ansible"],
+    delivery: {
+      ...delivered(),
+      proofs: [
+        { kind: "staged" as const, label: "x", verdict: "pending" as const, settledBy: "the cluster", criterionId: "c1" },
+      ],
+    },
+    update: () => (touched = true),
+    log: (l) => said.push(l),
+    findPlaybook: () => undefined,
+    run: async () => ({ code: 0, out: "failed=0" }),
+  });
+  assert.equal(touched, false, "nothing is stamped from a validation that never ran");
+  assert.match(said.join(" "), /a fact about this repository, not about the work/);
 });

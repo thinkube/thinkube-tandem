@@ -17,7 +17,7 @@ import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
-import { watchGitopsAfterAccept } from "../run/harvest";
+import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -382,7 +382,29 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     // delivery frozen at "pending" forever. Started, never awaited: the
     // accept returns; the watch reports through the space.
     const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
-    if (downstreamOf(gitRoot) === "gitops-app")
+    const down = downstreamOf(gitRoot);
+    // A playbook component proves itself on the live cluster, and Tandem
+    // can run that itself — the one downstream it executes rather than
+    // watches. Started, never awaited, like the pipeline watch.
+    if (down === "ansible" || down === "ansible-component")
+      void validateComponentsAfterAccept({
+        repoRoot: gitRoot,
+        landed: [
+          ...new Set(
+            s.space.nodes
+              .filter((n) => (cut?.changeIds ?? []).includes(n.id))
+              .flatMap((n) => (n.grounding?.touchpoints ?? []).map((t) => t.path)),
+          ),
+        ],
+        delivery: r.delivery,
+        update: (d, note) => {
+          s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+          s.persist();
+          s.changed(note);
+        },
+        log: (l) => s.changed(l),
+      });
+    if (down === "gitops-app")
       void watchGitopsAfterAccept({
         gitRoot,
         app: path.basename(gitRoot),

@@ -9,7 +9,7 @@ import { emptySpace, Space, Unit } from "../core/schema";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
-import { doorsBySentence, renderCutScreen, renderDeliveryPage } from "../gates/render";
+import { renderCutScreen } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
@@ -25,6 +25,8 @@ import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../cor
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { draftReadOf, saveDraftOn } from "./draftGestures";
+import { attestOn } from "./attesting";
+import { deliveryPageOf } from "./deliveryPage";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
 import { addCheckFlow, decideQuestionFlow, panicFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
@@ -532,17 +534,22 @@ export class TandemSession {
     return n;
   }
 
-  deliveryPage(deliveryId: string): string | undefined {
-    const d = this.space.deliveries.find((x) => x.id === deliveryId);
-    if (!d) return undefined;
-    return renderDeliveryPage(this.space, d, doorsBySentence(this.space.nodes));
-  }
+  /** The delivery, rendered for a person to read — in `./deliveryPage`. */
+  deliveryPage = (deliveryId: string): string | undefined => deliveryPageOf(this, deliveryId);
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
    *  retire (best-effort) — refused without green proof BEFORE the merge. */
   acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     return acceptDeliveryGesture(this, deliveryId);
   }
+
+  /** What only a person can settle, settled — kept in `./attesting`. */
+  attestDelivery = (
+    deliveryId: string,
+    criterionId: string,
+    held: boolean,
+    note?: string,
+  ): { ok: boolean; reason?: string } => attestOn(this, deliveryId, criterionId, held, note);
 
   /** Refuse a delivery: the cut goes back to signed and can run again. */
   rejectDelivery(deliveryId: string): { ok: boolean; reason?: string } {

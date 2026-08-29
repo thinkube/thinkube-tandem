@@ -75,6 +75,13 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "read the page, try the gestures, press Accept",
     },
   },
+  attest: {
+    kind: "human",
+    affordance: {
+      surface: "delivery page",
+      gesture: "install it, use it, then say whether it held",
+    },
+  },
   "think-again": {
     kind: "human",
     affordance: { surface: "the work page", gesture: "press Think again" },

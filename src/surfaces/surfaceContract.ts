@@ -76,6 +76,10 @@ interface DeliveryVM {
   undelivered?: string[];
   /** What only the person can certify, by using the delivered thing. */
   observations?: string[];
+  /** Promises whose answer comes from somewhere this run cannot reach —
+   *  each with where it will come from, and whether it has arrived. A
+   *  person attests the ones only a person can settle. */
+  pending?: { criterionId?: string; text: string; settledBy: string; ref?: string }[];
   /** Why the delivery was withheld, and the signed work to run again. */
   withheld?: string;
   rerun?: { id: string; tepId?: string };
@@ -236,6 +240,10 @@ export type WebToHost =
   | { action: "select-unit"; unitId: string }
   | { action: "accept-delivery"; deliveryId: string }
   | { action: "reject-delivery"; deliveryId: string }
+  /** What only a person can settle, settled: installed on a clean node,
+   *  seen working in the running product. Closes the one pending promise
+   *  it names, in the person's own words. */
+  | { action: "attest"; deliveryId: string; criterionId: string; held: boolean; note?: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }
@@ -255,7 +263,7 @@ export const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
   "dismiss-impact", "apply-all-impacts", "open-cut-review", "exempt-docs", "build", "rerun", "think-again",
-  "stop-run", "accept-delivery", "reject-delivery", "panic", "switch-repo",
+  "stop-run", "accept-delivery", "reject-delivery", "attest", "panic", "switch-repo",
 ]);
 
 /** The shaping actions the host allows right now, from the last push.

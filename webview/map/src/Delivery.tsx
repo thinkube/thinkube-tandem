@@ -7,7 +7,7 @@
  * reader arrives having read what they are accepting.
  */
 import { Markdown } from "./Markdown";
-import { C, FS, raised, SP } from "./type";
+import { C, FS, O, raised, SP } from "./type";
 import { can, post, SpacePush } from "./vscode";
 
 /** The way back in: the signed work runs again. It is offered on every
@@ -113,6 +113,53 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                     <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: 18 }}>
                       {d.observations.map((o, i) => (
                         <li key={i}>{o}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {d.pending?.length ? (
+                  <div data-pending={d.id} style={{ fontSize: FS.body, marginTop: SP.sm }}>
+                    <strong>Answered after the merge — not by anything this run could reach:</strong>
+                    <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: 18 }}>
+                      {d.pending.map((p, i) => (
+                        <li key={i} style={{ marginBottom: SP.xs }}>
+                          {p.text}
+                          <span style={{ opacity: O.dim }}> — settled by {p.settledBy}</span>
+                          {p.ref ? <div style={{ opacity: O.dim, fontSize: FS.caption }}>{p.ref}</div> : null}
+                          {/* Only a person can answer some of these: they
+                              installed it, or they did not. The buttons say
+                              exactly that and nothing more. */}
+                          {p.criterionId && /attest|person|clean node|install/i.test(p.settledBy) ? (
+                            <div style={{ marginTop: SP.xs }}>
+                              <button
+                                data-attest-held={p.criterionId}
+                                onClick={() =>
+                                  post({
+                                    action: "attest",
+                                    deliveryId: d.id,
+                                    criterionId: p.criterionId!,
+                                    held: true,
+                                  })
+                                }
+                              >
+                                It held
+                              </button>{" "}
+                              <button
+                                data-attest-broke={p.criterionId}
+                                onClick={() =>
+                                  post({
+                                    action: "attest",
+                                    deliveryId: d.id,
+                                    criterionId: p.criterionId!,
+                                    held: false,
+                                  })
+                                }
+                              >
+                                It did not
+                              </button>
+                            </div>
+                          ) : null}
+                        </li>
                       ))}
                     </ul>
                   </div>

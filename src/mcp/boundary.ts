@@ -59,6 +59,9 @@ export const PERSON_ONLY: Record<string, string> = {
   "keep-draft": "turning drafted words into your asks is yours; a machine may draft, never keep",
   "accept-delivery": "accepting a delivery is the second gate — a machine may not accept its own work",
   "reject-delivery": "rejecting a delivery is a judgement about the work, and it is yours",
+  attest:
+    "attesting is the answer to a promise nothing mechanical could settle — installed on a clean " +
+    "node, seen working. A machine saying it held would be inventing the one verdict it cannot reach",
   "mint-approval": "an approval stands for your click; a machine minting one forges it",
   "think-again": "withdrawing signed work discards what you approved — yours to decide",
   panic: "clearing what was derived is destructive and yours to decide",
