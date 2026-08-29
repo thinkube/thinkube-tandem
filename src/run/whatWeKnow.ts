@@ -19,6 +19,8 @@ import { openTheDoor, type TreeSetup } from "./setup";
 import { factsOf, rememberWhatHeld, type RepositoryFacts } from "./facts";
 import { missing, type Proved } from "./proved";
 import type { DispatchDeps } from "./deps";
+import type { Cut, Space } from "../core/schema";
+import { groundThatMoved, regroundingNeeded } from "./groundStillThere";
 
 export type Known =
   | {
@@ -36,6 +38,9 @@ export async function whatWeKnow(a: {
   deps: DispatchDeps;
   worktree: string;
   tep: string;
+  /** The cut being run, to check its ground is still under it. */
+  space: Space;
+  cut: Cut;
   resumed: boolean;
   halted: () => boolean;
   exec: Parameters<typeof openTheDoor>[0]["exec"];
@@ -44,6 +49,13 @@ export async function whatWeKnow(a: {
   defect: Parameters<typeof openTheDoor>[0]["defect"];
 }): Promise<Known> {
   const { deps } = a;
+  // The base may have moved under this cut since it was written — an
+  // urgent fix with no ask behind it, merged in just above. A promise
+  // grounded on code that is gone cannot be built as written, and no
+  // worker can discover that: it fails every check for a reason none of
+  // them can act on.
+  const moved = await groundThatMoved({ worktree: a.worktree, space: a.space, cut: a.cut });
+  if (moved.length) return { ok: false, refusal: regroundingNeeded(moved) };
   // What this repository already proved about itself, in an earlier run.
   // Candidates, not facts: the door runs each one again here, so a file
   // somebody edited by hand fails now rather than at a judgement.

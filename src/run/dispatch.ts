@@ -173,7 +173,7 @@ export async function dispatchTep(
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
   const know = await whatWeKnow({
-    deps, worktree, tep, resumed: refreshed.resumed, halted: () => st.halted,
+    deps, worktree, tep, space, cut, resumed: refreshed.resumed, halted: () => st.halted,
     exec, boundedExec, log, defect,
   });
   if (!know.ok) return refuse("setup", know.refusal, "gate");
