@@ -150,7 +150,15 @@ export interface Cut {
   };
 }
 
-type ProofVerdict = "green" | "red" | "pending";
+/**
+ * "unjudged" is not a failure. The check could not be RUN — no assessor
+ * could be dispatched, one threw, the runner was missing, the run was
+ * stopped. Read as red, that sent repair actors to fix work nobody had
+ * judged, and withheld deliveries for it. It never counts against a
+ * promise; it asks the person to reword the criterion into something that
+ * can be settled.
+ */
+type ProofVerdict = "green" | "red" | "pending" | "unjudged";
 
 /** Evidence on a delivery: probe runs, suite verdicts, CI verdicts. */
 export interface Proof {
@@ -162,6 +170,18 @@ export interface Proof {
   /** The check this proof answers — the claim card reads verification
    *  state through this, not by matching label prose. */
   criterionId?: string;
+}
+
+/**
+ * Is this proof a promise the run did not keep?
+ *
+ * Not green is not the same as not kept. A check that could not be RUN
+ * judged nothing, and counting it against the work withheld deliveries for
+ * the machine's own failures and sent repair actors after code that was
+ * never assessed.
+ */
+export function unkeptProof(p: Proof): boolean {
+  return p.verdict !== "green" && p.verdict !== "unjudged";
 }
 
 /** An exam amended mid-run, on the record: the oracle's ruling on a

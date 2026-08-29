@@ -8,6 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { unkeptProof } from "../core/schema";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -294,4 +295,26 @@ test("a reviewer that has not answered is the machine's business, never the work
   assert.match(graded.observations[0], /could not grade this/);
   assert.match(graded.observations[0], /Judge it yourself/);
   }
+});
+
+/**
+ * A criterion nothing could judge is not a promise the code failed.
+ *
+ * No assessor could be dispatched; one threw; the runner was missing. Each
+ * of those came back as a red check, which made it an unkept promise,
+ * which withheld the delivery and sent repair actors after work nobody had
+ * assessed. The only thing that settles such a criterion is a change to
+ * what was asked, so it reaches the person as a proposal instead.
+ */
+test("a check that could not run is unjudged — never counted against a promise", () => {
+  const proofs = [
+    { kind: "probe" as const, label: "the band is fuchsia", verdict: "green" as const },
+    { kind: "probe" as const, label: "it feels responsive", verdict: "unjudged" as const },
+    { kind: "probe" as const, label: "the total is 42", verdict: "red" as const },
+  ];
+  assert.deepEqual(
+    proofs.filter(unkeptProof).map((p) => p.label),
+    ["the total is 42"],
+    "only the check that ran and failed is a promise not kept",
+  );
 });

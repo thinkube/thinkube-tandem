@@ -14,6 +14,7 @@
  * straight from red to withheld with nobody left to try.
  */
 import type { Cut, Proof, Ruling, Space } from "../core/schema";
+import { unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
 import type { AcVerification } from "../engine/core/closingGate";
@@ -70,7 +71,7 @@ export async function repairUnkept(a: {
   }) => void;
 }): Promise<Proof[]> {
   const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf, exec, boundedExec, log, defect } = a;
-  let unkept = proofs.filter((p) => p.verdict !== "green");
+  let unkept = proofs.filter(unkeptProof);
   // Each red criterion goes back to the unit that wrote its code, as the
   // next message in that unit's own session, with the drive's evidence and
   // what changed in the tree since it stopped. Then the checks run again.
@@ -135,7 +136,7 @@ export async function repairUnkept(a: {
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
-      unkept = proofs.filter((p) => p.verdict !== "green");
+      unkept = proofs.filter(unkeptProof);
       log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
     }
   }
@@ -167,7 +168,7 @@ export async function repairUnkept(a: {
       // nothing but the tree.
       const redReviews = new Set(
         proofs
-          .filter((p) => p.kind === "assessment" && p.verdict !== "green" && !settled.has(p.label))
+          .filter((p) => p.kind === "assessment" && unkeptProof(p) && !settled.has(p.label))
           .map((p) => p.label),
       );
       if (redReviews.size) {
@@ -185,7 +186,7 @@ export async function repairUnkept(a: {
         // being an unkept proof: it moves to the person's list by name.
         for (const o of regradedAll.observations) {
           const label = o.slice(0, 60);
-          const stale = proofs.find((p) => p.kind === "assessment" && p.verdict !== "green" && p.label.includes(label.slice(0, 40)));
+          const stale = proofs.find((p) => p.kind === "assessment" && unkeptProof(p) && p.label.includes(label.slice(0, 40)));
           if (stale) stale.verdict = "green";
         }
         for (const r of regradedAll.proofs) {
@@ -224,7 +225,7 @@ export async function repairUnkept(a: {
         proof.verdict = wired.executed === "no" ? "red" : "green";
         proof.ref = (wired.executed !== "yes" ? wired.detail : r.evidence)?.slice(0, 300) ?? proof.ref;
       }
-      return proofs.filter((p) => p.verdict !== "green");
+      return proofs.filter(unkeptProof);
     };
     const closed = await close({
       subject: `${tep} (the unkept promises)`,
@@ -265,8 +266,8 @@ export async function repairUnkept(a: {
       defect: (e) => defect({ unit: "gate#closer", ...e }),
       ...(deps.worker ? { worker: deps.worker } : {}),
     });
-    unkept = proofs.filter((p) => p.verdict !== "green");
+    unkept = proofs.filter(unkeptProof);
     log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`);
   }
-  return proofs.filter((p) => p.verdict !== "green");
+  return proofs.filter(unkeptProof);
 }

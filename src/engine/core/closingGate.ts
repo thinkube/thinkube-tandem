@@ -365,9 +365,13 @@ export async function runAcVerifications(
     // runnable command. No assessor injected ⇒ un-runnable ⇒ red (the no-skip rule: never silently green).
     if (v.env === "assessment") {
       if (!assess?.assessAc) {
+        // No assessor could be dispatched. That is this machine failing to
+        // judge, not the work failing — recorded as unrunnable so nothing
+        // downstream reads it as a promise the code did not keep.
         out.push({
           ac: v.ac,
           pass: false,
+          unrunnable: true,
           evidence: `assessment AC #${v.ac} → could not run: no independent assessor available`,
         });
         continue;
@@ -388,9 +392,13 @@ export async function runAcVerifications(
           )}`,
         });
       } catch (err) {
+        // The assessor threw. A model or transport failure is not a verdict
+        // about the code, and grading it as one sends repair actors to fix
+        // work that was never judged.
         out.push({
           ac: v.ac,
           pass: false,
+          unrunnable: true,
           evidence: `assessment AC #${v.ac} → could not run: ${(err as Error).message}`,
         });
       }

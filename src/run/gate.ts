@@ -12,7 +12,7 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Cut, Delivery, Proof, Ruling, Space } from "../core/schema";
+import { Cut, Delivery, Proof, Ruling, Space, unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
 import { gradeAssessments, logRedChecks } from "./assess";
@@ -187,10 +187,14 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       const wired = wiring.get(r.ac);
       const kept = r.pass && wired?.executed !== "no";
       const ref = wired && wired.executed !== "yes" ? wired.detail : r.evidence;
+      // A check that could not run judged nothing. Calling that red hands a
+      // repair actor work that was never assessed, and withholds a delivery
+      // for the machine's own failure.
+      const verdict = r.unrunnable ? ("unjudged" as const) : kept ? ("green" as const) : ("red" as const);
       return {
         kind: "probe" as const,
         label: (probe && g.checkOf.get(probe)) || `check ${r.ac}`,
-        verdict: kept ? ("green" as const) : ("red" as const),
+        verdict,
         ...(ref ? { ref: ref.slice(0, 300) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
@@ -426,7 +430,15 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // would forbid demolition — but nothing is handed over while a promise is
   // unkept. A delivery with a red proof asks the person to finish the work
   // and to decide which reds are acceptable, which is the machine's job.
-  let unkept = proofs.filter((p) => p.verdict !== "green");
+  // A criterion nothing could judge is not a failure to repair and not a
+  // promise to withhold: only a change to what was asked can settle it, so
+  // it reaches the person as a proposal in the criterion's own words.
+  for (const p of proofs.filter((x) => x.verdict === "unjudged")) {
+    log(`✎ ${tep}: "${p.label}" could not be judged — ${(p.ref ?? "nothing settled it").slice(0, 150)}. Reword it as something you certify by looking, or as a claim a check can run.`);
+    defect({ activity: "closing gate", trigger: "unjudgeable-criterion", type: "contract", stage: "brief",
+      impact: "the ask needs rewording", detail: `${p.label} — ${(p.ref ?? "").slice(0, 300)}` });
+  }
+  let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
