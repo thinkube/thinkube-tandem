@@ -109,31 +109,28 @@ test("the door reports the stores a ready tree HAS, however it got ready", async
   );
 });
 
-test("the fence closes every shell door, Monitor included", () => {
+/**
+ * What each worker may reach.
+ *
+ * A fenced worker has no shell — every door, including the ones added
+ * later. An unfenced one keeps its shell, because the actors with full
+ * authority are useless without it. Neither may delegate: a worker that
+ * spawns another is work nobody is answerable for.
+ */
+test("the fence closes every shell door, and no worker ever delegates", () => {
+  {
   for (const t of ["Monitor", "Task", "Agent", "Workflow", "Skill"])
     assert.ok((FENCED_TOOLS as readonly string[]).includes(t), `${t} must be fenced`);
-});
-
-/**
- * The last actor can run the checks it is asked to satisfy.
- *
- * The closer is declared unfenced and was shell-less anyway: the flag was
- * honoured at the write guard and nowhere else, while its role stripped
- * Bash. So it could not ask the compiler what was wrong — and reported a
- * cause it had inferred, "there is no tsc", about a tree whose
- * dependencies were present. A one-line unused import withheld a finished
- * delivery behind that guess.
- */
-test("an unfenced worker keeps the shell, and still cannot delegate", () => {
+  }
+  {
   // The product's own rule, not a copy of it.
   const closer = toolsRefusedTo({ unfenced: true, role: "test" });
   assert.equal(closer.includes("Bash"), false, "the last actor must be able to run the build");
   assert.equal(closer.includes("Monitor"), false, "and to watch a command it started");
   for (const t of DELEGATION_TOOLS)
     assert.ok(closer.includes(t), `${t} stays closed: nothing judges what it would spawn`);
-});
-
-test("every other worker keeps its fence, shell included", () => {
+  }
+  {
   const tester = toolsRefusedTo({ role: "test" });
   assert.ok(tester.includes("Bash"), "a tester writes checks, it does not run them");
   assert.ok(tester.includes("Monitor"), "and cannot reach a shell the long way round");
@@ -144,4 +141,7 @@ test("every other worker keeps its fence, shell included", () => {
   assert.ok(blindCoder.includes("Bash"));
   // A sighted coder keeps its shell — only the blinded and the testers lose it.
   assert.equal(toolsRefusedTo({ role: "code" }).includes("Bash"), false);
+  }
 });
+
+

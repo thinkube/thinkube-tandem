@@ -13,19 +13,21 @@ import { emptySpace } from "../core/schema";
 import { rehouseChecks } from "./checkHomes";
 
 /**
- * An observation is not a check, at every layer it could enter as one:
- * classified at birth, skipped by the reviewer panel, and carried on the
- * delivery's face for the person — never a reason to withhold the very
- * delivery the observation needs.
+ * A criterion nothing but a person's eyes can settle.
+ *
+ * Recognised by rule when it is written, moved to the unverified notes at
+ * grounding, judged by no reviewer, and carried onto the delivery by name
+ * for the person to certify. Asking a model to rule on it produces a
+ * confident answer about something it cannot see.
  */
-test("a criterion only the running product can show is an observation, by rule", () => {
+test("a criterion only a person can see is an observation from birth to delivery", async () => {
+  {
   assert.ok(observationShaped("in the running extension, opening two thinking spaces shows two tabs"));
   assert.ok(observationShaped("the user sees both panels side by side"));
   assert.equal(observationShaped("opening a key that already has a live tab reveals that tab"), undefined);
   assert.equal(observationShaped("greet() returns 'hello'"), undefined, "an honest check is untouched");
-});
-
-test("no reviewer is asked to judge an observation, and it rides the delivery by name", async () => {
+  }
+  {
   const asked: string[] = [];
   const graded = await gradeAssessments({
     space: {
@@ -58,9 +60,8 @@ test("no reviewer is asked to judge an observation, and it rides the delivery by
   assert.match(graded.observations[0], /running extension/);
   assert.equal(graded.proofs.length, 1);
   assert.equal(graded.proofs[0].verdict, "green");
-});
-
-test("grounding moves an observation-worded criterion to the unverified notes at birth", () => {
+  }
+  {
   const parsed = parseGroundedNodes(
     JSON.stringify({
       nodes: [
@@ -86,9 +87,20 @@ test("grounding moves an observation-worded criterion to the unverified notes at
   );
   assert.equal(n!.unverified?.length, 1);
   assert.match(n!.unverified![0].text, /running extension/);
+  }
 });
 
-test("a check is born beside code, never beside a document", () => {
+
+
+/**
+ * Where a check is born when a promise lands in prose.
+ *
+ * Beside code, because nothing can run a check that lives beside a
+ * document. A slice that lands only in documents has no code to move to,
+ * so its check stays where it already is rather than being homed nowhere.
+ */
+test("a check is born beside code, and a documents-only slice keeps the one it has", () => {
+  {
   const slices = [
     {
       handle: "SL-5",
@@ -100,12 +112,13 @@ test("a check is born beside code, never beside a document", () => {
   ];
   const moved = rehouseChecks(slices as never, ["src/a.ts", "src/a.test.ts"]);
   assert.deepEqual(moved.map((m) => m.to), ["src/gates/engineWiring_AC-1.test.ts"]);
-});
-
-test("a slice that lands only in documents keeps its check where it was", () => {
+  }
+  {
   const slices = [{ handle: "SL-9", workUnits: [{ role: "code", footprint: ["docs/x.md"] }, { role: "test", footprint: ["probes/x__SL-9_AC-1.test.mjs"] }] }];
   assert.deepEqual(rehouseChecks(slices as never, ["src/a.ts", "src/a.test.ts"]), []);
+  }
 });
+
 
 test("a seam named by a bare name is shaped at derivation, by the machine, before anything is sliced", async () => {
   // The contract carries signatures. A grounding that names a function by

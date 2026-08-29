@@ -13,11 +13,15 @@ import { setupRunTree } from "./setup";
 import { factsOf, rememberFacts } from "./facts";
 
 /**
- * The door: a run must not die installing what the checkout beside it
- * already holds. Two headless runs were killed for their memory doing
- * exactly that.
+ * Borrowing instead of installing.
+ *
+ * A run that installs again costs minutes and, on a small machine, dies
+ * during an install it did not need. Dependencies may be shared; build
+ * output may not — output is the work being judged, and lending it made a
+ * run compile through a doorway into the other tree and grade that tree.
  */
-test("the door borrows the checkout's provisioning instead of installing again", async () => {
+test("the door borrows dependency stores from the checkout, and nothing else", async () => {
+  {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
   fs.mkdirSync(path.join(base, "node_modules", "dep"), { recursive: true });
   fs.writeFileSync(path.join(base, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
@@ -43,9 +47,8 @@ test("the door borrows the checkout's provisioning instead of installing again",
   assert.deepEqual(setup.provisioned, ["node_modules"], "and the run still knows what it has");
   assert.ok(fs.existsSync(path.join(wt, "node_modules", "dep", "index.js")), "the dependency is reachable in the worktree");
   assert.ok(said.some((l) => /borrowing the checkout's node_modules/.test(l)));
-});
-
-test("the door borrows even when no install command was ever learned", async () => {
+  }
+  {
   // Run 2 of the acceptance died here: no install command was known, so
   // nothing was borrowed and nothing was installed, and the suite failed
   // before its first test on a tree missing its dependencies.
@@ -68,9 +71,8 @@ test("the door borrows even when no install command was ever learned", async () 
     fs.existsSync(path.join(wt, "webview", "map", "node_modules", "vite", "index.js")),
     "a nested dependency directory is lent too",
   );
-});
-
-test("the borrow lends dependency stores and nothing else", async () => {
+  }
+  {
   // Run 4 judged the wrong tree: the borrow lent out-test/ as a symlink, so
   // the worktree's suite compiled through it INTO the base checkout and ran
   // the base's code. Seven reds against work that was finished.
@@ -97,7 +99,10 @@ test("the borrow lends dependency stores and nothing else", async () => {
   assert.deepEqual(setup.provisioned, ["node_modules"], "only the dependency store crossed");
   for (const d of ["out-test", "out", "media", "coverage", "thinkube-tandem-2.0.144.vsix"])
     assert.ok(!fs.existsSync(path.join(wt, d)), `${d} was lent — the run would judge the base's tree`);
+  }
 });
+
+
 
 test("what the door lends can never be committed, even by add -A", async () => {
   // Run 4's withheld commit ran `git add -A` and committed four borrowed

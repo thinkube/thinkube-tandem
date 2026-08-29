@@ -29,6 +29,7 @@ import {
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
+import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
@@ -241,6 +242,21 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // the finisher — and a tree repaired in that hour was still reported as
   // not building, withholding work that built perfectly well.
   const ran = await judgeTree(g.suite, worktree);
+  // A runner that ANSWERED — green, or red in its own words — is judging
+  // the work. A command that did not run at all is judging nothing, and
+  // reporting it as a red suite tells a person their work broke when what
+  // broke is this run's idea of how to test their repository. That is the
+  // sentence a whole delivery was withheld on.
+  if (!aRunnerAnswered(ran.code, ran.output)) {
+    const why =
+      `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
+      `no test runner answered, so nothing here is a verdict about the work. ` +
+      `The branch keeps everything. What the shell said:\n${ran.output.trim().split("\n").slice(-8).join("\n").slice(0, 800)}`;
+    log(`⛔ ${tep}: ${why}`);
+    defect({ activity: "closing gate", trigger: "suite-could-not-run", type: "infrastructure",
+      impact: "the delivered tree could not be judged", detail: why.slice(0, 500) });
+    return { refusals: [why], undelivered: [] };
+  }
   let verdict = suiteVerdictOf(ran.code, ran.output, worktree);
   if (!verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.

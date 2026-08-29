@@ -66,7 +66,16 @@ test("a check that drives its subject is proven by the runtime", async () => {
   assert.equal(verdict.executed, "yes", verdict.detail);
 });
 
-test("a runtime that reports nothing is unknown, never a pass and never a failure", async () => {
+/**
+ * Absence of evidence is not evidence of absence.
+ *
+ * Three ways the runtime can fail to say what it executed: it reports
+ * nothing, it reports something unparseable, or it writes nothing at all.
+ * All three used to answer "nothing executed" — the verdict that withheld
+ * seventeen promises for code that was correct.
+ */
+test("evidence this reader cannot understand is unknown, never a failure", async () => {
+  {
   const dir = repo();
   const verdict = await provedByExecution({
     run: "true",
@@ -75,6 +84,41 @@ test("a runtime that reports nothing is unknown, never a pass and never a failur
     exec,
   });
   assert.equal(verdict.executed, "unknown", verdict.detail);
+  }
+  {
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "wiring-shape-"));
+  fs.writeFileSync(path.join(wt, "subject.js"), "module.exports = () => 1;\n");
+  const verdict = await provedByExecution({
+    // Writes a coverage file whose shape this parser does not recognise.
+    run: `node -e "const f=require('fs'),p=process.env.NODE_V8_COVERAGE;f.mkdirSync(p,{recursive:true});f.writeFileSync(p+'/x.json','{\\"unexpected\\":true}')"`,
+    subjects: ["subject.js"],
+    worktree: wt,
+    exec: async (cmd, cwd) =>
+      new Promise((resolve) =>
+        execFile("bash", ["-lc", cmd], { cwd }, (err, out, errOut) =>
+          resolve({ code: err ? 1 : 0, output: `${out}${errOut}` }),
+        ),
+      ),
+  });
+  assert.equal(verdict.executed, "unknown", `said "${verdict.executed}": ${verdict.detail}`);
+  }
+  {
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "wiring-none-"));
+  fs.writeFileSync(path.join(wt, "subject.js"), "module.exports = () => 1;\n");
+  const verdict = await provedByExecution({
+    run: "true", // passes, records nothing at all
+    subjects: ["subject.js"],
+    worktree: wt,
+    exec: async (cmd, cwd) =>
+      new Promise((resolve) =>
+        execFile("bash", ["-lc", cmd], { cwd }, (err, out, errOut) =>
+          resolve({ code: err ? 1 : 0, output: `${out}${errOut}` }),
+        ),
+      ),
+  });
+  assert.equal(verdict.executed, "unknown");
+  assert.match(verdict.detail, /does not report what it executed/);
+  }
 });
 
 test("a subject is recognised wherever the build put it", () => {
@@ -96,48 +140,4 @@ test("a promise landing in a document is not asked to execute", async () => {
   assert.match(verdict.detail, /content, not code/);
 });
 
-/**
- * Evidence that could not be read is never a verdict about the work.
- *
- * The parser turned every unreadable thing into an empty list, and an
- * empty list means "the drive executed nothing" — a statement about the
- * code. A coverage directory that could not be listed, a file that could
- * not be read, a shape the parser did not expect: each silently accused
- * work that had run perfectly well. Seventeen promises came back unkept
- * behind exactly this, and nothing in the report could attribute them.
- */
-test("a runtime whose coverage cannot be parsed is unknown, not a failure", async () => {
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "wiring-shape-"));
-  fs.writeFileSync(path.join(wt, "subject.js"), "module.exports = () => 1;\n");
-  const verdict = await provedByExecution({
-    // Writes a coverage file whose shape this parser does not recognise.
-    run: `node -e "const f=require('fs'),p=process.env.NODE_V8_COVERAGE;f.mkdirSync(p,{recursive:true});f.writeFileSync(p+'/x.json','{\\"unexpected\\":true}')"`,
-    subjects: ["subject.js"],
-    worktree: wt,
-    exec: async (cmd, cwd) =>
-      new Promise((resolve) =>
-        execFile("bash", ["-lc", cmd], { cwd }, (err, out, errOut) =>
-          resolve({ code: err ? 1 : 0, output: `${out}${errOut}` }),
-        ),
-      ),
-  });
-  assert.equal(verdict.executed, "unknown", `said "${verdict.executed}": ${verdict.detail}`);
-});
 
-test("a coverage directory that was never written is unknown, not a failure", async () => {
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "wiring-none-"));
-  fs.writeFileSync(path.join(wt, "subject.js"), "module.exports = () => 1;\n");
-  const verdict = await provedByExecution({
-    run: "true", // passes, records nothing at all
-    subjects: ["subject.js"],
-    worktree: wt,
-    exec: async (cmd, cwd) =>
-      new Promise((resolve) =>
-        execFile("bash", ["-lc", cmd], { cwd }, (err, out, errOut) =>
-          resolve({ code: err ? 1 : 0, output: `${out}${errOut}` }),
-        ),
-      ),
-  });
-  assert.equal(verdict.executed, "unknown");
-  assert.match(verdict.detail, /does not report what it executed/);
-});

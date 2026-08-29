@@ -81,7 +81,15 @@ function watched(clock: ReturnType<typeof driven>, maxMs: number): { st: RunStat
   return { st, said };
 }
 
-test("a run that goes quiet ends, and says what never finished", () => {
+/**
+ * Every way a run can fail to stop.
+ *
+ * Silence, endless noise, and a repair that keeps trying without getting
+ * better. Each ends at a bound and says what never finished, because a run
+ * that hangs holds a person's evening and reports nothing at all.
+ */
+test("a run always ends — quiet, endless, or no longer improving", async () => {
+  {
   const clock = driven();
   const { st, said } = watched(clock, 60 * 60_000);
   clock.pass(11 * 60_000); // past the quiet limit: a notice, not yet an end
@@ -92,9 +100,8 @@ test("a run that goes quiet ends, and says what never finished", () => {
     said.some((l) => l.includes("SL-1#eu-0")),
     "and the report names the unit that never finished",
   );
-});
-
-test("a run that talks forever still ends at its bound", () => {
+  }
+  {
   const clock = driven();
   const { st, said } = watched(clock, 60 * 60_000);
   // A run in a repair loop: never silent, never finished.
@@ -107,21 +114,95 @@ test("a run that talks forever still ends at its bound", () => {
     said.some((l) => l.includes("bound")),
     "and the report says it was the bound, not a stall",
   );
+  }
+  {
+  const result = await close({
+    subject: "the delivery",
+    worktree: "/nowhere",
+    footprint: ["src/a.ts"],
+    probeSources: [],
+    history: [],
+    criteria: [{ id: "c1", text: "it works" }],
+    model: "sonnet",
+    measure: async () => ({ green: false, score: 5, evidence: "5 red" }),
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async () => ({ code: 0, output: "" }),
+    halted: () => false,
+    log: () => {},
+    say: () => {},
+    onRuling: () => {},
+    defect: () => {},
+    worker: async () => ({ ok: true, finalText: "no idea" }),
+  });
+  assert.equal(result.green, false);
+  assert.ok(result.rounds <= 3, `it stopped instead of grinding: ${result.rounds} rounds`);
+  }
 });
 
+
 /**
- * Convergence: the loop must end, and it must not end by abandoning a
- * repair halfway through a structural change.
+ * What a tree that does not build reports.
+ *
+ * One failure, not one per test that could not run. The compiler's own
+ * words, because a paraphrase is not evidence. And the files it names are
+ * what the closer is cleared to open — otherwise the actor sent to fix it
+ * cannot reach the code that broke.
  */
-test("a tree that does not build is one failure, not many", () => {
+test("a build failure is one failure, in the compiler's own words, and names its files", () => {
+  {
   // The count a repair loop watches decides whether it keeps going. A
   // deletion that breaks five imports has done ONE thing wrong.
   assert.equal(convergenceScore({ buildRed: true, reds: 5 }), 1);
   assert.equal(convergenceScore({ buildRed: true, reds: 40 }), 1);
   assert.equal(convergenceScore({ buildRed: false, reds: 3 }), 3);
+  }
+  {
+  // The gate's last actor had "full authority" and had its edit restored by
+  // the guard, because the clearance was read from the TEST failures only
+  // and the tree's real problem was a compiler error in another file.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-named-"));
+  fs.mkdirSync(path.join(repo, "src", "core"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src", "core", "records.ts"), "export const x = 1;\n");
+  const out =
+    "src/core/records.ts(96,10): error TS2305: Module has no exported member 'foldSpaces'.\n" +
+    "src/gone/away.ts(1,1): error TS2307: file that does not exist here\n";
+  assert.deepEqual(filesNamedIn(out, repo), ["src/core/records.ts"], "named, and only what really exists");
+  }
+  {
+  // This reported the LAST line of the output, and a compiler's output
+  // ends in a blank line — so a run withheld ten promises with the words
+  // "checks run against an unbuilt tree:" and nothing after the colon.
+  // The closer spent rounds guessing at a message nobody had shown it.
+  const tsc = [
+    "",
+    "> thinkube-tandem@2.0.1 compile",
+    "> tsc -p ./",
+    "",
+    "src/run/state.ts(41,3): error TS2564: Property 'plan' has no initializer.",
+    "src/gates/render.ts(88,7): error TS2322: Type 'string' is not assignable.",
+    "",
+    "",
+  ].join("\n");
+  const said = buildComplaint(tsc);
+  assert.match(said, /state\.ts\(41,3\): error TS2564/);
+  assert.match(said, /render\.ts\(88,7\)/);
+  assert.doesNotMatch(said, /^\s*$/, "a failure that says nothing is the defect this replaces");
+  // Output with no error-shaped line still says something rather than nothing.
+  assert.equal(buildComplaint("\n\nkilled by signal\n\n"), "killed by signal");
+  assert.match(buildComplaint("\n\n\n"), /printed nothing/);
+  }
 });
 
-test("the closer is fenced by nothing — full authority is a fact, not a list", async () => {
+/**
+ * The closer and the finisher have full authority.
+ *
+ * They are the last actors before work is withheld, so a tool they lack is
+ * work nobody can rescue. The rule was written for the closer and applied
+ * to only half of it: the finisher kept its fence, and the argument for
+ * removing one is the argument for removing both.
+ */
+test("the last actors are fenced by nothing — full authority is a fact, not a list", async () => {
+  {
   // Two runs withheld because the closer wrote the correct fix in a file
   // its clearance list did not contain, and the guard deleted the edit. A
   // list can never hold the file the closer discovers by reading; behind
@@ -152,9 +233,47 @@ test("the closer is fenced by nothing — full authority is a fact, not a list",
     },
   });
   assert.equal(sawUnfenced, true, "the guard does not run over the closer");
+  }
+  {
+  // The reason the closer is unfenced holds for the finisher word for word:
+  // the guard keeps PARALLEL workers off each other's files, and at the gate
+  // nobody runs beside it. Fenced, it spent six minutes discovering it could
+  // not write the file its own red named, failed, and the closer — allowed
+  // to — fixed the same red in one round.
+  let sawUnfenced: boolean | undefined;
+  const state = new RunState(() => {});
+  await repairSuiteAtGate({
+    tep: "TEP-1",
+    worktree: "/nowhere",
+    baseSha: "HEAD~1",
+    state,
+    verdict: { green: false, failures: [{ name: "a standing check", file: "docs/LEDGER.md", detail: "stale" }] },
+    deps: {
+      told: { suite: "true" },
+      worker: async (d: { unfenced?: boolean }) => {
+        sawUnfenced = d.unfenced;
+        return { ok: true, finalText: "done" };
+      },
+    } as never,
+    exec: async () => ({ code: 0, out: "" }),
+    suiteExec: async () => ({ code: 1, output: "still red" }),
+    log: () => {},
+    defect: () => {},
+  } as never);
+  assert.equal(sawUnfenced, true, "the guard still runs over the last actor at the gate");
+  }
 });
 
-test("demolition is not punished: the closer rides out a worse round and finishes", async () => {
+/**
+ * What must never be lost while a run is in flight.
+ *
+ * An actor that makes things worse before better is not cut off at the
+ * worse round. What a unit wrote reaches the branch. A unit does not wait
+ * on another slice for a break its own change caused. And a stop reaches
+ * the last actor rather than leaving it running past the end.
+ */
+test("a unit's work survives a worse round, another slice's break, and a stop", async () => {
+  {
   // The real loop, over a repair that gets WORSE before it gets better —
   // a deletion that breaks imports for a round, which is what a structural
   // change looks like from the outside.
@@ -186,68 +305,8 @@ test("demolition is not punished: the closer rides out a worse round and finishe
 
   assert.equal(result.green, true, "the repair that ends green is not abandoned on its worst round");
   assert.ok(result.rounds >= 2, `it took more than one round: ${result.rounds}`);
-});
-
-test("a repair that stops improving does end", async () => {
-  const result = await close({
-    subject: "the delivery",
-    worktree: "/nowhere",
-    footprint: ["src/a.ts"],
-    probeSources: [],
-    history: [],
-    criteria: [{ id: "c1", text: "it works" }],
-    model: "sonnet",
-    measure: async () => ({ green: false, score: 5, evidence: "5 red" }),
-    exec: async () => ({ code: 0, out: "" }),
-    boundedExec: async () => ({ code: 0, output: "" }),
-    halted: () => false,
-    log: () => {},
-    say: () => {},
-    onRuling: () => {},
-    defect: () => {},
-    worker: async () => ({ ok: true, finalText: "no idea" }),
-  });
-  assert.equal(result.green, false);
-  assert.ok(result.rounds <= 3, `it stopped instead of grinding: ${result.rounds} rounds`);
-});
-
-/**
- * Two more invariants, stated as properties rather than as the incidents
- * that taught them.
- */
-test("a unit is never failed for a red it cannot reach", async () => {
-  // A standing test of the repository is already red, in a file no unit of
-  // this cut is cleared to change. Four units were once reworked, closed
-  // and failed for exactly this.
-  const shape = SHAPES[0] as RepoShape;
-  const repo = repoInShape(shape, { standingRed: true });
-  const { space, ids } = oneAsk();
-  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-unreachable" };
-  const state = new RunState(() => {});
-  const outcome = await dispatchTep(
-    {
-      repoRoot: repo,
-      model: "sonnet",
-      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
-      state,
-      supervisorRound: async () => null,
-      spaceName: "ends",
-      worker: scriptedWorker(shape, "honest").worker as never,
-    } as never,
-    space,
-    cut,
-    tepSlices({ space, cut, spaceName: "ends" }),
-  );
-
-  assert.deepEqual(
-    [...state.units.values()].filter((u) => u.state === "failed").map((u) => `${u.id}: ${u.note ?? ""}`),
-    [],
-    "no unit was failed for the standing red it could not reach",
-  );
-  assert.ok(outcome.delivery, "and the run still reached a delivery");
-});
-
-test("nothing a unit wrote is lost from the branch", async () => {
+  }
+  {
   // Even when the promise is not kept: the work stays where a person can
   // pick it up, and the delivery says so.
   const shape = SHAPES[0] as RepoShape;
@@ -275,56 +334,8 @@ test("nothing a unit wrote is lost from the branch", async () => {
     .toString()
     .split("\n");
   assert.ok(onBranch.includes("src/greet.mjs"), `the work the coder wrote is on the branch: ${onBranch.join(" ")}`);
-});
-
-test("the closer is cleared for the files the compiler names", () => {
-  // The gate's last actor had "full authority" and had its edit restored by
-  // the guard, because the clearance was read from the TEST failures only
-  // and the tree's real problem was a compiler error in another file.
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-named-"));
-  fs.mkdirSync(path.join(repo, "src", "core"), { recursive: true });
-  fs.writeFileSync(path.join(repo, "src", "core", "records.ts"), "export const x = 1;\n");
-  const out =
-    "src/core/records.ts(96,10): error TS2305: Module has no exported member 'foldSpaces'.\n" +
-    "src/gone/away.ts(1,1): error TS2307: file that does not exist here\n";
-  assert.deepEqual(filesNamedIn(out, repo), ["src/core/records.ts"], "named, and only what really exists");
-});
-
-/**
- * A red that says "the check was not there to run" is the gate's failure,
- * never a code verdict. Eight runs once wrote 460 code rows whose single
- * cause was the machine judging a tree its checks were not in — and the
- * attention counter saw none of it, because a missing check exits like an
- * ordinary failure.
- */
-test("a check that was not there to run is the gate's red, not the code's", async () => {
-  const results = await runAcVerifications(
-    [
-      { ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" },
-      { ac: 2, run: "node --test probes/b_AC-2.test.mjs", env: "local" },
-    ],
-    "/nowhere",
-    async (run) =>
-      run.includes("a_AC-1")
-        ? { code: 1, output: "Could not find '/wt/probes/a_AC-1.test.mjs'" }
-        : { code: 1, output: "not ok 1 - greet returns hello\n  AssertionError: expected 'hello'" },
-  );
-  assert.equal(results[0].unrunnable, true, "a missing check is the gate's own failure");
-  assert.equal(results[1].unrunnable, undefined, "a check that ran and failed is the honest code red");
-});
-
-test("an import the check cannot resolve stays a code red", async () => {
-  // A module the coder never wrote fails exactly this way, and that red is
-  // the verdict the run exists to give.
-  const results = await runAcVerifications(
-    [{ ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" }],
-    "/nowhere",
-    async () => ({ code: 1, output: "Error: Cannot find module '../out/greet.js'\nimported from probes/a_AC-1.test.mjs" }),
-  );
-  assert.equal(results[0].unrunnable, undefined, JSON.stringify(results[0]));
-});
-
-test("a unit never waits on another slice for a build its own change broke", async () => {
+  }
+  {
   // The runner holds the base, which builds, plus this unit's files: a
   // build error outside its clearance is its own doing, and waiting for
   // another slice to mend it is waiting for nobody.
@@ -350,9 +361,8 @@ test("a unit never waits on another slice for a build its own change broke", asy
   });
   assert.equal(waited, 0, "no wait was taken");
   assert.equal(r.green, false, "and the verdict is the unit's to act on");
-});
-
-test("Stop reaches the closer — its abort is handed to the run", async () => {
+  }
+  {
   // Every other actor registers its abort the moment it starts. The closer
   // never did, and it is the one that runs longest and last: pressing Stop
   // during it aborted nothing and reported "Nothing to stop", while the
@@ -386,57 +396,81 @@ test("Stop reaches the closer — its abort is handed to the run", async () => {
     },
   });
   assert.ok(handed.length >= 1, "the closer never offered its abort to the run");
+  }
 });
 
-test("the finisher is fenced by nothing either — the argument was only half applied", async () => {
-  // The reason the closer is unfenced holds for the finisher word for word:
-  // the guard keeps PARALLEL workers off each other's files, and at the gate
-  // nobody runs beside it. Fenced, it spent six minutes discovering it could
-  // not write the file its own red named, failed, and the closer — allowed
-  // to — fixed the same red in one round.
-  let sawUnfenced: boolean | undefined;
+
+/**
+ * Who a red belongs to.
+ *
+ * A check that was not there to run is the gate's business; an import a
+ * check cannot resolve is genuinely the code's; a red in a file a unit may
+ * not even open belongs to neither. Getting this wrong reworks and fails
+ * units for breakage they had no hand in.
+ */
+test("a red is attributed to whoever can act on it, never to the nearest unit", async () => {
+  {
+  // A standing test of the repository is already red, in a file no unit of
+  // this cut is cleared to change. Four units were once reworked, closed
+  // and failed for exactly this.
+  const shape = SHAPES[0] as RepoShape;
+  const repo = repoInShape(shape, { standingRed: true });
+  const { space, ids } = oneAsk();
+  const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-unreachable" };
   const state = new RunState(() => {});
-  await repairSuiteAtGate({
-    tep: "TEP-1",
-    worktree: "/nowhere",
-    baseSha: "HEAD~1",
-    state,
-    verdict: { green: false, failures: [{ name: "a standing check", file: "docs/LEDGER.md", detail: "stale" }] },
-    deps: {
-      told: { suite: "true" },
-      worker: async (d: { unfenced?: boolean }) => {
-        sawUnfenced = d.unfenced;
-        return { ok: true, finalText: "done" };
-      },
+  const outcome = await dispatchTep(
+    {
+      repoRoot: repo,
+      model: "sonnet",
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
+      state,
+      supervisorRound: async () => null,
+      spaceName: "ends",
+      worker: scriptedWorker(shape, "honest").worker as never,
     } as never,
-    exec: async () => ({ code: 0, out: "" }),
-    suiteExec: async () => ({ code: 1, output: "still red" }),
-    log: () => {},
-    defect: () => {},
-  } as never);
-  assert.equal(sawUnfenced, true, "the guard still runs over the last actor at the gate");
+    space,
+    cut,
+    tepSlices({ space, cut, spaceName: "ends" }),
+  );
+
+  assert.deepEqual(
+    [...state.units.values()].filter((u) => u.state === "failed").map((u) => `${u.id}: ${u.note ?? ""}`),
+    [],
+    "no unit was failed for the standing red it could not reach",
+  );
+  assert.ok(outcome.delivery, "and the run still reached a delivery");
+  }
+  {
+  const results = await runAcVerifications(
+    [
+      { ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" },
+      { ac: 2, run: "node --test probes/b_AC-2.test.mjs", env: "local" },
+    ],
+    "/nowhere",
+    async (run) =>
+      run.includes("a_AC-1")
+        ? { code: 1, output: "Could not find '/wt/probes/a_AC-1.test.mjs'" }
+        : { code: 1, output: "not ok 1 - greet returns hello\n  AssertionError: expected 'hello'" },
+  );
+  assert.equal(results[0].unrunnable, true, "a missing check is the gate's own failure");
+  assert.equal(results[1].unrunnable, undefined, "a check that ran and failed is the honest code red");
+  }
+  {
+  // A module the coder never wrote fails exactly this way, and that red is
+  // the verdict the run exists to give.
+  const results = await runAcVerifications(
+    [{ ac: 1, run: "node --test probes/a_AC-1.test.mjs", env: "local" }],
+    "/nowhere",
+    async () => ({ code: 1, output: "Error: Cannot find module '../out/greet.js'\nimported from probes/a_AC-1.test.mjs" }),
+  );
+  assert.equal(results[0].unrunnable, undefined, JSON.stringify(results[0]));
+  }
 });
 
-test("a build that fails at the gate says what the compiler said", () => {
-  // This reported the LAST line of the output, and a compiler's output
-  // ends in a blank line — so a run withheld ten promises with the words
-  // "checks run against an unbuilt tree:" and nothing after the colon.
-  // The closer spent rounds guessing at a message nobody had shown it.
-  const tsc = [
-    "",
-    "> thinkube-tandem@2.0.1 compile",
-    "> tsc -p ./",
-    "",
-    "src/run/state.ts(41,3): error TS2564: Property 'plan' has no initializer.",
-    "src/gates/render.ts(88,7): error TS2322: Type 'string' is not assignable.",
-    "",
-    "",
-  ].join("\n");
-  const said = buildComplaint(tsc);
-  assert.match(said, /state\.ts\(41,3\): error TS2564/);
-  assert.match(said, /render\.ts\(88,7\)/);
-  assert.doesNotMatch(said, /^\s*$/, "a failure that says nothing is the defect this replaces");
-  // Output with no error-shaped line still says something rather than nothing.
-  assert.equal(buildComplaint("\n\nkilled by signal\n\n"), "killed by signal");
-  assert.match(buildComplaint("\n\n\n"), /printed nothing/);
-});
+
+
+
+
+
+
+

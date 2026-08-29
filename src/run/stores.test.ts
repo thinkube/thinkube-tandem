@@ -79,7 +79,16 @@ test("the door provisions a Python project by its own command", async () => {
   );
 });
 
-test("a store the checkout already has is borrowed, and nothing is installed", async () => {
+/**
+ * Dependency stores, in a language nothing here knows.
+ *
+ * Borrowed when the checkout has one, installed when it does not. A borrow
+ * is a doorway into the person's own checkout: installing through it once
+ * emptied their dependencies, so it is closed first. Anything outside the
+ * run's own tree is refused rather than removed.
+ */
+test("a store is borrowed or installed, and nothing outside the run's tree is touched", async () => {
+  {
   const root = pythonProject();
   fs.mkdirSync(path.join(root, ".venv", "lib"), { recursive: true });
   fs.writeFileSync(path.join(root, ".venv", "lib", "marker"), "from the checkout\n");
@@ -103,9 +112,8 @@ test("a store the checkout already has is borrowed, and nothing is installed", a
     "borrowed",
     "it is a doorway into the checkout, not a copy",
   );
-});
-
-test("installing never reaches through a borrowed store into the lender", async () => {
+  }
+  {
   const root = pythonProject();
   fs.mkdirSync(path.join(root, ".venv", "lib"), { recursive: true });
   fs.writeFileSync(path.join(root, ".venv", "lib", "precious"), "the person's own\n");
@@ -121,9 +129,8 @@ test("installing never reaches through a borrowed store into the lender", async 
     "and what was behind it is untouched",
   );
   assert.equal(fs.existsSync(path.join(wt, ".venv")), false, "the tree is ready to install into");
-});
-
-test("a run never deletes what it does not own", async () => {
+  }
+  {
   const root = pythonProject();
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), "not-ours-"));
   fs.writeFileSync(path.join(outside, "keep"), "keep\n");
@@ -132,9 +139,8 @@ test("a run never deletes what it does not own", async () => {
   assert.equal(r.removed, "foreign");
   assert.match(r.refused ?? "", /outside this run's tree/);
   assert.ok(fs.existsSync(path.join(outside, "keep")), "nothing was destroyed");
-});
-
-test("a store the checkout does not have is installed, not borrowed", async () => {
+  }
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt4-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -153,18 +159,22 @@ test("a store the checkout does not have is installed, not borrowed", async () =
     "own",
     "it installed its own rather than inheriting the checkout's",
   );
+  }
 });
 
+
+
+
 /**
- * The whole-suite command is proved, never assumed.
+ * Proving the whole-suite command before anything is judged by it.
  *
- * It was a default — `npm test` — written into five call sites. A
- * repository in any other language got it regardless: the gate ran a
- * command that could not exist there, read the shell's "command not found"
- * as the suite's verdict, and withheld the delivery. The person was told
- * their own standing checks were red.
+ * A runner that answers — green, or red in its own words — has run. A
+ * repository's own tests failing is its business and the command still
+ * holds. "Command not found" is not an answer, and judging by it told
+ * people their standing checks were red when nothing had run at all.
  */
-test("a suite command that runs is kept, in a language that is not JavaScript", async () => {
+test("a suite command is kept when a runner answers, dropped when none does", async () => {
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt5-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -173,9 +183,8 @@ test("a suite command that runs is kept, in a language that is not JavaScript", 
 
   const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "./run_tests.sh");
   assert.equal(held, "./run_tests.sh", "the repository's own way of running its suite");
-});
-
-test("a suite command that cannot run is dropped, not used to judge", async () => {
+  }
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt6-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -183,9 +192,8 @@ test("a suite command that cannot run is dropped, not used to judge", async () =
   // What every non-npm repository was handed.
   const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "npm test");
   assert.equal(held, "", "command not found is not a verdict about the work");
-});
-
-test("a suite that RUNS and reports failures still holds", async () => {
+  }
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt7-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -194,7 +202,10 @@ test("a suite that RUNS and reports failures still holds", async () => {
 
   const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "./red.sh");
   assert.equal(held, "./red.sh", "a red suite on the base is the base's business, not a bad command");
+  }
 });
+
+
 
 /**
  * The run must know how the repository runs its whole suite.
@@ -221,7 +232,17 @@ function door(root: string, wt: string, extra: Record<string, unknown> = {}) {
   });
 }
 
-test("the door asks the repository for a suite command nobody told it", async () => {
+/**
+ * The run must know how this repository runs its whole suite.
+ *
+ * The closing gate's last judgement IS that command's verdict. Four of the
+ * five commands a run needs are read from the repository; this one was
+ * only ever a caller's setting, and when the setting went away the value
+ * became "" — carried through five hand-offs and executed at the final
+ * step of a seventy-minute run.
+ */
+test("the door asks for a suite command, and refuses the run without one", async () => {
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt8-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -239,9 +260,8 @@ test("the door asks the repository for a suite command nobody told it", async ()
   assert.match(asked, /WHOLE suite/, "the repository is asked, in the same words as the other four");
   assert.equal(ready.refusal, undefined);
   assert.equal(ready.suite, "./all.sh", "and the answer is proved before it is trusted");
-});
-
-test("a run refuses at the door when no suite command can be found", async () => {
+  }
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt9-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -254,9 +274,8 @@ test("a run refuses at the door when no suite command can be found", async () =>
     /whole suite/,
     "refused in the first minute, by name — not executed as an empty command in the last",
   );
-});
-
-test("a suite answer that cannot run is refused, not carried to the gate", async () => {
+  }
+  {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt10-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
@@ -267,4 +286,7 @@ test("a suite answer that cannot run is refused, not carried to the gate", async
   });
 
   assert.match(ready.refusal ?? "", /whole suite/, "command not found is not a suite");
+  }
 });
+
+

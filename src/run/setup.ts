@@ -159,10 +159,18 @@ export interface SetupArgs {
   /** What this repository's build step produces, when it has been proved
    *  here before — never borrowed, because output is the work judged. */
   builds?: string[];
-  /** How this repository runs its whole suite. Proved on the untouched
-   *  tree like the rest; an answer that cannot run is dropped, never used
-   *  to judge the work. */
+  /** How this repository runs its whole suite. */
   suite?: string;
+  /**
+   * This repository already proved that suite command, in an earlier run.
+   *
+   * Proving it means RUNNING it, which costs the length of a suite at the
+   * start of every run — paid again and again for an answer that did not
+   * change. A remembered answer is taken as it stands; if it turns out not
+   * to run, the gate says the command did not run rather than that the
+   * work is red, which is the attribution the proving was there to buy.
+   */
+  suiteProvenBefore?: boolean;
   /** Told the answer that held on the untouched tree — the only one worth remembering. */
   proven?: (s: { provision: string; prepare: string; runOne: string }) => void;
   exec: Exec;
@@ -328,7 +336,11 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // an empty string. An empty string was accepted by every consumer and
   // executed by one of them.
   const ranOne = await proveRunOne(args);
-  const ranSuite = args.suite ? await proveSuite(args, args.suite) : "";
+  const ranSuite = args.suite
+    ? args.suiteProvenBefore
+      ? args.suite
+      : await proveSuite(args, args.suite)
+    : "";
   return {
     provisioned,
     built,
@@ -471,6 +483,7 @@ function setupArgsFor(a: {
     boundedExec: a.boundedExec,
     log: a.log,
     ...(suite ? { suite } : {}),
+    ...(a.known?.suite === suite ? { suiteProvenBefore: true } : {}),
     ...(a.known?.builds?.length ? { builds: a.known.builds } : {}),
     ...(a.told.provision ? { provision: a.told.provision } : {}),
     ...(a.told.prepare ? { prepare: a.told.prepare } : {}),

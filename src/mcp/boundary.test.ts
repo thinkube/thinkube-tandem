@@ -10,29 +10,39 @@ import assert from "node:assert/strict";
 import { MACHINE_MAY, PERSON_ONLY, machineMay } from "./boundary";
 import { gatedActions } from "../surfaces/phase";
 
-test("the two gates are refused to a machine, with the reason", () => {
+/**
+ * What a machine may do on a person's behalf.
+ *
+ * Reading and drafting, yes. The two gates — signing and accepting — never,
+ * with the reason said. An action nobody declared is refused rather than
+ * allowed, because the list of what is dangerous can never be complete,
+ * and nothing may be on both lists.
+ */
+test("the machine boundary allows what is declared and refuses everything else", () => {
+  {
   for (const gate of ["build", "accept-delivery", "mint-approval", "keep-draft"]) {
     const v = machineMay(gate);
     assert.equal(v.ok, false, `${gate} must be refused`);
     assert.match((v as { reason: string }).reason, /yours/);
   }
-});
-
-test("an undeclared action is refused, not allowed", () => {
+  }
+  {
   const v = machineMay("some-tool-added-next-month");
   assert.equal(v.ok, false);
   assert.match((v as { reason: string }).reason, /not declared/);
-});
-
-test("reading and drafting are allowed", () => {
+  }
+  {
   for (const a of ["read-space", "read-run", "save-draft", "reground"])
     assert.equal(machineMay(a).ok, true, `${a} should be allowed`);
-});
-
-test("no action is both allowed and reserved", () => {
+  }
+  {
   const both = MACHINE_MAY.filter((a) => a in PERSON_ONLY);
   assert.deepEqual(both, [], "an action cannot be the machine's and the person's at once");
+  }
 });
+
+
+
 
 /**
  * The surface's own gated actions are the list of things a person can

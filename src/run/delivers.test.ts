@@ -248,7 +248,17 @@ test("a delivered cut can be proven again — the record gives its checks back",
   );
 });
 
-test("a promise that is not kept is withheld, never handed over red", async () => {
+/**
+ * The only two things that stop a delivery.
+ *
+ * A promise that is not kept, and a tree that does not build as the
+ * repository ships it. Everything else the run notices rides along as a
+ * finding for the person to weigh. These two are withheld whatever the
+ * rest of the suite says, because handing over work that does not do what
+ * was promised, or does not ship, is not a delivery.
+ */
+test("the two vetoes: an unkept promise and a product that does not build", async () => {
+  {
   // The coder's work never satisfies the check and never changes, and the
   // closer cannot save it either: there is nothing to deliver.
   const shape = SHAPES[0] as RepoShape;
@@ -286,9 +296,8 @@ test("a promise that is not kept is withheld, never handed over red", async () =
     held.some((p) => /_AC-\d/.test(p)),
     `the withheld branch lost its checks: ${held.filter((p) => p.includes("test")).join(", ")}`,
   );
-});
-
-test("a tree that does not build as shipped is withheld, whatever the tests say", async () => {
+  }
+  {
   // Three runs once reported deliveries of a branch the product build
   // rejected: the gate proved the test build only. The product build is
   // green on the untouched tree and red once the coder's file exists — so
@@ -316,4 +325,6 @@ test("a tree that does not build as shipped is withheld, whatever the tests say"
   assert.ok(outcome.delivery, "the run reached a terminal state");
   assert.ok(outcome.delivery?.withheld, "and it was withheld");
   assert.match(outcome.delivery!.withheld!, /does not build as shipped/);
+  }
 });
+

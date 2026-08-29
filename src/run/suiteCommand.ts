@@ -29,6 +29,22 @@ const firstLine = (output: string): string => output.trim().split("\n").pop() ??
  * failing to run at all. An answer that does not hold is dropped rather
  * than used, and the run says so instead of judging by it.
  */
+/**
+ * Did a test runner ANSWER, or did the command fail to run at all?
+ *
+ * The one rule, used both when the command is first proved and when the
+ * closing gate judges by it. Red is an answer — a repository's own tests
+ * failing is its business. "command not found" is not an answer, and
+ * reporting it as a red suite tells a person their work broke when what
+ * broke is the run's idea of how to test their repository.
+ */
+export function aRunnerAnswered(code: number | null, output: string): boolean {
+  return (
+    code === 0 ||
+    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)/m.test(output)
+  );
+}
+
 export async function proveSuite(
   args: Pick<SetupArgs, "worktree" | "boundedExec" | "log">,
   suite: string,
@@ -37,9 +53,7 @@ export async function proveSuite(
   args.log(`proving the repository's own suite: ${suite}`);
   const t0 = Date.now();
   const r = await args.boundedExec(suite, args.worktree);
-  const ran =
-    r.code === 0 ||
-    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)/m.test(r.output);
+  const ran = aRunnerAnswered(r.code, r.output);
   args.log(
     `  ${ran ? "held" : "did not hold"} in ${since(t0)}` +
       (ran ? "" : ` — ${firstLine(r.output).slice(0, 300)}`),

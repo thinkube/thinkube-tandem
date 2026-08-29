@@ -37,7 +37,16 @@ function spaceLanding(...paths: string[]): { space: Space; cut: Cut } {
   return { space, cut: { id: "c1", changeIds: ["n1"] } as Cut };
 }
 
-test("a repository's published pages are found from its own documentation system", () => {
+/**
+ * What counts as documentation is the repository's answer, not ours.
+ *
+ * Found by the marker its own documentation system leaves. A marker whose
+ * pages directory was never created names no place; a repository that
+ * publishes nothing falls back to the plain reading; and a root's name is
+ * never treated as a prefix of a different directory that starts the same.
+ */
+test("the pages a repository publishes are found from its own documentation system", () => {
+  {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "docs-"));
   fs.mkdirSync(path.join(repo, "docs", "modules", "ROOT", "pages"), { recursive: true });
   fs.writeFileSync(path.join(repo, "docs", "antora.yml"), "name: thing\n");
@@ -45,14 +54,27 @@ test("a repository's published pages are found from its own documentation system
   fs.writeFileSync(path.join(repo, "docs", "PROCESS.md"), "# process\n");
 
   assert.deepEqual(userDocsRoots(repo), ["docs/modules"]);
-});
-
-test("a marker whose pages directory was never created names no place", () => {
+  }
+  {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "docs-"));
   fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
   fs.writeFileSync(path.join(repo, "docs", "antora.yml"), "name: thing\n");
   assert.deepEqual(userDocsRoots(repo), []);
+  }
+  {
+  configureDocsRoots([]);
+  const { space, cut } = spaceLanding("docs/NOTES.md");
+  assert.equal(docsDuty(space, cut).state, "landed");
+  configureDocsRoots(undefined);
+  }
+  {
+  configureDocsRoots(["docs/modules"]);
+  const { space, cut } = spaceLanding("docs/modules-archive/old.adoc");
+  assert.equal(docsDuty(space, cut).state, "missing");
+  configureDocsRoots(undefined);
+  }
 });
+
 
 test("an internal note under docs/ no longer satisfies the duty", () => {
   configureDocsRoots(["docs/modules"]);
@@ -72,12 +94,6 @@ test("a change in the published pages satisfies it", () => {
   configureDocsRoots(undefined);
 });
 
-test("a repository that publishes nothing keeps the plain reading", () => {
-  configureDocsRoots([]);
-  const { space, cut } = spaceLanding("docs/NOTES.md");
-  assert.equal(docsDuty(space, cut).state, "landed");
-  configureDocsRoots(undefined);
-});
 
 test("an exemption still settles a cut that lands no documentation", () => {
   configureDocsRoots(["docs/modules"]);
@@ -91,9 +107,3 @@ test("an exemption still settles a cut that lands no documentation", () => {
   configureDocsRoots(undefined);
 });
 
-test("a root's name is not a prefix of another directory's", () => {
-  configureDocsRoots(["docs/modules"]);
-  const { space, cut } = spaceLanding("docs/modules-archive/old.adoc");
-  assert.equal(docsDuty(space, cut).state, "missing");
-  configureDocsRoots(undefined);
-});
