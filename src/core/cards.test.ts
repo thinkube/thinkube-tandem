@@ -200,3 +200,50 @@ test("a credential in a remote never reaches the store", () => {
   // Stripped or not, it is still the same repository.
   assert.equal(sameRemote(withToken, held.remote!), true);
 });
+
+/**
+ * The store answered from ANOTHER checkout, and this one kept its copy.
+ *
+ * The card reached the store when a different clone of the same repository
+ * was read. From then on the store answers every time, the file in this
+ * working tree is never read again — and nothing removes it, so it shows
+ * as untracked in every `git status` the person runs, in the repository
+ * Tandem itself is developed in.
+ */
+test("a working-tree card the store already holds is removed on the next read", () => {
+  const store = storeAt();
+  const remote = "https://github.com/someone/thing.git";
+  const first = repoAt(remote);
+  const minted = mintCard(first, { label: "Thing" }, store, () => "aa11");
+  assert.equal(minted.ok, true);
+  const id = minted.ok ? minted.card.id : "";
+
+  // A second clone of the same repository, still carrying the old file.
+  const clone = repoAt(remote);
+  fs.mkdirSync(path.join(clone, ".tandem"), { recursive: true });
+  fs.writeFileSync(path.join(clone, ".tandem", "space.yaml"), `id: ${id}\nlabel: Thing\n`);
+
+  const found = discoverProjects(clone, store);
+  assert.equal(found.length, 1, "the store still names the project");
+  assert.equal(found[0].card.id, id);
+  assert.equal(
+    fs.existsSync(path.join(clone, ".tandem", "space.yaml")),
+    false,
+    "the file has no reader left, so it does not stay as noise",
+  );
+});
+
+test("a working-tree card naming a DIFFERENT project is left alone", () => {
+  const store = storeAt();
+  const remote = "https://github.com/someone/thing.git";
+  const repo = repoAt(remote);
+  const minted = mintCard(repo, { label: "Thing" }, store, () => "aa11");
+  assert.equal(minted.ok, true);
+
+  const stray = path.join(repo, ".tandem", "space.yaml");
+  fs.mkdirSync(path.join(repo, ".tandem"), { recursive: true });
+  fs.writeFileSync(stray, "id: something-else\nlabel: Else\n");
+
+  discoverProjects(repo, store);
+  assert.ok(fs.existsSync(stray), "removing it would throw away an identity nobody imported");
+});

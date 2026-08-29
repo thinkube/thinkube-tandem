@@ -73,7 +73,12 @@ function readCard(dir: string, storeRoot: string, seen?: Lookup): SpaceCard | un
   const cards = seen ? seen.cards : allCards(storeRoot);
   const remote = seen ? seen.remote(gitRoot) : remoteOf(gitRoot);
   const stored = matchCard(cards, remote, prefix, dir);
-  if (stored)
+  if (stored) {
+    // A clone whose card reached the store from ANOTHER checkout still
+    // carries its own working-tree copy: never read, never removed, and
+    // untracked in every `git status` the person runs. The store answers,
+    // so the file has no reader left.
+    if (readLegacyCard(dir)?.id === stored.id) retireLegacyCard(dir);
     return {
       id: stored.id,
       label: stored.label,
@@ -81,6 +86,7 @@ function readCard(dir: string, storeRoot: string, seen?: Lookup): SpaceCard | un
       ...(stored.remote ? { remote: stored.remote } : {}),
       ...(stored.scopes ? { scopes: stored.scopes } : {}),
     };
+  }
   const legacy = readLegacyCard(dir);
   if (!legacy) return undefined;
   const known = remote || legacy.remote || "";
