@@ -113,9 +113,10 @@ export async function attach(args: AttachArgs): Promise<Attached> {
         ? `${project.card.product} / ${project.card.label}`
         : project.card.label,
     },
-    // The repository's own answer, proved by the door and remembered. A
-    // default here would assert a fact about a repository nobody asked.
-    suiteCommand: (told?.suite ?? "").split(" ").filter(Boolean),
+    // Candidates only — what this repository last proved about itself. The
+    // door runs each again and refuses by name if none answers, so nothing
+    // a person never verified reaches a judgement.
+    ...(told ? { told: { ...(told.suite ? { suite: told.suite } : {}), ...(told.build ? { build: told.build } : {}), ...(told.runOne ? { runOne: told.runOne } : {}), ...(told.provision ? { provision: told.provision } : {}) } } : {}),
     ...(told?.prepare ? { prepareCommand: told.prepare } : {}),
     workerModel: { workerModel: "sonnet" },
     maxConcurrent: 4,

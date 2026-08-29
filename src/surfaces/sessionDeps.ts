@@ -22,7 +22,13 @@ export interface SessionDeps {
   author?: string;
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;
-  suiteCommand?: string[];
+  /**
+   * What somebody told this session about the target repository — a
+   * setting, its remembered facts, a reading. Candidates only: the door
+   * runs each one and only what answers is used. Kept apart from what the
+   * door proved so a guess can never reach an executor.
+   */
+  told?: { provision?: string; prepare?: string; runOne?: string; build?: string; suite?: string };
   /** Build/typecheck command run in the isolated check runner and the
    *  closing-gate worktree BEFORE probes execute. A repo whose tests
    *  import compiled output cannot run a probe against an unbuilt tree. */

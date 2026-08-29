@@ -143,14 +143,19 @@ function worthRemembering(f: RepositoryFacts): boolean {
 export function rememberWhatHeld(
   repoRoot: string,
   known: RepositoryFacts | undefined,
-  ready: { runOne: string; suite: string; built: readonly string[]; corrected?: { provision: string; prepare: string } },
+  ready: {
+    runOne?: string;
+    suite?: string;
+    built: readonly string[];
+    corrected?: { provision: string; prepare: string };
+  },
   told: { provision?: string; prepare?: string; build?: string },
   at: string,
 ): void {
   const facts = factsAfterRun(known, {
     provision: ready.corrected?.provision ?? told.provision ?? "",
     prepare: ready.corrected?.prepare ?? told.prepare ?? "",
-    runOne: ready.runOne,
+    runOne: ready.runOne ?? "",
     ...(told.build ? { build: told.build } : {}),
     ...(ready.suite ? { suite: ready.suite } : {}),
     built: ready.built,

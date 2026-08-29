@@ -18,6 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { refusedBeforeDispatch } from "./refusals";
 import { rehouseChecks } from "./checkHomes";
+import { proved } from "./proved";
 import { closingVerifications, confessedDeferrals } from "./plan";
 import { pinRecordedChecks } from "./checkHomes";
 import { knotWarnings } from "./refusals";
@@ -320,14 +321,18 @@ test("the gate runs a check the way the repository runs a test", () => {
     },
   ];
   const runOne = `node --test "out-test/$(echo '<file>' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`;
-  const withFact = closingVerifications(slices as never, runOne);
+  const withFact = closingVerifications(slices as never, proved(runOne, true)!);
   assert.equal(
     withFact.verifs[0].run,
     `node --test "out-test/$(echo 'probes/x__SL-1_AC-1.test.mjs' | sed -e 's|^src/||' -e 's|\\.ts$|.js|')"`,
     "the gate ignored the repository's own way of running one test",
   );
-  // No fact proved: the plain command stands, as it always did.
-  assert.equal(closingVerifications(slices as never).verifs[0].run, "node --test probes/x__SL-1_AC-1.test.mjs");
+  // There is no "no fact proved" case any more. A check with no proved
+  // command used to fall back to `node --test <probe>`; in a repository
+  // that is not JavaScript that command does not exist, every check was
+  // red, and a red check is an unkept promise — the machine's ignorance
+  // reported as the person's work failing. The run now refuses at the
+  // door instead, and the type makes the fallback unwritable.
 });
 
 test("a slice only stands if it satisfies the plan that is running now", async () => {

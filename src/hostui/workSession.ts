@@ -133,7 +133,10 @@ export async function ensureWorkSession(args: {
       const forge = await args.resolveForge(p.gitRoot);
       return { gitRoot: p.gitRoot, prefix: p.prefix, ...(forge ? { forge } : {}) };
     },
-    suiteCommand: config.get<string>("suiteCommand", "").split(" ").filter(Boolean),
+    // A setting is a CANDIDATE, never a fact: the door runs it here first.
+    ...(config.get<string>("suiteCommand", "").trim()
+      ? { told: { suite: config.get<string>("suiteCommand", "").trim() } }
+      : {}),
     workerModel: {
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),

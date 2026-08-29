@@ -211,7 +211,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     // work, took its slices as standing, and inherited a plan it did not
     // satisfy. The space names itself.
     author: process.env.TANDEM_AUTHOR ?? path.basename(args.space),
-    suiteCommand: args.suite,
+    ...(args.suite.length ? { told: { suite: args.suite.join(" ") } } : {}),
     ...(args.prepare ?? told?.prepare ?? known?.prepare
       ? { prepareCommand: args.prepare ?? told?.prepare ?? known!.prepare }
       : {}),

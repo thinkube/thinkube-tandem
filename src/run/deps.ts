@@ -12,13 +12,28 @@ import type { WorkerModelConfig } from "../engine/workerModel";
 import type { runUnitWorker, WorkerOutcome } from "./worker";
 import type { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
+import type { Proved } from "./proved";
 
 export interface DispatchDeps {
   repoRoot: string;
   model: string;
   /** Per-role model resolution (judgment raised above the base). */
   workerModel?: WorkerModelConfig;
-  suiteCommand: string[];
+  /**
+   * What SOMEBODY TOLD the run about this repository — a setting, a
+   * remembered file, a reading. Candidates, never trusted: the door runs
+   * each one here and only what answers becomes a {@link Proved} below.
+   * Kept apart from the proved fields so a candidate cannot reach an
+   * executor: that is how `npm test` was run in a repository with no npm,
+   * and how the shell's "command not found" became a verdict on the work.
+   */
+  told?: {
+    provision?: string;
+    prepare?: string;
+    runOne?: string;
+    build?: string;
+    suite?: string;
+  };
   forge?: Forge;
   state: RunState;
   spaceName: string;
@@ -33,10 +48,10 @@ export interface DispatchDeps {
   /** How this repository's probes are written and run — a fact about the target repository;
    *  the default fits the node harness the oracle ships with. */
   testConvention?: string;
-  /** What a fresh checkout needs installed — run once; its produce is linked into every runner. */
-  provision?: string;
-  /** How ONE of the repository's own tests runs (`<file>` = its path) — proved at setup. */
-  runOne?: string;
+  /** Proved at the door: what a fresh checkout needs installed. Its produce is linked into every runner. */
+  provision?: Proved;
+  /** Proved at the door: how ONE of this repository's tests runs (`<file>` = its path). */
+  runOne?: Proved;
   /** Test files red at an earlier gate — run early at every slice; told what stayed red at this one. */
   suiteReds?: readonly string[];
   rememberSuiteReds?: (files: readonly string[]) => void;
@@ -51,10 +66,14 @@ export interface DispatchDeps {
   affected?: (path: string) => Promise<string>;
   /** Build/typecheck command run in the verify runner and the gate
    *  worktree before checks — the engine's own prepare seam. */
-  prepare?: string;
-  /** Builds the PRODUCT as the repository ships it. Proved on the untouched
-   *  tree at the door; red at the gate withholds the delivery. */
-  build?: string;
+  prepare?: Proved;
+  /** Proved at the door: builds the PRODUCT as this repository ships it.
+   *  Red at the gate withholds the delivery. */
+  build?: Proved;
+  /** Proved at the door: runs this repository's WHOLE suite. The closing
+   *  gate's last judgement is this command's verdict, so a run without one
+   *  is refused at the door rather than judging with nothing. */
+  suite?: Proved;
   /** Concurrent workers on the ready frontier (default 4, the v1 default). */
   concurrency?: number;
   /** Injectable for tests: how a unit sleeps waiting for another unit's

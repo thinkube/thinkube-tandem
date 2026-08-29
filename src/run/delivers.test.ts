@@ -42,7 +42,45 @@ function oneAsk(): { space: ReturnType<typeof emptySpace>; ids: string[] } {
   return { space: n.space, ids: [n.added.id] };
 }
 
-for (const shape of SHAPES as readonly RepoShape[])
+/**
+ * A repository with no way to run ONE of its tests cannot be judged.
+ *
+ * Every promise is proved by running its check alone and reading that
+ * verdict. Where no such command exists the run used to fall back to
+ * `node --test <probe>` — right in one language, "command not found" in
+ * every other, and a check that cannot run is a red check, which is an
+ * unkept promise. The machine's own ignorance came back as the person's
+ * work failing. The run now stops at the door and names what is missing.
+ */
+for (const shape of SHAPES.filter((s) => !s.runOne) as readonly RepoShape[])
+  test(`a run refuses in a repository where ${shape.name}`, async () => {
+    const repo = repoInShape(shape);
+    const { space, ids } = oneAsk();
+    const cut = { id: "cut-1", changeIds: ids, tepId: "TEP-nosingle" };
+    const state = new RunState(() => {});
+    const outcome = await dispatchTep(
+      {
+        repoRoot: repo,
+        model: "sonnet",
+        told: { suite: "true", ...(shape.prepare ? { prepare: shape.prepare } : {}) },
+        state,
+        supervisorRound: async () => null,
+        spaceName: "delivers",
+        worker: scriptedWorker(shape, "honest").worker as never,
+      } as never,
+      space,
+      cut,
+      tepSlices({ space, cut, spaceName: "delivers" }),
+    );
+    assert.equal(outcome.delivery, undefined, "nothing is handed over");
+    assert.match(
+      outcome.refusals?.[0] ?? "",
+      /run one check/,
+      "and the refusal names the fact that is missing, not a symptom",
+    );
+  });
+
+for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
   test(`a run delivers in a repository where ${shape.name}`, async () => {
     const repo = repoInShape(shape);
     const before = new Set(
@@ -57,9 +95,11 @@ for (const shape of SHAPES as readonly RepoShape[])
       {
         repoRoot: repo,
         model: "sonnet",
-        suiteCommand: ["true"],
-        ...(shape.prepare ? { prepare: shape.prepare } : {}),
-        ...(shape.runOne ? { runOne: shape.runOne } : {}),
+        told: {
+          suite: "true",
+          ...(shape.prepare ? { prepare: shape.prepare } : {}),
+          ...(shape.runOne ? { runOne: shape.runOne } : {}),
+        },
         state,
         supervisorRound: async () => null,
         spaceName: "delivers",
@@ -71,7 +111,7 @@ for (const shape of SHAPES as readonly RepoShape[])
     );
 
     // What the person asked for is on the branch, and the delivery is open.
-    assert.ok(outcome.delivery, "the run reached a delivery");
+    assert.ok(outcome.delivery, `the run reached a delivery — said:\n${said.slice(-6).map((l) => l.slice(0, 160)).join("\n")}`);
     assert.equal(outcome.delivery?.withheld, undefined, `the delivery was withheld: ${outcome.delivery?.withheld}`);
     assert.deepEqual(
       [...state.units.values()].filter((u) => u.state !== "done").map((u) => `${u.id}: ${u.state} ${u.note ?? ""}`),
@@ -168,8 +208,7 @@ test("a delivered cut can be proven again — the record gives its checks back",
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       state: new RunState(() => {}),
       supervisorRound: async () => null,
       spaceName: "delivers",
@@ -186,8 +225,7 @@ test("a delivered cut can be proven again — the record gives its checks back",
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       state: new RunState(() => {}),
       supervisorRound: async () => null,
       spaceName: "delivers",
@@ -222,8 +260,7 @@ test("a promise that is not kept is withheld, never handed over red", async () =
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       state,
       supervisorRound: async () => null,
       spaceName: "delivers",
@@ -265,8 +302,7 @@ test("a tree that does not build as shipped is withheld, whatever the tests say"
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       build: "test ! -e src/greet.mjs",
       state,
       supervisorRound: async () => null,

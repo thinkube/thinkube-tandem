@@ -275,10 +275,11 @@ async function ensureSession(
         ? `${project.card.product} / ${project.card.label}`
         : project.card.label,
     },
-    suiteCommand: config
-      .get<string>("suiteCommand", "")
-      .split(" ")
-      .filter(Boolean),
+    // A setting is a CANDIDATE, never a fact: the door runs it here before
+    // anything judges by it.
+    ...(config.get<string>("suiteCommand", "").trim()
+      ? { told: { suite: config.get<string>("suiteCommand", "").trim() } }
+      : {}),
     prepareCommand: config.get<string>("prepareCommand", ""),
     retire: (tepId) => retireTepWorktrees(bound.gitRoot, tepId),
     workerModel: {

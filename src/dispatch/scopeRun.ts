@@ -85,7 +85,6 @@ export async function dispatchScopePlan(args: {
         model: deps.round.model,
         workerModel: deps.workerModel,
         concurrency: deps.maxConcurrent,
-        suiteCommand: deps.suiteCommand ?? [],
         forge: target.forge ?? deps.forge,
         state: args.runState,
         spaceName: args.spaceName,
@@ -94,14 +93,22 @@ export async function dispatchScopePlan(args: {
         // The session's own clock reaches the run: a delivery's produced-at
         // and the acceptedAt later stamped on it come from the one source.
         now: () => new Date(deps.now()).getTime(),
-        ...(sc === "" && args.prepare
-          ? { prepare: args.prepare }
-          : deps.prepareCommand
-            ? { prepare: deps.prepareCommand }
-            : {}),
-        ...(sc === "" && args.provision ? { provision: args.provision } : {}),
-        ...(sc === "" && args.runOne ? { runOne: args.runOne } : {}),
-        ...(sc === "" && args.build ? { build: args.build } : {}),
+        // Everything a reading or a setting produced is a CANDIDATE. It
+        // travels in `told` and is run by the door; only what answers
+        // there reaches a judgement. Passed straight through, a reading's
+        // guess about somebody else's repository became a fact nobody
+        // checked.
+        told: {
+          ...deps.told,
+          ...(sc === "" && args.prepare
+            ? { prepare: args.prepare }
+            : deps.prepareCommand
+              ? { prepare: deps.prepareCommand }
+              : {}),
+          ...(sc === "" && args.provision ? { provision: args.provision } : {}),
+          ...(sc === "" && args.runOne ? { runOne: args.runOne } : {}),
+          ...(sc === "" && args.build ? { build: args.build } : {}),
+        },
         ...(sc === "" && args.suiteReds ? { suiteReds: args.suiteReds } : {}),
         ...(sc === "" && args.rememberSuiteReds ? { rememberSuiteReds: args.rememberSuiteReds } : {}),
         ...(sc === "" && args.resetup ? { resetup: args.resetup } : {}),

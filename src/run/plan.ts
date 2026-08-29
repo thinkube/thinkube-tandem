@@ -17,6 +17,7 @@ import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import type { Exec } from "./oracle";
 import * as fsp from "node:fs/promises";
+import type { Proved } from "./proved";
 
 /**
  * Execution locks (§multi-user commitment 4): a machine-local lock file per
@@ -111,10 +112,18 @@ export async function claimRunLock(
  */
 export function sliceBookkeeping(
   slices: SliceForDag[],
-  /** How this repository runs one of its own tests (`<file>` = its path),
-   *  proved at the door. A check is run the way the repository runs a test,
-   *  not the way one language does. */
-  runOne = "",
+  /**
+   * How this repository runs one of its own tests (`<file>` = its path),
+   * PROVED at the door.
+   *
+   * Required, and branded, because the alternative was written here: a
+   * check with no proved command fell back to `node --test <probe>`. In a
+   * repository that is not JavaScript that command does not exist, the
+   * check cannot run, a check that cannot run is red, and a red check is
+   * an unkept promise. The machine's ignorance was reported as the
+   * person's work failing.
+   */
+  runOne: Proved,
 ): {
   sliceProbes: Map<string, string[]>;
   sliceVerifs: Map<string, AcVerification[]>;
@@ -145,7 +154,7 @@ export function sliceBookkeeping(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne ? runOne.replace(/<file>/g, p) : `node --test ${p}`, env: "local" })),
+      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne.replace(/<file>/g, p), env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -192,12 +201,12 @@ function acOf(probe: string): number {
 export function closingVerifications(
   slices: SliceForDag[],
   /** How this repository runs ONE of its own tests (`<file>` = its path),
-   *  proved at the door. The gate ran a hardcoded `node --test <path>`
+   *  PROVED at the door. The gate ran a hardcoded `node --test <path>`
    *  instead, so a repository whose tests are compiled first — or whose
    *  sources are not what its runner takes — had every check fail here
    *  after passing in its own slice, identically, for a reason no worker
    *  could act on. Ten promises were withheld exactly that way. */
-  runOne = "",
+  runOne: Proved,
 ): {
   verifs: AcVerification[];
   probeOfAc: Map<number, string>;
@@ -210,7 +219,7 @@ export function closingVerifications(
       for (const probe of u.footprint.filter(isProbePath)) {
         verifs.push({
           ac: ++ord,
-          run: runOne ? runOne.replace(/<file>/g, probe) : `node --test ${probe}`,
+          run: runOne.replace(/<file>/g, probe),
           env: "local",
         });
         probeOfAc.set(ord, probe);

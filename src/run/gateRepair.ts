@@ -16,13 +16,16 @@ import { runUnitWorker, porcelainPaths } from "./worker";
 import { suiteFootprint, suiteStanza, suiteVerdictOf } from "./suite";
 import type { SuiteFailure, SuiteVerdict } from "./suite";
 import type { Exec } from "./oracle";
-import { formatBuild, shellLine } from "./execs";
+import { formatBuild } from "./execs";
+import type { Proved } from "./proved";
 import * as path from "node:path";
 
 /** One finishing round; what it cannot bring under goes to the closer. */
 const GATE_REPAIR_BUDGET = 1;
 
 export interface GateRepairArgs {
+  /** The whole-suite command the door proved here. */
+  suite: Proved;
   tep: string;
   worktree: string;
   baseSha: string;
@@ -72,7 +75,7 @@ function gateRepairBrief(args: { tep: string; failures: readonly SuiteFailure[];
  */
 export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: SuiteVerdict; rounds: number }> {
   const worker = a.deps.worker ?? runUnitWorker;
-  const cmd = shellLine(a.deps.suiteCommand);
+  const cmd = a.suite;
   const suite = async () => {
     const r = await a.suiteExec(cmd, a.worktree);
     return suiteVerdictOf(r.code, r.output, a.worktree);

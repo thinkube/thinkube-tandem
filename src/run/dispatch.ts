@@ -29,8 +29,7 @@ import { refreshRunTrees } from "./refresh";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
-import { openTheDoor } from "./setup";
-import { factsOf, rememberWhatHeld } from "./facts";
+import { whatWeKnow } from "./whatWeKnow";
 import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
@@ -132,6 +131,10 @@ export async function dispatchTep(
   };
 
   const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
+    // Said, not only recorded. A refusal that goes to the defect ledger
+    // alone leaves the run's own log ending mid-sentence, and the person
+    // reading it has no idea why nothing happened.
+    log(`⛔ ${tep}: ${refusal}`);
     defect({ activity: "preflight", trigger, ...(type ? { type } : {}), impact: "run refused", detail: refusal.slice(0, 500) });
     return { refusals: [refusal], undelivered: [] };
   };
@@ -168,22 +171,15 @@ export async function dispatchTep(
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
-  // What this repository already proved about itself. Its build output is
-  // never lent: output is the work being judged.
-  const known = factsOf(deps.repoRoot);
-  const ready = await openTheDoor({
-    worktree, repoRoot: deps.repoRoot, tep, known, told: deps, exec, boundedExec, log, defect,
-    resumed: refreshed.resumed, halted: () => st.halted,
+  const know = await whatWeKnow({
+    deps, worktree, tep, resumed: refreshed.resumed, halted: () => st.halted,
+    exec, boundedExec, log, defect,
   });
-  if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  rememberWhatHeld(deps.repoRoot, known, ready, deps, new Date().toISOString());
-  const { provisioned, built, runOne: runOneTest } = ready;
-  // Judge by a command that was proved to RUN here. A default nobody tried
-  // — `npm test` in a repository that has no npm — made the shell's
-  // "command not found" the suite's verdict, and the delivery was withheld
-  // for it. When nothing holds, the gate says so rather than judging.
-  if (ready.suite) deps = { ...deps, suiteCommand: ready.suite.split(" ").filter(Boolean) };
-  if (ready.corrected) deps = { ...deps, ...ready.corrected };
+  if (!know.ok) return refuse("setup", know.refusal, "gate");
+  const ready = know.ready;
+  deps = know.deps;
+  const { provisioned, built } = ready;
+  const runOneTest = know.runOne;
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
   const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
@@ -278,9 +274,16 @@ export async function dispatchTep(
       buildWorkerPrompt(next, tep, {
         tepBody: specBody,
         cwd: tree,
+        // Every worker was told how NODE runs tests, in every repository.
+        // A coder in a Python or Go project was instructed to write files
+        // for a runner that is not there — the machine teaching its own
+        // language to somebody else's codebase. What this repository does
+        // is what it proved at the door, in its own words.
         testConvention:
           deps.testConvention ??
-          "node:test ESM modules run directly with `node --test <file>` — name probe files exactly as the footprint states (.test.mjs, no build step)",
+          `this repository runs one of its tests with: ${ready.runOne} ` +
+            `(<file> is the test's path as the footprint states it). Write checks that ` +
+            `this command runs, in the shape this repository already uses.`,
       }) +
       (deps.digest
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
@@ -570,7 +573,8 @@ export async function dispatchTep(
       `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
     );
   return await closeGate({
-    tep, branch, baseSha, worktree, slices, space, cut, deps, runOne: runOneTest,
+    tep, branch, baseSha, worktree, slices, space, cut, deps,
+    runOne: know.runOne, suite: know.suite,
     sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),

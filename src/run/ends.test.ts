@@ -228,8 +228,7 @@ test("a unit is never failed for a red it cannot reach", async () => {
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       state,
       supervisorRound: async () => null,
       spaceName: "ends",
@@ -260,8 +259,7 @@ test("nothing a unit wrote is lost from the branch", async () => {
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["true"],
-      ...(shape.runOne ? { runOne: shape.runOne } : {}),
+      told: { suite: "true", ...(shape.runOne ? { runOne: shape.runOne } : {}) },
       state,
       supervisorRound: async () => null,
       spaceName: "ends",
@@ -405,7 +403,7 @@ test("the finisher is fenced by nothing either — the argument was only half ap
     state,
     verdict: { green: false, failures: [{ name: "a standing check", file: "docs/LEDGER.md", detail: "stale" }] },
     deps: {
-      suiteCommand: ["true"],
+      told: { suite: "true" },
       worker: async (d: { unfenced?: boolean }) => {
         sawUnfenced = d.unfenced;
         return { ok: true, finalText: "done" };

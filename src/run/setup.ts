@@ -15,21 +15,13 @@
  * one install serves the whole run.
  *
  * When the checkout the run was started from ALREADY HOLDS what
- * provisioning would produce, the run borrows it — the same links, from
+ * provisioning would produce, the run BORROWS it — the same links, from
  * the base — and skips the command. A machine with little memory dies
  * during an install it did not need, which is how two runs ended before
  * their first worker. Borrowing is checked immediately, because the build
  * is proved right after: if the build then fails, the borrowed state is
  * dropped and the real command runs, so a stale borrow costs one build and
  * never a wrong run.
- *
- * When the checkout the run was started from already holds what
- * provisioning would produce, the run BORROWS it — the same links, from
- * the base — and skips the command. A machine with little memory dies
- * during an install it did not need; borrowing costs nothing and is
- * checked immediately, because the build is proved right after. If the
- * build then fails, the borrowed state is dropped and the real command
- * runs, so a stale borrow costs one build, never a wrong run.
  *
  * Then the build step is PROVED on the untouched tree: if it fails before
  * any worker has changed a line, the fault is the environment's, and the
@@ -42,6 +34,7 @@ import type { Exec } from "./oracle";
 import { isProbePath, isTestPath } from "./testHomes";
 import { releaseBorrowed, removeOwned } from "./ownTree";
 import { askForTheSuite, proveSuite } from "./suiteCommand";
+import { proved, type Proved } from "./proved";
 import { repairStandingTree } from "./refresh";
 
 export type BoundedExec = (
@@ -49,17 +42,6 @@ export type BoundedExec = (
   cwd: string,
 ) => Promise<{ code: number | null; output: string }>;
 
-/**
- * Directories a package manager fills — the ONLY thing the borrow may lend.
- *
- * The costs are asymmetric. A store this list misses costs one real
- * install. A directory lent wrongly is a symlink into the base checkout:
- * lend the build output and the run compiles THROUGH it — writing into the
- * base and judging the base's code instead of its own tree, which is how a
- * run reported seven reds against work that was finished. So the list is
- * closed, and everything else — build output, packages, media — is the
- * run's own to produce.
- */
 /**
  * Names a run falls back on the FIRST time it meets a repository, and
  * never after.
@@ -121,10 +103,18 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 }
 
 export interface TreeSetup {
-  /** The proven way to run one of the repository's own tests, or "". */
-  runOne: string;
-  /** The proven way to run the whole suite, or "" when nothing held. */
-  suite: string;
+  /** Ran one of this repository's own tests here; absent when nothing held. */
+  runOne?: Proved;
+  /** Ran this repository's whole suite here; absent when nothing held. */
+  suite?: Proved;
+  /** Provisioned this tree here; absent when the repository needs none. */
+  provision?: Proved;
+  /** Built this tree here so a check could run; absent when none is needed. */
+  prepare?: Proved;
+  /** Built the product here as this repository ships it; absent when it
+   *  ships nothing built — which removes one of the run's two vetoes, and
+   *  is why the door says so out loud rather than leaving it to silence. */
+  build?: Proved;
   /** What provisioning produced — ignored entries to link into runners. */
   provisioned: string[];
   /** What the build step produced — where compiled output lands, so a
@@ -186,7 +176,7 @@ export interface SetupArgs {
 export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
   const first = await proveTree(args);
   if (!first.refusal) {
-    args.proven?.({ provision: args.provision ?? "", prepare: args.prepare ?? "", runOne: first.runOne });
+    args.proven?.({ provision: args.provision ?? "", prepare: args.prepare ?? "", runOne: first.runOne ?? "" });
     return first;
   }
   if (!args.resetup) return first;
@@ -197,7 +187,8 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
     `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
   );
   const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, runOne: again.runOne ?? args.runOne });
-  if (!second.refusal) args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne });
+  if (!second.refusal)
+    args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne ?? "" });
   return second.refusal ? second : { ...second, corrected: { provision: again.provision, prepare: again.prepare } };
 }
 
@@ -266,8 +257,6 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     args.log(`  provisioned in ${since(t0)}`);
     if (p.code !== 0)
       return {
-        runOne: "",
-        suite: "",
         provisioned,
         built: [],
         refusal: `the repository's own provisioning step (${args.provision}) fails on an untouched checkout — no worker can build here until it does:\n${tail(p.output)}`,
@@ -311,8 +300,6 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
         return proveTree(args, false);
       }
       return {
-        runOne: "",
-        suite: "",
         provisioned,
         built,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
@@ -332,18 +319,25 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     args.log(`  ${b.code === 0 ? "held" : "did not hold"} in ${since(t0)}`);
     if (b.code !== 0)
       return {
-        runOne: "",
-        suite: "",
         provisioned,
         built,
         refusal: `the repository's own product build (${args.build}) fails on the untouched tree — nothing this run delivers could ship:\n${tail(b.output)}`,
       };
   }
+  // Each command that RAN here is minted; one that did not is absent, not
+  // an empty string. An empty string was accepted by every consumer and
+  // executed by one of them.
+  const ranOne = await proveRunOne(args);
+  const ranSuite = args.suite ? await proveSuite(args, args.suite) : "";
   return {
     provisioned,
     built,
-    runOne: await proveRunOne(args),
-    suite: args.suite ? await proveSuite(args, args.suite) : "",
+    ...(ranOne ? { runOne: proved(ranOne, true) } : {}),
+    ...(ranSuite ? { suite: proved(ranSuite, true) } : {}),
+    // Provision, prepare and build reached here only by exiting zero above.
+    ...(args.provision ? { provision: proved(args.provision, true) } : {}),
+    ...(args.prepare ? { prepare: proved(args.prepare, true) } : {}),
+    ...(args.build ? { build: proved(args.build, true) } : {}),
   };
 }
 
@@ -462,14 +456,14 @@ function setupArgsFor(a: {
   worktree: string;
   repoRoot: string;
   known?: { suite?: string; builds?: string[] };
-  told: { provision?: string; prepare?: string; build?: string; runOne?: string; suiteCommand?: readonly string[] };
+  told: { provision?: string; prepare?: string; build?: string; runOne?: string; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
   resetup?: SetupArgs["resetup"];
   proven?: SetupArgs["proven"];
 }): SetupArgs {
-  const suite = a.known?.suite ?? (a.told.suiteCommand?.length ? a.told.suiteCommand.join(" ") : "");
+  const suite = a.known?.suite ?? a.told.suite ?? "";
   return {
     worktree: a.worktree,
     repoRoot: a.repoRoot,
@@ -506,7 +500,7 @@ export async function openTheDoor(a: {
     prepare?: string;
     build?: string;
     runOne?: string;
-    suiteCommand?: readonly string[];
+    suite?: string;
     resetup?: SetupArgs["resetup"];
     proveSetup?: SetupArgs["proven"];
   };
@@ -521,7 +515,7 @@ export async function openTheDoor(a: {
   // runs its suite costs a minute rather than a whole run.
   const suite =
     a.known?.suite ||
-    (a.told.suiteCommand?.length ? a.told.suiteCommand.join(" ") : "") ||
+    a.told.suite ||
     (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
   const open = (): Promise<TreeSetup> =>
     setupRunTree(
@@ -529,7 +523,7 @@ export async function openTheDoor(a: {
         worktree: a.worktree,
         repoRoot: a.repoRoot,
         ...(a.known ? { known: a.known } : {}),
-        told: { ...a.told, ...(suite ? { suiteCommand: suite.split(" ").filter(Boolean) } : {}) },
+        told: { ...a.told, ...(suite ? { suite } : {}) },
         exec: a.exec,
         boundedExec: a.boundedExec,
         log: a.log,

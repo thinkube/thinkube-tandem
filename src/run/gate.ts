@@ -28,11 +28,11 @@ import {
 } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
+import { traceWiring } from "./wiringTrace";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
-import type { WiringVerdict } from "./wiring";
 import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
@@ -40,7 +40,7 @@ import { filesNamedIn, suiteFootprint, suiteVerdictOf } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
 import { repairUnkept } from "./unkept";
-import { shellLine } from "./execs";
+import type { Proved } from "./proved";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
 export interface GateContext {
@@ -55,7 +55,13 @@ export interface GateContext {
    *  — not as configured. The gate judged every check with a hardcoded
    *  command and disagreed with the slice oracle that had just passed
    *  them. */
-  runOne?: string;
+  /** Ran one of this repository's own tests here — the promise veto rests
+   *  on it, so the gate is given what the door proved, never a candidate. */
+  runOne: Proved;
+  /** Ran this repository's whole suite here. The closing judgement IS this
+   *  command's verdict, so it is required: an absent one used to arrive as
+   *  an empty string and be handed to a shell at the last step. */
+  suite: Proved;
   branch: string;
   baseSha: string;
   worktree: string;
@@ -110,7 +116,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const producedAt = g.producedAt ?? new Date().toISOString();
   const undelivered = g.undelivered;
   log(`${tep}: closing gate`);
-  const { verifs, probeOfAc } = closingVerifications(slices, g.runOne ?? deps.runOne ?? "");
+  const { verifs, probeOfAc } = closingVerifications(slices, g.runOne);
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
@@ -159,41 +165,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [rules.reason], undelivered: [] };
   }
   const { criterionMapOf: mapCriteria, provedByExecution: proveWiring } = rules;
-  // Named by the CHECK it ran — an ordinal names nothing to a reader.
-  const criterionByProbe = mapCriteria(slices);
-  // Wiring proven by execution: a green check is asked whether running it
-  // actually executed the code its promise lands in. A stub satisfies an
-  // assertion; it cannot appear on a path nothing reaches.
-  const subjectsOf = (criterionId?: string): string[] => {
-    if (!criterionId) return [];
-    const promise = space.nodes.find((n) => n.acceptance.some((a) => a.id === criterionId));
-    return (promise?.grounding?.touchpoints ?? []).map((t) => t.path).filter((p) => !isTestPath(p));
-  };
-  const wiring = new Map<number, WiringVerdict>();
-  for (const r of acResults) {
-    if (!r.pass) continue;
-    const v = verifs.find((x) => x.ac === r.ac);
-    if (!v?.run || v.env === "assessment") continue;
-    const probe = probeOfAc.get(r.ac);
-    const verdict = await proveWiring({
-      run: v.run,
-      subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
-      worktree,
-      exec: boundedExec,
-    });
-    wiring.set(r.ac, verdict);
-    if (verdict.executed === "no")
-      defect({
-        activity: "closing gate",
-        trigger: "wiring-trace",
-        type: "code",
-        stage: "author",
-        impact: "a green check proved nothing",
-        detail: verdict.detail.slice(0, 400),
-      });
-  }
-  const unproven = [...wiring.values()].filter((w) => w.executed === "unknown").length;
-  if (unproven) log(`${tep}: ${unproven} check(s) ran under a runtime that does not report what it executed — their wiring is unproven`);
+  const { wiring, criterionByProbe, subjectsOf } = await traceWiring({
+    tep, space, slices, acResults, verifs, probeOfAc, worktree,
+    exec: boundedExec, log, defect, mapCriteria, proveWiring,
+  });
   const assessed = graded.proofs;
   // What only the running product can show is the person's to certify —
   // ON the delivery, because the delivery is the thing they certify with.
@@ -265,7 +240,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // first measurement and this judgement — checks, assessments, reviews,
   // the finisher — and a tree repaired in that hour was still reported as
   // not building, withholding work that built perfectly well.
-  const ran = await judgeTree(shellLine(deps.suiteCommand), worktree);
+  const ran = await judgeTree(g.suite, worktree);
   let verdict = suiteVerdictOf(ran.code, ran.output, worktree);
   if (!verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
@@ -273,6 +248,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // A red suite has owners in the run: the finisher brings the delivered
     // tree under the repository's checks, bounded; only then is it withheld.
     const repaired = await repairSuiteAtGate({
+      suite: g.suite,
       tep,
       worktree,
       baseSha: g.baseSha,
@@ -309,7 +285,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         model: deps.model,
         ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
         measure: async () => {
-          const r = await judgeTree(shellLine(deps.suiteCommand), worktree);
+          const r = await judgeTree(g.suite, worktree);
           const v = suiteVerdictOf(r.code, r.output, worktree);
           // Build first: an unbuildable tree is one failure, not many, so a
           // repair that breaks imports for a round is not read as a collapse.
@@ -342,7 +318,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
-        const again = await judgeTree(shellLine(deps.suiteCommand), worktree);
+        const again = await judgeTree(g.suite, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
           await exec("git", ["add", "-A", "."], worktree);

@@ -20,11 +20,6 @@ export function haltableExecs(
   };
 }
 
-/** A command and its arguments as one shell line, each argument quoted. */
-export function shellLine(cmd: readonly string[]): string {
-  return cmd.map((a) => (/^[\w./:=@%+-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(" ");
-}
-
 /** The compiler's words, verbatim and bounded, with the verdict first. */
 export function formatBuild(r: { code: number | null; output: string }): string {
   const out = r.output.trim();
