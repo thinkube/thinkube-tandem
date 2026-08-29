@@ -106,3 +106,38 @@ test("the surface's own gate refuses a shaping action the host does not allow no
   noteAllowed(undefined);
   assert.equal(can("exempt-docs"), true, "with no push yet the surface refuses nothing");
 });
+
+/**
+ * The one hole in the brand, watched.
+ *
+ * `Proved` makes an invented command about the target repository a compile
+ * error — a plain string is not assignable, so the compiler enumerates
+ * every one of them, including the ones nobody has written yet. A cast is
+ * the only way past it, so the cast is the thing to check, and there is
+ * exactly one legitimate site: where a command has just been run and
+ * answered.
+ */
+test("only the minting site casts to Proved", () => {
+  const casts: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name);
+      if (fs.statSync(p).isDirectory()) {
+        if (["node_modules", "out", "out-test", "media", "engine"].includes(name)) continue;
+        walk(p);
+      } else if (/\.(ts|tsx)$/.test(name)) {
+        const rel = path.relative(repo, p);
+        if (rel === "src/run/proved.ts") continue;
+        for (const [i, line] of fs.readFileSync(p, "utf8").split("\n").entries())
+          if (/\bas\s+(unknown\s+as\s+)?Proved\b/.test(line) && !line.trimStart().startsWith("*"))
+            casts.push(`${rel}:${i + 1}`);
+      }
+    }
+  };
+  walk(path.join(repo, "src"));
+  assert.deepEqual(
+    casts,
+    [],
+    "a command about the target repository was asserted rather than run — mint it with proved() at the site that ran it",
+  );
+});
