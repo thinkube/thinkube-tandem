@@ -105,6 +105,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ? "This space was thought through before subjects and claims existed. Its promises are kept and readable, but new work starts in a new thinking space — paste your asks there."
         : undefined,
     repoName: session.repoName,
+    spaceName: session.spaceName,
     activity: session.activity,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,

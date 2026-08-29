@@ -32,7 +32,19 @@ export function ignoredNames(root: string): Set<string> {
         .split("\n")
         .filter((l) => l.startsWith("!! "))
         .map((l) => l.slice(3).trim().replace(/\/$/, ""))
-        .map((p) => p.split("/")[0])
+        // The IGNORED directory's own name, not the top of its path. Git
+      // reports `webview/map/node_modules/`; taking the first segment
+      // recorded `webview` — so a directory that merely CONTAINS something
+      // ignored became unwalkable, and every walk lost what was under it:
+      // the nested part of this very repository, a sub-project's card, a
+      // documentation root. The last segment is the thing actually ignored,
+      // and skipping it at any depth is what every caller means.
+      //
+      // The trade-off, stated: a repository that ignores `foo/dist` and
+      // keeps a source directory called `dist` elsewhere skips the second
+      // too. A name-based walk cannot tell them apart, and losing a source
+      // tree wholesale is the worse of the two failures.
+      .map((p) => p.split("/").filter(Boolean).pop() ?? "")
         .filter(Boolean),
     );
   } catch {

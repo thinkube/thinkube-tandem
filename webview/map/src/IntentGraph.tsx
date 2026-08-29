@@ -196,6 +196,33 @@ export function IntentGraph(props: {
   working: boolean;
 }): JSX.Element {
   const { push } = props;
+  // AN EMPTY GRAPH MUST SAY WHY IT IS EMPTY.
+  //
+  // The chrome — tabs, zoom, fit — renders whatever the space holds, so a
+  // space with nothing derived looked identical to a broken one, to a run
+  // that had eaten it, and to a bug. A person stared at blank space with
+  // no way to tell which; so did I, with the filesystem open, and I
+  // guessed wrong twice before reading which space was pushed. One
+  // sentence ends that.
+  if (!push.modelFailure && !push.pendingModel && (push.subjects?.length ?? 0) === 0)
+    return (
+      <section data-empty-space style={{ margin: 12, padding: 12 }}>
+        <strong style={{ fontSize: FS.body }}>
+          Nothing is derived in {push.spaceName ? `"${push.spaceName}"` : "this space"} yet
+        </strong>
+        <div style={{ fontSize: FS.body, margin: "6px 0", opacity: O.dim }}>
+          {(push.sentences?.length ?? 0) > 0
+            ? `Your ${push.sentences.length} sentence${push.sentences.length === 1 ? "" : "s"} ${
+                push.sentences.length === 1 ? "is" : "are"
+              } written and waiting to be read.`
+            : "Write what you want on the first page, and it is read into subjects and claims here."}
+        </div>
+        <div style={{ fontSize: FS.caption, opacity: O.dim }}>
+          If you expected work here, this is not the space that holds it — pick another under its
+          project in the tree.
+        </div>
+      </section>
+    );
   if (push.modelFailure)
     return (
       <section

@@ -15,14 +15,9 @@ import { appendDefect } from "./engine/defectLog";
 import { configureDocsRoots, userDocsRoots } from "./core/docsDuty";
 import { followFor } from "./hostui/storeWatch";
 import { registerServer } from "./hostui/mcpRegister";
-import {
-  createProduct,
-  discoverProjects,
-  EnabledProject,
-  listProducts,
-  setCardProduct,
-} from "./core/identity";
+import { createProduct, EnabledProject, listProducts, setCardProduct } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
+import { activeOwnerKey, forgetProjects, openProjects, rememberedProject } from "./hostui/whichProject";
 import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "./core/spaces";
 import {
   chooseThinkingSpace,
@@ -104,31 +99,6 @@ function activeSession(
   return slug ? sessions.get(`${ownerKey}/${slug}`) : undefined;
 }
 let statusBar: vscode.StatusBarItem | undefined;
-
-function openProjects(): EnabledProject[] {
-  const folders = vscode.workspace.workspaceFolders ?? [];
-  const seen = new Map<string, EnabledProject>();
-  for (const f of folders)
-    for (const p of discoverProjects(f.uri.fsPath, configuredStoreRoot()))
-      if (!seen.has(p.card.id)) seen.set(p.card.id, p);
-  return [...seen.values()];
-}
-
-function activeOwnerKey(context: vscode.ExtensionContext): string | undefined {
-  const saved = context.workspaceState.get<string>("tandem.activeProject");
-  if (saved?.startsWith("wp:")) return saved;
-  return rememberedProject(context)?.card.id;
-}
-
-function rememberedProject(context: vscode.ExtensionContext): EnabledProject | undefined {
-  const open = openProjects();
-  const saved = context.workspaceState.get<string>("tandem.activeProject");
-  if (saved?.startsWith("wp:")) return undefined;
-  const hit = saved ? open.find((p) => p.card.id === saved) : undefined;
-  if (hit) return hit;
-  if (open.length === 1) return open[0];
-  return undefined;
-}
 
 function updateStatusBar(project: EnabledProject | undefined): void {
   if (!statusBar) return;
@@ -348,6 +318,12 @@ export function activate(context: vscode.ExtensionContext): void {
       treeDataProvider: projectsTree,
       showCollapseAll: true,
     }),
+    // A folder added or removed changes which projects exist — the one
+    // way the set moves without any gesture of ours.
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      forgetProjects();
+      projectsTree?.refresh();
+    }),
   );
 
   // The Configuration area (v1, verbatim).
@@ -410,7 +386,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const s = await ensureSession(context, true);
     if (!s) return;
     updateStatusBar(rememberedProject(context));
-    projectsTree?.refresh();
+    (forgetProjects(), projectsTree?.refresh());
     const ownerKey = activeOwnerKey(context);
     const slug = ownerKey
       ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`)
@@ -434,7 +410,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // The v1 gestures (open / create / delete a thinking space) — spaceOps.
     ...registerSpaceCommands(context, {
       openSpaceFor,
-      refreshTree: () => projectsTree?.refresh(),
+      refreshTree: () => (forgetProjects(), projectsTree?.refresh()),
       // The deleted space's own panel is disposed and dropped; every
       // other open space's panel is untouched.
       dropSession: (key) => {
@@ -446,7 +422,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sweepResidue: (ownerKey, cost) => sweepDeletedSpaceRuns(openProjects, ownerKey, cost),
     }),
     vscode.commands.registerCommand("thinkube-tandem.refreshProjects", () =>
-      projectsTree?.refresh(),
+      (forgetProjects(), projectsTree?.refresh()),
     ),
     vscode.commands.registerCommand("thinkube-tandem.newProduct", async () => {
       const name = await vscode.window.showInputBox({
@@ -459,7 +435,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showErrorMessage(`Tandem: ${r.reason}`);
         return;
       }
-      projectsTree?.refresh();
+      (forgetProjects(), projectsTree?.refresh());
     }),
     vscode.commands.registerCommand(
       "thinkube-tandem.newProject",
@@ -488,7 +464,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         if (!kind) return;
         if (kind.k === "repo") {
-          await newProjectFlow(product, openProjects, () => projectsTree?.refresh());
+          await newProjectFlow(product, openProjects, () => (forgetProjects(), projectsTree?.refresh()));
           return;
         }
         if (kind.k === "app") {
@@ -499,7 +475,7 @@ export function activate(context: vscode.ExtensionContext): void {
             storeRoot: configuredStoreRoot(),
             ...(owner ? { ownerKey: owner } : {}),
             ...(slug ? { activeSlug: slug } : {}),
-            refresh: () => projectsTree?.refresh(),
+            refresh: () => (forgetProjects(), projectsTree?.refresh()),
             activate: (cardId) => openSpaceFor(cardId),
           });
           return;
@@ -514,7 +490,7 @@ export function activate(context: vscode.ExtensionContext): void {
           void vscode.window.showErrorMessage(`Tandem: ${made.reason}`);
           return;
         }
-        projectsTree?.refresh();
+        (forgetProjects(), projectsTree?.refresh());
         await openSpaceFor(`wp:${made.project.id}`);
       },
     ),
@@ -528,7 +504,7 @@ export function activate(context: vscode.ExtensionContext): void {
           node.wp.state === "done" ? "open" : "done",
         );
         if (!r.ok) void vscode.window.showWarningMessage(`Tandem — ${r.reason}`);
-        projectsTree?.refresh();
+        (forgetProjects(), projectsTree?.refresh());
       },
     ),
     vscode.commands.registerCommand(
@@ -563,7 +539,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const r = setCardProduct(project.anchorDir, product, configuredStoreRoot());
         if (!r.ok) void vscode.window.showErrorMessage(`Tandem: ${r.reason}`);
-        projectsTree?.refresh();
+        (forgetProjects(), projectsTree?.refresh());
       },
     ),
     ...placeCommands({ context, openProjects, openSpaceFor, rememberedProject, currentAuthor }),

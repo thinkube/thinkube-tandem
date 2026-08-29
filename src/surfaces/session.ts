@@ -24,6 +24,7 @@ import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../core/cutClosure";
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
+import { draftReadOf, saveDraftOn } from "./draftGestures";
 import { buildFlow, costOfThinking, WorkCost } from "./buildFlow";
 import { addCheckFlow, decideQuestionFlow, panicFlow } from "./captureFlows";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
@@ -80,6 +81,11 @@ export class TandemSession {
 
   get repoName(): string {
     return this.deps.scope?.label ?? path.basename(this.deps.round.repoRoot);
+  }
+
+  /** The space's own name — its directory under the author's spaces. */
+  get spaceName(): string {
+    return path.basename(this.deps.storeDir);
   }
 
   changed(message?: string): void {
@@ -216,26 +222,12 @@ export class TandemSession {
     return { ok: false, reason };
   }
 
-  /** What you are writing, before any of it is an ask. */
-  saveDraft(text: string): void {
-    this.space = { ...this.space, draft: text };
-    this.persist();
-  }
-
-  /** Read the draft — one round, as often as you ask for it. */
-  readDraft(): Promise<{ ok: boolean; reason?: string }> {
-    return readDraftFlow(this);
-  }
-
-  /** Keep the reading: the draft's lines become asks. Spends nothing. */
-  keepDraft(): { ok: boolean; reason?: string } {
-    return keepDraftFlow(this);
-  }
-
-  /** The lines of the reading that are still draft. */
-  draftRead(): string[] {
-    return (this.space.proposal?.texts ?? []).slice(this.space.asks.length);
-  }
+  /** The draft a person is writing, and what becomes of it — one subject,
+   *  kept together in `./draftGestures`. */
+  saveDraft = (text: string): void => saveDraftOn(this, text);
+  readDraft = (): Promise<{ ok: boolean; reason?: string }> => readDraftFlow(this);
+  keepDraft = (): { ok: boolean; reason?: string } => keepDraftFlow(this);
+  draftRead = (): string[] => draftReadOf(this);
 
   /**
    * What is known about this repository, built once and carried into

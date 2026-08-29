@@ -120,6 +120,11 @@ export interface SpacePush {
   legacy?: string;
   signedTeps: number;
   repoName?: string;
+  /** The thinking space this push is about, by the name the person gave
+   *  it. Without it an empty panel cannot say WHICH space is empty, and a
+   *  person looking at blank chrome has no way to tell an empty space from
+   *  a broken one — nor did I, with the filesystem in front of me. */
+  spaceName?: string;
   /** No repository chosen yet — the view renders the chooser state. */
   needsRepo?: boolean;
   /** Liveness: what the machine is doing right now, and for which ask. */

@@ -43,7 +43,20 @@ const SYSTEMS: { marker: RegExp; pages: string }[] = [
  * The directories a repository publishes to its readers, relative to its
  * root and slash-separated. Empty when it publishes nothing.
  */
+/**
+ * Found once per repository and kept.
+ *
+ * The walk asks git what the repository ignores and then reads three
+ * levels of directories — a third of a second, measured, on this one. It
+ * ran on every space opened, and a documentation system is not something
+ * a repository grows between two clicks. A new marker appears when a
+ * person adds one; reopening the window finds it.
+ */
+const docsRootsSeen = new Map<string, string[]>();
+
 export function userDocsRoots(repoRoot: string, maxDepth = 3): string[] {
+  const remembered = docsRootsSeen.get(repoRoot);
+  if (remembered) return remembered;
   const found: string[] = [];
   const skip = ignoredFor(repoRoot);
   const walk = (dir: string, depth: number): void => {
@@ -73,7 +86,9 @@ export function userDocsRoots(repoRoot: string, maxDepth = 3): string[] {
         walk(path.join(dir, e.name), depth + 1);
   };
   walk(path.resolve(repoRoot), 0);
-  return [...new Set(found)].sort();
+  const roots = [...new Set(found)].sort();
+  docsRootsSeen.set(repoRoot, roots);
+  return roots;
 }
 
 /** Found once per host, where the repository root is known. Passing `[]`
