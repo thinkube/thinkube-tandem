@@ -139,6 +139,34 @@ async function outsideClearance(deps: {
  * guard has every fact needed to say so instead.
  */
 /**
+ * What a worker may not touch, decided in one place so a fence is a rule
+ * rather than an expression repeated at each call site.
+ *
+ * `unfenced` means what it says. The closer is the last actor: it is asked
+ * to bring a tree under the repository's own checks, and it cannot do that
+ * without running them. Honouring the flag only at the write guard left it
+ * declared unfenced and shell-less — so it could not ask the compiler what
+ * was wrong, and reported a cause it had inferred ("there is no tsc")
+ * about a tree whose dependencies were present. A one-line unused import
+ * withheld a finished delivery behind that guess.
+ *
+ * Delegation stays closed even there: full authority is over the TREE —
+ * read it, build it, repair it — never the power to spawn an actor no rung
+ * behind it can judge.
+ */
+export function toolsRefusedTo(w: { unfenced?: boolean; role?: string; blind?: boolean }): string[] {
+  if (w.unfenced) return [...DELEGATION_TOOLS];
+  return [...(w.role === "test" || w.blind ? ["Bash"] : []), ...FENCED_TOOLS];
+}
+
+/**
+ * Spawning another actor: closed to EVERY worker, the unfenced closer
+ * included. Full authority is over the tree it was given, never the power
+ * to create an actor no rung behind it can judge.
+ */
+export const DELEGATION_TOOLS = ["Task", "Agent", "Workflow", "Skill"] as const;
+
+/**
  * The tools no worker gets, whatever its role — every door out of the
  * fence, not only the front one. Monitor is here because it runs shell
  * commands in an until-loop: with it, a fence on Bash fences nothing —
@@ -148,11 +176,8 @@ async function outsideClearance(deps: {
 export const FENCED_TOOLS = [
   "WebFetch",
   "WebSearch",
-  "Task",
-  "Agent",
-  "Workflow",
+  ...DELEGATION_TOOLS,
   "Monitor",
-  "Skill",
   "AskUserQuestion",
   "ExitPlanMode",
   "EnterPlanMode",
@@ -371,10 +396,7 @@ export async function runUnitWorker(
         ...(mcpServers ? { mcpServers } : {}),
         // A tool that moves the session's working directory would let a
         // relative write land outside the footprint: none of those, ever.
-        disallowedTools: [
-          ...(deps.role === "test" || deps.blind ? ["Bash"] : []),
-          ...FENCED_TOOLS,
-        ],
+        disallowedTools: toolsRefusedTo(deps),
         hooks: {
           PreToolUse: [
             {
