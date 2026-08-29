@@ -538,18 +538,13 @@ export async function openTheDoor(a: {
       }),
     );
   const ready = await open();
-  // A tree that proved everything but cannot run its own suite is a tree
-  // nothing can be judged on: the gate's final reading IS that command's
-  // verdict, and without one it executed the empty string at minute
-  // seventy. Refused here, by name, in the first minute.
-  if (!ready.refusal && !ready.suite)
-    return {
-      ...ready,
-      refusal:
-        "no command runs this repository's whole suite — the closing gate judges a " +
-        "delivered tree by that verdict, so nothing this run produced could be judged. " +
-        "Tell the run how this repository runs its suite, or record it in .tandem/setup.json.",
-    };
+  // ABSENT IS A FACT. A repository with no whole-suite command has no
+  // standing suite to hold a delivery to — the veto does not exist for it,
+  // the same way no product build removes that veto. This used to be a
+  // refusal, which locked out every repository nobody has tested yet: the
+  // platform's normal case, and the ones Tandem exists to give their first
+  // check. What absence must never become is an empty string reaching a
+  // shell — the gate now takes no command at all instead.
   // The product build is the run's second veto. A repository that ships
   // nothing built has no such veto, which is legitimate — and silent
   // until it is said.

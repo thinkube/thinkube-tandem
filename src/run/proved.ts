@@ -38,6 +38,27 @@ export function proved(command: string, ran: boolean): Proved | undefined {
 }
 
 /**
+ * The one sanctioned deferral of proof.
+ *
+ * A repository with no tests cannot prove its single-check command — the
+ * command runs a test, and no test exists until the tester writes the
+ * first one. Refusing to start is a chicken-and-egg: no tests, so no run,
+ * so no tests. So the told command is carried, SAID to be unproven, and
+ * proves itself in use the moment the first written check runs. A
+ * candidate that cannot run yields "could not be judged" there — never a
+ * verdict against the work — which is what makes this deferral safe.
+ */
+export function provisional(
+  command: string,
+  why: string,
+  log?: (line: string) => void,
+): Proved {
+  const cmd = command.trim();
+  log?.(`carrying "${cmd}" unproven: ${why}`);
+  return cmd as Proved;
+}
+
+/**
  * What the run knows about this repository, and what it does not.
  *
  * One vocabulary for all five, so a missing fact is reported the same way

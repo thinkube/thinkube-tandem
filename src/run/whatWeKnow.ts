@@ -17,7 +17,8 @@
  */
 import { openTheDoor, type TreeSetup } from "./setup";
 import { factsOf, rememberWhatHeld, type RepositoryFacts } from "./facts";
-import { missing, type Proved } from "./proved";
+import { missing, provisional, type Proved } from "./proved";
+import { downstreamOf, partsOf } from "./survey";
 import type { DispatchDeps } from "./deps";
 import type { Cut, Space } from "../core/schema";
 import { groundThatMoved, regroundingNeeded } from "./groundStillThere";
@@ -27,10 +28,11 @@ export type Known =
       ok: true;
       ready: TreeSetup;
       deps: DispatchDeps;
-      /** The two a judgement rests on, carried out separately so no caller
-       *  has to re-establish that they are there. */
+      /** Carried out separately so no caller re-establishes they are there.
+       *  `suite` may be absent: a repository with no whole-suite command
+       *  has no standing-suite veto, and the door has said so. */
       runOne: Proved;
-      suite: Proved;
+      suite?: Proved;
     }
   | { ok: false; refusal: string };
 
@@ -78,21 +80,48 @@ export async function whatWeKnow(a: {
     halted: a.halted,
   });
   if (ready.refusal) return { ok: false, refusal: ready.refusal };
-  // The two the judgements rest on. Everything else may legitimately be
-  // absent — a repository that needs no install, or ships nothing built —
-  // and the door says so out loud rather than leaving it to silence.
-  if (!ready.suite) return { ok: false, refusal: missing("suite") };
-  if (!ready.runOne) return { ok: false, refusal: missing("runOne") };
-  rememberWhatHeld(deps.repoRoot, known, ready, deps.told ?? {}, new Date().toISOString());
+  // ABSENT IS A FACT, NOT A REFUSAL. Most of this platform's components
+  // have no tests yet, and Tandem's job on them is to create the first
+  // check — a door that refuses to start without a provable suite locks
+  // out the normal case, not an edge case. What absence removes is said
+  // out loud: no whole-suite command means the standing-suite veto does
+  // not apply to this repository, the same way no product build removes
+  // that veto. A `runOne` with no test to prove it on is carried as told,
+  // and proves itself in use the moment the tester's first check runs —
+  // a candidate that cannot run yields "could not be judged", never a
+  // verdict against the work.
+  const downstream = downstreamOf(deps.repoRoot);
+  // The parts a project is made of — each with its own toolchain. Said now
+  // so the person sees what the survey found; criteria bind to them next.
+  const parts = partsOf(deps.repoRoot);
+  if (parts.length > 1)
+    a.log(`this project has ${parts.length} parts: ${parts.map((p) => p.root).join(", ")} (${downstream})`);
+  if (!ready.suite)
+    a.log(
+      `this repository has no whole-suite command that runs here — the standing-suite veto does not apply` +
+        (downstream === "gitops-app" || downstream === "template"
+          ? "; its declared tests run in the platform pipeline, after the merge"
+          : ""),
+    );
+  if (!ready.runOne && !deps.told?.runOne)
+    return { ok: false, refusal: missing("runOne") };
+  rememberWhatHeld(deps.repoRoot, known, { ...ready, downstream }, deps.told ?? {}, new Date().toISOString());
+  const runOne =
+    ready.runOne ??
+    provisional(
+      deps.told!.runOne!,
+      "no test exists yet to prove it on — the first check the tester writes proves it in use",
+      a.log,
+    );
   return {
     ok: true,
     ready,
-    runOne: ready.runOne,
-    suite: ready.suite,
+    runOne,
+    ...(ready.suite ? { suite: ready.suite } : {}),
     deps: {
       ...deps,
-      suite: ready.suite,
-      runOne: ready.runOne,
+      ...(ready.suite ? { suite: ready.suite } : {}),
+      runOne,
       ...(ready.provision ? { provision: ready.provision } : {}),
       ...(ready.prepare ? { prepare: ready.prepare } : {}),
       ...(ready.build ? { build: ready.build } : {}),

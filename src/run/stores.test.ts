@@ -239,15 +239,19 @@ function door(root: string, wt: string, extra: Record<string, unknown> = {}) {
 }
 
 /**
- * The run must know how this repository runs its whole suite.
+ * The run must know how this repository runs its whole suite — WHEN it has
+ * one. The closing gate's last judgement is that command's verdict, so the
+ * door asks the repository for a command nobody told it and proves the
+ * answer by running it.
  *
- * The closing gate's last judgement IS that command's verdict. Four of the
- * five commands a run needs are read from the repository; this one was
- * only ever a caller's setting, and when the setting went away the value
- * became "" — carried through five hand-offs and executed at the final
- * step of a seventy-minute run.
+ * A repository with NO suite is a fact, not a refusal: it has no standing
+ * suite to hold a delivery to, so that veto does not exist for it — the
+ * platform's components mostly have no tests yet, and Tandem's job on them
+ * is to create the first check. Refusing to start locked out the normal
+ * case. What absence must never become is an empty string reaching a
+ * shell.
  */
-test("the door asks for a suite command, and refuses the run without one", async () => {
+test("the door asks for a suite command, keeps what runs, and says when there is none", async () => {
   {
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt8-${Date.now()}`);
@@ -268,30 +272,30 @@ test("the door asks for a suite command, and refuses the run without one", async
   assert.equal(ready.suite, "./all.sh", "and the answer is proved before it is trusted");
   }
   {
+  // Nobody knows, and the repository cannot say: the run STARTS, with no
+  // suite and therefore no standing-suite veto — never with "".
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt9-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
 
-  // Nobody knows, and the repository cannot say.
   const ready = await door(root, wt, { resetup: async () => ({ provision: "true", prepare: "true" }) });
 
-  assert.match(
-    ready.refusal ?? "",
-    /whole suite/,
-    "refused in the first minute, by name — not executed as an empty command in the last",
-  );
+  assert.equal(ready.refusal, undefined, "no suite is a fact about the repository, not a fault in it");
+  assert.equal(ready.suite, undefined, "and absent stays absent — never an empty command");
   }
   {
+  // A candidate that cannot run is dropped the same way: what every
+  // non-npm repository used to be handed.
   const root = pythonProject();
   const wt = path.join(os.tmpdir(), `py-wt10-${Date.now()}`);
   execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
 
   const ready = await door(root, wt, {
-    // What every non-npm repository was handed.
     resetup: async () => ({ provision: "true", prepare: "true", suite: "npm test" }),
   });
 
-  assert.match(ready.refusal ?? "", /whole suite/, "command not found is not a suite");
+  assert.equal(ready.refusal, undefined);
+  assert.equal(ready.suite, undefined, "command not found is not a suite, and not a refusal either");
   }
 });
 

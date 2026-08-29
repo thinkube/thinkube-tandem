@@ -38,7 +38,7 @@ import { judgingRules } from "./selfHosted";
 import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
-import { filesNamedIn, suiteFootprint, suiteVerdictOf } from "./suite";
+import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
 import { repairUnkept } from "./unkept";
@@ -60,10 +60,12 @@ export interface GateContext {
   /** Ran one of this repository's own tests here — the promise veto rests
    *  on it, so the gate is given what the door proved, never a candidate. */
   runOne: Proved;
-  /** Ran this repository's whole suite here. The closing judgement IS this
-   *  command's verdict, so it is required: an absent one used to arrive as
-   *  an empty string and be handed to a shell at the last step. */
-  suite: Proved;
+  /** Ran this repository's whole suite here — or absent, when no such
+   *  command runs in a worktree. Absent removes the standing-suite veto,
+   *  exactly as no product build removes that one; the door has already
+   *  said so, and the delivery says it again where the verdict would be.
+   *  What is never allowed is an empty string reaching a shell. */
+  suite?: Proved;
   branch: string;
   baseSha: string;
   worktree: string;
@@ -246,13 +248,18 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // first measurement and this judgement — checks, assessments, reviews,
   // the finisher — and a tree repaired in that hour was still reported as
   // not building, withholding work that built perfectly well.
-  const ran = await judgeTree(g.suite, worktree);
+  // No whole-suite command runs here: there is no standing suite to hold
+  // the delivery to, so the veto does not exist for this repository. The
+  // proof row says so — "no standing suite runs here" is a fact the person
+  // reads at Accept, not a green invented for a suite nobody ran.
+  if (!g.suite) log(`${tep}: no whole-suite command runs here — the standing-suite veto does not apply`);
+  const ran = g.suite ? await judgeTree(g.suite, worktree) : undefined;
   // A runner that ANSWERED — green, or red in its own words — is judging
   // the work. A command that did not run at all is judging nothing, and
   // reporting it as a red suite tells a person their work broke when what
   // broke is this run's idea of how to test their repository. That is the
   // sentence a whole delivery was withheld on.
-  if (!aRunnerAnswered(ran.code, ran.output)) {
+  if (ran && !aRunnerAnswered(ran.code, ran.output)) {
     const why =
       `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
       `no test runner answered, so nothing here is a verdict about the work. ` +
@@ -262,14 +269,16 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       impact: "the delivered tree could not be judged", detail: why.slice(0, 500) });
     return { refusals: [why], undelivered: [] };
   }
-  let verdict = suiteVerdictOf(ran.code, ran.output, worktree);
-  if (!verdict.green) {
+  let verdict = ran
+    ? suiteVerdictOf(ran.code, ran.output, worktree)
+    : { green: true, failures: [] as SuiteFailure[], summary: "no standing suite runs here" };
+  if (ran && !verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
     deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
     // A red suite has owners in the run: the finisher brings the delivered
     // tree under the repository's checks, bounded; only then is it withheld.
     const repaired = await repairSuiteAtGate({
-      suite: g.suite,
+      suite: g.suite!,
       tep,
       worktree,
       baseSha: g.baseSha,
@@ -306,7 +315,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         model: deps.model,
         ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
         measure: async () => {
-          const r = await judgeTree(g.suite, worktree);
+          const r = await judgeTree(g.suite!, worktree);
           const v = suiteVerdictOf(r.code, r.output, worktree);
           // Build first: an unbuildable tree is one failure, not many, so a
           // repair that breaks imports for a round is not read as a collapse.
@@ -339,7 +348,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
-        const again = await judgeTree(g.suite, worktree);
+        const again = await judgeTree(g.suite!, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
           await exec("git", ["add", "-A", "."], worktree);
@@ -348,12 +357,13 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       }
     }
   }
-  proofs.push({
-    kind: "suite",
-    label: "repo suite",
-    verdict: verdict.green ? "green" : "red",
-    ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
-  });
+  if (g.suite)
+    proofs.push({
+      kind: "suite",
+      label: "repo suite",
+      verdict: verdict.green ? "green" : "red",
+      ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
+    });
 
   // What the machine could not settle rides the delivery for the person to
   // weigh at Accept. A rule may only veto when its failure names an actor

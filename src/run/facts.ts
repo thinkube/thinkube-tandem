@@ -58,6 +58,14 @@ export interface RepositoryFacts {
    * learned in the first place.
    */
   dependencies?: string[];
+  /**
+   * What the merge sets in motion for this repository — one word, decided
+   * by the survey from evidence (the remote, the manifests, the playbook
+   * convention). Everything specific to that downstream lives in its own
+   * authoritative source (`thinkube.yaml`, the component's playbooks) and
+   * is read at the moment of use, never copied here.
+   */
+  downstream?: string;
   /** When the door proved these, so a reader can tell how old they are. */
   provenAt?: string;
 }
@@ -82,6 +90,7 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
       ...(Array.isArray(parsed.dependencies)
         ? { dependencies: parsed.dependencies.filter((x) => typeof x === "string") }
         : {}),
+      ...(typeof parsed.downstream === "string" ? { downstream: parsed.downstream } : {}),
       ...(parsed.provenAt ? { provenAt: parsed.provenAt } : {}),
     };
   } catch {
@@ -122,6 +131,7 @@ function factsAfterRun(
     built: readonly string[];
     /** What the install was watched producing (or the borrow re-confirmed). */
     provisioned?: readonly string[];
+    downstream?: string;
   },
 ): RepositoryFacts {
   return {
@@ -130,6 +140,11 @@ function factsAfterRun(
     runOne: proved.runOne,
     ...(proved.build ? { build: proved.build } : {}),
     ...(proved.suite ? { suite: proved.suite } : known?.suite ? { suite: known.suite } : {}),
+    ...(proved.downstream
+      ? { downstream: proved.downstream }
+      : known?.downstream
+        ? { downstream: known.downstream }
+        : {}),
     ...(proved.provisioned?.length
       ? { dependencies: [...proved.provisioned] }
       : known?.dependencies?.length
@@ -165,6 +180,7 @@ export function rememberWhatHeld(
     suite?: string;
     built: readonly string[];
     provisioned?: readonly string[];
+    downstream?: string;
     corrected?: { provision: string; prepare: string };
   },
   told: { provision?: string; prepare?: string; build?: string },
@@ -172,6 +188,7 @@ export function rememberWhatHeld(
 ): void {
   const facts = factsAfterRun(known, {
     ...(ready.provisioned ? { provisioned: ready.provisioned } : {}),
+    ...(ready.downstream ? { downstream: ready.downstream } : {}),
     provision: ready.corrected?.provision ?? told.provision ?? "",
     prepare: ready.corrected?.prepare ?? told.prepare ?? "",
     runOne: ready.runOne ?? "",
