@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptySpace, unkeptProof } from "../core/schema";
+import { unkeptProof } from "../core/schema";
 import { stagedProofs } from "./assess";
 import { tepSlices } from "../dispatch/adapter";
 import * as fs from "node:fs";
