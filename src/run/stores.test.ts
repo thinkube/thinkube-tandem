@@ -82,10 +82,13 @@ test("the door provisions a Python project by its own command", async () => {
 /**
  * Dependency stores, in a language nothing here knows.
  *
- * Borrowed when the checkout has one, installed when it does not. A borrow
- * is a doorway into the person's own checkout: installing through it once
- * emptied their dependencies, so it is closed first. Anything outside the
- * run's own tree is refused rather than removed.
+ * A run may borrow ONLY what this repository's install command was watched
+ * producing in an earlier run. It used to be the other way round — lend
+ * everything the tree ignores minus what a build was seen making — and
+ * that denylist lent `out` to a run, which compiled through the link into
+ * the directory the extension is deployed from. On a first meeting nothing
+ * is remembered, so nothing is lent: the run pays for one install and
+ * watches what appears, which is how the answer is learned.
  */
 test("a store is borrowed or installed, and nothing outside the run's tree is touched", async () => {
   {
@@ -100,6 +103,9 @@ test("a store is borrowed or installed, and nothing outside the run's tree is to
     repoRoot: root,
     provision: "exit 9", // must NOT run: borrowing means not installing
     prepare: "true",
+    // An earlier run watched the install produce this. Without the memory,
+    // nothing would be lent and the install would run.
+    dependencies: [".venv"],
     exec,
     boundedExec,
     log: () => {},
@@ -289,4 +295,44 @@ test("the door asks for a suite command, and refuses the run without one", async
   }
 });
 
+/**
+ * The allowlist is the whole rule: nothing remembered, nothing lent.
+ *
+ * And what a BUILD makes is never on the list, however it got into the
+ * checkout — `out` was lent under the old subtraction rule, and the run
+ * compiled through the link into the directory the extension deploys from.
+ */
+test("a first meeting lends nothing, and build output is never lent", async () => {
+  const root = pythonProject();
+  // The checkout holds both a dependency store and build output.
+  fs.mkdirSync(path.join(root, ".venv", "lib"), { recursive: true });
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(root, "dist", "app.bin"), "built\n");
+  fs.appendFileSync(path.join(root, ".gitignore"), "dist/\n");
+  const wt = path.join(os.tmpdir(), `py-wt-lend-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
 
+  let installed = false;
+  const ready = await setupRunTree({
+    worktree: wt,
+    repoRoot: root,
+    provision: "mkdir -p .venv/lib && echo mine > .venv/lib/marker",
+    prepare: "true",
+    // No `dependencies`: this repository has never been installed here.
+    exec,
+    boundedExec: async (cmd, cwd) => {
+      if (cmd.startsWith("mkdir")) installed = true;
+      return boundedExec(cmd, cwd);
+    },
+    log: () => {},
+  });
+
+  assert.equal(installed, true, "nothing remembered, so the install runs and is watched");
+  assert.equal(
+    fs.lstatSync(path.join(wt, ".venv")).isSymbolicLink(),
+    false,
+    "what it made is the run's own, not a doorway into the checkout",
+  );
+  assert.equal(fs.existsSync(path.join(wt, "dist")), false, "build output is never lent");
+  assert.ok(ready.provisioned.includes(".venv"), "and the watched produce is reported for remembering");
+});

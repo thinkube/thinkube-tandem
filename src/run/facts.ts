@@ -51,6 +51,13 @@ export interface RepositoryFacts {
    * command says what it makes, in whatever language it is written in.
    */
   builds?: string[];
+  /**
+   * What this repository's INSTALL command was watched producing — the
+   * ONLY thing a later run may borrow instead of installing again. Absent
+   * means nothing is lent: one install, watched, is how the answer is
+   * learned in the first place.
+   */
+  dependencies?: string[];
   /** When the door proved these, so a reader can tell how old they are. */
   provenAt?: string;
 }
@@ -71,6 +78,9 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
       ...(typeof parsed.suite === "string" && parsed.suite.trim() ? { suite: parsed.suite } : {}),
       ...(Array.isArray(parsed.builds)
         ? { builds: parsed.builds.filter((x) => typeof x === "string") }
+        : {}),
+      ...(Array.isArray(parsed.dependencies)
+        ? { dependencies: parsed.dependencies.filter((x) => typeof x === "string") }
         : {}),
       ...(parsed.provenAt ? { provenAt: parsed.provenAt } : {}),
     };
@@ -110,6 +120,8 @@ function factsAfterRun(
     build?: string;
     suite?: string;
     built: readonly string[];
+    /** What the install was watched producing (or the borrow re-confirmed). */
+    provisioned?: readonly string[];
   },
 ): RepositoryFacts {
   return {
@@ -118,6 +130,11 @@ function factsAfterRun(
     runOne: proved.runOne,
     ...(proved.build ? { build: proved.build } : {}),
     ...(proved.suite ? { suite: proved.suite } : known?.suite ? { suite: known.suite } : {}),
+    ...(proved.provisioned?.length
+      ? { dependencies: [...proved.provisioned] }
+      : known?.dependencies?.length
+        ? { dependencies: known.dependencies }
+        : {}),
     ...(proved.built.length
       ? { builds: [...proved.built] }
       : known?.builds?.length
@@ -147,12 +164,14 @@ export function rememberWhatHeld(
     runOne?: string;
     suite?: string;
     built: readonly string[];
+    provisioned?: readonly string[];
     corrected?: { provision: string; prepare: string };
   },
   told: { provision?: string; prepare?: string; build?: string },
   at: string,
 ): void {
   const facts = factsAfterRun(known, {
+    ...(ready.provisioned ? { provisioned: ready.provisioned } : {}),
     provision: ready.corrected?.provision ?? told.provision ?? "",
     prepare: ready.corrected?.prepare ?? told.prepare ?? "",
     runOne: ready.runOne ?? "",

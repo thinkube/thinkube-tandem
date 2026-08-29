@@ -94,6 +94,9 @@ test("the door reports the stores a ready tree HAS, however it got ready", async
     worktree: wt,
     provision: "true",
     prepare: "true",
+    // Remembered from the run that installed it: what a ready tree HAS is
+    // what the install once made, here or earlier.
+    dependencies: ["node_modules"],
     exec,
     boundedExec: async (cmd, cwd) =>
       new Promise((resolve) =>

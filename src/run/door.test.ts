@@ -32,6 +32,9 @@ test("the door borrows dependency stores from the checkout, and nothing else", a
     worktree: wt,
     repoRoot: base,
     provision: "npm ci",
+    // An earlier run watched the install produce this — the only reason
+    // anything may be lent.
+    dependencies: ["node_modules"],
     exec: async (cmd, args, cwd) =>
       cmd === "git" && args[2] === "status"
         ? { code: 0, out: cwd === base ? "!! node_modules/\n" : "" }
@@ -59,6 +62,7 @@ test("the door borrows dependency stores from the checkout, and nothing else", a
   const setup = await setupRunTree({
     worktree: wt,
     repoRoot: base,
+    dependencies: ["webview/map/node_modules"],
     exec: async (cmd, args, cwd) =>
       cmd === "git" && args[2] === "status"
         ? { code: 0, out: cwd === base ? "!! webview/map/node_modules/\n" : "" }
@@ -83,6 +87,7 @@ test("the door borrows dependency stores from the checkout, and nothing else", a
   const setup = await setupRunTree({
     worktree: wt,
     repoRoot: base,
+    dependencies: ["node_modules"],
     exec: async (cmd, args, cwd) =>
       cmd === "git" && args[2] === "status"
         ? {
@@ -131,7 +136,7 @@ test("what the door lends can never be committed, even by add -A", async () => {
       return { code: 1, out: String((err as { stdout?: string }).stdout ?? "") };
     }
   };
-  await setupRunTree({ worktree: wt, repoRoot: base, exec: exec as never, boundedExec: async () => ({ code: 0, output: "" }), log: () => {} });
+  await setupRunTree({ worktree: wt, repoRoot: base, dependencies: ["node_modules"], exec: exec as never, boundedExec: async () => ({ code: 0, output: "" }), log: () => {} });
 
   assert.ok(fs.lstatSync(path.join(wt, "node_modules")).isSymbolicLink(), "the dependency store was lent as a link");
   g(wt, "add", "-A", ".");

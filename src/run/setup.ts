@@ -43,37 +43,6 @@ export type BoundedExec = (
 ) => Promise<{ code: number | null; output: string }>;
 
 /**
- * Names a run falls back on the FIRST time it meets a repository, and
- * never after.
- *
- * Telling a dependency store from build output matters: dependencies may
- * be shared with the checkout, output may not — output is the work being
- * judged, and a run that borrows it compiles through a doorway into the
- * other tree and grades that tree's code. Seven reds against finished work
- * came from lending out-test/ once.
- *
- * On a repository nobody has built here yet there is nothing to measure,
- * so these names are the guess — and they are only a guess: a project
- * whose store is called something else installs its own and is no worse
- * off. From the first proved build onward the repository's own answer
- * (`builds`) is used instead, in whatever language it is written in, and
- * this list is never consulted again.
- */
-const FIRST_GUESS = new Set([
-  "node_modules",
-  "vendor",
-  "venv",
-  ".venv",
-  "bower_components",
-  "Pods",
-  "__pypackages__",
-]);
-
-function looksLikeADependencyStore(rel: string): boolean {
-  return FIRST_GUESS.has(rel.split("/").filter(Boolean).pop() ?? "");
-}
-
-/**
  * What a run may borrow instead of installing again is MEASURED wherever
  * it can be.
  *
@@ -159,6 +128,16 @@ export interface SetupArgs {
   /** What this repository's build step produces, when it has been proved
    *  here before — never borrowed, because output is the work judged. */
   builds?: string[];
+  /**
+   * What this repository's INSTALL command was watched producing, in an
+   * earlier run here. The only thing a run may borrow.
+   *
+   * Absent on a repository nobody has installed here: nothing is lent, the
+   * run installs, and what appears is watched and remembered. One slow run
+   * buys an answer that is right in every language, because the repository
+   * answered it by running its own command.
+   */
+  dependencies?: string[];
   /** How this repository runs its whole suite. */
   suite?: string;
   /**
@@ -227,18 +206,22 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     // tree's code. Seven reds against finished work came from lending
     // out-test/ once.
     //
-    // Which is which is measured, not named: `builds` is what the prepare
-    // step made when it was last proved here. A repository nobody has
-    // built yet lends everything, because the alternative — a tree with no
-    // dependencies and no install command — fails with certainty, and the
-    // build proof immediately after drops a borrow that does not hold.
-    // Measured when this repository has been built here before: lend
-    // everything it ignores except what its own build makes. Guessed only
-    // the first time, when there is nothing to measure.
-    const measured = args.builds?.length ? new Set(args.builds) : undefined;
-    const lendable = [...theirs].filter(
-      (e) => !mine.has(e) && (measured ? !measured.has(e) : looksLikeADependencyStore(e)),
-    );
+    // Only what THIS repository's own install command was watched
+    // producing. Nothing else, whatever it is called.
+    //
+    // It used to be the other way round: lend everything the repository
+    // ignores, minus what a build was seen making. That is a denylist, and
+    // a denylist is incomplete by construction — `out` was lent because
+    // nobody had watched the product build, and the run then compiled
+    // through the link into the directory the extension is deployed from.
+    // `media` and a handful of `.vsix` files went the same way; no install
+    // made either of them.
+    //
+    // Nothing remembered means nothing lent: the run pays for one install
+    // and watches what appears, which is how the answer is learned in the
+    // first place. Slow and correct beats fast and silently wrong.
+    const dependencies = new Set(args.dependencies ?? []);
+    const lendable = [...theirs].filter((e) => !mine.has(e) && dependencies.has(e));
     if (lendable.length) {
       await linkProvisioned(args.worktree, args.repoRoot, lendable);
       provisioned.push(...lendable);
@@ -280,11 +263,12 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // sides and the list came back empty — no fresh runner was linked, its
   // build died in an empty tree, and the failure was pinned on the code.
   //
-  // Anything the repository ignores and the run did not build is what a
-  // runner needs: ignored because it is not source, not built because the
-  // build step is proved separately. No ecosystem is named.
+  // What a runner needs is what the INSTALL made — here, or in an earlier
+  // run of this repository. Sweeping in everything the tree ignores put
+  // build output and stray packages on the list too, and a runner was
+  // linked to both.
   for (const e of await ignoredEntries(args.worktree, args.exec))
-    if (!provisioned.includes(e)) provisioned.push(e);
+    if ((args.dependencies ?? []).includes(e) && !provisioned.includes(e)) provisioned.push(e);
   const built: string[] = [];
   if (args.prepare) {
     const before = await ignoredEntries(args.worktree, args.exec);
@@ -321,10 +305,18 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // the closer and every slice commit run `git add -A` in this tree.
   await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
   if (args.build) {
+    // Watched exactly like the test build. It was not, so what the PRODUCT
+    // build makes was never on the list of things a run must not lend —
+    // and `out` was lent to a run, which then compiled through the link
+    // into the directory the extension is deployed from.
+    const before = await ignoredEntries(args.worktree, args.exec);
     args.log(`proving the product build on the untouched tree: ${args.build}`);
     const t0 = Date.now();
     const b = await args.boundedExec(args.build, args.worktree);
     args.log(`  ${b.code === 0 ? "held" : "did not hold"} in ${since(t0)}`);
+    if (b.code === 0)
+      for (const e of await ignoredEntries(args.worktree, args.exec))
+        if (!before.has(e) && !provisioned.includes(e) && !built.includes(e)) built.push(e);
     if (b.code !== 0)
       return {
         provisioned,
@@ -467,7 +459,7 @@ export async function prepareAtGate(
 function setupArgsFor(a: {
   worktree: string;
   repoRoot: string;
-  known?: { suite?: string; builds?: string[] };
+  known?: { suite?: string; builds?: string[]; dependencies?: string[] };
   told: { provision?: string; prepare?: string; build?: string; runOne?: string; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
@@ -484,6 +476,7 @@ function setupArgsFor(a: {
     log: a.log,
     ...(suite ? { suite } : {}),
     ...(a.known?.suite === suite ? { suiteProvenBefore: true } : {}),
+    ...(a.known?.dependencies?.length ? { dependencies: a.known.dependencies } : {}),
     ...(a.known?.builds?.length ? { builds: a.known.builds } : {}),
     ...(a.told.provision ? { provision: a.told.provision } : {}),
     ...(a.told.prepare ? { prepare: a.told.prepare } : {}),
@@ -507,7 +500,7 @@ export async function openTheDoor(a: {
   worktree: string;
   repoRoot: string;
   tep: string;
-  known?: { suite?: string; builds?: string[] };
+  known?: { suite?: string; builds?: string[]; dependencies?: string[] };
   told: {
     provision?: string;
     prepare?: string;
