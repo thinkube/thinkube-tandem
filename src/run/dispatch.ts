@@ -30,7 +30,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { setupRunTree } from "./setup";
-import { rememberFacts } from "./facts";
+import { factsAfterRun, factsOf, rememberFacts, worthRemembering } from "./facts";
 import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
@@ -168,8 +168,11 @@ export async function dispatchTep(
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
+  // What this repository already proved about itself. Its build output is
+  // never lent: output is the work being judged.
+  const known = factsOf(deps.repoRoot);
   const doSetup = () =>
-    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, provision: deps.provision, prepare: deps.prepare, build: deps.build, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
+    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, ...(known?.builds?.length ? { builds: known.builds } : {}), provision: deps.provision, prepare: deps.prepare, build: deps.build, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
   let ready = await doSetup();
   // A resumed branch an earlier run left half-committed is mended before the run refuses.
   if (ready.refusal && refreshed.resumed) {
@@ -184,14 +187,14 @@ export async function dispatchTep(
   // "Nothing needed" proved on a tree that already had its dependencies is
   // not a fact about the repository — run 2 of the acceptance believed one
   // and died before its first test. Only an answer with content is kept.
-  const facts = {
+  const facts = factsAfterRun(known, {
     provision: ready.corrected?.provision ?? deps.provision ?? "",
     prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
     runOne: ready.runOne,
     ...(deps.build ? { build: deps.build } : {}),
-  };
-  if (facts.provision || facts.prepare || facts.runOne || facts.build)
-    rememberFacts(deps.repoRoot, facts, new Date().toISOString());
+    built: ready.built,
+  });
+  if (worthRemembering(facts)) rememberFacts(deps.repoRoot, facts, new Date().toISOString());
   const { provisioned, built, runOne: runOneTest } = ready;
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();

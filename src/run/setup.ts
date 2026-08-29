@@ -40,6 +40,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Exec } from "./oracle";
 import { isProbePath, isTestPath } from "./testHomes";
+import { releaseBorrowed, removeOwned } from "./ownTree";
 
 export type BoundedExec = (
   cmd: string,
@@ -57,7 +58,24 @@ export type BoundedExec = (
  * closed, and everything else — build output, packages, media — is the
  * run's own to produce.
  */
-const DEPENDENCY_STORES = new Set([
+/**
+ * Names a run falls back on the FIRST time it meets a repository, and
+ * never after.
+ *
+ * Telling a dependency store from build output matters: dependencies may
+ * be shared with the checkout, output may not — output is the work being
+ * judged, and a run that borrows it compiles through a doorway into the
+ * other tree and grades that tree's code. Seven reds against finished work
+ * came from lending out-test/ once.
+ *
+ * On a repository nobody has built here yet there is nothing to measure,
+ * so these names are the guess — and they are only a guess: a project
+ * whose store is called something else installs its own and is no worse
+ * off. From the first proved build onward the repository's own answer
+ * (`builds`) is used instead, in whatever language it is written in, and
+ * this list is never consulted again.
+ */
+const FIRST_GUESS = new Set([
   "node_modules",
   "vendor",
   "venv",
@@ -67,9 +85,25 @@ const DEPENDENCY_STORES = new Set([
   "__pypackages__",
 ]);
 
-function isDependencyStore(rel: string): boolean {
-  return DEPENDENCY_STORES.has(rel.split("/").filter(Boolean).pop() ?? "");
+function looksLikeADependencyStore(rel: string): boolean {
+  return FIRST_GUESS.has(rel.split("/").filter(Boolean).pop() ?? "");
 }
+
+/**
+ * What a run may borrow instead of installing again is MEASURED wherever
+ * it can be.
+ *
+ * A list of ecosystem names — node_modules, venv, Pods — is a list of the
+ * ecosystems somebody thought of. A project whose store is called anything
+ * else matched nothing: it installed from scratch every run, and every
+ * runner worktree was built with no dependencies, so each check died with
+ * the tool's own words and the failure read as the code's. Silent, and
+ * permanent, in every language but the one the list was written for.
+ *
+ * The repository's own provisioning command says what it makes. Run it
+ * once, see what appeared, remember that — and the answer is right in
+ * Python, Go, Rust and Ruby with nobody maintaining anything.
+ */
 
 /** Ignored entries at the tree's surface (`!! node_modules/`), collapsed —
  *  never one line per installed file. */
@@ -126,6 +160,9 @@ export interface SetupArgs {
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
+  /** What this repository's build step produces, when it has been proved
+   *  here before — never borrowed, because output is the work judged. */
+  builds?: string[];
   /** Told the answer that held on the untouched tree — the only one worth remembering. */
   proven?: (s: { provision: string; prepare: string; runOne: string }) => void;
   exec: Exec;
@@ -172,7 +209,27 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   if (borrow && args.repoRoot) {
     const theirs = await ignoredEntries(args.repoRoot, args.exec);
     const mine = await ignoredEntries(args.worktree, args.exec);
-    const lendable = [...theirs].filter((e) => !mine.has(e) && isDependencyStore(e));
+    // What the checkout ignores and this tree lacks — MINUS whatever this
+    // repository's own build step is known to produce.
+    //
+    // Dependencies may be shared: they are the same for everyone. Build
+    // output may not: it is the work being judged, and a run that borrows
+    // it compiles through a doorway into the other tree and grades that
+    // tree's code. Seven reds against finished work came from lending
+    // out-test/ once.
+    //
+    // Which is which is measured, not named: `builds` is what the prepare
+    // step made when it was last proved here. A repository nobody has
+    // built yet lends everything, because the alternative — a tree with no
+    // dependencies and no install command — fails with certainty, and the
+    // build proof immediately after drops a borrow that does not hold.
+    // Measured when this repository has been built here before: lend
+    // everything it ignores except what its own build makes. Guessed only
+    // the first time, when there is nothing to measure.
+    const measured = args.builds?.length ? new Set(args.builds) : undefined;
+    const lendable = [...theirs].filter(
+      (e) => !mine.has(e) && (measured ? !measured.has(e) : looksLikeADependencyStore(e)),
+    );
     if (lendable.length) {
       await linkProvisioned(args.worktree, args.repoRoot, lendable);
       provisioned.push(...lendable);
@@ -184,6 +241,14 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     }
   }
   if (args.provision && !borrowed) {
+    // NEVER install into a borrowed store: an installer deletes the store
+    // before filling it, and a borrowed store is a doorway into the
+    // checkout — so the delete lands in the person's own tree. It happened.
+    const freed = await releaseBorrowed(args.worktree, [
+      ...(await ignoredEntries(args.worktree, args.exec)),
+    ]);
+    for (const rel of freed)
+      args.log(`  released the borrowed ${rel} — installing into it would have emptied the lender`);
     const before = await ignoredEntries(args.worktree, args.exec);
     args.log(`provisioning the worktree: ${args.provision}`);
     const t0 = Date.now();
@@ -201,15 +266,17 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   }
   // What a READY TREE HAS, never a diff of what this call changed.
   //
-  // Every runner worktree is given these stores by linkProvisioned, so the
-  // list must mean "the dependencies a runner needs", whatever their
-  // history. Derived as a before/after diff of the install, one swallowed
-  // failure upstream put a store on both sides of the diff and the list
-  // came back empty — no fresh runner was linked, its build died with the
-  // runner's own words, and the failure was pinned on the code. Reading
-  // the finished tree makes the list right regardless of how it got ready.
+  // Every runner worktree is given these by linkProvisioned, so the list
+  // must mean "what a runner needs", whatever this call did. Derived as a
+  // before/after diff, one swallowed failure upstream put a store on both
+  // sides and the list came back empty — no fresh runner was linked, its
+  // build died in an empty tree, and the failure was pinned on the code.
+  //
+  // Anything the repository ignores and the run did not build is what a
+  // runner needs: ignored because it is not source, not built because the
+  // build step is proved separately. No ecosystem is named.
   for (const e of await ignoredEntries(args.worktree, args.exec))
-    if (isDependencyStore(e) && !provisioned.includes(e)) provisioned.push(e);
+    if (!provisioned.includes(e)) provisioned.push(e);
   const built: string[] = [];
   if (args.prepare) {
     const before = await ignoredEntries(args.worktree, args.exec);
@@ -222,14 +289,14 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
       // this tree: drop it and pay for the real install once.
       if (borrowed) {
         args.log("  the borrowed provisioning does not build here — installing instead");
-        // rm -rf semantics: a borrowed store may be a symlink (unlinked,
-        // never followed) or a real directory left by an earlier run. The
-        // plain force-rm THROWS EISDIR on a directory, and the swallowed
-        // throw left the store in place — so the install's before/after
-        // diff saw it on both sides and recorded nothing, and no runner
-        // was ever given its dependencies again.
-        for (const rel of provisioned)
-          await fs.rm(path.join(args.worktree, rel), { force: true, recursive: true }).catch(() => {});
+        // One rule decides what may be destroyed: a doorway is unlinked, a
+        // directory of the run's own is removed whole, anything outside is
+        // refused and said. A plain force-rm threw EISDIR on a directory
+        // and the swallowed throw left the store in place.
+        for (const rel of provisioned) {
+          const r = await removeOwned(args.worktree, path.join(args.worktree, rel));
+          if (r.refused) args.log(`  ${r.refused}`);
+        }
         return proveTree(args, false);
       }
       return {
