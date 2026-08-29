@@ -21,6 +21,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Cut, Space } from "./schema";
+import { ignoredFor, worthWalking } from "./ignored";
 
 const DOCS_PREFIX = "docs/";
 
@@ -38,14 +39,13 @@ const SYSTEMS: { marker: RegExp; pages: string }[] = [
   { marker: /^_config\.ya?ml$/, pages: "" },
 ];
 
-const SKIP = new Set(["node_modules", ".git", "out", "out-test", "build", "dist", ".venv", "target"]);
-
 /**
  * The directories a repository publishes to its readers, relative to its
  * root and slash-separated. Empty when it publishes nothing.
  */
 export function userDocsRoots(repoRoot: string, maxDepth = 3): string[] {
   const found: string[] = [];
+  const skip = ignoredFor(repoRoot);
   const walk = (dir: string, depth: number): void => {
     let entries: fs.Dirent[];
     try {
@@ -66,7 +66,10 @@ export function userDocsRoots(repoRoot: string, maxDepth = 3): string[] {
     }
     if (depth >= maxDepth) return;
     for (const e of entries)
-      if (e.isDirectory() && !SKIP.has(e.name) && !e.name.startsWith("."))
+      // What the repository itself ignores, never a list of names: a
+      // project whose output lands somewhere unusual was walked as if it
+      // were source.
+      if (e.isDirectory() && worthWalking(e.name, skip) && !e.name.startsWith("."))
         walk(path.join(dir, e.name), depth + 1);
   };
   walk(path.resolve(repoRoot), 0);

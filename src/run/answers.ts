@@ -44,13 +44,33 @@ export function outsideFootprint(text: string, footprint: readonly string[]): st
   return pathsNamed(text).filter((p) => /\//.test(p) && !mine(p));
 }
 
-/** Text that shows the run's own machinery: a path, a tool, an error code,
- *  a probe. A person is asked about behavior, never about these. */
+/**
+ * Text that shows the run's own machinery: a file, a path, a machine error
+ * code, or a word only this machine uses. A person is asked about
+ * behaviour, never about these.
+ *
+ * It used to match TypeScript — `.ts`, `.json`, `tsc`, `npm`, and four
+ * directory names from this repository. A Python worker asking about
+ * `handlers.py`, or a Go worker about `go.mod`, named an internal and was
+ * not caught, so the question reached the person as if it were about the
+ * work. The shapes below are language-agnostic: any file, any path, any
+ * shouting error code, and this methodology's own vocabulary — which is
+ * the same in every language because it is ours, not an ecosystem's.
+ */
+export function reachesThePerson(text: string): boolean {
+  return !namesInternals(text);
+}
+
 function namesInternals(text: string): boolean {
   return (
-    /(^|\s)(src|out|out-test|probes|node_modules)\//.test(text) ||
-    /\.(ts|tsx|mjs|cjs|js|json)\b/.test(text) ||
-    /\b(ERR_[A-Z_]+|tsc|npm|node --test|verify|oracle|footprint|probe)\b/i.test(text)
+    pathsNamed(text).length > 0 ||
+    // Any filename SHAPE, not a list of extensions: `go.mod`,
+    // `Cargo.toml`, `pyproject.toml` and whatever the next ecosystem calls
+    // its manifest are all a name, a dot, and a short word.
+    /\b[\w-]{2,}\.[a-z]{1,6}\b/.test(text) ||
+    /(^|\s)[\w.-]+\/[\w./-]+/.test(text) ||
+    /\b(ERR_[A-Z_]+|E[A-Z]{3,}\b)/.test(text) ||
+    /\b(verify|oracle|footprint|probe|slice|clearance|worktree|runner)\b/i.test(text)
   );
 }
 

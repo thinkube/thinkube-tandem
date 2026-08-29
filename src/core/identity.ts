@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { StoredCard, allCards, matchCard, putCard, remoteOf } from "./cards";
+import { ignoredFor, worthWalking } from "./ignored";
 
 /** One member scope of a project (beyond the anchor). */
 export interface ProjectScope {
@@ -233,6 +234,7 @@ export function discoverProjects(folder: string, storeRoot: string, maxDepth = 4
       return r;
     },
   };
+  const skip = ignoredFor(folder);
   const walk = (dir: string, depth: number): void => {
     const card = readCard(dir, storeRoot, seen);
     if (card) {
@@ -253,7 +255,9 @@ export function discoverProjects(folder: string, storeRoot: string, maxDepth = 4
     }
     for (const e of entries) {
       if (!e.isDirectory()) continue;
-      if (["node_modules", ".git", "out", "out-test", "build", "dist"].includes(e.name)) continue;
+      // What this project does not author, asked of the project. A list of
+      // names would be a list of the ecosystems somebody thought of.
+      if (!worthWalking(e.name, skip)) continue;
       walk(path.join(dir, e.name), depth + 1);
     }
   };
