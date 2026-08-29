@@ -30,7 +30,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { whatWeKnow } from "./whatWeKnow";
-import { briefWithNames } from "./contractNames";
+import { briefWithInherited, briefWithNames } from "./contractNames";
 import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
@@ -53,7 +53,7 @@ import type { DispatchDeps } from "./deps";
 export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
-import { decisionsStanza, extractDecisions, isProbePath, missingProbes, testerTurns, testHomesOf, testHomesStanza } from "./testHomes";
+import { decisionsStanza, extractDecisions, isProbePath, isTestPath, missingProbes, repoTestFiles, testerTurns, testHomesOf, testHomesStanza, testHomeWorkOf } from "./testHomes";
 import { overlapWaits } from "./frontier";
 
 export interface DispatchOutcome {
@@ -302,12 +302,7 @@ export async function dispatchTep(
       role === "test"
         ? testerStanza(built) +
           (maintain ? coderStanza(!!oracle) : "") +
-          testHomesStanza(
-            testHomesOf(next.footprint),
-            (next.units ?? []).flatMap(
-              (u) => (u as { testHomeWork?: { path: string; sentence: string; criteria: string[] }[] }).testHomeWork ?? [],
-            ),
-          )
+          testHomesStanza(testHomesOf(next.footprint), testHomeWorkOf(next))
         : clearanceStanza(next) +
           coderStanza(!!oracle) +
           decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
@@ -322,7 +317,13 @@ export async function dispatchTep(
     st.doing(next.id, "working");
     let ok = false;
     const attempts = oracle ? MAX_REWORK_ATTEMPTS : 1;
-    let brief = baseBrief + oracleStanza() + disclosure;
+    // A tester inherits every test pinning the files it changes: it alone
+    // may touch a test, and alone holds the criteria saying what the
+    // behaviour becomes. What the person overruled is retired here.
+    let brief = await briefWithInherited(baseBrief + oracleStanza() + disclosure, {
+      role, tree, files: next.footprint.filter((f) => !isTestPath(f)),
+      tests: (await repoTestFiles(tree)).filter((t: string) => !next.footprint.includes(t)),
+    });
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
       let outcome = await worker(
         {

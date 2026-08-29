@@ -14,6 +14,7 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { ignoredFor, worthWalking } from "../core/ignored";
 
 /** Files a test runner can execute — any ecosystem, never one language's.
  *  A configuration or a document is never a test, whatever its name says:
@@ -112,10 +113,41 @@ export function testHomesStanza(
     "never appease a scenario to keep it green, never rewrite the file wholesale, never add a block for this " +
     "delivery. Work from the criteria and the contract: the implementation does not exist yet.\n" +
     lines.join("\n") +
+    STALE +
     "\n\nEnd your final summary with one line per choice the contract forced on you (an exact name, literal, " +
     'or rule), each starting exactly with "DECISION: " — the coder builds to these without ever seeing your tests.'
   );
 }
+
+/**
+ * What to do with a test in these files that is ALREADY FAILING.
+ *
+ * The rest of this brief is about behaviour that does not exist yet, and
+ * says so. This part is the opposite: these tests were written for earlier
+ * work, and the code beneath them has moved — sometimes by an ask, and
+ * often by a fix made with no ask at all, between deliveries. A test can
+ * be stale for a reason nothing in this cut mentions.
+ *
+ * The last rule is the one that matters. Without it a tester under
+ * pressure to reach green rewrites every failing test to match whatever
+ * the code now does, and the suite stops being a check on the code and
+ * becomes a mirror of it — the exact moment a regression becomes
+ * invisible.
+ */
+const STALE =
+  "\n\n──── A TEST IN THESE FILES THAT ALREADY FAILS ────\n" +
+  "Some of these were written for earlier work, and some pin behaviour that later changes " +
+  "— INCLUDING FIXES MADE OUTSIDE ANY ASK — have already replaced. Run each one against the " +
+  "tree AS IT STANDS NOW, before you write anything.\n" +
+  "  · It passes — leave it exactly as it is. Do not touch a test you did not need to touch.\n" +
+  "  · It fails — decide from the CODE AND ITS HISTORY, never from the test's wording. `git log` " +
+  "on that code shows whether the behaviour was changed deliberately and what the change said it was doing.\n" +
+  "      – changed on purpose: bring the test under what the code does now, or delete it if nothing is " +
+  "left for it to pin. Say which behaviour it pinned and which change replaced it.\n" +
+  "      – not changed on purpose, or you cannot find a change that explains it: LEAVE IT FAILING and " +
+  "say so. That is a regression, and catching it is why this step exists.\n" +
+  "You are never asked to make a test agree with the code. You are asked to say whether the difference " +
+  "was intended.";
 
 /** A tester's turn budget scales with what it must write. */
 export function testerTurns(files: number): number {
@@ -139,5 +171,41 @@ export function continuationBrief(brief: string, footprint: readonly string[], m
     `Already written (do not rewrite): ${written.join(", ") || "none"}.\n` +
     "STILL TO WRITE — write exactly these, one criterion each, then end with your DECISION lines:\n" +
     missing.map((m) => `- ${m}`).join("\n")
+  );
+}
+
+/**
+ * Every test file the repository has, repository-relative.
+ *
+ * Read from the tree the run works in, so a test another unit of this same
+ * cut has just written is found like any other. What the repository does
+ * not author is skipped by its own ignore rules, never by a list of
+ * directory names.
+ */
+export async function repoTestFiles(tree: string): Promise<string[]> {
+  const out: string[] = [];
+  const skip = ignoredFor(tree);
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (worthWalking(e.name, skip)) await walk(abs);
+        continue;
+      }
+      const rel = path.relative(tree, abs).split(path.sep).join("/");
+      if (isTestPath(rel)) out.push(rel);
+    }
+  };
+  await walk(tree);
+  return out.sort();
+}
+
+/** The test-home work a unit declares, from the plan's own shape. */
+export function testHomeWorkOf(unit: {
+  units?: unknown[];
+}): { path: string; sentence: string; criteria: string[] }[] {
+  return (unit.units ?? []).flatMap(
+    (u) => (u as { testHomeWork?: { path: string; sentence: string; criteria: string[] }[] }).testHomeWork ?? [],
   );
 }
