@@ -67,7 +67,7 @@ export async function handOver(a: {
             ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
             : "") +
           (undelivered.length ? `UNDELIVERED:\n${undelivered.map((u) => `- ${u}`).join("\n")}\n\n` : "") +
-          `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}`).join("\n")}`,
+          `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}${p.settledBy ? ` (settled by ${p.settledBy})` : ""}`).join("\n")}`,
       });
     } catch (err) {
       log(`forge refused the delivery: ${err instanceof Error ? err.message : String(err)}`);

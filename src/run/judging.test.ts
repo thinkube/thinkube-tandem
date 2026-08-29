@@ -8,7 +8,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { unkeptProof } from "../core/schema";
+import { emptySpace, unkeptProof } from "../core/schema";
+import { stagedProofs } from "./assess";
+import { tepSlices } from "../dispatch/adapter";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -317,4 +319,47 @@ test("a check that could not run is unjudged — never counted against a promise
     ["the total is 42"],
     "only the check that ran and failed is a promise not kept",
   );
+});
+
+/**
+ * A promise settled elsewhere is pending, named, and never unkept.
+ *
+ * On this platform most promises are finally settled after the merge — an
+ * app's tests run in a named image in the pipeline the push fires; a
+ * component is validated by its 18_test.yaml on the live cluster; an
+ * installer by a person installing it. Forcing those into here-shaped
+ * checks made every run on a non-local target fail on the machine's own
+ * limits and blame the work.
+ */
+test("a criterion settled elsewhere gets no probe, rides as pending, and never withholds", () => {
+  const space = {
+    ...emptySpace(),
+    nodes: [
+      {
+        id: "n1",
+        sentence: "the todo API answers on its route once deployed",
+        serves: [],
+        needs: [],
+        acceptance: [
+          { id: "c1", text: "GET /api/todos returns 200 on the deployed app",
+            settledBy: "the app's build pipeline and ArgoCD sync" },
+          { id: "c2", text: "listTodos() returns the seeded rows" },
+        ],
+        grounding: { touchpoints: [{ path: "backend/app.py", planned: false }], stamp: [] },
+      },
+    ],
+  };
+  const cut = { id: "cut-1", changeIds: ["n1"] };
+
+  const staged = stagedProofs(space as never, cut as never);
+  assert.equal(staged.length, 1, "only the elsewhere-settled criterion is staged");
+  assert.equal(staged[0].verdict, "pending");
+  assert.equal(staged[0].criterionId, "c1");
+  assert.match(staged[0].settledBy ?? "", /build pipeline/);
+
+  assert.equal(unkeptProof(staged[0]), false, "pending elsewhere is not a promise the run broke");
+
+  const slices = tepSlices({ space: space as never, cut: cut as never, spaceName: "s" });
+  const probes = slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)).filter((f) => /_AC-/.test(f));
+  assert.equal(probes.length, 1, "one probe for the here-criterion; none for the staged one");
 });

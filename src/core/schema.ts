@@ -78,6 +78,20 @@ export interface AcceptanceCriterion {
   text: string;
   probePath?: string;
   kind?: "probe" | "assessment";
+  /**
+   * Where this criterion is SETTLED, when that is not here.
+   *
+   * A worktree can only prove what runs in a worktree. On this platform
+   * most promises are finally settled elsewhere: an app's tests run in a
+   * named image in the build pipeline the merge fires; a component is
+   * validated by its own 18_test.yaml against the live cluster; an
+   * installer is proved by a person installing it. Before this field,
+   * every such criterion was forced into here-shaped checks — and a run
+   * on any non-local target withheld deliveries for the machine's own
+   * limits. Free text naming the settling source, decided at grounding
+   * from the target's downstream, shown to the person at signing.
+   */
+  settledBy?: string;
   proof?: ProofAnchor;
 }
 
@@ -162,9 +176,13 @@ type ProofVerdict = "green" | "red" | "pending" | "unjudged";
 
 /** Evidence on a delivery: probe runs, suite verdicts, CI verdicts. */
 export interface Proof {
-  kind: "probe" | "suite" | "ci" | "assessment";
+  kind: "probe" | "suite" | "ci" | "assessment" | "staged";
   label: string;
   verdict: ProofVerdict;
+  /** For a "pending" verdict: where the answer will come from — the CI
+   *  step, the cluster playbook, the person's attestation. Harvested
+   *  after the merge; never counted as an unkept promise. */
+  settledBy?: string;
   /** Where the machine face of this evidence lives (log, run URL). */
   ref?: string;
   /** The check this proof answers — the claim card reads verification
@@ -181,6 +199,7 @@ export interface Proof {
  * never assessed.
  */
 export function unkeptProof(p: Proof): boolean {
+  if (p.verdict === "pending" && p.settledBy) return false;
   return p.verdict !== "green" && p.verdict !== "unjudged";
 }
 

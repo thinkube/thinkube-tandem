@@ -176,9 +176,13 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
 
     // Assessment checks get NO probe order — no runnable test fits them
     // by definition; the closing gate grades them with a fresh assessor.
+    // A criterion settled elsewhere gets none either: its answer comes
+    // from the pipeline, the cluster, or a person, after the merge — a
+    // here-shaped check for it fails on the machine's limits and blames
+    // the work.
     const criteria = changes.flatMap((c) =>
       c.acceptance
-        .filter((a) => a.kind !== "assessment")
+        .filter((a) => a.kind !== "assessment" && !a.settledBy)
         .map((a) => ({ change: c, id: a.id, text: a.text })),
     );
     // What the plan says this unit will DO to each file, not merely which

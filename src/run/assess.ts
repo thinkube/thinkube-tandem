@@ -258,3 +258,31 @@ export function proposeRewording(
     });
   }
 }
+
+/**
+ * The cut's criteria that are settled elsewhere, as pending proofs.
+ *
+ * Each names its settling source — the pipeline the merge fires, the
+ * component's 18_test.yaml, a person's attestation — and rides the
+ * delivery as pending. Harvested after the merge; never an unkept
+ * promise, because the machine deciding here would be deciding about a
+ * place it cannot see.
+ */
+export function stagedProofs(space: Space, cut: Cut): Proof[] {
+  const byId = new Map(space.nodes.map((n) => [n.id, n]));
+  const out: Proof[] = [];
+  for (const id of cut.changeIds) {
+    const n = byId.get(id);
+    if (!n) continue;
+    for (const c of n.acceptance)
+      if (c.settledBy)
+        out.push({
+          kind: "staged",
+          label: c.text,
+          verdict: "pending",
+          settledBy: c.settledBy,
+          criterionId: c.id,
+        });
+  }
+  return out;
+}

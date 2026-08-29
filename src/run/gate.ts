@@ -15,7 +15,7 @@ import * as path from "node:path";
 import { Cut, Delivery, Proof, Ruling, Space, unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
-import { gradeAssessments, logRedChecks, proposeRewording } from "./assess";
+import { gradeAssessments, logRedChecks, proposeRewording, stagedProofs } from "./assess";
 import type { Exec } from "./oracle";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
@@ -183,7 +183,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const observations = [...new Set([...observationsOf(space, cut), ...graded.observations])];
   if (observations.length)
     log(`${tep}: ${observations.length} observation(s) ride the delivery for the person to certify`);
-  const proofs: Proof[] = assessed.concat(
+  // Criteria settled elsewhere ride as pending, each naming its source.
+  const staged = stagedProofs(space, cut);
+  if (staged.length)
+    log(`${tep}: ${staged.length} promise(s) are settled after the merge — ` +
+      [...new Set(staged.map((p) => p.settledBy))].join("; "));
+  const proofs: Proof[] = staged.concat(assessed).concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;

@@ -41,7 +41,16 @@ export function renderCutScreen(space: Space, cut: Cut): string {
     if (n.acceptance.length === 0) lines.push(`      checked by: (no check yet)`);
     for (const c of n.acceptance)
       lines.push(
-        `      checked by: ${c.text}${c.kind === "assessment" ? " — graded by an independent reviewer" : " — runnable test"}`,
+        `      checked by: ${c.text}${
+          // The person signs knowing WHERE each promise is settled — a
+          // criterion answered after the merge must never read as a test
+          // the run will execute.
+          c.settledBy
+            ? ` — settled after the merge by ${c.settledBy}`
+            : c.kind === "assessment"
+              ? " — graded by an independent reviewer"
+              : " — runnable test"
+        }`,
       );
   }
 
