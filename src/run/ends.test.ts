@@ -228,7 +228,7 @@ test("a unit is never failed for a red it cannot reach", async () => {
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["node", "-e", "process.exit(0)"],
+      suiteCommand: ["true"],
       ...(shape.runOne ? { runOne: shape.runOne } : {}),
       state,
       supervisorRound: async () => null,
@@ -260,7 +260,7 @@ test("nothing a unit wrote is lost from the branch", async () => {
     {
       repoRoot: repo,
       model: "sonnet",
-      suiteCommand: ["node", "-e", "process.exit(0)"],
+      suiteCommand: ["true"],
       ...(shape.runOne ? { runOne: shape.runOne } : {}),
       state,
       supervisorRound: async () => null,

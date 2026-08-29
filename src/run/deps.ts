@@ -41,7 +41,9 @@ export interface DispatchDeps {
   suiteReds?: readonly string[];
   rememberSuiteReds?: (files: readonly string[]) => void;
   /** Re-read the setup facts from a failure's evidence (the door tries the correction once). */
-  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
+  resetup?: (
+    evidence: string,
+  ) => Promise<{ provision: string; prepare: string; runOne?: string; suite?: string }>;
   /** The door proved this setup on the untouched tree — remember it as the answer. */
   proveSetup?: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** The code graph's importer listing for a path — orders each slice's

@@ -32,7 +32,9 @@ export async function dispatchScopePlan(args: {
   runOne?: string;
   suiteReds?: readonly string[];
   rememberSuiteReds?: (files: readonly string[]) => void;
-  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
+  resetup?: (
+    evidence: string,
+  ) => Promise<{ provision: string; prepare: string; runOne?: string; suite?: string }>;
   proveSetup?: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** The code graph's importer listing for a path — orders test-home work. */
   affected?: (path: string) => Promise<string>;

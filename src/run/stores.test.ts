@@ -22,7 +22,8 @@ import { execFile, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { proveSuite, setupRunTree } from "./setup";
+import { openTheDoor, setupRunTree } from "./setup";
+import { proveSuite } from "./suiteCommand";
 import type { Exec } from "./oracle";
 import { ownershipOf, releaseBorrowed, removeOwned } from "./ownTree";
 
@@ -193,4 +194,77 @@ test("a suite that RUNS and reports failures still holds", async () => {
 
   const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "./red.sh");
   assert.equal(held, "./red.sh", "a red suite on the base is the base's business, not a bad command");
+});
+
+/**
+ * The run must know how the repository runs its whole suite.
+ *
+ * The gate's last judgement IS that command's verdict on the delivered
+ * tree. Four of the five commands a run needs are read from the repository
+ * itself; this one was only ever a caller's setting, and when the setting
+ * was removed the value became "". It was carried politely through five
+ * hand-offs and executed at the final step of a seventy-minute run: every
+ * unit done, sixty-one criteria assessed, and then `execFile("")`.
+ */
+function door(root: string, wt: string, extra: Record<string, unknown> = {}) {
+  return openTheDoor({
+    worktree: wt,
+    repoRoot: root,
+    tep: "TEP-1",
+    told: { provision: "true", prepare: "true", ...extra },
+    exec,
+    boundedExec,
+    log: () => {},
+    defect: () => {},
+    resumed: false,
+    halted: () => false,
+  });
+}
+
+test("the door asks the repository for a suite command nobody told it", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt8-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+  fs.writeFileSync(path.join(wt, "all.sh"), "#!/bin/sh\necho '3 passed'\n");
+  fs.chmodSync(path.join(wt, "all.sh"), 0o755);
+
+  let asked = "";
+  const ready = await door(root, wt, {
+    resetup: async (evidence: string) => {
+      asked = evidence;
+      return { provision: "true", prepare: "true", suite: "./all.sh" };
+    },
+  });
+
+  assert.match(asked, /WHOLE suite/, "the repository is asked, in the same words as the other four");
+  assert.equal(ready.refusal, undefined);
+  assert.equal(ready.suite, "./all.sh", "and the answer is proved before it is trusted");
+});
+
+test("a run refuses at the door when no suite command can be found", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt9-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+
+  // Nobody knows, and the repository cannot say.
+  const ready = await door(root, wt, { resetup: async () => ({ provision: "true", prepare: "true" }) });
+
+  assert.match(
+    ready.refusal ?? "",
+    /whole suite/,
+    "refused in the first minute, by name — not executed as an empty command in the last",
+  );
+});
+
+test("a suite answer that cannot run is refused, not carried to the gate", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt10-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+
+  const ready = await door(root, wt, {
+    // What every non-npm repository was handed.
+    resetup: async () => ({ provision: "true", prepare: "true", suite: "npm test" }),
+  });
+
+  assert.match(ready.refusal ?? "", /whole suite/, "command not found is not a suite");
 });

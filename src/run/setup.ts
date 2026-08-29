@@ -41,6 +41,7 @@ import * as path from "node:path";
 import type { Exec } from "./oracle";
 import { isProbePath, isTestPath } from "./testHomes";
 import { releaseBorrowed, removeOwned } from "./ownTree";
+import { askForTheSuite, proveSuite } from "./suiteCommand";
 import { repairStandingTree } from "./refresh";
 
 export type BoundedExec = (
@@ -162,7 +163,9 @@ export interface SetupArgs {
   runOne?: string;
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
-  resetup?: (evidence: string) => Promise<{ provision: string; prepare: string; runOne?: string }>;
+  resetup?: (
+    evidence: string,
+  ) => Promise<{ provision: string; prepare: string; runOne?: string; suite?: string }>;
   /** What this repository's build step produces, when it has been proved
    *  here before — never borrowed, because output is the work judged. */
   builds?: string[];
@@ -454,47 +457,7 @@ export async function prepareAtGate(
   return { ok: prep.code === 0, words: prep.output.slice(-3000) };
 }
 
-/**
- * The repository's own whole-suite command, PROVED before it is trusted.
- *
- * It used to be a default — `npm test` — written into five call sites. A
- * repository in any other language got it anyway: the gate ran a command
- * that could not exist there, read the shell's "command not found" as the
- * suite's verdict, and withheld the delivery for it. The person was told
- * their standing checks were red.
- *
- * Proved the way the single-test command is: run it on the untouched tree
- * and see whether a RUNNER answered. A red suite on the base is the base's
- * business and the answer still holds — what disqualifies a command is
- * failing to run at all. An answer that does not hold is dropped rather
- * than used, and the run says so instead of judging by it.
- */
-export async function proveSuite(
-  args: Pick<SetupArgs, "worktree" | "boundedExec" | "log">,
-  suite: string,
-): Promise<string> {
-  if (!suite.trim()) return "";
-  args.log(`proving the repository's own suite: ${suite}`);
-  const t0 = Date.now();
-  const r = await args.boundedExec(suite, args.worktree);
-  const ran =
-    r.code === 0 ||
-    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)/m.test(r.output);
-  args.log(
-    `  ${ran ? "held" : "did not hold"} in ${since(t0)}` +
-      (ran ? "" : ` — ${tail(r.output, 300).split("\n")[0]}`),
-  );
-  return ran ? suite : "";
-}
 
-/**
- * The door's arguments for one run, assembled from what the repository
- * already proved about itself and what this dispatch was told.
- *
- * A repository's own answer wins over anything a caller assumed: the
- * caller's was a default in five places, and a repository in another
- * language got it regardless.
- */
 function setupArgsFor(a: {
   worktree: string;
   repoRoot: string;
@@ -554,13 +517,19 @@ export async function openTheDoor(a: {
   resumed: boolean;
   halted: () => boolean;
 }): Promise<TreeSetup> {
+  // Asked BEFORE the tree is proved, so a repository that cannot say how it
+  // runs its suite costs a minute rather than a whole run.
+  const suite =
+    a.known?.suite ||
+    (a.told.suiteCommand?.length ? a.told.suiteCommand.join(" ") : "") ||
+    (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
   const open = (): Promise<TreeSetup> =>
     setupRunTree(
       setupArgsFor({
         worktree: a.worktree,
         repoRoot: a.repoRoot,
         ...(a.known ? { known: a.known } : {}),
-        told: a.told,
+        told: { ...a.told, ...(suite ? { suiteCommand: suite.split(" ").filter(Boolean) } : {}) },
         exec: a.exec,
         boundedExec: a.boundedExec,
         log: a.log,
@@ -569,6 +538,23 @@ export async function openTheDoor(a: {
       }),
     );
   const ready = await open();
+  // A tree that proved everything but cannot run its own suite is a tree
+  // nothing can be judged on: the gate's final reading IS that command's
+  // verdict, and without one it executed the empty string at minute
+  // seventy. Refused here, by name, in the first minute.
+  if (!ready.refusal && !ready.suite)
+    return {
+      ...ready,
+      refusal:
+        "no command runs this repository's whole suite — the closing gate judges a " +
+        "delivered tree by that verdict, so nothing this run produced could be judged. " +
+        "Tell the run how this repository runs its suite, or record it in .tandem/setup.json.",
+    };
+  // The product build is the run's second veto. A repository that ships
+  // nothing built has no such veto, which is legitimate — and silent
+  // until it is said.
+  if (!ready.refusal && !a.told.build)
+    a.log("this repository ships nothing built — the product-build veto does not apply to this run");
   if (!ready.refusal || !a.resumed) return ready;
   const rebuild = async (): Promise<{ ok: boolean; words: string }> =>
     a.told.prepare

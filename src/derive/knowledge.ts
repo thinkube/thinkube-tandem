@@ -47,10 +47,16 @@ export interface Knowledge {
   runOne: string;
   /** How the product is built to ship; "" when nothing ships built. */
   build: string;
+  /** How this repository runs its WHOLE suite. The gate's judgement on a
+   *  delivered tree is this command's verdict, so a run that does not know
+   *  it cannot decide whether anything may be handed over. */
+  suite: string;
   /** Test files red at an earlier gate of this repository. */
   suiteReds: string[];
   rememberSuiteReds: (files: readonly string[]) => void;
-  resetup: (evidence: string) => Promise<{ provision: string; prepare: string; runOne: string }>;
+  resetup: (
+    evidence: string,
+  ) => Promise<{ provision: string; prepare: string; runOne: string; suite: string }>;
   /** The door proved this answer on a fresh checkout — remember it as such. */
   proveSetup: (s: { provision: string; prepare: string; runOne: string }) => void;
   /** What the human has settled — every derivation runs under these. */
@@ -159,6 +165,7 @@ export async function knowledgeOf(args: {
     prepare: settled.prepare,
     runOne: settled.runOne,
     build: settled.build,
+    suite: settled.suite,
     suiteReds: parseReds(args.store?.load("suite@reds")),
     rememberSuiteReds: (files) => {
       const all = [...new Set([...parseReds(args.store?.load("suite@reds")), ...files])].slice(-40);

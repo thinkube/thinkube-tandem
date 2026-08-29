@@ -31,9 +31,13 @@ export interface Setup {
    *  over a branch whose test build passed and whose product build did
    *  not, because only the first was ever asked for. */
   build: string;
+  /** Runs the repository's WHOLE suite, the way its own contributors run
+   *  it. The gate's final judgement on a delivered tree is this command's
+   *  verdict, so a run that does not know it cannot judge anything. */
+  suite: string;
 }
 
-export const NO_SETUP: Setup = { provision: "", prepare: "", runOne: "", build: "" };
+export const NO_SETUP: Setup = { provision: "", prepare: "", runOne: "", build: "", suite: "" };
 
 /** What steers a derivation besides the repository: an earlier answer to
  *  hold to unless the manifests changed, and the evidence of an answer that
@@ -51,9 +55,10 @@ function buildPreparePrompt(
   ctx: SetupContext = {},
 ): string {
   const show = (s: Setup) =>
-    `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}\nRUNONE: ${s.runOne || "NONE"}\nBUILD: ${s.build || "NONE"}`;
+    `PROVISION: ${s.provision || "NONE"}\nPREPARE: ${s.prepare || "NONE"}\nRUNONE: ${s.runOne || "NONE"}\n` +
+    `BUILD: ${s.build || "NONE"}\nSUITE: ${s.suite || "NONE"}`;
   return (
-    `Three questions about the repository at ${repoRoot}, answered from its ` +
+    `Five questions about the repository at ${repoRoot}, answered from its ` +
     `own manifests and configs (the dependency manifests and lockfiles, ` +
     `the test runner configuration, the build scripts, where tests import from). ` +
     `Consider EVERY dependency manifest in the repository, nested ones included: ` +
@@ -89,13 +94,19 @@ function buildPreparePrompt(
     `4. BUILD — what single command builds the PRODUCT as this repository ` +
     `ships it — its build, compile or package script (the one a release ` +
     `runs), NOT the test build? A tree this command rejects cannot ship, ` +
-    `whatever the tests say. NONE only if nothing is built to ship.\n\n` +
-    `Respond with EXACTLY four lines and nothing else — no explanation, no ` +
+    `whatever the tests say. NONE only if nothing is built to ship.\n` +
+    `5. SUITE — what single command runs this repository's WHOLE suite, the ` +
+    `way its own contributors run it before pushing, exiting non-zero when ` +
+    `anything fails? Its verdict on the delivered tree is what decides ` +
+    `whether work is handed over. NONE only if this repository has no suite ` +
+    `at all.\n\n` +
+    `Respond with EXACTLY five lines and nothing else — no explanation, no ` +
     `code fences:\n` +
     `PROVISION: <the exact shell command, run from the repository root, or NONE>\n` +
     `PREPARE: <the exact shell command, run from the repository root, or NONE>\n` +
     `RUNONE: <the exact shell command with <file> in it, or NONE>\n` +
-    `BUILD: <the exact shell command, run from the repository root, or NONE>`
+    `BUILD: <the exact shell command, run from the repository root, or NONE>\n` +
+    `SUITE: <the exact shell command, run from the repository root, or NONE>`
   );
 }
 
@@ -106,7 +117,7 @@ function parseSetup(raw: string | null): Setup | undefined {
   if (!raw || !/^\s*`*\s*(PROVISION|PREPARE|RUNONE)\s*:/im.test(raw)) return undefined;
   const setup: Setup = { ...NO_SETUP };
   for (const l of raw.split("\n")) {
-    const m = /^\s*`*\s*(PROVISION|PREPARE|RUNONE|BUILD)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
+    const m = /^\s*`*\s*(PROVISION|PREPARE|RUNONE|BUILD|SUITE)\s*:\s*(.*?)\s*`*\s*$/i.exec(l);
     if (!m) continue;
     const cmd = m[2].replace(/^`+|`+$/g, "").trim();
     // A command is one line of sane length; an essay or NONE is not one.
@@ -116,6 +127,7 @@ function parseSetup(raw: string | null): Setup | undefined {
     if (key === "PROVISION") setup.provision = value;
     else if (key === "PREPARE") setup.prepare = value;
     else if (key === "BUILD") setup.build = value;
+    else if (key === "SUITE") setup.suite = value;
     // A single-file command without its placeholder runs nothing in particular.
     else setup.runOne = value.includes("<file>") ? value : "";
   }
