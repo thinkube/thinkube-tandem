@@ -27,31 +27,44 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** The repository a path belongs to, by its common git directory — so a
- *  worktree and the checkout it was cut from answer the same. */
-export function repositoryOf(dir: string): string {
+/**
+ * The repository a path belongs to, by its common git directory — so a
+ * worktree and the checkout it was cut from answer the same.
+ *
+ * Undefined when git could not say. Not the empty string: an empty string
+ * compares unequal to everything, so a failed call answered "these are
+ * different repositories" — which is the answer that judges a cut by the
+ * stale rules it exists to correct.
+ */
+export function repositoryOf(dir: string): string | undefined {
   try {
     const out = execFileSync("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    return out ? fs.realpathSync(out) : "";
+    return out ? fs.realpathSync(out) : undefined;
   } catch {
-    return "";
+    return undefined;
   }
 }
 
 /**
  * Is this run judging its own machinery?
  *
- * True when the rules doing the judging live in the same repository as the
- * tree being judged — whatever either is called, and whichever branch each
- * is on.
+ * "yes" when the rules doing the judging live in the same repository as
+ * the tree being judged, whatever either is called and whichever branch
+ * each is on. "unknown" when git could not answer for one of them — which
+ * is not "no": treated as "no", a run judges a cut by the very rule the
+ * cut corrects, and reports the resulting failures as the person's.
  */
-export function judgingItself(worktree: string, rulesAt: string = __dirname): boolean {
+export function judgingItself(
+  worktree: string,
+  rulesAt: string = __dirname,
+): "yes" | "no" | "unknown" {
   const judged = repositoryOf(worktree);
   const judging = repositoryOf(rulesAt);
-  return !!judged && judged === judging;
+  if (!judged || !judging) return "unknown";
+  return judged === judging ? "yes" : "no";
 }
 
 /**
@@ -83,7 +96,16 @@ export async function ruleFromTreeUnderTest<T>(a: {
   /** Injectable for drives: where the rules doing the judging live. */
   rulesAt?: string;
 }): Promise<{ ok: true; rule: T } | { ok: false; reason: string }> {
-  if (!judgingItself(a.worktree, a.rulesAt ?? __dirname)) return { ok: true, rule: a.running };
+  const own = judgingItself(a.worktree, a.rulesAt ?? __dirname);
+  if (own === "no") return { ok: true, rule: a.running };
+  if (own === "unknown")
+    return {
+      ok: false,
+      reason:
+        `git could not say which repository the tree under test or these judging rules ` +
+        `belong to, so this run cannot tell whether it is judging its own machinery. ` +
+        `Judging anyway would apply rules the cut may exist to correct.`,
+    };
   const at = path.join(a.worktree, a.builtAs);
   if (!fs.existsSync(at))
     return {

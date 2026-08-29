@@ -112,21 +112,31 @@ export function wrongAltitude(a: {
 /**
  * Whether a name is something these files hand out — read from the files
  * themselves, in the forms every language writes an export in that this
- * repository can see. A file that cannot be read hands out nothing, which
- * makes the rule fire more often, never less: the refusal is the cautious
- * side only when the evidence is there.
+ * repository can see.
+ *
+ * A file that IS NOT THERE hands out nothing, and that is a fact: a
+ * promise plans files that do not exist yet. A file that is there and
+ * cannot be READ is not a fact about anything — it is a fault here, and
+ * answering "hands out nothing" for it removes the exemption that keeps
+ * the altitude rule from firing, so the person's plan is refused for a
+ * failed read. Those files are named instead, and the caller stops.
  */
-export function exportedIn(repoRoot: string, files: readonly string[]): (symbol: string) => boolean {
+export function exportedIn(
+  repoRoot: string,
+  files: readonly string[],
+): { exported: (symbol: string) => boolean; unreadable: string[] } {
+  const unreadable: string[] = [];
   const sources = files
     .map((f) => {
       try {
         return fs.readFileSync(`${repoRoot}/${f}`, "utf8");
-      } catch {
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") unreadable.push(f);
         return "";
       }
     })
     .filter(Boolean);
-  return (symbol) => {
+  const exported = (symbol: string): boolean => {
     const s = symbol.replace(/[$]/g, "\\$&");
     return sources.some(
       (src) =>
@@ -136,4 +146,5 @@ export function exportedIn(repoRoot: string, files: readonly string[]): (symbol:
         new RegExp(`\\bfunc\\s+${s}\\b`).test(src),
     );
   };
+  return { exported, unreadable };
 }

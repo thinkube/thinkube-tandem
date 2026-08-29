@@ -287,14 +287,24 @@ export async function refusedBeforeDispatch(a: {
       },
     };
 
+  const reading = exportedIn(
+    a.repoRoot,
+    a.space.nodes.flatMap((n) => (n.grounding?.touchpoints ?? []).map((t) => t.path)),
+  );
+  // A file that is there and could not be read is a fault here. Left
+  // silent, it answers "this name is not exported", removes the exemption
+  // the altitude rule turns on, and the person's plan is refused for a
+  // failed read. The rule is held back and the files are named instead.
+  if (reading.unreadable.length)
+    a.log(
+      `⚠ ${reading.unreadable.length} file(s) a promise names could not be read, so the altitude rule ` +
+        `is not applied to this cut: ${reading.unreadable.slice(0, 5).join(", ")}`,
+    );
   const impossible = refusalsBeforeDispatch({
     slices: a.slices,
     space: a.space,
-    methods: a.graphPath ? classMethodsIn(a.graphPath) : [],
-    exported: exportedIn(
-      a.repoRoot,
-      a.space.nodes.flatMap((n) => (n.grounding?.touchpoints ?? []).map((t) => t.path)),
-    ),
+    methods: reading.unreadable.length ? [] : a.graphPath ? classMethodsIn(a.graphPath) : [],
+    exported: reading.exported,
   });
   if (impossible.length) return { dag, refusal: { trigger: "plan-promises", refusal: impossible.join("\n") } };
 

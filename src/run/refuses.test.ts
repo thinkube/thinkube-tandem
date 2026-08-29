@@ -23,6 +23,7 @@ import { acceptDelivery } from "../gates/sign";
 import type { Delivery } from "../core/schema";
 import * as os from "node:os";
 import { emptySpace } from "../core/schema";
+import { exportedIn } from "./altitude";
 
 /** A repository with one directory, so the import audit has ground truth. */
 function repo(): string {
@@ -446,6 +447,28 @@ test("what an opened delivery recorded outlives every later failed run", async (
   assert.equal(kept.checks?.[0].source, "the real check");
 });
 
+/**
+ * A file that is THERE and cannot be read is not evidence about the work.
+ *
+ * `exportedIn` answered "hands out nothing" for it. That removes the
+ * exemption the altitude rule turns on, so a promise naming a symbol the
+ * code map also knows was refused before dispatch — the person's plan
+ * rejected because a read failed here. A file that is simply not there yet
+ * still answers "nothing", because a promise plans files that do not
+ * exist: that one IS a fact.
+ */
+test("a file that is absent hands out nothing, and says nothing was wrong", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "exp-"));
+  const r = exportedIn(root, ["src/planned.ts"]);
+  assert.deepEqual(r.unreadable, [], "a file to be created is not a fault");
+  assert.equal(r.exported("greet"), false);
+});
 
+test("a file that cannot be read is named, not answered for", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "exp2-"));
+  fs.mkdirSync(path.join(root, "src", "locked.ts"), { recursive: true });
 
-
+  // A directory where a file is expected: it exists, and reading it fails.
+  const r = exportedIn(root, ["src/locked.ts"]);
+  assert.deepEqual(r.unreadable, ["src/locked.ts"], "the caller is told which file it could not see");
+});
