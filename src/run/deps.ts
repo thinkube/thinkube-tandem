@@ -3,7 +3,7 @@
  * commands this repository answers to, and the seams a test replaces.
  *
  * It lives apart from the loop because it is a contract, read by the
- * editor, the headless entry and every test — while the loop beside it is
+ * editor, the journey entry and every test — while the loop beside it is
  * a program.
  */
 import type { Forge } from "../dispatch/forge";

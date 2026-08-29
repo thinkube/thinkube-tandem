@@ -1,17 +1,17 @@
 /**
  * The whole journey without a window: asks in, delivery out.
  *
- * `headless.ts` runs a cut that is already signed, which covers the
- * expensive half and none of the half where the plan is made. So the
- * derivation could only ever be exercised by a person clicking through
- * four screens, and every question about it — does it slice this the same
- * way twice, does the door refuse what it should — cost a person an
- * evening and could not be asked twice under the same conditions.
- *
  * This runs the same session the editor drives, in the same order a person
  * drives it: write the asks, read them, keep the reading, work out what to
  * build, sign, run. Nothing here is a second implementation; every step is
  * the method the panel calls.
+ *
+ * That is the whole requirement, and it is why this is the ONLY entry
+ * without a window. An entry that calls the dispatcher directly skips what
+ * the editor does around it — the approval check, the run record the UI
+ * reads, the forge, the model split, the author — so it produces something
+ * that looks like a run, is judged like one, and answers a question nobody
+ * asked.
  *
  *   node out/cli/journey.js --asks <file> --repo <repo> --space <dir>
  *                           [--suite "<how this repo runs its suite>"] [--prepare "npx tsc -p ."]
