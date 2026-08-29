@@ -15,7 +15,7 @@ import * as path from "node:path";
 import { Cut, Delivery, Proof, Ruling, Space, unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
-import { gradeAssessments, logRedChecks } from "./assess";
+import { gradeAssessments, logRedChecks, proposeRewording } from "./assess";
 import type { Exec } from "./oracle";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
@@ -29,6 +29,7 @@ import {
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
+import { handOver } from "./handOver";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
@@ -430,14 +431,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // would forbid demolition — but nothing is handed over while a promise is
   // unkept. A delivery with a red proof asks the person to finish the work
   // and to decide which reds are acceptable, which is the machine's job.
-  // A criterion nothing could judge is not a failure to repair and not a
-  // promise to withhold: only a change to what was asked can settle it, so
-  // it reaches the person as a proposal in the criterion's own words.
-  for (const p of proofs.filter((x) => x.verdict === "unjudged")) {
-    log(`✎ ${tep}: "${p.label}" could not be judged — ${(p.ref ?? "nothing settled it").slice(0, 150)}. Reword it as something you certify by looking, or as a claim a check can run.`);
-    defect({ activity: "closing gate", trigger: "unjudgeable-criterion", type: "contract", stage: "brief",
-      impact: "the ask needs rewording", detail: `${p.label} — ${(p.ref ?? "").slice(0, 300)}` });
-  }
+  // A criterion nothing could judge is neither repaired nor withheld: only
+  // a change to what was asked settles it, so it reaches the person.
+  proposeRewording(tep, proofs, log, defect);
   let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
@@ -540,60 +536,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     };
   }
 
-  for (const c of kept) await fs.rm(path.join(worktree, c.path), { force: true }).catch(() => {});
-  log(`${tep}: ${kept.length} check(s) recorded on the delivery and discarded from the tree`);
-  log(`${tep}: committing and opening the delivery`);
-  await exec("git", ["add", "-A", "."], worktree);
-  await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
-  const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
-  // A criterion's proof lives on the delivery record, not in a test file.
-  const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = recordPath
-    ? kept.map((c) => ({
-        criterionId: c.criterionId,
-        path: recordPath,
-        stamp: [{ root: deps.repoRoot, head: deliveredHead, dirty: "" }],
-      }))
-    : [];
-  const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
-  let url: string | undefined;
-  if (pushed.code === 0 && deps.forge) {
-    try {
-      url = await deps.forge.openDelivery({
-        branch,
-        title: `Tandem delivery: ${tep}`,
-        body:
-          `Delivered by run ${runId} for ${tep}, produced at ${producedAt}.\n\n` +
-          (observations.length
-            ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
-            : "") +
-          (undelivered.length ? `UNDELIVERED:\n${undelivered.map((u) => `- ${u}`).join("\n")}\n\n` : "") +
-          `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}`).join("\n")}`,
-      });
-    } catch (err) {
-      log(`forge refused the delivery: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  } else if (pushed.code !== 0) {
-    proofs.push({ kind: "ci", label: "push", verdict: "red" });
-  }
-  const delivery: Delivery = {
-    id: `delivery-${tep}`,
-    ...(findings.length ? { findings } : {}),
-    cutId: cut.id,
-    branch,
-    runId,
-    producedAt,
-    proofs,
-    ...(observations.length ? { observations } : {}),
-    ...(url ? { url } : {}),
-    ...(undelivered.length ? { undelivered } : {}),
-    ...(g.rulings.length ? { rulings: g.rulings } : {}),
-    ...(g.decisions.length ? { decisions: g.decisions } : {}),
-  };
-  return {
-    refusals: [],
-    undelivered,
-    url,
-    ...(proofAnchors.length ? { proofAnchors } : {}),
-    delivery,
-  };
+  return handOver({
+    tep, branch, worktree, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
+    rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec, log,
+  });
 }

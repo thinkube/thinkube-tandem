@@ -221,3 +221,40 @@ export function logRedChecks(
       });
     }
 }
+
+/**
+ * A criterion nothing could judge reaches the person as a proposal.
+ *
+ * Not "your code failed" — nothing was judged. No assessor could be
+ * dispatched, one threw, the runner was missing. The only thing that
+ * settles such a criterion is a change to what was asked, so it is said in
+ * the criterion's own words, to the one person who can change it.
+ */
+export function proposeRewording(
+  tep: string,
+  proofs: readonly { verdict: string; label: string; ref?: string }[],
+  log: (line: string) => void,
+  defect: (e: {
+    activity: string;
+    trigger: string;
+    type?: string;
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
+    impact: string;
+    detail: string;
+  }) => void,
+): void {
+  for (const p of proofs.filter((x) => x.verdict === "unjudged")) {
+    log(
+      `✎ ${tep}: "${p.label}" could not be judged — ${(p.ref ?? "nothing settled it").slice(0, 150)}. ` +
+        `Reword it as something you certify by looking, or as a claim a check can run.`,
+    );
+    defect({
+      activity: "closing gate",
+      trigger: "unjudgeable-criterion",
+      type: "contract",
+      stage: "brief",
+      impact: "the ask needs rewording",
+      detail: `${p.label} — ${(p.ref ?? "").slice(0, 300)}`,
+    });
+  }
+}

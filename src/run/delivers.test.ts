@@ -124,9 +124,11 @@ for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
       "and the promise carries a proof that ran",
     );
 
-    // The run proves the promise; it does not grow the repository's suite.
-    // Every check is evidence on the delivery, and none of them rides the
-    // merge into the delivered tree.
+    // The checks a run writes STAY. Each carries the promise it proves,
+    // which is what lets a later cut retire it when that promise is
+    // overruled — and it is the proof the person paid the run to produce.
+    // What must never ride the merge is a check under a coordinate of the
+    // run: `probes/` is the run's own scratch space, not the repository's.
     const delivered = execFileSync("git", ["-C", repo, "ls-tree", "-r", "--name-only", outcome.delivery!.branch])
       .toString()
       .split("\n")
@@ -138,8 +140,8 @@ for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
     );
     assert.deepEqual(
       delivered.filter((p) => /\.test\.|\.spec\./.test(p)).filter((p) => !before.has(p)),
-      [],
-      "the delivery installed no test into the repository",
+      ["src/greet_AC-1.test.mjs"],
+      "the delivery hands the repository the check that proves its promise",
     );
 
     // A check is born where this repository keeps its tests — beside the
