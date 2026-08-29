@@ -28,9 +28,10 @@ import {
 } from "./plan";
 import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
-import { platformImitations } from "./probeAudit";
+import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
+import { judgingRules } from "./selfHosted";
 import type { WiringVerdict } from "./wiring";
 import { isTestPath } from "./testHomes";
 import type { DispatchDeps, DispatchOutcome } from "./dispatch";
@@ -145,8 +146,21 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         detail: `${label} — ${criterion}`.slice(0, 400),
       }),
   });
+  // The rules that decide whether a promise is kept come from the TREE
+  // UNDER TEST when that tree is the one that defines them. A cut that
+  // corrects a judging rule was otherwise judged by the rule it corrects:
+  // seventeen promises came back unkept for a defect both of the branch's
+  // commits had already fixed, and no such cut could ever be delivered.
+  const rules = await judgingRules({ worktree, running: { criterionMapOf, provedByExecution }, log });
+  if (!rules.ok) {
+    log(`⛔ ${tep}: ${rules.reason}`);
+    defect({ activity: "closing gate", trigger: "self-hosted-judge", type: "infrastructure",
+      impact: "the run cannot judge this cut", detail: rules.reason.slice(0, 500) });
+    return { refusals: [rules.reason], undelivered: [] };
+  }
+  const { criterionMapOf: mapCriteria, provedByExecution: proveWiring } = rules;
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
-  const criterionByProbe = criterionMapOf(slices);
+  const criterionByProbe = mapCriteria(slices);
   // Wiring proven by execution: a green check is asked whether running it
   // actually executed the code its promise lands in. A stub satisfies an
   // assertion; it cannot appear on a path nothing reaches.
@@ -161,7 +175,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     const v = verifs.find((x) => x.ac === r.ac);
     if (!v?.run || v.env === "assessment") continue;
     const probe = probeOfAc.get(r.ac);
-    const verdict = await provedByExecution({
+    const verdict = await proveWiring({
       run: v.run,
       subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
       worktree,
@@ -355,28 +369,15 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // Production that imitates the platform, said for the person to weigh.
   // The simulator rule reads checks; this reads what the run DELIVERED,
   // because that is where the imitation moved when the checks were watched.
-  {
-    const delivered = (
-      await exec("git", ["-C", worktree, "diff", "--name-only", "--diff-filter=d", `${g.baseSha}..HEAD`], worktree)
-    ).out.split("\n").map((l) => l.trim()).filter((f) => f && !isTestPath(f) && /\.(m|c)?tsx?$/.test(f));
-    for (const rel of delivered) {
-      let src = "";
-      try {
-        src = await fs.readFile(path.join(worktree, rel), "utf8");
-      } catch {
-        continue;
-      }
-      for (const hit of platformImitations(rel, src)) {
-        findings.push(`${hit.file}:${hit.line} — ${hit.detail}`);
-        defect({
-          activity: "closing gate",
-          trigger: "platform-imitation",
-          type: "code",
-          impact: "production imitates the platform — carried as a finding",
-          detail: `${hit.file}:${hit.line} ${hit.detail}`.slice(0, 500),
-        });
-      }
-    }
+  for (const hit of await imitationsDelivered({
+    worktree, baseSha: g.baseSha, exec,
+    readFile: (rel) => fs.readFile(path.join(worktree, rel), "utf8"),
+    isTestPath,
+  })) {
+    findings.push(`${hit.where} — ${hit.detail}`);
+    defect({ activity: "closing gate", trigger: "platform-imitation", type: "code",
+      impact: "production imitates the platform — carried as a finding",
+      detail: `${hit.where} ${hit.detail}`.slice(0, 500) });
   }
   if (!verdict.green && !verdict.failures.some((f) => /product build/i.test(f.name))) {
     const carried = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);

@@ -78,6 +78,15 @@ function world(): { repo: string; store: string; space: string } {
   return { repo, store, space };
 }
 
+/**
+ * The spawned process is RECORDED BEFORE it is spoken to.
+ *
+ * Recording it afterwards meant a failed handshake leaked it: the drive
+ * threw, `shared` stayed undefined, `after` had nothing to kill, and the
+ * child held stdio open so `node --test` never exited. That hung the whole
+ * suite — and the suite is what a closing gate runs, so a leak here stops
+ * a delivery for as long as anyone is patient.
+ */
 async function serverFor(w: ReturnType<typeof world>) {
   const proc = spawn(
     process.execPath,
@@ -93,6 +102,7 @@ async function serverFor(w: ReturnType<typeof world>) {
     },
   );
   const c = client(proc);
+  spawned.push(proc);
   await c.call("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
@@ -103,6 +113,8 @@ async function serverFor(w: ReturnType<typeof world>) {
 
 /** One server for the whole file: spawning a process per drive multiplies
  *  the slowest part of the file by the number of claims it makes. */
+/** Every process this file starts, killed however the file ends. */
+const spawned: ReturnType<typeof spawn>[] = [];
 let shared: { w: ReturnType<typeof world>; proc: ReturnType<typeof spawn>; c: ReturnType<typeof client> } | undefined;
 async function running() {
   if (!shared) {
@@ -112,7 +124,9 @@ async function running() {
   }
   return shared;
 }
-after(() => shared?.proc.kill());
+after(() => {
+  for (const p of spawned) p.kill("SIGKILL");
+});
 
 test("the server lists its tools and none of them is a gate", { timeout: 5000 }, async () => {
   const { c } = await running();

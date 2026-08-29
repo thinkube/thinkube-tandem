@@ -34,27 +34,47 @@ interface V8Coverage {
   result?: { url?: string; functions?: { ranges?: { count?: number }[] }[] }[];
 }
 
-/** Every file the recorded run actually executed a line of. */
-async function executedFiles(dir: string): Promise<string[]> {
+/**
+ * Every file the recorded run actually executed a line of — and whether
+ * the evidence could be read at all.
+ *
+ * The difference is the whole verdict. Unreadable coverage used to become
+ * an empty list, and an empty list means "the drive executed nothing",
+ * which is a statement about the WORK. A directory that could not be
+ * listed, a file that could not be read, a shape the parser did not
+ * expect: each of them silently accused the code of not running.
+ *
+ * So absence of evidence is returned as absence of evidence. `read` is
+ * false when nothing could be understood, and the caller says "unknown"
+ * rather than "no".
+ */
+async function executedFiles(dir: string): Promise<{ files: string[]; read: boolean }> {
   const out = new Set<string>();
-  const names = await fs.readdir(dir).catch(() => [] as string[]);
+  let understood = 0;
+  const names = await fs.readdir(dir).catch(() => undefined);
+  if (!names) return { files: [], read: false };
   for (const n of names) {
     if (!n.endsWith(".json")) continue;
-    const raw = await fs.readFile(path.join(dir, n), "utf8").catch(() => "");
+    const raw = await fs.readFile(path.join(dir, n), "utf8").catch(() => undefined);
+    if (raw === undefined) continue;
     let parsed: V8Coverage;
     try {
       parsed = JSON.parse(raw) as V8Coverage;
     } catch {
       continue;
     }
-    for (const entry of parsed.result ?? []) {
+    // A coverage file whose shape the parser does not recognise says
+    // nothing about the work — it is one more thing that was not read.
+    if (!Array.isArray(parsed.result)) continue;
+    understood++;
+    for (const entry of parsed.result) {
       const url = entry.url ?? "";
       if (!url.startsWith("file://")) continue;
       const ran = (entry.functions ?? []).some((f) => (f.ranges ?? []).some((r) => (r.count ?? 0) > 0));
       if (ran) out.add(url.slice("file://".length));
     }
   }
-  return [...out];
+  return { files: [...out], read: understood > 0 };
 }
 
 /**
@@ -114,8 +134,12 @@ export async function provedByExecution(a: {
     const t0 = Date.now();
     const r = await a.exec(`NODE_V8_COVERAGE='${dir}' ${a.run}`, a.worktree);
     const took = Date.now() - t0;
-    const ran = await executedFiles(dir);
-    if (!ran.length)
+    const { files: ran, read } = await executedFiles(dir);
+    // Nothing to read, or nothing understood: that is a fact about the
+    // EVIDENCE, never about the work. Saying "no" here accused the code of
+    // not running whenever a directory could not be listed or a coverage
+    // file had a shape the parser did not expect.
+    if (!read || !ran.length)
       return {
         executed: "unknown",
         detail:

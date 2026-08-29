@@ -224,3 +224,39 @@ export function platformImitations(
   }
   return out;
 }
+
+/**
+ * Production the run DELIVERED that imitates the platform it runs on.
+ *
+ * The simulator rule reads checks; this reads what was actually handed
+ * over, because that is where the imitation moved once the checks were
+ * watched. Carried as a finding for the person to weigh, never a veto: it
+ * is a judgement about taste in code, and by the time the gate has spent
+ * every rung the person is the only actor left who can make one.
+ */
+export async function imitationsDelivered(a: {
+  worktree: string;
+  baseSha: string;
+  exec: (cmd: string, args: string[], cwd: string) => Promise<{ out: string }>;
+  readFile: (at: string) => Promise<string>;
+  isTestPath: (p: string) => boolean;
+}): Promise<{ where: string; detail: string }[]> {
+  const out: { where: string; detail: string }[] = [];
+  const delivered = (
+    await a.exec("git", ["-C", a.worktree, "diff", "--name-only", "--diff-filter=d", `${a.baseSha}..HEAD`], a.worktree)
+  ).out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((f) => f && !a.isTestPath(f) && /\.(m|c)?tsx?$/.test(f));
+  for (const rel of delivered) {
+    let src = "";
+    try {
+      src = await a.readFile(rel);
+    } catch {
+      continue;
+    }
+    for (const hit of platformImitations(rel, src))
+      out.push({ where: `${hit.file}:${hit.line}`, detail: hit.detail });
+  }
+  return out;
+}
