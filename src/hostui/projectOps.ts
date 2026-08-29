@@ -15,11 +15,13 @@ import * as vscode from "vscode";
 import { EnabledProject, mintCard, scopesNotOpen } from "../core/identity";
 import { configuredStoreRoot } from "./spaceOps";
 import { sweepSpaceResidue } from "../run/residue";
+import { ignoredFor, worthWalking } from "../core/ignored";
 
 /** Git repositories nested inside a root — the root itself is never a
  *  candidate; found repos are leaves (no descent into them). */
 function reposInside(root: string, depth = 3): string[] {
   const out: string[] = [];
+  const skip = ignoredFor(root);
   const walk = (dir: string, level: number): void => {
     let entries: fs.Dirent[];
     try {
@@ -28,7 +30,8 @@ function reposInside(root: string, depth = 3): string[] {
       return;
     }
     for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules") continue;
+      // What this project does not author, asked of the project.
+      if (!e.isDirectory() || e.name.startsWith(".") || !worthWalking(e.name, skip)) continue;
       const child = path.join(dir, e.name);
       if (fs.existsSync(path.join(child, ".git"))) out.push(child);
       else if (level < depth) walk(child, level + 1);
