@@ -8,6 +8,8 @@
  * really drives the subject.
  */
 import { test } from "node:test";
+import { logRedChecks } from "./assess";
+import { PROBE_UNRUNNABLE_CODES } from "../engine/core/closingGate";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -140,4 +142,25 @@ test("a promise landing in a document is not asked to execute", async () => {
   assert.match(verdict.detail, /content, not code/);
 });
 
+/**
+ * Stopping a run is not evidence about the work.
+ *
+ * A halt cut every in-flight check short. Each one was written down as a
+ * criterion the code failed — one stop produced forty-seven "your code is
+ * broken" rows, and reading the ledger afterwards, that is indistinguishable
+ * from forty-seven real defects.
+ */
+test("a halted run records no defect, and a check cut short is never a code verdict", () => {
+  const rows: { activity: string; trigger: string; type?: string; impact: string; detail: string }[] = [];
+  const keep = (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) =>
+    rows.push(e);
 
+  logRedChecks([{ ac: 1, pass: false, evidence: "exit 124 [stopped — the run was halted]" }], keep, true);
+  assert.equal(rows.length, 0, "a stop is the person's act, not a fault in the work");
+
+  logRedChecks([{ ac: 1, pass: false, unrunnable: true, evidence: "exit 124" }], keep, false);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.type, "gate", "a check that could not run is the machine's, never the code's");
+
+  assert.equal(PROBE_UNRUNNABLE_CODES.has(124), true, "cut short — a timeout or a stop");
+});

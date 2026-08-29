@@ -196,7 +196,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       };
     }),
   );
-  logRedChecks(acResults, defect);
+  logRedChecks(acResults, defect, g.state.halted);
 
   undelivered.push(
     ...(await confessedDeferrals({

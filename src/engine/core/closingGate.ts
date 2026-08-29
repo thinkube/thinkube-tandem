@@ -41,9 +41,17 @@ export interface AcResult {
   unrunnable?: boolean;
 }
 
-/** Shell exit codes that mean the PROBE cannot run at all (126 = found but not
- *  executable, 127 = command not found) — a gate defect, never a code red. */
-export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([126, 127]);
+/**
+ * Exit codes that mean the check did not run, so its red says nothing
+ * about the code.
+ *
+ * 126 — found but not executable. 127 — command not found. 124 — the
+ * command was cut short: a timeout, or the person pressing stop. That last
+ * one wrote one "this criterion failed" row per check still in flight when
+ * a run was halted, and the ledger then read as the work being broken
+ * dozens of times over. Stopping a run is not evidence about anything.
+ */
+export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([124, 126, 127]);
 
 /**
  * A red that says "the check was not there to run" is the gate's own

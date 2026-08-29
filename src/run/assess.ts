@@ -197,7 +197,12 @@ export function logRedChecks(
     evidence?: string;
   }[],
   defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void,
+  /** The run was stopped — by the person, or by its own bound. Nothing
+   *  that was in flight is evidence about the work, and one row per
+   *  interrupted check made a single stop look like dozens of defects. */
+  halted = false,
 ): void {
+  if (halted) return;
   for (const r of results)
     if (!r.pass) {
       // The gate already decides this and puts it on the result. Deriving
