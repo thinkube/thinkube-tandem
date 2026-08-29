@@ -16,6 +16,8 @@ import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
+import { downstreamOf } from "../run/survey";
+import { watchGitopsAfterAccept } from "../run/harvest";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -374,5 +376,24 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
       };
     }
     s.changed("Accepted and merged.");
+    // The merge's push fired the platform pipeline for a gitops app; the
+    // promises marked settled-elsewhere are answered THERE. Watch it and
+    // stamp the answers home — the person sees promises close, not a
+    // delivery frozen at "pending" forever. Started, never awaited: the
+    // accept returns; the watch reports through the space.
+    const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+    if (downstreamOf(gitRoot) === "gitops-app")
+      void watchGitopsAfterAccept({
+        gitRoot,
+        app: path.basename(gitRoot),
+        delivery: r.delivery,
+        acceptedAt: s.deps.now(),
+        update: (d, note) => {
+          s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+          s.persist();
+          s.changed(note);
+        },
+        log: (l) => s.changed(l),
+      });
     return { ok: true };
   }
