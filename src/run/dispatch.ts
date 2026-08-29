@@ -30,6 +30,7 @@ import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { whatWeKnow } from "./whatWeKnow";
+import { briefWithNames } from "./contractNames";
 import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
@@ -288,7 +289,14 @@ export async function dispatchTep(
       (deps.digest
         ? `\n\n──── THE REPOSITORY'S CONVENTIONS (an established reading — build under it instead of re-discovering it) ────\n${deps.digest}`
         : "");
-    if (role !== "test") briefBySlice.set(next.slice, baseBrief);
+    // A check fixes exact identifiers, and the code must agree on the
+    // spelling to compile at all: a coder blind to the check is guessing a
+    // word another actor already wrote down.
+    const withNames = await briefWithNames(baseBrief, {
+      role, tree, probes: sliceProbes.get(next.slice) ?? [],
+      owned: next.footprint.filter((f) => !isProbePath(f)),
+    });
+    if (role !== "test") briefBySlice.set(next.slice, withNames);
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>
       role === "test"
