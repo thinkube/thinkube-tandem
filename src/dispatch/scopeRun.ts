@@ -99,10 +99,14 @@ export async function dispatchScopePlan(args: {
         // guess about somebody else's repository became a fact nobody
         // checked.
         told: {
-          ...deps.told,
+          // The editor's settings describe the ANCHOR repository. Offered
+          // to every repository in the space, a Node suite command reached
+          // a Python repo as a candidate on every run — bounded by the
+          // door, but wrong every time, and paid for every time.
+          ...(sc === "" ? deps.told : {}),
           ...(sc === "" && args.prepare
             ? { prepare: args.prepare }
-            : deps.prepareCommand
+            : sc === "" && deps.prepareCommand
               ? { prepare: deps.prepareCommand }
               : {}),
           ...(sc === "" && args.provision ? { provision: args.provision } : {}),
