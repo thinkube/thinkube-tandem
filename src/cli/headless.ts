@@ -9,7 +9,7 @@
  * nothing could be measured twice under the same conditions.
  *
  *   node out/cli/headless.js --space <space dir> --repo <repo> [--cut <id>]
- *                            [--suite "npm test"] [--prepare "npx tsc -p ."]
+ *                            [--suite "<how this repo runs its suite>"] [--prepare "npx tsc -p ."]
  *                            [--model sonnet] [--no-digest]
  *
  * It prints the run's log as it happens and ends with the delivery's
@@ -49,7 +49,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
   const repo = get("repo");
   if (!space || !repo)
     return "usage: --space <space dir> --repo <repo dir> [--cut <id>] [--suite <cmd>] [--prepare <cmd>] [--build <cmd>] [--provision <cmd>] [--model <name>] [--hours <n>] [--no-digest]";
-  const suite = (get("suite") ?? "npm test").split(" ").filter(Boolean);
+  const suite = (get("suite") ?? "").split(" ").filter(Boolean);
   return {
     space: path.resolve(space),
     repo: path.resolve(repo),

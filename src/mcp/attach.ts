@@ -113,7 +113,9 @@ export async function attach(args: AttachArgs): Promise<Attached> {
         ? `${project.card.product} / ${project.card.label}`
         : project.card.label,
     },
-    suiteCommand: ["npm", "test"],
+    // The repository's own answer, proved by the door and remembered. A
+    // default here would assert a fact about a repository nobody asked.
+    suiteCommand: (told?.suite ?? "").split(" ").filter(Boolean),
     ...(told?.prepare ? { prepareCommand: told.prepare } : {}),
     workerModel: { workerModel: "sonnet" },
     maxConcurrent: 4,

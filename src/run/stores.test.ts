@@ -22,7 +22,7 @@ import { execFile, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { setupRunTree } from "./setup";
+import { proveSuite, setupRunTree } from "./setup";
 import type { Exec } from "./oracle";
 import { ownershipOf, releaseBorrowed, removeOwned } from "./ownTree";
 
@@ -152,4 +152,45 @@ test("a store the checkout does not have is installed, not borrowed", async () =
     "own",
     "it installed its own rather than inheriting the checkout's",
   );
+});
+
+/**
+ * The whole-suite command is proved, never assumed.
+ *
+ * It was a default — `npm test` — written into five call sites. A
+ * repository in any other language got it regardless: the gate ran a
+ * command that could not exist there, read the shell's "command not found"
+ * as the suite's verdict, and withheld the delivery. The person was told
+ * their own standing checks were red.
+ */
+test("a suite command that runs is kept, in a language that is not JavaScript", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt5-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+  fs.writeFileSync(path.join(wt, "run_tests.sh"), "#!/bin/sh\necho '1 passed'\n");
+  fs.chmodSync(path.join(wt, "run_tests.sh"), 0o755);
+
+  const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "./run_tests.sh");
+  assert.equal(held, "./run_tests.sh", "the repository's own way of running its suite");
+});
+
+test("a suite command that cannot run is dropped, not used to judge", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt6-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+
+  // What every non-npm repository was handed.
+  const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "npm test");
+  assert.equal(held, "", "command not found is not a verdict about the work");
+});
+
+test("a suite that RUNS and reports failures still holds", async () => {
+  const root = pythonProject();
+  const wt = path.join(os.tmpdir(), `py-wt7-${Date.now()}`);
+  execFileSync("git", ["-C", root, "worktree", "add", "-q", wt], { stdio: "ignore" });
+  fs.writeFileSync(path.join(wt, "red.sh"), "#!/bin/sh\necho '2 failed'\nexit 1\n");
+  fs.chmodSync(path.join(wt, "red.sh"), 0o755);
+
+  const held = await proveSuite({ worktree: wt, boundedExec, log: () => {} }, "./red.sh");
+  assert.equal(held, "./red.sh", "a red suite on the base is the base's business, not a bad command");
 });

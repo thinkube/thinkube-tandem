@@ -83,7 +83,7 @@ export async function dispatchScopePlan(args: {
         model: deps.round.model,
         workerModel: deps.workerModel,
         concurrency: deps.maxConcurrent,
-        suiteCommand: deps.suiteCommand ?? ["npm", "test"],
+        suiteCommand: deps.suiteCommand ?? [],
         forge: target.forge ?? deps.forge,
         state: args.runState,
         spaceName: args.spaceName,

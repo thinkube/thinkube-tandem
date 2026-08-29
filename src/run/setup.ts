@@ -41,6 +41,7 @@ import * as path from "node:path";
 import type { Exec } from "./oracle";
 import { isProbePath, isTestPath } from "./testHomes";
 import { releaseBorrowed, removeOwned } from "./ownTree";
+import { repairStandingTree } from "./refresh";
 
 export type BoundedExec = (
   cmd: string,
@@ -121,6 +122,8 @@ async function ignoredEntries(dir: string, exec: Exec): Promise<Set<string>> {
 export interface TreeSetup {
   /** The proven way to run one of the repository's own tests, or "". */
   runOne: string;
+  /** The proven way to run the whole suite, or "" when nothing held. */
+  suite: string;
   /** What provisioning produced — ignored entries to link into runners. */
   provisioned: string[];
   /** What the build step produced — where compiled output lands, so a
@@ -163,6 +166,10 @@ export interface SetupArgs {
   /** What this repository's build step produces, when it has been proved
    *  here before — never borrowed, because output is the work judged. */
   builds?: string[];
+  /** How this repository runs its whole suite. Proved on the untouched
+   *  tree like the rest; an answer that cannot run is dropped, never used
+   *  to judge the work. */
+  suite?: string;
   /** Told the answer that held on the untouched tree — the only one worth remembering. */
   proven?: (s: { provision: string; prepare: string; runOne: string }) => void;
   exec: Exec;
@@ -257,6 +264,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     if (p.code !== 0)
       return {
         runOne: "",
+        suite: "",
         provisioned,
         built: [],
         refusal: `the repository's own provisioning step (${args.provision}) fails on an untouched checkout — no worker can build here until it does:\n${tail(p.output)}`,
@@ -301,6 +309,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
       }
       return {
         runOne: "",
+        suite: "",
         provisioned,
         built,
         refusal: `the repository's own build step (${args.prepare}) fails on the untouched tree — every check would report a build failure no worker can fix:\n${tail(b.output)}`,
@@ -321,12 +330,18 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     if (b.code !== 0)
       return {
         runOne: "",
+        suite: "",
         provisioned,
         built,
         refusal: `the repository's own product build (${args.build}) fails on the untouched tree — nothing this run delivers could ship:\n${tail(b.output)}`,
       };
   }
-  return { provisioned, built, runOne: await proveRunOne(args) };
+  return {
+    provisioned,
+    built,
+    runOne: await proveRunOne(args),
+    suite: args.suite ? await proveSuite(args, args.suite) : "",
+  };
 }
 
 /** The single-test command, tried on one of the repository's own tests.
@@ -437,4 +452,138 @@ export async function prepareAtGate(
   const prep = await boundedExec(prepare, worktree);
   if (prep.code !== 0) log(`⚠ the build failed at the gate — checks run against an unbuilt tree:\n${buildComplaint(prep.output)}`);
   return { ok: prep.code === 0, words: prep.output.slice(-3000) };
+}
+
+/**
+ * The repository's own whole-suite command, PROVED before it is trusted.
+ *
+ * It used to be a default — `npm test` — written into five call sites. A
+ * repository in any other language got it anyway: the gate ran a command
+ * that could not exist there, read the shell's "command not found" as the
+ * suite's verdict, and withheld the delivery for it. The person was told
+ * their standing checks were red.
+ *
+ * Proved the way the single-test command is: run it on the untouched tree
+ * and see whether a RUNNER answered. A red suite on the base is the base's
+ * business and the answer still holds — what disqualifies a command is
+ * failing to run at all. An answer that does not hold is dropped rather
+ * than used, and the run says so instead of judging by it.
+ */
+export async function proveSuite(
+  args: Pick<SetupArgs, "worktree" | "boundedExec" | "log">,
+  suite: string,
+): Promise<string> {
+  if (!suite.trim()) return "";
+  args.log(`proving the repository's own suite: ${suite}`);
+  const t0 = Date.now();
+  const r = await args.boundedExec(suite, args.worktree);
+  const ran =
+    r.code === 0 ||
+    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)/m.test(r.output);
+  args.log(
+    `  ${ran ? "held" : "did not hold"} in ${since(t0)}` +
+      (ran ? "" : ` — ${tail(r.output, 300).split("\n")[0]}`),
+  );
+  return ran ? suite : "";
+}
+
+/**
+ * The door's arguments for one run, assembled from what the repository
+ * already proved about itself and what this dispatch was told.
+ *
+ * A repository's own answer wins over anything a caller assumed: the
+ * caller's was a default in five places, and a repository in another
+ * language got it regardless.
+ */
+function setupArgsFor(a: {
+  worktree: string;
+  repoRoot: string;
+  known?: { suite?: string; builds?: string[] };
+  told: { provision?: string; prepare?: string; build?: string; runOne?: string; suiteCommand?: readonly string[] };
+  exec: Exec;
+  boundedExec: BoundedExec;
+  log: (line: string) => void;
+  resetup?: SetupArgs["resetup"];
+  proven?: SetupArgs["proven"];
+}): SetupArgs {
+  const suite = a.known?.suite ?? (a.told.suiteCommand?.length ? a.told.suiteCommand.join(" ") : "");
+  return {
+    worktree: a.worktree,
+    repoRoot: a.repoRoot,
+    exec: a.exec,
+    boundedExec: a.boundedExec,
+    log: a.log,
+    ...(suite ? { suite } : {}),
+    ...(a.known?.builds?.length ? { builds: a.known.builds } : {}),
+    ...(a.told.provision ? { provision: a.told.provision } : {}),
+    ...(a.told.prepare ? { prepare: a.told.prepare } : {}),
+    ...(a.told.build ? { build: a.told.build } : {}),
+    ...(a.told.runOne ? { runOne: a.told.runOne } : {}),
+    ...(a.resetup ? { resetup: a.resetup } : {}),
+    ...(a.proven ? { proven: a.proven } : {}),
+  };
+}
+
+/**
+ * Open the door: prove the tree, and mend a resumed branch once before
+ * refusing.
+ *
+ * A run that resumes a branch an earlier run left half-committed fails its
+ * own setup for damage nobody in this run caused. The mend is bounded and
+ * happens once; if it changes anything, the door is asked again, and only
+ * then does a refusal stand.
+ */
+export async function openTheDoor(a: {
+  worktree: string;
+  repoRoot: string;
+  tep: string;
+  known?: { suite?: string; builds?: string[] };
+  told: {
+    provision?: string;
+    prepare?: string;
+    build?: string;
+    runOne?: string;
+    suiteCommand?: readonly string[];
+    resetup?: SetupArgs["resetup"];
+    proveSetup?: SetupArgs["proven"];
+  };
+  exec: Exec;
+  boundedExec: BoundedExec;
+  log: (line: string) => void;
+  defect: Parameters<typeof repairStandingTree>[0]["defect"];
+  resumed: boolean;
+  halted: () => boolean;
+}): Promise<TreeSetup> {
+  const open = (): Promise<TreeSetup> =>
+    setupRunTree(
+      setupArgsFor({
+        worktree: a.worktree,
+        repoRoot: a.repoRoot,
+        ...(a.known ? { known: a.known } : {}),
+        told: a.told,
+        exec: a.exec,
+        boundedExec: a.boundedExec,
+        log: a.log,
+        ...(a.told.resetup ? { resetup: a.told.resetup } : {}),
+        ...(a.told.proveSetup ? { proven: a.told.proveSetup } : {}),
+      }),
+    );
+  const ready = await open();
+  if (!ready.refusal || !a.resumed) return ready;
+  const rebuild = async (): Promise<{ ok: boolean; words: string }> =>
+    a.told.prepare
+      ? a.boundedExec(a.told.prepare, a.worktree).then((r) => ({ ok: r.code === 0, words: r.output }))
+      : { ok: true, words: "" };
+  const mended = await repairStandingTree({
+    worktree: a.worktree,
+    tep: a.tep,
+    refusal: ready.refusal,
+    deps: a.told as never,
+    exec: a.exec,
+    log: a.log,
+    defect: a.defect,
+    halted: a.halted,
+    rebuild,
+  });
+  return mended ? open() : ready;
 }

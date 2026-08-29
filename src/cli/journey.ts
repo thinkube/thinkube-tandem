@@ -14,7 +14,7 @@
  * the method the panel calls.
  *
  *   node out/cli/journey.js --asks <file> --repo <repo> --space <dir>
- *                           [--suite "npm test"] [--prepare "npx tsc -p ."]
+ *                           [--suite "<how this repo runs its suite>"] [--prepare "npx tsc -p ."]
  *                           [--model opus] [--worker sonnet] [--stop-after sign]
  *
  * Exit code 0 for a delivery, 1 for anything else — so a loop can read it.
@@ -58,7 +58,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     asks: path.resolve(asks),
     repo: path.resolve(repo),
     space: path.resolve(space),
-    suite: (get("suite") ?? "npm test").split(" ").filter(Boolean),
+    suite: (get("suite") ?? "").split(" ").filter(Boolean),
     ...(get("prepare") ? { prepare: get("prepare")! } : {}),
     model: get("model") ?? "opus",
     worker: get("worker") ?? "sonnet",

@@ -29,6 +29,16 @@ export interface RepositoryFacts {
   /** How the product is built to ship, or "". */
   build?: string;
   /**
+   * How this repository runs its WHOLE suite, proved on an untouched tree.
+   *
+   * It was a default — `npm test` — in five places. A repository in any
+   * other language got it regardless: the gate ran a command that could
+   * not exist there and read "command not found" as the suite's verdict,
+   * withholding the delivery and telling the person their standing checks
+   * were red.
+   */
+  suite?: string;
+  /**
    * What this repository's own build step PRODUCES — measured, never named.
    *
    * A run may share dependencies with the checkout it came from, but never
@@ -58,6 +68,7 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
       prepare: parsed.prepare ?? "",
       runOne: parsed.runOne ?? "",
       ...(parsed.build ? { build: parsed.build } : {}),
+      ...(typeof parsed.suite === "string" && parsed.suite.trim() ? { suite: parsed.suite } : {}),
       ...(Array.isArray(parsed.builds)
         ? { builds: parsed.builds.filter((x) => typeof x === "string") }
         : {}),
@@ -90,15 +101,23 @@ export function rememberFacts(repoRoot: string, facts: RepositoryFacts, at: stri
  * knew. A run that borrowed installed nothing and measured no build, so it
  * has nothing new to say and the earlier answer stands.
  */
-export function factsAfterRun(
+function factsAfterRun(
   known: RepositoryFacts | undefined,
-  proved: { provision: string; prepare: string; runOne: string; build?: string; built: readonly string[] },
+  proved: {
+    provision: string;
+    prepare: string;
+    runOne: string;
+    build?: string;
+    suite?: string;
+    built: readonly string[];
+  },
 ): RepositoryFacts {
   return {
     provision: proved.provision,
     prepare: proved.prepare,
     runOne: proved.runOne,
     ...(proved.build ? { build: proved.build } : {}),
+    ...(proved.suite ? { suite: proved.suite } : known?.suite ? { suite: known.suite } : {}),
     ...(proved.built.length
       ? { builds: [...proved.built] }
       : known?.builds?.length
@@ -108,6 +127,33 @@ export function factsAfterRun(
 }
 
 /** Is there anything here worth writing down? */
-export function worthRemembering(f: RepositoryFacts): boolean {
-  return !!(f.provision || f.prepare || f.runOne || f.build || f.builds?.length);
+function worthRemembering(f: RepositoryFacts): boolean {
+  return !!(f.provision || f.prepare || f.runOne || f.build || f.suite || f.builds?.length);
+}
+
+/**
+ * Write down what held on the untouched tree, folded onto what the
+ * repository already knew — so the next run, with a window or without one,
+ * is told by the repository rather than by a person or a default.
+ *
+ * "Nothing needed", proved on a tree that already had its dependencies, is
+ * not a fact about the repository: run 2 of the acceptance believed one
+ * and died before its first test. Only an answer with content is kept.
+ */
+export function rememberWhatHeld(
+  repoRoot: string,
+  known: RepositoryFacts | undefined,
+  ready: { runOne: string; suite: string; built: readonly string[]; corrected?: { provision: string; prepare: string } },
+  told: { provision?: string; prepare?: string; build?: string },
+  at: string,
+): void {
+  const facts = factsAfterRun(known, {
+    provision: ready.corrected?.provision ?? told.provision ?? "",
+    prepare: ready.corrected?.prepare ?? told.prepare ?? "",
+    runOne: ready.runOne,
+    ...(told.build ? { build: told.build } : {}),
+    ...(ready.suite ? { suite: ready.suite } : {}),
+    built: ready.built,
+  });
+  if (worthRemembering(facts)) rememberFacts(repoRoot, facts, at);
 }

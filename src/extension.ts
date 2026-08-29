@@ -276,7 +276,7 @@ async function ensureSession(
         : project.card.label,
     },
     suiteCommand: config
-      .get<string>("suiteCommand", "npm test")
+      .get<string>("suiteCommand", "")
       .split(" ")
       .filter(Boolean),
     prepareCommand: config.get<string>("prepareCommand", ""),

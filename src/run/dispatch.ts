@@ -25,12 +25,12 @@ import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { defaultExec, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
-import { refreshRunTrees, repairStandingTree } from "./refresh";
+import { refreshRunTrees } from "./refresh";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
-import { setupRunTree } from "./setup";
-import { factsAfterRun, factsOf, rememberFacts, worthRemembering } from "./facts";
+import { openTheDoor } from "./setup";
+import { factsOf, rememberWhatHeld } from "./facts";
 import { recordedCheckHomes, recordedCheckPaths, restoreChecksFromRecord } from "./recordedChecks";
 import { planRecordOf } from "./record";
 import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
@@ -171,31 +171,18 @@ export async function dispatchTep(
   // What this repository already proved about itself. Its build output is
   // never lent: output is the work being judged.
   const known = factsOf(deps.repoRoot);
-  const doSetup = () =>
-    setupRunTree({ worktree, repoRoot: deps.repoRoot, exec, boundedExec, log, ...(known?.builds?.length ? { builds: known.builds } : {}), provision: deps.provision, prepare: deps.prepare, build: deps.build, runOne: deps.runOne, resetup: deps.resetup, proven: deps.proveSetup });
-  let ready = await doSetup();
-  // A resumed branch an earlier run left half-committed is mended before the run refuses.
-  if (ready.refusal && refreshed.resumed) {
-    const rebuild = async () =>
-      deps.prepare ? boundedExec(deps.prepare, worktree).then((r) => ({ ok: r.code === 0, words: r.output })) : { ok: true, words: "" };
-    if (await repairStandingTree({ worktree, tep, refusal: ready.refusal, deps, exec, log, defect, halted: () => st.halted, rebuild })) ready = await doSetup();
-  }
-  if (ready.refusal) return refuse("setup", ready.refusal, "gate");
-  // What the door proved on an untouched checkout is a fact about the
-  // repository: it is kept there, so the next run — with a window or
-  // without one — is told by the repository rather than by a person.
-  // "Nothing needed" proved on a tree that already had its dependencies is
-  // not a fact about the repository — run 2 of the acceptance believed one
-  // and died before its first test. Only an answer with content is kept.
-  const facts = factsAfterRun(known, {
-    provision: ready.corrected?.provision ?? deps.provision ?? "",
-    prepare: ready.corrected?.prepare ?? deps.prepare ?? "",
-    runOne: ready.runOne,
-    ...(deps.build ? { build: deps.build } : {}),
-    built: ready.built,
+  const ready = await openTheDoor({
+    worktree, repoRoot: deps.repoRoot, tep, known, told: deps, exec, boundedExec, log, defect,
+    resumed: refreshed.resumed, halted: () => st.halted,
   });
-  if (worthRemembering(facts)) rememberFacts(deps.repoRoot, facts, new Date().toISOString());
+  if (ready.refusal) return refuse("setup", ready.refusal, "gate");
+  rememberWhatHeld(deps.repoRoot, known, ready, deps, new Date().toISOString());
   const { provisioned, built, runOne: runOneTest } = ready;
+  // Judge by a command that was proved to RUN here. A default nobody tried
+  // — `npm test` in a repository that has no npm — made the shell's
+  // "command not found" the suite's verdict, and the delivery was withheld
+  // for it. When nothing holds, the gate says so rather than judging.
+  if (ready.suite) deps = { ...deps, suiteCommand: ready.suite.split(" ").filter(Boolean) };
   if (ready.corrected) deps = { ...deps, ...ready.corrected };
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
