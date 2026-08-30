@@ -305,6 +305,13 @@ const BARE_FUNCTION = /^[a-z_$][\w$]*$/;
  * and named only by its bare name. One bounded round over the tree, for
  * exactly those symbols; what it cannot shape stays a bare name and is
  * said in the log, so the gap is on the record rather than in a guess.
+ *
+ * The signature is shaped WITH the criteria that will judge it. A shape
+ * invented from the sentence alone can be narrower than the criteria
+ * demand — a type of five values under a criterion naming six states —
+ * and the coder is then held to a contract no correct implementation can
+ * satisfy: its checks fail for a reason no code can fix, and the
+ * impossibility reaches the person as an unkept promise.
  */
 async function shapeSeams(
   derived: DerivedNode[],
@@ -315,7 +322,15 @@ async function shapeSeams(
     n.touchpoints.filter((t) => t.symbol && BARE_FUNCTION.test(t.symbol)).map((t) => ({ node: n, t })),
   );
   if (!bare.length) return;
-  const listed = bare.map(({ node, t }, i) => `${i + 1}. ${t.path} › ${t.symbol} — for: "${node.sentence}"${t.planned ? " (new)" : " (exists, changed)"}`);
+  const listed = bare.map(({ node, t }, i) =>
+    [
+      `${i + 1}. ${t.path} › ${t.symbol} — for: "${node.sentence}"${t.planned ? " (new)" : " (exists, changed)"}`,
+      ...node.acceptance
+        .map((ac) => ac.text.trim())
+        .filter(Boolean)
+        .map((text) => `   must satisfy: ${text}`),
+    ].join("\n"),
+  );
   const reply = await round(
     { ...deps, maxTurns: 16 },
     [
@@ -328,6 +343,12 @@ async function shapeSeams(
       "types, and the return type — reading the file and its callers in this repository to keep every",
       "existing caller compiling (an optional parameter, an overload, a default) unless the promise",
       "itself requires breaking one. Write the signature, not a description.",
+      "",
+      "The criteria under each line are what the finished work is judged by, and this signature is",
+      "binding on the worker that must meet them. So the shape must be able to satisfy them: a type",
+      "that enumerates its values must hold every value the criteria name — a criterion naming six",
+      "distinct states needs a type of six, not five. A signature narrower than its criteria cannot",
+      "be met by any correct implementation, and the worker pays for it.",
       "",
       listed.join("\n"),
       "",
