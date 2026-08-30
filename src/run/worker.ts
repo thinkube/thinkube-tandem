@@ -90,16 +90,27 @@ const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
  * cleared to change, and RESTORE anything else. Extracted from the hook so
  * the wiring — porcelain, judgement, restore — is testable.
  *
+ * `wrote` narrows it to the paths THIS tool call touched. Every unit works
+ * in one shared tree, so reading the whole tree charges a unit for whatever
+ * a neighbour happens to have left there a second earlier: one unit wrote a
+ * scratch file at 10:29:43 and deleted it at 10:29:54, and in that window a
+ * second unit saved a file it was perfectly cleared for and was failed for
+ * the first one's scratch. A file tool names the path it wrote, so nothing
+ * needs to be inferred from the tree at all.
+ *
  * Returns the paths it restored, or nothing.
  */
-async function encloseWork(deps: {
-  worktree: string;
-  footprint: string[];
-  alsoAllowed?: () => string[];
-  baseline: Set<string>;
-  log: (line: string) => void;
-}): Promise<string[]> {
-  const dirty = await porcelainPaths(deps.worktree);
+async function encloseWork(
+  deps: {
+    worktree: string;
+    footprint: string[];
+    alsoAllowed?: () => string[];
+    baseline: Set<string>;
+    log: (line: string) => void;
+  },
+  wrote?: readonly string[],
+): Promise<string[]> {
+  const dirty = mine(await porcelainPaths(deps.worktree), wrote);
   const bad = containmentViolations(
     dirty,
     [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
@@ -110,15 +121,46 @@ async function encloseWork(deps: {
   return bad;
 }
 
+/**
+ * The repository-relative paths a tool call named, when it named any.
+ *
+ * `Write` and `Edit` carry `file_path`, `NotebookEdit` carries
+ * `notebook_path` — each an absolute path into the worktree. `Bash` names
+ * nothing: a shell command can write anywhere, so there is nothing to
+ * narrow by and the guard falls back to reading the tree.
+ */
+export function pathsNamedByTool(
+  h: { tool_name?: string; tool_input?: Record<string, unknown> },
+  worktree: string,
+): string[] {
+  const named = ["file_path", "notebook_path"]
+    .map((k) => h.tool_input?.[k])
+    .filter((v): v is string => typeof v === "string" && !!v);
+  const root = worktree.endsWith("/") ? worktree : `${worktree}/`;
+  return named.map((p) => (p.startsWith(root) ? p.slice(root.length) : p));
+}
+
+/** The dirty paths this tool call is answerable for. A call that named its
+ *  path answers for that alone; a shell command named none, so the tree is
+ *  all there is to go on. */
+function mine(dirty: string[], wrote?: readonly string[]): string[] {
+  if (!wrote?.length) return dirty;
+  const named = new Set(wrote);
+  return dirty.filter((p) => named.has(p));
+}
+
 /** What this unit has changed that it is not cleared for — read, not restored. */
-async function outsideClearance(deps: {
-  worktree: string;
-  footprint: string[];
-  alsoAllowed?: () => string[];
-  baseline: Set<string>;
-}): Promise<string[]> {
+async function outsideClearance(
+  deps: {
+    worktree: string;
+    footprint: string[];
+    alsoAllowed?: () => string[];
+    baseline: Set<string>;
+  },
+  wrote?: readonly string[],
+): Promise<string[]> {
   return containmentViolations(
-    await porcelainPaths(deps.worktree),
+    mine(await porcelainPaths(deps.worktree), wrote),
     [...deps.footprint, ...(deps.alsoAllowed?.() ?? [])],
     deps.baseline,
   );
@@ -436,13 +478,12 @@ export async function runUnitWorker(
           PostToolUse: [
             {
               hooks: [
-                async (h: { tool_name?: string }) => {
+                async (h: { tool_name?: string; tool_input?: Record<string, unknown> }) => {
                   if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
-                  // The door first, and only then the guard: a path nobody
-                  // owns and nobody is touching is granted, the work stands,
-                  // and the unit carries on. Reverting it would throw away a
-                  // correct change to ask a question with the same answer.
-                  const wanted = await outsideClearance(deps);
+                  // What THIS call wrote, when the tool said so. A shell
+                  // command names no path, so there the tree is all there is.
+                  const wrote = pathsNamedByTool(h, deps.worktree);
+                  const wanted = await outsideClearance(deps, wrote);
                   if (wanted.length && deps.clearFor) {
                     const ruling = await deps.clearFor(wanted);
                     if (ruling.granted.length) {
@@ -450,7 +491,7 @@ export async function runUnitWorker(
                       deps.log(`⚖ cleared at the door for ${ruling.granted.join(", ")} — the work stands`);
                     }
                   }
-                  const bad = await encloseWork(deps);
+                  const bad = await encloseWork(deps, wrote);
                   if (!bad.length) return {};
                   if (!warned) {
                     warned = true;
