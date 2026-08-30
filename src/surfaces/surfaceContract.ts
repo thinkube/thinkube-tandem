@@ -292,15 +292,19 @@ export const SHAPING = new Set([
   "stop-run", "accept-delivery", "reject-delivery", "attest", "panic", "switch-repo",
 ]);
 
-/** The shaping actions the host allows right now, from the last push.
- *  Before the first push nothing is known, so nothing is refused here —
- *  the host still refuses on its side. */
+/** The shaping actions the host allows right now, from the last push, and
+ *  the phase that push carried. Before the first push nothing is known, so
+ *  nothing is refused here — the host still refuses on its side. */
 let allowedNow: string[] | undefined;
+let phaseNow: SpacePush["phase"] | undefined;
 
-/** What the host allows now — set by every push, and by a harness that
- *  renders the surface without a host. */
-export function noteAllowed(allowed: string[] | undefined): void {
+/** What the host allows now, and in which phase — set by every push, and by
+ *  a harness that renders the surface without a host. Starting a new push
+ *  clears any held refusal sentence from the press before it. */
+export function noteAllowed(allowed: string[] | undefined, phase?: SpacePush["phase"]): void {
   allowedNow = allowed;
+  phaseNow = phase;
+  heldRefusal = undefined;
 }
 
 /** Whether the host would act on this action now. Non-shaping actions
@@ -320,6 +324,8 @@ export const CONTROL_NAMES: Readonly<Record<string, string>> = {
   "save-draft": "Write",
   "read-draft": "Read",
   "keep-draft": "Keep",
+  "cancel-capture": "Cancel",
+  "capture-many": "Read",
   build: "Build",
   think: "Think",
   reframe: "Reframe",
@@ -339,16 +345,58 @@ export const CONTROL_NAMES: Readonly<Record<string, string>> = {
   "accept-impact": "Apply",
   "dismiss-impact": "Set aside",
   "apply-all-impacts": "Apply all",
+  "propose-check": "Work out a check",
+  "accept-check": "Use this check",
+  "accept-question": "Decide",
+  "open-cut-review": "Read the cut review",
+  "exempt-docs": "Say why documentation is not needed",
+  rerun: "Run again",
+  "switch-repo": "Switch",
 };
 
-/** Why a control is off, for its tooltip — one sentence per phase. */
-export function whyNot(phase: SpacePush["phase"] | undefined): string {
-  switch (phase) {
-    case "running": return "A run is in flight — stop it first.";
-    case "signed": return "Signed work is waiting to run — run it, or it stays as it is.";
-    case "delivered": return "A delivery is waiting for your decision.";
-    case "read": return "The reading is waiting for keep or edit.";
-    case "drafting": return "Nothing has been read yet.";
-    default: return "Not now.";
-  }
+/** Why a control is off, for its tooltip — one sentence per phase, when this
+ *  phase has its own reason. Absent for a phase with no phase-specific
+ *  wording, so callers fall back to the bare "Not now." */
+const PHASE_REASON: Partial<Record<NonNullable<SpacePush["phase"]>, string>> = {
+  running: "a run is in flight — stop it first",
+  signed: "signed work is waiting to run — run it, or it stays as it is",
+  delivered: "a delivery is waiting for your decision",
+  read: "the reading is waiting for keep or edit",
+  understood: "nothing is signed or running",
+  drafting: "nothing has been read yet",
+};
+
+const NO_REASON = "Not now.";
+
+/** One sentence naming a governed control and why it is unavailable right
+ *  now: the control's person-facing name, and this phase's reason when one
+ *  is defined — the bare fallback otherwise. This is the one place the
+ *  per-phase wording lives; nothing else keeps its own copy. */
+export function refusalSentence(action: string, phase: SpacePush["phase"] | undefined): string {
+  const name = CONTROL_NAMES[action] ?? action;
+  const reason = phase ? PHASE_REASON[phase] : undefined;
+  return reason ? `${name} — not now: ${reason}.` : `${name}: ${NO_REASON}`;
+}
+
+/** Held sentence for the last press the surface refused itself, so the
+ *  panel can put it in front of the person instead of swallowing the
+ *  click. Cleared by the next `noteAllowed` (a new push). */
+let heldRefusal: string | undefined;
+
+/** Record the sentence for a press `post()` refused to send. */
+export function noteRefusal(sentence: string): void {
+  heldRefusal = sentence;
+}
+
+/** The held refusal sentence, if a press was refused since the last push. */
+export function lastRefusal(): string | undefined {
+  return heldRefusal;
+}
+
+/** The refusal sentence for this action, if the last-noted allowed list
+ *  excludes it — undefined when the action is allowed (or nothing is known
+ *  yet about what is allowed). */
+export function refusalIfRefused(action: string): string | undefined {
+  if (can(action)) return undefined;
+  return refusalSentence(action, phaseNow);
 }

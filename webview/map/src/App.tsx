@@ -4,7 +4,7 @@
  * pushes; every abstract flips to its machine face with one gesture.
  */
 import { useEffect, useMemo, useState } from "react";
-import { can, onSpace, post, SpacePush, whyNot } from "./vscode";
+import { can, onSpace, post, refusalSentence, SpacePush, watchRefusals } from "./vscode";
 import { RunNote, RunSection } from "./Run";
 import { Implications } from "./Implications";
 import { Compose } from "./Compose";
@@ -40,6 +40,10 @@ export function App(props: {
   initial?: { push: SpacePush; tab: SurfacePage };
 } = {}): JSX.Element {
   const [push, setPush] = useState<SpacePush | null>(props.initial?.push ?? null);
+  // The sentence for the last press the surface refused itself, if any —
+  // read fresh from every push, since a new push means a new allowed list
+  // and the sentence held for the press before it no longer applies.
+  const [refusal, setRefusal] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
@@ -101,6 +105,14 @@ export function App(props: {
     setClassifying(false);
   }, [readAt]);
   useEffect(() => onSpace(setPush), []);
+  // A refused press puts its sentence in front of the person instead of
+  // being swallowed. The next push clears it — noteAllowed (run for every
+  // push, before this component re-renders) already dropped the held
+  // sentence, so a fresh push means a clean message line.
+  useEffect(() => watchRefusals(setRefusal), []);
+  useEffect(() => {
+    setRefusal(undefined);
+  }, [push]);
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
   const spinStyle = (
@@ -165,7 +177,7 @@ export function App(props: {
         <button
           data-switch-repo
           disabled={!can("switch-repo")}
-          title={can("switch-repo") ? "Switch the repository this space works on." : whyNot(push.phase)}
+          title={can("switch-repo") ? "Switch the repository this space works on." : refusalSentence("switch-repo", push.phase)}
           style={{ marginLeft: "auto", fontSize: FS.caption, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: `1px ${SP.sm}px` }}
           onClick={() => post({ action: "switch-repo" })}
         >
@@ -254,7 +266,7 @@ export function App(props: {
         <Compose
           busy={!!push.activity || push.phase === "running"}
           canRead={can("read-draft")}
-          whyNotRead={whyNot(push.phase)}
+          whyNotRead={refusalSentence("read-draft", push.phase)}
           initial={push.draft}
           onChange={(text) => post({ action: "save-draft", text })}
           onRead={() => {
@@ -321,7 +333,9 @@ export function App(props: {
         {push.running ? (
           <span style={{ fontSize: FS.body, color: C.ok }}>● building…</span>
         ) : null}
-        {push.message ? (
+        {refusal ? (
+          <span data-refusal style={{ fontSize: FS.body, color: C.ask }}>{refusal}</span>
+        ) : push.message ? (
           <span style={{ fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
         ) : null}
       </div>

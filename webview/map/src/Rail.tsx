@@ -7,7 +7,7 @@
  * box you write them in, and what was read from them on the reading page.
  */
 import { useEffect, useRef, useState } from "react";
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
 
 const btn: React.CSSProperties = {
@@ -230,7 +230,7 @@ export function Rail(props: {
               title={
                 can("open-cut-review")
                   ? "Open the whole cut as a page you can read: every promise, where it lands, and what will prove it."
-                  : whyNot(push.phase)
+                  : refusalSentence("open-cut-review", push.phase)
               }
               onClick={() => post({ action: "open-cut-review" })}
             >
@@ -272,7 +272,7 @@ export function Rail(props: {
                   ? "Say why documentation is not needed, or ground a docs/ page, before signing."
                   : can("build")
                     ? "Sign this work and start the workers."
-                    : whyNot(push.phase)
+                    : refusalSentence("build", push.phase)
               }
               onClick={() => {
                 if (!docSettled && docReasonReady) post({ action: "exempt-docs", reason: docReason });

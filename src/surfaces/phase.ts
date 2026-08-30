@@ -5,6 +5,7 @@
  * the allowed list with every push and never decides on its own.
  */
 import type { TandemSession } from "./session";
+import { refusalSentence } from "./surfaceContract";
 
 /** Where the space is in its sequence of steps: one word the surface and
  *  the host both read, so a control is enabled exactly when the host would
@@ -86,17 +87,11 @@ export function allowedNow(phase: Phase): string[] {
   return Object.entries(ALLOWED).filter(([, phases]) => phases!.includes(phase)).map(([a]) => a);
 }
 
-/** Why an action is refused now, or nothing. */
+/** Why an action is refused now, or nothing — the same sentence
+ *  `refusalSentence` gives the surface for this action and phase, so the
+ *  host and the surface never say two different things about one press. */
 export function refusedNow(action: string, phase: Phase): string | undefined {
   const allowed = ALLOWED[action];
   if (!allowed || allowed.includes(phase)) return undefined;
-  const why: Record<Phase, string> = {
-    running: "a run is in flight — stop it first",
-    signed: "signed work is waiting to run — run it, or it stays as it is",
-    delivered: "a delivery is waiting for your decision",
-    read: "the reading is waiting for keep or edit",
-    understood: "nothing is signed or running",
-    drafting: "nothing has been read yet",
-  };
-  return `not now: ${why[phase]}`;
+  return refusalSentence(action, phase);
 }

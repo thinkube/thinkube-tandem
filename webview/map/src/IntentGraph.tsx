@@ -8,7 +8,7 @@
  * sentence that did not say enough. Going on to the work page is what
  * starts the thinking, and it says first what that will cost.
  */
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 /**
@@ -334,7 +334,7 @@ export function IntentGraph(props: {
             props.working
               ? "Working out what to build. The work page opens by itself when every subject is done."
               : !props.canWork
-                ? whyNot(push.phase)
+                ? refusalSentence("think", push.phase)
               : push.pendingModel
                 ? "Keep this reading and work out what to build from it. This is what starts spending. You stay here until it is finished."
                 : "Go to the work page. Working out what to build is what starts spending."
@@ -370,7 +370,7 @@ export function IntentGraph(props: {
               <button
                 data-dismiss-promise={o.id}
                 disabled={!can("dismiss-promise")}
-                title={can("dismiss-promise") ? "Remove it — nothing you wrote asks for this." : whyNot(push.phase)}
+                title={can("dismiss-promise") ? "Remove it — nothing you wrote asks for this." : refusalSentence("dismiss-promise", push.phase)}
                 onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
               >
                 Remove

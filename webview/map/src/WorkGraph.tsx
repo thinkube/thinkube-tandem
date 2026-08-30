@@ -5,7 +5,7 @@
  * because they carry the cut checkbox and the check gestures.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn, raised } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
@@ -139,7 +139,7 @@ export function WorkGraph(props: {
               data-think-here
               disabled={!can("think")}
               style={{ fontWeight: 600, marginTop: SP.md }}
-              title={can("think") ? "Work out what to build. This is what starts spending." : whyNot(push.phase)}
+              title={can("think") ? "Work out what to build. This is what starts spending." : refusalSentence("think", push.phase)}
               onClick={() => post({ action: "think" })}
             >
               Work it out now
@@ -189,7 +189,7 @@ export function WorkGraph(props: {
             title={
               can("reground")
                 ? "Read the code again and work out these subjects from what is there now. Nothing you wrote changes."
-                : whyNot(push.phase)
+                : refusalSentence("reground", push.phase)
             }
             onClick={() => post({ action: "reground" })}
           >
@@ -223,7 +223,11 @@ export function WorkGraph(props: {
             data-think-again
             disabled={!can("think-again")}
             style={{ fontWeight: 600 }}
-            title="Withdraw the signature and think these promises through again under everything decided since. Nothing delivered is touched; the asks stay as you wrote them."
+            title={
+              can("think-again")
+                ? "Withdraw the signature and think these promises through again under everything decided since. Nothing delivered is touched; the asks stay as you wrote them."
+                : refusalSentence("think-again", push.phase)
+            }
             onClick={() => post({ action: "think-again" })}
           >
             Think it through again
@@ -297,7 +301,7 @@ export function WorkGraph(props: {
                 title={
                   can("reframe") || can("amend")
                     ? `Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`
-                    : whyNot(push.phase)
+                    : refusalSentence("reframe", push.phase)
                 }
                 aria-label={`say ask ${claim.fromAskN} differently`}
                 style={{
@@ -434,6 +438,11 @@ export function WorkGraph(props: {
                               <button
                                 data-accept-check={p.id}
                                 disabled={!can("accept-check")}
+                                title={
+                                  can("accept-check")
+                                    ? "Keep this check as what proves the promise."
+                                    : refusalSentence("accept-check", push.phase)
+                                }
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   post({
@@ -465,7 +474,7 @@ export function WorkGraph(props: {
                             title={
                               can("propose-check")
                                 ? "Work out a check that would prove this promise, and show it to me before it is kept."
-                                : whyNot(push.phase)
+                                : refusalSentence("propose-check", push.phase)
                             }
                             onClick={(e) => {
                               e.stopPropagation();

@@ -17,7 +17,7 @@
  * reason enough to say the ask differently.
  */
 import { useState } from "react";
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 type Sentence = SpacePush["sentences"][number];
@@ -35,10 +35,11 @@ function boundWords(b: Sentence["bound"]): string {
   return `approved${as} — these words are part of the record now; nothing is built from them yet`;
 }
 
-function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
+function Editor(props: { s: Sentence; phase: SpacePush["phase"]; onDone: () => void }): JSX.Element {
   const { s } = props;
   const [text, setText] = useState(s.state === "bound" ? "" : s.text);
   const bound = s.state === "bound";
+  const action = bound ? "amend" : "reframe";
   return (
     <div style={{ marginTop: 6 }}>
       <textarea
@@ -53,11 +54,12 @@ function Editor(props: { s: Sentence; onDone: () => void }): JSX.Element {
         <button
           data-reframe={bound ? undefined : s.id}
           data-amend={bound ? s.id : undefined}
-          disabled={!can(bound ? "amend" : "reframe")}
+          disabled={!can(action)}
+          title={can(action) ? undefined : refusalSentence(action, props.phase)}
           style={{ fontWeight: 600 }}
           onClick={() => {
             if (!text.trim()) return;
-            post({ action: bound ? "amend" : "reframe", unitId: s.id, text });
+            post({ action, unitId: s.id, text });
             props.onDone();
           }}
         >
@@ -141,7 +143,7 @@ export function Asks(props: {
                 disabled={!can(s.state === "bound" ? "amend" : "reframe")}
                 title={
                   !can(s.state === "bound" ? "amend" : "reframe")
-                    ? whyNot(props.push.phase)
+                    ? refusalSentence(s.state === "bound" ? "amend" : "reframe", props.push.phase)
                     : s.state === "bound"
                       ? "Approved work only changes through new work — add an amendment."
                       : "Say this ask differently and I will read it again."
@@ -165,7 +167,9 @@ export function Asks(props: {
               </button>
             )}
           </div>
-          {editing === s.id ? <Editor s={s} onDone={() => setEditing(null)} /> : null}
+          {editing === s.id ? (
+            <Editor s={s} phase={props.push.phase} onDone={() => setEditing(null)} />
+          ) : null}
           {s.assumptions.length ? (
             <div style={{ marginTop: 6 }}>
               <div style={{ ...labelIn(C.ask) }}>

@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/App";
-import { noteAllowed, SpacePush, SURFACE_PAGES } from "../src/vscode";
+import { noteAllowed, refusalIfRefused, SpacePush, SURFACE_PAGES } from "../src/vscode";
 
 // Layout effects do not run in a static render; the warning is noise here.
 const warn = console.error;
@@ -18,7 +18,10 @@ console.error = (...a: unknown[]) => {
 const pushes = JSON.parse(fs.readFileSync(process.argv[2], "utf8")) as Record<string, SpacePush>;
 const out: Record<string, Record<string, string[]>> = {};
 for (const [phase, push] of Object.entries(pushes)) {
-  noteAllowed(push.allowed);
+  // Every caller of the allowed-list recorder hands it the phase the same
+  // push carried, or the sentence it renders is the bare fallback with no
+  // control named in it.
+  noteAllowed(push.allowed, push.phase);
   out[phase] = {};
   for (const tab of SURFACE_PAGES) {
     const html = renderToStaticMarkup(<App initial={{ push, tab }} />);
@@ -31,7 +34,14 @@ for (const [phase, push] of Object.entries(pushes)) {
         .join(" ");
       const text = m[2].replace(/<[^>]+>/g, "").trim();
       if (!data && /^[+−]$|^Fit$/.test(text)) continue;
-      buttons.push((/\bdisabled(=""|\b)/.test(attrs) ? "off " : "on  ") + (data || `"${text.slice(0, 30)}"`));
+      const off = /\bdisabled(=""|\b)/.test(attrs);
+      // The action a control's data-handle names, so an off control's row
+      // carries the sentence a person would read — not a blank column.
+      const action = data.split(" ")[0]?.split("=")[0];
+      const why = off && action ? refusalIfRefused(action) : undefined;
+      buttons.push(
+        (off ? "off " : "on  ") + (data || `"${text.slice(0, 30)}"`) + (why ? ` — ${why}` : ""),
+      );
     }
     out[phase][tab] = buttons;
   }
