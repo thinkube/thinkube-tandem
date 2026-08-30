@@ -10,7 +10,7 @@
  * "the reading page" or "units map" when the surface draws no such thing.
  */
 
-export interface Affordance {
+interface Affordance {
   /** A key of PAGES — the page a person goes to for this gesture. */
   page: string;
   gesture: string;

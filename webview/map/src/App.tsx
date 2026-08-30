@@ -29,7 +29,7 @@ import { ASKS_PAGE, drawsAskList, SurfacePage } from "../../../src/surfaces/surf
  *  mid-visit or `push.running` flipping cannot pull the page out from
  *  under them. `shown` is the flow view already settled on entry (or
  *  null before the page has ever been opened). */
-export function reportShown(push: SpacePush | null, shown: "workers" | "report" | null): boolean {
+function reportShown(push: SpacePush | null, shown: "workers" | "report" | null): boolean {
   if (shown !== null) return shown === "report";
   return !!push?.deliveries.length && !push?.running;
 }

@@ -2,7 +2,6 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/cli/headless.ts",
         "src/cli/journey.ts",
         "src/mcp/server.ts"
       ],
@@ -14,9 +13,6 @@
         "@vscode/vsce",
         "antora",
         "asciidoctor-kroki"
-      ],
-      "ignore": [
-        "src/surfaces/auditCard.ts"
       ]
     },
     "webview/map": {

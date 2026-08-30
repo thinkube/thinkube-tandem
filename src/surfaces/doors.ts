@@ -8,7 +8,6 @@
  * One definition, two import paths a reader might reasonably reach for.
  */
 export {
-  declaredDoors,
   missingDoors,
   missingPages,
   verifiedDoors,

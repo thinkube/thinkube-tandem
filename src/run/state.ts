@@ -69,7 +69,7 @@ const STEP_LOG_CAP = 2000;
  *  belongs to `step` but is not `step` itself, in the order they first
  *  appear. One rule, read by `logTail` and `view()` alike, so a step's
  *  account and its line count never disagree about what belongs to it. */
-export function subStepsOf(stepLogs: Map<string, string[]>, step: string): string[] {
+function subStepsOf(stepLogs: Map<string, string[]>, step: string): string[] {
   const prefix = `${step}#`;
   return [...stepLogs.keys()].filter((k) => k.startsWith(prefix));
 }

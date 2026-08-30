@@ -10,8 +10,8 @@
  * takes effect immediately.
  */
 
-export type SurfaceTab = "write" | "intent" | "work" | "flow";
-export type FlowView = "workers" | "report";
+type SurfaceTab = "write" | "intent" | "work" | "flow";
+type FlowView = "workers" | "report";
 
 export interface ViewState {
   tab: SurfaceTab;

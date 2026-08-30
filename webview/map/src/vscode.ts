@@ -12,10 +12,9 @@
 import { can, noteAllowed, noteRefusal, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
 import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
-export { can, noteAllowed, refusalSentence, refusalIfRefused, noteRefusal, lastRefusal } from "../../../src/surfaces/surfaceContract";
+export { can, noteAllowed, refusalSentence, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
 export type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
-export { surfaceRegions, SURFACE_PAGES } from "../../../src/surfaces/surfaceLayout";
-export type { SurfacePage, SurfaceRegion } from "../../../src/surfaces/surfaceLayout";
+export { SURFACE_PAGES } from "../../../src/surfaces/surfaceLayout";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -40,8 +39,9 @@ export function watchRefusals(handler: (sentence: string) => void): () => void {
 
 /** Send a governed press to the host, or — when the phase refuses it —
  *  record the sentence for it through the contract and send nothing. A
- *  refused press is never silently dropped: `lastRefusal()` carries the
- *  sentence to the panel's message line. */
+ *  refused press is never silently dropped: the watcher registered through
+ *  `watchRefusals` carries the sentence straight to the panel's message
+ *  line. */
 export function post(msg: WebToHost): void {
   const refusal = refusalIfRefused(msg.action);
   if (refusal) {

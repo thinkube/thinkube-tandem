@@ -3,7 +3,7 @@
  * apply it or set it aside — and, once more than one is waiting, one
  * press to apply them all. Renders nothing when the push stages none.
  */
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { implicationRows } from "../../../src/surfaces/implications";
 import { C, FS, O, SP, label } from "./type";
 
@@ -21,7 +21,7 @@ export function Implications(props: { push: SpacePush }): JSX.Element | null {
           <button
             data-apply-all-impacts
             disabled={!can("apply-all-impacts")}
-            title={can("apply-all-impacts") ? "Apply every staged implication." : whyNot(push.phase)}
+            title={can("apply-all-impacts") ? "Apply every staged implication." : refusalSentence("apply-all-impacts", push.phase)}
             style={{ marginLeft: "auto", fontSize: FS.caption, cursor: "pointer" }}
             onClick={() => post({ action: "apply-all-impacts" })}
           >
@@ -47,7 +47,7 @@ export function Implications(props: { push: SpacePush }): JSX.Element | null {
             <button
               data-accept-impact={row.id}
               disabled={!can("accept-impact")}
-              title={can("accept-impact") ? "Apply this implication." : whyNot(push.phase)}
+              title={can("accept-impact") ? "Apply this implication." : refusalSentence("accept-impact", push.phase)}
               style={{ fontSize: FS.caption, cursor: "pointer" }}
               onClick={() => post(row.apply)}
             >
@@ -56,7 +56,7 @@ export function Implications(props: { push: SpacePush }): JSX.Element | null {
             <button
               data-dismiss-impact={row.id}
               disabled={!can("dismiss-impact")}
-              title={can("dismiss-impact") ? "Set this implication aside." : whyNot(push.phase)}
+              title={can("dismiss-impact") ? "Set this implication aside." : refusalSentence("dismiss-impact", push.phase)}
               style={{ fontSize: FS.caption, cursor: "pointer" }}
               onClick={() => post(row.setAside)}
             >
