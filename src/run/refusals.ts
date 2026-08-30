@@ -23,7 +23,6 @@ import { orderCoupledSlices, usesByFile } from "./coupling";
 import type { ClassMethod } from "./altitude";
 import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
-import { contentionNote, contentionOf } from "./contention";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
 import { pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
@@ -261,24 +260,6 @@ export async function refusedBeforeDispatch(a: {
   // every unit carries the path its check is really born at and every edge
   // the map found.
   const dag = buildUnitDag(a.slices);
-  // What the plan's own shape costs, before a worker is spent on it: two
-  // units never write one file at once, so a file most units carry makes
-  // them a queue, and no number of workers shortens it.
-  const crowded = contentionOf(dag);
-  const crowding = contentionNote(crowded);
-  if (crowding) {
-    a.log(`⏳ ${crowding}`);
-    // The queue is the machine's own: a slice's files are its promises'
-    // grounding touchpoints, so a file in most footprints is something the
-    // machine decided. It goes on the machine's record, not the person's.
-    a.defect?.({
-      activity: "preflight",
-      trigger: "plan-shape",
-      type: "machine",
-      impact: `${crowded.serialised} of ${crowded.total} units run one at a time`,
-      detail: crowded.shared.slice(0, 5).map((f) => `${f.units} units: ${f.path}`).join("\n"),
-    });
-  }
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return { dag, refusal: { trigger: "plan-validation", refusal: `the engine refused the plan: ${JSON.stringify(verdict)}` } };
