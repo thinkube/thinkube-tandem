@@ -30,6 +30,7 @@ import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
+import { criterionVerdicts } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
@@ -586,8 +587,23 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     };
   }
 
+  // A criterion no proof mentions is not silently kept: it is named as
+  // undelivered here, the same reading the delivery page gives it as
+  // "not checked" — so the page, the pull request and this gate's own
+  // kept-or-withheld verdict never disagree about a criterion nobody graded.
+  const ungraded = criterionVerdicts(space, {
+    id: `delivery-${tep}`,
+    cutId: cut.id,
+    branch,
+    runId,
+    producedAt,
+    proofs,
+    ...(observations.length ? { observations } : {}),
+  }).filter((c) => c.verdict === "not checked");
+  undelivered.push(...ungraded.map((c) => `${c.promise} — not checked: ${c.text}`));
+
   return handOver({
-    tep, branch, worktree, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
+    tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec, log,
   });
 }

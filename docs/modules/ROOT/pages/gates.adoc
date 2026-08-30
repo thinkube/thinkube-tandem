@@ -24,9 +24,16 @@ what you approved, enforced cryptographically rather than by convention.
 
 A delivery page opens by naming the run that produced it and when — or
 says plainly that the run was never recorded, for an old delivery that
-predates the field — before any other section. It then lists every
-proof: one per acceptance criterion, executed by the real closing gate,
-plus the repository's own test suite. Accepting:
+predates the field — before any other section. It then names every
+acceptance criterion of the cut with its verdict: green, red, "for you
+to certify" for what only the running product can show, or "not
+checked" for a criterion nothing judged — a criterion is never left off
+the page for want of a proof that mentions it. Proofs that answer no
+single criterion, such as the repository's own test suite or a red
+push, are listed beside the criteria rather than folded into them. The
+pull request the gate opens carries that same complete list, so the
+delivery page and the pull request never say different things about a
+criterion. Accepting:
 
 * is refused for a delivery that was withheld, or one with no proof at
   all;

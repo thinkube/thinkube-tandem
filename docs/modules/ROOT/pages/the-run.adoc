@@ -62,9 +62,13 @@ single click as every worker card.
 The closing gate re-runs every probe from a clean environment, the
 honesty scan reads the delivered files for self-declared deferrals, the
 repository's own suite runs, and the branch becomes a pull request whose
-description carries the proofs, the tester's decisions and every
-UNDELIVERED line. The machine face — the structured verification trace —
-persists in the store beside the space.
+description carries every acceptance criterion of the cut with its
+verdict — including "not checked" for a criterion nothing judged — the
+tester's decisions and every UNDELIVERED line. The same complete list
+is what the delivery page shows, so the pull request and the delivery
+page never disagree about a criterion. The machine face — the
+structured verification trace — persists in the store beside the
+space.
 
 A run ends in exactly one of three states:
 

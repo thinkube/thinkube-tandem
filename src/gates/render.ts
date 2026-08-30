@@ -7,12 +7,80 @@ import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
 import { docsDuty } from "../core/docsDuty";
 import { verifiedDoors } from "./doors";
+import { observationShaped } from "../run/observations";
 
 
 
 function nodesOf(space: Space, ids: readonly string[]): Change[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   return ids.map((id) => byId.get(id)).filter((n): n is Change => !!n);
+}
+
+/**
+ * Every acceptance criterion of the cut, each with its verdict — never
+ * silently dropped when nothing judged it.
+ *
+ * A criterion that no proof mentions is "not checked" rather than absent
+ * from the page: the delivery page once listed only what proofs happened
+ * to answer, so a criterion the run never graded read as if it had been
+ * kept. An observation-shaped criterion — one only the running product can
+ * show — is never "not checked" and never "red": it is "for you to
+ * certify", the same reading a reviewer's OBSERVE ruling gets when the
+ * criterion's own words head an entry on `delivery.observations`.
+ */
+export function criterionVerdicts(
+  space: Space,
+  delivery: Delivery,
+): {
+  promiseId: string;
+  promise: string;
+  id: string;
+  text: string;
+  kind: "probe" | "assessment";
+  verdict: "green" | "red" | "not checked" | "for you to certify";
+  ref?: string;
+}[] {
+  const cut = space.cuts.find((c) => c.id === delivery.cutId);
+  const members = cut ? nodesOf(space, cut.changeIds) : [];
+  const verdictOfCriterion = new Map<string, { verdict: string; ref?: string }>();
+  for (const p of delivery.proofs) {
+    if (p.criterionId) verdictOfCriterion.set(p.criterionId, { verdict: p.verdict, ref: p.ref });
+    verdictOfCriterion.set(`text:${p.label.trim()}`, { verdict: p.verdict, ref: p.ref });
+  }
+  const observations = delivery.observations ?? [];
+  const headsObservation = (text: string): boolean =>
+    observations.some((o) => o.startsWith(`${text.trim()} — `));
+  const out: {
+    promiseId: string;
+    promise: string;
+    id: string;
+    text: string;
+    kind: "probe" | "assessment";
+    verdict: "green" | "red" | "not checked" | "for you to certify";
+    ref?: string;
+  }[] = [];
+  for (const n of members) {
+    for (const c of n.acceptance) {
+      const kind: "probe" | "assessment" = c.kind === "assessment" ? "assessment" : "probe";
+      if (observationShaped(c.text) || headsObservation(c.text)) {
+        out.push({ promiseId: n.id, promise: n.sentence, id: c.id, text: c.text, kind, verdict: "for you to certify" });
+        continue;
+      }
+      const proof = verdictOfCriterion.get(c.id) ?? verdictOfCriterion.get(`text:${c.text.trim()}`);
+      const verdict: "green" | "red" | "not checked" =
+        !proof ? "not checked" : proof.verdict === "green" ? "green" : "red";
+      out.push({
+        promiseId: n.id,
+        promise: n.sentence,
+        id: c.id,
+        text: c.text,
+        kind,
+        verdict,
+        ...(proof?.ref ? { ref: proof.ref } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -267,11 +335,32 @@ export function renderDeliveryPage(
       if (seen) lines.push(`    - see it: ${seen}`);
     }
   }
-  if (delivery.proofs.length) {
+  // Every acceptance criterion of the cut, with its verdict — a criterion
+  // no proof mentions is named "not checked" rather than left off the page.
+  // Proofs that answer no criterion (the repository suite, a red push) are
+  // not about any one promise and are listed beside the criteria, not
+  // folded into them.
+  const criteria = criterionVerdicts(space, delivery);
+  const criterionProofIds = new Set(
+    delivery.proofs.filter((p) => p.criterionId).map((p) => p.criterionId),
+  );
+  const criterionProofLabels = new Set(
+    delivery.proofs.filter((p) => p.criterionId).map((p) => `text:${p.label.trim()}`),
+  );
+  const looseProofs = delivery.proofs.filter(
+    (p) =>
+      !(p.criterionId && criterionProofIds.has(p.criterionId)) &&
+      !criterionProofLabels.has(`text:${p.label.trim()}`),
+  );
+  if (criteria.length || looseProofs.length) {
     lines.push("");
     lines.push("## Checks");
     lines.push("");
-    for (const p of delivery.proofs)
+    for (const c of criteria)
+      lines.push(
+        `- ${c.verdict === "green" ? "✓" : c.verdict === "not checked" ? "○" : c.verdict === "for you to certify" ? "◐" : "✗"} ${c.text} — ${c.verdict}${c.ref ? ` (${c.ref})` : ""}`,
+      );
+    for (const p of looseProofs)
       lines.push(
         `- ${p.verdict === "green" ? "✓" : "✗"} ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
       );
@@ -320,5 +409,45 @@ export function renderDeliveryPage(
   // The walkthrough already appears beside the claim each line belongs to.
   // Repeating it here keyed by promise id printed the machine's own
   // identifiers at the foot of the page and said nothing new.
+  return lines.join("\n");
+}
+
+/**
+ * The pull-request body: the same account of the delivery the accept page
+ * gives, in the words a forge shows beside the diff. What only the person
+ * can certify, every undelivered line, and every acceptance criterion with
+ * its verdict — the forge face and the accept page never say different
+ * things about a criterion, because both are read from this delivery.
+ */
+export function renderDeliveryBody(space: Space, delivery: Delivery): string {
+  const lines: string[] = [];
+  lines.push(
+    `Delivered by run ${delivery.runId ?? "(unrecorded)"} for ${delivery.cutId}` +
+      (delivery.producedAt ? `, produced at ${delivery.producedAt}.` : "."),
+  );
+  const observations = delivery.observations ?? [];
+  if (observations.length) {
+    lines.push("");
+    lines.push("## For you to certify — the machine cannot observe the running product");
+    lines.push("");
+    for (const o of observations) lines.push(`- ${o}`);
+  }
+  const undelivered = delivery.undelivered ?? [];
+  if (undelivered.length) {
+    lines.push("");
+    lines.push("## Not delivered");
+    lines.push("");
+    for (const u of undelivered) lines.push(`- ⚠ ${u}`);
+  }
+  const criteria = criterionVerdicts(space, delivery);
+  if (criteria.length) {
+    lines.push("");
+    lines.push("## Checks");
+    lines.push("");
+    for (const c of criteria)
+      lines.push(
+        `- ${c.verdict === "green" ? "✓" : c.verdict === "not checked" ? "○" : c.verdict === "for you to certify" ? "◐" : "✗"} ${c.text} — ${c.verdict}${c.ref ? ` (${c.ref})` : ""}`,
+      );
+  }
   return lines.join("\n");
 }

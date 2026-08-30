@@ -61,7 +61,9 @@ token stops matching until you sign again.
 == Watch it build, then accept
 
 The run starts on its own; see xref:the-run.adoc[]. When the delivery
-arrives, its page lists every proof (green or red, with evidence) and
-every UNDELIVERED item. *Accept* merges it on your forge; a delivery
-with a red proof, or with an unmet documentation obligation, refuses to
-be accepted.
+arrives, its page names every acceptance criterion of the cut with its
+verdict — green, red, "for you to certify", or "not checked" for a
+criterion nothing judged — and every UNDELIVERED item. The pull request
+the gate opens carries that same list. *Accept* merges it on your
+forge; a delivery with a red criterion, or with an unmet documentation
+obligation, refuses to be accepted.
