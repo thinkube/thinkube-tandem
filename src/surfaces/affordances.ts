@@ -19,7 +19,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "the writing page",
-      gesture: "type — every line is an ask, and the words are kept as you write them",
+      gesture: "Write — every line is an ask, and the words are kept as you write them",
     },
   },
   "read-draft": {
@@ -47,26 +47,26 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "the reading page",
-      gesture: "go to the work page — that is what starts the thinking, and it says what it will cost",
+      gesture: "go to the work page — that is what starts Think, and it says what it will cost",
     },
   },
   reframe: {
     kind: "human",
     affordance: {
       surface: "any sentence of yours",
-      gesture: "say it differently — the reading re-forms, at a price shown first",
+      gesture: "press Reframe and say it differently — the reading re-forms, at a price shown first",
     },
   },
   amend: {
     kind: "human",
     affordance: {
       surface: "a sentence whose work is built",
-      gesture: "add a new sentence that supersedes it — built work only changes through new work",
+      gesture: "press Amend and add a new sentence that supersedes it — built work only changes through new work",
     },
   },
   "select-unit": {
     kind: "human",
-    affordance: { surface: "the work graph", gesture: "click a promise" },
+    affordance: { surface: "the work graph", gesture: "Select a promise by clicking it" },
   },
   "accept-delivery": {
     kind: "human",
@@ -79,7 +79,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "delivery page",
-      gesture: "install it, use it, then say whether it held",
+      gesture: "install it, use it, then press Attest to say whether it held",
     },
   },
   "think-again": {
@@ -97,7 +97,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "run view",
-      gesture: "type into a parked worker's answer box and press Send",
+      gesture: "type into a parked worker's answer box and press Answer",
     },
   },
   "dismiss-promise": {
@@ -106,11 +106,11 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   },
   "retry-model": {
     kind: "human",
-    affordance: { surface: "the intent graph, after a failed reading", gesture: "press 'Read it again' — your sentences are already recorded" },
+    affordance: { surface: "the intent graph, after a failed reading", gesture: "press Retry — your sentences are already recorded" },
   },
   "read-log": {
     kind: "human",
-    affordance: { surface: "orchestration graph", gesture: "click a step to read its own log, and page through it" },
+    affordance: { surface: "orchestration graph", gesture: "press Read log on a step to read its own log, and page through it" },
   },
   "stop-run": {
     kind: "human",
@@ -127,7 +127,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       surface: "units map",
-      gesture: "press an out-of-date badge to re-read the code under those promises",
+      gesture: "press Reground on an out-of-date badge to re-read the code under those promises",
     },
   },
   "accept-impact": {

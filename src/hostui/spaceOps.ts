@@ -7,8 +7,8 @@
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { createThinkingSpace, DeletionCost, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
+import { vs } from "../core/vscodeHost";
 
 /** Owner keys: a repository card id, or "wp:<project-id>" for a project. */
 function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
@@ -32,12 +32,6 @@ export function spaceTitle(storeRoot: string, ownerKey: string, slug: string): s
     /* no name.txt — the slug is the title */
   }
   return slug;
-}
-
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
 }
 
 export function configuredStoreRoot(): string {

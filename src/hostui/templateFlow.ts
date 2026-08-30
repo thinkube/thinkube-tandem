@@ -8,21 +8,14 @@
  * active project's context scope — so grounding reads INSTANTIATED code,
  * never raw template source.
  */
-import type * as vscodeTypes from "vscode";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { mintCard } from "../core/identity";
 import { configuredStoreRoot } from "./spaceOps";
 import { thinkingSpaceDirs } from "../core/spaces";
 import { readContextScope, writeContextScope } from "../core/workProjects";
-
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
-}
+import { vs } from "../core/vscodeHost";
 
 interface ControlAuth {
   base: string;

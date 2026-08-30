@@ -6,17 +6,12 @@
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { TandemSession } from "./session";
 import { spacePush } from "./push";
 import { handleInbound } from "./inbound";
 import type { InboundAction } from "./inbound";
-
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-export function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
-}
+export { vs } from "../core/vscodeHost";
+import { vs } from "../core/vscodeHost";
 
 export interface PanelHostHooks {
   /** Host-side gesture: the QuickPick that rebinds the space to a repo. */

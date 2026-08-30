@@ -292,6 +292,37 @@ export function can(action: string): boolean {
   return !allowedNow || allowedNow.includes(action);
 }
 
+/**
+ * The person-facing name for every control the phase can govern, or that a
+ * refusal names — the same word the affordance registry's gesture uses for
+ * it, so a control is never called one thing in a refusal and another in an
+ * instruction.
+ */
+export const CONTROL_NAMES: Readonly<Record<string, string>> = {
+  "save-draft": "Write",
+  "read-draft": "Read",
+  "keep-draft": "Keep",
+  build: "Build",
+  think: "Think",
+  reframe: "Reframe",
+  amend: "Amend",
+  "select-unit": "Select",
+  "accept-delivery": "Accept",
+  attest: "Attest",
+  "think-again": "Think again",
+  "reject-delivery": "Not this",
+  "answer-worker": "Answer",
+  "dismiss-promise": "Dismiss",
+  "retry-model": "Retry",
+  "read-log": "Read log",
+  "stop-run": "Stop",
+  panic: "Panic",
+  reground: "Reground",
+  "accept-impact": "Apply",
+  "dismiss-impact": "Set aside",
+  "apply-all-impacts": "Apply all",
+};
+
 /** Why a control is off, for its tooltip — one sentence per phase. */
 export function whyNot(phase: SpacePush["phase"] | undefined): string {
   switch (phase) {

@@ -125,6 +125,40 @@ CLI journey's closing report (`closingReportOf`, `src/cli/journey.ts`),
 the run state the panel reads (`RunState.view().runId`) — reads these
 same two words and spells them the same way.
 
+## One name per control
+
+A control cannot be called one thing in a refusal sentence and another in an
+instruction telling you where to find it. `CONTROL_NAMES`
+(`src/surfaces/surfaceContract.ts`) fixes the word a refusal uses; the same
+word appears, verbatim, inside that control's gesture in the affordance
+registry (`src/surfaces/affordances.ts`). One row below per control: the
+name to say, and the wordings that used to be said instead — never again.
+
+| Say | Never say | Control (action key) |
+|---|---|---|
+| Write | type, jot | save-draft |
+| Read | read your words | read-draft |
+| Keep | commit the draft | keep-draft |
+| Build | run the build, sign and go | build |
+| Think | start thinking | think |
+| Reframe | say it differently, rephrase | reframe |
+| Amend | supersede, replace the sentence | amend |
+| Select | click a promise, choose a unit | select-unit |
+| Accept | approve the delivery | accept-delivery |
+| Attest | certify, confirm it held | attest |
+| Think again | rerun the thinking | think-again |
+| Not this | reject, decline the delivery | reject-delivery |
+| Answer | reply, send | answer-worker |
+| Dismiss | remove the promise | dismiss-promise |
+| Retry | read it again, retry the model | retry-model |
+| Read log | open the log, view the step's log | read-log |
+| Stop | halt, cancel the run | stop-run |
+| Panic | abort everything | panic |
+| Reground | re-read the code, refresh the badge | reground |
+| Apply | accept the implication | accept-impact |
+| Set aside | dismiss the implication | dismiss-impact |
+| Apply all | apply everything, bulk apply | apply-all-impacts |
+
 ## What changes in the code
 
 - `WorkUnit.changes: { action: "create" | "change" | "delete"; path: string }[]`
