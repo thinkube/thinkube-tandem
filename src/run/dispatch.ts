@@ -217,6 +217,9 @@ export async function dispatchTep(
     changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
+    // Only the person may change what was asked for; parking is how the
+    // run asks, and the unit shows as waiting for them while it does.
+    askPerson: (unit, question) => new Promise<string>((resolve) => st.park(unit, question, resolve)),
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);

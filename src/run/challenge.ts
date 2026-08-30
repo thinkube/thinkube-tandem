@@ -6,6 +6,12 @@
  * check from the criterion it proves — never from the coder's argument.
  * A check that cannot RUN is the check's failure, and is re-authored on
  * the same terms. Both are budgeted: a valve, never a grinding strategy.
+ *
+ * Where the impossibility is in the CRITERION and not in its rendering,
+ * re-authoring cannot help: the new probe renders the same demand as
+ * faithfully as the old one, and the coder grinds against it until its
+ * budget is gone. That case is a question for the person who signed the
+ * criterion, and it is asked as one.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -50,14 +56,22 @@ export function makeChallenge(
         { model: judge, repoRoot: a.testerWt, log: a.log },
         [
           "You are the ORACLE ruling on a coder's CHALLENGE to one check. You see",
-          "everything; the coder saw only its own failures. Judge ONE question:",
-          "does the probe faithfully render the criterion? A probe that asserts",
-          "implementation details the criterion never demands, contradicts a",
-          "stated rule of the run, or cannot be satisfied by ANY correct",
-          "implementation is DEFECTIVE. A probe the coder merely finds hard is",
-          "FAITHFUL. The criterion itself is not on trial.",
-          "Your FIRST line must be exactly DEFECTIVE or FAITHFUL, then one plain",
-          "sentence of reason.",
+          "everything; the coder saw only its own failures. Judge where the fault",
+          "lies, in three possible places.",
+          "Your FIRST line must be exactly one of:",
+          '- "FAITHFUL: <reason>" — the probe renders the criterion, and the coder',
+          "   merely finds it hard. The check stands.",
+          '- "DEFECTIVE: <reason>" — the probe asserts implementation details the',
+          "   criterion never demands, or contradicts a stated rule of the run. A",
+          "   probe written FROM THE CRITERION ALONE would not have this fault, so",
+          "   the check is rewritten from it.",
+          '- "IMPOSSIBLE: <reason>" — the criterion ITSELF cannot be met by any',
+          "   correct implementation: it demands more than exists to give (more",
+          "   distinct values than its type holds), or it contradicts another",
+          "   criterion of the same promise. Rewriting the probe cannot help here —",
+          "   any faithful rendering makes the same impossible demand. Choose this",
+          "   ONLY for a real impossibility, never for difficulty.",
+          "Then one plain sentence of reason.",
           "",
           `THE CRITERION (signed by the human): ${criterion.text}`,
           "",
@@ -68,12 +82,17 @@ export function makeChallenge(
           argument.slice(0, 4000),
         ].join("\n"),
       );
-      const granted = !!reply?.trimStart().toUpperCase().startsWith("DEFECTIVE");
+      const first = (reply ?? "").trimStart().toUpperCase();
+      const impossible = first.startsWith("IMPOSSIBLE");
+      const granted = first.startsWith("DEFECTIVE");
       const reason = (reply ?? "the judge was unreachable — the check stands")
+        .replace(/^(IMPOSSIBLE|DEFECTIVE|FAITHFUL)\s*:?\s*/i, "")
         .split("\n")
         .slice(0, 2)
         .join(" ")
         .slice(0, 300);
+      if (impossible)
+        return askTheSigner(a, { slice, ac, rel, criterion, reason, unit: a.acting?.(slice)?.unit });
       a.onRuling?.({ slice, criterionId: criterion.id, granted, reason });
       a.defect({
         slice,
@@ -90,6 +109,70 @@ export function makeChallenge(
       a.log(`⚖ ${slice}: check ${ac} re-authored at the oracle's ruling — ${reason}`);
       return `GRANTED — ${reason}\nThe check was re-authored from its criterion. Run verify.`;
     };
+}
+
+/**
+ * A criterion that cannot be met goes back to the person who signed it.
+ *
+ * Only they may change what was asked for — so the run stops this unit at
+ * a question, in their own words: the criterion they signed, and what it
+ * demands that cannot exist. Their answer is the amendment, and the check
+ * is rewritten to it. Without a way to ask, the unit is told to stop
+ * rather than grind against a wall it cannot move.
+ */
+async function askTheSigner(
+  a: OracleFactoryArgs,
+  args: {
+    slice: string;
+    ac: number;
+    rel: string;
+    criterion: { id: string; text: string };
+    reason: string;
+    unit?: string;
+  },
+): Promise<string> {
+  const { slice, ac, rel, criterion, reason, unit } = args;
+  if (!a.askPerson || !unit) {
+    a.onRuling?.({ slice, criterionId: criterion.id, granted: false, reason: `cannot be met as written: ${reason}` });
+    return (
+      `IMPOSSIBLE — ${reason}\nThis is the criterion's own fault, not yours, and nobody here can change ` +
+      `what was asked for. Do not try again: finish what you can and report UNDELIVERED naming this check.`
+    );
+  }
+  a.log(`✋ ${slice}: check ${ac} cannot be met as written — asking the person who signed it`, unit);
+  const answer = (
+    await a.askPerson(
+      unit,
+      `One thing you asked for cannot be built as written, so I need your word before going on.\n\n` +
+        `You asked: "${criterion.text}"\n\n` +
+        `Why it cannot be met: ${reason}\n\n` +
+        `How should this read instead? Answer in your own words — what you want it to mean.`,
+    )
+  ).trim();
+  a.onRuling?.({
+    slice,
+    criterionId: criterion.id,
+    granted: true,
+    reason: `could not be met as written (${reason}) — amended by its author: ${answer.slice(0, 200)}`,
+  });
+  a.defect({
+    slice,
+    unit,
+    activity: "challenge",
+    trigger: "impossible-criterion",
+    type: "spec",
+    impact: "the criterion's author amended it",
+    detail: `${criterion.text}\n→ ${answer}`,
+  });
+  const ok = await reauthorCheck(a, {
+    slice,
+    rel,
+    criterion: `${criterion.text}\n\nAS AMENDED BY THE PERSON WHO SIGNED IT: ${answer}`,
+    because: `the criterion as written could not be met by any correct implementation: ${reason}`,
+  });
+  return ok
+    ? `AMENDED — its author says: ${answer}\nThe check was rewritten to that. Run verify.`
+    : `AMENDED — its author says: ${answer}\nThe check could not be rewritten; meet the amended criterion and run verify.`;
 }
 
 /** Rewrite one probe from its criterion, in the tester's tree, and keep it

@@ -44,6 +44,9 @@ export function buildOracleArgs(a: {
   /** Commit a waiting unit's work, so it holds nothing while it waits. */
   commitBeforeWaiting: (unitId: string, why: string) => Promise<void>;
   halted: () => boolean;
+  /** Stop a unit at a question only the person can answer, and resume it
+   *  with their answer (src/run/challenge.ts). */
+  askPerson: (unit: string, question: string) => Promise<string>;
 }): OracleFactoryArgs {
   const { deps, dag, slices, rulings } = a;
   return {
@@ -85,6 +88,7 @@ export function buildOracleArgs(a: {
       defect: a.defect,
     }),
     onDecision: (unit: string, text: string) => a.decisions.push({ unit, text }),
+    askPerson: a.askPerson,
     // The repository's standing tests are every slice's check, scoped to what imports its files.
     suite: sliceSuiteArgs({
       runOne: a.runOneTest,
