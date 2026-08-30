@@ -513,3 +513,53 @@ test("a unit failed for a real reason keeps that reason", () => {
   st.set("SL-18#eu-0", "failed");
   assert.match(st.units.get("SL-18#eu-0")?.note ?? "", /checks not green/, "the true reason is never overwritten");
 });
+
+/**
+ * A long run is not a broken run.
+ *
+ * The watch used to hold a three-hour clock and stop the run at it,
+ * whatever was happening. It stopped one that was working: thirty-three
+ * of forty-one units finished, eight never started, and every verdict was
+ * thrown away for being slow. Nothing in a run is unbounded to begin
+ * with — attempts, challenges, repairs and turns all have limits, execs
+ * time out, the plan is a finite graph — so time alone was never evidence
+ * of anything, and no deadline is set by default. Going quiet still ends
+ * a run, because a silent run is one nobody can read.
+ */
+test("a run that keeps talking is never stopped for taking long", () => {
+  const clock = driven();
+  const st = new RunState(() => {});
+  const said: string[] = [];
+  st.sink = (line) => said.push(line);
+  watchForStall({
+    st,
+    units: () => [{ id: "SL-1#eu-0", state: "running", requires: [] }],
+    log: (l) => said.push(l),
+    defect: () => {},
+    quietMs: 10 * 60_000,
+    now: clock.now,
+    every: clock.every,
+  });
+
+  // Eight hours of a run that is working: something is said every minute.
+  for (let i = 0; i < 8 * 60; i++) {
+    st.log("still working");
+    clock.pass(60_000);
+  }
+  assert.equal(st.halted, false, "a working run is left alone, however long it takes");
+  assert.equal(
+    said.some((l) => l.includes("bound")),
+    false,
+    "and nothing is said about a bound, because it has none",
+  );
+});
+
+test("a caller that insists on a deadline still gets one", () => {
+  const clock = driven();
+  const { st } = watched(clock, 60 * 60_000);
+  for (let i = 0; i < 70; i++) {
+    st.log("still working");
+    clock.pass(60_000);
+  }
+  assert.equal(st.halted, true, "an explicit deadline is honoured");
+});

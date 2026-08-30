@@ -51,23 +51,24 @@ export function contentionOf(units: readonly Planned[]): Contention {
 }
 
 /**
- * What the plan's shape means for the clock, said before a worker starts.
+ * How long this run will take, said before it starts.
  *
- * Undefined when nothing is worth saying. A sentence when the plan is
- * mostly serial: the person can re-cut it, or accept the wait knowing
- * why — either is better than learning it from a run that is killed at
- * its bound with a third of its units never started.
+ * A forecast, not an instruction. Which file lands in which unit is the
+ * machine's own doing — a slice's files are its promises' grounding
+ * touchpoints — so the queue is the machine's to answer for, and telling
+ * the person to re-cut it hands them a decision they never made. What is
+ * theirs is the wait: they are the one who sits through it, so they are
+ * told how long it will be and what is making it long.
+ *
+ * Undefined when there is nothing worth a person's attention.
  */
 export function contentionNote(c: Contention, minutesPerUnit = 5): string | undefined {
   if (!c.hottest || c.serialised < 3) return undefined;
   const share = c.serialised / c.total;
   const hours = (c.serialised * minutesPerUnit) / 60;
   const line =
-    `${c.serialised} of ${c.total} units change ${c.hottest.path}, and two units never write one file ` +
-    `at once — so those ${c.serialised} run one after another, however many workers this run is allowed. ` +
-    `At ${minutesPerUnit} minutes each that is about ${hours.toFixed(1)} hours of the run's length, ` +
-    `set by the plan rather than by the work.`;
-  return share >= 0.5
-    ? `${line} Most of this plan is a queue behind one file; cutting it smaller, or giving that file to one unit, is what makes it faster.`
-    : line;
+    `expect about ${hours.toFixed(1)} hours: ${c.serialised} of ${c.total} units change ` +
+    `${c.hottest.path}, and two units never write one file at once, so those ${c.serialised} ` +
+    `run one after another however many workers this run has.`;
+  return share >= 0.5 ? `${line} Most of this run is that queue.` : line;
 }

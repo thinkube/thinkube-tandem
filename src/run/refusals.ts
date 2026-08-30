@@ -202,6 +202,9 @@ export async function refusedBeforeDispatch(a: {
   graphPath?: string;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   log: (line: string) => void;
+  /** The machine's own record — what the plan's shape costs is a fact
+   *  about the slicing, which is the machine's, never the person's. */
+  defect?: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
 }): Promise<{ dag: ReturnType<typeof buildUnitDag>; refusal?: { trigger: string; refusal: string } }> {
   // A check is born where this repository already keeps its tests, beside
   // the module it drives — so it imports its subject the same way before
@@ -261,8 +264,21 @@ export async function refusedBeforeDispatch(a: {
   // What the plan's own shape costs, before a worker is spent on it: two
   // units never write one file at once, so a file most units carry makes
   // them a queue, and no number of workers shortens it.
-  const crowding = contentionNote(contentionOf(dag));
-  if (crowding) a.log(`⏳ ${crowding}`);
+  const crowded = contentionOf(dag);
+  const crowding = contentionNote(crowded);
+  if (crowding) {
+    a.log(`⏳ ${crowding}`);
+    // The queue is the machine's own: a slice's files are its promises'
+    // grounding touchpoints, so a file in most footprints is something the
+    // machine decided. It goes on the machine's record, not the person's.
+    a.defect?.({
+      activity: "preflight",
+      trigger: "plan-shape",
+      type: "machine",
+      impact: `${crowded.serialised} of ${crowded.total} units run one at a time`,
+      detail: crowded.shared.slice(0, 5).map((f) => `${f.units} units: ${f.path}`).join("\n"),
+    });
+  }
   const verdict = validateDag(dag) as { ok: boolean; error?: string };
   if (!verdict.ok)
     return { dag, refusal: { trigger: "plan-validation", refusal: `the engine refused the plan: ${JSON.stringify(verdict)}` } };

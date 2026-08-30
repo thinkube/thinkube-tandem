@@ -163,6 +163,7 @@ export async function dispatchTep(
     ...(deps.graphPath ? { graphPath: deps.graphPath } : {}),
     exec,
     log: (l) => log(`${tep}: ${l}`),
+    defect,
   });
   const dag = before.dag;
   st.plan = planRecordOf(slices); // kept even when refused — that is the case a later rule must keep refusing

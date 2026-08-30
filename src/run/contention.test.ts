@@ -30,9 +30,13 @@ test("a plan queued behind one file is measured, and the wait is stated in hours
   assert.equal(c.total, 41);
 
   const said = contentionNote(c);
-  assert.match(said ?? "", /28 of 41 units change src\/surfaces\/surfaceContract\.ts/);
-  assert.match(said ?? "", /2\.3 hours/, "what the plan alone costs, before any work");
-  assert.match(said ?? "", /queue behind one file/, "and what to do about it, since most of the plan is that queue");
+  assert.match(said ?? "", /expect about 2\.3 hours/, "the wait is the person's, so the wait is what they are told");
+  assert.match(said ?? "", /28 of 41 units change src\/surfaces\/surfaceContract\.ts/, "and what is making it long");
+  assert.doesNotMatch(
+    said ?? "",
+    /cut|re-cut|should|giving that file/i,
+    "never homework: which file lands in which unit is the machine's own doing, not theirs",
+  );
 });
 
 test("a plan whose units keep out of each other's way says nothing", () => {

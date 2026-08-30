@@ -14,11 +14,18 @@
  * the run, which drains it into a delivery record and a report instead of
  * leaving it to sit until someone gives up.
  *
- * Silence is not the only way a run fails to end. A run can talk steadily
- * for hours and still be going nowhere — rounds that repair each other's
- * damage, a unit reworking a criterion it cannot reach. So the same watch
- * holds a wall clock: past its bound, the run stops and reports, whatever
- * it was saying.
+ * A long run is not a broken run. This watch once also held a wall clock —
+ * three hours, and then it stopped whatever was happening — which killed a
+ * run that was working: thirty-three of forty-one units finished, eight
+ * never started, and everything it had done was thrown away for being
+ * slow. Nothing in a run is unbounded to begin with: attempts, challenges,
+ * repairs and turns all have their own limits, execs time out, and the
+ * plan is a finite graph. A run that keeps finishing units is progressing,
+ * however long that takes, and time alone is not evidence of anything.
+ *
+ * So the only thing that ends a run against its will is going quiet. A
+ * caller that must have a deadline can still set one; nothing sets one by
+ * default.
  */
 import type { RunState } from "./state";
 
@@ -33,8 +40,9 @@ const howLong = (ms: number): string =>
 /** How long a run may be silent before the watchdog says so. */
 const QUIET_BEFORE_NOTICE_MS = 8 * 60 * 1000;
 
-/** How long a run may take, talking or not, before it stops and reports. */
-const RUN_BOUND_MS = 3 * 60 * 60 * 1000;
+/** No run has a deadline of its own: only a caller that asks for one gets
+ *  one, and nothing in this codebase asks. */
+const NO_DEADLINE = Number.POSITIVE_INFINITY;
 
 export interface StallWatch {
   /** A beat: something moved. */
@@ -52,13 +60,14 @@ export function watchForStall(a: {
   log: (line: string, step?: string) => void;
   defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
   quietMs?: number;
-  /** The wall clock: how long this run may take in total. */
+  /** A deadline, when a caller insists on one. Unset means no deadline:
+   *  a run that is finishing units is working, whatever the clock says. */
   maxMs?: number;
   now?: () => number;
   every?: (fn: () => void, ms: number) => { stop: () => void };
 }): StallWatch {
   const quiet = a.quietMs ?? QUIET_BEFORE_NOTICE_MS;
-  const bound = a.maxMs ?? RUN_BOUND_MS;
+  const bound = a.maxMs ?? NO_DEADLINE;
   const now = a.now ?? (() => Date.now());
   const every =
     a.every ??
