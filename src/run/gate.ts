@@ -93,6 +93,9 @@ export interface GateContext {
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   /** How many times this run made a person interpret the machine. */
   machineAttention: () => number;
+  /** Work a fenced unit wrote that the guard took back, with its change —
+   *  read by the last actor, which is fenced by nothing. */
+  restored?: readonly { path: string; patch: string }[];
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
@@ -486,6 +489,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
     halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
     abortable: (ab) => g.state.aborts.set("gate#closer", ab),
+    ...(g.restored?.length ? { restored: g.restored } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
   });
   // A check proves a promise once; it does not join the repository's suite

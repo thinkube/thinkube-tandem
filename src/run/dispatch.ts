@@ -243,6 +243,9 @@ export async function dispatchTep(
   const diagnoseFor = makeDiagnoser(oracleArgs, makeReauthor(oracleArgs));
   const answerEnd = makeEndAnswerer(oracleArgs);
 
+  // What the guard took back, kept for the last actor. A revert undoes the
+  // change; it should not also erase what the unit worked out to make it.
+  const restored: { path: string; patch: string }[] = [];
   const liveFootprints = new Map<string, { tree: string; paths: string[] }>();
   // The session each unit was worked in: a criterion red at the gate goes
   // back to the author that wrote the code, not to a stranger with a summary.
@@ -352,6 +355,7 @@ export async function dispatchTep(
           ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),
           alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
           baseline,
+          onRestored: (kept) => restored.push(...kept),
           // The door, on the path that needs it. Without it the guard has no
           // grant to consult: every write outside the footprint is restored
           // at once, and the second one kills the unit. It was wired only to
@@ -581,6 +585,7 @@ export async function dispatchTep(
     sessionOf: (unit: string) => sessions.get(unit),
     worker,
     machineAttention: () => machineAttention,
+    restored,
     runId,
     producedAt,
   });

@@ -74,6 +74,11 @@ export interface CloserArgs {
   probeSources: { path: string; source: string }[];
   /** What the run already tried and could not settle. */
   history: string[];
+  /** Work the guard took back from a fenced unit, with the change it undid.
+   *  The last actor is fenced by nothing and reaches the same files; without
+   *  this it rediscovers from an empty tree what another unit had already
+   *  worked out and written. */
+  restored?: readonly { path: string; patch: string }[];
   criteria: { id: string; text: string }[];
   digest?: string;
   prepare?: string;
@@ -102,11 +107,12 @@ export interface CloserArgs {
 }
 
 /** The brief: everything, plainly, and the one law that still binds it. */
-function closerBrief(a: {
+export function closerBrief(a: {
   subject: string;
   round: number;
   state: CloserState;
   history: readonly string[];
+  restored?: readonly { path: string; patch: string }[];
   criteria: readonly { id: string; text: string }[];
   probeSources: readonly { path: string; source: string }[];
   footprint: readonly string[];
@@ -137,6 +143,17 @@ function closerBrief(a: {
     "",
     "──── WHAT THE RUN ALREADY TRIED ────",
     ...a.history.slice(0, 20).map((h) => `- ${h}`),
+    ...(a.restored?.length
+      ? [
+          "",
+          "──── WORK A FENCED UNIT WROTE AND THE GUARD TOOK BACK ────",
+          "Another unit reached these files, was not cleared for them, and its change was",
+          "restored. The reasoning was right often enough to be worth your reading: this is",
+          "what it wrote, not what you must write. You are fenced by nothing — judge it, and",
+          "make the change yourself if it is correct.",
+          ...a.restored.slice(0, 6).map((r) => `── ${r.path} ──\n${r.patch.slice(0, 4000)}`),
+        ]
+      : []),
     "",
     "──── THE CHECKS, IN FULL ────",
     ...a.probeSources.slice(0, 12).map((p) => `── ${p.path} ──\n${p.source.slice(0, 6000)}`),
@@ -226,6 +243,7 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
       },
       closerBrief({
         subject: a.subject,
+        ...(a.restored?.length ? { restored: a.restored } : {}),
         round,
         state,
         history: a.history,

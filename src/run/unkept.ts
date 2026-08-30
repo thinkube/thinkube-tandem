@@ -47,6 +47,9 @@ export async function repairUnkept(a: {
   checkOf: Map<string, string>;
   sliceProbes: Map<string, string[]>;
   sessionOf: (unit: string) => string | undefined;
+  /** Work a fenced unit wrote that the guard took back, with its change.
+   *  The closer is fenced by nothing and reaches the same files. */
+  restored?: readonly { path: string; patch: string }[];
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   baseSha: string;
   halted: () => boolean;
@@ -233,6 +236,7 @@ export async function repairUnkept(a: {
       footprint: slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)),
       probeSources: [],
       history: unkept.map((p) => `${p.label}: ${(p.ref ?? "").split("\n")[0]}`).slice(0, 20),
+      ...(a.restored?.length ? { restored: a.restored } : {}),
       criteria: unkept.map((p, i) => ({ id: p.criterionId ?? `unkept-${i}`, text: p.label })),
       ...(deps.digest ? { digest: deps.digest } : {}),
       ...(deps.prepare ? { prepare: deps.prepare } : {}),
