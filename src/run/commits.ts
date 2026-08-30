@@ -32,6 +32,9 @@ export function makeCommitBook(a: {
    *  the waits, and a wait nothing can fast-forward is a wait no test can
    *  reach. Defaults to the clock. */
   sleep?: (ms: number, wake: (fn: () => void) => void) => Promise<void>;
+  /** Keeps the committed branch's product build honest as slices land:
+   *  a slice that stops the product building is named where it lands. */
+  branchBuild?: { after: (slice: string) => Promise<void> };
 }): {
   sliceCommitted: Set<string>;
   /** Units asleep on the next commit right now. */
@@ -86,8 +89,13 @@ export function makeCommitBook(a: {
     );
     if (paths.length) await a.exec("git", ["add", "--", ...paths], a.worktree);
     const c = await a.exec("git", ["commit", "-m", `tandem: ${a.tep} ${slice}`], a.worktree);
-    if (c.code === 0) a.log(`✓ ${slice}: committed on ${a.branch}`);
-    else a.log(`⚠ ${slice}: nothing to commit — ${c.out.trim().split("\n").pop() ?? ""}`);
+    if (c.code === 0) {
+      a.log(`✓ ${slice}: committed on ${a.branch}`);
+      // What ships is built on the committed branch, so a slice that stops
+      // it building is named here rather than discovered by the next unit
+      // as a break in a file nobody in the run may touch.
+      await a.branchBuild?.after(slice);
+    } else a.log(`⚠ ${slice}: nothing to commit — ${c.out.trim().split("\n").pop() ?? ""}`);
   };
   const failWith = (id: string, ...why: string[]): void => {
     a.st.fail(id, why.join("; "));
