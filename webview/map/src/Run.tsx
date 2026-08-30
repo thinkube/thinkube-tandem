@@ -13,6 +13,7 @@ import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/no
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
 import { unpassedWorkers } from "../../../src/surfaces/auditCard";
+import { stateFace } from "../../../src/surfaces/runCardFace";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -144,26 +145,37 @@ export function RunSection(props: {
       // paragraph is a graph nobody can take in, and this one was drawing
       // the same slice title on three different nodes, so no card said
       // which one it was.
-      ...run.units.map((u) => ({
-        id: u.id,
-        band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+      ...run.units.map((u) => {
         // A maintainer is named for the slice it serves, not as a slice of its own.
-        title: u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice),
-        titleFull: `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`,
-        abs: u.id,
-        chips: [chipFor(u, now), logChip(u.id, run)],
-      })),
-      ...slices.map((slice) => ({
-        id: `audit:${slice}`,
-        band: ROLES.audit,
-        title: run.units.find((u) => u.slice === slice)?.sliceTitle ?? slice,
-        abs: `audit:${slice}`,
-        chips: [
-          graded(slice)
-            ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
-            : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
-        ],
-      })),
+        const fallback = u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice);
+        const fallbackFull = `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`;
+        return {
+          id: u.id,
+          band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+          title: u.promiseLabel?.label ?? fallback,
+          titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : fallbackFull,
+          abs: u.id,
+          chips: [chipFor(u, now), logChip(u.id, run)],
+          face: stateFace(u.state),
+        };
+      }),
+      ...slices.map((slice) => {
+        const u = run.units.find((x) => x.slice === slice);
+        const isGraded = graded(slice);
+        return {
+          id: `audit:${slice}`,
+          band: ROLES.audit,
+          title: u?.promiseLabel?.label ?? u?.sliceTitle ?? slice,
+          titleFull: u?.promiseLabel ? `audit:${slice} — ${u.promiseLabel.full}` : undefined,
+          abs: `audit:${slice}`,
+          chips: [
+            isGraded
+              ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
+              : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
+          ],
+          face: stateFace(isGraded ? "done" : "running"),
+        };
+      }),
       // No workers, no gate: a run that never seeded a unit (it refused
       // itself before dispatch) has nothing to grade, and a lone closing
       // gate card over an empty graph claims a run that never happened.
@@ -181,7 +193,7 @@ export function RunSection(props: {
                     ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
                     : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
               ],
-              ...(run.logCounts?.run ? { children: undefined } : {}),
+              face: stateFace(allDone ? "done" : anyFailed ? "failed" : "running"),
             },
           ]
         : []),

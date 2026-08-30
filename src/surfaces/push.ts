@@ -9,6 +9,7 @@ import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 import { docsDuty } from "../core/docsDuty";
+import { promiseLabelOf } from "./runPromiseLabel";
 
 const TITLE_CLIP = 64;
 
@@ -127,7 +128,16 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ...v,
         units: v.units.map((u) => {
           const title = session.units.find((x) => x.id === u.slice)?.abstract?.title;
-          return title ? { ...u, sliceTitle: title } : u;
+          const promiseLabel = promiseLabelOf({
+            nodes: session.space.nodes,
+            units: session.units,
+            slice: u.slice,
+          });
+          return {
+            ...u,
+            ...(title ? { sliceTitle: title } : {}),
+            ...(promiseLabel ? { promiseLabel } : {}),
+          };
         }),
       };
     })(),

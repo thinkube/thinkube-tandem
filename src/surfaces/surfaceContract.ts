@@ -91,6 +91,11 @@ interface RunView {
     slice: string;
     /** The slice in the human's words, when the space still knows it. */
     sliceTitle?: string;
+    /** The promise this unit's slice is keeping — the card's title (or a
+     *  count when it holds more than one) and the full sentence(s) for
+     *  hover, in the space's own wording. Absent when no change could be
+     *  matched to the unit; the card falls back to its slice title. */
+    promiseLabel?: { label: string; full: string };
     role: "code" | "test" | "maintain";
     /** What this unit builds, in the reading's own words. */
     what?: string;
