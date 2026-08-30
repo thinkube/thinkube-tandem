@@ -109,6 +109,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     // The old note dies the moment a new press starts — a corpse is never news.
     s.runNote = undefined;
     s.running = true;
+    s.driving = true;
     s.changed("Starting — refreshing the branch…");
     // The run is written down AS IT HAPPENS, not only when it is over.
     // A record kept until the end is a record nobody can read while they
@@ -317,6 +318,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
     } finally {
       clearInterval(pulse);
       s.running = false;
+      s.driving = false;
       if (pending) clearTimeout(pending);
       // And once more at the end, so the last thing that happened is in
       // the record whatever the throttle was doing when it happened.
