@@ -15,6 +15,7 @@ import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
 import { sliceCheckTally, unpassedWorkers } from "../../../src/surfaces/auditCard";
 import { stateFace } from "../../../src/surfaces/runCardFace";
+import { gateTitle } from "../../../src/surfaces/runPromiseLabel";
 import { proofOfPass } from "../../../src/surfaces/surfaceContract";
 
 
@@ -205,7 +206,12 @@ export function RunSection(props: {
             {
               id: "gate",
               band: { ...ROLES.audit, text: "Audit — everything together" },
-              title: "The closing gate",
+              // The gate keeps the whole cut's promise, so it is titled the
+              // way every other card is: by the promise, in the person's own
+              // words, with the full sentences on hover. One promise names
+              // itself; several are named by the first and a count, the same
+              // shape a worker card uses when its unit carries more than one.
+              ...gateTitle(run.units),
               abs: "every check, on the real state",
               chips: [
                 allDone

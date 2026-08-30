@@ -3,9 +3,8 @@
  * that serves it — its coders, its tester, and the maintainer of its
  * `<slice>-tests` — has finished.
  *
- * Reached only from webview/map/src/Run.tsx, not from either CLI or the
- * extension's own entry — declared unreachable-by-design in knip.json's
- * root workspace for that reason; the webview workspace reaches it fine.
+ * Reached from webview/map/src/Run.tsx, which the webview workspace's own
+ * entry point reaches.
  */
 
 export interface RunUnitLike {

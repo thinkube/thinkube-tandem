@@ -21,6 +21,7 @@ function FromAsk(props: {
   n: number;
   id: string;
   text: string;
+  phase: SpacePush["phase"];
   onEditAsk: (id: string) => void;
 }): JSX.Element {
   return (
@@ -38,7 +39,7 @@ function FromAsk(props: {
         title={
           can("reframe") || can("amend")
             ? `Say ask #${props.n} differently — I will read it again.`
-            : "Not now — nothing changes while work is signed or running."
+            : refusalSentence("reframe", props.phase)
         }
         aria-label={`say ask ${props.n} differently`}
         style={{
@@ -137,7 +138,14 @@ function Recorded(props: {
                 <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 2, display: "flex", gap: 6 }}>
                   <span>read from your ask{s.from.length === 1 ? "" : "s"}</span>
                   {s.from.map((f) => (
-                    <FromAsk key={f.id} n={f.n} id={f.id} text={f.text} onEditAsk={props.onEditAsk} />
+                    <FromAsk
+                      key={f.id}
+                      n={f.n}
+                      id={f.id}
+                      text={f.text}
+                      phase={push.phase}
+                      onEditAsk={props.onEditAsk}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -166,6 +174,7 @@ function Recorded(props: {
                     n={c.fromAskN}
                     id={c.fromAskId}
                     text={c.fromAsk}
+                    phase={push.phase}
                     onEditAsk={props.onEditAsk}
                   />{" "}
                   {c.text}

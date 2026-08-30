@@ -9,9 +9,9 @@
  * may reuse "cut" or gold — a card can be both in the cut and running, and
  * the two marks must stay visually distinct.
  *
- * Reached only from webview/map/src/proto/nodeCard.tsx and
- * webview/map/src/Run.tsx — declared unreachable-by-design in knip.json,
- * since neither file is a product entry point.
+ * Reached from webview/map/src/proto/nodeCard.tsx and
+ * webview/map/src/Run.tsx, which the webview workspace's own entry point
+ * reaches.
  */
 
 export function stateFace(state: string): { word: string; tone: "run" | "q" | "pass" | "na" | "idle" | "block"; why: string } {
