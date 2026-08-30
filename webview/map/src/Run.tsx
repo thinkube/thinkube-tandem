@@ -3,8 +3,9 @@
  * SAME HTML node cards laid out by ELK (layered, RIGHT, orthogonal
  * ELK-routed edges), run-state chips (pulsing `running`), elapsed time in
  * the chip, the log panel ANCHORED under the running node, a parked
- * worker's answer box inside its own card, Stop and a determinate
- * progress header above the canvas.
+ * worker's question shown on its own card (answered from the rail, the
+ * surface's one answer box), Stop and a determinate progress header
+ * above the canvas.
  */
 import { useEffect, useMemo, useState } from "react";
 import { can, post, SpacePush } from "./vscode";
@@ -120,7 +121,6 @@ export function RunSection(props: {
   openLog?: string;
 }): JSX.Element {
   const { run, world } = props;
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -373,26 +373,13 @@ export function RunSection(props: {
                 style={{ left: c?.x ?? 0, top: c?.y ?? 0 }}
               >
                 {parked && !world.far ? (
+                  // Display only: the one place an answer is given is the
+                  // rail's parked-question box, so this card names the
+                  // question and offers no second box to type into.
                   <div data-parked={u.id} style={{ marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
-                    <div style={{ fontSize: FS.body, marginBottom: 4, color: C.ask }}>❓ {parked.question}</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input
-                        data-answer-input={u.id}
-                        value={answers[u.id] ?? ""}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setAnswers((a) => ({ ...a, [u.id]: e.target.value }))}
-                        style={{ flex: 1, fontSize: FS.body, minWidth: 0 }}
-                      />
-                      <button
-                        data-answer-send={u.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const text = (answers[u.id] ?? "").trim();
-                          if (text) post({ action: "answer-worker", unitId: u.id, text });
-                        }}
-                      >
-                        Send
-                      </button>
+                    <div style={{ fontSize: FS.body, color: C.ask }}>❓ {parked.question}</div>
+                    <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: 2 }}>
+                      Answer this in the rail.
                     </div>
                   </div>
                 ) : null}

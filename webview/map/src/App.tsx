@@ -504,7 +504,7 @@ export function App(props: {
         ) : tab === "flow" && push.run && !reportIsShown ? (
           <ZoomControls world={flowWorld} />
         ) : null}
-        <Rail push={push} canBuild={tab === "work"} />
+        {regionOrder.includes("rail") ? <Rail push={push} canBuild={tab === "work"} /> : null}
       </div>
     </div>
   );

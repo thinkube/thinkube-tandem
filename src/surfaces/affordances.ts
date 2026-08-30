@@ -96,7 +96,7 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   "answer-worker": {
     kind: "human",
     affordance: {
-      surface: "run view",
+      surface: "the rail's parked-question box",
       gesture: "type into a parked worker's answer box and press Answer",
     },
   },
