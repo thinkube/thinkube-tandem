@@ -28,6 +28,8 @@ export function WorkGraph(props: {
   /** The way back: your asks are not on this page, so a claim that reads
    *  wrong opens the ask it came from where you write them. */
   onEditAsk: (askId: string) => void;
+  /** The way back to the run itself, from the signed-idle notice. */
+  onGoToRun: () => void;
 }): JSX.Element {
   const { push } = props;
   // Which promise asked for a check: the answer comes back on the whole
@@ -199,7 +201,7 @@ export function WorkGraph(props: {
           </span>
         </div>
       ) : null}
-      {push.unrun && !push.running ? (
+      {push.signedIdle ? (
         <div
           data-signed-idle
           style={{
@@ -214,10 +216,9 @@ export function WorkGraph(props: {
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: FS.body }}>
-            {push.unrun.tepId ?? "This work"} is signed and nothing is running. Its last run ended
-            without a delivery — if the window reloaded, the run ended with it.
-          </span>
+          {/* One wording, one place: the run page shows the full notice; this
+              page keeps only the way back in — the button and its short
+              caption — and drops the paragraph, so the fact is told once. */}
           <button
             data-think-again
             disabled={!can("think-again")}
@@ -228,8 +229,16 @@ export function WorkGraph(props: {
             Think it through again
           </button>
           <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            the promises are derived anew and come back for a new signature — to run the signed work as it is, use the run page
+            the promises are derived anew and come back for a new signature — to run the signed work as it is,
           </span>
+          <a
+            data-go-to-run
+            title="Go to the run page — it has the full notice and the way to run this signed work again."
+            style={{ fontSize: FS.caption, textDecoration: "underline", cursor: "pointer" }}
+            onClick={() => props.onGoToRun()}
+          >
+            use the run page
+          </a>
         </div>
       ) : null}
       </div>

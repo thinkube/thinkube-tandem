@@ -64,47 +64,50 @@ function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
     : { text: "no log yet", kind: "plain", why: "This step has not written anything yet." };
 }
 
-export function RunNote(props: { note: string; unrun?: { id: string; tepId?: string } }): JSX.Element {
+export function RunNote(props: {
+  notice: { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean };
+}): JSX.Element {
+  const { notice } = props;
   return (
     <div data-run-note style={{ margin: SP.xl, padding: SP.lg, border: `1px solid ${C.bad}`, borderRadius: 6, maxWidth: 560 }}>
-      <strong>
-        {/^The delivery was withheld/.test(props.note)
-          ? "The delivery was withheld."
-          : /^The build stopped/.test(props.note)
-            ? "The build stopped."
-            : /^This work is signed/.test(props.note)
-              ? "Nothing is running."
-              : "The build did not start."}
-      </strong>
-      <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{props.note}</div>
+      <strong>{notice.heading}</strong>
+      <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{notice.sentence}</div>
       {/* Signing happens once, so a run that refused itself would leave the
           work sealed and unreachable — the button that starts it is already
           spent. This is the way back in. */}
-      {props.unrun ? (
+      {notice.canRerun || notice.canThinkAgain ? (
         <div style={{ marginTop: SP.md, display: "flex", gap: SP.md, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            data-rerun
-            disabled={!can("rerun")}
-            style={{ fontWeight: 600 }}
-            title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
-            onClick={() => post({ action: "rerun" })}
-          >
-            Run {props.unrun.tepId ?? "it"} again
-          </button>
-          <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            already signed — this starts the workers, nothing is decided again
-          </span>
-          <button
-            data-think-again
-            disabled={!can("think-again")}
-            title="Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
-            onClick={() => post({ action: "think-again" })}
-          >
-            Think {props.unrun.tepId ?? "it"} again
-          </button>
-          <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            withdraws the signature — the promises are derived anew and signed as new work
-          </span>
+          {notice.canRerun ? (
+            <>
+              <button
+                data-rerun
+                disabled={!can("rerun")}
+                style={{ fontWeight: 600 }}
+                title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+                onClick={() => post({ action: "rerun" })}
+              >
+                Run it again
+              </button>
+              <span style={{ fontSize: FS.caption, color: C.quiet }}>
+                already signed — this starts the workers, nothing is decided again
+              </span>
+            </>
+          ) : null}
+          {notice.canThinkAgain ? (
+            <>
+              <button
+                data-think-again
+                disabled={!can("think-again")}
+                title="Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
+                onClick={() => post({ action: "think-again" })}
+              >
+                Think it again
+              </button>
+              <span style={{ fontSize: FS.caption, color: C.quiet }}>
+                withdraws the signature — the promises are derived anew and signed as new work
+              </span>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -424,6 +424,7 @@ export function App(props: {
               setSelected(id);
               setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
             }}
+            onGoToRun={() => setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport }))}
           />
         ) : reportIsShown ? (
           <Delivery push={push} />
@@ -432,15 +433,10 @@ export function App(props: {
             {/* The way back in rides signed-undelivered work itself, not the
                 note from a refusal — the note dies with the window, and a
                 refused run leaves a record whose page would otherwise show
-                an empty graph with the only restart button unreachable. */}
-            {push.runNote ? (
-              <RunNote note={push.runNote} unrun={push.unrun} />
-            ) : push.unrun && !push.running ? (
-              <RunNote
-                note="This work is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it. Below is what it left."
-                unrun={push.unrun}
-              />
-            ) : null}
+                an empty graph with the only restart button unreachable. The
+                notice — heading, sentence, and which ways back in ride with
+                it — comes from the push; this page never words it again. */}
+            {push.signedIdle ? <RunNote notice={push.signedIdle} /> : null}
             {push.run ? (
               <RunSection
                 run={push.run}
@@ -452,11 +448,8 @@ export function App(props: {
           </div>
         ) : (
           <div style={{ flex: 1, padding: SP.xl }}>
-            {push.unrun ? (
-              <RunNote
-                note="This work is signed and has not run. Nothing was delivered from it."
-                unrun={push.unrun}
-              />
+            {push.signedIdle ? (
+              <RunNote notice={push.signedIdle} />
             ) : (
               <span style={{ opacity: O.dim }}>
                 Nothing has been orchestrated yet — press Build on the work page and the workers

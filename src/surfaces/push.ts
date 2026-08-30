@@ -10,6 +10,7 @@ import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 import { docsDuty } from "../core/docsDuty";
 import { promiseLabelOf } from "./runPromiseLabel";
+import { signedIdleNotice } from "./runGate";
 
 const TITLE_CLIP = 64;
 
@@ -113,6 +114,13 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     // Signed work that never delivered: the run can be started again,
     // and the surface is the only place that can say so.
     unrun: session.unrunCut(),
+    // The one notice for that fact — its heading, its sentence, and the
+    // ways back in — worked out once here so no page words it again.
+    signedIdle: signedIdleNotice({
+      unrun: session.unrunCut(),
+      running: session.running,
+      runNote: session.runNote,
+    }),
     grounding: session.groundingView(),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),

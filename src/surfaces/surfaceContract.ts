@@ -159,6 +159,11 @@ export interface SpacePush {
   runNote?: string;
   /** Work that was signed and never delivered — it can be run again. */
   unrun?: { id: string; tepId?: string };
+  /** The one notice for signed work that has not delivered — its heading,
+   *  its sentence, and which ways back in ride with it. Every page renders
+   *  this instead of wording the fact again. Absent while a run is in
+   *  flight, or when there is no signed, undelivered work. */
+  signedIdle?: { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean };
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
