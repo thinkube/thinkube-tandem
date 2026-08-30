@@ -18,7 +18,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { gatedActions } from "./surfaces/phase";
-import { can, noteAllowed, SHAPING } from "./surfaces/surfaceContract";
+import { can, noteAllowed, SHAPING, CONTROL_NAMES } from "./surfaces/surfaceContract";
+import { AFFORDANCES } from "./surfaces/affordances";
 
 const repo = path.resolve(__dirname, "..");
 const SIZE_LIMIT = 600;
@@ -105,6 +106,29 @@ test("the surface's own gate refuses a shaping action the host does not allow no
   // the host still refuses on its side.
   noteAllowed(undefined);
   assert.equal(can("exempt-docs"), true, "with no push yet the surface refuses nothing");
+});
+
+test("every human door names its own control inside its own instruction", () => {
+  // CONTROL_NAMES is the one place a control's person-facing name lives;
+  // the affordance registry's gesture text is a separate hand-written
+  // sentence for the same action. Nothing ties them together at compile
+  // time, so a control renamed in one place silently drifts from the
+  // other — a refusal calls it one thing while the instruction that
+  // teaches a person to press it calls it another. Both sets are driven
+  // here, never scraped from a file as text.
+  const mismatches: string[] = [];
+  for (const [action, entry] of Object.entries(AFFORDANCES)) {
+    if (entry.kind !== "human") continue;
+    const name = CONTROL_NAMES[action];
+    if (!name) {
+      mismatches.push(`${action}: no entry in CONTROL_NAMES`);
+      continue;
+    }
+    if (!entry.affordance.gesture.includes(name)) {
+      mismatches.push(`${action}: gesture "${entry.affordance.gesture}" does not contain "${name}"`);
+    }
+  }
+  assert.deepEqual(mismatches, [], mismatches.join("\n"));
 });
 
 /**
