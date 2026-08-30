@@ -115,6 +115,9 @@ interface RunView {
   parked: { unitId: string; question: string }[];
   /** How many lines each step holds — the surface pages them on demand. */
   logCounts: Record<string, number>;
+  /** Per-slice acceptance-criteria outcomes, from the last grading — the
+   *  audit card's own account of what passed and what did not. */
+  sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
 }
 
 export interface SpacePush {

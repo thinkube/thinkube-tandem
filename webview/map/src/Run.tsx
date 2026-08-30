@@ -12,7 +12,7 @@ import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
-import { unpassedWorkers } from "../../../src/surfaces/auditCard";
+import { sliceCheckTally, unpassedWorkers } from "../../../src/surfaces/auditCard";
 import { stateFace } from "../../../src/surfaces/runCardFace";
 
 
@@ -162,17 +162,34 @@ export function RunSection(props: {
       ...slices.map((slice) => {
         const u = run.units.find((x) => x.slice === slice);
         const isGraded = graded(slice);
+        const tally = sliceCheckTally(run.sliceChecks?.[slice]);
+        const chips: Chip[] = tally.graded
+          ? [
+              {
+                text: `${tally.passed}/${tally.total} checks passed`,
+                kind: tally.passed === tally.total ? "pass" : "na",
+                why: "How many of this slice's acceptance criteria passed against the real state.",
+              },
+              ...tally.failed.map(
+                (f): Chip => ({
+                  text: `AC-${f.ac} failed`,
+                  kind: "na",
+                  why: f.text ?? "This check did not pass.",
+                }),
+              ),
+            ]
+          : [
+              isGraded
+                ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
+                : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
+            ];
         return {
           id: `audit:${slice}`,
           band: ROLES.audit,
           title: u?.promiseLabel?.label ?? u?.sliceTitle ?? slice,
           titleFull: u?.promiseLabel ? `audit:${slice} — ${u.promiseLabel.full}` : undefined,
           abs: `audit:${slice}`,
-          chips: [
-            isGraded
-              ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
-              : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
-          ],
+          chips,
           face: stateFace(isGraded ? "done" : "running"),
         };
       }),

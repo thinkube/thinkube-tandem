@@ -68,6 +68,11 @@ export class RunState {
   /** What the door judged: footprints and order, kept so the plan can be
    *  re-judged against a changed door without running anything. */
   plan?: { handle: string; criterionIds?: string[]; units: { role?: string; footprint: string[]; consumes?: string[] }[] }[];
+  /** Per-slice, which acceptance criteria passed and which did not — the
+   *  audit card's own account. A slice's outcomes are replaced whole on
+   *  every grading, never appended to: a re-grade reports the current
+   *  state of the criteria, not their history. */
+  sliceChecks = new Map<string, { ac: number; pass: boolean; text?: string }[]>();
   /** This run's own id — the same id that will land on the delivery it
    *  mints, so the person watching the run can match it against the report. */
   private _runId?: string;
@@ -77,7 +82,13 @@ export class RunState {
   /** A finished run, read back from disk: the same state, with nothing
    *  live in it — no aborts to cancel and nobody left to answer. */
   static from(
-    record: { units: RunUnitView[]; logs: string[]; stepLogs: Record<string, string[]>; runId?: string },
+    record: {
+      units: RunUnitView[];
+      logs: string[];
+      stepLogs: Record<string, string[]>;
+      runId?: string;
+      sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
+    },
     onChange: () => void,
   ): RunState {
     const s = new RunState(onChange);
@@ -85,6 +96,8 @@ export class RunState {
     s.logs = [...record.logs];
     s.stepLogs = new Map(Object.entries(record.stepLogs).map(([k, v]) => [k, [...v]]));
     s._runId = record.runId;
+    if (record.sliceChecks)
+      s.sliceChecks = new Map(Object.entries(record.sliceChecks).map(([k, v]) => [k, [...v]]));
     return s;
   }
 
@@ -199,6 +212,13 @@ export class RunState {
     return true;
   }
 
+  /** Record what a slice's checks came back as, replacing whatever this
+   *  slice held before — a re-grade reports where the slice stands now. */
+  gradeSlice(slice: string, checks: { ac: number; pass: boolean; text?: string }[]): void {
+    this.sliceChecks.set(slice, [...checks]);
+    this.onChange();
+  }
+
   halt(): number {
     this.halted = true;
     let n = 0;
@@ -219,12 +239,15 @@ export class RunState {
     logCounts: Record<string, number>;
     /** This run's own id, once named — the same id its delivery will carry. */
     runId?: string;
+    /** Per-slice acceptance-criteria outcomes, from the last grading. */
+    sliceChecks: Record<string, { ac: number; pass: boolean; text?: string }[]>;
   } {
     return {
       units: [...this.units.values()],
       logs: this.logs.slice(-40),
       logCounts: Object.fromEntries([...this.stepLogs].map(([k, v]) => [k, v.length])),
       parked: [...this.parked.entries()].map(([unitId, p]) => ({ unitId, question: p.question })),
+      sliceChecks: Object.fromEntries([...this.sliceChecks].map(([k, v]) => [k, [...v]])),
       ...(this._runId ? { runId: this._runId } : {}),
     };
   }

@@ -234,6 +234,13 @@ export async function dispatchTep(
     changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
+    // The audit card's own account: which criteria passed, per slice, from
+    // the oracle's own verdicts — replaced whole on every re-grade.
+    onGrade: (slice, results) =>
+      st.gradeSlice(
+        slice,
+        results.map((r) => ({ ac: r.ac, pass: r.pass, ...(r.pass ? {} : { text: r.evidence }) })),
+      ),
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);

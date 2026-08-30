@@ -11,6 +11,7 @@ import { makeClearance } from "./clearance";
 import { sliceSuiteArgs } from "./suite";
 import type { OracleFactoryArgs, Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
+import type { OracleAcResult } from "../engine/verifyOracle";
 
 export function buildOracleArgs(a: {
   deps: DispatchDeps;
@@ -44,6 +45,9 @@ export function buildOracleArgs(a: {
   /** Commit a waiting unit's work, so it holds nothing while it waits. */
   commitBeforeWaiting: (unitId: string, why: string) => Promise<void>;
   halted: () => boolean;
+  /** Every per-AC results verdict a slice's oracle produces — the run's
+   *  own account of which criteria passed. */
+  onGrade?: (slice: string, results: readonly OracleAcResult[]) => void;
 }): OracleFactoryArgs {
   const { deps, dag, slices, rulings } = a;
   return {
@@ -64,6 +68,7 @@ export function buildOracleArgs(a: {
     boundedExec: a.boundedExec,
     log: a.log,
     defect: a.defect,
+    ...(a.onGrade ? { onGrade: a.onGrade } : {}),
     ...(deps.prepare ? { prepare: deps.prepare } : {}),
     provisioned: a.provisioned,
     built: a.built,

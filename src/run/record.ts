@@ -70,6 +70,9 @@ export interface RunRecord {
   plan?: PlanRecord[];
   logs: string[];
   stepLogs: Record<string, string[]>;
+  /** Per-slice acceptance-criteria outcomes — the audit card's account,
+   *  carried so a reopened window reads the same verdicts the live run had. */
+  sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
 }
 
 /** The plan as the record keeps it — footprints and order, nothing else. */
@@ -117,6 +120,9 @@ export function saveRun(
       stepLogs: Object.fromEntries(
         [...state.stepLogs].map(([k, v]) => [k, v.slice(-KEPT_LINES)]),
       ),
+      ...(state.sliceChecks.size
+        ? { sliceChecks: Object.fromEntries([...state.sliceChecks].map(([k, v]) => [k, [...v]])) }
+        : {}),
     };
     fs.writeFileSync(path.join(dir, `${record.cutId}.json`), JSON.stringify(full, null, 2));
   } catch {
