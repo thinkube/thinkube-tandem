@@ -12,6 +12,7 @@ import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
+import { unpassedWorkers } from "../../../src/surfaces/auditCard";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -131,8 +132,7 @@ export function RunSection(props: {
     () => [...new Set(run.units.filter((u) => u.role === "code").map((u) => u.slice))],
     [run.units],
   );
-  const graded = (slice: string): boolean =>
-    run.units.filter((u) => u.slice === slice && u.role === "code").every((u) => u.state === "done");
+  const graded = (slice: string): boolean => unpassedWorkers(run.units, slice).length === 0;
   const anyFailed = run.units.some((u) => u.state === "failed");
   const blocked = run.units.filter((u) => u.state === "blocked").length;
   const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");

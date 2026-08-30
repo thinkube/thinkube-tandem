@@ -14,6 +14,9 @@
         "@vscode/vsce",
         "antora",
         "asciidoctor-kroki"
+      ],
+      "ignore": [
+        "src/surfaces/auditCard.ts"
       ]
     },
     "webview/map": {
