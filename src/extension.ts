@@ -42,6 +42,7 @@ import {
   updateConfigContext,
 } from "./engine/host/active";
 import { AUTHOR_MISSING, currentAuthor } from "./core/author";
+import { busyLine, spaceBusy } from "./surfaces/busy";
 
 let panels: SpacePanels;
 let projectsTree: ProjectsTreeProvider | undefined;
@@ -88,16 +89,11 @@ async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge
 
 const watches = new Map<string, { dispose(): void }>();
 const sessions = new Map<string, TandemSession>();
+/** Last time each space changed, keyed the same as `sessions` —
+ *  "<ownerKey>/<slug>". Dropped in the same act as the session and the
+ *  panel, so the busy line never names a space that is gone. */
+const lastChangeMs = new Map<string, number>();
 
-function activeSession(
-  context: vscode.ExtensionContext,
-  project?: EnabledProject,
-): TandemSession | undefined {
-  const ownerKey = project?.card.id ?? activeOwnerKey(context);
-  if (!ownerKey) return undefined;
-  const slug = context.workspaceState.get<string>(`tandem.space.${ownerKey}`);
-  return slug ? sessions.get(`${ownerKey}/${slug}`) : undefined;
-}
 let statusBar: vscode.StatusBarItem | undefined;
 
 function updateStatusBar(project: EnabledProject | undefined): void {
@@ -110,39 +106,29 @@ function updateStatusBar(project: EnabledProject | undefined): void {
 
 const storeRootOf = configuredStoreRoot;
 
+/** Speaks for every open thinking space, not just the remembered one, and
+ *  is driven both by pushes and by its own repeating tick — so a space
+ *  left running in the background is still reported. */
 function heartbeat(context: vscode.ExtensionContext): void {
   if (!statusBar) return;
-  const project = rememberedProject(context);
-  const s = activeSession(context);
-  if (s?.running && s.runState) {
-    const v = s.runState.view();
-    const done = v.units.filter((u) => u.state === "done").length;
-    if (v.parked.length) {
-      statusBar.text = `$(warning) Tandem: a worker needs your answer`;
-      statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-    } else {
-      statusBar.text = `$(sync~spin) Tandem: building — ${done}/${v.units.length} units`;
-      statusBar.backgroundColor = undefined;
-    }
+  const spaces = [...sessions.entries()]
+    .map(([key, s]) => spaceBusy(key, s.repoName, s, lastChangeMs.get(key)))
+    .filter((b): b is NonNullable<typeof b> => b !== undefined);
+  const line = busyLine(spaces, Date.now());
+  if (line) {
+    statusBar.text = line.alert
+      ? `$(warning) Tandem: ${line.text}`
+      : `$(sync~spin) Tandem: ${line.text}`;
+    statusBar.tooltip = line.detail;
+    statusBar.backgroundColor = line.alert
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
     statusBar.show();
     return;
   }
-  const grounding = s?.groundingView() ?? [];
-  if (grounding.length) {
-    const running = grounding.filter((g) => g.label !== "waiting").length;
-    statusBar.text = `$(sync~spin) Tandem: thinking about ${running} of ${grounding.length} asks`;
-    statusBar.backgroundColor = undefined;
-    statusBar.show();
-    return;
-  }
-  if (s?.activity) {
-    statusBar.text = `$(sync~spin) Tandem: ${s.activity.label}… (${s.activity.current}/${s.activity.total})`;
-    statusBar.backgroundColor = undefined;
-    statusBar.show();
-    return;
-  }
+  statusBar.tooltip = "Switch the repository or project Tandem works on";
   statusBar.backgroundColor = undefined;
-  updateStatusBar(project);
+  updateStatusBar(rememberedProject(context));
 }
 
 /** The live editor's own gestures — the seam between this entry point and
@@ -159,6 +145,7 @@ export function editorNoticeHost(): NoticeHost {
 /** key is "<ownerKey>/<slug>" — the space this change came from, never
  *  whichever space is remembered as active. */
 function pushActive(context: vscode.ExtensionContext, key: string, message?: string): void {
+  lastChangeMs.set(key, Date.now());
   heartbeat(context);
   const s = sessions.get(key);
   if (!s) return;
@@ -288,6 +275,12 @@ export function activate(context: vscode.ExtensionContext): void {
   updateStatusBar(rememberedProject(context));
   context.subscriptions.push(statusBar);
 
+  // The status bar keeps itself current on its own clock, not only when a
+  // change happens to arrive — a run left going in a background space is
+  // still reported minutes later.
+  const tick = setInterval(() => heartbeat(context), 30_000);
+  context.subscriptions.push({ dispose: () => clearInterval(tick) });
+
   // The Claude launcher (v1, verbatim): registers the cwd-patching wrapper
   // under claudeCode.claudeProcessWrapper — through the version-stable
   // extension-current symlink, so extension updates and the deploy script's
@@ -371,16 +364,22 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   };
   // One panel per thinking space: opening a space never disposes another
-  // space's panel — each is made once per key and reused after that.
-  panels = new SpacePanels(
-    (key, title) =>
-      new SpacePanel({
-        key,
-        title,
-        getSession: sessionForKey(key),
-        hooks,
-      }),
-  );
+  // space's panel — each is made once per key and reused after that. A tab
+  // the person closes drops that space's session and change time in the
+  // same act, so the busy line never names a space that is gone.
+  panels = new SpacePanels((key, title) => {
+    const panel = new SpacePanel({
+      key,
+      title,
+      getSession: sessionForKey(key),
+      hooks,
+    });
+    panel.onDidDispose(() => {
+      sessions.delete(key);
+      lastChangeMs.delete(key);
+    });
+    return panel;
+  });
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
     const s = await ensureSession(context, true);
@@ -415,6 +414,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // other open space's panel is untouched.
       dropSession: (key) => {
         sessions.delete(key);
+        lastChangeMs.delete(key);
         panels.dispose(key);
       },
       deleteSpace: deleteThinkingSpace,

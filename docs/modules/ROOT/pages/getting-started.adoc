@@ -15,6 +15,16 @@ you are working on — it never guesses. The choice shows in the status bar
 `<repo> ▾` button in the map, or with *Tandem: Switch Project /
 Repository*. Each repository gets its own space.
 
+The status bar is also the one place that says whether the machine is
+busy, across every open thinking space at once — not only the one you
+last looked at. While a space is working it names that space and how
+much of its work is done ("2/5 units"); with more than one space busy it
+counts them all. If a worker has stopped and is waiting on you, the
+status bar says so in plain words ("needs an answer") and changes color
+so it stands out. If a space has gone quiet — no change for a while — the
+status bar says how many minutes. When nothing anywhere is busy, the
+status bar goes back to naming the chosen repository, exactly as above.
+
 == Say what you want
 
 Type into the capture box, in your own words, as many lines as you need
