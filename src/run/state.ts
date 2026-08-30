@@ -7,6 +7,13 @@
  * a failed step is diagnosed where it failed instead of from one shared ring
  * that has already dropped the line that mattered.
  */
+import type { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
+import type { SliceForDag } from "../engine/core/dag";
+import type { DispatchDeps } from "./deps";
+import type { Exec } from "./oracle";
+import type { BoundedExec } from "./setup";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import type { Proved } from "./proved";
 
 /**
  * Where a unit got to. `blocked` is not a failure: it is a unit that
@@ -56,6 +63,16 @@ export interface RunUnitView {
 const LOG_TAIL = 500;
 /** Lines kept per step. Generous: a step's log is the evidence it failed. */
 const STEP_LOG_CAP = 2000;
+
+/** A step's own sub-steps, keyed by the "<step>#<name>" convention (e.g.
+ *  "gate#closer", "gate#finisher") — every key logged under this run that
+ *  belongs to `step` but is not `step` itself, in the order they first
+ *  appear. One rule, read by `logTail` and `view()` alike, so a step's
+ *  account and its line count never disagree about what belongs to it. */
+export function subStepsOf(stepLogs: Map<string, string[]>, step: string): string[] {
+  const prefix = `${step}#`;
+  return [...stepLogs.keys()].filter((k) => k.startsWith(prefix));
+}
 
 export class RunState {
   units = new Map<string, RunUnitView>();
@@ -191,9 +208,14 @@ export class RunState {
   }
 
   /** One page of a step's own log, newest page by default. */
-  /** The tail of a step's log, and how many lines there are in all. */
+  /** The tail of a step's log — its own lines, then every sub-step's, in
+   *  the order the sub-steps were first written to — and how many lines
+   *  there are in all. Asking for a step is asking for everything it did,
+   *  including what it delegated: "gate" reads as one account, not an
+   *  empty panel next to "gate#closer" holding the actual work. */
   logTail(step: string): { lines: string[]; total: number; shown: number } {
-    const all = this.stepLogs.get(step) ?? [];
+    const own = this.stepLogs.get(step) ?? [];
+    const all = [...own, ...subStepsOf(this.stepLogs, step).flatMap((s) => this.stepLogs.get(s) ?? [])];
     const lines = all.slice(-LOG_TAIL);
     return { lines, total: all.length, shown: lines.length };
   }
@@ -245,7 +267,15 @@ export class RunState {
     return {
       units: [...this.units.values()],
       logs: this.logs.slice(-40),
-      logCounts: Object.fromEntries([...this.stepLogs].map(([k, v]) => [k, v.length])),
+      // A parent's count includes what its sub-steps wrote — the same fold
+      // `logTail` gives its lines, so the number on a card and the log a
+      // click on it opens are never about two different sets of lines.
+      logCounts: Object.fromEntries(
+        [...this.stepLogs].map(([k, v]) => [
+          k,
+          v.length + subStepsOf(this.stepLogs, k).reduce((n, s) => n + (this.stepLogs.get(s)?.length ?? 0), 0),
+        ]),
+      ),
       parked: [...this.parked.entries()].map(([unitId, p]) => ({ unitId, question: p.question })),
       sliceChecks: Object.fromEntries([...this.sliceChecks].map(([k, v]) => [k, [...v]])),
       ...(this._runId ? { runId: this._runId } : {}),
@@ -275,4 +305,83 @@ export function silentVerdict(a: {
       ? a.busyUnits.map((u) => `${u.id}${u.text ? ` (${u.text})` : ""}`).join("; ")
       : (a.lastLine ?? "an unnamed step");
   return `the run went silent for ${mins} minutes at: ${at.slice(0, 300)} — stopped and recorded`;
+}
+
+/** What a run hands back: the delivery it opened or withheld, and every
+ *  refusal and undelivered obligation along the way. Kept beside
+ *  {@link RunState} rather than in `dispatch.ts`, which the run loop
+ *  itself already fills to the repository's module-size limit. */
+export interface DispatchOutcome {
+  delivery?: Delivery;
+  refusals: string[];
+  undelivered: string[];
+  url?: string;
+  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
+  proofAnchors?: (ProofAnchor & { criterionId: string })[];
+}
+
+/** Everything the closing gate needs: the run's own facts, what the door
+ *  proved, and the seams — exec, log, defect — through which it acts.
+ *  Kept beside {@link RunState} rather than in `gate.ts` itself, which the
+ *  gate's own logic already fills to the repository's module-size limit. */
+export interface GateContext {
+  tep: string;
+  /** This run's own id and the moment it was minted — one clock reading in
+   *  `dispatchTep`, stamped on every delivery this gate hands back, kept or
+   *  withheld. Optional only for a caller that predates the field —
+   *  `dispatchTep` always supplies both from its own single clock read. */
+  runId?: string;
+  producedAt?: string;
+  /** Ran one of this repository's own tests here — the promise veto rests
+   *  on it, so the gate is given what the door proved, never a candidate. */
+  runOne: Proved;
+  /** Per-part single-check commands, so a check is run by the runner of
+   *  the part that owns it — the gate judges the same way the slices did. */
+  parts?: Record<string, { runOne?: string }>;
+  /** Ran this repository's whole suite here — or absent, when no such
+   *  command runs in a worktree. Absent removes the standing-suite veto,
+   *  exactly as no product build removes that one; the door has already
+   *  said so, and the delivery says it again where the verdict would be.
+   *  What is never allowed is an empty string reaching a shell. */
+  suite?: Proved;
+  branch: string;
+  baseSha: string;
+  worktree: string;
+  slices: SliceForDag[];
+  space: Space;
+  cut: Cut;
+  deps: DispatchDeps;
+  sliceProbes: Map<string, string[]>;
+  sliceCommitted: Set<string>;
+  checkOf: Map<string, string>;
+  undelivered: string[];
+  rulings: Ruling[];
+  decisions: { unit: string; text: string }[];
+  exec: Exec;
+  boundedExec: BoundedExec;
+  /** Runs the suite command, bounded for a whole suite. */
+  suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  state: RunState;
+  /** The session a unit was worked in, when the run still holds it. */
+  sessionOf: (unit: string) => string | undefined;
+  /** The run's worker, so a repair is the next message in that session. */
+  worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
+  /** How many times this run made a person interpret the machine. */
+  machineAttention: () => number;
+  /** Work a fenced unit wrote that the guard took back, with its change —
+   *  read by the last actor, which is fenced by nothing. */
+  restored?: readonly { path: string; patch: string }[];
+  log: (line: string, step?: string) => void;
+  defect: (entry: {
+    slice?: string;
+    unit?: string;
+    activity: string;
+    trigger: string;
+    type?: string;
+    qualifier?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
+    impact: string;
+    detail: string;
+  }) => void;
 }

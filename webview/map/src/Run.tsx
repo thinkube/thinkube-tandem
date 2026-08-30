@@ -212,6 +212,10 @@ export function RunSection(props: {
                   : anyFailed
                     ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
                     : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
+                // The gate's own account, one click away like every worker's —
+                // its opening line and the reason it withheld or kept a
+                // delivery are filed under this same step name.
+                logChip("gate", run),
               ],
               face: stateFace(allDone ? "done" : anyFailed ? "failed" : "running"),
             },

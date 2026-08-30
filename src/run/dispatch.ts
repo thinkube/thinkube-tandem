@@ -13,7 +13,7 @@
  * UNDELIVERED, containment, red proofs — never as silence.
  */
 import * as path from "node:path";
-import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
+import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
 import { unitsAtOnce } from "./cpuAllowance";
@@ -58,14 +58,8 @@ import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, isTestPath, missingProbes, repoTestFiles, testerTurns, testHomesOf, testHomesStanza, testHomeWorkOf } from "./testHomes";
 
-export interface DispatchOutcome {
-  delivery?: Delivery;
-  refusals: string[];
-  undelivered: string[];
-  url?: string;
-  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
-  proofAnchors?: (ProofAnchor & { criterionId: string })[];
-}
+import type { DispatchOutcome } from "./state";
+export type { DispatchOutcome } from "./state";
 export async function dispatchTep(
   deps: DispatchDeps,
   space: Space,
