@@ -16,7 +16,20 @@ import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
 import { Asks } from "./Asks";
 import { useWorld, ZoomControls } from "./proto/world";
+import { nextView, ViewState } from "../../../src/surfaces/viewMove";
 
+
+/** Whether the Orchestration page is currently showing the delivery
+ *  report rather than the workers. Read once, at the moment the reader
+ *  opens the page, from whether a report exists at that instant — never
+ *  recomputed while the reader stays on the page, so a delivery arriving
+ *  mid-visit or `push.running` flipping cannot pull the page out from
+ *  under them. `shown` is the flow view already settled on entry (or
+ *  null before the page has ever been opened). */
+export function reportShown(push: SpacePush | null, shown: "workers" | "report" | null): boolean {
+  if (shown !== null) return shown === "report";
+  return !!push?.deliveries.length && !push?.running;
+}
 
 export function App(props: {
   /** A first push and page, for rendering the surface outside the host
@@ -28,42 +41,42 @@ export function App(props: {
   const [classifying, setClassifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  const [tab, setTab] = useState<"write" | "intent" | "work" | "flow">(props.initial?.tab ?? "write");
-  // The orchestration page has two things to show and they are wanted at
-  // different moments: the workers while they run, the report once they
-  // have. Neither replaces the other, so the reader keeps the switch.
-  const [shown, setShown] = useState<"workers" | "report" | null>(null);
+  // The one rule that decides which page is shown: a push from the host
+  // never moves it (except to land a move the reader already asked for),
+  // only a reader gesture does. Every tab/flow-view change in this file
+  // goes through nextView().
+  const [view, setView] = useState<ViewState>({
+    tab: props.initial?.tab ?? "write",
+    flowView: "workers",
+    awaited: null,
+  });
+  const tab = view.tab;
   // Which ask has its editor open. It lives here because a subject, a
   // claim that reads wrong must be able to open the ask it came
   // from, and they are drawn on another surface.
   const [editingAsk, setEditingAsk] = useState<string | null>(null);
   const [workSubject, setWorkSubject] = useState<string | null>(null);
-  // Set when the reader asked to see the work. The move waits for the
-  // thinking to finish: a page drawn while its promises are still being
-  // worked out is a skeleton of empty frames that looks finished and is
-  // not, and no amount of labelling makes a half-drawn page worth
-  // arriving at.
-  const [goingToWork, setGoingToWork] = useState(false);
   const unitsWorld = useWorld();
   const flowWorld = useWorld();
-  useEffect(() => {
-    if (push?.running) setTab("flow");
-  }, [push?.running]);
   // Working out what to build, right now: a stage is running or subjects
   // are in flight. Not the same as having work left to think about, which
   // is what `cost` counts.
   const working = !!push?.activity || (push?.grounding?.length ?? 0) > 0;
   const allWorkedOut = !working && (push?.cost.subjects ?? 0) === 0;
+  // A push never moves the page on its own — it only lands a move the
+  // reader already asked for (reader-awaits-work), and only once the work
+  // is worked out.
   useEffect(() => {
-    if (goingToWork && allWorkedOut) {
-      setGoingToWork(false);
-      setTab("work");
-    }
-  }, [goingToWork, allWorkedOut]);
-  // Until the reader says otherwise: the workers while they run, and the
-  // report the moment there is one to read.
+    setView((v) => nextView(v, { kind: "push", workedOut: allWorkedOut }));
+  }, [allWorkedOut]);
   const hasReport = !!push?.deliveries.length;
-  const reportShown = shown === null ? hasReport && !push?.running : shown === "report";
+  // The orchestration page has two things to show and they are wanted at
+  // different moments: the workers while they run, the report once they
+  // have. Neither replaces the other, so the reader keeps the switch —
+  // set once, at the moment the reader opens the page (the reader-tab
+  // event below), and only changed again by the reader's own flow-view
+  // switch.
+  const reportIsShown = reportShown(push, view.flowView);
 
   // The box empties when the words are safely recorded, and not before:
   // a send that comes back as a list preview keeps them, so "keep editing"
@@ -277,7 +290,7 @@ export function App(props: {
             }
             // A tab only moves. What starts thinking is the page's own
             // button, and the phase says whether that button is on.
-            onClick={() => setTab(id)}
+            onClick={() => setView((v) => nextView(v, { kind: "reader-tab", tab: id, hasReport }))}
             style={{
               background: C.raised,
               color: tab === id ? C.focus : "inherit",
@@ -303,12 +316,12 @@ export function App(props: {
                 key={id}
                 data-flow-view={id}
                 title={why}
-                onClick={() => setShown(id)}
+                onClick={() => setView((v) => nextView(v, { kind: "reader-flow-view", view: id }))}
                 style={{
                   background: "none",
                   border: "none",
-                  borderBottom: `2px solid ${(id === "report") === reportShown ? C.focus : "transparent"}`,
-                  color: (id === "report") === reportShown ? "inherit" : C.quiet,
+                  borderBottom: `2px solid ${(id === "report") === reportIsShown ? C.focus : "transparent"}`,
+                  color: (id === "report") === reportIsShown ? "inherit" : C.quiet,
                   padding: `2px ${SP.xs}px`,
                   cursor: "pointer",
                   fontSize: FS.body,
@@ -368,7 +381,7 @@ export function App(props: {
                 }}
                 onKeep={() => {
                   post({ action: "keep-draft" });
-                  setTab("intent");
+                  setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
                 }}
               />
             ) : (
@@ -385,10 +398,10 @@ export function App(props: {
             onSelect={setSelected}
             onWork={() => {
               if (allWorkedOut) {
-                setTab("work");
+                setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
                 return;
               }
-              setGoingToWork(true);
+              setView((v) => nextView(v, { kind: "reader-awaits-work" }));
               post({ action: "think" });
             }}
             working={working}
@@ -399,7 +412,7 @@ export function App(props: {
             }}
             onOpenWork={(id) => {
               setWorkSubject(id);
-              setTab("work");
+              setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
             }}
           />
         ) : tab === "work" ? (
@@ -408,7 +421,7 @@ export function App(props: {
             onEditAsk={(id) => {
               setSelected(id);
               setEditingAsk(id);
-              setTab("intent");
+              setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
             }}
             world={unitsWorld}
             subjectId={workSubject}
@@ -420,10 +433,10 @@ export function App(props: {
             }}
             onUp={(id) => {
               setSelected(id);
-              setTab("intent");
+              setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
             }}
           />
-        ) : reportShown ? (
+        ) : reportIsShown ? (
           <Delivery push={push} />
         ) : push.run || push.runNote ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -468,7 +481,7 @@ export function App(props: {
             three buttons that did nothing at all. */}
         {tab === "work" ? (
           <ZoomControls world={unitsWorld} />
-        ) : tab === "flow" && push.run && !reportShown ? (
+        ) : tab === "flow" && push.run && !reportIsShown ? (
           <ZoomControls world={flowWorld} />
         ) : null}
         <Rail push={push} canBuild={tab === "work"} />
