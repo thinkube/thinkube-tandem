@@ -110,7 +110,7 @@ export function verifiedDoors(surfaceText?: string): Door[] {
  * Returns an empty string — never throws — when the tree has no webview
  * source to read. An absent surface is "nothing verified", not a crash.
  */
-function webviewSourceText(root?: string): string {
+export function webviewSourceText(root?: string): string {
   const dir = root ? path.join(root, "webview", "map", "src") : findWebviewSource();
   if (!dir) return "";
   const parts: string[] = [];
