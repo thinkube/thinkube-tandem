@@ -22,18 +22,27 @@ export interface Followable {
   load(): void;
   readonly activity: unknown;
   readonly running: unknown;
+  /** This session is the one EXECUTING the run, not merely watching it. */
+  readonly driving?: unknown;
 }
 
 /**
  * Whether an outside write should be folded in right now.
  *
- * Never mid-flight: a round in progress holds state in memory that the
- * records do not have yet, and re-folding underneath it would discard the
- * very work being done. The write is not lost — it is on disk, and the
- * next quiet moment picks it up.
+ * Never under the session that is DOING the work: a round in progress
+ * holds state in memory that the records do not have yet, and re-folding
+ * underneath it would discard the very work being done.
+ *
+ * A session that is only WATCHING a run holds nothing of the kind, and
+ * refusing to fold for it was the whole point of watching. It adopted the
+ * run's record once — which set `running` — and from that moment every
+ * further write to the run was ignored, so the window kept the frame it
+ * happened to catch while the run moved on for an hour underneath it. A
+ * card read "mending 1 check" long after that unit had finished and the
+ * next one had too.
  */
 export function shouldFollow(s: Followable): boolean {
-  return !s.activity && !s.running;
+  return !s.activity && !s.driving;
 }
 
 /**
