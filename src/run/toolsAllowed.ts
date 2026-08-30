@@ -38,9 +38,6 @@ export const FENCED_TOOLS = [
   "ExitWorktree",
 ] as const;
 
-/** Tools that could show an author the evidence it is judged by. */
-
-
 /**
  * What a worker may not touch, decided in one place so a fence is a rule
  * rather than an expression repeated at each call site.
@@ -84,22 +81,22 @@ export function describeTool(b: Record<string, unknown>): string {
       .find(Boolean) ?? "";
   return of ? `${name} ${of.length > 120 ? `${of.slice(0, 120)}…` : of}` : name;
 }
-/** Held-out evidence: a probe, or any test-shaped path — one rule. */
-function isHeldOut(target: string): boolean {
-  return isTestPath(target);
-}
 /** Why a tool use is refused before it runs, or nothing. A coder never
  *  reads held-out evidence when blinded, and never writes a test-shaped
- *  path at all — tests are the tester's, whatever the footprint says. */
+ *  path at all — tests are the tester's, whatever the footprint says.
+ *
+ *  Held-out evidence is any test-shaped path, so the fence asks `isTestPath`
+ *  itself: a local alias for that one rule is a second name the reader must
+ *  chase, and a place the rule can quietly come to mean something else. */
 export function refusedToolUse(
   deps: { role: "code" | "test"; blind?: boolean },
   tool: string,
   target: string,
 ): string | undefined {
   if (!target) return undefined;
-  if (deps.role === "code" && ["Write", "Edit", "NotebookEdit"].includes(tool) && isHeldOut(target))
+  if (deps.role === "code" && ["Write", "Edit", "NotebookEdit"].includes(tool) && isTestPath(target))
     return "tests are the tester's — a coder never writes a test or probe file; build to the contract and ask `verify`";
-  if (deps.blind && READ_TOOLS.includes(tool) && isHeldOut(target))
+  if (deps.blind && READ_TOOLS.includes(tool) && isTestPath(target))
     return "the checks are held out — ask `verify` how you are doing instead of reading them";
   return undefined;
 }

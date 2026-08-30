@@ -12,7 +12,13 @@
 import { can, noteAllowed, noteRefusal, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
 import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
-export { can, noteAllowed, refusalSentence, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
+export {
+  can,
+  noteAllowed,
+  refusalSentence,
+  refusalIfRefused,
+  SHAPING,
+} from "../../../src/surfaces/surfaceContract";
 export type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 export { SURFACE_PAGES } from "../../../src/surfaces/surfaceLayout";
 

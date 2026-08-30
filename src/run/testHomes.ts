@@ -20,11 +20,12 @@ import { ignoredFor, worthWalking } from "../core/ignored";
  *  adapter, the write fence, the read block, the blast-radius fold and
  *  re-homing alike. Defined once, in src/core/testShape.ts. */
 export { isProbePath, isTestPath } from "../core/testShape";
-import { isProbePath, isTestPath } from "../core/testShape";
+import { isProbePath, isTestPath, testKind } from "../core/testShape";
 
-/** Every existing test home a slice's tester owns — test-shaped, not a probe. */
+/** Every existing test home a slice's tester owns — test-shaped, not a probe:
+ *  a `unit` test by the one rule that names the two kinds apart. */
 export function testHomesOf(footprint: readonly string[]): string[] {
-  return footprint.filter((p) => isTestPath(p) && !isProbePath(p));
+  return footprint.filter((p) => isTestPath(p) && testKind(p) === "unit");
 }
 
 /** The tester's contract-completing choices, from its final words. */

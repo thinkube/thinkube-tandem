@@ -11,6 +11,8 @@
  * where every page carries its handle and every gesture carries its
  * control's handle as a data attribute.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { AFFORDANCES, PAGES } from "../surfaces/affordances";
 
 /** A gesture the surface must offer, and the handles that prove it exists:
@@ -75,6 +77,11 @@ export function missingPages(surfaceText: string): { page: string; handle: strin
  * it, never assumed present because nobody looked. A door needs both its
  * own control AND its page to render: a control that renders on a page
  * that itself never rendered is not a way in.
+ *
+ * A standing region is the one exception, and not a loosening of that
+ * rule: it is drawn outside the page wrappers on every tab, so there is no
+ * page whose absence could strand its control. Such a door is proved by
+ * its own control alone.
  */
 export function verifiedDoors(surfaceText?: string): Door[] {
   const doors = declaredDoors();
@@ -83,23 +90,84 @@ export function verifiedDoors(surfaceText?: string): Door[] {
   const missingPageHandles = new Set(missingPages(surfaceText).map((p) => p.handle));
   return doors.filter((x) => {
     if (missingControl.has(x.action)) return false;
-    const pageHandle = PAGES[x.page]?.handle;
-    if (pageHandle && missingPageHandles.has(pageHandle)) return false;
+    const page = PAGES[x.page];
+    if (page?.standing) return true;
+    if (page?.handle && missingPageHandles.has(page.handle)) return false;
     return true;
   });
 }
 
 /**
- * The built webview source, read once through an injectable reader so a
- * caller can hold the result rather than reading the filesystem again for
- * every delivery on every push. Returns an empty string — never throws —
- * when the reader has nothing to give: an absent build is "no doors
- * verified", not a crash.
+ * The webview's own SOURCE, read from disk: every `.tsx`/`.ts` file under
+ * `webview/map/src`, concatenated. This is what the handle proof runs
+ * against, rather than the built bundle — a bundler may rename, inline or
+ * drop a literal, so a handle found in the bundle proves the bundler's
+ * output and a handle found here proves what a person wrote.
+ *
+ * Reading the real files is the point: a proof that never opens the code it
+ * is about is green for a stub as readily as for the real surface.
+ *
+ * Returns an empty string — never throws — when the tree has no webview
+ * source to read. An absent surface is "nothing verified", not a crash.
+ */
+function webviewSourceText(root?: string): string {
+  const dir = root ? path.join(root, "webview", "map", "src") : findWebviewSource();
+  if (!dir) return "";
+  const parts: string[] = [];
+  const walk = (at: string): void => {
+    for (const entry of fs.readdirSync(at, { withFileTypes: true })) {
+      const full = path.join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name)) parts.push(fs.readFileSync(full, "utf8"));
+    }
+  };
+  try {
+    walk(dir);
+  } catch {
+    return "";
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Where the webview's source lives, found by walking up from this compiled
+ * module and from the working directory. A check runs from whatever
+ * directory its runner chose — the repository root, an `out-test` tree, an
+ * isolated runner copy — and a proof that silently reads nothing because it
+ * guessed the wrong root is green while proving nothing, which is the one
+ * failure this whole seam exists to prevent. Returns undefined only when
+ * the tree genuinely has no webview source.
+ */
+function findWebviewSource(): string | undefined {
+  const seen = new Set<string>();
+  for (const start of [__dirname, process.cwd()]) {
+    let at = start;
+    for (;;) {
+      if (!seen.has(at)) {
+        seen.add(at);
+        const candidate = path.join(at, "webview", "map", "src");
+        if (fs.existsSync(candidate)) return candidate;
+      }
+      const up = path.dirname(at);
+      if (up === at) break;
+      at = up;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The webview surface, read once through an injectable reader so a caller
+ * can hold the result rather than reading the filesystem again for every
+ * delivery on every push. With no reader injected it falls back to the
+ * webview's own source on disk, so a caller that supplies nothing still
+ * proves against the real surface instead of against an empty string.
+ * Returns an empty string — never throws — when there is nothing to read:
+ * an absent surface is "no doors verified", not a crash.
  */
 export function builtSurfaceText(read?: () => string): string {
-  if (!read) return "";
   try {
-    return read();
+    return read ? read() : webviewSourceText();
   } catch {
     return "";
   }

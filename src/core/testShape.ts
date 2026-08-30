@@ -41,3 +41,18 @@ export function isProbePath(rel: string): boolean {
   if (/(^|[\s/])probes\//.test(t) || /(^|\/)acceptance\//.test(t)) return true;
   return /_AC-\d+/.test(t) && isTestPath(t);
 }
+
+/**
+ * Which of the two kinds of test a path is — the classification that decides
+ * what a caller may do with it: a `unit` test is a home the repository
+ * maintains, which a code author folds into a footprint and updates; a
+ * `held-out` check is this run's own evidence, which must never be pulled
+ * into a code footprint and is retired instead.
+ *
+ * It lives beside `isTestPath` and `isProbePath` because it is the same one
+ * rule: a second spelling of "which kind of test is this" in a caller drifts
+ * from the definition of "probe" it is derived from the moment either moves.
+ */
+export function testKind(rel: string): "unit" | "held-out" {
+  return isProbePath(rel) ? "held-out" : "unit";
+}
