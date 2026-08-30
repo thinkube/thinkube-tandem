@@ -122,6 +122,34 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const runId = g.runId ?? `${tep}@${Date.now().toString(36)}`;
   const producedAt = g.producedAt ?? new Date().toISOString();
   const undelivered = g.undelivered;
+  // A stopped run is not graded, and the grading is where the gate spends
+  // its time: every check run, every assessment reviewed, the finisher and
+  // the closer after them. That verdict was thrown away at the end — the
+  // report says "nothing was judged from a stopped run" whatever the
+  // grading found — so a run halted before the gate spent another
+  // fifty-five minutes producing an answer nobody could use. It is asked
+  // first now, where the answer costs nothing.
+  if (g.state.halted) {
+    log(`${tep}: the run was stopped before the closing gate — nothing is judged; the branch holds the work.`);
+    return {
+      refusals: [],
+      undelivered,
+      delivery: {
+        id: `delivery-${tep}`,
+        cutId: cut.id,
+        branch,
+        runId,
+        producedAt,
+        proofs: [],
+        withheld:
+          `the run was stopped before its promises were graded — nothing was judged from a stopped run. ` +
+          `The branch holds the work; run it again to finish the grading.`,
+        ...(undelivered.length ? { undelivered } : {}),
+        ...(g.rulings.length ? { rulings: g.rulings } : {}),
+        ...(g.decisions.length ? { decisions: g.decisions } : {}),
+      },
+    };
+  }
   log(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
