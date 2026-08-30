@@ -51,6 +51,16 @@ export interface MarkedSentence {
 
 const escape = (n: string): string => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/**
+ * The label a reader sees for a subject: its position among the read
+ * subjects, counted from one. Colour repeats every six subjects; this
+ * label never does, so a subject past the sixth is still told apart from
+ * the ones sharing its hue.
+ */
+export function subjectKey(index: number): string {
+  return `S${index + 1}`;
+}
+
 /** Words that carry a name; articles and the like do not. */
 const STOP = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "its", "this", "that", "every"]);
 const contentWords = (name: string): string[] =>
