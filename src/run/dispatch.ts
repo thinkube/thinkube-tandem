@@ -338,8 +338,7 @@ export async function dispatchTep(
           abort,
           // A worker's question goes to the machine first; the human sees
           // only an intent-level question, in the human's words.
-          onPark: (q, answer) =>
-            void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
+          onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer),
           log: (line: string) => log(line, next.id),
           ...(deps.prepare && tree === worktree
             ? { buildTool: async () => formatBuild(await boundedExec(deps.prepare!, tree)) }
@@ -386,7 +385,7 @@ export async function dispatchTep(
                 baseline,
                 ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
                 abort,
-                onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer, (intent) => st.park(next.id, intent, answer)),
+                onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer),
                 log: (line: string) => log(line, next.id),
               },
               text,

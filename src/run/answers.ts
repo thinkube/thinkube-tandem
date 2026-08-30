@@ -1,8 +1,14 @@
 /**
- * A worker's questions go to the machine first — mid-way as a park, or at
- * the end in its UNDELIVERED lines. The supervisor sees the brief, the
- * checks and the repository; whatever is decidable from those it answers,
- * and only a question about intent reaches the human, in the human's words.
+ * A worker's questions are answered by the machine — every one of them.
+ *
+ * The supervisor sees the brief, the checks and the repository; whatever
+ * is decidable from those it answers. A genuine choice among behaviors
+ * the asks do not decide is DECIDED, on the record: the decision rides
+ * the delivery for the person to judge before they accept, and a wrong
+ * one costs one rerun. It used to park the unit and wait for the person
+ * instead — mid-run, on a question they never expected — and a run
+ * waiting on an absent person is a run that dies of silence. The person
+ * reviews decisions at the merge; nothing waits on them before it.
  * A doubt is not a gap.
  */
 import * as fs from "node:fs/promises";
@@ -13,13 +19,6 @@ import type { OracleFactoryArgs } from "./oracle";
 import { clearedPaths } from "./oracle";
 import { clearanceNote } from "./clearance";
 
-/**
- * A worker's question goes to the machine first. The supervisor sees the
- * brief, the checks and the repository; whatever is decidable from those it
- * ANSWERS, and the worker continues. Only a question about intent — a choice
- * among behaviors the asks do not decide — is ESCALATED to the human, in the
- * human's own words, never in the run's internals.
- */
 /** Repo-relative file paths an answer names, in the forms an answer writes
  *  them: bare, backticked, or quoted. */
 function pathsNamed(text: string): string[] {
@@ -44,43 +43,9 @@ export function outsideFootprint(text: string, footprint: readonly string[]): st
   return pathsNamed(text).filter((p) => /\//.test(p) && !mine(p));
 }
 
-/**
- * Text that shows the run's own machinery: a file, a path, a machine error
- * code, or a word only this machine uses. A person is asked about
- * behaviour, never about these.
- *
- * It used to match TypeScript — `.ts`, `.json`, `tsc`, `npm`, and four
- * directory names from this repository. A Python worker asking about
- * `handlers.py`, or a Go worker about `go.mod`, named an internal and was
- * not caught, so the question reached the person as if it were about the
- * work. The shapes below are language-agnostic: any file, any path, any
- * shouting error code, and this methodology's own vocabulary — which is
- * the same in every language because it is ours, not an ecosystem's.
- */
-export function reachesThePerson(text: string): boolean {
-  return !namesInternals(text);
-}
-
-function namesInternals(text: string): boolean {
-  return (
-    pathsNamed(text).length > 0 ||
-    // Any filename SHAPE, not a list of extensions: `go.mod`,
-    // `Cargo.toml`, `pyproject.toml` and whatever the next ecosystem calls
-    // its manifest are all a name, a dot, and a short word.
-    /\b[\w-]{2,}\.[a-z]{1,6}\b/.test(text) ||
-    /(^|\s)[\w.-]+\/[\w./-]+/.test(text) ||
-    /\b(ERR_[A-Z_]+|E[A-Z]{3,}\b)/.test(text) ||
-    /\b(verify|oracle|footprint|probe|slice|clearance|worktree|runner)\b/i.test(text)
-  );
-}
-
 export function makeParkAnswerer(a: OracleFactoryArgs) {
   return (slice: string, unit: string) =>
-    async (
-      question: string,
-      answer: (text: string) => void,
-      escalate: (intentQuestion: string) => void,
-    ): Promise<void> => {
+    async (question: string, answer: (text: string) => void): Promise<void> => {
       const brief = a.briefBySlice.get(slice) ?? "";
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
@@ -94,8 +59,8 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
       const prompt = [
         "You are the RUN SUPERVISOR. A worker of an autonomous delivery has stopped to ask a question.",
         "You see what it cannot: its exact brief, the held-out checks' source, and the repository (read-only).",
-        "The human who commissioned this work has NOT seen the run's internals and must never be asked",
-        "about them — files, names, tools, tests, ordering are the run's own business.",
+        "Nobody else is here: the person who commissioned this work reviews the delivery, with your",
+        "decisions on its face — they are never interrupted mid-run, so every question ends with you.",
         "",
         "Your FIRST line must be EXACTLY one of:",
         '- "ANSWER: <the answer, complete and concrete, in the worker\'s terms — everything it needs to continue>"',
@@ -109,9 +74,11 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         "   moves to that unit — the promise stays with the unit that carries it. Only a test-shaped path is",
         "   refused, because the checks are the test author's. Never tell a worker to change a file it is not",
         "   cleared for without this line: words without the clearance send it into the guard.",
-        '- "ESCALATE: <the question restated at the level of intent, in the human\'s vocabulary — which',
-        "   behavior the asks want — with no file names, tool names or internals>\" ONLY when the answer",
-        "   is a genuine choice among behaviors that the asks and the checks do not decide.",
+        '- "DECIDE: <the choice, and one sentence of why>" when the answer is a genuine choice among',
+        "   behaviors that the asks and the checks do not decide. Pick the reading the asks best support",
+        "   and commit to it — the decision rides the delivery for the person to judge before they accept,",
+        "   and a wrong choice costs one rerun; a unit stopped to wait costs the run. State the decision",
+        "   in the words of the asks (behavior, not files or tools), so the person can judge it.",
         "",
         `THE UNIT: ${unit} of ${slice}`,
         "",
@@ -183,28 +150,40 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
         answer(text);
         return;
       }
-      const intent = /^ESCALATE:/i.test(first) ? first.replace(/^ESCALATE:\s*/i, "").trim() : question;
-      // The human is never shown the run's internals. A "question" full of
-      // paths, tools and error codes is not an intent question: it is the
-      // machine failing to answer, and it is answered as such.
-      if (namesInternals(intent)) {
-        a.log(`⛔ ${unit}: the machine could not answer this itself and its restatement still names internals — not a question for a person`, unit);
+      if (/^DECIDE:/i.test(first)) {
+        const text = first.replace(/^DECIDE:\s*/i, "").split("\n")[0].trim().slice(0, 400);
+        a.log(`⚖ ${unit}: the supervisor decided — ${text.slice(0, 140)}`, unit);
+        // On the delivery's face, beside every other decision: the person
+        // judges it at the merge, which is the only place they judge anything.
+        a.onDecision?.(unit, text);
         a.defect({
           slice,
           unit,
           activity: "worker question",
           trigger: "supervisor",
-          type: "contract",
-          impact: "escalation refused — internals, not intent",
-          detail: intent.slice(0, 600),
+          type: "decision",
+          impact: "an open choice was decided and recorded for the person's review",
+          detail: `Q: ${question.slice(0, 400)}\nDECIDED: ${text}`,
         });
-        answer(
-          "The machine cannot answer this and it is not a question for a person — it names the run's own internals. " +
-            "Do what you are cleared to do, and end with an UNDELIVERED line stating exactly what remains and why.",
-        );
+        answer(`Decided: ${text}\nBuild to that. The decision is recorded on the delivery for the person to review.`);
         return;
       }
-      escalate(intent);
+      // No ruling came back at all. The worker still may not wait on a
+      // person who is not here: it chooses the reading its brief best
+      // supports and says so where the report will carry it.
+      a.defect({
+        slice,
+        unit,
+        activity: "worker question",
+        trigger: "supervisor",
+        type: "machine",
+        impact: "the supervisor gave no usable ruling — the worker decides and documents",
+        detail: `Q: ${question.slice(0, 400)}\nREPLY: ${first.slice(0, 300)}`,
+      });
+      answer(
+        "Nobody can rule on this now. Choose the reading your brief best supports, build to it, and state " +
+          "the choice and its reason in your final words — the delivery carries it for the person to review.",
+      );
     };
 }
 
