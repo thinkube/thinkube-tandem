@@ -40,6 +40,9 @@ export interface DispatchDeps {
   /** Project identity — qualifies branch and worktree names so two
    *  projects' runs in the same monorepo never collide (§7quater). */
   projectId?: string;
+  /** Start this cut from nothing: discard the branch an earlier run left,
+   *  so every unit runs again on the base as it stands today. */
+  freshStart?: boolean;
   /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
   storeDir?: string;
   /** The repository reading (conventions and the why) — every worker gets it in its brief:

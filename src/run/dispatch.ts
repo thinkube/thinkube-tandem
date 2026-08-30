@@ -26,6 +26,7 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { defaultExec, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
 import { refreshRunTrees } from "./refresh";
+import { discardRunBranch } from "./freshStart";
 import { makeCommitBook } from "./commits";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
@@ -170,6 +171,21 @@ export async function dispatchTep(
   if (before.refusal) return refuse(before.refusal.trigger, before.refusal.refusal, "gate");
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
 
+  // Asked to start from nothing: the branch that holds the earlier run's
+  // committed slices goes, so the door below cuts a fresh one from the base
+  // and every unit runs again. What is discarded is tagged first.
+  if (deps.freshStart) {
+    const fresh = await discardRunBranch({ repoRoot: deps.repoRoot, branch, worktree, exec, log: (l) => log(`${tep}: ${l}`) });
+    if (fresh.discarded)
+      defect({
+        activity: "preflight",
+        trigger: "fresh-start",
+        type: "machine",
+        impact: "the earlier run's branch was discarded at the person's request",
+        detail: `${branch} at ${fresh.discarded.head} kept as ${fresh.discarded.tag}`,
+      });
+    else if (fresh.nothing) log(`${tep}: ${fresh.nothing}`);
+  }
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);

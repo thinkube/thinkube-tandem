@@ -65,4 +65,7 @@ export interface SessionDeps {
   projectDir?: string;
   /** Called after every state change so the panel can re-push. */
   onChanged?: (message?: string) => void;
+  /** Start the cut from nothing: the branch an earlier run left is
+   *  discarded (and tagged) so every unit runs again on today's base. */
+  freshStart?: boolean;
 }

@@ -446,11 +446,20 @@ export class TandemSession {
     );
   }
 
-  async rerun(): Promise<{ ok: boolean; reason?: string }> {
+  /**
+   * Run the signed work again.
+   *
+   * Resuming by default: a slice an earlier run committed stands, and only
+   * what never finished runs again. `fresh` discards that branch first, so
+   * every unit is proved again on the base as it stands today — what a
+   * person wants when the machinery itself changed under the last run, and
+   * its finished units were judged by rules since corrected.
+   */
+  async rerun(fresh = false): Promise<{ ok: boolean; reason?: string }> {
     const c = this.unrunCut();
     if (!c) return { ok: false, reason: "there is no signed work waiting to run" };
     if (this.running) return { ok: false, reason: "a run is already in flight" };
-    await executeRun(this, c.id);
+    await executeRun(this, c.id, { fresh });
     return { ok: true };
   }
 

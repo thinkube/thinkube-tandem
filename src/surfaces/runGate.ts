@@ -76,7 +76,11 @@ export function signCutGesture(s: TandemSession): GestureResult {
     return { ok: true };
   }
 
-export async function executeRun(s: TandemSession, cutId: string): Promise<DispatchOutcome | undefined> {
+export async function executeRun(
+  s: TandemSession,
+  cutId: string,
+  opts: { fresh?: boolean } = {},
+): Promise<DispatchOutcome | undefined> {
     const cut = s.space.cuts.find((c) => c.id === cutId);
     if (!cut || s.running) return undefined;
     const approval = cut.tepId ? s.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
@@ -243,7 +247,7 @@ export async function executeRun(s: TandemSession, cutId: string): Promise<Dispa
         plan,
         cut,
         space: () => s.space,
-        deps: s.deps,
+        deps: opts.fresh ? { ...s.deps, freshStart: true } : s.deps,
         runState: s.runState!,
         spaceName: path.basename(s.deps.storeDir),
         ...(digest ? { digest } : {}),

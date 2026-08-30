@@ -195,6 +195,19 @@ export function toolTable(): ToolDef[] {
       },
     },
     {
+      name: "full_rerun",
+      action: "rerun",
+      description:
+        "Start the signed work again FROM NOTHING: the branch an earlier run left is discarded — kept under a `discarded/…` tag — so every unit runs again on the base as it stands today. A plain rerun resumes instead, standing on the slices an earlier run committed. Use this when the machinery itself changed under the last run. Refused when nothing is signed, or a run is in flight.",
+      inputSchema: IN_SPACE,
+      run: (c) => {
+        if (c.session.running) return "refused: a run is already in flight";
+        if (!c.session.unrunCut()) return "refused: there is no signed work waiting to run";
+        void c.session.rerun(true);
+        return "run started from nothing — the earlier branch is discarded and tagged; watch it with read_run";
+      },
+    },
+    {
       name: "stop_run",
       action: "stop-run",
       description:
