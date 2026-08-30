@@ -20,7 +20,7 @@ import { TandemSession } from "./session";
 import { docsDuty } from "../core/docsDuty";
 import { emptySpace } from "../core/schema";
 import { refusedNow } from "./phase";
-import { can, noteAllowed, WebToHost } from "./surfaceContract";
+import { can, CONTROL_NAMES, noteAllowed, refusalSentence, WebToHost } from "./surfaceContract";
 
 /** A session with one grounded promise and nothing signed — the phase in
  *  which the host offers the documentation exemption at all. */
@@ -87,6 +87,26 @@ test("the surface drops the exemption action in a phase the host would refuse", 
   // press the surface let through by mistake still starts nothing.
   assert.ok(refusedNow("exempt-docs", "running"), "a run in flight refuses the exemption");
   assert.equal(refusedNow("exempt-docs", "understood"), undefined, "it is allowed once asks are understood");
+});
+
+test("handleInbound refuses a governed action the phase forbids, naming its control, and runs nothing", async () => {
+  // This session is in the "understood" phase (nodes recorded, nothing
+  // signed or running). "stop-run" is only allowed while a run is in
+  // flight, so it is forbidden here — the host must answer with the same
+  // sentence the surface itself would show, and must not call stopRun().
+  const session = throwawaySession();
+  let stopped = false;
+  session.stopRun = () => {
+    stopped = true;
+    return 0;
+  };
+
+  const pushed: (string | undefined)[] = [];
+  await handleInbound(session, { action: "stop-run" } as InboundAction, (m) => pushed.push(m));
+
+  assert.deepEqual(pushed, [refusalSentence("stop-run", "understood")], "the host names the control and the phase's reason");
+  assert.ok(pushed[0]?.includes(CONTROL_NAMES["stop-run"]), "the sentence names the control by its person-facing name");
+  assert.equal(stopped, false, "the forbidden action never ran");
 });
 
 test("the documentation verdict on the push is the one rule's, for the cut being signed", () => {
