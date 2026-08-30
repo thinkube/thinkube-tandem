@@ -22,6 +22,14 @@
  *
  * Detected by asking git, never by a name: whose repository is this code
  * in, and whose repository is being judged.
+ *
+ * Except that installed rules have no git to ask. A packaged extension is
+ * a copy of the build's output, and a copy carries no repository — git
+ * answers nothing for it, and "nothing" is not "no". Every self-hosted run
+ * therefore refused at the closing gate, after all its work was done. So
+ * the build records the repository it was built from, beside the rules it
+ * built, and the rules read that instead of interrogating a directory that
+ * cannot answer.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -48,23 +56,75 @@ export function repositoryOf(dir: string): string | undefined {
   }
 }
 
+/** What the build wrote down about the repository it was built from. */
+interface BuiltFrom {
+  /** Its origin remote, which survives being copied to another machine. */
+  remote?: string;
+  /** Its common git directory — the answer on the machine that built it. */
+  gitDir?: string;
+}
+
+/** The file the build leaves beside the rules it built. */
+const BUILT_FROM = "builtFrom.json";
+
+/**
+ * The repository the running rules came from.
+ *
+ * Git first, for rules running from their own checkout — a drive, a
+ * development host, this repository's own tests. Then the build's stamp,
+ * for rules running as an installed copy, where there is no git to ask.
+ * The stamp is searched from the rules outward, because the rules sit in
+ * a subdirectory of the build's output.
+ */
+function rulesRepository(rulesAt: string): { gitDir?: string; remote?: string } | undefined {
+  const gitDir = repositoryOf(rulesAt);
+  if (gitDir) return { gitDir, ...(remoteOf(rulesAt) ? { remote: remoteOf(rulesAt) } : {}) };
+  for (let dir = rulesAt, up = 0; up < 4; up++, dir = path.dirname(dir)) {
+    try {
+      const stamped = JSON.parse(fs.readFileSync(path.join(dir, BUILT_FROM), "utf8")) as BuiltFrom;
+      if (stamped.remote || stamped.gitDir) return stamped;
+    } catch {
+      /* no stamp at this level — keep walking up */
+    }
+  }
+  return undefined;
+}
+
+/** A repository's origin remote, when it has one. */
+function remoteOf(dir: string): string | undefined {
+  try {
+    const out = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Is this run judging its own machinery?
  *
- * "yes" when the rules doing the judging live in the same repository as
+ * "yes" when the rules doing the judging came from the same repository as
  * the tree being judged, whatever either is called and whichever branch
- * each is on. "unknown" when git could not answer for one of them — which
- * is not "no": treated as "no", a run judges a cut by the very rule the
- * cut corrects, and reports the resulting failures as the person's.
+ * each is on. The remote decides when both have one, because a copy taken
+ * to another machine keeps its remote and loses its paths; the git
+ * directory decides otherwise. "unknown" when neither the tree nor the
+ * rules could say — which is not "no": treated as "no", a run judges a cut
+ * by the very rule the cut corrects, and reports the resulting failures as
+ * the person's.
  */
 export function judgingItself(
   worktree: string,
   rulesAt: string = __dirname,
 ): "yes" | "no" | "unknown" {
-  const judged = repositoryOf(worktree);
-  const judging = repositoryOf(rulesAt);
-  if (!judged || !judging) return "unknown";
-  return judged === judging ? "yes" : "no";
+  const judging = rulesRepository(rulesAt);
+  const judged = { gitDir: repositoryOf(worktree), remote: remoteOf(worktree) };
+  if (!judging || (!judged.gitDir && !judged.remote)) return "unknown";
+  if (judged.remote && judging.remote) return judged.remote === judging.remote ? "yes" : "no";
+  if (judged.gitDir && judging.gitDir) return judged.gitDir === judging.gitDir ? "yes" : "no";
+  return "unknown";
 }
 
 /**

@@ -22,6 +22,23 @@ echo "▸ version bumped to ${VERSION}"
 echo "▸ compile (tsc + webview)…"
 npm run compile
 
+# The packaged extension is a COPY: git can say nothing about where it came
+# from, and the closing gate needs that answer to know whether a run judges
+# its own machinery. The build is the only place that knows, so it writes it
+# down beside the rules it built (src/run/selfHosted.ts reads this).
+echo "▸ stamp the repository this build came from…"
+node -e '
+const { execFileSync } = require("child_process"), fs = require("fs");
+const git = (a) => { try { return execFileSync("git", a, { encoding: "utf8" }).trim() || undefined; } catch { return undefined; } };
+const stamp = {
+  remote: git(["remote", "get-url", "origin"]),
+  gitDir: git(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+  commit: git(["rev-parse", "HEAD"]),
+};
+fs.writeFileSync("out/builtFrom.json", JSON.stringify(stamp, null, 2));
+console.log("  " + (stamp.remote ?? stamp.gitDir ?? "no repository — the gate will refuse a self-hosted run"));
+'
+
 echo "▸ package ${VSIX} (with dependencies)…"
 npx vsce package -o "${VSIX}" --allow-star-activation 2>&1 | tail -2
 

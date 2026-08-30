@@ -122,3 +122,45 @@ test("another project's tree never has its rules loaded", async () => {
   assert.equal(rule.ok && rule.rule(), "ours", "only a self-hosting run reads its rules from the tree it judges");
 });
 
+
+/**
+ * Rules that were installed still know which repository they came from.
+ *
+ * A packaged extension is a COPY of the build's output. Git answers
+ * nothing for a copy, and nothing is not "no" — so every self-hosted run
+ * refused at the closing gate, after all thirty-three of its units had
+ * done their work. The build is the only place that knows, so it writes
+ * the answer down beside the rules it built.
+ */
+function installed(stamp: unknown): string {
+  const ext = fs.mkdtempSync(path.join(os.tmpdir(), "installed-"));
+  fs.mkdirSync(path.join(ext, "out", "run"), { recursive: true });
+  if (stamp !== undefined)
+    fs.writeFileSync(path.join(ext, "out", "builtFrom.json"), JSON.stringify(stamp));
+  return path.join(ext, "out", "run");
+}
+
+test("installed rules are matched to the tree by the repository the build stamped", () => {
+  const mine = repo();
+  execFileSync("git", ["-C", mine, "remote", "add", "origin", "https://git.example/tandem.git"], { stdio: "ignore" });
+  const theirs = repo();
+  execFileSync("git", ["-C", theirs, "remote", "add", "origin", "https://git.example/other.git"], { stdio: "ignore" });
+
+  const rules = installed({ remote: "https://git.example/tandem.git", gitDir: "/gone/from/this/machine/.git" });
+
+  assert.equal(judgingItself(mine, rules), "yes", "the run is judging the machinery it is changing");
+  assert.equal(judgingItself(theirs, rules), "no", "another project is judged by the rules as they run");
+});
+
+test("rules with neither git nor a stamp still refuse, rather than guessing", () => {
+  assert.equal(
+    judgingItself(repo(), installed(undefined)),
+    "unknown",
+    "an unstamped build cannot say, and cannot say is never no",
+  );
+});
+
+test("a checkout's own rules are still read from git, stamp or no stamp", () => {
+  const mine = repo();
+  assert.equal(judgingItself(mine, mine), "yes", "the drive, and this repository's own tests");
+});
