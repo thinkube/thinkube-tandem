@@ -49,6 +49,13 @@ export async function handleInbound(
     await hooks?.onSwitchRepo?.();
     return;
   }
+  if (msg.action === "load") {
+    // The surface's first message after it finishes loading: it asks for
+    // the state it missed while it was not yet listening. Nothing here
+    // records anything — this is a read, not a gesture.
+    push();
+    return;
+  }
   let note: string | undefined;
   if (msg.action === "save-draft") {
     // Typing costs nothing and interrupts nothing: the words are kept and

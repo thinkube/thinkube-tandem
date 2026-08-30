@@ -22,8 +22,8 @@ import { deleteThinkingSpace, deletionCost, listThinkingSpaces, nextTepNumber, t
 import {
   chooseThinkingSpace,
   configuredStoreRoot,
+  panelOpening,
   registerSpaceCommands,
-  spaceTitle,
 } from "./hostui/spaceOps";
 import { chooseProject, newProjectFlow, retireTepWorktrees, sweepDeletedSpaceRuns } from "./hostui/projectOps";
 import { placeCommands } from "./hostui/placeCommands";
@@ -390,12 +390,14 @@ export function activate(context: vscode.ExtensionContext): void {
     const slug = ownerKey
       ? context.workspaceState.get<string>(`tandem.space.${ownerKey}`)
       : undefined;
-    const key = ownerKey && slug ? `${ownerKey}/${slug}` : "unknown";
-    const title =
-      ownerKey && slug ? spaceTitle(configuredStoreRoot(), ownerKey, slug) : "Tandem";
-    const spacePanel = panels.open(key, title) as SpacePanel;
+    const opening = panelOpening(configuredStoreRoot(), ownerKey, slug);
+    if ("refusal" in opening) {
+      void vscode.window.showWarningMessage(`Tandem — ${opening.refusal}`);
+      return;
+    }
+    const spacePanel = panels.open(opening.key, opening.title) as SpacePanel;
     await spacePanel.show(context.extensionUri);
-    pushActive(context, key);
+    pushActive(context, opening.key);
   };
 
   context.subscriptions.push(

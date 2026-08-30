@@ -61,6 +61,6 @@ export function onSpace(handler: (push: SpacePush) => void): () => void {
     }
   };
   window.addEventListener("message", listener);
-  api.postMessage({ action: "load" });
+  post({ action: "load" });
   return () => window.removeEventListener("message", listener);
 }

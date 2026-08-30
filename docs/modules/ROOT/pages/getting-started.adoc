@@ -5,9 +5,16 @@
 
 Click the Tandem icon in the activity bar (left edge), or run
 *Tandem: Open the Space*. Each thinking space you open gets its own
-editor tab, titled with that space's name — opening a second thinking
-space opens a second tab and leaves the first one open, so several
-thinking spaces stay open at the same time.
+editor tab, titled with that space's name — the name you gave it when
+you named it, or, when you never named it, its slug read back as plain
+words (dashes and underscores become spaces, only the first letter is
+capitalised — "docs-duty-and-tabs" becomes "Docs duty and tabs").
+Opening a second thinking space opens a second tab and leaves the first
+one open, so several thinking spaces stay open at the same time.
+
+When no space can be named — none is chosen, or the choice was never
+recorded — no tab opens at all: you are told why, in one plain sentence,
+instead.
 
 If your workspace has more than one folder, Tandem asks which repository
 you are working on — it never guesses. The choice shows in the status bar

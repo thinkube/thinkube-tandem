@@ -247,6 +247,7 @@ export interface SpacePush {
 }
 
 export type WebToHost =
+  | { action: "load" }
   | { action: "save-draft"; text: string }
   | { action: "read-draft" }
   | { action: "keep-draft" }

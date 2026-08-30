@@ -217,7 +217,7 @@ async function renderBundleHtml(
     mediaRoot = joinUri(extensionUri, "media", "map");
     raw = await fs.readFile(joinUri(mediaRoot, "index.html").fsPath, "utf8");
   } catch {
-    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
+    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run build</code> in <code>webview/map</code> (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
   }
   const nonce = Array.from({ length: 16 }, () =>
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(
