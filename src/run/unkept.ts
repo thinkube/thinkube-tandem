@@ -140,7 +140,7 @@ export async function repairUnkept(a: {
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
       unkept = proofs.filter(unkeptProof);
-      log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`);
+      log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`, "gate");
     }
   }
   // The ladder's last rung, for criteria as it already is for the suite:
@@ -199,7 +199,7 @@ export async function repairUnkept(a: {
             // third time cannot learn anything the second did not.
             if (proof.verdict === r.verdict && r.verdict !== "green") {
               settled.add(proof.label);
-              log(`${tep}: "${proof.label.slice(0, 70)}" is red on a second reading — standing red, not asked again`);
+              log(`${tep}: "${proof.label.slice(0, 70)}" is red on a second reading — standing red, not asked again`, "gate");
             }
             proof.verdict = r.verdict;
             if (r.ref) proof.ref = r.ref;
@@ -271,7 +271,7 @@ export async function repairUnkept(a: {
       ...(deps.worker ? { worker: deps.worker } : {}),
     });
     unkept = proofs.filter(unkeptProof);
-    log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`);
+    log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`, "gate");
   }
   return proofs.filter(unkeptProof);
 }
