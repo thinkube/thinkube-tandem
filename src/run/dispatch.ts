@@ -27,7 +27,6 @@ import { defaultExec, scrubbedEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
 import { refreshRunTrees } from "./refresh";
 import { makeCommitBook } from "./commits";
-import { watchBranchBuild } from "./branchBuilds";
 import { makeEndAnswerer, makeParkAnswerer } from "./answers";
 import { confirmWaitingForTree, verifyWithRepair } from "./repair";
 import { whatWeKnow } from "./whatWeKnow";
@@ -238,17 +237,9 @@ export async function dispatchTep(
   const testerPaths = [...new Set([...sliceProbes.values()].flat())];
 
   let testInflight = 0;
-  // What ships is built on the COMMITTED branch after each slice lands.
-  // The shared worktree cannot answer this — every unit writes there at
-  // once — and the runner's `prepare` only makes the checks runnable.
-  const branchBuild = watchBranchBuild({
-    repoRoot: deps.repoRoot, branch, wtRoot, tep,
-    ...(deps.build && deps.build !== deps.prepare ? { build: deps.build } : {}),
-    exec, run: boundedExec, log: (l) => log(l), defect,
-  });
   const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
     tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
-    ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}), branchBuild });
+    ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}) });
 
   const closeUnit = unitCloser({
     worktree, testerWt, sliceProbes, sliceVerifs, criterionOf, st, exec, boundedExec, log, deps, rulings, undelivered, defect,
