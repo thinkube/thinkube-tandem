@@ -18,6 +18,7 @@ import { Rail } from "./Rail";
 import { Asks } from "./Asks";
 import { useWorld, ZoomControls } from "./proto/world";
 import { nextView, ViewState } from "../../../src/surfaces/viewMove";
+import { surfaceRegions, SurfacePage } from "../../../src/surfaces/surfaceLayout";
 
 
 /** Whether the Orchestration page is currently showing the delivery
@@ -35,7 +36,7 @@ export function reportShown(push: SpacePush | null, shown: "workers" | "report" 
 export function App(props: {
   /** A first push and page, for rendering the surface outside the host
    *  (the button table is checked this way on every build). */
-  initial?: { push: SpacePush; tab: "write" | "intent" | "work" | "flow" };
+  initial?: { push: SpacePush; tab: SurfacePage };
 } = {}): JSX.Element {
   const [push, setPush] = useState<SpacePush | null>(props.initial?.push ?? null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -78,6 +79,10 @@ export function App(props: {
   // event below), and only changed again by the reader's own flow-view
   // switch.
   const reportIsShown = reportShown(push, view.flowView);
+  // The fixed top-to-bottom order of the surface's regions for this page —
+  // "asking-in" and "tabs" always come first, at the same index, so the
+  // tab row's place never depends on which page is showing.
+  const regionOrder = surfaceRegions(tab);
 
   // The box empties when the words are safely recorded, and not before:
   // a send that comes back as a list preview keeps them, so "keep editing"
@@ -166,7 +171,75 @@ export function App(props: {
           switch
         </button>
       </div>
+      {regionOrder.map((region) => {
+        if (region === "tabs") return (
+      <div key="tabs" data-tabs style={{ display: "flex", gap: 6, padding: `${SP.sm}px ${SP.md}px 0`, alignItems: "center" }}>
+        {([
+          ["write", "0 · Write", "what you want, in your words"],
+          ["intent", "1 · Intent", "what I understood"],
+          ["work", "2 · Work", "what gets built, and what proves it"],
+          ["flow", "3 · Orchestration", "the workers, in the order they run, and what they proved"],
+        ] as const).map(([id, label, why]) => (
+          <button
+            key={id}
+            data-tab={id}
+            title={
+              id === "work" && working
+                ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}.`
+                : `Show ${why}.`
+            }
+            // A tab only moves. What starts thinking is the page's own
+            // button, and the phase says whether that button is on.
+            onClick={() => setView((v) => nextView(v, { kind: "reader-tab", tab: id, hasReport }))}
+            style={{
+              background: C.raised,
+              color: tab === id ? C.focus : "inherit",
+              border: `1px solid ${tab === id ? C.focus : C.border}`,
+              padding: `${SP.sm}px ${SP.lg}px`,
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: FS.body,
+            }}
+          >
+            {label}
+            {id === "flow" && push.running ? " ●" : ""}
+            {id === "work" && working ? " ⟳" : ""}
+          </button>
+        ))}
+        {tab === "flow" && hasReport ? (
+          <div data-flow-view style={{ display: "flex", gap: 6, marginLeft: SP.lg }}>
+            {([
+              ["workers", "Workers", "The workers this run used, in the order they ran."],
+              ["report", "Delivery report", "What the run made true, and the decision left."],
+            ] as const).map(([id, text, why]) => (
+              <button
+                key={id}
+                data-flow-view={id}
+                title={why}
+                onClick={() => setView((v) => nextView(v, { kind: "reader-flow-view", view: id }))}
+                style={{
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${(id === "report") === reportIsShown ? C.focus : "transparent"}`,
+                  color: (id === "report") === reportIsShown ? "inherit" : C.quiet,
+                  padding: `2px ${SP.xs}px`,
+                  cursor: "pointer",
+                  fontSize: FS.body,
+                }}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
+          write it · see what it means · see what it will build · build it
+        </span>
+      </div>
+        );
+        if (region === "capture") return (
       <div
+        key="capture"
         data-capture
         style={{
           display: tab === "write" ? "flex" : "none",
@@ -251,93 +324,38 @@ export function App(props: {
           <span style={{ fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
         ) : null}
       </div>
-      {tab === "intent" ? (
-        <Asks
-          push={push}
-          selected={selected}
-          onSelect={setSelected}
-          editing={editingAsk}
-          onEditing={setEditingAsk}
-        />
-      ) : null}
-      <Implications push={push} />
-      {push.legacy ? (
-        <div
-          data-legacy
-          style={{
-            margin: `${SP.sm}px ${SP.md}px 0`,
-            padding: `${SP.sm}px ${SP.md}px`,
-            border: "1px solid #e5c07b",
-            borderRadius: 5,
-            fontSize: FS.body,
-          }}
-        >
-          {push.legacy}
-        </div>
-      ) : null}
-      <div data-tabs style={{ display: "flex", gap: 6, padding: `${SP.sm}px ${SP.md}px 0`, alignItems: "center" }}>
-        {([
-          ["write", "0 · Write", "what you want, in your words"],
-          ["intent", "1 · Intent", "what I understood"],
-          ["work", "2 · Work", "what gets built, and what proves it"],
-          ["flow", "3 · Orchestration", "the workers, in the order they run, and what they proved"],
-        ] as const).map(([id, label, why]) => (
-          <button
-            key={id}
-            data-tab={id}
-            title={
-              id === "work" && working
-                ? `Still working out what to build${push.activity ? ` — ${push.activity.label} ${push.activity.current} of ${push.activity.total}` : ""}.`
-                : `Show ${why}.`
-            }
-            // A tab only moves. What starts thinking is the page's own
-            // button, and the phase says whether that button is on.
-            onClick={() => setView((v) => nextView(v, { kind: "reader-tab", tab: id, hasReport }))}
-            style={{
-              background: C.raised,
-              color: tab === id ? C.focus : "inherit",
-              border: `1px solid ${tab === id ? C.focus : C.border}`,
-              padding: `${SP.sm}px ${SP.lg}px`,
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: FS.body,
-            }}
-          >
-            {label}
-            {id === "flow" && push.running ? " ●" : ""}
-            {id === "work" && working ? " ⟳" : ""}
-          </button>
-        ))}
-        {tab === "flow" && hasReport ? (
-          <div data-flow-view style={{ display: "flex", gap: 6, marginLeft: SP.lg }}>
-            {([
-              ["workers", "Workers", "The workers this run used, in the order they ran."],
-              ["report", "Delivery report", "What the run made true, and the decision left."],
-            ] as const).map(([id, text, why]) => (
-              <button
-                key={id}
-                data-flow-view={id}
-                title={why}
-                onClick={() => setView((v) => nextView(v, { kind: "reader-flow-view", view: id }))}
+        );
+        if (region === "asks") return tab === "intent" ? (
+          <Asks
+            key="asks"
+            push={push}
+            selected={selected}
+            onSelect={setSelected}
+            editing={editingAsk}
+            onEditing={setEditingAsk}
+          />
+        ) : null;
+        if (region === "legacy") return (
+          <span key="legacy">
+            <Implications push={push} />
+            {push.legacy ? (
+              <div
+                data-legacy
                 style={{
-                  background: "none",
-                  border: "none",
-                  borderBottom: `2px solid ${(id === "report") === reportIsShown ? C.focus : "transparent"}`,
-                  color: (id === "report") === reportIsShown ? "inherit" : C.quiet,
-                  padding: `2px ${SP.xs}px`,
-                  cursor: "pointer",
+                  margin: `${SP.sm}px ${SP.md}px 0`,
+                  padding: `${SP.sm}px ${SP.md}px`,
+                  border: "1px solid #e5c07b",
+                  borderRadius: 5,
                   fontSize: FS.body,
                 }}
               >
-                {text}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
-          write it · see what it means · see what it will build · build it
-        </span>
-      </div>
+                {push.legacy}
+              </div>
+            ) : null}
+          </span>
+        );
+        return null;
+      })}
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
         {tab === "write" ? (
           <div data-write-page style={{ flex: 1, overflowY: "auto", padding: `0 ${SP.lg}px ${SP.xl}px` }}>

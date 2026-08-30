@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/App";
-import { noteAllowed, SpacePush } from "../src/vscode";
+import { noteAllowed, SpacePush, SURFACE_PAGES } from "../src/vscode";
 
 // Layout effects do not run in a static render; the warning is noise here.
 const warn = console.error;
@@ -16,12 +16,11 @@ console.error = (...a: unknown[]) => {
 };
 
 const pushes = JSON.parse(fs.readFileSync(process.argv[2], "utf8")) as Record<string, SpacePush>;
-const TABS = ["write", "intent", "work", "flow"] as const;
 const out: Record<string, Record<string, string[]>> = {};
 for (const [phase, push] of Object.entries(pushes)) {
   noteAllowed(push.allowed);
   out[phase] = {};
-  for (const tab of TABS) {
+  for (const tab of SURFACE_PAGES) {
     const html = renderToStaticMarkup(<App initial={{ push, tab }} />);
     const buttons: string[] = [];
     for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {

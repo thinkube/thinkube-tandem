@@ -14,6 +14,8 @@ import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract
 
 export { can, noteAllowed, whyNot } from "../../../src/surfaces/surfaceContract";
 export type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
+export { surfaceRegions, SURFACE_PAGES } from "../../../src/surfaces/surfaceLayout";
+export type { SurfacePage, SurfaceRegion } from "../../../src/surfaces/surfaceLayout";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
