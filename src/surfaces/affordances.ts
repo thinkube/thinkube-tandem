@@ -130,5 +130,26 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
       gesture: "press an out-of-date badge to re-read the code under those promises",
     },
   },
+  "accept-impact": {
+    kind: "human",
+    affordance: {
+      surface: "the staged implications list",
+      gesture: "press Apply on the implication you want in force",
+    },
+  },
+  "dismiss-impact": {
+    kind: "human",
+    affordance: {
+      surface: "the staged implications list",
+      gesture: "press Set aside on the implication you do not want applied",
+    },
+  },
+  "apply-all-impacts": {
+    kind: "human",
+    affordance: {
+      surface: "the staged implications list",
+      gesture: "press Apply all, shown once two or more implications are staged",
+    },
+  },
 };
 

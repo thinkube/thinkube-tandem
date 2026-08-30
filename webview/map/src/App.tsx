@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { can, onSpace, post, SpacePush, whyNot } from "./vscode";
 import { RunNote, RunSection } from "./Run";
+import { Implications } from "./Implications";
 import { Compose } from "./Compose";
 import { Analysis } from "./Analysis";
 import { asksOfText } from "../../../src/derive/asks";
@@ -259,6 +260,7 @@ export function App(props: {
           onEditing={setEditingAsk}
         />
       ) : null}
+      <Implications push={push} />
       {push.legacy ? (
         <div
           data-legacy
