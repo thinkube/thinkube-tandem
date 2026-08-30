@@ -11,14 +11,15 @@ import { Compose } from "./Compose";
 import { Analysis } from "./Analysis";
 import { asksOfText } from "../../../src/derive/asks";
 import { Delivery } from "./Delivery";
-import { C, FS, label, O, SP } from "./type";
+import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
 import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
 import { Asks } from "./Asks";
 import { useWorld, ZoomControls } from "./proto/world";
 import { nextView, ViewState } from "../../../src/surfaces/viewMove";
-import { surfaceRegions, SurfacePage } from "../../../src/surfaces/surfaceLayout";
+import { surfaceRegions } from "../../../src/surfaces/surfaceLayout";
+import { ASKS_PAGE, drawsAskList, SurfacePage } from "../../../src/surfaces/surfaceContract";
 
 
 /** Whether the Orchestration page is currently showing the delivery
@@ -325,7 +326,7 @@ export function App(props: {
         ) : null}
       </div>
         );
-        if (region === "asks") return tab === "intent" ? (
+        if (region === "asks") return drawsAskList(tab) ? (
           <Asks
             key="asks"
             push={push}
@@ -359,38 +360,6 @@ export function App(props: {
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
         {tab === "write" ? (
           <div data-write-page style={{ flex: 1, overflowY: "auto", padding: `0 ${SP.lg}px ${SP.xl}px` }}>
-            {/* What is already recorded, above the empty box. Without it
-                this page reads as an empty space with nothing in it, and
-                the natural move is to write the same asks again. */}
-            {push.sentences.length ? (
-              <div data-already-recorded style={{ marginTop: SP.md, maxWidth: "56rem" }}>
-                <div style={label}>
-                  {push.sentences.length} ask{push.sentences.length === 1 ? "" : "s"} already
-                  recorded
-                </div>
-                {push.sentences.map((a, i) => (
-                  <div
-                    key={a.id}
-                    data-recorded-ask={a.id}
-                    style={{
-                      fontSize: FS.body,
-                      padding: `${SP.xs}px ${SP.md}px`,
-                      borderLeft: `3px solid ${C.border}`,
-                      marginBottom: 2,
-                      color: C.quiet,
-                    }}
-                  >
-                    <span style={{ marginRight: SP.sm }}>#{i + 1}</span>
-                    {a.text}
-                  </div>
-                ))}
-                <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-                  Kept word for word. To change one, open it on 1 · Intent — writing it again here
-                  records a second copy of the same ask, and is refused.
-                </div>
-              </div>
-            ) : null}
-
             {push.pendingModel ? (
               <Analysis
                 model={push.pendingModel}
@@ -441,7 +410,7 @@ export function App(props: {
             onEditAsk={(id) => {
               setSelected(id);
               setEditingAsk(id);
-              setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
+              setView((v) => nextView(v, { kind: "reader-tab", tab: ASKS_PAGE, hasReport }));
             }}
             world={unitsWorld}
             subjectId={workSubject}

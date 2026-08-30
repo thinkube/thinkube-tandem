@@ -12,6 +12,19 @@
  * Nothing here touches the DOM, `vscode`, or disk, so the host's own
  * checks import it and drive it directly.
  */
+import type { SurfacePage } from "./surfaceLayout";
+export type { SurfacePage } from "./surfaceLayout";
+export { SURFACE_PAGES } from "./surfaceLayout";
+
+/** The one page that draws your asks. Named here, once, so the surface
+ *  and its checks read the same answer instead of each deciding page by
+ *  page which one shows the list. */
+export const ASKS_PAGE: SurfacePage = "intent";
+
+/** Whether this page draws the ask list. Exactly one page does. */
+export function drawsAskList(page: SurfacePage): boolean {
+  return page === ASKS_PAGE;
+}
 
 /** One check, with its verification state — read on the claim card
  *  independently of how many iterations produced it. */

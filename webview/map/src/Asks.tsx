@@ -97,7 +97,7 @@ export function Asks(props: {
   return (
     <div
       data-sentences
-      style={{ padding: `${SP.sm}px ${SP.lg}px 0`, maxHeight: "16rem", overflowY: "auto" }}
+      style={{ padding: `${SP.sm}px ${SP.lg}px 0` }}
     >
       <div style={{ ...label, marginBottom: 4 }}>
         Asks — what you wrote, kept word for word
