@@ -327,7 +327,7 @@ export async function runUnitWorker(
               ? [
                   mod.tool(
                     "build",
-                    "Run the repository's TYPECHECK over the shared tree — every unit's work in progress, not only yours — and get the compiler's words VERBATIM. Seconds, runs no tests, judges nothing — your fastest feedback for type and import errors. It is not the product build: what ships is built and judged once, after every unit lands. Lines naming files you are not cleared for are other units' in-flight work; ignore them.",
+                    "Run this repository's own PREPARE command — what makes its checks runnable, which may be less than what ships — over the shared tree, every unit's work in progress, not only yours. You get its words VERBATIM. Seconds, runs no tests, judges nothing — fast feedback for compile and import errors. What ships is built and judged once, after every unit lands. Lines naming files you are not cleared for are other units' in-flight work; ignore them.",
                     {},
                     async () => ({ content: [{ type: "text" as const, text: await build() }] }),
                   ),
