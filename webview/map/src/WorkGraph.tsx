@@ -216,9 +216,14 @@ export function WorkGraph(props: {
             flexWrap: "wrap",
           }}
         >
-          {/* One wording, one place: the run page shows the full notice; this
-              page keeps only the way back in — the button and its short
-              caption — and drops the paragraph, so the fact is told once. */}
+          {/* One wording, one place: the notice's own heading and sentence,
+              the same text the run page shows. A page that re-says the fact
+              in words of its own is a second wording to keep in step, and
+              the two drift the moment either is edited. */}
+          <div style={{ flexBasis: "100%" }}>
+            <strong>{push.signedIdle.heading}</strong>
+            <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{push.signedIdle.sentence}</div>
+          </div>
           <button
             data-think-again
             disabled={!can("think-again")}
@@ -233,11 +238,11 @@ export function WorkGraph(props: {
             Think it through again
           </button>
           <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            the promises are derived anew and come back for a new signature — to run the signed work as it is,
+            to run the signed work as it is,
           </span>
           <a
             data-go-to-run
-            title="Go to the run page — it has the full notice and the way to run this signed work again."
+            title="Go to the run page — it has the way to run this signed work again."
             style={{ fontSize: FS.caption, textDecoration: "underline", cursor: "pointer" }}
             onClick={() => props.onGoToRun()}
           >

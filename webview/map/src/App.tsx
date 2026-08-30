@@ -441,7 +441,13 @@ export function App(props: {
                 setSelected(id);
                 setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
               }}
-              onGoToRun={() => setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport }))}
+              // The signed-idle link promises the run page's notice, so it
+              // lands on the workers view and never on a past delivery's
+              // report: a link that shows something other than what it names
+              // is a link the reader stops trusting.
+              onGoToRun={() =>
+                setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport: false }))
+              }
             />
           </div>
         ) : (
