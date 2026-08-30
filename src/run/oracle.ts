@@ -23,6 +23,7 @@ import { runScopedSuite, withSuite } from "./suite";
 import { linkProvisioned } from "./linkProvisioned";
 import { evidenceKey } from "./owner";
 import { clearanceNote } from "./clearance";
+import { withCpuTruth } from "./cpuAllowance";
 import type { ClearanceRuling } from "./clearance";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
@@ -32,7 +33,9 @@ export function scrubbedEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const k of Object.keys(env))
     if (/^NODE_TEST|^TEST_|^NODE_OPTIONS$/.test(k)) delete env[k];
-  return env;
+  // And the processors this container really has, because every tool the
+  // run starts otherwise sizes itself for the host's (src/run/cpuAllowance.ts).
+  return withCpuTruth(env);
 }
 
 export type Exec = (

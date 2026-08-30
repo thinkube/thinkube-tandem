@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
+import { unitsAtOnce } from "./cpuAllowance";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
 import { ownership } from "./fence";
@@ -550,7 +551,9 @@ export async function dispatchTep(
   };
   await pumpUnits({
     st, dag, pending, done, failed, liveFootprints,
-    concurrency: Math.max(1, deps.concurrency ?? 2),
+    // Sized to the processors this container is actually granted, not the
+    // host's — oversubscribing them throttles the run and the editor alike.
+    concurrency: Math.max(1, deps.concurrency ?? unitsAtOnce()),
     worktree, testerWt, runOne, finishUnit, failWith,
     onTestUnitCrash: () => { testInflight = Math.max(0, testInflight - 1); },
     log, defect,
