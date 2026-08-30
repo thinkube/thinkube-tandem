@@ -474,3 +474,42 @@ test("a red is attributed to whoever can act on it, never to the nearest unit", 
 
 
 
+
+/**
+ * A unit that ends without a verdict says so, whichever way it ended.
+ *
+ * The attempt loop runs `while attempts remain AND the run is not halted`,
+ * so a run that reaches its three-hour bound ends the loop of whatever
+ * unit is in flight. That unit was then written down as a bare "failed"
+ * with nothing beside it: no note, no line in the run's log, nothing to
+ * tell it apart from work that was tried and judged. One run spent
+ * fifty-five minutes on a unit that was still reading its brief when the
+ * clock ran out, and reported it as the person's failure. The units
+ * BLOCKED behind it said "the run stopped" — only the one actually
+ * stopped said nothing.
+ */
+test("a unit is never failed in silence", () => {
+  const st = new RunState(() => {});
+  st.seed("SL-6#eu-0", "SL-6", "code");
+  st.set("SL-6#eu-0", "running");
+
+  // What the halted attempt loop does: it simply stops, and the unit is
+  // finished as not-ok with no verdict of its own.
+  st.set("SL-6#eu-0", "failed");
+
+  const note = st.units.get("SL-6#eu-0")?.note ?? "";
+  assert.notEqual(note, "", "a failure with nothing said is unreadable");
+  assert.match(
+    note,
+    /not a verdict on the work/,
+    "and it says the machine failed it, so nobody reads it as the person's",
+  );
+});
+
+test("a unit failed for a real reason keeps that reason", () => {
+  const st = new RunState(() => {});
+  st.seed("SL-18#eu-0", "SL-18", "code");
+  st.fail("SL-18#eu-0", "checks not green after 2 attempts and the closer");
+  st.set("SL-18#eu-0", "failed");
+  assert.match(st.units.get("SL-18#eu-0")?.note ?? "", /checks not green/, "the true reason is never overwritten");
+});

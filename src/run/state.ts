@@ -129,6 +129,12 @@ export class RunState {
     const u = this.units.get(id);
     if (!u) return;
     if (state === "running" && u.state !== "parked") u.startedAt = Date.now();
+    // A failure with nothing said reads exactly like work that was judged
+    // and did not pass, and its promise is counted unkept for a reason
+    // nobody can see. Blocked units say the run stopped; a failed one that
+    // says nothing is worse than either, so silence is named as what it is.
+    if (state === "failed" && !u.note)
+      u.note = "the run failed this unit without saying why — a fault in the machine, not a verdict on the work";
     u.state = state;
     u.question = state === "parked" ? question : undefined;
     if (state !== "running" && state !== "parked") u.activity = undefined;

@@ -15,7 +15,7 @@
 import * as path from "node:path";
 import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
-import { frontier } from "./frontier";
+import { pumpUnits } from "./pump";
 import { buildWorkerPrompt } from "../engine/core/preflight";
 import { haltableExecs } from "./execs";
 import { ownership } from "./fence";
@@ -55,7 +55,6 @@ export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, isTestPath, missingProbes, repoTestFiles, testerTurns, testHomesOf, testHomesStanza, testHomeWorkOf } from "./testHomes";
-import { overlapWaits } from "./frontier";
 
 export interface DispatchOutcome {
   delivery?: Delivery;
@@ -523,55 +522,24 @@ export async function dispatchTep(
     st.aborts.delete(next.id);
     liveFootprints.delete(next.id);
     if (role === "test" && !maintain) testInflight--;
+    // The attempt loop also ends when the run is halted — its own bound, or
+    // a person stopping it — and a unit stopped mid-flight has no verdict at
+    // all. Left unsaid it was written down as a bare "failed", which reads
+    // as work that was judged and did not pass: a promise counted unkept
+    // for a clock nobody could see, next to blocked units that at least say
+    // the run stopped.
+    if (!ok && st.halted && !st.units.get(next.id)?.note)
+      failWith(next.id, "the run stopped before this unit finished — its work was never judged");
     await finishUnit(next.id, next.slice, ok);
   };
-  // The pump: launch what is ready up to the cap, wake on any completion.
-  const concurrency = Math.max(1, deps.concurrency ?? 2);
-  const inflight = new Map<string, Promise<void>>();
-  while (!st.halted) {
-    // The frontier refuses a unit whose footprint a running unit is writing — two coders in one file is a silent lost update.
-    const ready = frontier(dag, {
-      pending,
-      done,
-      failed,
-      running: [...liveFootprints.values()].flatMap((v) => v.paths),
-    });
-    // A ready unit that is not launched says why: a slot, or a file it shares with a running unit.
-    for (const [id, why] of overlapWaits(dag, pending, ready, liveFootprints, done)) st.doing(id, why);
-    for (const u of ready) {
-      if (inflight.size >= concurrency) {
-        st.doing(u.id, `waiting for a free slot (${concurrency} running)`);
-        break;
-      }
-      st.doing(u.id, undefined);
-      pending.delete(u.id);
-      // On the record synchronously with the launch — later leaves a window the next frontier cannot see.
-      liveFootprints.set(u.id, {
-        tree: (u.role ?? "code") === "test" ? testerWt : worktree,
-        paths: u.footprint,
-      });
-          // A crash inside one unit is that unit's failure, on the record — never the run's end.
-      const p = runOne(u)
-        .catch(async (err) => {
-          const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
-          log(`⛔ ${u.id}: crashed — ${why.split("\n")[0]}`, u.id);
-          defect({ slice: u.slice, unit: u.id, activity: "unit execution", trigger: "crash", impact: "unit failed", detail: why.slice(0, 1200) });
-          st.aborts.delete(u.id);
-          liveFootprints.delete(u.id);
-          if (u.role === "test") testInflight = Math.max(0, testInflight - 1);
-          failWith(u.id, `crashed: ${why.split("\n")[0].slice(0, 200)}`);
-          await finishUnit(u.id, u.slice, false);
-        })
-        .finally(() => inflight.delete(u.id));
-      inflight.set(u.id, p);
-    }
-    if (inflight.size === 0) break;
-    await Promise.race([...inflight.values()]);
-  }
-  await Promise.all([...inflight.values()]);
-  // Never ran is not failed: a unit the run never reached says so, and the real failure stays findable.
-  for (const id of pending)
-    st.block(id, "never ran — the run stopped, or something it waits on failed");
+  await pumpUnits({
+    st, dag, pending, done, failed, liveFootprints,
+    concurrency: Math.max(1, deps.concurrency ?? 2),
+    worktree, testerWt, runOne, finishUnit, failWith,
+    onTestUnitCrash: () => { testInflight = Math.max(0, testInflight - 1); },
+    log, defect,
+  });
+
 
   if (machineAttention)
     log(
