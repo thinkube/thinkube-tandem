@@ -40,7 +40,15 @@ import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { readRun } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
+import { builtSurfaceText } from "../gates/doors";
 export type { SessionDeps } from "./sessionDeps";
+
+/** The constructor options `SessionDeps` does not itself carry: an
+ *  injectable reader for the built webview surface, read once and held
+ *  for a whole push rather than once per delivery. Kept here rather than
+ *  widening `SessionDeps` — every existing caller already satisfies this
+ *  intersection unchanged, since the field is optional. */
+type SessionDepsWithSurface = SessionDeps & { readBuiltSurface?: () => string };
 
 export class TandemSession {
   space: Space = emptySpace();
@@ -73,7 +81,7 @@ export class TandemSession {
   private _captureAbort: AbortController | undefined;
   _grounding = new Map<string, { label: string; current: number; total: number }>();
 
-  constructor(readonly deps: SessionDeps) {
+  constructor(readonly deps: SessionDepsWithSurface) {
     this._approvals = createApprovalStore(deps.storageDir);
     this._secret = loadOrCreateApprovalSecret(deps.storageDir);
     this.load();
@@ -477,8 +485,26 @@ export class TandemSession {
     return n;
   }
 
-  /** The delivery, rendered for a person to read — in `./deliveryPage`. */
-  deliveryPage = (deliveryId: string): string | undefined => deliveryPageOf(this, deliveryId);
+  /** The delivery, rendered for a person to read — in `./deliveryPage`.
+   *  `surfaceText` is read once by the caller (a whole push, however many
+   *  deliveries it carries) and handed to every delivery here — never
+   *  re-read per delivery. Defaults to a fresh single read for callers
+   *  (tests, the CLI) that render one delivery on its own. */
+  deliveryPage = (deliveryId: string, surfaceText?: string): string | undefined =>
+    deliveryPageOf(this, deliveryId, surfaceText ?? this.readBuiltSurfaceOnce());
+
+  /** The built webview surface, read once through the injected reader and
+   *  cached on this session — never re-read for a later push. A build does
+   *  not change while this process is alive; reading it again on every
+   *  push (or once per delivery within a push) is unneeded I/O with the
+   *  same answer every time. */
+  private _builtSurfaceText: string | undefined;
+  readBuiltSurfaceOnce(): string {
+    if (this._builtSurfaceText === undefined) {
+      this._builtSurfaceText = builtSurfaceText(this.deps.readBuiltSurface);
+    }
+    return this._builtSurfaceText;
+  }
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
    *  retire (best-effort) — refused without green proof BEFORE the merge. */

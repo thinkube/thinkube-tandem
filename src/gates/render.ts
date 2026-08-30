@@ -6,7 +6,7 @@
 import { Change, Cut, Delivery, Space } from "../core/schema";
 import { asksOf } from "../core/intent";
 import { docsDuty } from "../core/docsDuty";
-import { verifiedDoors } from "./doors";
+import { declaredDoors, verifiedDoors } from "./doors";
 import { observationShaped } from "../run/observations";
 
 
@@ -193,15 +193,38 @@ export function renderCutScreen(space: Space, cut: Cut): string {
  * something.
  */
 /** The walkthrough line for each promise: every one names a door the
- *  machine verified renders, matched by the promise's own sentence. */
-export function doorsBySentence(nodes: readonly Change[]): ReadonlyMap<string, string> {
-  const doors = verifiedDoors();
+ *  machine verified renders — its page and its gesture — matched by the
+ *  promise's own sentence, against the surface this build actually shipped.
+ *  A promise whose door's handle (or page's handle) is absent from
+ *  `surfaceText` gets no entry — it is named as undelivered instead of
+ *  pointing at a way in that is not there. */
+export function doorsBySentence(nodes: readonly Change[], surfaceText: string): ReadonlyMap<string, string> {
+  const doors = verifiedDoors(surfaceText);
   const experience = new Map<string, string>();
   for (const n of nodes) {
     const door = doors.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
-    if (door) experience.set(n.id, `${door.surface} — ${door.gesture}`);
+    if (door) experience.set(n.id, `${door.label} — ${door.gesture}`);
   }
   return experience;
+}
+
+/**
+ * Promises whose sentence names a declared door's gesture, but whose door
+ * the machine could not prove renders in the given surface text — named as
+ * undelivered instead of quietly losing their "see it" line. A promise
+ * whose sentence names no door at all is not about a door and is never
+ * named here; only one that matched an action and then failed proof is.
+ */
+export function unprovenDoorPromises(nodes: readonly Change[], surfaceText: string): string[] {
+  const all = declaredDoors();
+  const proved = doorsBySentence(nodes, surfaceText);
+  const out: string[] = [];
+  for (const n of nodes) {
+    if (proved.has(n.id)) continue;
+    const matched = all.find((x) => n.sentence.toLowerCase().includes(x.action.replace(/-/g, " ")));
+    if (matched) out.push(`${n.sentence} — the way in could not be proved`);
+  }
+  return out;
 }
 
 export function renderDeliveryPage(

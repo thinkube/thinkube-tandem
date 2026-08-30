@@ -95,6 +95,9 @@ function latestVerdictOf(
 
 export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
+  // Read once, held for every delivery this push renders — not once per
+  // delivery and not skipped for a push that has any.
+  const surfaceText = session.readBuiltSurfaceOnce();
   return {
     kind: "space",
     running: session.running,
@@ -316,7 +319,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     }),
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,
-      page: session.deliveryPage(d.id) ?? "",
+      page: session.deliveryPage(d.id, surfaceText) ?? "",
       accepted: !!d.acceptedAt,
       // Whether it COULD be accepted, asked of the same gate that would
       // refuse it. A surface that offers a press the machine will refuse

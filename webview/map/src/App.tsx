@@ -395,80 +395,88 @@ export function App(props: {
             )}
           </div>
         ) : tab === "intent" ? (
-          <IntentGraph
-            push={push}
-            selected={selected}
-            onSelect={setSelected}
-            onWork={() => {
-              if (allWorkedOut) {
+          <div data-intent-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            <IntentGraph
+              push={push}
+              selected={selected}
+              onSelect={setSelected}
+              onWork={() => {
+                if (allWorkedOut) {
+                  setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
+                  return;
+                }
+                setView((v) => nextView(v, { kind: "reader-awaits-work" }));
+                post({ action: "think" });
+              }}
+              working={working}
+              canWork={allWorkedOut || can("think")}
+              onEditAsk={(id) => {
+                setSelected(id);
+                setEditingAsk(id);
+              }}
+              onOpenWork={(id) => {
+                setWorkSubject(id);
                 setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
-                return;
-              }
-              setView((v) => nextView(v, { kind: "reader-awaits-work" }));
-              post({ action: "think" });
-            }}
-            working={working}
-            canWork={allWorkedOut || can("think")}
-            onEditAsk={(id) => {
-              setSelected(id);
-              setEditingAsk(id);
-            }}
-            onOpenWork={(id) => {
-              setWorkSubject(id);
-              setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
-            }}
-          />
+              }}
+            />
+          </div>
         ) : tab === "work" ? (
-          <WorkGraph
-            push={push}
-            onEditAsk={(id) => {
-              setSelected(id);
-              setEditingAsk(id);
-              setView((v) => nextView(v, { kind: "reader-tab", tab: ASKS_PAGE, hasReport }));
-            }}
-            world={unitsWorld}
-            subjectId={workSubject}
-            onSubject={setWorkSubject}
-            selected={selected}
-            onSelect={(id) => {
-              setSelected(id);
-              post({ action: "select-unit", unitId: id });
-            }}
-            onUp={(id) => {
-              setSelected(id);
-              setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
-            }}
-            onGoToRun={() => setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport }))}
-          />
-        ) : reportIsShown ? (
-          <Delivery push={push} />
-        ) : push.run || push.runNote ? (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            {/* The way back in rides signed-undelivered work itself, not the
-                note from a refusal — the note dies with the window, and a
-                refused run leaves a record whose page would otherwise show
-                an empty graph with the only restart button unreachable. The
-                notice — heading, sentence, and which ways back in ride with
-                it — comes from the push; this page never words it again. */}
-            {push.signedIdle ? <RunNote notice={push.signedIdle} /> : null}
-            {push.run ? (
-              <RunSection
-                run={push.run}
-                live={!!push.running}
-                world={flowWorld}
-                openLog={push.runLog?.step}
-              />
-            ) : null}
+          <div data-work-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            <WorkGraph
+              push={push}
+              onEditAsk={(id) => {
+                setSelected(id);
+                setEditingAsk(id);
+                setView((v) => nextView(v, { kind: "reader-tab", tab: ASKS_PAGE, hasReport }));
+              }}
+              world={unitsWorld}
+              subjectId={workSubject}
+              onSubject={setWorkSubject}
+              selected={selected}
+              onSelect={(id) => {
+                setSelected(id);
+                post({ action: "select-unit", unitId: id });
+              }}
+              onUp={(id) => {
+                setSelected(id);
+                setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
+              }}
+              onGoToRun={() => setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport }))}
+            />
           </div>
         ) : (
-          <div style={{ flex: 1, padding: SP.xl }}>
-            {push.signedIdle ? (
-              <RunNote notice={push.signedIdle} />
+          <div data-flow-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            {reportIsShown ? (
+              <Delivery push={push} />
+            ) : push.run || push.runNote ? (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                {/* The way back in rides signed-undelivered work itself, not the
+                    note from a refusal — the note dies with the window, and a
+                    refused run leaves a record whose page would otherwise show
+                    an empty graph with the only restart button unreachable. The
+                    notice — heading, sentence, and which ways back in ride with
+                    it — comes from the push; this page never words it again. */}
+                {push.signedIdle ? <RunNote notice={push.signedIdle} /> : null}
+                {push.run ? (
+                  <RunSection
+                    run={push.run}
+                    live={!!push.running}
+                    world={flowWorld}
+                    openLog={push.runLog?.step}
+                  />
+                ) : null}
+              </div>
             ) : (
-              <span style={{ opacity: O.dim }}>
-                Nothing has been orchestrated yet — press Build on the work page and the workers
-                appear here as they run.
-              </span>
+              <div style={{ flex: 1, padding: SP.xl }}>
+                {push.signedIdle ? (
+                  <RunNote notice={push.signedIdle} />
+                ) : (
+                  <span style={{ opacity: O.dim }}>
+                    Nothing has been orchestrated yet — press Build on the work page and the workers
+                    appear here as they run.
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}

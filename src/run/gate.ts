@@ -27,7 +27,7 @@ import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
-import { criterionVerdicts } from "../gates/render";
+import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
@@ -537,6 +537,18 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     ...(observations.length ? { observations } : {}),
   }).filter((c) => c.verdict === "not checked");
   undelivered.push(...ungraded.map((c) => `${c.promise} — not checked: ${c.text}`));
+
+  // A promise whose sentence names a human gesture, but whose door the
+  // machine could not prove renders in the surface this build shipped, is
+  // never silently dropped from its "see it" line: it is named here as
+  // undelivered, in the same words the page's own render would give it.
+  const cutMembers = cut.changeIds
+    .map((id) => space.nodes.find((n) => n.id === id))
+    .filter((n): n is (typeof space.nodes)[number] => !!n);
+  const surfaceText = await fs
+    .readFile(path.join(worktree, "media", "map", "index.html"), "utf8")
+    .catch(() => "");
+  undelivered.push(...unprovenDoorPromises(cutMembers, surfaceText));
 
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
