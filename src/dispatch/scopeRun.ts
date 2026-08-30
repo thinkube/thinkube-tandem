@@ -82,6 +82,11 @@ export async function dispatchScopePlan(args: {
       {
         repoRoot: target.gitRoot,
         projectId: deps.scope?.projectId,
+        // Asked for from nothing: the door discards the branch an earlier
+        // run left, so every unit is proved again on today's base. These
+        // deps are assembled field by field, so a field nobody copies here
+        // never reaches the door however faithfully it was set upstream.
+        ...(deps.freshStart ? { freshStart: true } : {}),
         model: deps.round.model,
         workerModel: deps.workerModel,
         concurrency: deps.maxConcurrent,
