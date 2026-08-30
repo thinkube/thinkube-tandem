@@ -577,12 +577,14 @@ export function seedUnitViews(
  * What this plan asks for is on disk, or the slice runs again.
  */
 export async function standingSlices(
-  committed: readonly string[],
+  committed: readonly { slice: string; runId?: string }[],
   dag: readonly { slice: string; footprint: string[] }[],
   worktree: string,
   log: (line: string) => void,
 ): Promise<Set<string>> {
-  const standing = new Set(committed.filter((sl) => dag.some((u) => u.slice === sl)));
+  const standing = new Set(
+    committed.filter((c) => dag.some((u) => u.slice === c.slice)).map((c) => c.slice),
+  );
   for (const sl of [...standing]) {
     const owes = await missingProbes(worktree, dag.filter((u) => u.slice === sl).flatMap((u) => u.footprint));
     if (!owes.length) continue;
@@ -590,4 +592,16 @@ export async function standingSlices(
     log(`${sl} was committed by an earlier run, but this plan asks for ${owes.length} check(s) it never wrote — it runs again`);
   }
   return standing;
+}
+
+/**
+ * The line a unit's own log carries when it passes because an earlier run
+ * already did the work: naming that earlier run when the slice commit that
+ * made it standing carried one, and saying plainly that no such run is on
+ * the record when it did not — never inventing a run id to fill the gap.
+ */
+export function standingPassLine(unitId: string, slice: string, ranIn?: string): string {
+  if (ranIn)
+    return `✓ ${unitId}: ${slice} was standing from an earlier run — it passed in ${ranIn}, not in this run.`;
+  return `✓ ${unitId}: ${slice} was standing from an earlier run, but that earlier run is not on the record — its commit named no run.`;
 }

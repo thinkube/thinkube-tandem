@@ -15,6 +15,7 @@ import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
 import { sliceCheckTally, unpassedWorkers } from "../../../src/surfaces/auditCard";
 import { stateFace } from "../../../src/surfaces/runCardFace";
+import { proofOfPass } from "../../../src/surfaces/surfaceContract";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -28,7 +29,7 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function chipFor(u: RunUnits[number], now: number): Chip {
+function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
   const elapsed =
     u.startedAt && (u.state === "running" || u.state === "parked")
       ? ` · ${formatElapsed(now - u.startedAt)}`
@@ -41,8 +42,10 @@ function chipFor(u: RunUnits[number], now: number): Chip {
         : { text: `running${elapsed}`, kind: "run" };
     case "parked":
       return { text: `needs you${elapsed}`, kind: "q" };
-    case "done":
-      return { text: "passed", kind: "pass" };
+    case "done": {
+      const proof = proofOfPass(logLines);
+      return { text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why };
+    }
     case "failed":
       return { text: "failed", kind: "na" };
     case "blocked":
@@ -59,9 +62,7 @@ function chipFor(u: RunUnits[number], now: number): Chip {
 /** The step's own log, advertised on its card — a door, not a secret. */
 function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
   const n = run.logCounts?.[id] ?? 0;
-  return n
-    ? { text: `${n} log lines`, kind: "plain", why: "Click this card to read this step's own log in the panel." }
-    : { text: "no log yet", kind: "plain", why: "This step has not written anything yet." };
+  return { text: `${n} log line${n === 1 ? "" : "s"}`, kind: "plain", why: "Click this card to read this step's own log in the panel." };
 }
 
 export function RunNote(props: {
@@ -158,7 +159,7 @@ export function RunSection(props: {
           title: u.promiseLabel?.label ?? fallback,
           titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : fallbackFull,
           abs: u.id,
-          chips: [chipFor(u, now), logChip(u.id, run)],
+          chips: [chipFor(u, now, run.logCounts?.[u.id] ?? 0), logChip(u.id, run)],
           face: stateFace(u.state),
         };
       }),
@@ -208,7 +209,9 @@ export function RunSection(props: {
               abs: "every check, on the real state",
               chips: [
                 allDone
-                  ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
+                  ? ((proof) => ({ text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why }) as Chip)(
+                      proofOfPass(run.logCounts?.["gate"] ?? 0),
+                    )
                   : anyFailed
                     ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
                     : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),

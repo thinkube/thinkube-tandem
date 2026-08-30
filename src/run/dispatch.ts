@@ -36,7 +36,7 @@ import { runnerFor } from "./proved";
 import { briefWithInherited, briefWithNames } from "./contractNames";
 import { putBackDeliveredChecks, recordedCheckHomes, recordedCheckPaths } from "./recordedChecks";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingPassLine, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -206,11 +206,13 @@ export async function dispatchTep(
   const pending = new Set(dag.map((u) => u.id));
 
   const standing = await standingSlices(refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`));
+  const standingRunOf = new Map(refreshed.committedSlices.map((c) => [c.slice, c.runId] as const));
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);
       pending.delete(u.id);
       st.set(u.id, "done");
+      log(standingPassLine(u.id, u.slice, standingRunOf.get(u.slice)), u.id);
     }
 
   const briefBySlice = new Map<string, string>();
@@ -259,7 +261,7 @@ export async function dispatchTep(
 
   let testInflight = 0;
   const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
-    tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
+    tep, runId, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
     ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}) });
 
   const closeUnit = unitCloser({

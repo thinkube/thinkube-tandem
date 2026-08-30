@@ -401,3 +401,24 @@ export function refusalIfRefused(action: string): string | undefined {
   if (can(action)) return undefined;
   return refusalSentence(action, phaseNow);
 }
+
+/**
+ * Whether a "passed" verdict is backed by a log a person can read, and the
+ * sentence that says so either way. A step can be marked done because an
+ * earlier run already proved it — the log for that proof may or may not
+ * still be on this run's record — so the surface never draws a bare
+ * "passed" that implies evidence nobody can actually open.
+ */
+export function proofOfPass(logLines: number): { text: string; proven: boolean; why: string } {
+  if (logLines > 0)
+    return {
+      text: `passed — ${logLines} log line${logLines === 1 ? "" : "s"}`,
+      proven: true,
+      why: "Click this card to read the log lines that prove it passed.",
+    };
+  return {
+    text: "passed — no log of the proof is kept",
+    proven: false,
+    why: "This step is marked passed, but no log of the proof survives to read.",
+  };
+}

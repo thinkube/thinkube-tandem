@@ -13,6 +13,10 @@ const WAIT_FOR_COMMIT_MS = 10 * 60 * 1000;
 
 export function makeCommitBook(a: {
   tep: string;
+  /** This run's own id, ridden as a `Tandem-Run:` trailer on every slice
+   *  commit — so a later run's resume can name, in its own log, which run
+   *  made a standing slice's work standing. */
+  runId: string;
   branch: string;
   worktree: string;
   testerWt: string;
@@ -85,7 +89,15 @@ export function makeCommitBook(a: {
       fs.existsSync(path.join(a.worktree, rel)),
     );
     if (paths.length) await a.exec("git", ["add", "--", ...paths], a.worktree);
-    const c = await a.exec("git", ["commit", "-m", `tandem: ${a.tep} ${slice}`], a.worktree);
+    // Subject and trailer ride as ONE combined message: a later run's
+    // `committedSlicesOf` reads the run id from this commit's own body, and
+    // git only keeps a body when it arrives in the same `-m` string as the
+    // subject it belongs to.
+    const c = await a.exec(
+      "git",
+      ["commit", "-m", `tandem: ${a.tep} ${slice}\n\nTandem-Run: ${a.runId}`],
+      a.worktree,
+    );
     if (c.code === 0) a.log(`✓ ${slice}: committed on ${a.branch}`);
     else a.log(`⚠ ${slice}: nothing to commit — ${c.out.trim().split("\n").pop() ?? ""}`);
   };

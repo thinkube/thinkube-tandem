@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn } from "./type";
+import { proofOfPass } from "../../../src/surfaces/surfaceContract";
 
 const btn: React.CSSProperties = {
   fontWeight: 600,
@@ -95,7 +96,7 @@ function StepLog(props: {
           overflowY: "auto",
         }}
       >
-        {log.lines.join("\n") || "(nothing yet)"}
+        {log.lines.join("\n") || proofOfPass(0).text}
       </pre>
       <div style={{ display: "flex", gap: SP.sm, alignItems: "center", fontSize: FS.caption }}>
         {following ? (
