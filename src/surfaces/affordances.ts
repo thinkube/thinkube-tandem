@@ -28,7 +28,16 @@ export type AffordanceEntry =
  * because the delivery report is drawn inside the flow page rather than
  * being a fifth tab.
  */
-export const PAGES: Record<string, { label: string; handle: string }> = {
+export const PAGES: Record<
+  string,
+  {
+    label: string;
+    handle: string;
+    /** Drawn outside the page wrappers, on every tab. A door here is proved
+     *  by its own control alone: there is no page that must render first. */
+    standing?: boolean;
+  }
+> = {
   write: { label: "the write page", handle: "data-write-page" },
   intent: { label: "the intent page", handle: "data-intent-page" },
   work: { label: "the work page", handle: "data-work-page" },
@@ -37,6 +46,16 @@ export const PAGES: Record<string, { label: string; handle: string }> = {
   // inside the flow page once a run has produced one. Named here so a
   // door can point at it without being mistaken for a fifth tab.
   "delivery-report": { label: "the delivery report", handle: "data-delivery-report" },
+  // Not one of SURFACE_PAGES's four tabs either, and not nested inside one:
+  // staged implications are drawn above the page wrappers and stand on
+  // every tab, because a decision in force is not the business of one page.
+  // `standing` records that — a door here is reachable whichever tab the
+  // reader is on, so its control needs no page to have rendered first.
+  implications: {
+    label: "the staged implications list",
+    handle: "data-implications",
+    standing: true,
+  },
 };
 
 export const AFFORDANCES: Record<string, AffordanceEntry> = {
@@ -158,21 +177,21 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   "accept-impact": {
     kind: "human",
     affordance: {
-      page: "write",
+      page: "implications",
       gesture: "press Apply on the implication you want in force",
     },
   },
   "dismiss-impact": {
     kind: "human",
     affordance: {
-      page: "write",
+      page: "implications",
       gesture: "press Set aside on the implication you do not want applied",
     },
   },
   "apply-all-impacts": {
     kind: "human",
     affordance: {
-      page: "write",
+      page: "implications",
       gesture: "press Apply all, shown once two or more implications are staged",
     },
   },

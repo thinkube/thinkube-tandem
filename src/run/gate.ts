@@ -48,14 +48,35 @@ const RED_SUITE_REFUSAL =
   "rather than handed over red; the branch keeps the work and the run record keeps the " +
   "suite's verdict (if the repository was already red before, it must be green first)";
 
+/** The step the closing gate files its OWN lines under — the same name its
+ *  card carries, so a click on that card opens the gate's own account. Its
+ *  sub-steps ("gate#closer", "gate#finisher") are spelled from it, so the
+ *  parent and its children can never drift apart. */
+export const GATE_STEP = "gate";
+
+/**
+ * How the closing gate files a line of its own.
+ *
+ * The gate's own lines — its opening line and the reason it withholds or
+ * keeps a delivery — file under {@link GATE_STEP}, the same name its card
+ * carries: the surface asks for "gate" and expects to read what the gate
+ * itself said, not an empty panel next to "gate#closer" and "gate#finisher"
+ * where the actual account lives.
+ *
+ * It is a named seam and not a bare closure inside `closeGate` because the
+ * promise it keeps — that every line under "gate" and its sub-steps reaches
+ * the run-wide log the bottom panel renders — is otherwise provable only by
+ * running the whole gate. A check can drive this directly, so a `say` that
+ * filed a line nowhere is caught instead of passing as readily as the real
+ * thing.
+ */
+export function sayAt(log: (line: string, step?: string) => void): (line: string) => void {
+  return (line: string): void => log(line, GATE_STEP);
+}
+
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
-  // The gate's OWN lines — its opening line and the reason it withholds or
-  // keeps a delivery — file under the step "gate", the same name its card
-  // carries: the surface asks for "gate" and expects to read what the gate
-  // itself said, not an empty panel next to "gate#closer" and
-  // "gate#finisher" where the actual account lives.
-  const say = (line: string): void => log(line, "gate");
+  const say = sayAt(log);
   // `dispatchTep` always supplies both from its own single clock read; a
   // caller that predates the field falls back here rather than failing —
   // this gate must still stamp SOME identity on what it hands back.
@@ -316,11 +337,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         exec,
         boundedExec: g.suiteExec,
         halted: () => g.state.halted,
-        abortable: (ab) => g.state.aborts.set("gate#closer", ab),
-        log: (l) => log(l, "gate#closer"),
-        say: (t) => g.state.doing("gate#closer", t),
+        abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
+        log: (l) => log(l, `${GATE_STEP}#closer`),
+        say: (t) => g.state.doing(`${GATE_STEP}#closer`, t),
         onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
-        defect: (e) => defect({ unit: "gate#closer", ...e }),
+        defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
@@ -424,8 +445,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
-    halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
-    abortable: (ab) => g.state.aborts.set("gate#closer", ab),
+    halted: () => g.state.halted, doing: (t) => g.state.doing(`${GATE_STEP}#closer`, t), rulings: g.rulings,
+    abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
     ...(g.restored?.length ? { restored: g.restored } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
   });

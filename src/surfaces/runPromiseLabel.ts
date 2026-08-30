@@ -3,8 +3,11 @@
  * space's own words — not the unit id, which names nothing a person asked
  * for.
  *
- * Reached from src/surfaces/push.ts, which the extension's own entry point
- * loads, and from webview/map/src/Run.tsx.
+ * Reached from src/surfaces/push.ts, which src/extension.ts loads, and from
+ * webview/map/src/Run.tsx, which the webview's own entry point reaches.
+ * src/extension.ts is a product entry point: it is the extension's own
+ * `main` in package.json, so the reachability gate resolves it without
+ * knip.json naming it again.
  */
 import { Change, Unit } from "../core/schema";
 

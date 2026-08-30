@@ -4,6 +4,11 @@
  * whether the space has gone quiet. Plain functions only — no editor object
  * crosses this file; the host (extension.ts) is the only caller that knows
  * about vscode.
+ *
+ * Reached from src/extension.ts, which is a product entry point: it is the
+ * extension's own `main` in package.json, so the reachability gate resolves
+ * it without knip.json naming it again — listing it there a second time is
+ * the redundancy knip itself reports.
  */
 
 /** A space goes quiet after this long without a recorded change. */

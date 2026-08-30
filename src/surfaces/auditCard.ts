@@ -7,7 +7,7 @@
  * entry point reaches.
  */
 
-export interface RunUnitLike {
+interface RunUnitLike {
   id: string;
   slice: string;
   role: "code" | "test" | "maintain";

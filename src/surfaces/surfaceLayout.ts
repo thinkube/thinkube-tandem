@@ -16,7 +16,7 @@ export const SURFACE_PAGES: readonly SurfacePage[] = ["write", "intent", "work",
 /** A drawn band of the surface, top to bottom. "rail" is the one place a
  *  parked worker's question is answered — naming it here means a page
  *  drawn from this list can never leave it out. */
-export type SurfaceRegion =
+type SurfaceRegion =
   | "asking-in"
   | "tabs"
   | "legacy"

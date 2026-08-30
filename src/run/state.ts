@@ -7,6 +7,7 @@
  * a failed step is diagnosed where it failed instead of from one shared ring
  * that has already dropped the line that mattered.
  */
+import * as path from "node:path";
 import type { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import type { DispatchDeps } from "./deps";
@@ -196,6 +197,14 @@ export class RunState {
    *  flight, which is exactly when it is needed. */
   sink?: (line: string, step: string) => void;
 
+  /**
+   * Every line goes two places, always: the run-wide log the bottom panel
+   * renders, AND the step it belongs to. Filing a line under a step is
+   * never a way of taking it out of the run's own account — a line written
+   * under "gate", or under a sub-step like "gate#closer", is still one of
+   * the run's lines, and a reader watching the whole run must see it
+   * without knowing which step wrote it.
+   */
   log(line: string, step = "run"): void {
     this.sink?.(line, step);
     this.logs.push(line);
@@ -281,6 +290,49 @@ export class RunState {
       ...(this._runId ? { runId: this._runId } : {}),
     };
   }
+}
+
+/**
+ * What one run is called and where it works: the id heading its rows in the
+ * log, the produced-at stamp its delivery carries, its branch, and the
+ * worktree it runs in.
+ *
+ * One reading of the clock mints both facts. Two separate reads could
+ * straddle a tick and name two moments as if they were one — the run's log
+ * would then head its rows with an id its own delivery does not carry.
+ *
+ * Kept beside {@link RunState} rather than in `dispatch.ts`, which the run
+ * loop itself already fills to the repository's module-size limit.
+ */
+export function runNaming(a: {
+  tep: string;
+  repoRoot: string;
+  projectId?: string;
+  nowMs: number;
+}): {
+  runId: string;
+  producedAt: string;
+  runName: string;
+  branch: string;
+  wtRoot: string;
+  wtName: string;
+  worktree: string;
+} {
+  const producedAt = new Date(a.nowMs).toISOString();
+  // One run's rows, apart from the next run of this cut.
+  const runId = `${a.tep}@${a.nowMs.toString(36)}`;
+  const runName = a.projectId ? `${a.projectId}/${a.tep}` : a.tep;
+  const wtRoot = path.join(path.dirname(a.repoRoot), `${path.basename(a.repoRoot)}-worktrees`);
+  const wtName = runName.replace(/\//g, "__");
+  return {
+    runId,
+    producedAt,
+    runName,
+    branch: `tandem/${runName}`,
+    wtRoot,
+    wtName,
+    worktree: path.join(wtRoot, wtName),
+  };
 }
 
 /**

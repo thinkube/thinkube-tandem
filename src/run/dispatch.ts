@@ -12,7 +12,6 @@
  * slice is committed on the branch. Every failure lands as an artifact —
  * UNDELIVERED, containment, red proofs — never as silence.
  */
-import * as path from "node:path";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -58,7 +57,7 @@ import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, isTestPath, missingProbes, repoTestFiles, testerTurns, testHomesOf, testHomesStanza, testHomeWorkOf } from "./testHomes";
 
-import type { DispatchOutcome } from "./state";
+import { runNaming, type DispatchOutcome } from "./state";
 export type { DispatchOutcome } from "./state";
 export async function dispatchTep(
   deps: DispatchDeps,
@@ -70,20 +69,14 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  // One reading of the run's clock mints both facts: the id heading this
-  // run's rows in the log, and the produced-at stamp its delivery carries.
-  // Two separate reads could straddle a clock tick and name two moments as
-  // if they were one.
   const now = deps.now ?? Date.now;
-  const producedAtMs = now();
-  const producedAt = new Date(producedAtMs).toISOString();
-  const runId = `${tep}@${producedAtMs.toString(36)}`; // one run's rows, apart from the next run of this cut
+  const { runId, producedAt, runName, branch, wtRoot, wtName, worktree } = runNaming({
+    tep,
+    repoRoot: deps.repoRoot,
+    ...(deps.projectId ? { projectId: deps.projectId } : {}),
+    nowMs: now(),
+  });
   st.setRunId(runId);
-  const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
-  const branch = `tandem/${runName}`;
-  const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
-  const wtName = runName.replace(/\//g, "__");
-  const worktree = path.join(wtRoot, wtName);
   // One tree per repository. The tester writes its checks beside the code,
   // and the coder is kept off them by permission — the guard refuses a
   // blinded coder any test-shaped path (src/run/worker.ts). A second tree
