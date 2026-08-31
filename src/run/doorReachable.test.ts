@@ -34,16 +34,25 @@ const dispatch = from("dispatch.ts");
 
 test("every worker the run starts is handed the clearance door", () => {
   // A worker is started by calling `worker(...)`; each call is one actor
-  // whose writes the guard will judge.
+  // whose writes the guard will judge. Counting doors across the file is
+  // the wrong instrument — the gate hands one to its repairing authors too,
+  // which is not a worker call site. Each site is checked for its own.
   const starts = [...dispatch.matchAll(/\bworker\(\s*\n?\s*\{/g)];
   assert.ok(starts.length >= 2, `expected the run's worker call sites, found ${starts.length}`);
 
-  const doors = [...dispatch.matchAll(/clearFor:/g)];
-  assert.equal(
-    doors.length,
-    starts.length,
-    `${starts.length} worker call site(s) but ${doors.length} with a door — a worker without one ` +
-      `cannot be granted anything, and its second uncleared write kills it`,
+  const without = starts
+    .map((m, i) => {
+      const from = m.index ?? 0;
+      const to = i + 1 < starts.length ? (starts[i + 1].index ?? dispatch.length) : dispatch.length;
+      return { line: dispatch.slice(0, from).split("\n").length, args: dispatch.slice(from, to) };
+    })
+    .filter((site) => !/clearFor:/.test(site.args))
+    .map((site) => `dispatch.ts:${site.line}`);
+
+  assert.deepEqual(
+    without,
+    [],
+    "a worker started without the door cannot be granted anything, and its second uncleared write kills it",
   );
 });
 

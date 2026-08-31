@@ -50,6 +50,8 @@ export async function repairUnkept(a: {
   /** Work a fenced unit wrote that the guard took back, with its change.
    *  The closer is fenced by nothing and reaches the same files. */
   restored?: readonly { path: string; patch: string }[];
+  /** The run's door, for the authors repairing their own work at the gate. */
+  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   baseSha: string;
   halted: () => boolean;
@@ -114,6 +116,7 @@ export async function repairUnkept(a: {
         changedSince,
         worktree,
         model: deps.model,
+        ...(a.clearFor ? { clearFor: a.clearFor } : {}),
         worker: a.worker,
         log: (line) => log(line),
         defect,

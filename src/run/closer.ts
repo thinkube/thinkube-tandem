@@ -211,6 +211,7 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
   let stale = 0;
   let round = 0;
   let outcome: WorkerOutcome = { ok: false, finalText: "" };
+  let session: string | undefined;
   let state = before;
   while (!a.halted() && stale < NO_PROGRESS_LIMIT) {
     round++;
@@ -229,6 +230,13 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
         footprint,
         maxTurns: CLOSER_TURNS,
         baseline: new Set(await porcelainPaths(a.worktree)),
+        // Its own session, round after round. Every round used to start
+        // cold — "I'll start by getting oriented in the worktree" — and
+        // spend twenty minutes rebuilding a picture the previous round
+        // already had, then rediscover the same findings. The fenced
+        // author repair has resumed its session all along; the actor with
+        // the hardest residue was the only one made to forget.
+        ...(session ? { resume: session } : {}),
         abort,
         onPark: (_q, answer) =>
           answer("You are the last actor: decide it yourself from the criteria and the evidence. The run does not ask a person."),
@@ -267,6 +275,7 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
       a.onRuling({ criterionId: crit?.id ?? "closer", unit: a.subject, granted: true, reason: `the closer corrected a check: ${r.slice(0, 4000)}` });
       a.log(`⚖ ${a.subject}: the closer corrected a check — ${r.slice(0, 160)}`);
     }
+    session = outcome.sessionId ?? session;
     if (state.green) break;
     if (state.score < best) {
       best = state.score;

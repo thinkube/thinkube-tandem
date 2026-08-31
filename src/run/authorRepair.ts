@@ -83,6 +83,10 @@ export async function repairByAuthors(a: {
   changedSince: readonly string[];
   worktree: string;
   model: string;
+  /** The run's door. At the gate nothing else is running, so a path nobody
+   *  owns is granted at once — and the author, who already knows the fix,
+   *  makes it instead of handing the residue to the closer. */
+  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
   worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
   log: (line: string) => void;
   defect: (e: {
@@ -112,6 +116,11 @@ export async function repairByAuthors(a: {
         blind: true,
         footprint: red.footprint,
         baseline: new Set<string>(),
+        // The door, at the gate. Nothing else is running here, so the fence
+        // guards against nobody — yet three of seven hand-backs came back
+        // saying the fix was one line in a file outside the cleared list,
+        // and the residue went to the most expensive actor instead.
+        ...(a.clearFor ? { clearFor: a.clearFor } : {}),
         abort: new AbortController(),
         onPark: (_q, answer) => answer("continue with what you have"),
         log: (line) => a.log(line),
