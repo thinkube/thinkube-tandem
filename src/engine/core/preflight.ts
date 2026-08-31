@@ -10,73 +10,6 @@ import { WorkUnit } from "./base";
 // provision BEFORE any worker dispatches; the shell's instruments half (dispatcher smoke,
 // harness smoke, store writability) is I/O and lives in `OrchestratorService.defaultPreflight`.
 
-/** One about-to-dispatch unit as the provisions check sees it. */
-export interface PreflightUnit {
-  id: string;
-  slice: string;
-  /** The unit's task note (concatenated from its work units). */
-  note?: string;
-  footprint: string[];
-  /** True when the slice authored `work_units` (a legacy files-only slice has no
-   *  authored note to starve, so the note check does not apply to it). */
-  hasAuthoredUnits: boolean;
-  /** True when the slice declares MORE THAN ONE work unit — those units coordinate
-   *  through the slice contract, so a missing contract starves them all. */
-  multiUnitSlice: boolean;
-  /** The slice's declared contract (NOT the spec-wide union — the check is per slice). */
-  sliceContract?: string;
-}
-
-/**
- * The provisions half of the RUN PREFLIGHT: verify every about-to-dispatch unit's prompt
- * inputs resolve NON-EMPTY — the parent TEP body (via the spec's `implements`), the spec
- * body, the slice contract for multi-unit slices, the unit note, and a non-empty footprint.
- * Returns one human-readable failure line per missing piece (empty = provisioned). Pure.
- */
-export function preflightProvisionFailures(input: {
-  specBody: string;
-  tepBody: string;
-  /** The spec frontmatter's `implements` value, for the failure message. */
-  implementsRef?: unknown;
-  units: PreflightUnit[];
-}): string[] {
-  const failures: string[] = [];
-  if (!input.specBody.trim())
-    failures.push(
-      "spec body is empty — the spec doc could not be read (or has no content); every worker prompt embeds it.",
-    );
-  if (!input.tepBody.trim())
-    failures.push(
-      `parent TEP body unresolvable (spec frontmatter implements: ${
-        typeof input.implementsRef === "string" && input.implementsRef.trim()
-          ? JSON.stringify(input.implementsRef)
-          : "unset"
-      }) — worker prompts thread the TEP as the north star; fix the spec's \`implements\` or the TEP file.`,
-    );
-  const contractFlagged = new Set<string>();
-  for (const u of input.units) {
-    if (!(u.footprint ?? []).filter((f) => f.trim()).length)
-      failures.push(
-        `${u.id} (${u.slice}): nothing cleared — the unit has nowhere to write.`,
-      );
-    if (u.hasAuthoredUnits && !(u.note ?? "").trim())
-      failures.push(
-        `${u.id} (${u.slice}): unit note is empty — the worker would dispatch with no task text.`,
-      );
-    if (
-      u.multiUnitSlice &&
-      !(u.sliceContract ?? "").trim() &&
-      !contractFlagged.has(u.slice)
-    ) {
-      contractFlagged.add(u.slice);
-      failures.push(
-        `${u.slice}: multi-unit slice has no \`contract\` — its units would each invent the shared interface.`,
-      );
-    }
-  }
-  return failures;
-}
-
 export function buildWorkerPrompt(
   unit: SchedUnit,
   specNumber: string,
@@ -335,7 +268,7 @@ export function buildWorkerPrompt(
 }
 
 /** The marker a blocked worker prepends to its question so the orchestrator can park it (SL-3). */
-export const NEEDS_INPUT_SENTINEL = "⟦NEEDS-INPUT⟧";
+const NEEDS_INPUT_SENTINEL = "⟦NEEDS-INPUT⟧";
 
 /**
  * Pull a worker's escalated question out of its output (SL-3): the text after the
@@ -348,55 +281,3 @@ export function extractNeedsInput(text: string): string | null {
     text.slice(i + NEEDS_INPUT_SENTINEL.length).trim() || "(no question text)"
   );
 }
-
-/** The session id carried on a stream-json / SDK event, for resume-on-answer (SL-3/SL-5). */
-export function sessionIdOf(evt: Record<string, unknown>): string | undefined {
-  const s = evt.session_id;
-  return typeof s === "string" && s ? s : undefined;
-}
-
-/**
- * Extract a failure diagnosis from a delivery report OR a slice body (SP-11/3, extending
- * AC4). Matches the delivery report's plain-language `## What happened` prose FIRST; if that heading
- * is absent (or empty), falls back to the slice body's `## ⚑ Requires attention` heading — so the
- * existing `/attend` slice-diagnosis caller keeps working unchanged. Returns undefined when neither is
- * present. The attended-session divergence is `extractDiagnosis(report)`, passed verbatim.
- */
-export function extractDiagnosis(body: string): string | undefined {
-  const text = body ?? "";
-  // Consume ONLY the heading's own line-break (not the blank separator) so an EMPTY What-happened
-  // section captures "" and correctly falls through to the ⚑ heading below.
-  const wh = /##\s*What happened[ \t]*\r?\n([\s\S]*?)(?:\r?\n##\s|$)/.exec(
-    text,
-  );
-  if (wh?.[1]?.trim()) return wh[1].trim();
-  const m = /##\s*⚑\s*Requires attention\s*\n+([\s\S]*?)(?:\n##\s|$)/.exec(
-    text,
-  );
-  return m?.[1]?.trim() || undefined;
-}
-
-/**
- * Extract a worker's out-of-scope findings (SP-11/3) — the list items / paragraphs under a **trailing**
- * `## Discoveries` heading of its final output — with list markers stripped and each line trimmed.
- * `"## Discoveries\n- a\n- b"` → `["a","b"]`; the heading absent ⇒ `[]`. The convention is declared
- * (the discovery channel): the orchestrator pairs each returned item with its unit id and feeds them —
- * verbatim, no model-side summarizing — into the report's `## Discoveries & recommendations`. Pure.
- */
-export function extractDiscoveries(finalOutput: string): string[] {
-  const text = finalOutput ?? "";
-  // The TRAILING `## Discoveries` heading — take the last one if a body repeats it.
-  const re = /^##\s+Discoveries\s*$/gim;
-  let start = -1;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) start = m.index + m[0].length;
-  if (start === -1) return [];
-  const items: string[] = [];
-  for (const line of text.slice(start).split(/\r?\n/)) {
-    if (/^\s*#{1,6}\s+/.test(line)) break; // the next heading ends the section
-    const stripped = line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim();
-    if (stripped) items.push(stripped);
-  }
-  return items;
-}
-

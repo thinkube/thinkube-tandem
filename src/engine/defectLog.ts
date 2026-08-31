@@ -85,7 +85,7 @@ export function defectLogPath(thinkubeDir: string, when: Date): string {
  * and never throws: capture must never cost the run that is doing the finding.
  */
 /** The running extension's version, read once from its own manifest. */
-export function toolVersion(): string {
+function toolVersion(): string {
   if (cachedVersion) return cachedVersion;
   for (const up of [2, 3, 1]) {
     try {

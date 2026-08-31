@@ -32,24 +32,6 @@ export interface DefectRow {
 
 // ── Canonical trigger ranking ─────────────────────────────────────────────────
 
-/**
- * Canonical catch-point ranking, earliest (cheapest) first.
- *
- * Exported so that capture-side code and future consumers (TEP-23) import
- * this single source rather than re-declaring the order independently.
- */
-export const TRIGGER_ORDER: readonly string[] = [
-  "authoring-time audit",
-  "preflight",
-  "fence denial / containment",
-  "build gate (prepare)",
-  "gate-verifier failure",
-  "judge contradiction",
-  "worker flag (⚑)",
-  "human challenge",
-  "post-hoc diagnosis",
-];
-
 // ── Parse ────────────────────────────────────────────────────────────────────
 
 /**
@@ -84,69 +66,3 @@ export function parseDefectLog(text: string): {
 }
 
 // ── Aggregations ─────────────────────────────────────────────────────────────
-
-/**
- * Group defect counts by month (`YYYY-MM` from `ts`) and by type.
- *
- * Rows whose `type` field is absent are omitted from this dimension —
- * type is filled at fix-time (ODC closer) and may be missing on find-time rows.
- */
-export function typeByMonth(
-  rows: DefectRow[],
-): Map<string /* YYYY-MM */, Map<string /* type */, number>> {
-  const result = new Map<string, Map<string, number>>();
-  for (const row of rows) {
-    const type = row.type;
-    if (!type) continue;
-    const month = row.ts ? row.ts.slice(0, 7) : "unknown";
-    let byType = result.get(month);
-    if (!byType) {
-      byType = new Map<string, number>();
-      result.set(month, byType);
-    }
-    byType.set(type, (byType.get(type) ?? 0) + 1);
-  }
-  return result;
-}
-
-/**
- * Counts by trigger, ordered by {@link TRIGGER_ORDER} (known triggers first,
- * in catch-point order); unknown triggers follow, sorted alphabetically.
- */
-export function catchPointCurve(
-  rows: DefectRow[],
-): Array<{ trigger: string; count: number }> {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const t = row.trigger;
-    counts.set(t, (counts.get(t) ?? 0) + 1);
-  }
-
-  const known: Array<{ trigger: string; count: number }> = [];
-  for (const t of TRIGGER_ORDER) {
-    const c = counts.get(t);
-    if (c !== undefined) known.push({ trigger: t, count: c });
-  }
-
-  const unknownTriggers = [...counts.keys()]
-    .filter((t) => !TRIGGER_ORDER.includes(t))
-    .sort();
-  const unknown = unknownTriggers.map((t) => ({
-    trigger: t,
-    count: counts.get(t)!,
-  }));
-
-  return [...known, ...unknown];
-}
-
-/**
- * All rows whose `impact` equals `"integrity"`, sorted newest-first by `ts`.
- *
- * The integrity class — a false green — is the worst defect class and must
- * never be quiet: callers should surface this list loudly when non-empty.
- */
-export function integrityList(rows: DefectRow[]): DefectRow[] {
-  return rows
-    .filter((r) => r.impact === "integrity")
-    .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
-}

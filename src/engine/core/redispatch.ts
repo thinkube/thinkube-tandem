@@ -1,5 +1,3 @@
-import { createHash } from "crypto";
-import * as path from "path";
 import { SchedUnit } from "./dag";
 // ── Bounded re-dispatch + escalation (SP-6/6 AC5) ──────────────────────────
 //
@@ -24,7 +22,7 @@ export const MAX_REWORK_ATTEMPTS = 2;
  * {@link hasEscalationMarker} and stamped by {@link markEscalated}; the test asserts via THIS constant
  * (never a hand-copied string) so the marker and its detector can never silently diverge.
  */
-export const ESCALATION_MARKER =
+const ESCALATION_MARKER =
   "⛔ ESCALATED — bounded rework attempts exhausted";
 
 /**
@@ -38,28 +36,8 @@ export const ESCALATION_MARKER =
  * because its cause and its remedy differ: this is a design defect the slicer re-cuts, and no rework
  * attempt is burned reaching it.
  */
-export const CONTRACT_DEFECT_MARKER =
+const CONTRACT_DEFECT_MARKER =
   "⛔ CONTRACT-DEFECT — the contract is incomplete";
-
-/**
- * Marker for a **gate-attributed** escalation (2026-07-11): the verification
- * PROBE itself cannot run (shell exit 126/127 or spawn error). The defect is
- * the gate's own machinery — the probe command, its environment — never the
- * slice, so no rework attempt is burned and no role is re-dispatched; the
- * remedy is re-authoring `ac_verifications` (auditor re-run), and only if that
- * still cannot produce a runnable probe does a human see this marker.
- */
-export const GATE_DEFECT_MARKER =
-  "⛔ GATE-DEFECT — the verification probe cannot run";
-
-/**
- * Marker for a **deterministic-failure** escalation (2026-07-11): the same AC
- * failed with (normalized-)identical evidence to the prior attempt. Re-running
- * unchanged inputs cannot converge, so remaining rework attempts are not
- * burned — the loop stops immediately and a human (or auto-attend) decides.
- */
-export const DETERMINISTIC_FAILURE_MARKER =
-  "⛔ DETERMINISTIC FAILURE — identical evidence to the prior attempt; retrying unchanged inputs cannot converge";
 
 /**
  * Has a slice **crossed its rework bound** (SP-6/6 AC5)? True once the recorded failed-attempt count
@@ -98,7 +76,7 @@ export type Fault = "code" | "test" | "both" | "contract" | "gate" | "intent";
  * **rationale** (why), so the routing decision is recordable in the verification trace. The same
  * independent-judgment shape as {@link AcAssessment} — a verdict WITH a rationale.
  */
-export interface FailureJudgment {
+interface FailureJudgment {
   fault: Fault;
   rationale: string;
 }
@@ -115,7 +93,7 @@ export interface FailureJudgment {
  * decides each hand's conformance against the contract itself (not by comparing the two hands), which
  * is what lets it return the `contract` fault when both conform yet still disagree on an undefined seam.
  */
-export type JudgeFailure = (
+type JudgeFailure = (
   unit: Pick<SchedUnit, "id" | "slice" | "role">,
   failure: string,
   contract?: string,
@@ -127,7 +105,7 @@ export type JudgeFailure = (
 ) => Promise<FailureJudgment>;
 
 /** One verdict from {@link reDispatchDecision}: whether to send a red slice back for rework or stop. */
-export interface ReDispatchVerdict {
+interface ReDispatchVerdict {
   /** `re-dispatch` → bump the counter and return the slice to the ready frontier; `escalate` → leave
    *  it `requires-attention` with the {@link ESCALATION_MARKER}, excluded from the frontier (AC5);
    *  `repair` (2026-07-12) → the plan is the defect: route to the plan-repair lane (amend the
@@ -147,25 +125,6 @@ export interface ReDispatchVerdict {
    *  failed with the same normalized evidence as the prior attempt, so re-dispatch was refused
    *  ("deterministic failure — inputs unchanged") without burning the remaining attempts. */
   deterministic?: boolean;
-}
-
-/**
- * Normalize failing-run evidence into a stable hash for the identical-failure
- * circuit breaker: volatile fragments (durations, timestamps, tmp paths, hex
- * addresses, pids) are stripped so two runs of the same deterministic failure
- * hash identically while any real change in the failure hashes differently.
- */
-export function normalizeEvidenceHash(evidence: string): string {
-  const normalized = (evidence ?? "")
-    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, "<ts>")
-    .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds?|m|min|minutes?)\b/gi, "<dur>")
-    .replace(/duration_ms:\s*[\d.]+/g, "duration_ms: <dur>")
-    .replace(/\/tmp\/[^\s'"]+/g, "<tmp>")
-    .replace(/0x[0-9a-fA-F]+/g, "<addr>")
-    .replace(/\bpid[= ]\d+/gi, "pid=<pid>")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-  return createHash("sha256").update(normalized).digest("hex");
 }
 
 /**
@@ -189,7 +148,7 @@ export function normalizeEvidenceHash(evidence: string): string {
  * "stop retrying after N"; the code-vs-test `fault` is the only model input and it is supplied by the
  * injectable {@link JudgeFailure}, never computed in this pure function.
  */
-export function reDispatchDecision(
+function reDispatchDecision(
   priorAttempts: number,
   bound: number = MAX_REWORK_ATTEMPTS,
   fault?: Fault,
@@ -320,7 +279,7 @@ export function unmetDocsObligation(
   return undefined;
 }
 
-export function hasEscalationMarker(body: string): boolean {
+function hasEscalationMarker(body: string): boolean {
   return (body ?? "").includes(ESCALATION_MARKER);
 }
 
@@ -330,50 +289,12 @@ export function hasEscalationMarker(body: string): boolean {
  * markers. The marker is appended on its own line (the durable, human-facing signal that the bounded
  * rework loop has been exhausted and a human decision is required). Pure.
  */
-export function markEscalated(body: string): string {
+function markEscalated(body: string): string {
   const text = body ?? "";
   if (hasEscalationMarker(text)) return text;
   return text.trim()
     ? `${text.replace(/\s+$/, "")}\n\n${ESCALATION_MARKER}`
     : ESCALATION_MARKER;
-}
-
-/**
- * Strip the `## Acceptance Criteria` block — the heading PLUS its body, up to the next heading of
- * the same or higher level — from a Spec/slice markdown body (SP-6 AC1, "hold out the exam"). The
- * worker builds to **intent** (summary / Design / its task) and never receives the gradeable
- * criteria it would otherwise be tempted to optimise to. Pure + idempotent: a body with no AC block
- * passes through unchanged. Heading + AC-title matching mirrors `checkAcOrdinals` so the exact
- * section the grader later ticks is the section withheld here.
- */
-export function stripAcceptanceCriteria(body: string): string {
-  const lines = (body ?? "").split(/\r?\n/);
-  const out: string[] = [];
-  let skipLevel: number | null = null; // the AC heading's level while we're dropping its block
-  for (const line of lines) {
-    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-    if (heading) {
-      const level = heading[1].length;
-      // Inside the AC block: a heading of the same/higher level ends it; a deeper sub-heading
-      // belongs to the block and is dropped too.
-      if (skipLevel !== null) {
-        if (level <= skipLevel) skipLevel = null;
-        else continue;
-      }
-      const text = heading[2].trim().toLowerCase();
-      if (
-        skipLevel === null &&
-        (text === "acceptance criteria" || text === "acceptance_criteria")
-      ) {
-        skipLevel = level;
-        continue;
-      }
-    } else if (skipLevel !== null) {
-      continue; // body line inside the AC block — drop it.
-    }
-    out.push(line);
-  }
-  return out.join("\n");
 }
 
 /**
@@ -407,100 +328,6 @@ export function stripSatisfies(body: string): string {
 }
 
 /**
- * Build the **autonomy-first prompt** for a worker dispatched on one execution unit
- *. Scoped to the unit's footprint + shape, it tells the worker to decide
- * autonomously (never seek confirmation), never touch git or the thinking space, and escalate
- * with a question ONLY when genuinely blocked — the posture that keeps headless
- * execution from stopping on routine approvals.
- *
- * **Full intention for BOTH roles (context tranche, 2026-07-14 — reversing SP-6 AC1's "exam held
- * out" for code units):** every worker now receives the parent TEP (the north star), the FULL spec
- * body INCLUDING the `## Acceptance Criteria` block, the Spec-wide contract, and every sibling
- * unit's note labeled by role. Zero rubric-gaming was ever observed while context-starvation
- * failures repeated, so blindness is now exactly TWO artifacts: the probe SOURCE is withheld from
- * code workers and the implementation SOURCE from test workers (the structural tester-worktree
- * isolation, unchanged). `satisfies` ordinals stay stripped for code units — grader bookkeeping,
- * not intent ({@link stripSatisfies}). Mostly pure (the doctrine preamble is loaded from an
- * editable template with a bundled fallback) → unit-tested.
- */
-/**
- * Tools DENIED to a worker by role (SP-6/7). Independence is STRUCTURAL — a `role: test` worker's
- * cwd is the Spec's TESTER worktree, a base-commit snapshot where the code workers' in-progress
- * modifications simply do not exist — so its Read/Glob are unrestricted (there is nothing to hide in
- * its tree; it needs the base code to write a well-integrated test). The tool denial is the
- * SECONDARY control (the maintainer's layering: inform → structure → fence):
- *   • **Bash** — the roam vector (`cd` into the code worktree / other repos / session transcripts):
- *     an arbitrary shell command is NOT lexically containable, so it stays denied;
- *   • **WebFetch / WebSearch / Task** — no need, and Task could spawn an unfenced sub-agent.
- * SP-6/16 Part B: **Grep** is no longer denied wholesale — a pathless/absolute-path search was its only
- * escape route, and that is now closed LEXICALLY by {@link grepWithinCwd} (scoping the search to the
- * worker's own cwd snapshot) rather than by removing the tool. In-tree search is fair use (the tester
- * only ever reads within its own snapshot), so `Grep` is restored as an available tool + cwd guard.
- * A `code` worker keeps unrestricted `Grep` (it already has `Bash`, so scoping its `Grep` buys nothing;
- * its footprint fence stops it authoring the `acceptance/` grader, and `codeReadFence` stops it reading
- * copied-in probes during rework). Pure → the caller passes the result as the SDK query's `disallowedTools`.
- */
-export function disallowedToolsForRole(role?: "code" | "test"): string[] {
-  return role === "test" ? ["Bash", "WebFetch", "WebSearch", "Task"] : [];
-}
-
-/**
- * SP-6/16 Part B — the PURE, lexical cwd-containment guard for a `role: test` worker's `Grep` (the
- * tool un-denied above). A tester's `cwd` is its base-commit snapshot worktree, a sibling of the code
- * worktree where the graded implementation lives; the original blanket deny existed only to stop a
- * pathless / absolute-path search reaching that sibling. This restores in-tree search while closing
- * exactly that escape: a `Grep` whose `path` argument resolves OUTSIDE `cwd` is DENIED; an
- * omitted path (searches cwd) or any path — relative or absolute — resolving within cwd is ALLOWED
- * (consistent with `Read`, so workers learn ONE path rule); a non-`Grep` tool is
- * always allowed (this guard governs `Grep` only). Purely lexical — `path.resolve`/`path.relative`
- * against `cwd`, the SAME rule as {@link sliceFilesResolveInRepo}; no `realpath`/`fs` (the low-likelihood
- * symlink-escape gap is accepted, out of scope). The caller applies this in the PreToolUse hook only
- * when `isTest`, returning the same `permissionDecision: "deny"` shape on `{ allow: false }`.
- */
-export function grepWithinCwd(
-  toolName: string,
-  toolInput: unknown,
-  cwd: string,
-): { allow: true } | { allow: false; reason: string } {
-  // This guard governs Grep only — any other tool is outside its remit.
-  if (toolName !== "Grep") return { allow: true };
-  const rawPath = (toolInput as { path?: unknown } | null | undefined)?.path;
-  // No `path` (or a blank one) → the Grep searches cwd itself → contained → allowed.
-  if (rawPath == null || (typeof rawPath === "string" && !rawPath.trim())) {
-    return { allow: true };
-  }
-  // A non-string path can't be reasoned about lexically — deny fail-safe.
-  if (typeof rawPath !== "string") {
-    return {
-      allow: false,
-      reason: `Grep path must be a string inside the working directory; got ${typeof rawPath}.`,
-    };
-  }
-  const root = path.resolve(cwd);
-  const target = rawPath.trim();
-  // Absolute paths that resolve INSIDE cwd are allowed (2026-07-15). The old blanket
-  // absolute-deny taught workers the wrong rule: Read accepts an absolute in-tree path,
-  // so every worker learned "absolute is fine" and then burned calls rediscovering that
-  // Grep disagreed — the same denial, in every worker, in every run (a fence defect, not
-  // a worker defect). Containment is the resolve-and-relative check below, which is the
-  // real escape guard; where the path is DECLARED from adds nothing to it.
-  //
-  // Resolve against cwd and require it to stay under root (an absolute target resolves to
-  // itself). `path.relative` yields a leading `..` (or an absolute path on a drive change)
-  // when the target escapes; `""` means the path IS cwd — allowed for a search (unlike a
-  // slice footprint, cwd is a searchable directory).
-  const resolved = path.resolve(root, target);
-  const rel = path.relative(root, resolved);
-  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
-    return {
-      allow: false,
-      reason: `Grep path escapes the working directory (${root}): ${rawPath}`,
-    };
-  }
-  return { allow: true };
-}
-
-/**
  * The BUNDLED fallback for the worker preamble (the go-set, context tranche 2026-07-14) —
  * used only when no `worker-preamble.md` template resolves, so a missing doctrine file never
  * breaks a run. Content-mirrors `plugins/tandem-methodology/templates/worker-preamble.md`;
@@ -518,7 +345,7 @@ export const BUNDLED_WORKER_PREAMBLE = [
 
 /** The line prefix the orchestrator PARSES a worker's undelivered declarations by
  *  ({@link extractUndelivered}). A reply contract — in code, never template-editable. */
-export const UNDELIVERED_PREFIX = "UNDELIVERED:";
+const UNDELIVERED_PREFIX = "UNDELIVERED:";
 
 /** The machine-parsed reply contract for undelivered obligations, appended to every worker
  *  prompt IN CODE (after the template-loaded preamble) so an edited doctrine file can never
@@ -526,32 +353,6 @@ export const UNDELIVERED_PREFIX = "UNDELIVERED:";
 export const UNDELIVERED_FORMAT_STANZA =
   "FINAL-SUMMARY FORMAT (machine-parsed — do not vary it): every obligation you did not fully deliver goes in your final summary on its own line, starting exactly with " +
   `\`${UNDELIVERED_PREFIX} \` followed by the obligation and — question: <what you would have asked>. No undelivered obligations ⇒ no such lines.`;
-
-/**
- * Pull a worker's declared undelivered obligations out of its final output (the go-set exit
- * protocol): every line whose text — after an optional list marker — starts with
- * {@link UNDELIVERED_PREFIX}, returned verbatim (prefix stripped, trimmed). A simple
- * line-prefix scan by design: the format stanza pins the shape, and a declared gap must
- * survive any surrounding prose. No matching lines ⇒ `[]`. Pure.
- */
-/** Tester DECISIONS record (2026-07-15): the ambiguity resolutions a test author
- *  was forced to make where the contract ran out — the chosen rule + the exact
- *  literal, one line each, machine-parsed by prefix. Threaded into the SAME-slice
- *  coder's brief (tests-first guarantees the timing), so a naming/semantics
- *  divergence costs one contract line instead of oracle rounds. Interpretation
- *  choices ONLY — never the test matrix. */
-export const DECISION_PREFIX = "DECISION: ";
-export function extractDecisions(finalOutput: string): string[] {
-  const out: string[] = [];
-  for (const line of (finalOutput ?? "").split(/\r?\n/)) {
-    const stripped = line.replace(/^\s*(?:[-*+]|\d+[.)])?\s*/, "");
-    if (stripped.startsWith(DECISION_PREFIX)) {
-      const text = stripped.slice(DECISION_PREFIX.length).trim();
-      if (text) out.push(text);
-    }
-  }
-  return out;
-}
 
 export function extractUndelivered(finalOutput: string): string[] {
   const out: string[] = [];

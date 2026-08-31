@@ -12,31 +12,7 @@
  * *concurrency*, not on the whole thinking space.
  */
 
-import * as path from "node:path";
 
-export interface ParallelSliceInput {
-  /** Slice handle used to name a conflict, e.g. "SP-3_SL-2". */
-  handle: string;
-  /** The `parallel_group` this slice belongs to; undefined/blank → ungrouped. */
-  parallelGroup?: string;
-  /** Repo-relative paths the slice declares it will edit (its `files:` set). */
-  files?: string[];
-  /** Execution-aware work units; each footprint folds into the
-   *  slice's claimed set, so footprint disjointness is enforced alongside `files`. */
-  workUnits?: { footprint: string[] }[];
-}
-
-export interface FileConflict {
-  /** The file claimed by more than one slice in the same parallel group. */
-  file: string;
-  /** The parallel_group whose members collide on `file`. */
-  group: string;
-  /** The slice handles that both declare it (sorted, deduped). */
-  slices: string[];
-}
-
-export type ValidateParallelGroupResult =
-  { ok: true } | { ok: false; reason: string; conflicts: FileConflict[] };
 
 /**
  * Normalize a declared path for comparison: trim surrounding whitespace and
@@ -44,69 +20,9 @@ export type ValidateParallelGroupResult =
  * file. Deliberately conservative — it does not resolve `..` or symlinks (the
  * declared sets are repo-relative authoring hints, not filesystem queries).
  */
-export function normalizeFilePath(p: string): string {
+function normalizeFilePath(p: string): string {
   const t = p.trim();
   return t.startsWith("./") ? t.slice(2) : t;
-}
-
-/**
- * Refuse a `parallel_group` whose members' file sets overlap, naming the
- * conflicting files and the slices that claim them (AC1). A group with fewer
- * than two members, and any ungrouped slice, are skipped — they run
- * sequentially and disjointness does not apply.
- */
-export function validateParallelGroup(
-  slices: ParallelSliceInput[],
-): ValidateParallelGroupResult {
-  const byGroup = new Map<string, ParallelSliceInput[]>();
-  for (const s of slices) {
-    const g = (s.parallelGroup ?? "").trim();
-    if (!g) continue;
-    const arr = byGroup.get(g) ?? [];
-    arr.push(s);
-    byGroup.set(g, arr);
-  }
-
-  const conflicts: FileConflict[] = [];
-  for (const [group, members] of byGroup) {
-    if (members.length < 2) continue;
-    // file → the set of slice handles in this group that declare it.
-    const claimants = new Map<string, Set<string>>();
-    for (const m of members) {
-      const claimed = [
-        ...(m.files ?? []),
-        ...(m.workUnits ?? []).flatMap((w) => w.footprint ?? []),
-      ];
-      for (const raw of claimed) {
-        const file = normalizeFilePath(raw);
-        if (!file) continue;
-        const set = claimants.get(file) ?? new Set<string>();
-        set.add(m.handle);
-        claimants.set(file, set);
-      }
-    }
-    for (const [file, handles] of claimants) {
-      if (handles.size < 2) continue;
-      conflicts.push({ file, group, slices: [...handles].sort() });
-    }
-  }
-
-  if (conflicts.length === 0) return { ok: true };
-
-  conflicts.sort(
-    (a, b) => a.group.localeCompare(b.group) || a.file.localeCompare(b.file),
-  );
-  const reason =
-    "Parallel-group file overlap — members of a parallel_group must own disjoint files:\n" +
-    conflicts
-      .map(
-        (c) =>
-          `  • parallel_group "${c.group}": ${c.slices.join(
-            " and ",
-          )} both claim ${c.file}`,
-      )
-      .join("\n");
-  return { ok: false, reason, conflicts };
 }
 
 // ── Work-unit / slice DAG validation (: deterministic control plane) ──
@@ -236,7 +152,7 @@ export function validateDag(nodes: DagNode[]): ValidateDagResult {
  * unblockable by hand. Exported so the `create_slice` work_unit schema and the
  * test name the field via this constant rather than a hardcoded string.
  */
-export const CONTRACT_FIRST_OPTOUT_FIELD = "contract_first_optout" as const;
+const CONTRACT_FIRST_OPTOUT_FIELD = "contract_first_optout" as const;
 
 /**
  * The shape of a declared work_unit as the contract-first gate sees it — the
@@ -244,7 +160,7 @@ export const CONTRACT_FIRST_OPTOUT_FIELD = "contract_first_optout" as const;
  * Mirrors the on-disk `work_units[]` frontmatter (`footprint`, `consumes?`,
  * `execution`, `note?`) plus the contract-first opt-out flag this spec adds.
  */
-export interface ContractFirstWorkUnit {
+interface ContractFirstWorkUnit {
   /** Repo-relative files/objects this unit touches — the parallelism footprint. */
   footprint: string[];
   /**
@@ -279,7 +195,7 @@ export interface ContractFirstWorkUnit {
 }
 
 /** Options for {@link contractFirstCheck}. */
-export interface ContractFirstOpts {
+interface ContractFirstOpts {
   /**
    * Override the predicate deciding whether a unit is a test/integration unit
    * (the gate's trigger class). Defaults to {@link isIntegrationUnit} — any
@@ -288,7 +204,7 @@ export interface ContractFirstOpts {
   isIntegrationUnit?: (unit: ContractFirstWorkUnit) => boolean;
 }
 
-export type ContractFirstResult =
+type ContractFirstResult =
   | { ok: true }
   | { ok: false; message: string; offendingUnit: ContractFirstWorkUnit };
 
@@ -299,7 +215,7 @@ export type ContractFirstResult =
  * contract; if the test hardcodes its own copy, the two drift the moment one
  * side is reworded.
  */
-export const CONTRACT_FIRST_RULE_MSG =
+const CONTRACT_FIRST_RULE_MSG =
   "Contract-first slicing — define the shared contract before fanning out. " +
   "This is a `*.test.*`/integration `fan-out` unit with no `consumes`, placed " +
   "beside sibling implementation units. Fanned out unsequenced, each worker will " +
@@ -326,7 +242,7 @@ const TEST_OR_INTEGRATION_RE =
  * `integration` path segment). Static-only — it reads declared structure, never
  * file contents (the gate runs before the files exist).
  */
-export function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
+function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
   return (unit.footprint ?? []).some((f) =>
     TEST_OR_INTEGRATION_RE.test(normalizeFilePath(f)),
   );
@@ -343,7 +259,7 @@ export function isIntegrationUnit(unit: ContractFirstWorkUnit): boolean {
  * passes — this gate refuses the *undeclared* case and lets `buildUnitDag`'s
  * acyclicity/parallelism rules handle the rest. No I/O: fixtures in, a verdict out.
  */
-export function contractFirstCheck(
+function contractFirstCheck(
   units: ContractFirstWorkUnit[],
   opts?: ContractFirstOpts,
 ): ContractFirstResult {
@@ -397,7 +313,7 @@ export function contractFirstCheck(
 
 /** One undeclared cross-unit read: `reader` reads `file`, which `producer` produces,
  *  with no `consumes` edge declaring the dependency. */
-export interface UndeclaredRead {
+interface UndeclaredRead {
   /** The read file that a sibling unit produces. */
   file: string;
   /** A human label for the unit that declared the read. */
@@ -406,7 +322,7 @@ export interface UndeclaredRead {
   producer: string;
 }
 
-export type UndeclaredReadResult =
+type UndeclaredReadResult =
   { ok: true } | { ok: false; message: string; violations: UndeclaredRead[] };
 
 /**
@@ -416,7 +332,7 @@ export type UndeclaredReadResult =
  * drifts the moment one side is reworded (the `/promote_tep/` lesson). The specific
  * file + producing unit are appended per-violation by {@link undeclaredReadsCheck}.
  */
-export const UNDECLARED_READ_RULE_MSG =
+const UNDECLARED_READ_RULE_MSG =
   "Undeclared cross-unit read — a unit `reads:` a file another unit in this Spec " +
   "produces, but declares no `consumes` for it. Without the `consumes` edge the " +
   "scheduler sees no dependency and may dispatch this unit before its producer has " +
@@ -454,7 +370,7 @@ function describeUnit(unit: ContractFirstWorkUnit, index: number): string {
  * a verdict out — the deterministic analog of the prose-note dependency that slipped
  * the SL-1/SL-2 review.
  */
-export function undeclaredReadsCheck(
+function undeclaredReadsCheck(
   units: ContractFirstWorkUnit[],
 ): UndeclaredReadResult {
   const list = units ?? [];
@@ -537,10 +453,10 @@ export function undeclaredReadsCheck(
  * the footprint resolver, the tests) name the convention via this constant rather
  * than re-deriving the regex.
  */
-export const ACCEPTANCE_EVIDENCE_RE = /(?:^|\/)acceptance(?:\/|$)/i;
+const ACCEPTANCE_EVIDENCE_RE = /(?:^|\/)acceptance(?:\/|$)/i;
 
 /** Options for the acceptance-evidence convention (override the default shape). */
-export interface AcceptanceEvidenceOpts {
+interface AcceptanceEvidenceOpts {
   /**
    * Override the predicate deciding whether a (normalized, repo-relative) path is
    * held-out acceptance evidence. Defaults to {@link ACCEPTANCE_EVIDENCE_RE}.
@@ -554,7 +470,7 @@ export interface AcceptanceEvidenceOpts {
  * path first so `./acceptance/x` and `acceptance/x` agree. Static-only: a path-shape
  * decision, never a filesystem query.
  */
-export function isAcceptanceEvidencePath(
+function isAcceptanceEvidencePath(
   p: string,
   opts?: AcceptanceEvidenceOpts,
 ): boolean {
@@ -564,87 +480,6 @@ export function isAcceptanceEvidencePath(
   return predicate ? predicate(file) : ACCEPTANCE_EVIDENCE_RE.test(file);
 }
 
-/**
- * The footprint resolver (SP-6/6 AC2): strip acceptance-evidence paths from a
- * declared footprint so they are **never-in-footprint**. A unit cannot claim the
- * held-out evidence by listing it in `files:`/`footprint:` — the resolver drops it,
- * leaving the path unowned so {@link footprintGuard} denies a write to it and
- * {@link footprintContainment} flags a change there. Returns the remaining paths
- * unchanged (un-normalized); callers normalize as they already do.
- */
-export function resolveFootprint(
-  footprint: string[],
-  opts?: AcceptanceEvidenceOpts,
-): string[] {
-  return (footprint ?? []).filter((f) => !isAcceptanceEvidencePath(f, opts));
-}
-
-/** The independent-verification role of a work/execution unit (SP-6/7 AC1). */
-export type UnitRole = "code" | "test";
-
-/**
- * Resolve a unit's **effective footprint by role** (SP-6/7 AC1) — the role-vs-held-out split.
- *
- *   • A `code` unit (the default) OWNS the ordinary source it declares and can **never** own the
- *     held-out `acceptance/` evidence: {@link resolveFootprint} strips every acceptance path, so a
- *     code-author cannot author the probe it is graded on.
- *   • A `test` unit is the held-out verifier: its footprint is **exactly** the acceptance-evidence
- *     paths it declares (the inverse filter — keep only what {@link isAcceptanceEvidencePath} matches).
- *     So the test-author owns the `acceptance/` probe and nothing else, and the grade it authors lies
- *     outside every code-author's footprint (the independence AC4 relies on).
- *
- * Pure — a path-shape decision, no I/O. Paths are returned un-normalized (callers normalize as they
- * already do), mirroring {@link resolveFootprint}.
- */
-export function resolveRoleFootprint(
-  role: UnitRole | undefined,
-  footprint: string[],
-  opts?: AcceptanceEvidenceOpts,
-  /** Sanitized id of the spec being orchestrated (e.g. `21_3`). When given, a code
-   *  unit KEEPS declared test/acceptance paths that do NOT belong to this spec —
-   *  the retirement case (2026-07-15): create_slice's blast-radius gate requires a
-   *  slice deleting obsolete probes to own them, so the fences must honor exactly
-   *  that blessed ownership. The current spec's own probes (`SP-<id>_…`) are ALWAYS
-   *  stripped — a code author can never own the evidence it is graded on. */
-  specId?: string,
-): string[] {
-  if (role === "test")
-    // Tests-first (2026-07-08): the test role owns ALL tests — the held-out acceptance
-    // probes AND ordinary `*.test.*` files (e.g. updating an existing unit test to a
-    // changed contract). A code unit still owns neither (stripped below + codeTestFence).
-    return (footprint ?? []).filter(
-      (f) =>
-        isAcceptanceEvidencePath(f, opts) || /\.test\.[cm]?[jt]sx?$/.test(f),
-    );
-  const base = resolveFootprint(footprint, opts);
-  if (!specId) return base;
-  const retired = (footprint ?? []).filter(
-    (f) =>
-      (isAcceptanceEvidencePath(f, opts) ||
-        /\.test\.[cm]?[jt]sx?$/.test(f)) &&
-      !f.includes(`SP-${specId}_`),
-  );
-  return [...base, ...retired];
-}
-
-/** The test/acceptance paths a CODE unit legitimately owns for retirement — its declared
- *  footprint's test-shaped entries minus the current spec's own probes. Normalized like
- *  the fences normalize (repo-relative). Empty for every ordinary code unit. */
-export function ownedRetiredTestPaths(
-  footprint: string[],
-  specId: string | undefined,
-  opts?: AcceptanceEvidenceOpts,
-): string[] {
-  return (footprint ?? [])
-    .filter(
-      (f) =>
-        (isAcceptanceEvidencePath(f, opts) ||
-          /\.test\.[cm]?[jt]sx?$/.test(f)) &&
-        (!specId || !f.includes(`SP-${specId}_`)),
-    )
-    .map(normalizeFilePath);
-}
-
 // ── Footprint enforcement (: the PreToolUse guard) ────────────
 //
 // An orchestrated worker runs under `bypassPermissions` (no prompts), so a
@@ -652,180 +487,6 @@ export function ownedRetiredTestPaths(
 // file outside the worker's declared footprint. Pure decision — the SDK hook
 // callback (in OrchestratorService) and the shell `ownership-guard.mjs` both
 // call this; fixtures in, allow/deny out.
-
-const GUARDED_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-
-/** Relativize an Edit/Write target to the repo root so it compares to the (repo-relative) footprint. */
-function relToRepo(p: string, repoRoot: string): string {
-  const root = repoRoot.replace(/\/+$/, "");
-  let t = p.trim();
-  if (root && t.startsWith(root + "/")) t = t.slice(root.length + 1);
-  return normalizeFilePath(t);
-}
-
-export type FootprintDecision =
-  { allow: true } | { allow: false; reason: string };
-
-/**
- * Decide whether a worker scoped to `footprint` may run `toolName` on `toolInput`
- *. Only the write tools — `Edit`/`Write`/`MultiEdit`/`NotebookEdit` — are
- * guarded; anything else, and a call with no target path, is allowed (the hook fences
- * *writes*, not reads/Bash). A write to a file **outside** the declared footprint is
- * **denied**, naming it — so a stray write surfaces immediately instead of corrupting
- * another unit's files.
- */
-export function footprintGuard(
-  toolName: string,
-  toolInput: unknown,
-  footprint: string[],
-  repoRoot: string,
-  opts?: AcceptanceEvidenceOpts,
-): FootprintDecision {
-  if (!GUARDED_TOOLS.has(toolName)) return { allow: true };
-  // NotebookEdit carries its target as `notebook_path`; the rest use `file_path`.
-  const inp = toolInput as { file_path?: unknown; notebook_path?: unknown };
-  const fp = typeof inp?.file_path === "string" ? inp.file_path : inp?.notebook_path;
-  if (typeof fp !== "string" || !fp.trim()) return { allow: true };
-  const target = relToRepo(fp, repoRoot);
-  // The caller passes the ROLE-EFFECTIVE footprint (`resolveRoleFootprint`, SP-6/7): a
-  // `test` unit's footprint IS its held-out `acceptance/` probe(s); a `code` unit's has every
-  // acceptance path stripped. Honor it directly — do NOT re-strip here — so the held-out
-  // verifier can author the very probe it owns, while a code-author (whose role footprint
-  // excludes acceptance) still cannot. (Pre-SP-6/7 this hard-denied ANY acceptance write,
-  // which also fenced out the legitimate test-author — the bug this fixes.)
-  const owned = footprint.map(normalizeFilePath);
-  if (owned.includes(target)) return { allow: true };
-  // Not owned → a terse, generic refusal. Deliberately NOT naming "held-out grading evidence" or an
-  // "independent verifier" even for an acceptance/ target (SP-6/7): the deny must not teach the
-  // worker the independence mechanism it would then reason about or try to game — it just knocks its
-  // head on the footprint boundary and adjusts. (A code-author's role footprint already excludes
-  // acceptance/, so it lands here for a probe write, indistinguishable from any out-of-footprint one.)
-  return {
-    allow: false,
-    reason:
-      `Out-of-footprint write: ${target} is not in this unit's declared footprint ` +
-      `[${owned.join(", ") || "(none)"}]. Edit only your footprint; if you genuinely ` +
-      `need another file, stop and state the question rather than editing it.`,
-  };
-}
-
-/**
- * Read scoping for a `role: code` worker (SP-6/7 — the *reverse*-leak closure). Structural
- * independence puts the TESTER in its own base-commit snapshot, so the tester can't read the
- * implementation; this fence closes the other direction: once the finished probes are copied
- * into the code worktree for the gate (and during rework rounds after that), a re-dispatched
- * code worker must not read the grading assertions and code-to-the-test. Deny a `Read` whose
- * target is a held-out acceptance-evidence path; everything else is untouched. Terse on
- * purpose — like the write-fence, the deny must not teach the grading mechanism.
- */
-export function codeReadFence(
-  toolName: string,
-  toolInput: unknown,
-  repoRoot: string,
-  opts?: AcceptanceEvidenceOpts,
-  /** Retirement exemption (2026-07-15) — see {@link codeTestFence}. */
-  ownedTestPaths?: string[],
-): FootprintDecision {
-  if (toolName !== "Read") return { allow: true };
-  const raw = (toolInput as { file_path?: unknown })?.file_path;
-  if (typeof raw !== "string" || !raw.trim()) return { allow: true };
-  const target = relToRepo(raw.trim(), repoRoot);
-  if (!isAcceptanceEvidencePath(target, opts)) return { allow: true };
-  if ((ownedTestPaths ?? []).includes(normalizeFilePath(target)))
-    return { allow: true };
-  return {
-    allow: false,
-    reason:
-      `Out-of-scope read: ${target} is not part of this unit's task. Work from your ` +
-      `footprint and the task context; if you genuinely need it, stop and state the question.`,
-  };
-}
-
-/**
- * Tests-first belt (repair window, 2026-07-08): a `role: code` worker never touches tests.
- * Two prongs, both terse and mechanism-silent like the fences above:
- *  - a WRITE (Edit/Write/MultiEdit/NotebookEdit) targeting any test file — `*.test.*` or an
- *    `acceptance/` path — is denied regardless of footprint (test authorship is another
- *    role's job, always);
- *  - when the verify oracle is wired (`oracleWired`), a BASH command that reaches for test
- *    files, a tester snapshot (`…-test/`), or the build/test toolchain (npm/npx/tsc/test
- *    runners) is denied too — the oracle is the coder's whole feedback loop, and the
- *    worktree deliberately has no toolchain for it.
- * Pure decision; the SDK PreToolUse hook calls it for code units only.
- */
-export function codeTestFence(
-  toolName: string,
-  toolInput: unknown,
-  oracleWired: boolean,
-  /** Retirement exemption (2026-07-15): test paths this unit's blessed footprint OWNS
-   *  (see {@link ownedRetiredTestPaths}) — a write/delete targeting exactly these is
-   *  allowed, and a Bash command whose every test-shaped token is one of these is
-   *  allowed too (e.g. `rm` of the retired probes). Never contains the current spec's
-   *  own probes; the caller guarantees that via the specId filter. */
-  ownedTestPaths?: string[],
-  /** cwd the worker's paths resolve against (needed to normalize absolute targets). */
-  cwd?: string,
-): FootprintDecision {
-  const TEST_PATH = /(^|\/)acceptance\/|\.test\.[cm]?[jt]sx?$/;
-  const owned = new Set(ownedTestPaths ?? []);
-  const ownsTarget = (raw: string): boolean => {
-    if (owned.size === 0) return false;
-    let t = raw.trim().replace(/^['"`]|['"`]$/g, "");
-    if (/[*?[\]]/.test(t)) return false; // globs are never a blessed exact path
-    if (path.isAbsolute(t) && cwd) t = path.relative(path.resolve(cwd), t);
-    return owned.has(normalizeFilePath(t));
-  };
-  if (GUARDED_TOOLS.has(toolName)) {
-    const inp = toolInput as { file_path?: unknown; notebook_path?: unknown };
-    const fp =
-      typeof inp?.file_path === "string" ? inp.file_path : inp?.notebook_path;
-    if (typeof fp === "string" && TEST_PATH.test(fp.trim())) {
-      if (ownsTarget(fp)) return { allow: true };
-      return {
-        allow: false,
-        reason:
-          `Out-of-scope write: ${fp.trim()} is a test file, which is not part of this ` +
-          `unit's task. Implement within your footprint; if you believe a test must ` +
-          `change, stop and state the question.`,
-      };
-    }
-    return { allow: true };
-  }
-  if (oracleWired && toolName === "Bash") {
-    const cmd = (toolInput as { command?: unknown })?.command;
-    if (typeof cmd !== "string" || !cmd.trim()) return { allow: true };
-    // Retirement carve-out: a command whose EVERY test-shaped token is an owned
-    // retired path is fair use (deleting/listing exactly what the footprint blesses).
-    const testTokens = cmd
-      .split(/[\s;|&()<>]+/)
-      .map((t) => t.replace(/^['"`]|['"`]$/g, ""))
-      .filter((t) => TEST_PATH.test(t) || /-test\//.test(t));
-    const allTokensOwned =
-      testTokens.length > 0 && testTokens.every((t) => ownsTarget(t));
-    const reachesTests =
-      !allTokensOwned &&
-      (/(^|[\s/'"`(=])acceptance\//.test(cmd) ||
-        /\.test\.[cm]?[jt]sx?\b/.test(cmd) ||
-        /-test\//.test(cmd) ||
-        // The grading infrastructure itself (2026-07-15): a worker has no business
-        // even LISTING the probe store or the runner — a listing aims the reads.
-        /oracle-(store|runners)\//.test(cmd));
-    const runsToolchain =
-      /(^|[\s;&|(])(npm|npx|yarn|pnpm|tsc)(\s|$)/.test(cmd) ||
-      /\bnode\s+--test\b/.test(cmd) ||
-      /(^|[\s;&|(])(vitest|jest|mocha|pytest)(\s|$)/.test(cmd) ||
-      /\b(cargo|go)\s+test\b/.test(cmd);
-    if (reachesTests || runsToolchain)
-      return {
-        allow: false,
-        reason:
-          `Out-of-scope command: builds, test runs and test files are not part of this ` +
-          `unit's task — call the verify tool for feedback instead. If you genuinely ` +
-          `need this command, stop and state the question.`,
-      };
-  }
-  return { allow: true };
-}
 
 // ── Bash-inclusive post-tool footprint containment (SP-6/2 AC3) ─────────────
 //
@@ -842,16 +503,16 @@ export function codeTestFence(
 // the `query()` and reverts only the offending path(s) on a non-empty result.
 
 /** What kind of change git observed for an out-of-footprint path. */
-export type ContainmentChange = "create" | "modify" | "delete" | "rename";
+type ContainmentChange = "create" | "modify" | "delete" | "rename";
 
-export interface ContainmentViolation {
+interface ContainmentViolation {
   /** Normalized repo-relative path changed outside the unit's footprint. */
   file: string;
   /** The kind of change git reported for it (informational; any kind is a violation). */
   change: ContainmentChange;
 }
 
-export type ContainmentResult =
+type ContainmentResult =
   | { ok: true }
   | { ok: false; reason: string; violations: ContainmentViolation[] };
 
@@ -864,7 +525,7 @@ export type ContainmentResult =
  * check to changes this unit actually left outside its own footprint AND outside every
  * running unit's footprint AND not already present before it started.
  */
-export interface ContainmentContext {
+interface ContainmentContext {
   /**
    * The UNION of every currently-running unit's footprint files (this unit's included is
    * harmless — its own footprint is already owned). A changed path inside `running` is a
@@ -951,7 +612,7 @@ function classifyPorcelainChange(xy: string): ContainmentChange {
  * and a change touching it is ALWAYS a violation — so a worker that writes the grader
  * it is judged on is aborted to requires-attention, never granted a green it authored.
  */
-export function footprintContainment(
+function footprintContainment(
   porcelain: string,
   footprint: string[],
   ctx?: ContainmentContext,
@@ -1037,176 +698,8 @@ export function footprintContainment(
 // window reload by rehydrating the map from disk. These functions are the
 // testable core — no I/O, no clock.
 
-/** Normalized repo-relative file → the slice handle that owns it. */
-export type OwnershipState = Record<string, string>;
 
-export type AcquireOutcome =
-  | { ok: true; state: OwnershipState; acquired: string[] }
-  | { ok: false; conflicts: Array<{ file: string; heldBy: string }> };
-
-/**
- * Atomically claim `files` for `slice`. **All-or-nothing**: if any file is
- * already held by a *different* slice, the whole claim is denied and the input
- * `state` is returned untouched (the caller never persists a partial claim).
- * Re-claiming a file the same slice already owns is idempotent.
- */
-export function acquireClaim(
-  state: OwnershipState,
-  slice: string,
-  files: string[],
-): AcquireOutcome {
-  const norm = [...new Set(files.map(normalizeFilePath).filter(Boolean))];
-  const conflicts: Array<{ file: string; heldBy: string }> = [];
-  for (const f of norm) {
-    const owner = state[f];
-    if (owner && owner !== slice) conflicts.push({ file: f, heldBy: owner });
-  }
-  if (conflicts.length) {
-    conflicts.sort((a, b) => a.file.localeCompare(b.file));
-    return { ok: false, conflicts };
-  }
-  const next: OwnershipState = { ...state };
-  for (const f of norm) next[f] = slice;
-  return { ok: true, state: next, acquired: norm };
-}
-
-/** Release every file owned by `slice`. Returns the new state (others kept). */
-export function releaseClaim(
-  state: OwnershipState,
-  slice: string,
-): OwnershipState {
-  const next: OwnershipState = {};
-  for (const [f, owner] of Object.entries(state)) {
-    if (owner !== slice) next[f] = owner;
-  }
-  return next;
-}
-
-export interface ReconcileResult {
-  state: OwnershipState;
-  dropped: Array<{ file: string; slice: string }>;
-}
-
-/**
- * Reconcile the durable map against the set of slices whose worktrees are still
- * live: any file owned by a slice **not** in `liveSlices` is reclaimed — its
- * holder was abandoned (e.g. its worktree was removed without releasing). This
- * is the thinking space-wins recovery the arbiter runs after a reload (AC3, AC5).
- */
-export function reconcileOwnership(
-  state: OwnershipState,
-  liveSlices: Iterable<string>,
-): ReconcileResult {
-  const live = new Set(liveSlices);
-  const next: OwnershipState = {};
-  const dropped: Array<{ file: string; slice: string }> = [];
-  for (const [f, owner] of Object.entries(state)) {
-    if (live.has(owner)) next[f] = owner;
-    else dropped.push({ file: f, slice: owner });
-  }
-  dropped.sort((a, b) => a.file.localeCompare(b.file));
-  return { state: next, dropped };
-}
-
-/** Serialize the ownership map to the durable journal format (stable key order). */
-export function serializeOwnership(state: OwnershipState): string {
-  const claims: OwnershipState = {};
-  for (const f of Object.keys(state).sort()) claims[f] = state[f];
-  return JSON.stringify({ version: 1, claims }, null, 2) + "\n";
-}
-
-/**
- * Parse a durable journal back into an ownership map (rehydrate-from-disk).
- * Tolerant: malformed JSON or an unexpected shape yields an **empty** map rather
- * than throwing, so a corrupt journal degrades to "no claims" — never a dead
- * arbiter that can't activate.
- */
-export function parseOwnership(text: string): OwnershipState {
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const claims = (parsed as { claims?: unknown }).claims;
-      if (claims && typeof claims === "object" && !Array.isArray(claims)) {
-        const out: OwnershipState = {};
-        for (const [f, slice] of Object.entries(
-          claims as Record<string, unknown>,
-        )) {
-          if (typeof slice === "string" && slice) {
-            const nf = normalizeFilePath(f);
-            if (nf) out[nf] = slice;
-          }
-        }
-        return out;
-      }
-    }
-  } catch {
-    // fall through to the empty map
-  }
-  return {};
-}
 
 // ── Worktree-Spec recovery ─────────────────────────────────
 
-/** The recovery-relevant frontmatter of one slice. */
-export interface SliceRecoveryInfo {
-  handle: string;
-  /** Frontmatter `assignee:` — non-empty once a worktree/teammate claimed it. */
-  assignee?: string;
-  /** Frontmatter `status:` — ready | doing | done | archived. */
-  status?: string;
-}
-
-export interface RecoverableResult {
-  /** True when the Spec has orphaned, resumable work. */
-  recoverable: boolean;
-  /** Handles of the assignee-stamped, still-open slices with no live holder. */
-  orphaned: string[];
-}
-
-/**
- * Detect an **orphaned worktree-shaped Spec** (AC5): one whose slices carry an
- * `assignee:` stamp (a worktree/teammate claimed them) and are still open, yet
- * have **no live arbiter holder** — the signature of a Spec whose worktree
- * session died (a crash / window reload) before finishing. the session-open path uses
- * this to offer to resume rather than starting fresh. Done and archived slices
- * never count — their work is finished, not orphaned.
- */
-export function detectRecoverable(
-  slices: SliceRecoveryInfo[],
-  liveHolders: Iterable<string>,
-): RecoverableResult {
-  const live = new Set(liveHolders);
-  const orphaned = slices
-    .filter((s) => {
-      const status = (s.status ?? "").toLowerCase();
-      return (
-        (s.assignee ?? "").trim() !== "" &&
-        status !== "done" &&
-        status !== "archived" &&
-        !live.has(s.handle)
-      );
-    })
-    .map((s) => s.handle);
-  return { recoverable: orphaned.length > 0, orphaned };
-}
-
 // ── Require a worktree before working a Spec ────────────────
-
-/**
- * Decide whether a session must **open the Spec's worktree** before working,
- * or can **proceed** because it's already inside one (AC2). A Spec runs in its
- * own `spec/SP-{n}` worktree (TEP-0008); if the session was opened from the
- * canonical/main checkout it must redirect into the worktree session rather than
- * editing the main tree. `cwd` inside the canonical repo tree → `"open-worktree"`;
- * a linked worktree (a different path, e.g. a sibling `<repo>-worktrees/SP-{n}`)
- * → `"proceed"`. Pure — the actual open rides `WorktreeService` / SL-7/SL-8.
- */
-export function requiresWorktree(
-  cwd: string,
-  canonicalRepo: string,
-): "open-worktree" | "proceed" {
-  const norm = (p: string) => p.replace(/\/+$/, "");
-  const c = norm(cwd);
-  const repo = norm(canonicalRepo);
-  return c === repo || c.startsWith(repo + "/") ? "open-worktree" : "proceed";
-}

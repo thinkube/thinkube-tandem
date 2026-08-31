@@ -10,6 +10,4 @@ export * from "./core/stubScan";
 export * from "./core/preflight";
 export * from "./core/guidance";
 export * from "./core/closingGate";
-export * from "./core/watchdog";
-export * from "./core/commit";
 export * from "./core/trace";

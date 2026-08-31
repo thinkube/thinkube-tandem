@@ -66,7 +66,7 @@ export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([124, 126, 12
  * red, because a module the coder never wrote fails exactly that way and
  * that red is the honest verdict.
  */
-export function checkItselfMissing(run: string, output: string): boolean {
+function checkItselfMissing(run: string, output: string): boolean {
   const file = run
     .split(/\s+/)
     .filter((t) => t.includes("/") && !t.startsWith("-"))
@@ -78,37 +78,6 @@ export function checkItselfMissing(run: string, output: string): boolean {
   return /could not find|no such file|ENOENT|does not exist/i.test(output);
 }
 
-/**
- * Normalize the Spec frontmatter `ac_verifications` map (AC ordinal → { run, env }) into the
- * ordered `AcVerification[]` the runner executes. Tolerant: keys parse from string or number,
- * non-positive / non-integer ordinals and entries without a non-empty `run` are dropped; the
- * result is sorted by ordinal so the plan runs in a stable, dependency-friendly order.
- */
-export function parseAcVerifications(raw: unknown): AcVerification[] {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
-  const out: AcVerification[] = [];
-  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
-    const ac = Number(key);
-    if (!Number.isInteger(ac) || ac <= 0) continue;
-    if (!val || typeof val !== "object") continue;
-    const run = (val as Record<string, unknown>).run;
-    const env = (val as Record<string, unknown>).env;
-    const isAssessment = env === "assessment";
-    // An `assessment` AC (SP-6/7 AC3) is graded by an independent assessor session, not a runnable
-    // command — so it needs no non-empty `run`. Every other AC still requires a runnable command.
-    if (!isAssessment && (typeof run !== "string" || !run.trim())) continue;
-    out.push({
-      ac,
-      run: typeof run === "string" ? run.trim() : "",
-      env:
-        env === "cluster" || env === "local" || env === "assessment"
-          ? env
-          : undefined,
-    });
-  }
-  return out.sort((a, b) => a.ac - b.ac);
-}
-
 /** Run one declared command in `cwd`, resolving its exit code + combined output. Injectable so
  *  the runner is unit-testable; the default spawns a shell (the real cluster/local run). */
 export type AcExec = (
@@ -118,7 +87,7 @@ export type AcExec = (
 
 /** The independent-assessor verdict for an `env: "assessment"` AC (SP-6/7 AC3): pass/fail plus the
  *  assessor's **rationale** (why), so the verdict is recordable in the verification trace. */
-export interface AcAssessment {
+interface AcAssessment {
   pass: boolean;
   rationale: string;
 }
@@ -129,7 +98,7 @@ export interface AcAssessment {
  * pass/fail **with a rationale** — no runnable command required. Injectable so the closing gate is
  * unit-testable with no live model; the real SDK-session dispatch lives in `OrchestratorService`.
  */
-export type AssessAc = (
+type AssessAc = (
   ac: AcVerification,
   intent: string,
   artifact: string,
@@ -162,9 +131,9 @@ export interface BoundedOptions {
 }
 
 /** Exit code we resolve with when a bounded run is killed for exceeding its `timeoutMs`. */
-export const TIMED_OUT_CODE = 124;
+const TIMED_OUT_CODE = 124;
 /** Marker appended to a timed-out run's output (and matched by the closing-gate report). */
-export const TIMED_OUT_MARKER = "[timed out]";
+const TIMED_OUT_MARKER = "[timed out]";
 /** Default bound for an unparameterized AC verification: generous (~10 minutes), per-AC overridable. */
 export const DEFAULT_AC_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -439,35 +408,3 @@ export async function runAcVerifications(
   }
   return out;
 }
-
-/**
- * Tick the given 1-based AC ordinals (`- [ ]` → `- [x]`) under the Spec body's
- * `## Acceptance Criteria` heading, leaving everything else byte-for-byte. Out-of-range or
- * already-checked ordinals are no-ops. Pure — the shell writes the result back to the Spec doc
- * so the accept gate (every AC checked) can pass. Mirrors `extractAcceptanceCriteria`'s parser.
- */
-export function checkAcOrdinals(body: string, ordinals: number[]): string {
-  const want = new Set(ordinals.filter((n) => Number.isInteger(n) && n > 0));
-  if (!want.size) return body;
-  const lines = (body ?? "").split(/\r?\n/);
-  let inSection = false;
-  let ordinal = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const heading = /^(#{2,6})\s+(.+?)\s*$/.exec(lines[i]);
-    if (heading) {
-      const text = heading[2].trim().toLowerCase();
-      inSection =
-        text === "acceptance criteria" || text === "acceptance_criteria";
-      continue;
-    }
-    if (!inSection) continue;
-    const cb = /^(\s*[-*+]\s*)\[([ xX])\](\s+.+)$/.exec(lines[i]);
-    if (!cb) continue;
-    ordinal++;
-    if (want.has(ordinal) && cb[2] === " ") {
-      lines[i] = `${cb[1]}[x]${cb[3]}`;
-    }
-  }
-  return lines.join("\n");
-}
-

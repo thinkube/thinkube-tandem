@@ -9,7 +9,7 @@
  * The explicit supported-command list: the leading word(s) a single plain command may be
  * rtk-wrapped by. Exported so tests can verify the starting set without hard-coding it.
  */
-export const RTK_SUPPORTED: readonly string[] = [
+const RTK_SUPPORTED: readonly string[] = [
   "git status",
   "git diff",
   "git log",

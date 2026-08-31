@@ -21,30 +21,6 @@ export interface Agent {
   memory?: boolean;
 }
 
-export function createAgent(
-  name: string,
-  description: string,
-  content: string,
-  allowedTools: string[] = [],
-  model?: string,
-): Omit<Agent, "filePath"> {
-  return {
-    name: normalizeAgentName(name),
-    description,
-    allowedTools,
-    deniedTools: [],
-    model,
-    content,
-  };
-}
-
-export function normalizeAgentName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-");
-}
-
 export function agentToMarkdown(
   agent: Agent | Omit<Agent, "filePath">,
 ): string {

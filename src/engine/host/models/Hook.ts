@@ -22,7 +22,7 @@ export const HOOK_EVENTS = [
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-export type HookType = "command" | "http" | "prompt" | "agent";
+type HookType = "command" | "http" | "prompt" | "agent";
 
 export interface HookDefinition {
   type: HookType;
@@ -77,22 +77,4 @@ export function createHook(
     agent: hookDef.agent,
     timeout: hookDef.timeout,
   };
-}
-
-/**
- * Get a human-readable summary of a hook definition.
- */
-export function hookSummary(hookDef: HookDefinition): string {
-  switch (hookDef.type) {
-    case "command":
-      return hookDef.command || "(no command)";
-    case "http":
-      return hookDef.url || "(no url)";
-    case "prompt":
-      return hookDef.prompt ? hookDef.prompt.substring(0, 60) : "(no prompt)";
-    case "agent":
-      return hookDef.agent || "(no agent)";
-    default:
-      return "(unknown type)";
-  }
 }

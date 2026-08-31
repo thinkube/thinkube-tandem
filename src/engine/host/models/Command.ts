@@ -27,30 +27,6 @@ export interface Command {
   shell?: string;
 }
 
-export function createCommand(
-  name: string,
-  description: string,
-  content: string,
-  argumentHint?: string,
-): Omit<Command, "filePath"> {
-  return {
-    name: normalizeCommandName(name),
-    description,
-    argumentHint,
-    content,
-  };
-}
-
-export function normalizeCommandName(name: string): string {
-  if (name.startsWith("/")) {
-    name = name.slice(1);
-  }
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-");
-}
-
 export function commandToMarkdown(
   command: Command | Omit<Command, "filePath">,
 ): string {

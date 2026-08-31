@@ -36,7 +36,7 @@ import { join } from "node:path";
 import type { ApprovalToken } from "./approvalToken";
 
 /** Subdirectory of `storageDir` holding one token file per subject. */
-export const APPROVAL_STORE_DIR = "approvals";
+const APPROVAL_STORE_DIR = "approvals";
 
 /**
  * The side-channel token store: `put` is called by the host on Approve, `get` by the gate at

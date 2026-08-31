@@ -12,7 +12,7 @@ import { clip } from "./guidance";
  * Confession markers — unambiguous self-declared deferrals, case-insensitive,
  * whole-word. A hit on these is a deferral wherever it appears.
  */
-export const STUB_CONFESSION_RE =
+const STUB_CONFESSION_RE =
   /\b(TODO|FIXME|XXX|HACK|UNDELIVERED|not in scope|not implemented|unimplemented|pending SDK)\b/i;
 
 /**
@@ -24,7 +24,7 @@ export const STUB_CONFESSION_RE =
  * "deferrals" were this class — probe doubles, HTML/VS Code `placeholder`
  * attributes, and documented no-op semantics — with zero real deferrals).
  */
-export const STUB_WEAK_RE = /\b(stub|stubbed|no-op|noop|placeholder)\b/i;
+const STUB_WEAK_RE = /\b(stub|stubbed|no-op|noop|placeholder)\b/i;
 
 /**
  * Key-position `placeholder` — the HTML attribute (`placeholder="…"`) and the

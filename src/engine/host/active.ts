@@ -40,7 +40,7 @@ export function getCurrentActiveContext(): string | undefined {
  * Resolve the project path the user is currently focused on, based on the
  * active editor first and the workspace folders second.
  */
-export function getActiveProjectPath(): string | undefined {
+function getActiveProjectPath(): string | undefined {
   const editor = vscode.window.activeTextEditor;
   if (editor) {
     const filePath = editor.document.uri.fsPath;
@@ -69,7 +69,7 @@ export function getActiveProjectPath(): string | undefined {
  * Walk upward from startPath looking for common project-root markers,
  * stopping at workspace-folder boundaries.
  */
-export function findProjectRoot(startPath: string): string | undefined {
+function findProjectRoot(startPath: string): string | undefined {
   let current = fs.statSync(startPath).isDirectory()
     ? startPath
     : path.dirname(startPath);

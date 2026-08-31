@@ -2,12 +2,10 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/cli/journey.ts",
         "src/mcp/server.ts"
       ],
       "project": [
-        "src/**/*.ts",
-        "!src/engine/**"
+        "src/**/*.ts"
       ],
       "ignoreDependencies": [
         "@vscode/vsce",

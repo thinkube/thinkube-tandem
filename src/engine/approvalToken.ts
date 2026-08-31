@@ -41,7 +41,7 @@ import { join } from "node:path";
 export type ApprovalToken = string;
 
 /** File name of the approval HMAC secret inside the storage directory. */
-export const APPROVAL_SECRET_FILE = "approval-signing-key";
+const APPROVAL_SECRET_FILE = "approval-signing-key";
 
 /**
  * Domain-separation tag mixed into the signed payload so this HMAC can't collide with any other
@@ -134,7 +134,7 @@ export function mintApproval(
  *   - `'subject-mismatch'` — a valid token, but minted for a different subject;
  *   - `'content-mismatch'` — a valid token for this subject, but the document changed since approval.
  */
-export type ApprovalRefusalReason =
+type ApprovalRefusalReason =
   "bad-signature" | "subject-mismatch" | "content-mismatch";
 
 /** The outcome of {@link approvalStatus}: approved, or refused with a single reason. */
@@ -213,15 +213,4 @@ export function approvalStatus(
     // Malformed base64 / JSON / anything unexpected — an invalid token, never an exception.
     return { ok: false, reason: "bad-signature" };
   }
-}
-
-/**
- * Back-compat boolean wrapper over {@link approvalStatus} — true iff the token passes all three
- * checks. Pure, synchronous, never throws; existing callers that only need pass/fail are unchanged.
- */
-export function verifyApproval(
-  token: ApprovalToken | undefined,
-  a: { subjectKey: string; contentHash: string; secret: Buffer },
-): boolean {
-  return approvalStatus(token, a).ok;
 }

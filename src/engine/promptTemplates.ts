@@ -41,7 +41,7 @@ let configured: {
  *  optionally `pluginDirs` (an explicit plugin-template dir list — tests pass `[]` to
  *  make resolution hermetic; production omits it and gets marketplace discovery).
  *  Idempotent; pass `{}` to reset (tests). */
-export function configurePromptTemplates(cfg: {
+function configurePromptTemplates(cfg: {
   repoDir?: string;
   templateDir?: string;
   pluginDirs?: string[];
@@ -62,7 +62,7 @@ function readIfPresent(file: string): string | undefined {
 /** The installed tandem-methodology plugin's `templates/` dirs, located via Claude Code's
  *  own marketplace registry (`~/.claude/plugins/known_marketplaces.json` →
  *  `installLocation`). Best-effort: an absent/corrupt registry yields `[]`. */
-export function pluginTemplateDirs(homedir: string = os.homedir()): string[] {
+function pluginTemplateDirs(homedir: string = os.homedir()): string[] {
   try {
     const raw = fs.readFileSync(
       path.join(homedir, ".claude", "plugins", "known_marketplaces.json"),
@@ -135,22 +135,4 @@ function safeCwd(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Resolve `<!-- if:FLAG -->…<!-- endif:FLAG -->` conditional sections in a loaded
- * template: the section body is KEPT (markers stripped) when `flags[FLAG]` is true,
- * DROPPED entirely when false/absent. Lets one doctrine file carry prose that only
- * applies when its data is present (e.g. the audit's INTENT FIDELITY rule, which only
- * makes sense when a parent TEP was supplied) without the builder splicing prose.
- * Non-matching / unclosed markers pass through unchanged. Pure.
- */
-export function applyConditionals(
-  text: string,
-  flags: Record<string, boolean>,
-): string {
-  return text.replace(
-    /[ \t]*<!--\s*if:([A-Za-z0-9_-]+)\s*-->\r?\n?([\s\S]*?)[ \t]*<!--\s*endif:\1\s*-->\r?\n?/g,
-    (_m, flag: string, body: string) => (flags[flag] ? body : ""),
-  );
 }

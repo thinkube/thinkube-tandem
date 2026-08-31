@@ -25,12 +25,12 @@ import * as path from "node:path";
  * claude-code's project-dir encoding (verified against the bundle):
  * NFC-normalised absolute path, every non-alphanumeric char to "-".
  */
-export function encodeProjectDir(absPath: string): string {
+function encodeProjectDir(absPath: string): string {
   return absPath.normalize("NFC").replace(/[^a-zA-Z0-9]/g, "-");
 }
 
 /** `~/.claude/projects`, honouring CLAUDE_CONFIG_DIR like the CLI does. */
-export function claudeProjectsRoot(): string {
+function claudeProjectsRoot(): string {
   const configDir =
     process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
   return path.join(configDir, "projects");
@@ -152,141 +152,3 @@ export async function ensureSessionLinked(
   await linkInto(sessionFile, path.join(pickerDir, path.basename(sessionFile)));
 }
 
-export interface SessionInfo {
-  uuid: string;
-  /** Absolute path to the real transcript (never a symlink). */
-  file: string;
-  /** The cwd recorded inside the transcript — where the session "lives". */
-  cwd: string;
-  /** Last ai-title sidecar record, if any (what the picker displays). */
-  title?: string;
-  mtimeMs: number;
-}
-
-/**
- * Find every session whose recorded cwd is `folder` or a subfolder of it,
- * across ALL project dirs. The encoded dir name is lossy (any non-alnum
- * char becomes "-"), so membership is decided by the `"cwd"` field inside
- * each transcript — the same field the wrapper's RESUME branch trusts.
- * Newest first.
- */
-export async function listSessionsForFolder(
-  folder: string,
-  projectsRoot: string = claudeProjectsRoot(),
-): Promise<SessionInfo[]> {
-  // The CLI records its post-cd process cwd, which may or may not be fully
-  // resolved — accept a match against either spelling of the folder.
-  const bases = new Set([
-    folder.normalize("NFC"),
-    (await canonical(folder)).normalize("NFC"),
-  ]);
-  const belongs = (cwd: string) => {
-    for (const b of bases) {
-      if (cwd === b || cwd.startsWith(b + path.sep)) return true;
-    }
-    return false;
-  };
-
-  const out: SessionInfo[] = [];
-  let dirs;
-  try {
-    dirs = await fs.readdir(projectsRoot, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const d of dirs) {
-    if (!d.isDirectory()) continue;
-    const dir = path.join(projectsRoot, d.name);
-    let entries;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      // Real files only — symlinks are our own mirrors of other dirs'
-      // transcripts and would produce duplicates.
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const file = path.join(dir, entry.name);
-      const cwd = await readFirstJsonString(file, "cwd");
-      if (!cwd || !belongs(cwd.normalize("NFC"))) continue;
-      const st = await fs.stat(file).catch(() => undefined);
-      if (!st) continue;
-      out.push({
-        uuid: entry.name.slice(0, -".jsonl".length),
-        file,
-        cwd,
-        title: await readLastJsonString(file, "aiTitle"),
-        mtimeMs: st.mtimeMs,
-      });
-    }
-  }
-  return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
-}
-
-/**
- * Scan a transcript from the start for the first `"key":"value"` and return
- * the (unescaped) value. Chunked with overlap so we never load a multi-MB
- * transcript just to read its first cwd; capped — if the key hasn't shown
- * up in the first MB it isn't the record we're after.
- */
-async function readFirstJsonString(
-  file: string,
-  key: string,
-  maxBytes = 1 << 20,
-): Promise<string | undefined> {
-  const re = new RegExp(`"${key}":"((?:[^"\\\\]|\\\\.)*)"`);
-  const fh = await fs.open(file, "r");
-  try {
-    const chunk = Buffer.alloc(64 * 1024);
-    let carry = "";
-    let pos = 0;
-    while (pos < maxBytes) {
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, pos);
-      if (bytesRead === 0) break;
-      const text = carry + chunk.toString("utf8", 0, bytesRead);
-      const m = re.exec(text);
-      if (m) return unescapeJson(m[1]);
-      carry = text.slice(-512); // overlap: a match can't straddle a boundary
-      pos += bytesRead;
-    }
-    return undefined;
-  } finally {
-    await fh.close();
-  }
-}
-
-/**
- * Find the LAST `"key":"value"` in a transcript, reading only the tail —
- * sidecar records like ai-title are appended, and last-one-wins is exactly
- * the picker's behaviour.
- */
-async function readLastJsonString(
-  file: string,
-  key: string,
-  tailBytes = 64 * 1024,
-): Promise<string | undefined> {
-  const fh = await fs.open(file, "r");
-  try {
-    const { size } = await fh.stat();
-    const len = Math.min(size, tailBytes);
-    const buf = Buffer.alloc(len);
-    await fh.read(buf, 0, len, size - len);
-    const text = buf.toString("utf8");
-    const re = new RegExp(`"${key}":"((?:[^"\\\\]|\\\\.)*)"`, "g");
-    let m;
-    let last: string | undefined;
-    while ((m = re.exec(text))) last = m[1];
-    return last === undefined ? undefined : unescapeJson(last);
-  } finally {
-    await fh.close();
-  }
-}
-
-function unescapeJson(escaped: string): string | undefined {
-  try {
-    return JSON.parse(`"${escaped}"`) as string;
-  } catch {
-    return undefined; // truncated escape at a chunk boundary — skip
-  }
-}

@@ -8,13 +8,11 @@
  * Two transport types are supported: stdio (command+args) and http (url).
  */
 
-export type McpServerStatus = "running" | "stopped" | "starting" | "error";
-export type McpServerCategory = "official" | "community" | "custom";
-
+type McpServerStatus = "running" | "stopped" | "starting" | "error";
 /**
  * Stdio server — runs a local process.
  */
-export interface StdioServerConfig {
+interface StdioServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -44,18 +42,6 @@ export interface McpServer {
   errorMessage?: string;
 }
 
-export interface McpServerInfo {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  author: string;
-  repository?: string;
-  category: McpServerCategory;
-  tools: string[];
-  readme?: string;
-}
-
 /**
  * Type guard: is this an HTTP server config?
  */
@@ -63,13 +49,4 @@ export function isHttpServer(
   config: McpServerConfig,
 ): config is HttpServerConfig {
   return "type" in config && (config as HttpServerConfig).type === "http";
-}
-
-/**
- * Type guard: is this a stdio server config?
- */
-export function isStdioServer(
-  config: McpServerConfig,
-): config is StdioServerConfig {
-  return !isHttpServer(config);
 }

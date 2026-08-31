@@ -21,12 +21,11 @@
  * file) and reports it as `testFault`, so the caller routes it to the fault judge
  * instead of charging it against the coder's iteration budget.
  */
-import * as path from "path";
 
 import type { AcVerification } from "./orchestratorCore";
 
 /** One changed path in a worktree, from `git status --porcelain` text. */
-export interface OverlayEntry {
+interface OverlayEntry {
   /** Repo-relative path (the porcelain path, rename-target for renames). */
   path: string;
   /** True when the change is a deletion (the runner must remove the file). */
@@ -38,7 +37,7 @@ export interface OverlayEntry {
  * files to copy into the runner and which to delete there. Pure. Renames (`R  old -> new`)
  * contribute BOTH a deletion of the old path and a copy of the new one.
  */
-export function parsePorcelain(text: string): OverlayEntry[] {
+function parsePorcelain(text: string): OverlayEntry[] {
   const out: OverlayEntry[] = [];
   for (const raw of text.split("\n")) {
     if (!raw.trim()) continue;
@@ -71,7 +70,7 @@ export function parsePorcelain(text: string): OverlayEntry[] {
 }
 
 /** Classification of a failed prepare (build/typecheck) run. */
-export interface PrepareFailure {
+interface PrepareFailure {
   /** True when EVERY located error path is a probe file — a test-side fault the caller
    *  routes to the fault judge, never charged against the coder. */
   testFault: boolean;
@@ -86,7 +85,7 @@ export interface PrepareFailure {
  * locatable path at all ⇒ not a test fault (fail toward charging the build, not the
  * tester, so a toolchain error is never mis-routed to the judge).
  */
-export function classifyPrepareFailure(
+function classifyPrepareFailure(
   output: string,
   probeFiles: string[],
 ): PrepareFailure {
@@ -144,7 +143,7 @@ const clip = (s: string, n: number): string =>
  * assertion/error blocks themselves. Withholding any of this never protected
  * the probe's mechanism — it only bought blind rounds.
  */
-export function probeEvidence(
+function probeEvidence(
   run: string,
   code: number | null,
   output: string,
@@ -194,7 +193,7 @@ export function probeEvidence(
  * singleton-lock error read as "everything is wrong" instead of "one wall").
  * The signature is the evidence minus its per-AC `$ run…` head. Deterministic.
  */
-export function sharedFailureSignature(
+function sharedFailureSignature(
   results: OracleAcResult[],
 ): string | undefined {
   const failing = results.filter((r) => !r.pass);
@@ -208,7 +207,7 @@ export function sharedFailureSignature(
 /** Keep only compiler DIAGNOSTIC lines (`file(line,col): error CODE: message`),
  *  messages verbatim — dropping everything else (esbuild-style source frames,
  *  echoed commands), so build output informs without quoting check source. */
-export function diagnosticLinesOnly(output: string): string {
+function diagnosticLinesOnly(output: string): string {
   return output
     .split("\n")
     .filter((l) => /^\s*.+?\(\d+,\d+\): error \w+: /.test(l))
@@ -527,9 +526,4 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
       }),
     last: () => lastRecord,
   };
-}
-
-/** Repo-relative → absolute path join, exported for the wiring layer's copy/remove helpers. */
-export function runnerPath(root: string, rel: string): string {
-  return path.join(root, rel.replace(/^\.\//, ""));
 }

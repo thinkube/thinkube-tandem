@@ -44,7 +44,7 @@ export interface ClaudeConfig {
  * Create default settings — intentionally empty so we don't
  * generate fields that don't belong (e.g., mcpServers).
  */
-export function createDefaultSettings(): ClaudeSettings {
+function createDefaultSettings(): ClaudeSettings {
   return {};
 }
 
@@ -62,16 +62,5 @@ export function createDefaultConfig(basePath: string): ClaudeConfig {
     agentsDir: `${claudeDir}/agents`,
     rulesDir: `${claudeDir}/rules`,
     outputStylesDir: `${claudeDir}/output-styles`,
-  };
-}
-
-export function mergePermissions(
-  base: Permissions,
-  override: Partial<Permissions>,
-): Permissions {
-  return {
-    allow: [...new Set([...base.allow, ...(override.allow || [])])],
-    deny: [...new Set([...base.deny, ...(override.deny || [])])],
-    ask: [...new Set([...base.ask, ...(override.ask || [])])],
   };
 }

@@ -228,7 +228,7 @@ export interface SchedulerState {
  * consumer, it never opens it. This is the single gate that guarantees no consumer is dispatched
  * before its producer has landed; `readyFrontier` MUST route every candidate through it.
  */
-export function requiresSatisfied(
+function requiresSatisfied(
   requires: string[] | undefined,
   done: ReadonlySet<string>,
 ): boolean {

@@ -30,29 +30,6 @@ export interface Skill {
   memory?: boolean;
 }
 
-export function createSkill(
-  name: string,
-  description: string,
-  content: string,
-  allowedTools: string[] = [],
-  model?: string,
-): Omit<Skill, "filePath"> {
-  return {
-    name: normalizeSkillName(name),
-    description,
-    allowedTools,
-    model,
-    content,
-  };
-}
-
-export function normalizeSkillName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-");
-}
-
 export function skillToMarkdown(
   skill: Skill | Omit<Skill, "filePath">,
 ): string {
