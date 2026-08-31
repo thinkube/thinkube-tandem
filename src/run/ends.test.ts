@@ -26,8 +26,9 @@ import { execFileSync } from "node:child_process";
 import { dispatchTep } from "./dispatch";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "../core/schema";
-import { addAsk, addNode } from "../core/intent";
-import { SHAPES, repoInShape, scriptedWorker } from "./shapes";
+import {addAsk} from "../core/intent";
+
+import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes";
 import type { RepoShape } from "./shapes";
 
 /** One ask, one promise, one criterion — the content is never the point. */

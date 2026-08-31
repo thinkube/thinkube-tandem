@@ -11,7 +11,7 @@ import { extractNeedsInput } from "../engine/core/preflight";
 import { extractUndelivered } from "../engine/core/redispatch";
 import { rtkRewrite } from "../engine/rtkRewrite";
 import { clearanceLesson, refusedToolUse, toolsRefusedTo } from "./toolsAllowed";
-export { clearanceLesson, refusedToolUse, toolsRefusedTo, DELEGATION_TOOLS, FENCED_TOOLS } from "./toolsAllowed";
+export { clearanceLesson, refusedToolUse, toolsRefusedTo, FENCED_TOOLS } from "./toolsAllowed";
 import { describeTool } from "./toolsAllowed";
 
 export interface WorkerOutcome {

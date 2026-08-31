@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { builtSurfaceText } from "./doors";
+import { builtSurfaceText } from "../gates/doors";
 
 test("builtSurfaceText returns the text its injected reader produced", () => {
   const text = builtSurfaceText(() => "<div data-work-page></div>");

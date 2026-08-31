@@ -6,12 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  SURFACE_PAGES,
-  ASKS_PAGE,
-  drawsAskList,
-  SurfacePage,
-} from "./surfaceContract";
+import {ASKS_PAGE, drawsAskList, SurfacePage, } from "./surfaceContract";
+import { SURFACE_PAGES } from "./surfaceLayout";
 
 test("exactly one page in SURFACE_PAGES satisfies drawsAskList, and it is ASKS_PAGE", () => {
   const askPages: SurfacePage[] = SURFACE_PAGES.filter((page) =>

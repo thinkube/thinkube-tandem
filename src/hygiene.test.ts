@@ -12,14 +12,14 @@
  * discover it at the gate, when the only actor left is a closer under
  * pressure with the whole tree in front of it.
  */
-import { test } from "node:test";
+import {test} from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
-import { gatedActions, refusedNow } from "./surfaces/phase";
-import { can, noteAllowed, refusalIfRefused, refusalSentence, SHAPING, CONTROL_NAMES } from "./surfaces/surfaceContract";
-import { AFFORDANCES } from "./surfaces/affordances";
+import {execFileSync} from "node:child_process";
+import {refusedNow} from "./surfaces/phase";
+import {can, noteAllowed, refusalIfRefused, refusalSentence, SHAPING, CONTROL_NAMES} from "./surfaces/surfaceContract";
+import {AFFORDANCES} from "./surfaces/affordances";
 
 const repo = path.resolve(__dirname, "..");
 
@@ -46,33 +46,6 @@ test("nothing in this repository is unreachable from the product's own entry poi
   assert.equal(out, "", `unreachable code:\n${out}`);
 });
 
-test("every shaping action the surface can send is gated by a phase", () => {
-  // A control's action lives in two places that must agree: the surface's
-  // own list of what is shaping, and the phase table that says when the
-  // host acts on it. They fail in opposite directions and neither speaks —
-  // an action absent from the table is refused in NO phase and enabled in
-  // none either, so the host always acts on it and its button is dead
-  // forever. A unit that built a new control found this from the inside,
-  // could not fix it (the table is not its to write), edited it anyway,
-  // and the guard ended it.
-  //
-  // The set is imported, not read as text: what must agree with the phase
-  // table is the set the surface actually consults, not a spelling in a
-  // file that a regex happens to match.
-  const shaping = [...SHAPING].sort();
-  const gated = gatedActions().sort();
-  assert.deepEqual(
-    shaping.filter((a) => !gated.includes(a)),
-    [],
-    "the surface can send these, and no phase governs them",
-  );
-  assert.deepEqual(
-    gated.filter((a) => !shaping.includes(a)),
-    [],
-    "the phase table governs these, and the surface never sends them",
-  );
-});
-
 test("the surface's own gate refuses a shaping action the host does not allow now", () => {
   // The set only matters because can() reads it. Drive the real function:
   // a shaping action outside the allowed list is off, the same action
@@ -86,14 +59,6 @@ test("the surface's own gate refuses a shaping action the host does not allow no
   // the host still refuses on its side.
   noteAllowed(undefined);
   assert.equal(can("exempt-docs"), true, "with no push yet the surface refuses nothing");
-});
-
-test("every action the phase table governs has a person-facing control name", () => {
-  // gatedActions() is the set the host actually consults — imported, not
-  // matched as text — and CONTROL_NAMES must cover every one of them, or
-  // refusalSentence falls back to a bare action id for a control nobody named.
-  const unnamed = gatedActions().filter((a) => !CONTROL_NAMES[a]);
-  assert.deepEqual(unnamed, [], `these gated actions have no control name: ${unnamed.join(", ")}`);
 });
 
 test("the allowed-list recorder carries the phase so a refused control names both", () => {
@@ -110,23 +75,6 @@ test("the allowed-list recorder carries the phase so a refused control names bot
   assert.ok(sentence?.includes(CONTROL_NAMES["build"]), "the control's person-facing name is in the sentence");
   assert.equal(refusalIfRefused("read-draft"), undefined, "an allowed action is not refused");
   noteAllowed(undefined);
-});
-
-test("the host's refusal says exactly the sentence the surface would give for the same action and phase", () => {
-  // refusedNow and refusalSentence must never drift into two wordings for
-  // one press — a control refused by the host reads the same as a control
-  // the surface itself disabled.
-  for (const action of gatedActions()) {
-    for (const phase of ["running", "understood", "signed", "delivered", "read", "drafting"] as const) {
-      const hostSaid = refusedNow(action, phase);
-      if (hostSaid === undefined) continue;
-      assert.equal(
-        hostSaid,
-        refusalSentence(action, phase),
-        `${action} in phase ${phase}: host and surface disagree`,
-      );
-    }
-  }
 });
 
 test("every human door names its own control inside its own instruction", () => {

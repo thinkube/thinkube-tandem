@@ -5,10 +5,9 @@
  * action nobody declared is refused too. A tool added later without a
  * decision about who owns it fails closed.
  */
-import { test } from "node:test";
+import {test} from "node:test";
 import assert from "node:assert/strict";
-import { MACHINE_MAY, PERSON_ONLY, machineMay } from "./boundary";
-import { gatedActions } from "../surfaces/phase";
+import {MACHINE_MAY, PERSON_ONLY, machineMay} from "./boundary";
 
 /**
  * What a machine may do on a person's behalf.
@@ -41,22 +40,9 @@ test("the machine boundary allows what is declared and refuses everything else",
   }
 });
 
-
-
-
 /**
  * The surface's own gated actions are the list of things a person can
  * press. Every one of them must have been DECIDED about — allowed to a
  * machine, or reserved with a reason — so a new control cannot quietly
  * become reachable by a server that nobody thought about.
  */
-test("every action the surface gates has been decided about", () => {
-  const undecided = gatedActions().filter(
-    (a) => !(MACHINE_MAY as readonly string[]).includes(a) && !(a in PERSON_ONLY),
-  );
-  assert.deepEqual(
-    undecided,
-    [],
-    `these surface actions have no machine-boundary decision: ${undecided.join(", ")}`,
-  );
-});

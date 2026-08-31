@@ -152,30 +152,6 @@ function refusalsBeforeDispatch(a: {
 }
 
 /**
- * The order the slices run in, with a thin end-to-end path first.
- *
- * A plan that builds every part and joins them at the end discovers at the
- * last gate whether the parts fit — the most expensive moment there is. A
- * slice that touches the product's outer seam goes first, so the join is
- * exercised while everything after it can still be shaped by what it found.
- *
- * "Outer seam" is read from the plan, not guessed: the files a slice lands
- * in that nothing else in the plan depends on being built first — the ones
- * a person reaches the product through.
- */
-export function skeletonFirst(slices: SliceForDag[], entryPoints: readonly string[]): SliceForDag[] {
-  if (!entryPoints.length || slices.length < 2) return slices;
-  const touchesSeam = (s: SliceForDag): boolean =>
-    s.workUnits.some((u) => u.footprint.some((f) => entryPoints.some((e) => f === e || f.startsWith(e))));
-  const first = slices.findIndex(touchesSeam);
-  if (first <= 0) return slices;
-  const s = slices[first];
-  // A maintain slice follows its parent; moving one would orphan it.
-  if ((s as { maintains?: string }).maintains) return slices;
-  return [s, ...slices.filter((x) => x !== s)];
-}
-
-/**
  * Everything the run decides before it dispatches anybody, in one place:
  * where the checks are born, whether the plan holds together, whether any
  * promise is impossible, and whether what was signed is what is about to

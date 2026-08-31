@@ -20,8 +20,9 @@ import { dispatchTep } from "./dispatch";
 import { RunState } from "./state";
 import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "../core/schema";
-import { addAsk, addNode } from "../core/intent";
-import { SHAPES, repoInShape, scriptedWorker } from "./shapes";
+import {addAsk} from "../core/intent";
+
+import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes";
 import { refusedToolUse } from "./worker";
 import type { RepoShape } from "./shapes";
 

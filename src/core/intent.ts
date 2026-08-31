@@ -22,28 +22,6 @@ export function addAsk(
   return { ok: true, space: { ...space, asks: [...space.asks, ask] }, added: ask };
 }
 
-/**
- * Add a node. Its `serves` must name existing asks and its `needs` existing
- * nodes — dangling edges are refused at the door, not discovered later.
- */
-export function addNode(
-  space: Space,
-  node: Omit<Change, "id">,
-): Applied<Change> | Rejection {
-  const askIds = new Set(space.asks.map((a) => a.id));
-  for (const s of node.serves)
-    if (!askIds.has(s)) return { ok: false, reason: `serves unknown ask '${s}'` };
-  const changeIds = new Set(space.nodes.map((n) => n.id));
-  for (const d of node.needs)
-    if (!changeIds.has(d)) return { ok: false, reason: `needs unknown node '${d}'` };
-  const added: Change = { ...node, id: `node-${space.nodes.length + 1}` };
-  return {
-    ok: true,
-    space: { ...space, nodes: [...space.nodes, added] },
-    added,
-  };
-}
-
 
 /** The asks a node serves, resolved — for renders written in the asks' words. */
 export function asksOf(space: Space, node: Change): Ask[] {

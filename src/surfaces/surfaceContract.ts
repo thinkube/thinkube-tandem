@@ -14,7 +14,6 @@
  */
 import type { SurfacePage } from "./surfaceLayout";
 export type { SurfacePage } from "./surfaceLayout";
-export { SURFACE_PAGES } from "./surfaceLayout";
 
 /** The one page that draws your asks. Named here, once, so the surface
  *  and its checks read the same answer instead of each deciding page by
@@ -317,12 +316,10 @@ let allowedNow: string[] | undefined;
 let phaseNow: SpacePush["phase"] | undefined;
 
 /** What the host allows now, and in which phase — set by every push, and by
- *  a harness that renders the surface without a host. Starting a new push
- *  clears any held refusal sentence from the press before it. */
+ *  a harness that renders the surface without a host. */
 export function noteAllowed(allowed: string[] | undefined, phase?: SpacePush["phase"]): void {
   allowedNow = allowed;
   phaseNow = phase;
-  heldRefusal = undefined;
 }
 
 /** Whether the host would act on this action now. Non-shaping actions
@@ -396,21 +393,6 @@ export function refusalSentence(action: string, phase: SpacePush["phase"] | unde
   const name = CONTROL_NAMES[action] ?? action;
   const reason = phase ? PHASE_REASON[phase] : undefined;
   return reason ? `${name} — not now: ${reason}.` : `${name}: ${NO_REASON}`;
-}
-
-/** Held sentence for the last press the surface refused itself, so the
- *  panel can put it in front of the person instead of swallowing the
- *  click. Cleared by the next `noteAllowed` (a new push). */
-let heldRefusal: string | undefined;
-
-/** Record the sentence for a press `post()` refused to send. */
-export function noteRefusal(sentence: string): void {
-  heldRefusal = sentence;
-}
-
-/** The held refusal sentence, if a press was refused since the last push. */
-export function lastRefusal(): string | undefined {
-  return heldRefusal;
 }
 
 /** The refusal sentence for this action, if the last-noted allowed list

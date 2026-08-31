@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { verifiedDoors, Door } from "./doors";
+import { verifiedDoors, Door } from "../gates/doors";
 import { PAGES } from "./affordances";
 
 test("verifiedDoors omits a door whose page handle is absent, even when the door's own control handle is present", () => {

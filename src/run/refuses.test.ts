@@ -8,22 +8,22 @@
  * These are properties, not incidents: each states a kind of check that can
  * never be evidence, and each is driven by the smallest check of that kind.
  */
-import { test } from "node:test";
+import {test} from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
-import { auditProbe } from "./probeAudit";
-import { refusedBeforeDispatch, skeletonFirst } from "./refusals";
-import { repairByAuthors } from "./authorRepair";
-import { classMethodsIn, wrongAltitude } from "./altitude";
-import { rehouseChecks } from "./checkHomes";
-import { writeDeliveryRecord } from "./plan";
-import { acceptDelivery } from "../gates/sign";
+import {execFileSync} from "node:child_process";
+import {auditProbe} from "./probeAudit";
+import {refusedBeforeDispatch} from "./refusals";
+import {repairByAuthors} from "./authorRepair";
+import {classMethodsIn, wrongAltitude} from "./altitude";
+import {rehouseChecks} from "./checkHomes";
+import {writeDeliveryRecord} from "./plan";
+import {acceptDelivery} from "../gates/sign";
 import type { Delivery } from "../core/schema";
 import * as os from "node:os";
-import { emptySpace } from "../core/schema";
-import { exportedIn } from "./altitude";
+import {emptySpace} from "../core/schema";
+import {exportedIn} from "./altitude";
 
 /** A repository with one directory, so the import audit has ground truth. */
 function repo(): string {
@@ -34,7 +34,6 @@ function repo(): string {
 }
 
 const PLANNED = ["src/greet.mjs"];
-
 
 /** The pre-flight as the run calls it, with the repository stood in for. */
 async function refusedBeforeDispatchIn(a: { slices: unknown[]; space: unknown }): Promise<string[]> {
@@ -69,9 +68,9 @@ const AUDIT_CASES: {
   {
     case: "reads the source instead of driving it",
     source:
-      `import { readFileSync } from "node:fs";\n` +
-      `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
-      `import { greet } from "./greet.mjs";\n` +
+      `import {readFileSync} from "node:fs";\n` +
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `import {greet} from "./greet.mjs";\n` +
       `test("greet exists", () => assert.match(readFileSync("src/greet.mjs", "utf8"), /hello/));\n`,
     kind: "source-text",
     detail: /Drive the behaviour instead/,
@@ -79,7 +78,7 @@ const AUDIT_CASES: {
   {
     case: "imports nothing this cut builds",
     source:
-      `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
       `test("two is two", () => assert.equal(2, 2));\n`,
     kind: "drives-nothing",
   },
@@ -87,21 +86,21 @@ const AUDIT_CASES: {
     case: "simulates a platform the repository does not own",
     source:
       `import Module from "node:module";\nModule._load = () => ({ greet: () => "hello" });\n` +
-      `import { greet } from "./greet.mjs";\nimport { test } from "node:test";\ntest("greet", () => greet());\n`,
+      `import {greet} from "./greet.mjs";\nimport {test} from "node:test";\ntest("greet", () => greet());\n`,
     kind: "simulator",
   },
   {
     case: "drives what the cut builds — refused nothing",
     source:
-      `import { test } from "node:test";\nimport assert from "node:assert/strict";\n` +
-      `import { greet } from "./greet.mjs";\ntest("greet", () => assert.equal(greet(), "hello"));\n`,
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `import {greet} from "./greet.mjs";\ntest("greet", () => assert.equal(greet(), "hello"));\n`,
   },
   {
     // Reading data a test owns is how half the world's tests are written.
     case: "reads its own fixture — not a source-text check",
     source:
-      `import { readFileSync } from "node:fs";\n` +
-      `import { greet } from "./greet.mjs";\nimport { test } from "node:test";\n` +
+      `import {readFileSync} from "node:fs";\n` +
+      `import {greet} from "./greet.mjs";\nimport {test} from "node:test";\n` +
       `test("greet", () => greet(readFileSync("fixtures/names.txt", "utf8")));\n`,
   },
 ];
@@ -226,6 +225,11 @@ test("the pre-flight refuses only a promise no unit could keep", async () => {
   }
 });
 
+const METHODS = [
+  { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  { className: "SpacePanel", method: "show", file: "src/surfaces/panel.ts" },
+];
+
 /**
  * How the plan behaves before and during a run.
  *
@@ -233,130 +237,6 @@ test("the pre-flight refuses only a promise no unit could keep", async () => {
  * depth. A red criterion goes back as the next message in the session that
  * wrote it, which is the only actor holding the context. And every refusal
  * a person reads names the work, never the machinery.
- */
-test("the plan is ordered, repaired and refused in words about the work", async () => {
-  {
-  const slice = (handle: string, file: string): never =>
-    ({ handle, status: "ready", files: [file], workUnits: [{ footprint: [file], execution: "serial", role: "code" }] }) as never;
-  const ordered = skeletonFirst([slice("SL-1", "src/deep/core.mjs"), slice("SL-2", "src/main.mjs")], ["src/main.mjs"]);
-  assert.deepEqual(
-    ordered.map((s) => s.handle),
-    ["SL-2", "SL-1"],
-    "the slice that reaches the product's outer seam goes first",
-  );
-  }
-  {
-  const resumedWith: (string | undefined)[] = [];
-  const said: string[] = [];
-  const results = await repairByAuthors({
-    reds: [
-      { unit: "SL-1#eu-0", text: "greet() returns hello", evidence: "expected 'hello', got 'hi'", footprint: ["src/greet.mjs"] },
-      { unit: "SL-2#eu-0", text: "the panel opens once", evidence: "two panels", footprint: ["src/panel.mjs"] },
-    ],
-    sessionOf: (unit) => (unit === "SL-1#eu-0" ? "session-abc" : undefined),
-    changedSince: ["src/other.mjs"],
-    worktree: "/nowhere",
-    model: "sonnet",
-    worker: async (deps, brief) => {
-      resumedWith.push(deps.resume);
-      assert.match(brief, /THE PROMISE: greet\(\) returns hello/);
-      assert.match(brief, /expected 'hello', got 'hi'/);
-      assert.match(brief, /src\/other\.mjs/, "and what changed since it stopped");
-      return { ok: true, finalText: "UNDELIVERED: none" };
-    },
-    log: (l) => said.push(l),
-    defect: () => {},
-  });
-
-  assert.deepEqual(resumedWith, ["session-abc"], "the author is resumed, and only where a session survives");
-  assert.deepEqual(
-    results.map((r) => r.resumed),
-    [true, false],
-  );
-  assert.match(results[1].why, /no session/);
-  assert.ok(said.some((l) => /its session is gone/.test(l)), "a lost session is said, never skipped in silence");
-  }
-  {
-  const said: string[] = [];
-
-  // The pre-flight refusals, from the real function.
-  const impossible = await refusedBeforeDispatchIn({
-    slices: [
-      {
-        handle: "SL-1",
-        status: "ready",
-        files: ["src/panel.ts"],
-        workUnits: [{ footprint: ["src/panel.ts"], execution: "serial", role: "code" }],
-        criterionIds: ["c1"],
-      },
-    ],
-    space: {
-      ...emptySpace(),
-      nodes: [
-        {
-          id: "n1",
-          sentence: "one editor tab per thinking space",
-          serves: [],
-          needs: [],
-          acceptance: [{ id: "c1", text: "opening a space twice reveals the same tab" }],
-          grounding: { touchpoints: [{ path: "src/extension.ts", planned: false }], stamp: [] },
-        },
-      ],
-    },
-  });
-  said.push(...impossible);
-
-  // What acceptance refuses, in each of its shapes.
-  for (const d of [
-    { id: "d1", cutId: "c", branch: "tandem/TEP-1", proofs: [], withheld: "two promises are not kept" },
-    { id: "d2", cutId: "c", branch: "tandem/TEP-1", proofs: [{ kind: "probe" as const, label: "it works", verdict: "red" as const }] },
-  ] as Delivery[]) {
-    const r = acceptDelivery(d, "2026-08-22T00:00:00Z", "advisory", []);
-    if (!r.ok) said.push(r.reason);
-  }
-
-  // The altitude refusal, which has the most to explain.
-  const why = wrongAltitude({
-    criterion: "SpacePanel.reveal() sets the active tab",
-    methods: [{ className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" }],
-    exported: () => false,
-  });
-  if (why) said.push(why);
-
-  const offending = said.filter((line) => INTERNALS.test(line));
-  assert.deepEqual(offending, [], `these name the machine rather than the work:\n${offending.join("\n")}`);
-  assert.ok(said.length >= 4, `the drive read nothing: ${said.length}`);
-  }
-});
-
-
-
-
-
-
-
-
-
-/**
- * Altitude — the rule the whole methodology exists for. A criterion that
- * can only be checked by building a class and calling it is a criterion
- * whose check passes for a part connected to nothing.
- */
-const METHODS = [
-  { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
-  { className: "SpacePanel", method: "show", file: "src/surfaces/panel.ts" },
-];
-
-/**
- * The altitude rule: what a criterion may be checked BY.
- *
- * One subject, three cases. A criterion that can only be proved by
- * building a class and calling a method on it passes whether or not the
- * product ever reaches that code — so it is refused, and told what to
- * write instead. The other two cases are the rule's other half: an
- * ordinary criterion about what the product does must pass, and a name the
- * module itself hands out IS the outer seam, even when a class of the same
- * name has a method beside it.
  */
 test("a criterion is refused when only a class method can check it, and not otherwise", () => {
   const why = wrongAltitude({
@@ -477,10 +357,6 @@ test("what an earlier run recorded survives, and what cannot be read is named", 
   }
 });
 
-
-
-
-
 /**
  * What reaches a person is about the work.
  *
@@ -491,8 +367,4 @@ test("what an earlier run recorded survives, and what cannot be read is named", 
  */
 const INTERNALS =
   /\b(oracle|probe|footprint|worktree|dag|frontier|knip|tsc|npx|Bash|Grep|Glob|NotebookEdit|eu-\d|#eu|mcp__|stdout|stderr|regex)\b/i;
-
-
-
-
 

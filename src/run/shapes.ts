@@ -18,6 +18,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkerOutcome } from "./worker";
+import type { Change, Space } from "../core/schema";
+import type { Applied, Rejection } from "../core/intent";
 
 export interface RepoShape {
   /** What the shape is, in the words the door would use. */
@@ -199,4 +201,22 @@ export function scriptedWorker(shape: RepoShape, how: Personality, closerFixes =
       return { ok: true, finalText: "done" };
     },
   };
+}
+
+/**
+ * A node added to a space, for a check that needs a space with nodes in it.
+ *
+ * Its `serves` must name existing asks and its `needs` existing nodes: a
+ * fixture built on a dangling edge is a fixture that proves nothing about a
+ * space the door would have accepted.
+ */
+export function addNode(space: Space, node: Omit<Change, "id">): Applied<Change> | Rejection {
+  const askIds = new Set(space.asks.map((a) => a.id));
+  for (const s of node.serves)
+    if (!askIds.has(s)) return { ok: false, reason: `serves unknown ask '${s}'` };
+  const changeIds = new Set(space.nodes.map((n) => n.id));
+  for (const d of node.needs)
+    if (!changeIds.has(d)) return { ok: false, reason: `needs unknown node '${d}'` };
+  const added: Change = { ...node, id: `node-${space.nodes.length + 1}` };
+  return { ok: true, space: { ...space, nodes: [...space.nodes, added] }, added };
 }

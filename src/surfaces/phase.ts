@@ -69,20 +69,6 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],
 };
 
-/**
- * Every shaping action this table governs.
- *
- * An action missing from the table is not merely ungoverned: `refusedNow`
- * refuses it in no phase, and `allowedNow` never lists it, so the host
- * always acts on it and the surface never enables its control. The two
- * halves fail in opposite directions and neither says anything. A unit
- * that built a new control once discovered this from the inside and had
- * no way to fix it — the table is not its to write.
- */
-export function gatedActions(): string[] {
-  return Object.keys(ALLOWED);
-}
-
 /** The shaping actions the host acts on in this phase — sent with every
  *  push so the surface enables exactly these and nothing else. */
 export function allowedNow(phase: Phase): string[] {

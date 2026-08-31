@@ -19,7 +19,8 @@ import * as path from "node:path";
 import { ensureSnapshot } from "./oracle";
 import type { Exec } from "./oracle";
 import { setupRunTree } from "./setup";
-import { DELEGATION_TOOLS, FENCED_TOOLS, toolsRefusedTo } from "./worker";
+import {FENCED_TOOLS, toolsRefusedTo} from "./worker";
+import { DELEGATION_TOOLS } from "./toolsAllowed";
 
 const exec: Exec = (cmd, args, cwd) =>
   new Promise((resolve) =>
