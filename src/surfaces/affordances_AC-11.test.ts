@@ -30,6 +30,28 @@ const repo = path.resolve(__dirname, "..", "..");
 const harnessBundle = path.join(repo, "out-test", "harness", "buttons.cjs");
 
 /**
+ * Every `.ts`/`.tsx` file under `webview/map/src`, opened and concatenated.
+ *
+ * The criterion is about what the SOURCE FILES say, so the check opens them
+ * itself: the read is here, where a reader of the check can see which bytes
+ * the claim is made against. It is not the built bundle — a bundler may
+ * rename, inline or drop a literal.
+ */
+function webviewFilesRead(): string {
+  const dir = path.join(repo, "webview", "map", "src");
+  const parts: string[] = [];
+  const walk = (at: string): void => {
+    for (const entry of fs.readdirSync(at, { withFileTypes: true })) {
+      const full = path.join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name)) parts.push(fs.readFileSync(full, "utf8"));
+    }
+  };
+  walk(dir);
+  return parts.join("\n");
+}
+
+/**
  * The button harness, bundled for node and loaded. The harness is webview
  * code — React and JSX, which the host's own test build does not compile —
  * so it is reached through the bundle its own vite config produces rather
@@ -77,17 +99,24 @@ function pushWithDelivery(): SpacePush {
 }
 
 test("every handle declared in PAGES appears literally in the webview source under webview/map/src", () => {
-  // The source is read through `webviewSourceText`, the same function the
-  // product's own door proof uses, rather than a directory listing this
-  // check keeps for itself. A private reader here listed one directory and
-  // no deeper, so a page whose JSX moved into `src/proto/` would keep this
-  // check green while the product's recursive reader saw the truth — the
-  // check and the product would disagree about what "the webview source"
-  // means, and only the check would be happy.
-  const source = webviewSourceText();
+  // The claim is made against files this check opened itself, so what is
+  // asserted and what was read are the same bytes. The walk is recursive:
+  // a reader that listed one directory and no deeper would stay green for a
+  // page whose JSX moved into `src/proto/`.
+  const source = webviewFilesRead();
   assert.ok(
     source.length > 0,
     "set up: the webview's source was found and read — an empty read proves nothing",
+  );
+
+  // ...and the product's own reader must see that same surface. `doors.ts`
+  // is what the shipped door proof runs against; if the two readers
+  // disagreed about what "the webview source" means, this check would be
+  // measuring a different surface than the code it guards.
+  assert.equal(
+    webviewSourceText().length,
+    source.length,
+    "set up: the product's own webview reader and this check read the same source",
   );
 
   const handles = Object.values(PAGES).map((p) => p.handle);

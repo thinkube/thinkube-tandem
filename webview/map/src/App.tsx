@@ -465,20 +465,21 @@ export function App(props: {
                     an empty graph with the only restart button unreachable. The
                     notice — heading, sentence, and which ways back in ride with
                     it — comes from the push; this page never words it again. */}
-                {push.signedIdle ? <RunNote notice={push.signedIdle} /> : null}
+                {push.signedIdle ? <RunNote notice={push.signedIdle} phase={push.phase} /> : null}
                 {push.run ? (
                   <RunSection
                     run={push.run}
                     live={!!push.running}
                     world={flowWorld}
                     openLog={push.runLog?.step}
+                    phase={push.phase}
                   />
                 ) : null}
               </div>
             ) : (
               <div style={{ flex: 1, padding: SP.xl }}>
                 {push.signedIdle ? (
-                  <RunNote notice={push.signedIdle} />
+                  <RunNote notice={push.signedIdle} phase={push.phase} />
                 ) : (
                   <span style={{ opacity: O.dim }}>
                     Nothing has been orchestrated yet — press Build on the work page and the workers

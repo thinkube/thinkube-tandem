@@ -8,7 +8,7 @@
  * above the canvas.
  */
 import { useEffect, useMemo, useState } from "react";
-import { can, post, SpacePush } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
@@ -68,6 +68,10 @@ function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
 
 export function RunNote(props: {
   notice: { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean };
+  /** The phase the push carried, so a control the phase has turned off can
+   *  say why. `disabled` swallows the click, so `post()`'s refusal path
+   *  never runs and the tooltip is the only place the sentence reaches. */
+  phase: SpacePush["phase"];
 }): JSX.Element {
   const { notice } = props;
   return (
@@ -85,7 +89,11 @@ export function RunNote(props: {
                 data-rerun
                 disabled={!can("rerun")}
                 style={{ fontWeight: 600 }}
-                title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+                title={
+                  can("rerun")
+                    ? "Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+                    : refusalSentence("rerun", props.phase)
+                }
                 onClick={() => post({ action: "rerun" })}
               >
                 Run it again
@@ -100,7 +108,11 @@ export function RunNote(props: {
               <button
                 data-think-again
                 disabled={!can("think-again")}
-                title="Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
+                title={
+                  can("think-again")
+                    ? "Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
+                    : refusalSentence("think-again", props.phase)
+                }
                 onClick={() => post({ action: "think-again" })}
               >
                 Think it again
@@ -124,6 +136,10 @@ export function RunSection(props: {
   world: World;
   /** The step whose log is open, so its card reads as selected. */
   openLog?: string;
+  /** The phase the push carried, so a control the phase has turned off can
+   *  say why. `disabled` swallows the click, so `post()`'s refusal path
+   *  never runs and the tooltip is the only place the sentence reaches. */
+  phase: SpacePush["phase"];
 }): JSX.Element {
   const { run, world } = props;
   const [now, setNow] = useState(Date.now());
@@ -317,7 +333,11 @@ export function RunSection(props: {
         <button
           data-stop-run
           disabled={!can("stop-run")}
-          title="Stop the run — aborts every live worker; the run drains and reports."
+          title={
+            can("stop-run")
+              ? "Stop the run — aborts every live worker; the run drains and reports."
+              : refusalSentence("stop-run", props.phase)
+          }
           style={{ background: C.bad, color: "#fff", border: "none", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px`, cursor: "pointer" }}
           onClick={() => post({ action: "stop-run" })}
         >
