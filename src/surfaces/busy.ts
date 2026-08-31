@@ -12,7 +12,7 @@
  */
 
 /** A space goes quiet after this long without a recorded change. */
-export const QUIET_MS = 5 * 60 * 1000;
+const QUIET_MS = 5 * 60 * 1000;
 
 /** Mirrors exactly the shape `heartbeat`/`pushActive` already read off a
  *  TandemSession: a run's view (units + parked) when one is live, or the

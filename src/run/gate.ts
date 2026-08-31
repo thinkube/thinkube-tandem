@@ -56,7 +56,7 @@ const RED_SUITE_REFUSAL =
  *  card carries, so a click on that card opens the gate's own account. Its
  *  sub-steps ("gate#closer", "gate#finisher") are spelled from it, so the
  *  parent and its children can never drift apart. */
-export const GATE_STEP = "gate";
+const GATE_STEP = "gate";
 
 /**
  * How the closing gate files a line of its own.
@@ -66,15 +66,8 @@ export const GATE_STEP = "gate";
  * carries: the surface asks for "gate" and expects to read what the gate
  * itself said, not an empty panel next to "gate#closer" and "gate#finisher"
  * where the actual account lives.
- *
- * It is a named seam and not a bare closure inside `closeGate` because the
- * promise it keeps — that every line under "gate" and its sub-steps reaches
- * the run-wide log the bottom panel renders — is otherwise provable only by
- * running the whole gate. A check can drive this directly, so a `say` that
- * filed a line nowhere is caught instead of passing as readily as the real
- * thing.
  */
-export function sayAt(log: (line: string, step?: string) => void): (line: string) => void {
+function sayAt(log: (line: string, step?: string) => void): (line: string) => void {
   return (line: string): void => log(line, GATE_STEP);
 }
 
