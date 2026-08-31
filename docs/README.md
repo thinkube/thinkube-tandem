@@ -25,6 +25,7 @@ work in flight.
 | [ACCEPTANCE.md](ACCEPTANCE.md) | how each claim is *driven* — what test turns red if the mechanism is removed. Nothing is "done" because it was written, reviewed or committed. |
 | [THE-LADDER.md](THE-LADDER.md) | who settles a failure, and who is behind them when they cannot. Every failure routes to the actor best placed to settle it, and there is always one more actor behind. |
 | [WORDS.md](WORDS.md) | the vocabulary failures that cost real runs — where two different facts wore the same word and the machine acted on the wrong one. |
+| [CONFIGURATION.md](CONFIGURATION.md) | what a repository tells Tandem about itself: the six target shapes, the evidence each is recognised by, the four configuration surfaces and which of them are proved rather than guessed. |
 
 ## Working records
 
