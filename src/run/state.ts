@@ -423,6 +423,9 @@ export interface GateContext {
   /** Work a fenced unit wrote that the guard took back, with its change —
    *  read by the last actor, which is fenced by nothing. */
   restored?: readonly { path: string; patch: string }[];
+  /** The run's door, so an author repairing at the gate can be cleared for
+   *  a file nobody is contending — at the gate, nobody is. */
+  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
   log: (line: string, step?: string) => void;
   defect: (entry: {
     slice?: string;
