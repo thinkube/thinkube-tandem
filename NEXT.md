@@ -233,8 +233,63 @@ The 61 assessments go by being replaced, one at a time — each becomes
 either a B check or a line the post-deploy look reports on. Nothing about
 the gate that grades them is discarded; it is simply asked fewer questions.
 
+### 5 · The module-size rule is reframed
+
+Today it is `SIZE_LIMIT = 600` in `src/hygiene.test.ts` — a hard veto that
+lives only in a test and is written down nowhere a person reads. It went in
+after the machine produced files of five thousand lines, and it stopped
+that. But it measures the wrong thing, and the cost is not theoretical: in
+one afternoon four files were **compressed rather than split** to get under
+it, because deleting explanation is the cheaper way to comply.
+
+Measured against the tree it governs, it does less than it appears to:
+
+```
+imported v1 engine (exempt):  47 files · max 903 code lines · median 101
+code the rule applies to:    153 files · max 493 code lines · median 110
+```
+
+Same median with or without it. It bites only at the margin, and the
+largest files in the repository sit in the directory it exempts.
+
+It also cannot see what it stands in for. `plan.ts` opens with *"execution
+locks, per-slice probe and test-home maps, the closing gate's verification
+list, the honesty scan, the delivery record, documentation obligations, and
+the roles' invariant"* — seven things, two "and"s, 362 lines. Inside every
+limit anyone proposed, and plainly a bag.
+
+**What replaces it**, and it is the industry convention rather than a number
+anyone invented: no major style guide sets a line limit. Java requires one
+top-level class per file, enforced by the compiler. Go makes the *package*
+the unit. Rust maps modules to files. Google's TypeScript guide asks for a
+`@fileoverview` and sets no limit. ESLint's `max-lines` is off by default
+and ships `skipComments` — the most-used linter concedes the same point.
+
+> **A file holds one nameable thing, and is named after it.** Its opening
+> sentence says what that is, in one sentence, without "and". A change that
+> does not fit that sentence belongs in another file.
+>
+> The remedy, which the old rule never named: **extract a nameable piece;
+> never compress the prose.**
+
+Judged by a reviewer reading the name and the opening sentence against the
+contents — cheap, because only files the change touched are read, and
+exactly the kind of judgement an assessment is good at and a check is not.
+
+**And the delivery reports the shape rather than enforcing it**: how many
+source files, the largest, the median, the average lines of code, and how
+much of the tree explains rather than instructs. Growth stays visible
+without being punished, and what it means is the person's to judge. No
+veto, no number to satisfy.
+
+Per language, for the other targets: TypeScript and Python as above; Go
+judged at the **package**, not the file; Rust at the module tree, where a
+`mod.rs` re-exporting unrelated things is the bag.
+
 ## Order of work
 
+0. **Reframe the module rule** — the cheapest item here, and it stops the
+   machine paying for length by deleting explanation.
 1. **B, on case 0.** A rendering check home: the harness renders the real
    push at a real viewport, a check reads the DOM. First check to write:
    *every page region has height greater than zero and its top edge is
@@ -250,9 +305,24 @@ the gate that grades them is discarded; it is simply asked fewer questions.
 
 ## Two things already true and unfixed
 
-- `review-3` — `inCut` appears zero times in `Run.tsx`; no card can show the
-  in-cut mark.
-- `review-33` — the write/intent/work/flow union is still declared in two
-  files.
+- **`review-33` — fixed.** `viewMove.ts` declared its own copy of the
+  four-page union; it now imports `SurfacePage`. One file names the pages.
 
-Both were graded green by a reviewer that never rendered a card.
+- **`review-3` — diagnosed, and it is not what the reviewer thought.** It is
+  not a missing wire. `push.ts` computes `inCut: session.cutNodeIds.has(n.id)`
+  on every promise, the contract carries it on `PromiseVM` — and **nothing
+  reads it**. The only component with the in-cut mark is `NodeCard`, whose
+  only user is `Run.tsx`, which draws run units and never has the fact. So
+  the gold border, the tint and the far-zoom "cut" word are unreachable code,
+  and `WorkGraph` — which draws the promises that do carry the fact — has its
+  own card and never asks.
+
+  Two honest ends, and the choice is a product decision rather than a repair:
+  **remove it** (nobody asked for cut membership on a card, and rule 7 says a
+  fix names what it removes), or **show it on the work graph**, where the
+  fact lives and where a person looking at what is about to be built might
+  want it. Forcing it onto run cards satisfies the criterion and means
+  nothing: every unit in a run is in the cut, so every card would be gold.
+
+  Left for you. What the ask behind it wanted — a second carrier at far zoom
+  — is already delivered by `face`, the state word.

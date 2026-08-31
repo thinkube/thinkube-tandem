@@ -10,7 +10,15 @@
  * takes effect immediately.
  */
 
-type SurfaceTab = "write" | "intent" | "work" | "flow";
+import type { SurfacePage } from "./surfaceLayout";
+
+/**
+ * The pages, named once. A second hand-written copy of the same four words
+ * agrees with the first only until one of them changes, and then the page a
+ * reader is sent to and the page the layout draws are different lists that
+ * both compile.
+ */
+type SurfaceTab = SurfacePage;
 type FlowView = "workers" | "report";
 
 export interface ViewState {
