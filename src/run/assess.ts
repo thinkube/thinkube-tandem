@@ -177,7 +177,7 @@ async function gradeOne(
   mine.proofs.push({
     kind: "assessment",
     criterionId: c.id,
-    label: `review-${ord}: ${c.text.slice(0, 60)}`,
+    label: `review-${ord}: ${c.text}`,
     verdict: green ? "green" : "red",
     ...(reply ? { ref: reply.slice(0, 300) } : {}),
   });
@@ -200,7 +200,7 @@ export async function gradeAssessments(
     for (const c of n.acceptance) {
       if (c.kind !== "assessment") continue;
       ord++;
-      if (a.only && !a.only(`review-${ord}: ${c.text.slice(0, 60)}`)) continue;
+      if (a.only && !a.only(`review-${ord}: ${c.text}`)) continue;
       pending.push({ n, c, ord });
     }
   }
