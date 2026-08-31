@@ -138,10 +138,13 @@ Harbor → the adapter commits `k8s/.argocd-source-<app>.yaml` pinning the new
 tag and triggers an ArgoCD sync. `todo` has tests enabled for both
 containers.
 
-**Results are pull-only.** Nothing reports back. Control reads Argo Workflow
-objects; the endpoints exist but carry no `operation_id`, so they are not
-MCP-exposed — harvest calls them over HTTPS with the token at
-`~/.thinkube/api-token`.
+**Progress is pushed to control; Tandem pulls it back out.** Corrected
+2026-08-31 by the platform's owner — an earlier version of this file said
+"pull-only, nothing reports back", which was wrong. Gitea, Argo and Kaniko
+call control's API to register progress as a build moves, and the VS Code
+CI/CD extension renders that flow. Tandem then reads it from control over
+HTTPS with the token at `~/.thinkube/api-token`; those endpoints carry no
+`operation_id`, so they are not MCP-exposed.
 
 Two facts about the working copy: the remote moves without Tandem (the
 adapter's own build commits), so a run refreshes from origin first; and a
@@ -173,6 +176,22 @@ The person's own correction, recorded because it overrode a constraint the
 machine had invented: this is deployed like a template, and downtime here is
 acceptable — that is the owner's call, not the methodology's. Case 3 is
 case 1, not a special case.
+
+**Why control cannot become an app** (asked and answered 2026-08-31). It
+shares the app architecture, so converting it looks attractive: it would
+inherit the one chain that already works and gain the continuous integration
+it has never had. It cannot, because the machinery that deploys apps lives in
+control, and every build of every app calls control's API to register its
+progress. An app-shaped control would participate in its own deployment, and
+a broken control could not ship its own fix.
+
+What remains available, and is the thing to look at instead: **testing and
+deploying are separable.** Control's containers could be built and its tests
+run the way an app's are — the half of the chain that ends at Harbor — while
+deployment stays ansible and person-approved. That addresses twenty pytest
+modules run by hand and touches the bootstrap not at all. Whether the
+platform can express "test and build me, do not deploy me" is unchecked; it
+is the same shape as the per-container `test.enabled` flag, one level up.
 
 ### 4 — playbooks (`ansible`)
 
