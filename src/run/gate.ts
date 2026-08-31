@@ -40,7 +40,7 @@ import type { DispatchDeps, DispatchOutcome } from "./dispatch";
 import type { RunState } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
-import { close, convergenceScore } from "./closer";
+import { close, convergenceScore, readProbes } from "./closer";
 import { repairUnkept } from "./unkept";
 import { runnerFor, type Proved } from "./proved";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
@@ -352,7 +352,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
             ...verdict.failures.map((f) => f.file).filter((f): f is string => !!f),
           ]),
         ],
-        probeSources: [],
+        probeSources: readProbes(worktree, [...new Set([...g.sliceProbes.values()].flat())]),
         history: verdict.failures.map((f) => `${f.name}: ${f.detail.split("\n")[0]}`).slice(0, 12),
         criteria: [...g.checkOf.values()].slice(0, 40).map((text, i) => ({ id: `gate-${i}`, text })),
         ...(deps.digest ? { digest: deps.digest } : {}),
