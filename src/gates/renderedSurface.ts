@@ -55,10 +55,10 @@ export interface OpenSurface {
 }
 
 /** Whether this machine can render at all — said plainly, never guessed. */
-export async function canRender(mediaRoot: string): Promise<string | undefined> {
+export async function canRender(mediaRoot?: string): Promise<string | undefined> {
   if (!(await fs.stat(BROWSER).then(() => true, () => false)))
     return `no browser at ${BROWSER} — set TANDEM_BROWSER to one`;
-  if (!(await fs.stat(path.join(mediaRoot, "index.html")).then(() => true, () => false)))
+  if (mediaRoot && !(await fs.stat(path.join(mediaRoot, "index.html")).then(() => true, () => false)))
     return `the surface is not built at ${mediaRoot} — run the product build first`;
   return undefined;
 }
@@ -70,10 +70,18 @@ export async function canRender(mediaRoot: string): Promise<string | undefined> 
  * ES module and a browser refuses to load one from `file:`.
  */
 export async function openSurface(a: {
-  mediaRoot: string;
+  /** A built surface on disk, served here. */
+  mediaRoot?: string;
+  /** Or a thing already deployed — the same instrument, pointed at what the
+   *  merge produced rather than at what the worktree built. A check before
+   *  the merge and a look after it are the same act on different trees, and
+   *  giving them one home means they can never disagree about what "drawn"
+   *  means. */
+  url?: string;
   viewport?: { width: number; height: number };
 }): Promise<OpenSurface> {
-  const root = path.resolve(a.mediaRoot);
+  if (!a.mediaRoot && !a.url) throw new Error("openSurface needs a built surface or a url");
+  const root = a.mediaRoot ? path.resolve(a.mediaRoot) : "";
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent((req.url ?? "/").split("?")[0]).replace(/^\/+/, "") || "index.html";
     const file = path.resolve(root, rel);
@@ -84,18 +92,18 @@ export async function openSurface(a: {
       () => res.writeHead(404).end(),
     );
   });
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
-  const port = (server.address() as { port: number }).port;
+  if (root) await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const at = root ? `http://127.0.0.1:${(server.address() as { port: number }).port}/index.html` : a.url!;
 
   let browser: Browser | undefined;
   let page: Page | undefined;
   try {
     browser = await chromium.launch({ executablePath: BROWSER, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
     page = await browser.newPage({ viewport: a.viewport ?? { width: 1100, height: 800 } });
-    await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: "load" });
+    await page.goto(at, { waitUntil: "load" });
   } catch (err) {
     await browser?.close().catch(() => {});
-    await new Promise<void>((ok) => server.close(() => ok()));
+    if (root) await new Promise<void>((ok) => server.close(() => ok()));
     throw err;
   }
   const open = page;
@@ -136,7 +144,7 @@ export async function openSurface(a: {
     },
     close: async () => {
       await browser?.close().catch(() => {});
-      await new Promise<void>((ok) => server.close(() => ok()));
+      if (root) await new Promise<void>((ok) => server.close(() => ok()));
     },
   };
 }
