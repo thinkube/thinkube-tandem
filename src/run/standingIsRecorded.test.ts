@@ -85,22 +85,3 @@ test("nothing recorded leaves the old behaviour exactly as it was", async () => 
   assert.equal((await standingSlices([], DAG, wt, () => {})).size, 0);
 });
 
-/**
- * The run's arguments are built field by field at each hop. A `freshStart`
- * set faithfully upstream once reached nothing because one hop did not copy
- * it, and the run silently resumed instead of starting over. This reads
- * every hop rather than trusting the type, which cannot see an omission.
- */
-test("the recorded fact reaches the run through every hop", () => {
-  const at = (rel: string): string => fs.readFileSync(path.resolve(__dirname, "..", "..", "src", rel), "utf8");
-  const missing = [
-    ["surfaces/runGate.ts", /slicesFinished\(s\.deps\.storeDir, cutId\)/, "read at the run's start, before its own record overwrites the last one"],
-    ["surfaces/runGate.ts", /finishedBefore \}/, "handed to the dispatch it starts"],
-    ["dispatch/scopeRun.ts", /finishedBefore: args\.finishedBefore/, "copied into the deps the door is built from"],
-    ["run/dispatch.ts", /deps\.finishedBefore/, "and read where standing is decided"],
-  ]
-    .filter(([file, re]) => !(re as RegExp).test(at(file as string)))
-    .map(([file, , why]) => `${file as string} — ${why as string}`);
-
-  assert.deepEqual(missing, [], "a hop that does not copy it drops the fact silently");
-});

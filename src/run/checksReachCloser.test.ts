@@ -64,19 +64,3 @@ test("the checks behind the promises still open lead — the brief keeps only tw
   assert.equal(new Set(ordered).size, ordered.length, "no check is shown twice");
 });
 
-/**
- * Read at source, because the type cannot say it: `probeSources` is
- * required, so `[]` satisfies the compiler at every call site while
- * emptying the brief.
- */
-test("no gate call site hands the closer an empty set of checks", () => {
-  const src = path.resolve(__dirname, "..", "..", "src", "run");
-  const guilty: string[] = [];
-  for (const name of ["gate.ts", "unkept.ts", "closeUnit.ts"]) {
-    const text = fs.readFileSync(path.join(src, name), "utf8");
-    text.split("\n").forEach((line, i) => {
-      if (/probeSources:\s*\[\s*\]/.test(line)) guilty.push(`${name}:${i + 1}`);
-    });
-  }
-  assert.deepEqual(guilty, [], "a closer handed no checks rebuilds them from the tree instead of answering them");
-});

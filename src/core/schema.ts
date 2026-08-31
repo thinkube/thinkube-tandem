@@ -352,6 +352,9 @@ export interface Space {
   subjects?: Subject[];
   /** What must become true of each subject. */
   claims?: Claim[];
+  /** The sets worth delivering separately. Absent until the grouping is made;
+   *  a space without them behaves exactly as it did before. */
+  specs?: Spec[];
   /** The draft: what you are writing, before any of it is an ask.
    *  Kept with the space so you can close the window mid-sentence and
    *  find it where you left it. Nothing is derived from it and nothing
@@ -367,6 +370,28 @@ export interface Space {
   };
   /** A reading that failed, with the round's own words for why. */
   readingFailure?: { askIds: string[]; texts: string[]; reason: string };
+}
+
+/**
+ * A SPEC is a set of subjects worth building and showing on its own.
+ *
+ * The unit of DELIVERY, and the level v2 lost. v1 dispatched per spec —
+ * `dispatchGuard.ts` still says so: "invocations for different Specs run
+ * unimpeded" — and v2 collapsed it into the cut, so everything signed became
+ * one dispatch, one gate, one delivery. Nineteen asks about a surface then had
+ * nowhere to become five things, and the correction that turns a tricycle into
+ * a car happens between deliveries.
+ *
+ * Chosen from the subjects on the first screen, before any grounding: the
+ * cheapest point in the system to decide it, and the one that decides whether
+ * work arrives in one piece or five. A subject belongs to exactly one spec —
+ * in two, it is built twice and the second delivery rebuilds the first.
+ */
+export interface Spec {
+  id: string;
+  /** What becomes true when it is delivered, in the person's register. */
+  name: string;
+  subjectIds: string[];
 }
 
 /**

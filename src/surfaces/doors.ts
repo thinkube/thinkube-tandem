@@ -12,6 +12,5 @@ export {
   missingPages,
   verifiedDoors,
   builtSurfaceText,
-  webviewSourceText,
   type Door,
 } from "../gates/doors";

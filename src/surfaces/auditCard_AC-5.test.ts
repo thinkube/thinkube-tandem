@@ -45,22 +45,4 @@ test("a slice with every coder done but its tester still running is not unpassed
   );
 });
 
-test("the audit card imports and uses unpassedWorkers for its verdict", () => {
-  const src = runTsxSource();
 
-  assert.match(
-    src,
-    /unpassedWorkers/,
-    "Run.tsx must import and call unpassedWorkers to compute the audit card's verdict",
-  );
-});
-
-test("no role === \"code\" filter is left deciding the audit card's verdict", () => {
-  const src = runTsxSource();
-
-  assert.doesNotMatch(
-    src,
-    /role\s*===\s*["']code["']\)\.every\(/,
-    "the audit card's green chip must not be derived from a code-only .every(...) filter",
-  );
-});

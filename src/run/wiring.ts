@@ -153,22 +153,6 @@ export function ranAmong(subject: string, executed: readonly string[]): boolean 
  *  the trace demanded that a document run. */
 const EXECUTABLE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|sh|lua)$/i;
 
-/**
- * A check that proves its promise by READING files, not by running them.
- *
- * Execution is the right instrument for a promise about behaviour: a stub
- * satisfies an assertion but cannot appear on a path nothing reaches. It is
- * the wrong instrument for a promise about a file's TEXT — that no file
- * exceeds six hundred lines, that a handle "appears literally in the source,
- * reading the source files, not the built bundle". Those are kept by what a
- * file says, and a check proves them by opening it. Demanding execution
- * there fails a check for obeying its own criterion.
- *
- * The same escape already exists one step along, for a subject execution
- * cannot reach at all — a document, a data file. This is that rule keyed on
- * what the CHECK does rather than on the subject's extension.
- */
-const READS_FILES = /\b(readFileSync|readdirSync|readFile|opendirSync|globSync|statSync)\b/;
 
 /**
  * What the person reads when the machine doubts a check's reach.
@@ -196,7 +180,6 @@ export async function provedByExecution(a: {
   /** The check's own source, when the caller holds it. A check that reads
    *  files keeps its promise by their content; execution can neither prove
    *  nor refute that. */
-  probeSource?: string;
 }): Promise<WiringVerdict> {
   const runnable = a.subjects.filter((s) => EXECUTABLE.test(s));
   if (!runnable.length)
@@ -209,14 +192,6 @@ export async function provedByExecution(a: {
   // Asked before the trace is spent: a check that proves its promise by
   // READING its subject cannot be judged by execution, so running it a
   // second time under a recorder buys nothing.
-  if (a.probeSource && READS_FILES.test(a.probeSource))
-    return {
-      executed: "unknown",
-      detail:
-        `this check proves its promise by READING ${runnable.join(", ")}, not by running them — ` +
-        `a criterion about what a file SAYS (its length, a handle appearing literally in it) is kept by ` +
-        `the file's text, and execution can neither prove nor refute it.`,
-    };
   a = { ...a, subjects: runnable };
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tandem-wiring-"));
   try {

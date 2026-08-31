@@ -17,8 +17,6 @@ import type { Space } from "../core/schema";
 import { isTestPath } from "./testHomes";
 import type { WiringVerdict } from "./wiring";
 import { criterionMapOf } from "./criteria";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import { provedByExecution, unreachedNote } from "./wiring";
 import type { SliceForDag } from "../engine/core/dag";
 import type { AcVerification } from "../engine/core/closingGate";
@@ -72,17 +70,11 @@ export async function traceWiring(a: {
     const v = a.verifs.find((x) => x.ac === r.ac);
     if (!v?.run || v.env === "assessment") continue;
     const probe = a.probeOfAc.get(r.ac);
-    // The check's own source: a check that reaches its subject by READING it
-    // keeps a promise about that file's text, which execution cannot judge.
-    const probeSource = probe
-      ? await fs.readFile(path.join(a.worktree, probe), "utf8").catch(() => "")
-      : "";
     const verdict = await a.proveWiring({
       run: v.run,
       subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
       worktree: a.worktree,
       exec: a.exec,
-      ...(probeSource ? { probeSource } : {}),
     });
     wiring.set(r.ac, verdict);
     if (verdict.executed === "no") {

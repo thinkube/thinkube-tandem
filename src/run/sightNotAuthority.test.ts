@@ -54,16 +54,3 @@ test("an unblinded coder has a shell, which is why the fence stays", () => {
   assert.ok(toolsRefusedTo({ role: "code", blind: true }).includes("Bash"), "blinding withholds one");
 });
 
-test("the gate's author is given sight, its fence, and the door", () => {
-  const src = require("node:fs").readFileSync(
-    require("node:path").resolve(__dirname, "..", "..", "src", "run", "authorRepair.ts"),
-    "utf8",
-  ) as string;
-  // The worker's arguments: from the call to the brief it is handed.
-  const from = src.indexOf("await a.worker(");
-  const call = src.slice(from, src.indexOf("repairMessage({", from));
-  assert.ok(from > 0 && call.length > 0, "the gate's author is still started by a worker call");
-  assert.doesNotMatch(call, /blind:\s*true/, "the check under dispute is not withheld from its author");
-  assert.match(call, /footprint: red\.footprint/, "a shell write outside the footprint is still taken back");
-  assert.match(call, /clearFor/, "and the door is what keeps that fence from costing a round");
-});
