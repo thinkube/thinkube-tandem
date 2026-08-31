@@ -64,7 +64,8 @@ function repairMessage(a: {
     "",
     "THE RULES ARE UNCHANGED:",
     "- the promise is fixed — you may not reinterpret it;",
-    "- the checks are not yours to weaken; if one misreads its criterion, say so and why;",
+    "- you may now READ the check that failed you; you may not change it. If it",
+    "  misreads its criterion, say so and why, and leave it alone;",
     "- green is decided by running your code, not by your account of it.",
     "",
     "End with UNDELIVERED: none, or one line per thing you could not do.",
@@ -113,13 +114,19 @@ export async function repairByAuthors(a: {
         model: a.model,
         worktree: a.worktree,
         role: "code",
-        blind: true,
+        // Sight, not authority. Blinding a coder is what makes a green mean
+        // something while the code is being written: the check states the
+        // criterion independently, and code written to the check proves
+        // nothing. By this rung the check has already run and its verdict is
+        // the thing in dispute, so withholding it only makes the author
+        // reason about evidence it cannot see — and the next rung shows the
+        // same file to the closer anyway. What still holds is that a coder
+        // may not WRITE a check, at any rung and whatever its footprint says.
         footprint: red.footprint,
         baseline: new Set<string>(),
-        // The door, at the gate. Nothing else is running here, so the fence
-        // guards against nobody — yet three of seven hand-backs came back
-        // saying the fix was one line in a file outside the cleared list,
-        // and the residue went to the most expensive actor instead.
+        // A path nobody owns is granted at once — nothing else is running
+        // here — so the author that already knows the fix makes it, instead
+        // of the residue going to the most expensive actor.
         ...(a.clearFor ? { clearFor: a.clearFor } : {}),
         abort: new AbortController(),
         onPark: (_q, answer) => answer("continue with what you have"),

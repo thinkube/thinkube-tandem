@@ -19,7 +19,7 @@ import type { WiringVerdict } from "./wiring";
 import { criterionMapOf } from "./criteria";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { provedByExecution } from "./wiring";
+import { provedByExecution, unreachedNote } from "./wiring";
 import type { SliceForDag } from "../engine/core/dag";
 import type { AcVerification } from "../engine/core/closingGate";
 
@@ -30,6 +30,9 @@ export async function traceWiring(a: {
   acResults: readonly { ac: number; pass: boolean }[];
   verifs: readonly AcVerification[];
   probeOfAc: ReadonlyMap<number, string>;
+  /** What each probe is FOR, in the check's own words — a note names the
+   *  check a person read, never an ordinal. */
+  checkOf: ReadonlyMap<string, string>;
   worktree: string;
   exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   log: (line: string) => void;
@@ -44,12 +47,13 @@ export async function traceWiring(a: {
   mapCriteria: typeof criterionMapOf;
   proveWiring: typeof provedByExecution;
 }): Promise<{
-  wiring: Map<number, WiringVerdict>;
   /** Which criterion each probe belongs to — named by the CHECK it ran,
    *  because an ordinal names nothing to a reader. */
   criterionByProbe: Map<string, string>;
-  /** The files a criterion's promise lands in, tests excluded. */
-  subjectsOf: (criterionId?: string) => string[];
+  /** Checks that passed without being seen to exercise their subject, each
+   *  already written for the person. A doubt about a check's reach is the
+   *  person's to weigh at Accept; it decides no verdict here. */
+  unreached: string[];
 }> {
   // Named by the CHECK it ran — an ordinal names nothing to a reader.
   const criterionByProbe = a.mapCriteria(a.slices);
@@ -62,6 +66,7 @@ export async function traceWiring(a: {
     return (promise?.grounding?.touchpoints ?? []).map((t) => t.path).filter((p) => !isTestPath(p));
   };
   const wiring = new Map<number, WiringVerdict>();
+  const unreached: string[] = [];
   for (const r of a.acResults) {
     if (!r.pass) continue;
     const v = a.verifs.find((x) => x.ac === r.ac);
@@ -80,7 +85,8 @@ export async function traceWiring(a: {
       ...(probeSource ? { probeSource } : {}),
     });
     wiring.set(r.ac, verdict);
-    if (verdict.executed === "no")
+    if (verdict.executed === "no") {
+      unreached.push(unreachedNote((probe && a.checkOf.get(probe)) || `check ${r.ac}`));
       a.defect({
         activity: "closing gate",
         trigger: "wiring-trace",
@@ -89,8 +95,9 @@ export async function traceWiring(a: {
         impact: "a green check proved nothing",
         detail: verdict.detail.slice(0, 400),
       });
+    }
   }
   const unproven = [...wiring.values()].filter((w) => w.executed === "unknown").length;
   if (unproven) a.log(`${a.tep}: ${unproven} check(s) ran under a runtime that does not report what it executed — their wiring is unproven`);
-  return { wiring, criterionByProbe, subjectsOf };
+  return { criterionByProbe, unreached };
 }

@@ -67,10 +67,14 @@ export interface CloserArgs {
   worktree: string;
   /** Production files it may edit, relative to `worktree`. */
   footprint: string[];
-  /** The checks: a second tree, and the files in it this closer may correct.
-   *  They live apart from production, so the fence for them is its own. */
+  /** The check files this closer may CORRECT, and the tree they sit in.
+   *  Authority, not sight: given only where the closer is judged by these
+   *  checks, so a closer answering to the repository's own suite reads them
+   *  and rules on none. Correcting one always costs a RULING. */
   checks?: { root: string; paths: string[] };
-  /** Its full sight: the checks it is judged by, read from the tester's tree. */
+  /** Its sight: the checks it is judged by, read whole. A brief that names
+   *  them and shows none sends the closer to rebuild them from the tree
+   *  instead of answering them, which is rounds spent on archaeology. */
   probeSources: { path: string; source: string }[];
   /** What the run already tried and could not settle. */
   history: string[];
@@ -154,9 +158,16 @@ export function closerBrief(a: {
           ...a.restored.slice(0, 6).map((r) => `── ${r.path} ──\n${r.patch.slice(0, 4000)}`),
         ]
       : []),
-    "",
-    "──── THE CHECKS, IN FULL ────",
-    ...a.probeSources.slice(0, 12).map((p) => `── ${p.path} ──\n${p.source.slice(0, 6000)}`),
+    // A heading with nothing under it is a promise the brief does not keep:
+    // the reader is told the checks are here, finds none, and reconstructs
+    // them from the tree instead of doing the work.
+    ...(a.probeSources.length
+      ? [
+          "",
+          "──── THE CHECKS, IN FULL ────",
+          ...a.probeSources.slice(0, 12).map((p) => `── ${p.path} ──\n${p.source.slice(0, 6000)}`),
+        ]
+      : []),
     "",
     `──── PRODUCTION: EDIT THESE, IN ${a.worktree} ────`,
     "This tree is the one the run commits from. Work here, and nowhere else — a file you",
@@ -166,9 +177,19 @@ export function closerBrief(a: {
   if (a.checks?.paths.length)
     lines.push(
       "",
-      `──── THE CHECKS: A SEPARATE TREE, AT ${a.checks.root} ────`,
-      "You may correct these check files, in place, at that absolute path — and nothing else there.",
-      "Never write production code into the checks' tree: it is not committed, and the work is lost.",
+      // One tree per repository. Telling the reader the checks live
+      // somewhere else sends it looking for a directory that is not there.
+      ...(a.checks.root === a.worktree
+        ? [
+            "──── THE CHECKS: YOU MAY CORRECT THESE ────",
+            "These files are in the tree above, beside the code. You may correct a check where it",
+            "is wrong about its own criterion — say so with a RULING: line. Nothing else is yours.",
+          ]
+        : [
+            `──── THE CHECKS: A SEPARATE TREE, AT ${a.checks.root} ────`,
+            "You may correct these check files, in place, at that absolute path — and nothing else there.",
+            "Never write production code into the checks' tree: it is not committed, and the work is lost.",
+          ]),
       ...a.checks.paths.map((p) => `- ${p}`),
     );
   if (a.digest) lines.push("", "──── THE REPOSITORY, READ FOR YOU ────", a.digest.slice(0, 8000));
@@ -297,6 +318,23 @@ export async function close(a: CloserArgs): Promise<{ green: boolean; report: st
   );
   a.say(undefined);
   return { green: state.green, report, rounds: round };
+}
+
+/**
+ * The checks a closer is judged by, the ones it must answer for leading.
+ *
+ * The brief carries twelve. Which twelve was decided by the order a map
+ * happened to hold, which has nothing to do with which promises are unkept
+ * — so the checks behind the criteria still open come first, and the rest
+ * follow for context.
+ */
+export function probesForClosing(
+  all: readonly string[],
+  criterionByProbe: ReadonlyMap<string, string>,
+  open: ReadonlySet<string>,
+): string[] {
+  const leading = all.filter((p) => open.has(criterionByProbe.get(p) ?? ""));
+  return [...new Set([...leading, ...all])];
 }
 
 /** The checks a slice is judged by, read whole — the closer sees everything. */

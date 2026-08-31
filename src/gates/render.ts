@@ -227,6 +227,45 @@ export function unprovenDoorPromises(nodes: readonly Change[], surfaceText: stri
   return out;
 }
 
+/** A kept promise, one that is not, and one nobody settled either way. */
+const MARK: Record<string, string> = { green: "✓", red: "✗" };
+
+/**
+ * What a proof says to someone who was not here.
+ *
+ * A proof's `ref` is the MACHINE's face of the evidence — the command, its
+ * exit code, the tail of its output — and that is what a record should
+ * hold. Printed on this page it hands a reader a shell line with a `sed`
+ * expression inside it and calls that the explanation.
+ *
+ * So: a kept promise needs no face at all, because the criterion and its
+ * mark already say it. One that failed needs the sentence the check itself
+ * wrote when it failed, which the tail already carries. One nobody could
+ * judge says that, in those words. The command, the exit code and the tail
+ * stay in the run record and the log, where a developer goes looking.
+ */
+function saidPlainly(p: Delivery["proofs"][number]): string {
+  if (p.verdict === "green") return "";
+  if (p.verdict === "pending")
+    return p.settledBy ? `settled after the merge, by ${p.settledBy}` : "settled after the merge";
+  if (p.verdict === "unjudged") return "the machine could not run this check, so nothing was judged here";
+  const said = (p.ref ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // What the check said when it failed, before what the machine typed.
+  const failed = said.find((l) => /^not ok\b/.test(l) || /^(AssertionError|Error)\b/.test(l));
+  if (failed) return failed.replace(/^not ok\s+\d+\s+-\s+/, "");
+  // A reviewer answers in prose, which reads as it is; a command does not.
+  if (!/^\$ /.test(said[0] ?? "")) return said[0] ?? "";
+  // A command and nothing to quote from it. Saying nothing at all leaves a
+  // failure with no reason beside it, so say the one thing that is known
+  // and point at where the command and its output are kept.
+  if (said.some((l) => /the run was halted|stopped/i.test(l)))
+    return "the check did not finish — the run was stopped before it answered";
+  return "the check did not pass; the command it ran and its output are in the run record";
+}
+
 export function renderDeliveryPage(
   space: Space,
   delivery: Delivery,
@@ -383,10 +422,10 @@ export function renderDeliveryPage(
       lines.push(
         `- ${c.verdict === "green" ? "✓" : c.verdict === "not checked" ? "○" : c.verdict === "for you to certify" ? "◐" : "✗"} ${c.text} — ${c.verdict}${c.ref ? ` (${c.ref})` : ""}`,
       );
-    for (const p of looseProofs)
-      lines.push(
-        `- ${p.verdict === "green" ? "✓" : "✗"} ${p.label} — ${p.verdict}${p.ref ? ` (${p.ref})` : ""}`,
-      );
+    for (const p of looseProofs) {
+      const said = saidPlainly(p);
+      lines.push(`- ${MARK[p.verdict] ?? "○"} ${p.label}${said ? ` — ${said}` : ""}`);
+    }
   }
   // Effects the machine could not verify are said, with the reason — never
   // graded by a reviewer that cannot judge them, never assigned to a person.

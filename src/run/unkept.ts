@@ -19,15 +19,15 @@ import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
 import type { AcVerification } from "../engine/core/closingGate";
 import { gradeAssessments } from "./assess";
-import { close } from "./closer";
+import { close, probesForClosing, readProbes } from "./closer";
 import { repairByAuthors } from "./authorRepair";
 import type { RedCriterion } from "./authorRepair";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
-import { provedByExecution } from "./wiring";
 import type { DispatchDeps } from "./dispatch";
 import type { Exec } from "./oracle";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import type { provedByExecution } from "./wiring";
 
 export async function repairUnkept(a: {
   tep: string;
@@ -146,6 +146,12 @@ export async function repairUnkept(a: {
           ? proofs.find((p) => p.criterionId === criterionId)
           : proofs.find((p) => p.label === label);
         if (!proof || !r.pass) continue;
+        // A repaired check that passes is asked the same wiring question a
+        // green check is asked at the gate: whether running it exercised
+        // the code its promise lands in, by the same rule the gate judged
+        // by. A stub can satisfy an assertion; it cannot appear on a path
+        // nothing reaches, so the promise stays unkept rather than turning
+        // green on a check that proved nothing.
         const wired = await proveWiring({
           run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
           subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
@@ -247,11 +253,20 @@ export async function repairUnkept(a: {
       }
       return proofs.filter(unkeptProof);
     };
+    // The checks it is judged by, led by those behind the promises still
+    // open. A brief that names them and shows none sends the closer to
+    // rebuild them from the tree instead of answering them.
+    const closingProbes = probesForClosing(
+      [...new Set([...a.sliceProbes.values()].flat())],
+      criterionByProbe,
+      new Set(unkept.map((p) => p.criterionId).filter((id): id is string => !!id)),
+    );
     const closed = await close({
       subject: `${tep} (the unkept promises)`,
       worktree,
       footprint: slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)),
-      probeSources: [],
+      probeSources: readProbes(worktree, closingProbes),
+      checks: { root: worktree, paths: closingProbes },
       history: unkept.map((p) => `${p.label}: ${(p.ref ?? "").split("\n")[0]}`).slice(0, 20),
       ...(a.restored?.length ? { restored: a.restored } : {}),
       criteria: unkept.map((p, i) => ({ id: p.criterionId ?? `unkept-${i}`, text: p.label })),

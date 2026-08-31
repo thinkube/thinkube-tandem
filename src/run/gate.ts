@@ -38,7 +38,7 @@ import type { DispatchOutcome } from "./dispatch";
 import type { GateContext } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
-import { close, convergenceScore } from "./closer";
+import { close, convergenceScore, readProbes } from "./closer";
 import { repairUnkept } from "./unkept";
 import { runnerFor } from "./proved";
 
@@ -163,10 +163,19 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [rules.reason], undelivered: [] };
   }
   const { criterionMapOf: mapCriteria, provedByExecution: proveWiring } = rules;
-  const { wiring, criterionByProbe, subjectsOf } = await traceWiring({
-    tep, space, slices, acResults, verifs, probeOfAc, worktree,
+  const { criterionByProbe, unreached } = await traceWiring({
+    tep, space, slices, acResults, verifs, probeOfAc, checkOf: g.checkOf, worktree,
     exec: boundedExec, log, defect, mapCriteria, proveWiring,
   });
+  // Wiring proven by execution, the same rule the gate judged the tree by:
+  // a promise's subjects are the files its own grounding touches, minus its
+  // own tests. Kept beside the gate rather than imported from the trace,
+  // because a repair rung re-judges the SAME promise under the SAME rule.
+  const subjectsOf = (criterionId?: string): string[] => {
+    if (!criterionId) return [];
+    const promise = space.nodes.find((n) => n.acceptance.some((c) => c.id === criterionId));
+    return (promise?.grounding?.touchpoints ?? []).map((t) => t.path).filter((p) => !isTestPath(p));
+  };
   const assessed = graded.proofs;
   // What only the running product can show is the person's to certify —
   // ON the delivery, because the delivery is the thing they certify with.
@@ -182,22 +191,25 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (staged.length)
     log(`${tep}: ${staged.length} promise(s) are settled after the merge — ` +
       [...new Set(staged.map((p) => p.settledBy))].join("; "));
+  // What the machine could not settle, put to the person at Accept. A doubt
+  // about a check's REACH belongs here, never in a verdict: the vetoes are an
+  // unkept promise and a product that does not build, and a passing check is
+  // kept. Coverage sees none kept by a file's text, a bundle, or a mute runtime.
+  const findings: string[] = [...unreached];
   const proofs: Proof[] = staged.concat(assessed).concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;
-      const wired = wiring.get(r.ac);
-      const kept = r.pass && wired?.executed !== "no";
-      const ref = wired && wired.executed !== "yes" ? wired.detail : r.evidence;
+      const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
       // A check that could not run judged nothing. Calling that red hands a
       // repair actor work that was never assessed, and withholds a delivery
       // for the machine's own failure.
-      const verdict = r.unrunnable ? ("unjudged" as const) : kept ? ("green" as const) : ("red" as const);
+      const verdict = r.unrunnable ? ("unjudged" as const) : r.pass ? ("green" as const) : ("red" as const);
       return {
         kind: "probe" as const,
-        label: (probe && g.checkOf.get(probe)) || `check ${r.ac}`,
+        label,
         verdict,
-        ...(ref ? { ref: ref.slice(0, 300) } : {}),
+        ...(r.evidence ? { ref: r.evidence.slice(0, 300) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
     }),
@@ -306,7 +318,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
             ...verdict.failures.map((f) => f.file).filter((f): f is string => !!f),
           ]),
         ],
-        probeSources: [],
+        probeSources: readProbes(worktree, [...new Set([...g.sliceProbes.values()].flat())]),
         history: verdict.failures.map((f) => `${f.name}: ${f.detail.split("\n")[0]}`).slice(0, 12),
         criteria: [...g.checkOf.values()].slice(0, 40).map((text, i) => ({ id: `gate-${i}`, text })),
         ...(deps.digest ? { digest: deps.digest } : {}),
@@ -371,7 +383,6 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // hygiene view) was never a reason to hold four kept promises hostage.
   // A tree that does not BUILD stays a veto: handing over a product that
   // cannot ship harms whoever pulls it, whatever the person decides.
-  const findings: string[] = [];
   // Production that imitates the platform, said for the person to weigh.
   // The simulator rule reads checks; this reads what the run DELIVERED,
   // because that is where the imitation moved when the checks were watched.
