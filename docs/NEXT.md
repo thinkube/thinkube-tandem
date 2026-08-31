@@ -88,8 +88,20 @@ spec  →  build  →  light gate  →  merge & deploy  →  the look  →  feed
 - **build** — tester writes the checks, coder builds. **Unchanged.** This is
   what cured the stubs and the cheating and none of this week's failures
   came from here.
-- **light gate** — this spec's checks, the repository suite, the product
-  build. Nothing else. No assessment panel, no repair ladder, no closer.
+- **light gate** — the gate **keeps its machinery**: grading, the hand-back
+  to the author that wrote the code, the closer, the repository suite, the
+  product build, the two vetoes. None of that is thrown away; all of it does
+  real work on the criteria it can actually settle.
+
+  What leaves the gate is not machinery but a **class of criterion**: the
+  ones that cannot be settled during a dev iteration. A criterion needing
+  the deployed thing (C), or a person (D), or an appearance that has no
+  category-B check yet, is **not graded here at all**. It rides out as
+  pending, named, with where its answer will come from. It is never red and
+  never withholds, because nothing at this point has asked it.
+
+  The gate is "light" because it is asked fewer questions, not because it
+  has fewer faculties.
 - **merge & deploy** — a consequence of green, not a decision.
 - **the look** — a worker per ask, driving the **deployed** thing, writing
   what it finds. Playwright where there is a UI; the cluster's own state
@@ -98,18 +110,34 @@ spec  →  build  →  light gate  →  merge & deploy  →  the look  →  feed
   Routing is a lookup: the slice whose footprint holds the file, the promise
   whose touchpoints include it.
 
-What disappears, and why it can:
+What the gate stops being asked, and why:
 
-- **the 61 assessments** — they exist *only* because there was no way to
-  look at the product. Across this cut's life 24 of 61 disagreed with
-  themselves, twelve of them an isolated red between two greens. A reviewer
-  imagining a rendered card is replaced by a worker rendering it.
-- **the closer** — a heroic last actor exists because a single-shot cut has
-  too much riding on it to abandon. A spec you can rebuild in twenty minutes
-  needs no rescue.
-- **the repair ladder and its hand-backs** — same reason.
-- **the withholding** — the moment where the machine decides on the person's
-  behalf whether they may see their own work.
+- **the assessment panel shrinks to what a tree can honestly answer.** Its
+  61 reviews exist *only* because there was no way to look at the product:
+  a model reads code and imagines a rendered card. Across this cut's life 24
+  of 61 disagreed with themselves, twelve of them an isolated red between
+  two greens. Each one becomes either a category-B check or a line the
+  post-deploy look reports on. What is left — a genuine judgement about the
+  tree that no check can make — is still graded here.
+- **appearance criteria leave**, because during an iteration there is
+  nothing rendered to judge. They come back as B checks once B exists, and
+  until then they are answered by the look.
+- **criteria settled after the merge leave** — CI steps, cluster health,
+  `18_test.yaml`. They were never this gate's to answer.
+
+What the gate keeps, unchanged:
+
+- **the two vetoes** — an unkept promise, and a product that does not work.
+- **the repair ladder** — a red check goes back to the author that wrote the
+  code, in its own session, with the evidence. That is the cheapest repair
+  in the system and it works.
+- **the closer** — for a genuine unkept promise nobody else could settle.
+  It is a last resort, and with a spec-sized cut it will rarely be reached.
+- **the suite and the build.**
+
+The gate is "light" because it is asked fewer questions, not because it has
+fewer faculties. Three days of machinery here is not thrown away; it is
+pointed only at what it can actually decide.
 
 Two properties keep the look safe: it writes **feedback, never a verdict**
 (nothing it says can withhold anything, which is what keeps it blameless),
@@ -188,8 +216,9 @@ the reading is one question per check: **if this check passed and the
 product were broken, would it still pass?** If yes, it is a proxy and gets
 rewritten.
 
-The 61 assessments are the ones that go, and they go by being replaced —
-each becomes either a B check or a line the post-deploy look reports on.
+The 61 assessments go by being replaced, one at a time — each becomes
+either a B check or a line the post-deploy look reports on. Nothing about
+the gate that grades them is discarded; it is simply asked fewer questions.
 
 ## Order of work
 
