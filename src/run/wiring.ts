@@ -128,6 +128,24 @@ const EXECUTABLE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|e
  */
 const READS_FILES = /\b(readFileSync|readdirSync|readFile|opendirSync|globSync|statSync)\b/;
 
+/**
+ * What the person reads when the machine doubts a check's reach.
+ *
+ * The verdict's own sentence names a drive, a subject and a stub — words
+ * that mean something to whoever built this machine and nothing to whoever
+ * reads a delivery. The doubt is still worth saying: a check that was not
+ * seen to exercise its code may prove less than it appears to. What must
+ * not be said is that the work is wrong, because nothing here looked at
+ * the work. The machine's own wording stays where a machine reads it —
+ * the defect record and the log.
+ */
+export function unreachedNote(criterion: string): string {
+  return (
+    `${criterion} — this check passed, but the machine could not see it exercise the code the ` +
+    `promise is about, so it may prove less than it appears to. Nothing here says the work is wrong.`
+  );
+}
+
 export async function provedByExecution(a: {
   run: string;
   subjects: readonly string[];

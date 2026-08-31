@@ -24,7 +24,6 @@ import { repairByAuthors } from "./authorRepair";
 import type { RedCriterion } from "./authorRepair";
 import { prepareAtGate } from "./setup";
 import type { BoundedExec } from "./setup";
-import { provedByExecution } from "./wiring";
 import type { DispatchDeps } from "./dispatch";
 import type { Exec } from "./oracle";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
@@ -43,7 +42,6 @@ export async function repairUnkept(a: {
   verifs: AcVerification[];
   probeOfAc: Map<number, string>;
   criterionByProbe: Map<string, string>;
-  subjectsOf: (criterionId?: string) => string[];
   checkOf: Map<string, string>;
   sliceProbes: Map<string, string[]>;
   sessionOf: (unit: string) => string | undefined;
@@ -75,7 +73,7 @@ export async function repairUnkept(a: {
     detail: string;
   }) => void;
 }): Promise<Proof[]> {
-  const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf, exec, boundedExec, log, defect } = a;
+  const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, exec, boundedExec, log, defect } = a;
   let unkept = proofs.filter(unkeptProof);
   // Each red criterion goes back to the unit that wrote its code, as the
   // next message in that unit's own session, with the drive's evidence and
@@ -132,13 +130,10 @@ export async function repairUnkept(a: {
           ? proofs.find((p) => p.criterionId === criterionId)
           : proofs.find((p) => p.label === label);
         if (!proof || !r.pass) continue;
-        const wired = await provedByExecution({
-          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
-          subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
-          worktree,
-          exec: boundedExec,
-        });
-        if (wired.executed === "no") continue;
+        // The check passes, so the promise is kept. Whether it was seen to
+        // exercise its subject is a note the gate gathered once from the
+        // coverage trace; it decides no verdict, so re-running every check
+        // under coverage on each rung buys nothing.
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
@@ -222,14 +217,8 @@ export async function repairUnkept(a: {
           proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
           continue;
         }
-        const wired = await provedByExecution({
-          run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
-          subjects: subjectsOf(criterionId),
-          worktree,
-          exec: boundedExec,
-        });
-        proof.verdict = wired.executed === "no" ? "red" : "green";
-        proof.ref = (wired.executed !== "yes" ? wired.detail : r.evidence)?.slice(0, 300) ?? proof.ref;
+        proof.verdict = "green";
+        proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
       return proofs.filter(unkeptProof);
     };

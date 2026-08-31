@@ -206,8 +206,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { refusals: [rules.reason], undelivered: [] };
   }
   const { criterionMapOf: mapCriteria, provedByExecution: proveWiring } = rules;
-  const { wiring, criterionByProbe, subjectsOf } = await traceWiring({
-    tep, space, slices, acResults, verifs, probeOfAc, worktree,
+  const { criterionByProbe, unreached } = await traceWiring({
+    tep, space, slices, acResults, verifs, probeOfAc, checkOf: g.checkOf, worktree,
     exec: boundedExec, log, defect, mapCriteria, proveWiring,
   });
   const assessed = graded.proofs;
@@ -225,22 +225,25 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (staged.length)
     log(`${tep}: ${staged.length} promise(s) are settled after the merge — ` +
       [...new Set(staged.map((p) => p.settledBy))].join("; "));
+  // What the machine could not settle, put to the person at Accept. A doubt
+  // about a check's REACH belongs here, never in a verdict: the vetoes are an
+  // unkept promise and a product that does not build, and a passing check is
+  // kept. Coverage sees none kept by a file's text, a bundle, or a mute runtime.
+  const findings: string[] = [...unreached];
   const proofs: Proof[] = staged.concat(assessed).concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;
-      const wired = wiring.get(r.ac);
-      const kept = r.pass && wired?.executed !== "no";
-      const ref = wired && wired.executed !== "yes" ? wired.detail : r.evidence;
+      const label = (probe && g.checkOf.get(probe)) || `check ${r.ac}`;
       // A check that could not run judged nothing. Calling that red hands a
       // repair actor work that was never assessed, and withholds a delivery
       // for the machine's own failure.
-      const verdict = r.unrunnable ? ("unjudged" as const) : kept ? ("green" as const) : ("red" as const);
+      const verdict = r.unrunnable ? ("unjudged" as const) : r.pass ? ("green" as const) : ("red" as const);
       return {
         kind: "probe" as const,
-        label: (probe && g.checkOf.get(probe)) || `check ${r.ac}`,
+        label,
         verdict,
-        ...(ref ? { ref: ref.slice(0, 300) } : {}),
+        ...(r.evidence ? { ref: r.evidence.slice(0, 300) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
     }),
@@ -414,7 +417,6 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // hygiene view) was never a reason to hold four kept promises hostage.
   // A tree that does not BUILD stays a veto: handing over a product that
   // cannot ship harms whoever pulls it, whatever the person decides.
-  const findings: string[] = [];
   // Production that imitates the platform, said for the person to weigh.
   // The simulator rule reads checks; this reads what the run DELIVERED,
   // because that is where the imitation moved when the checks were watched.
@@ -488,7 +490,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   proposeRewording(tep, proofs, log, defect);
   let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
-    tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
+    tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
     halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
     abortable: (ab) => g.state.aborts.set("gate#closer", ab),
