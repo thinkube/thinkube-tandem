@@ -122,6 +122,13 @@ function buildGroundingPrompt(args: {
     `NEVER put line numbers in a path; anchors are structural.\n` +
     `- "needs": indices (0-based, into this same list) of nodes that must be built first. Only real build-order edges.\n` +
     `- "acceptance": what proves this node done, as observable statements — at least one per node, ` +
+    `each stating the PROPERTY the person wants to hold, never the way a check would look for it. ` +
+    `Write what must be true of the product, not what a test does: "no instruction on the surface names a page ` +
+    `that does not exist" — never "the handle appears literally in the source, reading the source files, not the ` +
+    `built bundle", and never "the repository's existing check, run unchanged". A criterion that names a check, ` +
+    `a file to read, or a way of reading it has descended to the level of its own proof: the method is then frozen ` +
+    `into what was signed, no worker may change how it is proved, and the delivery is withheld for the criterion ` +
+    `contradicting another rule of the run rather than for the work being wrong. ` +
     `each carrying its LIFETIME as "kind": [{"text":"…","kind":"probe"}].\n` +
     `    "probe" — STANDING BEHAVIOR: true today and still worth a machine checking in five years. Becomes a permanent regression test.\n` +
     `    "assessment" — proof of THIS TRANSITION: something is removed, renamed or reworded, documentation now says something. ` +

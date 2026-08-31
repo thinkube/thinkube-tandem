@@ -63,3 +63,29 @@ test("the signature is shaped with the criteria that will judge it", async () =>
     "and what a shape too narrow for them costs is said plainly",
   );
 });
+
+/**
+ * A criterion says what must be true, never how a check would look for it.
+ *
+ * Three criteria written as verification methods — "the handle appears
+ * literally in the source, reading the source files, not the built bundle",
+ * "the repository's existing check, run unchanged" — withheld a delivery
+ * whose other hundred and eighty-seven proofs were green. A criterion that
+ * names its own method freezes that method into what the person signed: no
+ * worker may then change how it is proved, and the delivery is refused for
+ * the criterion contradicting another rule of the run rather than for the
+ * work being wrong.
+ */
+test("the round that writes criteria is told to state the property, not the method", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-altitude-"));
+  const prompts: string[] = [];
+  await runGrounding(
+    { repoRoot: dir, model: "sonnet" } as never,
+    { id: "ask-1", text: "instructions must not send me to pages that do not exist" } as never,
+    { nextIndex: 1 },
+    async (_deps, prompt) => (prompts.push(prompt), NODES),
+  );
+  const asked = prompts[0];
+  assert.match(asked, /stating the PROPERTY the person wants to hold, never the way a check would look for it/);
+  assert.match(asked, /descended to the level of its own proof/, "and says what goes wrong when it does");
+});
