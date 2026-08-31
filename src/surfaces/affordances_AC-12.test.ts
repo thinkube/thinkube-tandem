@@ -11,18 +11,22 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { AFFORDANCES } from "./affordances";
-
-function readWebviewSource(): string {
-  const dir = path.join(__dirname, "..", "..", "webview", "map", "src");
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
-  return files.map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n");
-}
+import { webviewSourceText } from "../gates/doors";
 
 test("every handle of a human door in AFFORDANCES appears literally in the webview source, or its action is posted as a quoted string", () => {
-  const source = readWebviewSource();
+  // Read through `webviewSourceText` — the product's own reader — so this
+  // check and the door proof it guards mean the same thing by "the webview
+  // source". A private one-directory listing here would stay green for a
+  // control that moved into `src/proto/`, which the product's recursive
+  // reader would still find: the check would be measuring a smaller surface
+  // than the code it speaks for.
+  const source = webviewSourceText();
+  assert.ok(
+    source.length > 0,
+    "set up: the webview's source was found and read — an empty read proves nothing",
+  );
+
   const humanEntries = Object.entries(AFFORDANCES).filter(([, e]) => e.kind === "human");
   assert.ok(humanEntries.length > 0, "set up: at least one human door is declared");
 

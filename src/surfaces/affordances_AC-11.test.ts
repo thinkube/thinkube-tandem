@@ -10,18 +10,23 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { PAGES } from "./affordances";
-
-function readWebviewSource(): string {
-  const dir = path.join(__dirname, "..", "..", "webview", "map", "src");
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
-  return files.map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n");
-}
+import { webviewSourceText } from "../gates/doors";
 
 test("every handle declared in PAGES appears literally in the webview source under webview/map/src", () => {
-  const source = readWebviewSource();
+  // The source is read through `webviewSourceText`, the same function the
+  // product's own door proof uses, rather than a directory listing this
+  // check keeps for itself. A private reader here listed one directory and
+  // no deeper, so a page whose JSX moved into `src/proto/` would keep this
+  // check green while the product's recursive reader saw the truth — the
+  // check and the product would disagree about what "the webview source"
+  // means, and only the check would be happy.
+  const source = webviewSourceText();
+  assert.ok(
+    source.length > 0,
+    "set up: the webview's source was found and read — an empty read proves nothing",
+  );
+
   const handles = Object.values(PAGES).map((p) => p.handle);
   assert.ok(handles.length > 0, "set up: at least one page handle is declared");
 
