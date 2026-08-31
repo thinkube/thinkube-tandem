@@ -63,8 +63,8 @@ incomplete.
 |---|---|---|
 | **A** | here, without running the product — a check runs and answers | yes |
 | **B** | here, by running the product and measuring it — rendered in a harness or a browser, read by a machine | yes |
-| **C** | after the merge, by a machine elsewhere — CI steps, cluster smoke tests, `18_test.yaml` | no — pending, harvested |
-| **D** | only by a person, using the running thing | no — observation, attestation |
+| **C** | after the merge, by a machine elsewhere — CI steps, cluster smoke tests, `18_test.yaml` | no — it answers by itself, and the harvest reports it |
+| **D** | only by a person, using the running thing | no — and it should be nearly empty once B exists |
 
 **B does not exist in Tandem today**, and nearly every surface ask lives
 there. That single absence explains the week: with only A available, "the
@@ -73,6 +73,13 @@ rendered before X in the JSX".
 
 Category D shrinks to almost nothing once B exists. The 1cm bug was found
 by measuring the DOM, not by looking.
+
+**Nothing here produces a list to work through.** A criterion this gate
+cannot settle does not become an outstanding item, a pending proof or a box
+to tick — this week's delivery carried twenty-one observations that nobody
+was ever going to certify, which is the same mistake in its current form. It
+becomes an instruction to whoever exercises the deployed thing, and its
+normal outcome is silence.
 
 Prefer, wherever the choice exists, **a check that interrogates the running
 world over a check somebody wrote.** Nobody authors reality, so nobody can
@@ -95,10 +102,15 @@ spec  →  build  →  light gate  →  merge & deploy  →  the look  →  feed
 
   What leaves the gate is not machinery but a **class of criterion**: the
   ones that cannot be settled during a dev iteration. A criterion needing
-  the deployed thing (C), or a person (D), or an appearance that has no
-  category-B check yet, is **not graded here at all**. It rides out as
-  pending, named, with where its answer will come from. It is never red and
-  never withholds, because nothing at this point has asked it.
+  the deployed thing, or an appearance with no category-B check yet, is
+  **not graded here at all** — and it does not become an item either.
+
+  **It becomes part of what the look is told to exercise.** *"The closing
+  gate's log is reachable in one gesture"* is not an open box on a report;
+  it is a line in the brief of the worker that opens the deployed thing on
+  that ask. The worker clicks, and either says nothing or says what it
+  found. Nothing is outstanding, nothing accumulates, nobody has to
+  remember to come back — silence is the normal answer.
 
   The gate is "light" because it is asked fewer questions, not because it
   has fewer faculties.
@@ -123,7 +135,8 @@ What the gate stops being asked, and why:
   nothing rendered to judge. They come back as B checks once B exists, and
   until then they are answered by the look.
 - **criteria settled after the merge leave** — CI steps, cluster health,
-  `18_test.yaml`. They were never this gate's to answer.
+  `18_test.yaml`. They were never this gate's to answer, and they answer
+  themselves: a pipeline passes or fails, and the harvest says which.
 
 What the gate keeps, unchanged:
 
