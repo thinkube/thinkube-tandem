@@ -36,8 +36,11 @@ function reportShown(push: SpacePush | null, shown: "workers" | "report" | null)
 
 export function App(props: {
   /** A first push and page, for rendering the surface outside the host
-   *  (the button table is checked this way on every build). */
-  initial?: { push: SpacePush; tab: SurfacePage };
+   *  (the button table is checked this way on every build). `flowView`
+   *  settles the orchestration page's switch the way a reader opening the
+   *  page would, so the delivery report can be rendered and proved rather
+   *  than only described. */
+  initial?: { push: SpacePush; tab: SurfacePage; flowView?: "workers" | "report" };
 } = {}): JSX.Element {
   const [push, setPush] = useState<SpacePush | null>(props.initial?.push ?? null);
   // The sentence for the last press the surface refused itself, if any —
@@ -54,7 +57,7 @@ export function App(props: {
   // goes through nextView().
   const [view, setView] = useState<ViewState>({
     tab: props.initial?.tab ?? "write",
-    flowView: "workers",
+    flowView: props.initial?.flowView ?? "workers",
     awaited: null,
   });
   const tab = view.tab;

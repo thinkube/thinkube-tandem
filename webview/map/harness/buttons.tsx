@@ -50,6 +50,33 @@ export function buttonRows(html: string): string[] {
   return buttons;
 }
 
+/**
+ * The markup the surface really renders for one push, page by page.
+ *
+ * A handle proof that reads the source files only ever proves that somebody
+ * wrote the characters down: a handle sitting in a branch no page takes, or
+ * on a component nothing mounts, satisfies a text search while the person
+ * looking for that control finds nothing. Rendering answers the stronger
+ * question — the handle is in the markup a reader would receive — and it
+ * reaches the page components themselves rather than stopping at the
+ * registry that describes them.
+ */
+export function markupFor(push: SpacePush): Record<string, string> {
+  noteAllowed(push.allowed, push.phase);
+  const pages: Record<string, string> = {};
+  for (const tab of SURFACE_PAGES) {
+    pages[tab] = renderToStaticMarkup(<App initial={{ push, tab }} />);
+  }
+  // The orchestration page shows the workers or the delivery report, and a
+  // reader chooses between them. Rendering only the default would leave the
+  // report's own page unreached, so it is rendered under its own key the way
+  // a reader who opened the report would see it.
+  pages["flow:report"] = renderToStaticMarkup(
+    <App initial={{ push, tab: "flow", flowView: "report" }} />,
+  );
+  return pages;
+}
+
 /** The button table for one push, page by page. */
 export function tableFor(push: SpacePush): Record<string, string[]> {
   // Every caller of the allowed-list recorder hands it the phase the same
