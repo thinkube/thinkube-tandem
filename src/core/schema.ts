@@ -1,3 +1,4 @@
+import type { TreeShape } from "../gates/moduleSizes";
 /**
  * The core artifacts of Tandem: asks, nodes, units, cuts, work orders,
  * deliveries. Three rules shape every type here:
@@ -244,6 +245,12 @@ export interface Delivery {
    *  for the person to weigh at Accept; never a reason to withhold kept
    *  promises. */
   findings?: string[];
+  /** How big this tree's modules are — largest, median, average, and how
+   *  much of it explains rather than instructs. Reported, never enforced: a
+   *  ceiling on file length is satisfied by deleting the explanation, which
+   *  is the cheaper move and the worse one. What the shape means is the
+   *  person's to judge. */
+  moduleSizes?: TreeShape;
   id: string;
   cutId: string;
   branch: string;

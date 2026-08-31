@@ -4,6 +4,7 @@
  * fit the size budget, it is carrying machine context and must be cut.
  */
 import { Change, Cut, Delivery, Space } from "../core/schema";
+import { sayShape } from "./moduleSizes";
 import { asksOf } from "../core/intent";
 import { docsDuty } from "../core/docsDuty";
 import { declaredDoors, verifiedDoors } from "./doors";
@@ -468,6 +469,9 @@ export function renderDeliveryPage(
     lines.push("");
     for (const u of delivery.undelivered ?? []) lines.push(`- ⚠ ${u}`);
   }
+  // Last, because it is context rather than a verdict: how big this tree's
+  // modules are. Nothing here withholds anything or asks for anything.
+  if (delivery.moduleSizes) lines.push(...sayShape(delivery.moduleSizes));
   // The walkthrough already appears beside the claim each line belongs to.
   // Repeating it here keyed by promise id printed the machine's own
   // identifiers at the foot of the page and said nothing new.

@@ -41,6 +41,7 @@ import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
 import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
+import { treeShape } from "../gates/moduleSizes";
 import { runnerFor } from "./proved";
 
 export type { GateContext } from "./state";
@@ -548,8 +549,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     .catch(() => "");
   undelivered.push(...unprovenDoorPromises(cutMembers, surfaceText));
 
+  // The shape of what was delivered, said and never enforced.
+  const moduleSizes = await treeShape(worktree);
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
+    ...(moduleSizes ? { moduleSizes } : {}),
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec, log,
   });
 }

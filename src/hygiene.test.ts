@@ -22,26 +22,6 @@ import { can, noteAllowed, refusalIfRefused, refusalSentence, SHAPING, CONTROL_N
 import { AFFORDANCES } from "./surfaces/affordances";
 
 const repo = path.resolve(__dirname, "..");
-const SIZE_LIMIT = 600;
-
-test(`module size: no file exceeds ${SIZE_LIMIT} lines (the imported engine is exempt)`, () => {
-  const offenders: string[] = [];
-  const walk = (dir: string): void => {
-    for (const name of fs.readdirSync(dir)) {
-      const p = path.join(dir, name);
-      if (fs.statSync(p).isDirectory()) {
-        if (["node_modules", "out", "out-test", "media", "engine"].includes(name)) continue;
-        walk(p);
-      } else if (/\.(ts|tsx)$/.test(name)) {
-        const lines = fs.readFileSync(p, "utf8").split("\n").length;
-        if (lines > SIZE_LIMIT) offenders.push(`${path.relative(repo, p)}: ${lines}`);
-      }
-    }
-  };
-  walk(path.join(repo, "src"));
-  walk(path.join(repo, "webview", "map", "src"));
-  assert.deepEqual(offenders, []);
-});
 
 test("nothing in this repository is unreachable from the product's own entry points", () => {
   // The gate was off because its old configuration used TEST files as entry

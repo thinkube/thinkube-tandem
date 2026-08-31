@@ -11,6 +11,7 @@
  * and acted, and every reading of it had to hold both at once.
  */
 import type { Cut, Delivery, Proof, Space } from "../core/schema";
+import type { TreeShape } from "../gates/moduleSizes";
 import type { DispatchDeps } from "./deps";
 import type { DispatchOutcome } from "./dispatch";
 import { porcelainPaths } from "./worker";
@@ -29,6 +30,8 @@ export async function handOver(a: {
   observations: string[];
   undelivered: string[];
   findings: string[];
+  /** The shape of this tree's modules, for the report to say. */
+  moduleSizes?: TreeShape;
   rulings: Delivery["rulings"];
   decisions: Delivery["decisions"];
   kept: { path: string; criterionId: string }[];
@@ -73,6 +76,7 @@ export async function handOver(a: {
   const delivery: Delivery = {
     id: `delivery-${tep}`,
     ...(findings.length ? { findings } : {}),
+    ...(a.moduleSizes ? { moduleSizes: a.moduleSizes } : {}),
     cutId: cut.id,
     branch,
     runId,

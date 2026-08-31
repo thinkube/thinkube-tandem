@@ -99,7 +99,20 @@ export function Asks(props: {
   return (
     <div
       data-sentences
-      style={{ padding: `${SP.sm}px ${SP.lg}px 0` }}
+      style={{
+        padding: `${SP.sm}px ${SP.lg}px 0`,
+        // The asks are CONTENT sharing the column with the page, not a
+        // header sitting above it. Left to its natural height this list
+        // grew to seventeen hundred pixels in an eight hundred pixel
+        // column and took every one of them: each page below it was laid
+        // out at zero height and pushed off the bottom of the window, so
+        // the whole surface read as one strip of asks and nothing else.
+        // It shrinks and scrolls; the page keeps its share.
+        flex: "0 1 auto",
+        minHeight: 0,
+        maxHeight: "38%",
+        overflowY: "auto",
+      }}
     >
       <div style={{ ...label, marginBottom: 4 }}>
         Asks — what you wrote, kept word for word
