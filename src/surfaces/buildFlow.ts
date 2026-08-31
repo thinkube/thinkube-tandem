@@ -12,6 +12,7 @@
  * lock a sentence.
  */
 import { Component, components, promisesOf } from "../core/component";
+import { promisesOfSpec } from "../derive/specs";
 import { Space } from "../core/schema";
 import { signedIds } from "../core/cutClosure";
 import type { TandemSession } from "./session";
@@ -84,7 +85,7 @@ function buildable(space: Space): Component[] {
  */
 export async function buildFlow(
   s: TandemSession,
-  excluded: string[] = [],
+  specId: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   // Refused while anything is still being derived. A half-thought subject
   // would commit work that does not exist yet, and this is the one act
@@ -98,11 +99,14 @@ export async function buildFlow(
         "still working out what to build — nothing can be committed until every object is thought through",
     };
 
-  const out = new Set(excluded);
-  const included = buildable(s.space).filter(
-    (c) => !c.subjectIds.some((id) => out.has(id)) && !c.askIds.some((id) => out.has(id)),
-  );
-  if (!included.length) return { ok: false, reason: "nothing to build" };
+  const spec = (s.space.specs ?? []).find((x) => x.id === specId);
+  if (!spec) return { ok: false, reason: `no set called '${specId}' — group your asks into sets first` };
+  const ids = promisesOfSpec(s.space, spec);
+  if (!ids.length)
+    return { ok: false, reason: `nothing is derived from "${spec.name}" yet — work it out first` };
+  const signed = signedIds(s.space.cuts);
+  if (ids.every((id) => signed.has(id)))
+    return { ok: false, reason: `"${spec.name}" is already built` };
 
   // The press is the moment of consent: every assumption nobody objected
   // to becomes a decision on the record at that instant, and from then on
@@ -119,10 +123,10 @@ export async function buildFlow(
       ),
     };
 
-  const ids = included.flatMap((c) => promisesOf(s.space, c));
   s.cutNodeIds = new Set(ids);
+  s.cutSpecId = spec.id;
   s.changed(
-    `Building ${included.length} group(s) of subjects — ${ids.length} promise(s)` +
+    `Building "${spec.name}" — ${ids.length} promise(s)` +
       (settled ? `, ${settled} assumption(s) now in force` : "") +
       ". The sentences behind them are read-only from now on.",
   );

@@ -318,8 +318,14 @@ function Sets(props: { push: SpacePush }): JSX.Element | null {
             <button
               key={sp.id}
               data-choose-set={sp.id}
-              disabled={!can("choose-set")}
-              title={can("choose-set") ? `Put this set in the cut — ${sp.promises} promise(s).` : refusalSentence("choose-set", phase)}
+              disabled={!can("choose-set") || sp.built}
+              title={
+                sp.built
+                  ? "This set is built — its promises are signed."
+                  : can("choose-set")
+                    ? `Build this set on its own — ${sp.promises} promise(s).`
+                    : refusalSentence("choose-set", phase)
+              }
               onClick={() => post({ action: "choose-set", specId: sp.id })}
               style={{
                 textAlign: "left",
@@ -336,7 +342,12 @@ function Sets(props: { push: SpacePush }): JSX.Element | null {
               <div style={{ fontSize: FS.caption, opacity: O.dim }}>
                 {sp.subjects} subject{sp.subjects === 1 ? "" : "s"} · {sp.promises} promise
                 {sp.promises === 1 ? "" : "s"}
-                {sp.chosen ? " · in the cut" : ""}
+                {/* Where it lands. More than one repository is fine and is
+                    said: the parts are delivered separately and accepted
+                    together, because a provider and its consumer are one
+                    piece of work — half of it landing is worse than none. */}
+                {sp.repos.length > 1 ? ` · in ${sp.repos.join(" and ")}` : ""}
+                {sp.built ? " · built" : sp.chosen ? " · in the cut" : ""}
               </div>
             </button>
           ))}

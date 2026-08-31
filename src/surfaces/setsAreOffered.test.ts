@@ -60,8 +60,8 @@ test("each set is drawn with what it covers, and the chosen one says so", async 
 
   const seen = await onIntent(
     withSets([
-      { id: "spec-1", name: "the layout is stable", subjects: 5, promises: 12, chosen: true },
-      { id: "spec-2", name: "I can read the run graph", subjects: 3, promises: 7, chosen: false },
+      { id: "spec-1", name: "the layout is stable", subjects: 5, promises: 12, chosen: true, built: false, repos: ["thinkube-tandem"] },
+      { id: "spec-2", name: "I can read the run graph", subjects: 3, promises: 7, chosen: false, built: false, repos: ["thinkube-tandem"] },
     ]),
     () =>
       [...document.querySelectorAll("[data-choose-set]")].map((b) => ({
@@ -78,4 +78,34 @@ test("each set is drawn with what it covers, and the chosen one says so", async 
   assert.match(seen[0].text, /12 promises/, "with its size, before it is built");
   assert.match(seen[0].text, /in the cut/, "and the one in hand says so");
   assert.doesNotMatch(seen[1].text, /in the cut/);
+});
+
+test("a set says where it lands, whether it is built, and which is in hand", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+
+  const seen = await onIntent(
+    withSets([
+      { id: "s1", name: "the provider and its consumer", subjects: 2, promises: 6, chosen: false, built: false, repos: ["thinkube-tandem", "apps/todo"] },
+      { id: "s2", name: "already done", subjects: 1, promises: 3, chosen: false, built: true, repos: ["thinkube-tandem"] },
+      { id: "s3", name: "the one in hand", subjects: 4, promises: 9, chosen: true, built: false, repos: ["thinkube-tandem"] },
+    ]),
+    () => ({
+      sets: [...document.querySelectorAll("[data-choose-set]")].map((b) => ({
+        text: (b.textContent ?? "").replace(/\s+/g, " ").trim(),
+        pressable: !(b as HTMLButtonElement).disabled,
+      })),
+      header: (document.querySelector("[data-set-in-hand]")?.textContent ?? "").trim(),
+    }),
+  );
+
+  // Two repositories is said, not hidden: the parts are delivered separately
+  // and accepted together, so a person choosing it should know before they do.
+  assert.match(seen.sets[0].text, /in thinkube-tandem and apps\/todo/);
+  assert.doesNotMatch(seen.sets[2].text, /in thinkube-tandem and/, "one repository needs no saying");
+
+  assert.match(seen.sets[1].text, /built/, "a set already signed says so");
+  assert.equal(seen.sets[1].pressable, false, "and is not offered again");
+
+  assert.match(seen.header, /the one in hand/, "no page is silent about which set it is showing");
 });

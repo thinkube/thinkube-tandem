@@ -174,6 +174,15 @@ export function App(props: {
           fontSize: FS.body,
         }}
       >
+        {(() => {
+          const here = (push.specs ?? []).find((sp) => sp.chosen);
+          return here ? (
+            <span data-set-in-hand style={{ fontSize: FS.body }}>
+              <span style={{ opacity: O.faint }}>{" › "}</span>
+              {here.name}
+            </span>
+          ) : null;
+        })()}
         <span style={{ opacity: O.dim }}>Asking in</span>
         <strong style={{ fontSize: FS.body }}>{push.repoName ?? "no project chosen"}</strong>
         <span style={{ opacity: O.faint }}>— its code is read; its repository receives the delivery</span>

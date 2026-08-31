@@ -238,7 +238,20 @@ export interface SpacePush {
   impacts: { id: string; decision: string; askText: string; affected: number }[];
   /** The sets worth delivering on their own — the person's grouping of their
    *  own subjects. Empty until it is made; the surface behaves as before. */
-  specs?: { id: string; name: string; subjects: number; promises: number; chosen: boolean }[];
+  specs?: {
+    id: string;
+    name: string;
+    subjects: number;
+    promises: number;
+    /** In the cut right now — one set at a time, so at most one is. */
+    chosen: boolean;
+    /** Every promise of it is signed: built already, and not offered again. */
+    built: boolean;
+    /** The repositories it lands in. More than one is fine and is said: the
+     *  parts are delivered separately and accepted together, because a
+     *  provider and its consumer are one piece of work. */
+    repos: string[];
+  }[];
   subjects: SubjectVM[];
   cutCount: number;
   deliveries: DeliveryVM[];

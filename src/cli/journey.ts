@@ -274,7 +274,16 @@ export async function main(argv: readonly string[]): Promise<number> {
     say("stopping before the build, as asked — the promises are derived and unsigned");
     return 0;
   }
-  if (!(await step("signing and building", () => session.build()))) return 1;
+  // One set is the unit of building, so the journey groups first and builds
+  // the first set — the same path a person takes, not a special one.
+  if (!(session.space.specs ?? []).length) await session.groupIntoSpecs();
+  const first = (session.space.specs ?? [])[0];
+  if (!first) {
+    say("nothing to build — the asks did not group into any set");
+    return 1;
+  }
+  say(`building "${first.name}"`);
+  if (!(await step("signing and building", () => session.build(first.id)))) return 1;
 
   // Signing starts the run and does not wait for it: the gesture exists to
   // make a panel responsive, so `build()` returns the moment the workers

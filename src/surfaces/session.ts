@@ -240,8 +240,8 @@ export class TandemSession {
   buildRefusal?: string;
 
   /** Commit: assumptions become decisions, whole components go into one cut. */
-  async build(excluded: string[] = []): Promise<GestureResult> {
-    const r = await buildFlow(this, excluded);
+  async build(specId: string): Promise<GestureResult> {
+    const r = await buildFlow(this, specId);
     // A refusal always carries words: the button shows them under itself,
     // so a refusal with nothing to say would read as a button doing nothing.
     this.buildRefusal = undefined;

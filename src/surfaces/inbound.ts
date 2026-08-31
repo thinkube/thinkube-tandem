@@ -76,7 +76,7 @@ export async function handleInbound(
     note = "Cancelled.";
   } else if (msg.action === "build") {
     push("Building…");
-    const r = await session.build(msg.changeIds ?? []);
+    const r = await session.build(msg.specId ?? "");
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "think") {
     const c = session.thinkingCost();

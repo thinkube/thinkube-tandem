@@ -29,17 +29,17 @@ test("handleInbound refuses a governed action forbidden by the phase, naming the
   // (a governed, shaping action) is forbidden by the phase table.
   session.running = true;
 
-  let builtChangeIds: string[] | undefined;
+  let builtSpec: string | undefined;
   const originalBuild = session.build.bind(session);
-  session.build = async (changeIds: string[]) => {
-    builtChangeIds = changeIds;
-    return originalBuild(changeIds);
+  session.build = async (specId: string) => {
+    builtSpec = specId;
+    return originalBuild(specId);
   };
 
   const pushed: (string | undefined)[] = [];
   await handleInbound(session, { action: "build" } as InboundAction, (m) => pushed.push(m));
 
-  assert.equal(builtChangeIds, undefined, "the forbidden action must not run");
+  assert.equal(builtSpec, undefined, "the forbidden action must not run");
   assert.equal(pushed.length, 1, "exactly one message is pushed for the refusal");
   const controlName = CONTROL_NAMES["build"];
   assert.ok(controlName, "the build action must have a control name");

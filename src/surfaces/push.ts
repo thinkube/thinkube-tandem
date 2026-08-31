@@ -6,6 +6,7 @@
  */
 import { TandemSession } from "./session";
 import { promisesOfSpec } from "../derive/specs";
+import { signedIds } from "../core/cutClosure";
 import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
@@ -320,13 +321,26 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     }),
     // The sets worth delivering on their own, with what each covers — so a
     // person choosing one can see its size before they build it.
-    specs: (session.space.specs ?? []).map((sp) => ({
-      id: sp.id,
-      name: sp.name,
-      subjects: sp.subjectIds.length,
-      promises: promisesOfSpec(session.space, sp).length,
-      chosen: session.cutSpecId === sp.id,
-    })),
+    specs: (session.space.specs ?? []).map((sp) => {
+      const ids = promisesOfSpec(session.space, sp);
+      const signed = signedIds(session.space.cuts);
+      const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
+      return {
+        id: sp.id,
+        name: sp.name,
+        subjects: sp.subjectIds.length,
+        promises: ids.length,
+        chosen: session.cutSpecId === sp.id,
+        built: ids.length > 0 && ids.every((id) => signed.has(id)),
+        repos: [
+          ...new Set(
+            ids.flatMap((id) =>
+              (byId.get(id)?.grounding?.touchpoints ?? []).map((t) => t.scope || session.repoName),
+            ),
+          ),
+        ],
+      };
+    }),
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,
       page: session.deliveryPage(d.id, surfaceText) ?? "",
