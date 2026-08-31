@@ -103,7 +103,7 @@ test("every handle declared in PAGES appears literally in the webview source und
   // asserted and what was read are the same bytes. The walk is recursive:
   // a reader that listed one directory and no deeper would stay green for a
   // page whose JSX moved into `src/proto/`.
-  const source = webviewFilesRead();
+  const source = ""; // DELIBERATE BREAK
   assert.ok(
     source.length > 0,
     "set up: the webview's source was found and read — an empty read proves nothing",
