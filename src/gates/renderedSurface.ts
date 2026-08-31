@@ -17,7 +17,18 @@
 import * as fs from "node:fs/promises";
 import * as http from "node:http";
 import * as path from "node:path";
-import { chromium, type Browser, type Page } from "playwright-core";
+import type { Browser, Page } from "playwright-core";
+
+/**
+ * The browser driver, loaded when a browser is wanted and not before.
+ *
+ * Imported at the top of the file it is pulled in by everything that merely
+ * MENTIONS looking — the MCP server took long enough to start that its own
+ * handshake timed out, for a tool nobody had called yet.
+ */
+async function driver(): Promise<typeof import("playwright-core").chromium> {
+  return (await import("playwright-core")).chromium;
+}
 
 /** Where a webview asset is served from and what it is called. */
 const TYPES: Record<string, string> = {
@@ -36,7 +47,10 @@ const TYPES: Record<string, string> = {
  * Chromium, and a check that fetches a browser is a check that fails behind
  * a firewall for a reason having nothing to do with the work.
  */
-const BROWSER = process.env.TANDEM_BROWSER ?? "/usr/bin/chromium-browser";
+// Read when it is used, not when this module loads: a caller that points
+// it elsewhere — or a check that proves the no-browser path — must be able
+// to, and an import-time constant cannot be pointed anywhere.
+const browserPath = (): string => process.env.TANDEM_BROWSER ?? "/usr/bin/chromium-browser";
 
 export interface OpenSurface {
   /** Run an expression in the page and return what it produced. */
@@ -51,13 +65,17 @@ export interface OpenSurface {
   push(state: unknown): Promise<void>;
   /** Press a control the surface draws, by its data attribute. */
   press(handle: string): Promise<void>;
+  /** What the page threw, from the moment it was opened. Collected here
+   *  because a surface with no error boundary unmounts on its first throw
+   *  and then merely LOOKS empty — the emptiness alone never says why. */
+  threw(): readonly string[];
   close(): Promise<void>;
 }
 
 /** Whether this machine can render at all — said plainly, never guessed. */
 export async function canRender(mediaRoot?: string): Promise<string | undefined> {
-  if (!(await fs.stat(BROWSER).then(() => true, () => false)))
-    return `no browser at ${BROWSER} — set TANDEM_BROWSER to one`;
+  if (!(await fs.stat(browserPath()).then(() => true, () => false)))
+    return `no browser at ${browserPath()} — set TANDEM_BROWSER to one`;
   if (mediaRoot && !(await fs.stat(path.join(mediaRoot, "index.html")).then(() => true, () => false)))
     return `the surface is not built at ${mediaRoot} — run the product build first`;
   return undefined;
@@ -95,11 +113,16 @@ export async function openSurface(a: {
   if (root) await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const at = root ? `http://127.0.0.1:${(server.address() as { port: number }).port}/index.html` : a.url!;
 
+  const threw: string[] = [];
   let browser: Browser | undefined;
   let page: Page | undefined;
   try {
-    browser = await chromium.launch({ executablePath: BROWSER, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+    browser = await (await driver()).launch({ executablePath: browserPath(), args: ["--no-sandbox", "--disable-dev-shm-usage"] });
     page = await browser.newPage({ viewport: a.viewport ?? { width: 1100, height: 800 } });
+    page.on("pageerror", (e) => threw.push(e.message.split("\n")[0]));
+    page.on("console", (m) => {
+      if (m.type() === "error") threw.push(m.text().split("\n")[0]);
+    });
     await page.goto(at, { waitUntil: "load" });
   } catch (err) {
     await browser?.close().catch(() => {});
@@ -138,6 +161,7 @@ export async function openSurface(a: {
       );
       await settle();
     },
+    threw: () => threw,
     press: async (handle) => {
       await open.click(`[${handle}]`);
       await settle();

@@ -7,6 +7,7 @@
  * door rather than a silent new power.
  */
 import type { TandemSession } from "../surfaces/session";
+import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
@@ -136,6 +137,30 @@ export function toolTable(): ToolDef[] {
       description: "The current or last run: every unit and its state, and the run's note.",
       inputSchema: IN_SPACE,
       run: runReport,
+    },
+    {
+      name: "look_at",
+      action: "look-at",
+      description:
+        "Open something already deployed and say what a person would notice: whether it is blank, " +
+        "whether anything can be pressed, whether a page is drawn with no height, and what the page threw. " +
+        "Findings only — it withholds nothing and fails nothing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...WHERE,
+          url: { type: "string", description: "what to open — the deployed thing's address" },
+          ask: { type: "string", description: "what this look is about, in your words" },
+        },
+        required: ["space", "url"],
+      },
+      run: async (c) => {
+        const r = await theLook({ url: str(c, "url"), ...(str(c, "ask") ? { ask: str(c, "ask") } : {}) });
+        if (!r.looked) return `could not look: ${r.why}`;
+        return r.findings.length
+          ? [`${r.findings.length} thing(s) a person would notice:`, ...r.findings.map((f) => `  · ${f.said}`)].join("\n")
+          : "nothing to say — it opened, it has content, and every page has a size.";
+      },
     },
     {
       name: "read_delivery",
