@@ -161,8 +161,33 @@ export async function repairUnkept(a: {
      * is standing red, and the delivery says so by name.
      */
     const settled = new Set<string>();
+    /** This tree, exactly: what is committed and everything not yet. */
+    const treeNow = async (): Promise<string> =>
+      [
+        (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim(),
+        (await exec("git", ["-C", worktree, "status", "--porcelain"], worktree)).out.trim(),
+      ].join("\n");
+    /**
+     * The tree the standing verdicts were made on.
+     *
+     * A review is a fresh reviewer reading the tree and answering in its
+     * own words, so two readings of one tree can disagree. Re-reading a
+     * tree nothing has touched cannot learn anything — it can only draw
+     * again, and a red that turns green that way was never repaired.
+     * Grading runs immediately before the closer starts, so its first
+     * measurement is always that: a second draw on an unchanged tree.
+     */
+    let judgedOn: string | undefined;
     const rejudge = async (): Promise<Proof[]> => {
       await prepareAtGate(deps.prepare, worktree, boundedExec, log);
+      const tree = await treeNow();
+      const moved = judgedOn !== undefined && tree !== judgedOn;
+      const first = judgedOn === undefined;
+      judgedOn = tree;
+      if (!moved) {
+        if (!first) log(`${tep}: nothing changed the tree — the standing verdicts are not asked again`);
+        return proofs.filter(unkeptProof);
+      }
       // A red assessment is re-graded by a fresh reviewer over the repaired
       // tree, exactly as a check is re-run. Frozen first-pass verdicts held
       // three repaired promises red while the closer's edits could move

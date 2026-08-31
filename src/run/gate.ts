@@ -12,7 +12,7 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Cut, Delivery, Proof, Ruling, Space, unkeptProof } from "../core/schema";
+import { Cut, Proof, Ruling, Space, unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { runAcVerifications } from "../engine/core/closingGate";
 import { gradeAssessments, logRedChecks, proposeRewording, stagedProofs } from "./assess";
@@ -42,6 +42,7 @@ import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from 
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
 import { repairUnkept } from "./unkept";
+import { unsettledReviews, withheldDelivery } from "./withheld";
 import { runnerFor, type Proved } from "./proved";
 import type { RunWorkerDeps, WorkerOutcome } from "./worker";
 
@@ -140,20 +141,13 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return {
       refusals: [],
       undelivered,
-      delivery: {
-        id: `delivery-${tep}`,
-        cutId: cut.id,
-        branch,
-        runId,
-        producedAt,
-        proofs: [],
-        withheld:
+      delivery: withheldDelivery({
+        tep, cut, branch, runId, producedAt, proofs: [], undelivered,
+        rulings: g.rulings, decisions: g.decisions,
+        reason:
           `the run was stopped before its promises were graded — nothing was judged from a stopped run. ` +
           `The branch holds the work; run it again to finish the grading.`,
-        ...(undelivered.length ? { undelivered } : {}),
-        ...(g.rulings.length ? { rulings: g.rulings } : {}),
-        ...(g.decisions.length ? { decisions: g.decisions } : {}),
-      },
+      }),
     };
   }
   log(`${tep}: closing gate`);
@@ -463,18 +457,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // is readable; nothing was opened and it cannot be accepted. It carries
     // the same run id and produced-at stamp as a delivered one — a
     // withheld run is still a run, and its report still names itself.
-    const withheld: Delivery = {
-      id: `delivery-${tep}`,
-      cutId: cut.id,
-      branch,
-      runId,
-      producedAt,
-      proofs,
-      withheld: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
-      ...(undelivered.length ? { undelivered } : {}),
-      ...(g.rulings.length ? { rulings: g.rulings } : {}),
-      ...(g.decisions.length ? { decisions: g.decisions } : {}),
-    };
+    const withheld = withheldDelivery({
+      tep, cut, branch, runId, producedAt, proofs, undelivered, observations, findings,
+      rulings: g.rulings, decisions: g.decisions,
+      reason: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
+    });
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
   }
 
@@ -533,9 +520,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // It rides the delivery as a finding, said by name; only a red CHECK of
   // the cut's own promises still withholds, because an unkept promise is
   // the one thing this gate exists to never hand over.
-  for (const p of unkept.filter((x) => x.kind !== "probe")) {
-    findings.push(`${p.label}${p.ref ? ` — ${p.ref.split("\n")[0].slice(0, 200)}` : ""}`);
-    log(`${tep}: "${p.label.slice(0, 70)}" stays red with every actor spent — it rides the delivery for the person`);
+  for (const r of unsettledReviews(proofs)) {
+    findings.push(r.line);
+    log(`${tep}: "${r.label.slice(0, 70)}" stays red with every actor spent — it rides the delivery for the person`);
   }
   unkept = unkept.filter((x) => x.kind === "probe");
   if (unkept.length) {
@@ -553,42 +540,26 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       return {
         refusals: [],
         undelivered,
-        delivery: {
-          id: `delivery-${tep}`,
-          cutId: cut.id,
-          branch,
-          runId,
-          producedAt,
-          proofs,
-          ...(observations.length ? { observations } : {}),
-          withheld:
+        delivery: withheldDelivery({
+          tep, cut, branch, runId, producedAt, proofs, undelivered, observations, findings,
+          rulings: g.rulings, decisions: g.decisions,
+          reason:
             `the run was stopped while ${unkept.length} promise(s) were still being graded — nothing was judged from the stop. ` +
             `The branch holds the work; run it again to finish the grading.`,
-          ...(undelivered.length ? { undelivered } : {}),
-          ...(g.rulings.length ? { rulings: g.rulings } : {}),
-          ...(g.decisions.length ? { decisions: g.decisions } : {}),
-        },
+        }),
       };
     }
     log(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
     return {
       refusals: [],
       undelivered,
-      delivery: {
-        id: `delivery-${tep}`,
-        cutId: cut.id,
-        branch,
-        runId,
-        producedAt,
-        proofs,
-        ...(observations.length ? { observations } : {}),
-        withheld:
+      delivery: withheldDelivery({
+        tep, cut, branch, runId, producedAt, proofs, undelivered, observations, findings,
+        rulings: g.rulings, decisions: g.decisions,
+        reason:
           `${unkept.length} of the cut's promises are not kept, so nothing is handed over. The branch holds the work:\n` +
           named.join("\n"),
-        ...(undelivered.length ? { undelivered } : {}),
-        ...(g.rulings.length ? { rulings: g.rulings } : {}),
-        ...(g.decisions.length ? { decisions: g.decisions } : {}),
-      },
+      }),
     };
   }
 
