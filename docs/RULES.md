@@ -153,6 +153,19 @@ punished.
 *Remedy, which the old rule never named:* **extract a nameable piece; never
 compress the prose.**
 
+## 10. What only the checks use never ships
+
+A file the product does not load has no business in the product. Support a
+check needs — fixtures, scripted workers, tiny repositories built to be
+torn down — is named `*.fixture.ts` and left out of the shipped build by
+`tsconfig.json`, beside `*.test.ts`.
+
+The reachability gate cannot see this. A check is an importer, so anything
+a check imports looks used, and support code sitting in product source
+passes every gate while being compiled into what people install.
+
+*Remedy:* **name it a fixture, and let the build exclude it.**
+
 ## The ledger
 
 | Rule | Removes | Adds |

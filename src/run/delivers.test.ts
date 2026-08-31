@@ -22,9 +22,9 @@ import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "../core/schema";
 import {addAsk} from "../core/intent";
 
-import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes";
+import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes.fixture";
 import { refusedToolUse } from "./worker";
-import type { RepoShape } from "./shapes";
+import type { RepoShape } from "./shapes.fixture";
 
 /** One ask, one promise, one criterion — the content is never the point. */
 function oneAsk(): { space: ReturnType<typeof emptySpace>; ids: string[] } {

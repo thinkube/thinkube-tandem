@@ -12,8 +12,8 @@ import { tepSlices } from "../dispatch/adapter";
 import { emptySpace } from "../core/schema";
 import {addAsk} from "../core/intent";
 
-import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes";
-import type { RepoShape } from "./shapes";
+import { SHAPES, repoInShape, scriptedWorker , addNode} from "./shapes.fixture";
+import type { RepoShape } from "./shapes.fixture";
 
 function oneAsk(): { space: ReturnType<typeof emptySpace>; ids: string[] } {
   let s = emptySpace();
