@@ -48,3 +48,39 @@ test("it says why it cannot look, rather than failing obscurely", async () => {
 test("it refuses to open nothing at all", async () => {
   await assert.rejects(() => openSurface({}), /needs a built surface or a url/);
 });
+
+test("a page that redirects under the reader is still read", async (t) => {
+  const why = await canRender();
+  if (why) return t.skip(why);
+
+  // Deployed things redirect — to a sign-in, to a canonical host — and the
+  // context a read started in is then gone. Thrown at the caller that reads
+  // as "the look failed", when the page simply moved and is readable a
+  // moment later. Found by pointing this at a real cluster.
+  let hops = 0;
+  const server = http.createServer((q, r) => {
+    if ((q.url ?? "/") === "/") {
+      hops++;
+      return r
+        .writeHead(200, { "content-type": "text/html" })
+        .end(`<!doctype html><body><script>location.replace("/login")</script></body>`);
+    }
+    r.writeHead(200, { "content-type": "text/html" }).end(
+      `<!doctype html><body><div data-panel style="height:80px;width:120px">signed out</div></body>`,
+    );
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const { port } = server.address() as { port: number };
+  const s = await openSurface({ url: `http://127.0.0.1:${port}/`, viewport: { width: 800, height: 600 } });
+  try {
+    const seen = await s.read(() => ({
+      where: location.pathname,
+      panel: Math.round(document.querySelector("[data-panel]")?.getBoundingClientRect().height ?? 0),
+    }));
+    assert.equal(hops, 1);
+    assert.deepEqual(seen, { where: "/login", panel: 80 }, "it followed the move and measured where it landed");
+  } finally {
+    await s.close();
+    await new Promise<void>((ok) => server.close(() => ok()));
+  }
+});

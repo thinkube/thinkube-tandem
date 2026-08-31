@@ -142,8 +142,26 @@ export async function openSurface(a: {
       "new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => ok(0), 120))))",
     );
   };
+  /**
+   * Read the page, surviving a navigation under the reader.
+   *
+   * A deployed thing redirects — to a sign-in, to a canonical host — and the
+   * context a read started in is then gone. Thrown at the caller that reads
+   * as "the look failed", when what happened is that the page moved and is
+   * perfectly readable a moment later.
+   */
+  const readOnce = async <T>(fn: () => T): Promise<T> => {
+    try {
+      return (await open.evaluate(fn)) as T;
+    } catch (err) {
+      if (!/Execution context was destroyed|Target closed|navigation/i.test((err as Error).message)) throw err;
+      await open.waitForLoadState("load").catch(() => {});
+      await settle();
+      return (await open.evaluate(fn)) as T;
+    }
+  };
   return {
-    read: <T>(fn: () => T) => open.evaluate(fn) as Promise<T>,
+    read: <T>(fn: () => T) => readOnce(fn),
     readWith: <T, A>(fn: (arg: A) => T, arg: A) =>
       open.evaluate(fn as never, arg as never) as Promise<T>,
     act: async <A>(fn: (arg: A) => void, arg: A) => {
