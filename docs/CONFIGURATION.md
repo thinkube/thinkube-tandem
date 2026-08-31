@@ -167,10 +167,20 @@ is not part of the orchestrator.
 Tests today: 20 backend pytest modules and 2 Go proxy tests, in-cluster and
 manual only; the frontend has vitest installed and no tests; no CI.
 
-**Danger, verified:** `backend/run_tests.sh` reads `DATABASE_URL` from the
-environment and `DROP TABLE … CASCADE`s ten tables before pytest — against
-the live cluster PostgreSQL. Tandem must never run it as it stands. It was
-recorded as a natural first ask *for* control, not as a Tandem change.
+That is **more first-party testing than any other non-app case here** — the
+templates and the installer have none — and no CI is the normal state of
+everything that is not an app. Nothing about this repository is
+badly-configured, and earlier drafts of this file said otherwise without
+grounds.
+
+**One constraint on Tandem, not a flaw in control:**
+`backend/run_tests.sh` reads `DATABASE_URL` from the environment and
+`DROP TABLE … CASCADE`s ten tables before pytest. That is ordinary test-suite
+setup; it is only dangerous if something runs it blindly against whatever
+`DATABASE_URL` happens to hold, which is what a worktree run would do. So the
+rule belongs on the runner: this command is never auto-run. Giving it a test
+database of its own is a natural early ask *for* control, and not a change
+Tandem makes.
 
 The person's own correction, recorded because it overrode a constraint the
 machine had invented: this is deployed like a template, and downtime here is
@@ -179,8 +189,8 @@ case 1, not a special case.
 
 **Why control cannot become an app** (asked and answered 2026-08-31). It
 shares the app architecture, so converting it looks attractive: it would
-inherit the one chain that already works and gain the continuous integration
-it has never had. It cannot, because the machinery that deploys apps lives in
+inherit the one chain that already works and gain continuous integration it
+does not have. It cannot, because the machinery that deploys apps lives in
 control, and every build of every app calls control's API to register its
 progress. An app-shaped control would participate in its own deployment, and
 a broken control could not ship its own fix.
