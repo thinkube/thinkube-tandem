@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
 import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
 import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
+import { draftWithFindings } from "../run/feedback";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -472,6 +473,11 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
           const said = asFindings(findings);
           s.space = {
             ...s.space,
+            // A finding lands where a new ask is written, already written.
+            // Seeing the delivered thing and wanting it fixed used to mean
+            // typing every sentence again; now the cost of disagreeing with
+            // one is deleting its line.
+            draft: draftWithFindings(s.space.draft ?? "", findings),
             // What the look exercised stops standing on the delivery as
             // though someone still owed an answer: what was wrong came back
             // as a finding, and what was right needs no entry.
@@ -484,7 +490,7 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
           s.persist();
           s.changed(
             said.length
-              ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} to weigh`
+              ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} — they are on the writing page, as sentences you can keep`
               : "the look exercised what no check could reach, and found nothing to say",
           );
         },
