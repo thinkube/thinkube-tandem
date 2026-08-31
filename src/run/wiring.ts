@@ -93,8 +93,15 @@ async function executedFiles(dir: string): Promise<{ files: string[]; read: bool
  * cannot be read, or when it names nothing — a missing map is a fact about
  * the build, never a claim about what ran.
  *
- * Only sources that exist on disk are returned, so a map's own references
- * to a package's internals cannot invent a subject that was never there.
+ * A map names what the bundler COMPILED IN, which is the fact wanted here:
+ * those files ran. Where they sit afterwards is a fact about the tree, not
+ * about the drive — a runner that copies only the built output still ran
+ * exactly the same code, and requiring the source to be present on disk
+ * made the answer depend on the copying rather than on the execution.
+ *
+ * A dependency's own internals are named by such a map too. They are
+ * harmless: the caller matches a subject by its trailing path segments, so
+ * a source can only satisfy a subject the promise actually named.
  */
 async function mappedSources(file: string): Promise<string[]> {
   const raw = await fs.readFile(`${file}.map`, "utf8").catch(() => undefined);
@@ -107,13 +114,9 @@ async function mappedSources(file: string): Promise<string[]> {
   }
   if (!Array.isArray(map.sources)) return [];
   const base = path.dirname(file);
-  const found: string[] = [];
-  for (const s of map.sources) {
-    if (typeof s !== "string" || !s) continue;
-    const resolved = path.resolve(base, s.replace(/^file:\/\//, ""));
-    if (await fs.access(resolved).then(() => true, () => false)) found.push(resolved);
-  }
-  return found;
+  return map.sources
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .map((s) => path.resolve(base, s.replace(/^file:\/\//, "")));
 }
 
 /**
