@@ -286,6 +286,33 @@ Per language, for the other targets: TypeScript and Python as above; Go
 judged at the **package**, not the file; Rust at the module tree, where a
 `mod.rs` re-exporting unrelated things is the bag.
 
+## What is done
+
+| | item | state |
+|---|---|---|
+| 0 | the module rule reframed | **done** — the veto is gone, the delivery reports the shape, rule 9 is in RULES.md |
+| 1 | category B, on case 0 | **done** — `renderedSurface` + two checks; both fail on the broken surface naming the culprit and its pixels |
+| — | the layout bug itself | **fixed**, and green under those checks |
+| — | grounding knows B exists | **done** — a rendered page is now a seam a probe may name |
+| — | the same instrument opens a deployed thing | **done** — the after-deploy look has its tool |
+| 2 | the look, on case 2 | **not built.** The instrument works against a real deployed page; the worker-per-ask does not exist |
+| 3 | the spec layer | **not built** |
+| 4 | the light gate | **half** — appearance criteria are routed to B at grounding; the gate does not yet let unsettleable criteria leave |
+| 5 | case 4 testless | **not built** |
+| 6 | feedback routing | **not built** |
+
+Checks: 404 green. Two rendering checks now exist that could not have
+existed before, and the criterion pair that held a delivery hostage for two
+days is replaced by one that asks whether the page can be seen.
+
+### Found while doing this, not chased
+
+`todo.thinkube.com` answers 200, but what answers is not the todo app — the
+page title is "K8s Dashboard Hub" and its body has zero height. The HTTPRoute
+in `apps/todo/k8s/ingress.yaml` claims that hostname. Something else is
+serving it. This is exactly what the after-deploy look is for, and it is
+already true today.
+
 ## Order of work
 
 0. **Reframe the module rule** — the cheapest item here, and it stops the
