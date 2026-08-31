@@ -57,7 +57,7 @@ export function declaredDoors(): Door[] {
  * separate question, answered by `missingPages`/`verifiedDoors`, not folded
  * in here.
  */
-export function missingDoors(surfaceText: string, doors: Door[] = declaredDoors()): Door[] {
+function missingDoors(surfaceText: string, doors: Door[] = declaredDoors()): Door[] {
   return doors.filter((d) => {
     const controlThere = surfaceText.includes(d.handle) || surfaceText.includes(`"${d.action}"`);
     return !controlThere;
@@ -65,7 +65,7 @@ export function missingDoors(surfaceText: string, doors: Door[] = declaredDoors(
 }
 
 /** Every declared page whose handle is absent from the given surface text. */
-export function missingPages(surfaceText: string): { page: string; handle: string }[] {
+function missingPages(surfaceText: string): { page: string; handle: string }[] {
   return Object.entries(PAGES)
     .filter(([, p]) => !surfaceText.includes(p.handle))
     .map(([page, p]) => ({ page, handle: p.handle }));

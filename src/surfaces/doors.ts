@@ -8,8 +8,6 @@
  * One definition, two import paths a reader might reasonably reach for.
  */
 export {
-  missingDoors,
-  missingPages,
   verifiedDoors,
   builtSurfaceText,
   type Door,
