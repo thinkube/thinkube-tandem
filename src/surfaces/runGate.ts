@@ -60,6 +60,7 @@ export function signCutGesture(s: TandemSession): GestureResult {
     const cut = {
       id: `cut-${s.author}-${s.space.cuts.length + 1}`,
       changeIds: [...s.cutNodeIds],
+      ...(s.cutSpecId ? { specId: s.cutSpecId } : {}),
       ...(reason ? { docsExemption: { reason, at: s.deps.now() } } : {}),
     };
     const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());

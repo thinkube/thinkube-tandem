@@ -236,6 +236,9 @@ export interface SpacePush {
     missing: string[];
   };
   impacts: { id: string; decision: string; askText: string; affected: number }[];
+  /** The sets worth delivering on their own — the person's grouping of their
+   *  own subjects. Empty until it is made; the surface behaves as before. */
+  specs?: { id: string; name: string; subjects: number; promises: number; chosen: boolean }[];
   subjects: SubjectVM[];
   cutCount: number;
   deliveries: DeliveryVM[];
@@ -278,6 +281,8 @@ export type WebToHost =
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }
   | { action: "apply-all-impacts" }
+  | { action: "group-into-sets" }
+  | { action: "choose-set"; specId: string }
   | { action: "propose-check"; changeIds: string[] }
   | { action: "accept-check"; changeIds: string[]; text: string; kind: "probe" | "assessment" }
   | { action: "exempt-docs"; reason: string }
@@ -289,7 +294,7 @@ export type WebToHost =
 export const SHAPING = new Set([
   "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
   "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "open-cut-review", "exempt-docs", "build", "rerun", "think-again",
+  "dismiss-impact", "apply-all-impacts", "group-into-sets", "choose-set", "open-cut-review", "exempt-docs", "build", "rerun", "think-again",
   "stop-run", "accept-delivery", "reject-delivery", "attest", "panic", "switch-repo",
 ]);
 
@@ -346,6 +351,8 @@ export const CONTROL_NAMES: Readonly<Record<string, string>> = {
   "accept-impact": "Apply",
   "dismiss-impact": "Set aside",
   "apply-all-impacts": "Apply all",
+  "group-into-sets": "Group into sets",
+  "choose-set": "Build this set",
   "propose-check": "Work out a check",
   "accept-check": "Use this check",
   "accept-question": "Decide",

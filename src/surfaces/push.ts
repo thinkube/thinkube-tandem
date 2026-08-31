@@ -5,6 +5,7 @@
  * through the phase, what they may press.
  */
 import { TandemSession } from "./session";
+import { promisesOfSpec } from "../derive/specs";
 import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
@@ -317,6 +318,15 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ? { docsExemption: { reason: session.docsExemptionReason, at: session.deps.now() } }
         : {}),
     }),
+    // The sets worth delivering on their own, with what each covers — so a
+    // person choosing one can see its size before they build it.
+    specs: (session.space.specs ?? []).map((sp) => ({
+      id: sp.id,
+      name: sp.name,
+      subjects: sp.subjectIds.length,
+      promises: promisesOfSpec(session.space, sp).length,
+      chosen: session.cutSpecId === sp.id,
+    })),
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,
       page: session.deliveryPage(d.id, surfaceText) ?? "",

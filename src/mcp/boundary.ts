@@ -42,6 +42,9 @@ export const MACHINE_MAY = [
   // implication re-derives the asks it touches and invents nothing.
   "accept-impact",
   "apply-all-impacts",
+  // Proposing how the asks group is derivation, like any other reading:
+  // it invents nothing and decides nothing.
+  "group-into-sets",
 ] as const;
 
 /**
@@ -55,6 +58,8 @@ export const MACHINE_MAY = [
  * machine decided what I want".
  */
 export const PERSON_ONLY: Record<string, string> = {
+  "choose-set":
+    "which set is built next decides what you get to look at, and in what order — a machine may propose the sets, never pick one",
   build: "signing a cut is the first gate — a machine may not sign work it will then do",
   "keep-draft": "turning drafted words into your asks is yours; a machine may draft, never keep",
   "accept-delivery": "accepting a delivery is the second gate — a machine may not accept its own work",

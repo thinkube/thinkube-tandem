@@ -22,6 +22,7 @@ import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
 import { groundSubjectFlow } from "./subjectFlow";
 import { addWithNeeds, mergedIds, removeWithDependents, signedIds } from "../core/cutClosure";
+import { promisesOfSpec, proposeSpecs, specsFrom } from "../derive/specs";
 import { askState } from "../core/component";
 import { amendAsk, editAsk, Price, priceOfEditing } from "../core/reframe";
 import { draftReadOf, saveDraftOn } from "./draftGestures";
@@ -57,6 +58,8 @@ export class TandemSession {
   units: Unit[] = [];
   edges: { from: string; to: string }[] = [];
   cutNodeIds = new Set<string>();
+  /** The set the cut in hand was chosen from, if it was. */
+  cutSpecId: string | undefined;
   stale = new Set<string>();
   /** Criteria whose standing proof moved since it was bound — the test
    *  file changed after the anchor's stamp, so "proved" is out of date. */
@@ -395,8 +398,59 @@ export class TandemSession {
     return { ok: true };
   }
 
+  /**
+   * Group the subjects into sets worth delivering on their own.
+   *
+   * Asked once, on what the reading already produced, before any grounding —
+   * the cheapest point in the system to decide it, and the one that decides
+   * whether the work arrives in one piece or five. The proposal is the
+   * machine's; the grouping is the person's, and every set can be edited
+   * afterwards.
+   */
+  async groupIntoSpecs(): Promise<{ ok: boolean; reason?: string }> {
+    if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
+    const subjects = this.space.subjects ?? [];
+    if (subjects.length < 2)
+      return { ok: false, reason: "there is nothing to group yet — read some asks first" };
+    const proposed = await proposeSpecs(
+      { repoRoot: this.deps.round.repoRoot, model: this.deps.round.model },
+      this.space,
+    );
+    if (!proposed) return { ok: false, reason: "I could not see sets in these — group them yourself" };
+    this.space = { ...this.space, specs: specsFrom(proposed, (n) => `spec-${this.spaceName}-${n}`) };
+    this.changed(`${this.space.specs!.length} sets, each worth delivering on its own.`);
+    return { ok: true };
+  }
+
+  /**
+   * Put one spec's promises in the cut, and nothing else.
+   *
+   * This is the whole point of the layer. Dispatch, the gate and the delivery
+   * are already per-cut; what was missing was anything that ever put fewer
+   * than everything into one. Nineteen asks went in together and came out
+   * three days later as one delivery nobody could correct.
+   *
+   * Closed under needs like any other choice: a promise this one depends on
+   * comes with it, or the work cannot stand.
+   */
+  chooseSpec(specId: string): { ok: boolean; reason?: string } {
+    if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
+    const spec = (this.space.specs ?? []).find((s) => s.id === specId);
+    if (!spec) return { ok: false, reason: `no set called '${specId}'` };
+    const ids = promisesOfSpec(this.space, spec);
+    if (!ids.length)
+      return { ok: false, reason: `nothing is derived from "${spec.name}" yet — work it out first` };
+    this.cutNodeIds = new Set();
+    this.cutSpecId = spec.id;
+    const r = addWithNeeds(this.cutNodeIds, ids, this.space.nodes, signedIds(this.space.cuts));
+    this.changed(r.note ?? `"${spec.name}" — ${this.cutNodeIds.size} promise(s) to build and look at.`);
+    return { ok: true };
+  }
+
   /** Closed under needs: adds pull dependencies, removals drop dependents. */
   toggleCut(changeIds: string[]): void {
+    // Touched by hand, the cut is no longer the set it was offered as.
+    this.cutSpecId = undefined;
     const adding = changeIds.some((id) => !this.cutNodeIds.has(id));
     const r = adding
       ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes, signedIds(this.space.cuts))

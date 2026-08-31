@@ -137,6 +137,10 @@ export interface Unit {
 export interface Cut {
   id: string;
   changeIds: string[];
+  /** The set this cut was chosen from, when it was chosen from one. Absent
+   *  on a cut assembled promise by promise, which is still allowed — the
+   *  grouping is an offer, not a gate. */
+  specId?: string;
   /** The minted TEP identity (author-scoped, permanent): TEP-<user>-<n>. */
   tepId?: string;
   /** Set when the human signs; binds the render AND the grounded members. */

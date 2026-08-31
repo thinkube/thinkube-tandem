@@ -26,6 +26,8 @@ export interface InboundAction {
   held?: boolean;
   proposalId?: string;
   impactId?: string;
+  /** choose-set: which set of subjects becomes the cut. */
+  specId?: string;
   stepId?: string;
   page?: number;
   into?: string;
@@ -92,6 +94,13 @@ export async function handleInbound(
   } else if (msg.action === "amend" && msg.unitId && msg.text) {
     push("Recording the amendment…");
     const r = await session.amend(msg.unitId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "group-into-sets") {
+    push("Grouping your asks into sets…");
+    const r = await session.groupIntoSpecs();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "choose-set" && msg.specId) {
+    const r = session.chooseSpec(msg.specId);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);

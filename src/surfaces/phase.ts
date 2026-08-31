@@ -52,6 +52,8 @@ const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
   "accept-impact": OPEN,
   "dismiss-impact": OPEN,
   "apply-all-impacts": OPEN,
+  "group-into-sets": OPEN,
+  "choose-set": OPEN,
   "open-cut-review": OPEN,
   "exempt-docs": OPEN,
   build: OPEN,
