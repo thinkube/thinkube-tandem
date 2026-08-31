@@ -44,6 +44,20 @@ export async function repairUnkept(a: {
   probeOfAc: Map<number, string>;
   criterionByProbe: Map<string, string>;
   subjectsOf: (criterionId?: string) => string[];
+  /**
+   * The rule that decides whether a check reached its subject, as the gate
+   * resolved it — from the TREE UNDER TEST when that tree is the one that
+   * defines it.
+   *
+   * It is passed in rather than imported, because the gate has already done
+   * the deciding. Importing it here re-imported the RUNNING rule — the one a
+   * cut correcting it exists to replace — so the gate judged a cut by its
+   * own new rule and this ladder then re-judged the very same promises by
+   * the old one. A promise the gate would have kept came back unkept, and
+   * nothing in the report could explain the disagreement, because both
+   * verdicts were honestly reported by code reading different rules.
+   */
+  proveWiring: typeof provedByExecution;
   checkOf: Map<string, string>;
   sliceProbes: Map<string, string[]>;
   sessionOf: (unit: string) => string | undefined;
@@ -75,7 +89,7 @@ export async function repairUnkept(a: {
     detail: string;
   }) => void;
 }): Promise<Proof[]> {
-  const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf, exec, boundedExec, log, defect } = a;
+  const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf, proveWiring, exec, boundedExec, log, defect } = a;
   let unkept = proofs.filter(unkeptProof);
   // Each red criterion goes back to the unit that wrote its code, as the
   // next message in that unit's own session, with the drive's evidence and
@@ -132,7 +146,7 @@ export async function repairUnkept(a: {
           ? proofs.find((p) => p.criterionId === criterionId)
           : proofs.find((p) => p.label === label);
         if (!proof || !r.pass) continue;
-        const wired = await provedByExecution({
+        const wired = await proveWiring({
           run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
           subjects: subjectsOf(probe ? criterionByProbe.get(probe) : undefined),
           worktree,
@@ -222,7 +236,7 @@ export async function repairUnkept(a: {
           proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
           continue;
         }
-        const wired = await provedByExecution({
+        const wired = await proveWiring({
           run: verifs.find((v) => v.ac === r.ac)?.run ?? "",
           subjects: subjectsOf(criterionId),
           worktree,

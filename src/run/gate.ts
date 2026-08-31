@@ -446,6 +446,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, subjectsOf,
+    // The same rule the gate judged by, not the one this process started
+    // with: a cut that corrects a judging rule must be re-judged by its own.
+    proveWiring,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
     halted: () => g.state.halted, doing: (t) => g.state.doing(`${GATE_STEP}#closer`, t), rulings: g.rulings,
     abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
