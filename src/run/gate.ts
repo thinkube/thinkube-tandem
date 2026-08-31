@@ -35,12 +35,85 @@ import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
 import { isTestPath } from "./testHomes";
 import type { DispatchOutcome } from "./dispatch";
-import type { GateContext } from "./state";
+import type { RunState } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore } from "./closer";
 import { repairUnkept } from "./unkept";
-import { runnerFor } from "./proved";
+import { runnerFor, type Proved } from "./proved";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import type { Cut, Ruling, Space } from "../core/schema";
+import type { SliceForDag } from "../engine/core/dag";
+import type { DispatchDeps } from "./deps";
+import type { Exec } from "./oracle";
+import type { BoundedExec } from "./setup";
+
+/** Everything the closing gate needs: the run's own facts, what the door
+ *  proved, and the seams — exec, log, defect — through which it acts. */
+export interface GateContext {
+  tep: string;
+  /** This run's own id and the moment it was minted — one clock reading in
+   *  `dispatchTep`, stamped on every delivery this gate hands back, kept or
+   *  withheld. Optional only for a caller that predates the field —
+   *  `dispatchTep` always supplies both from its own single clock read. */
+  runId?: string;
+  producedAt?: string;
+  /** Ran one of this repository's own tests here — the promise veto rests
+   *  on it, so the gate is given what the door proved, never a candidate. */
+  runOne: Proved;
+  /** Per-part single-check commands, so a check is run by the runner of
+   *  the part that owns it — the gate judges the same way the slices did. */
+  parts?: Record<string, { runOne?: string }>;
+  /** Ran this repository's whole suite here — or absent, when no such
+   *  command runs in a worktree. Absent removes the standing-suite veto,
+   *  exactly as no product build removes that one; the door has already
+   *  said so, and the delivery says it again where the verdict would be.
+   *  What is never allowed is an empty string reaching a shell. */
+  suite?: Proved;
+  branch: string;
+  baseSha: string;
+  worktree: string;
+  slices: SliceForDag[];
+  space: Space;
+  cut: Cut;
+  deps: DispatchDeps;
+  sliceProbes: Map<string, string[]>;
+  sliceCommitted: Set<string>;
+  checkOf: Map<string, string>;
+  undelivered: string[];
+  rulings: Ruling[];
+  decisions: { unit: string; text: string }[];
+  exec: Exec;
+  boundedExec: BoundedExec;
+  /** Runs the suite command, bounded for a whole suite. */
+  suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  state: RunState;
+  /** The session a unit was worked in, when the run still holds it. */
+  sessionOf: (unit: string) => string | undefined;
+  /** The run's worker, so a repair is the next message in that session. */
+  worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
+  /** How many times this run made a person interpret the machine. */
+  machineAttention: () => number;
+  /** Work a fenced unit wrote that the guard took back, with its change —
+   *  read by the last actor, which is fenced by nothing. */
+  restored?: readonly { path: string; patch: string }[];
+  /** The run's door, so an author repairing at the gate can be cleared for
+   *  a file nobody is contending — at the gate, nobody is. */
+  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
+  log: (line: string, step?: string) => void;
+  defect: (entry: {
+    slice?: string;
+    unit?: string;
+    activity: string;
+    trigger: string;
+    type?: string;
+    qualifier?: string;
+    /** Which stage a repair implicates (docs/TARGET.md §4). */
+    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
+    impact: string;
+    detail: string;
+  }) => void;
+}
 
 /** The reason a red suite withholds the delivery — intent-level, no internals. */
 const RED_SUITE_REFUSAL =
@@ -448,6 +521,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     halted: () => g.state.halted, doing: (t) => g.state.doing(`${GATE_STEP}#closer`, t), rulings: g.rulings,
     abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
     ...(g.restored?.length ? { restored: g.restored } : {}),
+    ...(g.clearFor ? { clearFor: g.clearFor } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
   });
   // A check proves a promise once; it does not join the repository's suite

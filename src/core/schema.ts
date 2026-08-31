@@ -200,7 +200,30 @@ export interface Proof {
  */
 export function unkeptProof(p: Proof): boolean {
   if (p.verdict === "pending" && p.settledBy) return false;
+  if (machineMinted(p)) return false;
   return p.verdict !== "green" && p.verdict !== "unjudged";
+}
+
+/**
+ * A promise the MACHINE minted, not one the person asked for.
+ *
+ * Grounding adds obligations of its own — bring the new modules under the
+ * reachability gate, split the files this work pushed past the reading
+ * limit. They are reasonable housekeeping and they are nobody's ask: they
+ * serve no subject the person named, and they exist because the work
+ * happened to touch something.
+ *
+ * They were given the standing of a signed promise, so one could withhold
+ * a whole delivery. A run of a hundred and ninety proofs was held back on
+ * three, and two of those traced to a gap the machine wrote for itself
+ * while every criterion the person had actually asked for was green.
+ *
+ * So a gap informs and never vetoes. It rides the delivery as a finding,
+ * where the person can read it and decide, which is what a machine's own
+ * housekeeping is worth.
+ */
+export function machineMinted(p: { criterionId?: string }): boolean {
+  return /-gap-\d/.test(p.criterionId ?? "");
 }
 
 /** An exam amended mid-run, on the record: the oracle's ruling on a

@@ -582,6 +582,7 @@ export async function dispatchTep(
     worker,
     machineAttention: () => machineAttention,
     restored,
+    ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!("gate", "gate#repair", p) } : {}),
     runId,
     producedAt,
   });
