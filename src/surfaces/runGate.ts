@@ -18,7 +18,7 @@ import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
 import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
-import { asFindings, lookAfterDeploy } from "../run/lookRound";
+import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -461,23 +461,32 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
         },
         log: (l) => s.changed(l),
         then: async (url) => {
-          const found = await lookAfterDeploy({
+          const { findings, driven } = await lookAfterDeploy({
             url,
             space: s.space,
             delivery: r.delivery,
             deps: s.deps.round,
             log: (l) => s.changed(l),
           });
-          if (!found.length) return;
-          const said = asFindings(found);
+          if (!findings.length && !driven.length) return;
+          const said = asFindings(findings);
           s.space = {
             ...s.space,
+            // What the look exercised stops standing on the delivery as
+            // though someone still owed an answer: what was wrong came back
+            // as a finding, and what was right needs no entry.
             deliveries: s.space.deliveries.map((x) =>
-              x.id === r.delivery.id ? { ...x, findings: [...(x.findings ?? []), ...said] } : x,
+              x.id === r.delivery.id
+                ? exercised(said.length ? { ...x, findings: [...(x.findings ?? []), ...said] } : x, driven)
+                : x,
             ),
           };
           s.persist();
-          s.changed(`the look found ${said.length} thing${said.length === 1 ? "" : "s"} to weigh`);
+          s.changed(
+            said.length
+              ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} to weigh`
+              : "the look exercised what no check could reach, and found nothing to say",
+          );
         },
       });
     return { ok: true };

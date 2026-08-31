@@ -41,6 +41,42 @@ export function asksOfDelivery(space: Space, delivery: Pick<Delivery, "cutId">):
 }
 
 /**
+ * What the machine could not verify about this ask — the look's actual work.
+ *
+ * These effects need the running product, so grounding declines to write a
+ * check for them and the gate never grades them. Until now that was the end
+ * of it: they landed on the delivery as observations, and one delivery
+ * carried twenty-one that nobody was ever going to certify. A list nobody
+ * works through is not a record of anything; it is a way of not deciding.
+ *
+ * The deployed thing exists now, and a worker can drive it. So the effect
+ * stops being an item on a report and becomes a line in that worker's
+ * brief. Its normal outcome is silence.
+ */
+export function toExercise(space: Space, delivery: Pick<Delivery, "cutId">, askId: string): string[] {
+  const cut = space.cuts.find((c) => c.id === delivery.cutId);
+  if (!cut) return [];
+  const inCut = new Set(cut.changeIds);
+  return [
+    ...new Set(
+      space.nodes
+        .filter((n: Change) => inCut.has(n.id) && n.serves.includes(askId))
+        .flatMap((n) => (n.unverified ?? []).map((u) => u.text)),
+    ),
+  ];
+}
+
+/** The observations a look has now exercised, so they stop standing on the
+ *  delivery as though someone still owed an answer. What was wrong came
+ *  back as a finding; what was right needs no entry. */
+export function exercised(delivery: Delivery, driven: readonly string[]): Delivery {
+  if (!driven.length || !delivery.observations?.length) return delivery;
+  const done = new Set(driven);
+  const left = delivery.observations.filter((o) => ![...done].some((d) => o.includes(d)));
+  return left.length === delivery.observations.length ? delivery : { ...delivery, observations: left };
+}
+
+/**
  * Drive the deployed thing once per ask and return what was found.
  *
  * Fail-soft: an ask whose look could not run contributes nothing. The
@@ -55,30 +91,43 @@ export async function lookAfterDeploy(a: {
   deps: RoundDeps;
   look?: typeof lookAtAsk;
   log?: (line: string) => void;
-}): Promise<Finding[]> {
+}): Promise<{ findings: Finding[]; driven: string[] }> {
   const asks = asksOfDelivery(a.space, a.delivery);
-  if (!asks.length) return [];
+  if (!asks.length) return { findings: [], driven: [] };
   const look = a.look ?? lookAtAsk;
   const found: Finding[] = [];
+  const driven: string[] = [];
 
   a.log?.(`looking at ${a.url}, one worker per ask (${asks.length})`);
   for (let i = 0; i < asks.length; i += AT_ONCE) {
     const batch = await Promise.all(
       asks.slice(i, i + AT_ONCE).map(async (ask) => {
+        const exercise = toExercise(a.space, a.delivery, ask.id);
         try {
-          return await look({ url: a.url, ask: ask.text, deps: a.deps, ...(a.log ? { log: a.log } : {}) });
+          const r = await look({
+            url: a.url,
+            ask: ask.text,
+            deps: a.deps,
+            ...(exercise.length ? { exercise } : {}),
+            ...(a.log ? { log: a.log } : {}),
+          });
+          return { ...r, exercise };
         } catch (err) {
-          return { findings: [], looked: false, why: (err as Error).message.split("\n")[0] };
+          return { findings: [], looked: false, why: (err as Error).message.split("\n")[0], exercise };
         }
       }),
     );
     for (const r of batch) {
-      if (!r.looked && r.why) a.log?.(`the look could not run: ${r.why}`);
+      if (!r.looked) {
+        if (r.why) a.log?.(`the look could not run: ${r.why}`);
+        continue;
+      }
       found.push(...r.findings);
+      driven.push(...r.exercise);
     }
   }
   a.log?.(found.length ? `the look found ${found.length}` : "the look found nothing to say");
-  return found;
+  return { findings: found, driven };
 }
 
 /** What the look found, as the delivery carries it: the person's own ask,

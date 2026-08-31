@@ -79,7 +79,7 @@ const DESCRIBE = (): Omit<Page, "threw"> => {
   };
 };
 
-function brief(ask: string, page: Page, pressed: string[]): string {
+function brief(ask: string, page: Page, pressed: string[], exercise: readonly string[]): string {
   return [
     "You are looking at a page that has just been deployed, on behalf of the",
     "person who asked for this:",
@@ -87,6 +87,15 @@ function brief(ask: string, page: Page, pressed: string[]): string {
     `    ${ask}`,
     "",
     "Answer only about that ask. You are not reviewing the product.",
+    ...(exercise.length
+      ? [
+          "",
+          "These are the effects no check could reach, because they need the",
+          "running product. You are the one who can reach them:",
+          "",
+          ...exercise.map((e) => `    · ${e}`),
+        ]
+      : []),
     "",
     `THE PAGE IS TITLED: ${page.title || "(no title)"}`,
     "",
@@ -145,6 +154,10 @@ export async function lookAtAsk(a: {
   ask: string;
   deps: RoundDeps;
   viewport?: { width: number; height: number };
+  /** The effects no check could reach, because they need the running
+   *  product. Carried into the brief so they are exercised rather than
+   *  listed. */
+  exercise?: readonly string[];
   round?: typeof runReadRound;
   log?: (line: string) => void;
   /** Injectable for drives, as the rest of the after-merge machinery is. */
@@ -170,7 +183,7 @@ export async function lookAtAsk(a: {
   try {
     for (let turn = 0; turn <= GESTURES; turn++) {
       const page: Page = { ...(await s.read(DESCRIBE)), threw: [...s.threw()] };
-      const reply = await round(volumeDeps(a.deps), brief(a.ask, page, pressed));
+      const reply = await round(volumeDeps(a.deps), brief(a.ask, page, pressed, a.exercise ?? []));
       if (!reply) return { findings: [], looked: true, why: "the round answered nothing" };
 
       const { press, findings } = readReply(reply, at);

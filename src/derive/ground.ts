@@ -152,7 +152,9 @@ function buildGroundingPrompt(args: {
     `A check NEVER PERFORMS the effect on the world. When the effect itself cannot be verified by the machine — it ` +
     `needs the running product, or acts on the world ("the cluster is down", "the app answers on its URL") — it is NOT ` +
     `a check: put it in the node's "unverified" list as {"text":"the effect","why":"why the machine cannot verify it"} ` +
-    `and write the checks at the seam. The delivery reports each such effect as not verified, with its reason; nobody is ` +
+    `and write the checks at the seam. After the merge a worker opens the DEPLOYED thing for the ask this node serves ` +
+    `and exercises each of these, so write "text" as something a person could carry out on the running product and see ` +
+    `the answer to — never as an apology for what could not be checked. Nobody is ` +
     `assigned a check. Example — a button that shuts down the cluster: acceptance probe "pressing the button sends a ` +
     `shutdown request for the current cluster to the platform API, and only after a confirmation (seen through a fake ` +
     `API)"; probe "without confirmation no request is sent"; unverified {"text":"the cluster shuts down when the button ` +
