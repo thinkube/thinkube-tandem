@@ -29,14 +29,10 @@ export interface CardData {
   abs?: string;
   chips: Chip[];
   decision?: string;
-  /** In the cut: the whole card wears gold — and says so, because a
-   *  colour on its own is not a word. */
-  inCut?: boolean;
   /** What this card IS, in a word: the band across its top. */
   band?: { text: string; color: string; why?: string };
   /** This card's live state: a tone for its frame and a word that
-   *  survives the far zoom, from stateFace(). A different mark from
-   *  inCut's gold — a card can carry both at once. */
+   *  survives the far zoom, from stateFace(). */
   face?: { word: string; tone: "run" | "q" | "pass" | "na" | "idle" | "block"; why: string };
 }
 
@@ -96,13 +92,9 @@ export function NodeCard(props: {
 }): JSX.Element {
   const { card, far, expanded } = props;
   const faceColor = card.face ? FACE_COLORS[card.face.tone] : undefined;
-  // The in-cut gold is a fact about membership; the face tone is a fact
-  // about live state. Gold stays the border; the face rides as a ring
-  // outside it, so both survive together and neither reads as the other.
   const rings = [
     props.selected ? "0 0 0 3px #3794ff44" : undefined,
-    faceColor ? `0 0 0 ${card.inCut ? 5 : 2}px ${faceColor}55` : undefined,
-    card.inCut && !props.selected ? "0 0 0 1px #cca70055" : undefined,
+    faceColor ? `0 0 0 2px ${faceColor}55` : undefined,
     "0 2px 6px #0006",
   ]
     .filter(Boolean)
@@ -114,10 +106,8 @@ export function NodeCard(props: {
       style={{
         position: "absolute",
         width: NODE_W,
-        background: card.inCut ? "#cca70014" : C.raised,
-        border: card.inCut
-          ? "2px solid var(--gold, #cca700)"
-          : `1px solid ${faceColor ?? (props.selected ? C.focus : C.border)}`,
+        background: C.raised,
+        border: `1px solid ${faceColor ?? (props.selected ? C.focus : C.border)}`,
         borderRadius: 6,
         padding: `${SP.sm}px ${SP.md}px`,
         boxShadow: rings,
@@ -127,7 +117,7 @@ export function NodeCard(props: {
         ...props.style,
       }}
     >
-      {far && (card.face || card.inCut) ? (
+      {far && card.face ? (
         <div
           data-face
           style={{
@@ -138,16 +128,9 @@ export function NodeCard(props: {
             fontWeight: 600,
           }}
         >
-          {card.face ? (
-            <span title={card.face.why} style={{ color: faceColor }}>
-              {card.face.word}
-            </span>
-          ) : null}
-          {card.inCut ? (
-            <span title="Part of the signed work being built now." style={{ color: "var(--gold, #cca700)" }}>
-              cut
-            </span>
-          ) : null}
+          <span title={card.face.why} style={{ color: faceColor }}>
+            {card.face.word}
+          </span>
         </div>
       ) : null}
       {card.band ? (

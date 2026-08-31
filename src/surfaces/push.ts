@@ -235,7 +235,6 @@ export function spacePush(session: TandemSession, message?: string): unknown {
               })),
               ...(n.unverified?.length ? { unverified: n.unverified } : {}),
               needs: n.needs,
-              inCut: session.cutNodeIds.has(n.id),
               stale: session.stale.has(n.id),
               tep: session.space.cuts.find(
                 (cu) => cu.signature && cu.changeIds.includes(n.id),
