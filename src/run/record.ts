@@ -124,6 +124,37 @@ export function saveRun(
   }
 }
 
+/**
+ * The slices an earlier run of this cut finished.
+ *
+ * A commit says a slice ran AND changed something. Its absence says
+ * nothing at all — a slice that finds its work already done commits
+ * nothing, and taken for one that never ran it is started again on every
+ * resume: doing nothing, committing nothing, and earning the same reading
+ * next time. Inferring the answer back from the tree is guesswork about a
+ * fact the run already knew.
+ *
+ * So it is read, not deduced. The record says which units this cut
+ * finished. It must be read BEFORE the new run starts writing over it —
+ * there is one record per cut, and a resume overwrites its own evidence.
+ */
+export function slicesFinished(storeDir: string, cutId: string): string[] {
+  try {
+    const record = JSON.parse(
+      fs.readFileSync(path.join(dirFor(storeDir), `${cutId}.json`), "utf8"),
+    ) as RunRecord;
+    const bySlice = new Map<string, RunUnitView[]>();
+    for (const u of record.units ?? []) bySlice.set(u.slice, [...(bySlice.get(u.slice) ?? []), u]);
+    return [...bySlice]
+      .filter(([, units]) => units.length > 0 && units.every((u) => u.state === "done"))
+      .map(([slice]) => slice);
+  } catch {
+    // No record, or one this version cannot read: the run falls back to
+    // what the branch's commits say, which is where it stood before.
+    return [];
+  }
+}
+
 /** The last run this space ran, or nothing if it has never run one. */
 function loadLastRun(storeDir: string): RunRecord | undefined {
   try {

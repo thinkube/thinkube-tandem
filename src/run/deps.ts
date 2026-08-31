@@ -43,6 +43,9 @@ export interface DispatchDeps {
   /** Start this cut from nothing: discard the branch an earlier run left,
    *  so every unit runs again on the base as it stands today. */
   freshStart?: boolean;
+  /** Slices an earlier run of this cut RECORDED finishing. Read at the run's
+   *  start, because there is one record per cut and this run overwrites it. */
+  finishedBefore?: readonly string[];
   /** The store dir for find-time defect rows (fail-soft; absent = no ledger). */
   storeDir?: string;
   /** The repository reading (conventions and the why) — every worker gets it in its brief:

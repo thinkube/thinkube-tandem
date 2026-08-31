@@ -211,7 +211,7 @@ export async function dispatchTep(
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
 
-  const standing = await standingSlices(refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`));
+  const standing = await standingSlices(refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`), deps.finishedBefore ?? []);
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);

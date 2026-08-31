@@ -11,7 +11,7 @@ import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState, silentVerdict } from "../run/state";
-import { saveRun, stopWasRequested } from "../run/record";
+import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
 import type { TandemSession } from "./session";
@@ -153,6 +153,10 @@ export async function executeRun(
       keep();
       s.changed(note);
     };
+    // What the LAST run of this cut finished, read HERE — the next line
+    // creates the state whose first save overwrites that record, and there
+    // is one record per cut.
+    const finishedBefore = slicesFinished(s.deps.storeDir, cutId);
     let lastBeat = Date.now();
     s.runState = new RunState(() => {
       lastBeat = Date.now();
@@ -250,6 +254,7 @@ export async function executeRun(
         deps: opts.fresh ? { ...s.deps, freshStart: true } : s.deps,
         runState: s.runState!,
         spaceName: path.basename(s.deps.storeDir),
+        ...(finishedBefore.length ? { finishedBefore } : {}),
         ...(digest ? { digest } : {}),
         ...(prepare ? { prepare } : {}),
         ...(build ? { build } : {}),

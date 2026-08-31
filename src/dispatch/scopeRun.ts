@@ -20,6 +20,10 @@ export async function dispatchScopePlan(args: {
   deps: SessionDeps;
   runState: RunState;
   spaceName: string;
+  /** What the LAST run of this cut finished, read before this one began
+   *  overwriting its record. Without it a slice that had nothing left to
+   *  change looks like one that never ran. */
+  finishedBefore?: readonly string[];
   /** The anchor repository's reading — briefs in member scopes never get
    *  it; a digest of one repository is not knowledge of another. */
   digest?: string;
@@ -87,6 +91,7 @@ export async function dispatchScopePlan(args: {
         // deps are assembled field by field, so a field nobody copies here
         // never reaches the door however faithfully it was set upstream.
         ...(deps.freshStart ? { freshStart: true } : {}),
+        ...(args.finishedBefore?.length ? { finishedBefore: args.finishedBefore } : {}),
         model: deps.round.model,
         workerModel: deps.workerModel,
         concurrency: deps.maxConcurrent,

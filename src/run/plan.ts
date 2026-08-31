@@ -565,29 +565,33 @@ export function seedUnitViews(
 /**
  * Which slices an earlier run of this cut left standing.
  *
- * A slice its earlier run committed is done on the record and nothing
- * re-runs it; the gate re-proves it like all work. But it stands only if
- * it satisfies THIS plan. One was taken as standing because its name
- * appeared in an earlier run's commits, while the plan had grown from ten
- * checks to sixteen — so the six the plan added were never written, its
- * tester was marked done without ever running, and the failure surfaced
- * two units later as a maintainer that could not reach green, naming
- * nothing a person could act on.
+ * A slice an earlier run finished is done on the record and nothing
+ * re-runs it; the gate re-proves it like all work. Two accounts of that,
+ * because each is silent where the other speaks: a commit proves a slice
+ * ran AND changed something, and says nothing about one that found its
+ * work already done — read from commits alone, such a slice starts again
+ * on every resume and finds the same nothing to do. The run's own record
+ * says which units it finished, which is the fact wanted.
  *
- * What this plan asks for is on disk, or the slice runs again.
+ * Either way it stands only if it satisfies THIS plan, which may have grown
+ * since: what this plan asks for is on disk, or the slice runs again.
  */
 export async function standingSlices(
   committed: readonly string[],
   dag: readonly { slice: string; footprint: string[] }[],
   worktree: string,
   log: (line: string) => void,
+  /** Slices an earlier run of this cut RECORDED finishing. */
+  finished: readonly string[] = [],
 ): Promise<Set<string>> {
-  const standing = new Set(committed.filter((sl) => dag.some((u) => u.slice === sl)));
+  const standing = new Set([...committed, ...finished].filter((sl) => dag.some((u) => u.slice === sl)));
+  for (const sl of finished)
+    if (standing.has(sl) && !committed.includes(sl)) log(`${sl} committed nothing, and an earlier run recorded finishing it — it stands`);
   for (const sl of [...standing]) {
     const owes = await missingProbes(worktree, dag.filter((u) => u.slice === sl).flatMap((u) => u.footprint));
     if (!owes.length) continue;
     standing.delete(sl);
-    log(`${sl} was committed by an earlier run, but this plan asks for ${owes.length} check(s) it never wrote — it runs again`);
+    log(`${sl} was left standing by an earlier run, but this plan asks for ${owes.length} check(s) it never wrote — it runs again`);
   }
   return standing;
 }
