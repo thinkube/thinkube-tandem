@@ -313,6 +313,44 @@ in `apps/todo/k8s/ingress.yaml` claims that hostname. Something else is
 serving it. This is exactly what the after-deploy look is for, and it is
 already true today.
 
+## Where it stands
+
+| | item | state |
+|---|---|---|
+| 0 | the module rule reframed | **done** |
+| 1 | category B — render and measure | **done**, and it caught the layout bug |
+| 3 | the spec layer | **done** — one set is the cut, the surface says which |
+| 4 | the light gate | **half** — grounding routes appearance criteria to B; the gate does not yet let unsettleable criteria leave |
+| 2 | the look, on a deployed app | **not built** — the instrument works, the worker-per-ask does not exist |
+| 5 | case 4 testless | **not built** |
+| 6 | feedback routing | **not built** |
+| — | `review-3` | **closed** — dead machinery removed |
+| — | `review-33` | **closed** |
+
+The spec layer needed almost nothing: dispatch, the gate and the delivery
+were already per-cut. `buildFlow` took an EXCLUSION list — "one cut over
+every component the human left in" — so the default was everything. It takes
+one set now, and that path is deleted rather than added to.
+
+### The test count
+
+One removed for each added, as asked. Since the merge: **28 added, 23
+removed, net +5**.
+
+What went, and why: three checks asserting a handle "appears literally in the
+webview source" (a rendering check asks better); four guarding the
+READS_FILES escape (which existed to prevent a false VETO, and the probe
+cannot veto now); a second copy of the 600-line rule; two source-text proxies
+for behaviour tested directly; five of my own from that afternoon that read
+this repository's source and matched a regex; two asserting the in-cut mark
+was distinct from the state mark, once the in-cut mark was gone; and four of
+a private helper, reached through an export that existed only for them.
+
+Still +5. The next candidates are `affordances_AC-15/16` and `AC-20/21` —
+two pairs, each pair two halves of one property that could be one check
+each. I stopped rather than delete coverage of production behaviour nothing
+else covers, which would be hitting a number instead of pruning.
+
 ## Order of work
 
 0. **Reframe the module rule** — the cheapest item here, and it stops the
