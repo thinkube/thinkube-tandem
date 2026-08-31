@@ -1,4 +1,4 @@
-# Eight rules, and what each one deletes
+# Nine rules, and what each one deletes
 
 These came out of a week in which the machine ran 140 times and delivered
 nothing, while its own test suite reported 796 passing checks and 91%
@@ -118,6 +118,41 @@ that turned a fifteen-minute reconstruction into a five-minute read.
 
 ---
 
+## 9. A file holds one nameable thing
+
+A file holds one nameable thing, and is named after it. Its opening sentence
+says what that is — one sentence, without "and". A change that does not fit
+that sentence belongs in another file.
+
+This replaces a limit of six hundred lines that lived only in
+`hygiene.test.ts`, written down nowhere a person read. It went in after the
+machine produced files of five thousand lines and it stopped that — but a
+line count is satisfied by deleting the explanation rather than extracting
+the code, which is the cheaper move and the worse one. Four files were
+compressed instead of split in a single afternoon under it. Measured against
+its own tree it moved little: the median module is about a hundred lines of
+code with or without it, and the largest files sit in the directory it
+exempted.
+
+The count also cannot see what it stands in for. `plan.ts` opened with
+"execution locks, per-slice probe and test-home maps, the closing gate's
+verification list, the honesty scan, the delivery record, documentation
+obligations, and the roles' invariant" — seven things and two "and"s in
+three hundred and sixty-two lines, inside every limit anyone proposed and
+plainly a bag. A reader sees it at once; no number ever will.
+
+No major style guide sets a line limit. Java requires one top-level class per
+file, Go makes the package the unit, Rust maps modules to files, and ESLint's
+`max-lines` is off by default and ships `skipComments`.
+
+So the shape of the modules is reported and never enforced: the delivery says
+how many files there are, the largest, the median, the average, and how much
+of the tree explains rather than instructs. Growth is visible without being
+punished.
+
+*Remedy, which the old rule never named:* **extract a nameable piece; never
+compress the prose.**
+
 ## The ledger
 
 | Rule | Removes | Adds |
@@ -130,6 +165,7 @@ that turned a fifteen-minute reconstruction into a five-minute read.
 | 6 invariants over instances | instance regressions | — |
 | 7 a fix names its removal | one mechanism per fix | — |
 | 8 silence is an event | — | the log and the watchdog |
+| 9 one nameable thing | a line limit, and the incentive to delete explanation | a sentence a reviewer reads |
 
 Five rules delete more than they add. Two are free. One is an honest
 addition. If a future rule cannot fill the middle column, it does not
