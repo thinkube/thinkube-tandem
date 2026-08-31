@@ -9,6 +9,8 @@ import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 import { docsDuty } from "../core/docsDuty";
+import { promiseLabelOf } from "./runPromiseLabel";
+import { signedIdleNotice } from "./runGate";
 
 const TITLE_CLIP = 64;
 
@@ -93,6 +95,9 @@ function latestVerdictOf(
 
 export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
+  // Read once, held for every delivery this push renders — not once per
+  // delivery and not skipped for a push that has any.
+  const surfaceText = session.readBuiltSurfaceOnce();
   return {
     kind: "space",
     running: session.running,
@@ -112,6 +117,13 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     // Signed work that never delivered: the run can be started again,
     // and the surface is the only place that can say so.
     unrun: session.unrunCut(),
+    // The one notice for that fact — its heading, its sentence, and the
+    // ways back in — worked out once here so no page words it again.
+    signedIdle: signedIdleNotice({
+      unrun: session.unrunCut(),
+      running: session.running,
+      runNote: session.runNote,
+    }),
     grounding: session.groundingView(),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),
@@ -127,7 +139,16 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ...v,
         units: v.units.map((u) => {
           const title = session.units.find((x) => x.id === u.slice)?.abstract?.title;
-          return title ? { ...u, sliceTitle: title } : u;
+          const promiseLabel = promiseLabelOf({
+            nodes: session.space.nodes,
+            units: session.units,
+            slice: u.slice,
+          });
+          return {
+            ...u,
+            ...(title ? { sliceTitle: title } : {}),
+            ...(promiseLabel ? { promiseLabel } : {}),
+          };
         }),
       };
     })(),
@@ -298,7 +319,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     }),
     deliveries: session.space.deliveries.map((d) => ({
       id: d.id,
-      page: session.deliveryPage(d.id) ?? "",
+      page: session.deliveryPage(d.id, surfaceText) ?? "",
       accepted: !!d.acceptedAt,
       // Whether it COULD be accepted, asked of the same gate that would
       // refuse it. A surface that offers a press the machine will refuse

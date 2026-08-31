@@ -18,20 +18,38 @@ import type { DispatchDeps } from "./dispatch";
 
 export interface RefreshResult {
   refusal?: { trigger: string; refusal: string };
-  /** Slices already committed on the branch by an earlier run of this cut. */
-  committedSlices: string[];
+  /** Slices already committed on the branch by an earlier run of this cut,
+   *  each paired with the run id that made it standing — when its commit
+   *  carries one. */
+  committedSlices: { slice: string; runId?: string }[];
   /** Whether an existing branch was kept and refreshed. */
   resumed: boolean;
 }
 
-/** The slices an earlier run of this cut committed, from the branch's own log. */
-function committedSlicesOf(log: string, tep: string): string[] {
-  const out: string[] = [];
-  for (const line of log.split("\n")) {
-    const m = new RegExp(`^tandem: ${tep.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} (\\S+)$`).exec(line.trim());
-    if (m) out.push(m[1]);
+/**
+ * The slices an earlier run of this cut committed, from the branch's own
+ * log — paired with the run id riding that commit's `Tandem-Run:` trailer,
+ * so a resumed run can say, for a step it does not repeat, WHICH earlier
+ * run did the work rather than just that some run did.
+ *
+ * `git log --format=%s%n%b%x00` gives one record per commit, each ending in
+ * a NUL, so a multi-line body is read whole without swallowing the next
+ * commit's subject.
+ */
+export function committedSlicesOf(log: string, tep: string): { slice: string; runId?: string }[] {
+  const out = new Map<string, string | undefined>();
+  const escapedTep = tep.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const subjectRe = new RegExp(`^tandem: ${escapedTep} (\\S+)$`);
+  for (const record of log.split("\0")) {
+    const lines = record.split("\n");
+    const subject = (lines[0] ?? "").trim();
+    const m = subjectRe.exec(subject);
+    if (!m) continue;
+    const body = lines.slice(1).join("\n");
+    const trailer = /^Tandem-Run:\s*(\S+)\s*$/m.exec(body);
+    out.set(m[1], trailer ? trailer[1] : out.get(m[1]));
   }
-  return [...new Set(out)];
+  return [...out].map(([slice, runId]) => ({ slice, runId }));
 }
 
 /**
@@ -87,9 +105,12 @@ export async function refreshRunTrees(args: {
   } else {
     log(`${args.tep}: resuming the existing branch — the base has not moved`);
   }
-  const history = (await exec("git", ["-C", worktree, "log", `--grep=^tandem: ${args.tep} `, "--format=%s"], worktree)).out;
+  const history = (
+    await exec("git", ["-C", worktree, "log", `--grep=^tandem: ${args.tep} `, "--format=%s%n%b%x00"], worktree)
+  ).out;
   const committedSlices = committedSlicesOf(history, args.tep);
-  if (committedSlices.length) log(`${args.tep}: standing from the earlier run: ${committedSlices.join(", ")}`);
+  if (committedSlices.length)
+    log(`${args.tep}: standing from the earlier run: ${committedSlices.map((c) => c.slice).join(", ")}`);
   return { committedSlices, resumed: true };
 }
 

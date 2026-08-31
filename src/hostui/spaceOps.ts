@@ -7,8 +7,8 @@
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { createThinkingSpace, DeletionCost, listThinkingSpaces, SpaceOwnerKind } from "../core/spaces";
+import { vs } from "../core/vscodeHost";
 
 /** Owner keys: a repository card id, or "wp:<project-id>" for a project. */
 function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
@@ -17,10 +17,19 @@ function parseOwner(ownerKey: string): { id: string; kind: SpaceOwnerKind } {
     : { id: ownerKey, kind: "repository" };
 }
 
+/** The slug read back as plain words: dashes and underscores become
+ *  spaces and only the first letter is capitalised — the person's own
+ *  naming, just readable, needing nothing that is not already on disk. */
+function slugAsWords(slug: string): string {
+  const words = slug.replace(/[-_]+/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** The name a thinking space is known by: what the human wrote in
- *  name.txt when they created it, or the directory slug when no name was
- *  ever recorded (a space made before naming, or read by slug alone). A
- *  panel titles itself with this and never re-derives it later. */
+ *  name.txt when they created it, or the slug read back as plain words
+ *  when no name was ever recorded (a space made before naming, or read by
+ *  slug alone). A panel titles itself with this and never re-derives it
+ *  later. */
 export function spaceTitle(storeRoot: string, ownerKey: string, slug: string): string {
   const owner = parseOwner(ownerKey);
   const home = owner.kind === "project" ? "projects" : "spaces";
@@ -29,15 +38,23 @@ export function spaceTitle(storeRoot: string, ownerKey: string, slug: string): s
     const t = fs.readFileSync(nameFile, "utf8").trim();
     if (t) return t;
   } catch {
-    /* no name.txt — the slug is the title */
+    /* no name.txt — the slug read back as words is the title */
   }
-  return slug;
+  return slugAsWords(slug);
 }
 
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
+/** What a panel opens under: the key it binds its session to, and the
+ *  title it is shown once, in plain words. When no space can be named —
+ *  no owner, no slug — nothing opens: a refusal sentence instead, so an
+ *  empty tab under a word that names nothing never appears. */
+export function panelOpening(
+  storeRoot: string,
+  ownerKey: string | undefined,
+  slug: string | undefined,
+): { key: string; title: string } | { refusal: string } {
+  if (!ownerKey || !slug)
+    return { refusal: "There is no thinking space to open yet — choose or create one first." };
+  return { key: `${ownerKey}/${slug}`, title: spaceTitle(storeRoot, ownerKey, slug) };
 }
 
 export function configuredStoreRoot(): string {

@@ -81,7 +81,7 @@ test("nothing recorded leaves the old behaviour exactly as it was", async () => 
   const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-plain-"));
   fs.mkdirSync(path.join(wt, "src"), { recursive: true });
   fs.writeFileSync(path.join(wt, "src", "x_AC-1.test.ts"), "// written");
-  assert.ok((await standingSlices(["SL-4-tests"], DAG, wt, () => {})).has("SL-4-tests"));
+  assert.ok((await standingSlices([{ slice: "SL-4-tests" }], DAG, wt, () => {})).has("SL-4-tests"));
   assert.equal((await standingSlices([], DAG, wt, () => {})).size, 0);
 });
 

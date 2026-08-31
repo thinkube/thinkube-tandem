@@ -2,6 +2,12 @@
  * A unit card: bold wrapping title, the FULL abstract (always complete —
  * the human's ruling; text wraps, never truncates), chip badges, an
  * optional decision strip. A card in the cut wears gold all over.
+ *
+ * A card's live state is a second, independent mark: a coloured frame and
+ * a short state word, both of which survive the far zoom where chips are
+ * dropped. The in-cut gold is a different fact from the state frame — a
+ * card can be both in the cut and running — so the two marks never share a
+ * colour or a word.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import { C, FS, SP } from "../type";
@@ -28,7 +34,20 @@ export interface CardData {
   inCut?: boolean;
   /** What this card IS, in a word: the band across its top. */
   band?: { text: string; color: string; why?: string };
+  /** This card's live state: a tone for its frame and a word that
+   *  survives the far zoom, from stateFace(). A different mark from
+   *  inCut's gold — a card can carry both at once. */
+  face?: { word: string; tone: "run" | "q" | "pass" | "na" | "idle" | "block"; why: string };
 }
+
+const FACE_COLORS: Record<NonNullable<CardData["face"]>["tone"], string> = {
+  run: C.live,
+  q: C.ask,
+  pass: C.ok,
+  na: C.bad,
+  block: "#9d5fd6",
+  idle: C.quiet,
+};
 
 const CHIP_COLORS: Record<NonNullable<Chip["kind"]>, { border: string; color: string; bg?: string }> = {
   el: { border: C.ok, color: C.ok, bg: "#4ec9b01a" },
@@ -76,6 +95,18 @@ export function NodeCard(props: {
   children?: React.ReactNode;
 }): JSX.Element {
   const { card, far, expanded } = props;
+  const faceColor = card.face ? FACE_COLORS[card.face.tone] : undefined;
+  // The in-cut gold is a fact about membership; the face tone is a fact
+  // about live state. Gold stays the border; the face rides as a ring
+  // outside it, so both survive together and neither reads as the other.
+  const rings = [
+    props.selected ? "0 0 0 3px #3794ff44" : undefined,
+    faceColor ? `0 0 0 ${card.inCut ? 5 : 2}px ${faceColor}55` : undefined,
+    card.inCut && !props.selected ? "0 0 0 1px #cca70055" : undefined,
+    "0 2px 6px #0006",
+  ]
+    .filter(Boolean)
+    .join(", ");
   return (
     <div
       data-node={card.id}
@@ -86,20 +117,39 @@ export function NodeCard(props: {
         background: card.inCut ? "#cca70014" : C.raised,
         border: card.inCut
           ? "2px solid var(--gold, #cca700)"
-          : `1px solid ${props.selected ? C.focus : C.border}`,
+          : `1px solid ${faceColor ?? (props.selected ? C.focus : C.border)}`,
         borderRadius: 6,
         padding: `${SP.sm}px ${SP.md}px`,
-        boxShadow: props.selected
-          ? "0 0 0 3px #3794ff44, 0 2px 6px #0006"
-          : card.inCut
-            ? "0 0 0 1px #cca70055, 0 2px 6px #0006"
-            : "0 2px 6px #0006",
+        boxShadow: rings,
         boxSizing: "border-box",
         transition: "left .35s, top .35s",
         cursor: props.onClick ? "pointer" : undefined,
         ...props.style,
       }}
     >
+      {far && (card.face || card.inCut) ? (
+        <div
+          data-face
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 4,
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          {card.face ? (
+            <span title={card.face.why} style={{ color: faceColor }}>
+              {card.face.word}
+            </span>
+          ) : null}
+          {card.inCut ? (
+            <span title="Part of the signed work being built now." style={{ color: "var(--gold, #cca700)" }}>
+              cut
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {card.band ? (
         <div
           data-band={card.band.text}

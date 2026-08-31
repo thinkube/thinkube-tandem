@@ -8,19 +8,31 @@
  */
 import { Markdown } from "./Markdown";
 import { C, FS, O, raised, SP } from "./type";
-import { can, post, SpacePush } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 
 /** The way back in: the signed work runs again. It is offered on every
  *  delivery that is not accepted — withheld, refused by the gate, or still
  *  waiting for a decision. Signing happens once, so a delivery the gate
- *  will not accept would otherwise leave the work with no door at all. */
-function RunAgain(props: { rerun: { id: string; tepId?: string } }): JSX.Element {
+ *  will not accept would otherwise leave the work with no door at all.
+ *
+ *  Off, it says why. A control the phase has turned off is dimmed by the
+ *  native `disabled` attribute, which swallows the click — so the refusal
+ *  path in `post()` never runs and the tooltip is the only place the
+ *  sentence can reach the reader. */
+function RunAgain(props: {
+  rerun: { id: string; tepId?: string };
+  phase: SpacePush["phase"];
+}): JSX.Element {
   return (
     <button
       data-rerun
       disabled={!can("rerun")}
       style={{ fontWeight: 600 }}
-      title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+      title={
+        can("rerun")
+          ? "Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+          : refusalSentence("rerun", props.phase)
+      }
       onClick={() => post({ action: "rerun" })}
     >
       Run {props.rerun.tepId ?? "it"} again
@@ -65,7 +77,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 </div>
                 {d.rerun ? (
                   <div style={{ marginTop: SP.sm }}>
-                    <RunAgain rerun={d.rerun} />
+                    <RunAgain rerun={d.rerun} phase={props.push.phase} />
                   </div>
                 ) : null}
               </div>
@@ -79,7 +91,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 <strong>This cannot be accepted.</strong> {d.blocked}
                 {d.rerun ? (
                   <div style={{ marginTop: SP.sm }}>
-                    <RunAgain rerun={d.rerun} />
+                    <RunAgain rerun={d.rerun} phase={props.push.phase} />
                   </div>
                 ) : null}
               </div>
@@ -89,7 +101,11 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                   data-accept-delivery={d.id}
                   disabled={!can("accept-delivery")}
                   style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
-                  title="Accept it — this merges the work on the project's forge."
+                  title={
+                    can("accept-delivery")
+                      ? "Accept it — this merges the work on the project's forge."
+                      : refusalSentence("accept-delivery", props.push.phase)
+                  }
                   onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
                 >
                   Accept
@@ -98,12 +114,16 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                   data-reject-delivery={d.id}
                   disabled={!can("reject-delivery")}
                   style={{ padding: `${SP.xs}px ${SP.md}px` }}
-                  title="Not this — the work stays on its branch and the signed promises can run again."
+                  title={
+                    can("reject-delivery")
+                      ? "Not this — the work stays on its branch and the signed promises can run again."
+                      : refusalSentence("reject-delivery", props.push.phase)
+                  }
                   onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
                 >
                   Not this
                 </button>
-                {d.rerun ? <RunAgain rerun={d.rerun} /> : null}
+                {d.rerun ? <RunAgain rerun={d.rerun} phase={props.push.phase} /> : null}
                 <span style={{ fontSize: FS.caption, color: C.quiet }}>
                   Try it first — every “see it” line above is a way in.
                 </span>

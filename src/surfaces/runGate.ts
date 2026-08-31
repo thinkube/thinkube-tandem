@@ -336,6 +336,33 @@ export async function executeRun(
   }
 
 /**
+ * The one notice for signed work that has not delivered: what it says, and
+ * which ways back in ride with it. Every page that can show this fact reads
+ * it from here instead of wording it again — moving between pages never
+ * re-tells you the same thing in different words.
+ *
+ * Nothing while a run is in flight (there is nothing idle to report), and
+ * nothing when there is no signed, undelivered work at all. A refusal note
+ * on the session becomes this notice's sentence verbatim — it is not a
+ * second notice beside it.
+ */
+export function signedIdleNotice(view: {
+  unrun?: { id: string; tepId?: string };
+  running: boolean;
+  runNote?: string;
+}): { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean } | undefined {
+  if (view.running || !view.unrun) return undefined;
+  return {
+    heading: view.runNote ? "Nothing is running." : "This work is signed and has not run.",
+    sentence:
+      view.runNote ??
+      `${view.unrun.tepId ?? "This work"} is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it.`,
+    canRerun: true,
+    canThinkAgain: true,
+  };
+}
+
+/**
  * Refuse a delivery: it ends nothing, and the way back in stays open.
  *
  * The work stays on its branch — nothing is thrown away — the delivery

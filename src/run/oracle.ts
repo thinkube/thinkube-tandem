@@ -14,6 +14,7 @@ import {
 } from "../engine/core/closingGate";
 import {
   createVerifyOracle,
+  OracleAcResult,
   VerifyOracle,
 } from "../engine/verifyOracle";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
@@ -135,6 +136,32 @@ async function copyRel(fromRoot: string, toRoot: string, rel: string): Promise<v
   await fs.copyFile(path.join(fromRoot, rel), dst);
 }
 
+/** Wrap a {@link VerifyOracle} so every `verify()` and `confirmGreen()`
+ *  round that comes back with per-AC results also reports them to
+ *  `onGrade` — the run's own account of which criteria passed, kept
+ *  beside the coder's reply and never in place of it. A verdict that is
+ *  not shaped as results (a build failure, a stall, exhaustion) carries no
+ *  per-AC outcome to report, so `onGrade` hears nothing for it; the
+ *  wrapped oracle's verdict is returned unchanged either way. */
+export function tapGrades(
+  oracle: VerifyOracle,
+  onGrade: (results: readonly OracleAcResult[]) => void,
+): VerifyOracle {
+  const report = (r: Awaited<ReturnType<VerifyOracle["verify"]>>) => {
+    if (r.kind === "results") onGrade(r.results);
+    return r;
+  };
+  return {
+    ...oracle,
+    verify: async () => report(await oracle.verify()),
+    confirmGreen: async () => {
+      const out = await oracle.confirmGreen();
+      report(out.result);
+      return out;
+    },
+  };
+}
+
 export interface OracleFactoryArgs {
   repoRoot: string;
   branch: string;
@@ -167,6 +194,9 @@ export interface OracleFactoryArgs {
   pruneIn?: (slice: string) => readonly string[] | undefined;
   /** Lines carry the unit the oracle is acting for, when it is acting for one. */
   log: (line: string, step?: string) => void;
+  /** Every per-AC results verdict this slice's oracle produces — the run's
+   *  own account of which criteria passed, kept beside the coder's reply. */
+  onGrade?: (slice: string, results: readonly OracleAcResult[]) => void;
   /** Whom the oracle acts for right now — its lines carry that unit. */
   acting?: (slice: string) => { unit: string } | undefined;
   defect: (entry: {
@@ -438,7 +468,8 @@ export function sliceOracleFactory(
           log: logFor(slice),
         })
       : bare;
-    oracles.set(slice, oracle);
-    return oracle;
+    const graded = a.onGrade ? tapGrades(oracle, (results) => a.onGrade!(slice, results)) : oracle;
+    oracles.set(slice, graded);
+    return graded;
   };
 }

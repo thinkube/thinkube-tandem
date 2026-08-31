@@ -3,10 +3,22 @@
 
 Signing starts the run; watching it is optional. The run view appears in
 the space with the *orchestration graph*: one node per execution unit,
-edges for the order the engine derived, colors for live state (grey
-ready, green running — pulsing, amber parked, blue done, red failed).
-Click a node for its detail; the log tail runs beneath; *Stop* aborts
-every live worker.
+edges for the order the engine derived. Each card — worker, auditor and
+the closing gate alike — is titled with the promise it is keeping, in
+your own words; the worker id and the full promise sentence move to the
+card's hover text, so the title reads as what is being built rather than
+as a raw id.
+
+Live state is never carried by colour alone. Every card wears a coloured
+frame *and* a short state word — ready, running, needs you, passed,
+failed, never ran — and both survive zooming out, at the point where the
+card's chips are dropped for space. A card that is part of the signed
+work being built now carries a separate gold mark saying "cut" — a
+different fact from its live state, so a card can be both in the cut and
+running at once without either mark hiding the other. Click a node for
+its detail; the log tail runs beneath; *Stop* aborts every live worker.
+The closing gate's own card opens its own log the same way, on the same
+single click as every worker card.
 
 == How the machine builds
 
@@ -50,9 +62,13 @@ every live worker.
 The closing gate re-runs every probe from a clean environment, the
 honesty scan reads the delivered files for self-declared deferrals, the
 repository's own suite runs, and the branch becomes a pull request whose
-description carries the proofs, the tester's decisions and every
-UNDELIVERED line. The machine face — the structured verification trace —
-persists in the store beside the space.
+description carries every acceptance criterion of the cut with its
+verdict — including "not checked" for a criterion nothing judged — the
+tester's decisions and every UNDELIVERED line. The same complete list
+is what the delivery page shows, so the pull request and the delivery
+page never disagree about a criterion. The machine face — the
+structured verification trace — persists in the store beside the
+space.
 
 A run ends in exactly one of three states:
 

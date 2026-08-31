@@ -5,7 +5,7 @@
  * because they carry the cut checkbox and the check gestures.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label, labelIn, raised } from "./type";
 import { World } from "./proto/world";
 import { NODE_W } from "./proto/nodeCard";
@@ -28,6 +28,8 @@ export function WorkGraph(props: {
   /** The way back: your asks are not on this page, so a claim that reads
    *  wrong opens the ask it came from where you write them. */
   onEditAsk: (askId: string) => void;
+  /** The way back to the run itself, from the signed-idle notice. */
+  onGoToRun: () => void;
 }): JSX.Element {
   const { push } = props;
   // Which promise asked for a check: the answer comes back on the whole
@@ -137,7 +139,7 @@ export function WorkGraph(props: {
               data-think-here
               disabled={!can("think")}
               style={{ fontWeight: 600, marginTop: SP.md }}
-              title={can("think") ? "Work out what to build. This is what starts spending." : whyNot(push.phase)}
+              title={can("think") ? "Work out what to build. This is what starts spending." : refusalSentence("think", push.phase)}
               onClick={() => post({ action: "think" })}
             >
               Work it out now
@@ -187,7 +189,7 @@ export function WorkGraph(props: {
             title={
               can("reground")
                 ? "Read the code again and work out these subjects from what is there now. Nothing you wrote changes."
-                : whyNot(push.phase)
+                : refusalSentence("reground", push.phase)
             }
             onClick={() => post({ action: "reground" })}
           >
@@ -199,7 +201,7 @@ export function WorkGraph(props: {
           </span>
         </div>
       ) : null}
-      {push.unrun && !push.running ? (
+      {push.signedIdle ? (
         <div
           data-signed-idle
           style={{
@@ -214,22 +216,38 @@ export function WorkGraph(props: {
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: FS.body }}>
-            {push.unrun.tepId ?? "This work"} is signed and nothing is running. Its last run ended
-            without a delivery — if the window reloaded, the run ended with it.
-          </span>
+          {/* One wording, one place: the notice's own heading and sentence,
+              the same text the run page shows. A page that re-says the fact
+              in words of its own is a second wording to keep in step, and
+              the two drift the moment either is edited. */}
+          <div style={{ flexBasis: "100%" }}>
+            <strong>{push.signedIdle.heading}</strong>
+            <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{push.signedIdle.sentence}</div>
+          </div>
           <button
             data-think-again
             disabled={!can("think-again")}
             style={{ fontWeight: 600 }}
-            title="Withdraw the signature and think these promises through again under everything decided since. Nothing delivered is touched; the asks stay as you wrote them."
+            title={
+              can("think-again")
+                ? "Withdraw the signature and think these promises through again under everything decided since. Nothing delivered is touched; the asks stay as you wrote them."
+                : refusalSentence("think-again", push.phase)
+            }
             onClick={() => post({ action: "think-again" })}
           >
             Think it through again
           </button>
           <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            the promises are derived anew and come back for a new signature — to run the signed work as it is, use the run page
+            to run the signed work as it is,
           </span>
+          <a
+            data-go-to-run
+            title="Go to the run page — it has the way to run this signed work again."
+            style={{ fontSize: FS.caption, textDecoration: "underline", cursor: "pointer" }}
+            onClick={() => props.onGoToRun()}
+          >
+            use the run page
+          </a>
         </div>
       ) : null}
       </div>
@@ -288,7 +306,7 @@ export function WorkGraph(props: {
                 title={
                   can("reframe") || can("amend")
                     ? `Say ask #${claim.fromAskN} differently — I will read it again: ${claim.fromAsk}`
-                    : whyNot(push.phase)
+                    : refusalSentence("reframe", push.phase)
                 }
                 aria-label={`say ask ${claim.fromAskN} differently`}
                 style={{
@@ -425,6 +443,11 @@ export function WorkGraph(props: {
                               <button
                                 data-accept-check={p.id}
                                 disabled={!can("accept-check")}
+                                title={
+                                  can("accept-check")
+                                    ? "Keep this check as what proves the promise."
+                                    : refusalSentence("accept-check", push.phase)
+                                }
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   post({
@@ -456,7 +479,7 @@ export function WorkGraph(props: {
                             title={
                               can("propose-check")
                                 ? "Work out a check that would prove this promise, and show it to me before it is kept."
-                                : whyNot(push.phase)
+                                : refusalSentence("propose-check", push.phase)
                             }
                             onClick={(e) => {
                               e.stopPropagation();

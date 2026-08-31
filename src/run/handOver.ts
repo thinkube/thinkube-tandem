@@ -10,14 +10,17 @@
  * judges; this hands over. Mixing them made one function that both decided
  * and acted, and every reading of it had to hold both at once.
  */
-import type { Cut, Delivery, Proof } from "../core/schema";
+import type { Cut, Delivery, Proof, Space } from "../core/schema";
 import type { DispatchDeps } from "./deps";
 import type { DispatchOutcome } from "./dispatch";
+import { porcelainPaths } from "./worker";
+import { renderDeliveryBody } from "../gates/render";
 
 export async function handOver(a: {
   tep: string;
   branch: string;
   worktree: string;
+  space: Space;
   cut: Cut;
   deps: DispatchDeps;
   runId: string;
@@ -33,7 +36,7 @@ export async function handOver(a: {
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   log: (line: string) => void;
 }): Promise<DispatchOutcome> {
-  const { tep, branch, worktree, cut, deps, proofs, observations, undelivered, kept, recordPath, exec, log } = a;
+  const { tep, branch, worktree, space, cut, deps, proofs, observations, undelivered, kept, recordPath, exec, log } = a;
   const { runId, producedAt, findings } = a;
   // The checks STAY: they are the proof the person paid for, and each
   // carries the promise it proves, which is what lets a later cut retire
@@ -44,7 +47,16 @@ export async function handOver(a: {
   log(`${tep}: ${kept.length} check(s) recorded on the delivery and kept in the tree`);
   log(`${tep}: committing and opening the delivery`);
   await exec("git", ["add", "-A", "."], worktree);
-  await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
+  // A cut whose proofs left nothing new in the tree (every criterion
+  // already settled, or graded but never written to disk) has no changes
+  // to commit — running `git commit` anyway fails where the shell answers
+  // non-zero as a thrown error rather than a code, so the dirty tree is
+  // checked first and the commit is skipped when there is nothing to record.
+  if ((await porcelainPaths(worktree)).length) {
+    await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
+  } else {
+    log(`${tep}: nothing new to commit for the delivery`);
+  }
   const deliveredHead = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // A criterion's proof lives on the delivery record, not in a test file.
   const proofAnchors: NonNullable<DispatchOutcome["proofAnchors"]> = recordPath
@@ -55,26 +67,9 @@ export async function handOver(a: {
       }))
     : [];
   const pushed = await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
-  let url: string | undefined;
-  if (pushed.code === 0 && deps.forge) {
-    try {
-      url = await deps.forge.openDelivery({
-        branch,
-        title: `Tandem delivery: ${tep}`,
-        body:
-          `Delivered by run ${runId} for ${tep}, produced at ${producedAt}.\n\n` +
-          (observations.length
-            ? `FOR YOU TO CERTIFY — the machine cannot observe the running product:\n${observations.map((o) => `- ${o}`).join("\n")}\n\n`
-            : "") +
-          (undelivered.length ? `UNDELIVERED:\n${undelivered.map((u) => `- ${u}`).join("\n")}\n\n` : "") +
-          `Proofs:\n${proofs.map((p) => `- ${p.label}: ${p.verdict}${p.settledBy ? ` (settled by ${p.settledBy})` : ""}`).join("\n")}`,
-      });
-    } catch (err) {
-      log(`forge refused the delivery: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  } else if (pushed.code !== 0) {
-    proofs.push({ kind: "ci", label: "push", verdict: "red" });
-  }
+  // Built before the forge call, so the pull-request body and the accept
+  // page are read from the same delivery — the forge face can never say
+  // something different about a criterion than the page does.
   const delivery: Delivery = {
     id: `delivery-${tep}`,
     ...(findings.length ? { findings } : {}),
@@ -84,23 +79,29 @@ export async function handOver(a: {
     producedAt,
     proofs,
     ...(observations.length ? { observations } : {}),
-    ...(url ? { url } : {}),
     ...(undelivered.length ? { undelivered } : {}),
     ...(a.rulings?.length ? { rulings: a.rulings } : {}),
     ...(a.decisions?.length ? { decisions: a.decisions } : {}),
   };
+  let url: string | undefined;
+  if (pushed.code === 0 && deps.forge) {
+    try {
+      url = await deps.forge.openDelivery({
+        branch,
+        title: `Tandem delivery: ${tep}`,
+        body: renderDeliveryBody(space, delivery),
+      });
+    } catch (err) {
+      log(`forge refused the delivery: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else if (pushed.code !== 0) {
+    proofs.push({ kind: "ci", label: "push", verdict: "red" });
+  }
   return {
     refusals: [],
     undelivered,
     url,
     ...(proofAnchors.length ? { proofAnchors } : {}),
-    delivery,
-  };
-  return {
-    refusals: [],
-    undelivered,
-    url,
-    ...(proofAnchors.length ? { proofAnchors } : {}),
-    delivery,
+    delivery: url ? { ...delivery, url } : delivery,
   };
 }

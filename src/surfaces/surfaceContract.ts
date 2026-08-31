@@ -12,6 +12,19 @@
  * Nothing here touches the DOM, `vscode`, or disk, so the host's own
  * checks import it and drive it directly.
  */
+import type { SurfacePage } from "./surfaceLayout";
+export type { SurfacePage } from "./surfaceLayout";
+export { SURFACE_PAGES } from "./surfaceLayout";
+
+/** The one page that draws your asks. Named here, once, so the surface
+ *  and its checks read the same answer instead of each deciding page by
+ *  page which one shows the list. */
+export const ASKS_PAGE: SurfacePage = "intent";
+
+/** Whether this page draws the ask list. Exactly one page does. */
+export function drawsAskList(page: SurfacePage): boolean {
+  return page === ASKS_PAGE;
+}
 
 /** One check, with its verification state — read on the claim card
  *  independently of how many iterations produced it. */
@@ -91,6 +104,11 @@ interface RunView {
     slice: string;
     /** The slice in the human's words, when the space still knows it. */
     sliceTitle?: string;
+    /** The promise this unit's slice is keeping — the card's title (or a
+     *  count when it holds more than one) and the full sentence(s) for
+     *  hover, in the space's own wording. Absent when no change could be
+     *  matched to the unit; the card falls back to its slice title. */
+    promiseLabel?: { label: string; full: string };
     role: "code" | "test" | "maintain";
     /** What this unit builds, in the reading's own words. */
     what?: string;
@@ -110,6 +128,9 @@ interface RunView {
   parked: { unitId: string; question: string }[];
   /** How many lines each step holds — the surface pages them on demand. */
   logCounts: Record<string, number>;
+  /** Per-slice acceptance-criteria outcomes, from the last grading — the
+   *  audit card's own account of what passed and what did not. */
+  sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
 }
 
 export interface SpacePush {
@@ -138,6 +159,11 @@ export interface SpacePush {
   runNote?: string;
   /** Work that was signed and never delivered — it can be run again. */
   unrun?: { id: string; tepId?: string };
+  /** The one notice for signed work that has not delivered — its heading,
+   *  its sentence, and which ways back in ride with it. Every page renders
+   *  this instead of wording the fact again. Absent while a run is in
+   *  flight, or when there is no signed, undelivered work. */
+  signedIdle?: { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean };
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
@@ -221,6 +247,7 @@ export interface SpacePush {
 }
 
 export type WebToHost =
+  | { action: "load" }
   | { action: "save-draft"; text: string }
   | { action: "read-draft" }
   | { action: "keep-draft" }
@@ -266,15 +293,19 @@ export const SHAPING = new Set([
   "stop-run", "accept-delivery", "reject-delivery", "attest", "panic", "switch-repo",
 ]);
 
-/** The shaping actions the host allows right now, from the last push.
- *  Before the first push nothing is known, so nothing is refused here —
- *  the host still refuses on its side. */
+/** The shaping actions the host allows right now, from the last push, and
+ *  the phase that push carried. Before the first push nothing is known, so
+ *  nothing is refused here — the host still refuses on its side. */
 let allowedNow: string[] | undefined;
+let phaseNow: SpacePush["phase"] | undefined;
 
-/** What the host allows now — set by every push, and by a harness that
- *  renders the surface without a host. */
-export function noteAllowed(allowed: string[] | undefined): void {
+/** What the host allows now, and in which phase — set by every push, and by
+ *  a harness that renders the surface without a host. Starting a new push
+ *  clears any held refusal sentence from the press before it. */
+export function noteAllowed(allowed: string[] | undefined, phase?: SpacePush["phase"]): void {
   allowedNow = allowed;
+  phaseNow = phase;
+  heldRefusal = undefined;
 }
 
 /** Whether the host would act on this action now. Non-shaping actions
@@ -284,14 +315,110 @@ export function can(action: string): boolean {
   return !allowedNow || allowedNow.includes(action);
 }
 
-/** Why a control is off, for its tooltip — one sentence per phase. */
-export function whyNot(phase: SpacePush["phase"] | undefined): string {
-  switch (phase) {
-    case "running": return "A run is in flight — stop it first.";
-    case "signed": return "Signed work is waiting to run — run it, or it stays as it is.";
-    case "delivered": return "A delivery is waiting for your decision.";
-    case "read": return "The reading is waiting for keep or edit.";
-    case "drafting": return "Nothing has been read yet.";
-    default: return "Not now.";
-  }
+/**
+ * The person-facing name for every control the phase can govern, or that a
+ * refusal names — the same word the affordance registry's gesture uses for
+ * it, so a control is never called one thing in a refusal and another in an
+ * instruction.
+ */
+export const CONTROL_NAMES: Readonly<Record<string, string>> = {
+  "save-draft": "Write",
+  "read-draft": "Read",
+  "keep-draft": "Keep",
+  "cancel-capture": "Cancel",
+  "capture-many": "Read",
+  build: "Build",
+  think: "Think",
+  reframe: "Reframe",
+  amend: "Amend",
+  "select-unit": "Select",
+  "accept-delivery": "Accept",
+  attest: "Attest",
+  "think-again": "Think again",
+  "reject-delivery": "Not this",
+  "answer-worker": "Answer",
+  "dismiss-promise": "Dismiss",
+  "retry-model": "Retry",
+  "read-log": "Read log",
+  "stop-run": "Stop",
+  panic: "Panic",
+  reground: "Reground",
+  "accept-impact": "Apply",
+  "dismiss-impact": "Set aside",
+  "apply-all-impacts": "Apply all",
+  "propose-check": "Work out a check",
+  "accept-check": "Use this check",
+  "accept-question": "Decide",
+  "open-cut-review": "Read the cut review",
+  "exempt-docs": "Say why documentation is not needed",
+  rerun: "Run again",
+  "switch-repo": "Switch",
+};
+
+/** Why a control is off, for its tooltip — one sentence per phase, when this
+ *  phase has its own reason. Absent for a phase with no phase-specific
+ *  wording, so callers fall back to the bare "Not now." */
+const PHASE_REASON: Partial<Record<NonNullable<SpacePush["phase"]>, string>> = {
+  running: "a run is in flight — stop it first",
+  signed: "signed work is waiting to run — run it, or it stays as it is",
+  delivered: "a delivery is waiting for your decision",
+  read: "the reading is waiting for keep or edit",
+  understood: "nothing is signed or running",
+  drafting: "nothing has been read yet",
+};
+
+const NO_REASON = "Not now.";
+
+/** One sentence naming a governed control and why it is unavailable right
+ *  now: the control's person-facing name, and this phase's reason when one
+ *  is defined — the bare fallback otherwise. This is the one place the
+ *  per-phase wording lives; nothing else keeps its own copy. */
+export function refusalSentence(action: string, phase: SpacePush["phase"] | undefined): string {
+  const name = CONTROL_NAMES[action] ?? action;
+  const reason = phase ? PHASE_REASON[phase] : undefined;
+  return reason ? `${name} — not now: ${reason}.` : `${name}: ${NO_REASON}`;
+}
+
+/** Held sentence for the last press the surface refused itself, so the
+ *  panel can put it in front of the person instead of swallowing the
+ *  click. Cleared by the next `noteAllowed` (a new push). */
+let heldRefusal: string | undefined;
+
+/** Record the sentence for a press `post()` refused to send. */
+export function noteRefusal(sentence: string): void {
+  heldRefusal = sentence;
+}
+
+/** The held refusal sentence, if a press was refused since the last push. */
+export function lastRefusal(): string | undefined {
+  return heldRefusal;
+}
+
+/** The refusal sentence for this action, if the last-noted allowed list
+ *  excludes it — undefined when the action is allowed (or nothing is known
+ *  yet about what is allowed). */
+export function refusalIfRefused(action: string): string | undefined {
+  if (can(action)) return undefined;
+  return refusalSentence(action, phaseNow);
+}
+
+/**
+ * Whether a "passed" verdict is backed by a log a person can read, and the
+ * sentence that says so either way. A step can be marked done because an
+ * earlier run already proved it — the log for that proof may or may not
+ * still be on this run's record — so the surface never draws a bare
+ * "passed" that implies evidence nobody can actually open.
+ */
+export function proofOfPass(logLines: number): { text: string; proven: boolean; why: string } {
+  if (logLines > 0)
+    return {
+      text: `passed — ${logLines} log line${logLines === 1 ? "" : "s"}`,
+      proven: true,
+      why: "Click this card to read the log lines that prove it passed.",
+    };
+  return {
+    text: "passed — no log of the proof is kept",
+    proven: false,
+    why: "This step is marked passed, but no log of the proof survives to read.",
+  };
 }

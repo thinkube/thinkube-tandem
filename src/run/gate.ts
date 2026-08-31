@@ -12,13 +12,10 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Cut, Proof, Ruling, Space, unkeptProof } from "../core/schema";
-import type { SliceForDag } from "../engine/core/dag";
+import { Proof, unkeptProof } from "../core/schema";
 import { runAcVerifications } from "../engine/core/closingGate";
 import { gradeAssessments, logRedChecks, proposeRewording, stagedProofs } from "./assess";
-import type { Exec } from "./oracle";
 import { prepareAtGate } from "./setup";
-import type { BoundedExec } from "./setup";
 import {
   closingVerifications,
   confessedDeferrals,
@@ -30,90 +27,23 @@ import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
+import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
 import { observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
 import { isTestPath } from "./testHomes";
-import type { DispatchDeps, DispatchOutcome } from "./dispatch";
-import type { RunState } from "./state";
+import type { DispatchOutcome } from "./dispatch";
+import type { GateContext } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
 import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
-import { runnerFor, type Proved } from "./proved";
-import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import { runnerFor } from "./proved";
 
-export interface GateContext {
-  tep: string;
-  /** This run's own id and the moment it was minted — one clock reading in
-   *  `dispatchTep`, stamped on every delivery this gate hands back, kept or
-   *  withheld. Optional only for a caller that predates the field —
-   *  `dispatchTep` always supplies both from its own single clock read. */
-  runId?: string;
-  producedAt?: string;
-  /** How this repository runs ONE of its own tests, as PROVED at the door
-   *  — not as configured. The gate judged every check with a hardcoded
-   *  command and disagreed with the slice oracle that had just passed
-   *  them. */
-  /** Ran one of this repository's own tests here — the promise veto rests
-   *  on it, so the gate is given what the door proved, never a candidate. */
-  runOne: Proved;
-  /** Per-part single-check commands, so a check is run by the runner of
-   *  the part that owns it — the gate judges the same way the slices did. */
-  parts?: Record<string, { runOne?: string }>;
-  /** Ran this repository's whole suite here — or absent, when no such
-   *  command runs in a worktree. Absent removes the standing-suite veto,
-   *  exactly as no product build removes that one; the door has already
-   *  said so, and the delivery says it again where the verdict would be.
-   *  What is never allowed is an empty string reaching a shell. */
-  suite?: Proved;
-  branch: string;
-  baseSha: string;
-  worktree: string;
-  slices: SliceForDag[];
-  space: Space;
-  cut: Cut;
-  deps: DispatchDeps;
-  sliceProbes: Map<string, string[]>;
-  sliceCommitted: Set<string>;
-  checkOf: Map<string, string>;
-  undelivered: string[];
-  rulings: Ruling[];
-  decisions: { unit: string; text: string }[];
-  exec: Exec;
-  boundedExec: BoundedExec;
-  /** Runs the suite command, bounded for a whole suite. */
-  suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
-  state: RunState;
-  /** The session a unit was worked in, when the run still holds it. */
-  sessionOf: (unit: string) => string | undefined;
-  /** The run's worker, so a repair is the next message in that session. */
-  worker: (deps: RunWorkerDeps, brief: string) => Promise<WorkerOutcome>;
-  /** How many times this run made a person interpret the machine. */
-  machineAttention: () => number;
-  /** Work a fenced unit wrote that the guard took back, with its change —
-   *  read by the last actor, which is fenced by nothing. */
-  restored?: readonly { path: string; patch: string }[];
-  /** The run's door, so an author repairing at the gate can be cleared for
-   *  a file nobody is contending — at the gate, nobody is. */
-  clearFor?: (paths: string[]) => Promise<{ granted: string[]; refused: { path: string; why: string }[] }>;
-  log: (line: string, step?: string) => void;
-  defect: (entry: {
-    slice?: string;
-    unit?: string;
-    activity: string;
-    trigger: string;
-    type?: string;
-    qualifier?: string;
-    /** Which stage a repair implicates (docs/TARGET.md §4). */
-    stage?: "author" | "brief" | "check" | "clearance" | "altitude";
-    impact: string;
-    detail: string;
-  }) => void;
-}
+export type { GateContext } from "./state";
 
 /** The reason a red suite withholds the delivery — intent-level, no internals. */
 const RED_SUITE_REFUSAL =
@@ -121,8 +51,35 @@ const RED_SUITE_REFUSAL =
   "rather than handed over red; the branch keeps the work and the run record keeps the " +
   "suite's verdict (if the repository was already red before, it must be green first)";
 
+/** The step the closing gate files its OWN lines under — the same name its
+ *  card carries, so a click on that card opens the gate's own account. Its
+ *  sub-steps ("gate#closer", "gate#finisher") are spelled from it, so the
+ *  parent and its children can never drift apart. */
+export const GATE_STEP = "gate";
+
+/**
+ * How the closing gate files a line of its own.
+ *
+ * The gate's own lines — its opening line and the reason it withholds or
+ * keeps a delivery — file under {@link GATE_STEP}, the same name its card
+ * carries: the surface asks for "gate" and expects to read what the gate
+ * itself said, not an empty panel next to "gate#closer" and "gate#finisher"
+ * where the actual account lives.
+ *
+ * It is a named seam and not a bare closure inside `closeGate` because the
+ * promise it keeps — that every line under "gate" and its sub-steps reaches
+ * the run-wide log the bottom panel renders — is otherwise provable only by
+ * running the whole gate. A check can drive this directly, so a `say` that
+ * filed a line nowhere is caught instead of passing as readily as the real
+ * thing.
+ */
+export function sayAt(log: (line: string, step?: string) => void): (line: string) => void {
+  return (line: string): void => log(line, GATE_STEP);
+}
+
 export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { tep, branch, worktree, slices, space, cut, deps, exec, boundedExec, log, defect } = g;
+  const say = sayAt(log);
   // `dispatchTep` always supplies both from its own single clock read; a
   // caller that predates the field falls back here rather than failing —
   // this gate must still stamp SOME identity on what it hands back.
@@ -137,7 +94,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // fifty-five minutes producing an answer nobody could use. It is asked
   // first now, where the answer costs nothing.
   if (g.state.halted) {
-    log(`${tep}: the run was stopped before the closing gate — nothing is judged; the branch holds the work.`);
+    say(`${tep}: the run was stopped before the closing gate — nothing is judged; the branch holds the work.`);
     return {
       refusals: [],
       undelivered,
@@ -150,7 +107,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       }),
     };
   }
-  log(`${tep}: closing gate`);
+  say(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
@@ -194,7 +151,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // commits had already fixed, and no such cut could ever be delivered.
   const rules = await judgingRules({ worktree, running: { criterionMapOf, provedByExecution }, log });
   if (!rules.ok) {
-    log(`⛔ ${tep}: ${rules.reason}`);
+    say(`⛔ ${tep}: ${rules.reason}`);
     defect({ activity: "closing gate", trigger: "self-hosted-judge", type: "infrastructure",
       impact: "the run cannot judge this cut", detail: rules.reason.slice(0, 500) });
     return { refusals: [rules.reason], undelivered: [] };
@@ -204,6 +161,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     tep, space, slices, acResults, verifs, probeOfAc, checkOf: g.checkOf, worktree,
     exec: boundedExec, log, defect, mapCriteria, proveWiring,
   });
+  // Wiring proven by execution, the same rule the gate judged the tree by:
   const assessed = graded.proofs;
   // What only the running product can show is the person's to certify —
   // ON the delivery, because the delivery is the thing they certify with.
@@ -303,7 +261,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
       `no test runner answered, so nothing here is a verdict about the work. ` +
       `The branch keeps everything. What the shell said:\n${ran.output.trim().split("\n").slice(-8).join("\n").slice(0, 800)}`;
-    log(`⛔ ${tep}: ${why}`);
+    say(`⛔ ${tep}: ${why}`);
     defect({ activity: "closing gate", trigger: "suite-could-not-run", type: "infrastructure",
       impact: "the delivered tree could not be judged", detail: why.slice(0, 500) });
     return { refusals: [why], undelivered: [] };
@@ -379,11 +337,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         exec,
         boundedExec: g.suiteExec,
         halted: () => g.state.halted,
-        abortable: (ab) => g.state.aborts.set("gate#closer", ab),
-        log: (l) => log(l, "gate#closer"),
-        say: (t) => g.state.doing("gate#closer", t),
+        abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
+        log: (l) => log(l, `${GATE_STEP}#closer`),
+        say: (t) => g.state.doing(`${GATE_STEP}#closer`, t),
         onRuling: (r) => g.rulings.push({ criterionId: r.criterionId, unit: r.unit, granted: r.granted, reason: r.reason }),
-        defect: (e) => defect({ unit: "gate#closer", ...e }),
+        defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
@@ -439,7 +397,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   if (!verdict.green) {
     const names = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
-    log(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
+    say(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
     defect({
       activity: "closing gate",
       trigger: "suite",
@@ -479,8 +437,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe,
     checkOf: g.checkOf, sliceProbes: g.sliceProbes, sessionOf: g.sessionOf, worker: g.worker, baseSha: g.baseSha,
-    halted: () => g.state.halted, doing: (t) => g.state.doing("gate#closer", t), rulings: g.rulings,
-    abortable: (ab) => g.state.aborts.set("gate#closer", ab),
+    halted: () => g.state.halted, doing: (t) => g.state.doing(`${GATE_STEP}#closer`, t), rulings: g.rulings,
+    abortable: (ab) => g.state.aborts.set(`${GATE_STEP}#closer`, ab),
     ...(g.restored?.length ? { restored: g.restored } : {}),
     ...(g.clearFor ? { clearFor: g.clearFor } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
@@ -536,7 +494,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // reads as the work failing thirty-four times when what happened is
     // one person pressing one button. Stopped work is ungraded, not bad.
     if (g.state.halted) {
-      log(`${tep}: stopped by the person — ${unkept.length} promise(s) were still being graded; nothing is judged from a stop`);
+      say(`${tep}: stopped by the person — ${unkept.length} promise(s) were still being graded; nothing is judged from a stop`);
       return {
         refusals: [],
         undelivered,
@@ -549,7 +507,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         }),
       };
     }
-    log(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
+    say(`${tep}: withheld — ${unkept.length} promise(s) are not kept`);
     return {
       refusals: [],
       undelivered,
@@ -563,8 +521,35 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     };
   }
 
+  // A criterion no proof mentions is not silently kept: it is named as
+  // undelivered here, the same reading the delivery page gives it as
+  // "not checked" — so the page, the pull request and this gate's own
+  // kept-or-withheld verdict never disagree about a criterion nobody graded.
+  const ungraded = criterionVerdicts(space, {
+    id: `delivery-${tep}`,
+    cutId: cut.id,
+    branch,
+    runId,
+    producedAt,
+    proofs,
+    ...(observations.length ? { observations } : {}),
+  }).filter((c) => c.verdict === "not checked");
+  undelivered.push(...ungraded.map((c) => `${c.promise} — not checked: ${c.text}`));
+
+  // A promise whose sentence names a human gesture, but whose door the
+  // machine could not prove renders in the surface this build shipped, is
+  // never silently dropped from its "see it" line: it is named here as
+  // undelivered, in the same words the page's own render would give it.
+  const cutMembers = cut.changeIds
+    .map((id) => space.nodes.find((n) => n.id === id))
+    .filter((n): n is (typeof space.nodes)[number] => !!n);
+  const surfaceText = await fs
+    .readFile(path.join(worktree, "media", "map", "index.html"), "utf8")
+    .catch(() => "");
+  undelivered.push(...unprovenDoorPromises(cutMembers, surfaceText));
+
   return handOver({
-    tep, branch, worktree, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
+    tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec, log,
   });
 }

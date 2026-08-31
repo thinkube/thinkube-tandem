@@ -39,7 +39,8 @@ the unit; re-sign to re-run.
 every cut at signing; the only way past it there is a recorded
 exemption with a reason, entered before you sign.
 
-|The run seems stuck on a unit
-|The worker may be parked with a question
-|Open the run view — a parked node is amber; answer in its box.
+|A worker seems stuck
+|The worker is parked with a question
+|Open the rail beside the run — its parked-question box names the
+worker and is the one place in the surface to type your answer.
 |===

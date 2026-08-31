@@ -17,8 +17,9 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
-import { gatedActions } from "./surfaces/phase";
-import { can, noteAllowed, SHAPING } from "./surfaces/surfaceContract";
+import { gatedActions, refusedNow } from "./surfaces/phase";
+import { can, noteAllowed, refusalIfRefused, refusalSentence, SHAPING, CONTROL_NAMES } from "./surfaces/surfaceContract";
+import { AFFORDANCES } from "./surfaces/affordances";
 
 const repo = path.resolve(__dirname, "..");
 const SIZE_LIMIT = 600;
@@ -105,6 +106,70 @@ test("the surface's own gate refuses a shaping action the host does not allow no
   // the host still refuses on its side.
   noteAllowed(undefined);
   assert.equal(can("exempt-docs"), true, "with no push yet the surface refuses nothing");
+});
+
+test("every action the phase table governs has a person-facing control name", () => {
+  // gatedActions() is the set the host actually consults — imported, not
+  // matched as text — and CONTROL_NAMES must cover every one of them, or
+  // refusalSentence falls back to a bare action id for a control nobody named.
+  const unnamed = gatedActions().filter((a) => !CONTROL_NAMES[a]);
+  assert.deepEqual(unnamed, [], `these gated actions have no control name: ${unnamed.join(", ")}`);
+});
+
+test("the allowed-list recorder carries the phase so a refused control names both", () => {
+  // Every caller of noteAllowed must hand it the phase the same push
+  // carried, or refusalIfRefused renders the bare fallback with no phase
+  // reason in it — the hygiene drive proves the recorder itself does this.
+  noteAllowed(["read-draft"], "running");
+  const sentence = refusalIfRefused("build");
+  assert.equal(
+    sentence,
+    refusalSentence("build", "running"),
+    "the sentence a person reads names the control and the phase's own reason",
+  );
+  assert.ok(sentence?.includes(CONTROL_NAMES["build"]), "the control's person-facing name is in the sentence");
+  assert.equal(refusalIfRefused("read-draft"), undefined, "an allowed action is not refused");
+  noteAllowed(undefined);
+});
+
+test("the host's refusal says exactly the sentence the surface would give for the same action and phase", () => {
+  // refusedNow and refusalSentence must never drift into two wordings for
+  // one press — a control refused by the host reads the same as a control
+  // the surface itself disabled.
+  for (const action of gatedActions()) {
+    for (const phase of ["running", "understood", "signed", "delivered", "read", "drafting"] as const) {
+      const hostSaid = refusedNow(action, phase);
+      if (hostSaid === undefined) continue;
+      assert.equal(
+        hostSaid,
+        refusalSentence(action, phase),
+        `${action} in phase ${phase}: host and surface disagree`,
+      );
+    }
+  }
+});
+
+test("every human door names its own control inside its own instruction", () => {
+  // CONTROL_NAMES is the one place a control's person-facing name lives;
+  // the affordance registry's gesture text is a separate hand-written
+  // sentence for the same action. Nothing ties them together at compile
+  // time, so a control renamed in one place silently drifts from the
+  // other — a refusal calls it one thing while the instruction that
+  // teaches a person to press it calls it another. Both sets are driven
+  // here, never scraped from a file as text.
+  const mismatches: string[] = [];
+  for (const [action, entry] of Object.entries(AFFORDANCES)) {
+    if (entry.kind !== "human") continue;
+    const name = CONTROL_NAMES[action];
+    if (!name) {
+      mismatches.push(`${action}: no entry in CONTROL_NAMES`);
+      continue;
+    }
+    if (!entry.affordance.gesture.includes(name)) {
+      mismatches.push(`${action}: gesture "${entry.affordance.gesture}" does not contain "${name}"`);
+    }
+  }
+  assert.deepEqual(mismatches, [], mismatches.join("\n"));
 });
 
 /**

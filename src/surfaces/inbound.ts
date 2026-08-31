@@ -49,6 +49,13 @@ export async function handleInbound(
     await hooks?.onSwitchRepo?.();
     return;
   }
+  if (msg.action === "load") {
+    // The surface's first message after it finishes loading: it asks for
+    // the state it missed while it was not yet listening. Nothing here
+    // records anything — this is a read, not a gesture.
+    push();
+    return;
+  }
   let note: string | undefined;
   if (msg.action === "save-draft") {
     // Typing costs nothing and interrupts nothing: the words are kept and
@@ -100,7 +107,11 @@ export async function handleInbound(
     const r = await session.acceptQuestion(msg.questionId, msg.text);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
-    session.answerWorker(msg.unitId, msg.text);
+    // The one place an answer can land tells you what happened to it: it
+    // reaches the parked worker, or the worker is no longer waiting and
+    // nothing is delivered — never a silent vanish.
+    const delivered = session.answerWorker(msg.unitId, msg.text);
+    note = delivered ? undefined : "That worker is no longer waiting for an answer.";
   } else if (msg.action === "dismiss-promise") {
     const r = session.editModel({
       kind: msg.action,

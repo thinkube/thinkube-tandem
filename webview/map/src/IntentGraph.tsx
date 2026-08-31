@@ -8,7 +8,7 @@
  * sentence that did not say enough. Going on to the work page is what
  * starts the thinking, and it says first what that will cost.
  */
-import { can, post, SpacePush, whyNot } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
 
 /**
@@ -21,6 +21,7 @@ function FromAsk(props: {
   n: number;
   id: string;
   text: string;
+  phase: SpacePush["phase"];
   onEditAsk: (id: string) => void;
 }): JSX.Element {
   return (
@@ -38,7 +39,7 @@ function FromAsk(props: {
         title={
           can("reframe") || can("amend")
             ? `Say ask #${props.n} differently — I will read it again.`
-            : "Not now — nothing changes while work is signed or running."
+            : refusalSentence("reframe", props.phase)
         }
         aria-label={`say ask ${props.n} differently`}
         style={{
@@ -137,7 +138,14 @@ function Recorded(props: {
                 <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 2, display: "flex", gap: 6 }}>
                   <span>read from your ask{s.from.length === 1 ? "" : "s"}</span>
                   {s.from.map((f) => (
-                    <FromAsk key={f.id} n={f.n} id={f.id} text={f.text} onEditAsk={props.onEditAsk} />
+                    <FromAsk
+                      key={f.id}
+                      n={f.n}
+                      id={f.id}
+                      text={f.text}
+                      phase={push.phase}
+                      onEditAsk={props.onEditAsk}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -166,6 +174,7 @@ function Recorded(props: {
                     n={c.fromAskN}
                     id={c.fromAskId}
                     text={c.fromAsk}
+                    phase={push.phase}
                     onEditAsk={props.onEditAsk}
                   />{" "}
                   {c.text}
@@ -334,7 +343,7 @@ export function IntentGraph(props: {
             props.working
               ? "Working out what to build. The work page opens by itself when every subject is done."
               : !props.canWork
-                ? whyNot(push.phase)
+                ? refusalSentence("think", push.phase)
               : push.pendingModel
                 ? "Keep this reading and work out what to build from it. This is what starts spending. You stay here until it is finished."
                 : "Go to the work page. Working out what to build is what starts spending."
@@ -370,7 +379,7 @@ export function IntentGraph(props: {
               <button
                 data-dismiss-promise={o.id}
                 disabled={!can("dismiss-promise")}
-                title={can("dismiss-promise") ? "Remove it — nothing you wrote asks for this." : whyNot(push.phase)}
+                title={can("dismiss-promise") ? "Remove it — nothing you wrote asks for this." : refusalSentence("dismiss-promise", push.phase)}
                 onClick={() => post({ action: "dismiss-promise", unitId: o.id })}
               >
                 Remove

@@ -3,15 +3,20 @@
  * SAME HTML node cards laid out by ELK (layered, RIGHT, orthogonal
  * ELK-routed edges), run-state chips (pulsing `running`), elapsed time in
  * the chip, the log panel ANCHORED under the running node, a parked
- * worker's answer box inside its own card, Stop and a determinate
- * progress header above the canvas.
+ * worker's question shown on its own card (answered from the rail, the
+ * surface's one answer box), Stop and a determinate progress header
+ * above the canvas.
  */
 import { useEffect, useMemo, useState } from "react";
-import { can, post, SpacePush } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
 import { edgePath, layoutLayered, LaidOut, stackLayout } from "./proto/elkRun";
 import { C, FS, O, ROLES, SP } from "./type";
+import { sliceCheckTally, unpassedWorkers } from "../../../src/surfaces/auditCard";
+import { stateFace } from "../../../src/surfaces/runCardFace";
+import { gateTitle } from "../../../src/surfaces/runPromiseLabel";
+import { proofOfPass } from "../../../src/surfaces/surfaceContract";
 
 
 type RunUnits = NonNullable<SpacePush["run"]>["units"];
@@ -25,7 +30,7 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function chipFor(u: RunUnits[number], now: number): Chip {
+function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
   const elapsed =
     u.startedAt && (u.state === "running" || u.state === "parked")
       ? ` · ${formatElapsed(now - u.startedAt)}`
@@ -38,8 +43,10 @@ function chipFor(u: RunUnits[number], now: number): Chip {
         : { text: `running${elapsed}`, kind: "run" };
     case "parked":
       return { text: `needs you${elapsed}`, kind: "q" };
-    case "done":
-      return { text: "passed", kind: "pass" };
+    case "done": {
+      const proof = proofOfPass(logLines);
+      return { text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why };
+    }
     case "failed":
       return { text: "failed", kind: "na" };
     case "blocked":
@@ -56,52 +63,65 @@ function chipFor(u: RunUnits[number], now: number): Chip {
 /** The step's own log, advertised on its card — a door, not a secret. */
 function logChip(id: string, run: NonNullable<SpacePush["run"]>): Chip {
   const n = run.logCounts?.[id] ?? 0;
-  return n
-    ? { text: `${n} log lines`, kind: "plain", why: "Click this card to read this step's own log in the panel." }
-    : { text: "no log yet", kind: "plain", why: "This step has not written anything yet." };
+  return { text: `${n} log line${n === 1 ? "" : "s"}`, kind: "plain", why: "Click this card to read this step's own log in the panel." };
 }
 
-export function RunNote(props: { note: string; unrun?: { id: string; tepId?: string } }): JSX.Element {
+export function RunNote(props: {
+  notice: { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean };
+  /** The phase the push carried, so a control the phase has turned off can
+   *  say why. `disabled` swallows the click, so `post()`'s refusal path
+   *  never runs and the tooltip is the only place the sentence reaches. */
+  phase: SpacePush["phase"];
+}): JSX.Element {
+  const { notice } = props;
   return (
     <div data-run-note style={{ margin: SP.xl, padding: SP.lg, border: `1px solid ${C.bad}`, borderRadius: 6, maxWidth: 560 }}>
-      <strong>
-        {/^The delivery was withheld/.test(props.note)
-          ? "The delivery was withheld."
-          : /^The build stopped/.test(props.note)
-            ? "The build stopped."
-            : /^This work is signed/.test(props.note)
-              ? "Nothing is running."
-              : "The build did not start."}
-      </strong>
-      <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{props.note}</div>
+      <strong>{notice.heading}</strong>
+      <div style={{ marginTop: SP.sm, whiteSpace: "pre-wrap" }}>{notice.sentence}</div>
       {/* Signing happens once, so a run that refused itself would leave the
           work sealed and unreachable — the button that starts it is already
           spent. This is the way back in. */}
-      {props.unrun ? (
+      {notice.canRerun || notice.canThinkAgain ? (
         <div style={{ marginTop: SP.md, display: "flex", gap: SP.md, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            data-rerun
-            disabled={!can("rerun")}
-            style={{ fontWeight: 600 }}
-            title="Start the signed work again. Nothing is signed twice and nothing you wrote changes."
-            onClick={() => post({ action: "rerun" })}
-          >
-            Run {props.unrun.tepId ?? "it"} again
-          </button>
-          <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            already signed — this starts the workers, nothing is decided again
-          </span>
-          <button
-            data-think-again
-            disabled={!can("think-again")}
-            title="Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
-            onClick={() => post({ action: "think-again" })}
-          >
-            Think {props.unrun.tepId ?? "it"} again
-          </button>
-          <span style={{ fontSize: FS.caption, color: C.quiet }}>
-            withdraws the signature — the promises are derived anew and signed as new work
-          </span>
+          {notice.canRerun ? (
+            <>
+              <button
+                data-rerun
+                disabled={!can("rerun")}
+                style={{ fontWeight: 600 }}
+                title={
+                  can("rerun")
+                    ? "Start the signed work again. Nothing is signed twice and nothing you wrote changes."
+                    : refusalSentence("rerun", props.phase)
+                }
+                onClick={() => post({ action: "rerun" })}
+              >
+                Run it again
+              </button>
+              <span style={{ fontSize: FS.caption, color: C.quiet }}>
+                already signed — this starts the workers, nothing is decided again
+              </span>
+            </>
+          ) : null}
+          {notice.canThinkAgain ? (
+            <>
+              <button
+                data-think-again
+                disabled={!can("think-again")}
+                title={
+                  can("think-again")
+                    ? "Withdraw this signed work and think its promises through again under everything decided since. Nothing delivered is touched."
+                    : refusalSentence("think-again", props.phase)
+                }
+                onClick={() => post({ action: "think-again" })}
+              >
+                Think it again
+              </button>
+              <span style={{ fontSize: FS.caption, color: C.quiet }}>
+                withdraws the signature — the promises are derived anew and signed as new work
+              </span>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -116,9 +136,12 @@ export function RunSection(props: {
   world: World;
   /** The step whose log is open, so its card reads as selected. */
   openLog?: string;
+  /** The phase the push carried, so a control the phase has turned off can
+   *  say why. `disabled` swallows the click, so `post()`'s refusal path
+   *  never runs and the tooltip is the only place the sentence reaches. */
+  phase: SpacePush["phase"];
 }): JSX.Element {
   const { run, world } = props;
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -131,8 +154,7 @@ export function RunSection(props: {
     () => [...new Set(run.units.filter((u) => u.role === "code").map((u) => u.slice))],
     [run.units],
   );
-  const graded = (slice: string): boolean =>
-    run.units.filter((u) => u.slice === slice && u.role === "code").every((u) => u.state === "done");
+  const graded = (slice: string): boolean => unpassedWorkers(run.units, slice).length === 0;
   const anyFailed = run.units.some((u) => u.state === "failed");
   const blocked = run.units.filter((u) => u.state === "blocked").length;
   const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");
@@ -144,26 +166,54 @@ export function RunSection(props: {
       // paragraph is a graph nobody can take in, and this one was drawing
       // the same slice title on three different nodes, so no card said
       // which one it was.
-      ...run.units.map((u) => ({
-        id: u.id,
-        band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+      ...run.units.map((u) => {
         // A maintainer is named for the slice it serves, not as a slice of its own.
-        title: u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice),
-        titleFull: `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`,
-        abs: u.id,
-        chips: [chipFor(u, now), logChip(u.id, run)],
-      })),
-      ...slices.map((slice) => ({
-        id: `audit:${slice}`,
-        band: ROLES.audit,
-        title: run.units.find((u) => u.slice === slice)?.sliceTitle ?? slice,
-        abs: `audit:${slice}`,
-        chips: [
-          graded(slice)
-            ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
-            : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
-        ],
-      })),
+        const fallback = u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice);
+        const fallbackFull = `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`;
+        return {
+          id: u.id,
+          band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+          title: u.promiseLabel?.label ?? fallback,
+          titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : fallbackFull,
+          abs: u.id,
+          chips: [chipFor(u, now, run.logCounts?.[u.id] ?? 0), logChip(u.id, run)],
+          face: stateFace(u.state),
+        };
+      }),
+      ...slices.map((slice) => {
+        const u = run.units.find((x) => x.slice === slice);
+        const isGraded = graded(slice);
+        const tally = sliceCheckTally(run.sliceChecks?.[slice]);
+        const chips: Chip[] = tally.graded
+          ? [
+              {
+                text: `${tally.passed}/${tally.total} checks passed`,
+                kind: tally.passed === tally.total ? "pass" : "na",
+                why: "How many of this slice's acceptance criteria passed against the real state.",
+              },
+              ...tally.failed.map(
+                (f): Chip => ({
+                  text: `AC-${f.ac} failed`,
+                  kind: "na",
+                  why: f.text ?? "This check did not pass.",
+                }),
+              ),
+            ]
+          : [
+              isGraded
+                ? ({ text: "green", kind: "pass", why: "Every check for this slice passed against the real state." } as Chip)
+                : ({ text: "waiting", kind: "plain", why: "It grades once the slice's workers finish." } as Chip),
+            ];
+        return {
+          id: `audit:${slice}`,
+          band: ROLES.audit,
+          title: u?.promiseLabel?.label ?? u?.sliceTitle ?? slice,
+          titleFull: u?.promiseLabel ? `audit:${slice} — ${u.promiseLabel.full}` : undefined,
+          abs: `audit:${slice}`,
+          chips,
+          face: stateFace(isGraded ? "done" : "running"),
+        };
+      }),
       // No workers, no gate: a run that never seeded a unit (it refused
       // itself before dispatch) has nothing to grade, and a lone closing
       // gate card over an empty graph claims a run that never happened.
@@ -172,16 +222,27 @@ export function RunSection(props: {
             {
               id: "gate",
               band: { ...ROLES.audit, text: "Audit — everything together" },
-              title: "The closing gate",
+              // The gate keeps the whole cut's promise, so it is titled the
+              // way every other card is: by the promise, in the person's own
+              // words, with the full sentences on hover. One promise names
+              // itself; several are named by the first and a count, the same
+              // shape a worker card uses when its unit carries more than one.
+              ...gateTitle(run.units),
               abs: "every check, on the real state",
               chips: [
                 allDone
-                  ? ({ text: "green", kind: "pass", why: "Every check ran green at the gate." } as Chip)
+                  ? ((proof) => ({ text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why }) as Chip)(
+                      proofOfPass(run.logCounts?.["gate"] ?? 0),
+                    )
                   : anyFailed
                     ? ({ text: "some undelivered", kind: "na", why: "A failed unit leaves its promises undelivered — the gate names them." } as Chip)
                     : ({ text: "waiting", kind: "plain", why: "The gate runs when every unit has finished." } as Chip),
+                // The gate's own account, one click away like every worker's —
+                // its opening line and the reason it withheld or kept a
+                // delivery are filed under this same step name.
+                logChip("gate", run),
               ],
-              ...(run.logCounts?.run ? { children: undefined } : {}),
+              face: stateFace(allDone ? "done" : anyFailed ? "failed" : "running"),
             },
           ]
         : []),
@@ -272,7 +333,11 @@ export function RunSection(props: {
         <button
           data-stop-run
           disabled={!can("stop-run")}
-          title="Stop the run — aborts every live worker; the run drains and reports."
+          title={
+            can("stop-run")
+              ? "Stop the run — aborts every live worker; the run drains and reports."
+              : refusalSentence("stop-run", props.phase)
+          }
           style={{ background: C.bad, color: "#fff", border: "none", borderRadius: 4, padding: `${SP.xs}px ${SP.md}px`, cursor: "pointer" }}
           onClick={() => post({ action: "stop-run" })}
         >
@@ -344,26 +409,13 @@ export function RunSection(props: {
                 style={{ left: c?.x ?? 0, top: c?.y ?? 0 }}
               >
                 {parked && !world.far ? (
+                  // Display only: the one place an answer is given is the
+                  // rail's parked-question box, so this card names the
+                  // question and offers no second box to type into.
                   <div data-parked={u.id} style={{ marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
-                    <div style={{ fontSize: FS.body, marginBottom: 4, color: C.ask }}>❓ {parked.question}</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input
-                        data-answer-input={u.id}
-                        value={answers[u.id] ?? ""}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setAnswers((a) => ({ ...a, [u.id]: e.target.value }))}
-                        style={{ flex: 1, fontSize: FS.body, minWidth: 0 }}
-                      />
-                      <button
-                        data-answer-send={u.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const text = (answers[u.id] ?? "").trim();
-                          if (text) post({ action: "answer-worker", unitId: u.id, text });
-                        }}
-                      >
-                        Send
-                      </button>
+                    <div style={{ fontSize: FS.body, color: C.ask }}>❓ {parked.question}</div>
+                    <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: 2 }}>
+                      Answer this in the rail.
                     </div>
                   </div>
                 ) : null}

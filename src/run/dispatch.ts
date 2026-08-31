@@ -12,8 +12,7 @@
  * slice is committed on the branch. Every failure lands as an artifact —
  * UNDELIVERED, containment, red proofs — never as silence.
  */
-import * as path from "node:path";
-import { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
+import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
 import { unitsAtOnce } from "./cpuAllowance";
@@ -36,7 +35,7 @@ import { runnerFor } from "./proved";
 import { briefWithInherited, briefWithNames } from "./contractNames";
 import { putBackDeliveredChecks, recordedCheckHomes, recordedCheckPaths } from "./recordedChecks";
 import { planRecordOf } from "./record";
-import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingSlices } from "./plan";
+import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, seedUnitViews, standingPassLine, standingSlices } from "./plan";
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
@@ -58,14 +57,8 @@ import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
 import { decisionsStanza, extractDecisions, isProbePath, isTestPath, missingProbes, repoTestFiles, testerTurns, testHomesOf, testHomesStanza, testHomeWorkOf } from "./testHomes";
 
-export interface DispatchOutcome {
-  delivery?: Delivery;
-  refusals: string[];
-  undelivered: string[];
-  url?: string;
-  /** Where each criterion's standing check went on living — bound onto the acceptance criteria. */
-  proofAnchors?: (ProofAnchor & { criterionId: string })[];
-}
+import { runNaming, type DispatchOutcome } from "./state";
+export type { DispatchOutcome } from "./state";
 export async function dispatchTep(
   deps: DispatchDeps,
   space: Space,
@@ -76,20 +69,14 @@ export async function dispatchTep(
   const worker = deps.worker ?? runUnitWorker;
   const st = deps.state;
   const tep = cut.tepId ?? cut.id;
-  // One reading of the run's clock mints both facts: the id heading this
-  // run's rows in the log, and the produced-at stamp its delivery carries.
-  // Two separate reads could straddle a clock tick and name two moments as
-  // if they were one.
   const now = deps.now ?? Date.now;
-  const producedAtMs = now();
-  const producedAt = new Date(producedAtMs).toISOString();
-  const runId = `${tep}@${producedAtMs.toString(36)}`; // one run's rows, apart from the next run of this cut
+  const { runId, producedAt, runName, branch, wtRoot, wtName, worktree } = runNaming({
+    tep,
+    repoRoot: deps.repoRoot,
+    ...(deps.projectId ? { projectId: deps.projectId } : {}),
+    nowMs: now(),
+  });
   st.setRunId(runId);
-  const runName = deps.projectId ? `${deps.projectId}/${tep}` : tep;
-  const branch = `tandem/${runName}`;
-  const wtRoot = path.join(path.dirname(deps.repoRoot), `${path.basename(deps.repoRoot)}-worktrees`);
-  const wtName = runName.replace(/\//g, "__");
-  const worktree = path.join(wtRoot, wtName);
   // One tree per repository. The tester writes its checks beside the code,
   // and the coder is kept off them by permission — the guard refuses a
   // blinded coder any test-shaped path (src/run/worker.ts). A second tree
@@ -211,12 +198,16 @@ export async function dispatchTep(
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
 
-  const standing = await standingSlices(refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`), deps.finishedBefore ?? []);
+  const standing = await standingSlices(
+    refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`), deps.finishedBefore ?? [],
+  );
+  const standingRunOf = new Map(refreshed.committedSlices.map((c) => [c.slice, c.runId] as const));
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);
       pending.delete(u.id);
       st.set(u.id, "done");
+      log(standingPassLine(u.id, u.slice, standingRunOf.get(u.slice)), u.id);
     }
 
   const briefBySlice = new Map<string, string>();
@@ -234,6 +225,13 @@ export async function dispatchTep(
     changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
+    // The audit card's own account: which criteria passed, per slice, from
+    // the oracle's own verdicts — replaced whole on every re-grade.
+    onGrade: (slice, results) =>
+      st.gradeSlice(
+        slice,
+        results.map((r) => ({ ac: r.ac, pass: r.pass, ...(r.pass ? {} : { text: r.evidence }) })),
+      ),
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);
@@ -258,7 +256,7 @@ export async function dispatchTep(
 
   let testInflight = 0;
   const { sliceCommitted, waiting, waitForCommit, commitUnitWork, failWith, finishUnit } = makeCommitBook({
-    tep, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
+    tep, runId, branch, worktree, testerWt, dag, st, exec, log, undelivered, done, failed, standing, sliceProbes, sliceFiles,
     ...(deps.waitSleep ? { sleep: deps.waitSleep } : {}) });
 
   const closeUnit = unitCloser({

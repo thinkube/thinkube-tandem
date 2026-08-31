@@ -8,7 +8,6 @@
  * repository, and dispatch refuses what it cannot resolve — by name.
  */
 import type * as vscodeTypes from "vscode";
-import { createRequire } from "node:module";
 import { EnabledProject } from "../core/identity";
 import { nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
 import {
@@ -17,12 +16,7 @@ import {
   WorkProject,
   writeContextScope,
 } from "../core/workProjects";
-
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
-}
+import { vs } from "../core/vscodeHost";
 
 /** The multi-select over the PRODUCT's repositories (the human's boundary
  *  correction: never "whatever is open in the workspace"). Returns the

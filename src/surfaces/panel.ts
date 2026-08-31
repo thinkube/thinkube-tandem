@@ -6,17 +6,12 @@
 import type * as vscodeTypes from "vscode";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { TandemSession } from "./session";
 import { spacePush } from "./push";
 import { handleInbound } from "./inbound";
 import type { InboundAction } from "./inbound";
-
-const req: NodeRequire =
-  typeof require !== "undefined" ? require : createRequire(__filename);
-export function vs(): typeof vscodeTypes {
-  return req("vscode") as typeof vscodeTypes;
-}
+export { vs } from "../core/vscodeHost";
+import { vs } from "../core/vscodeHost";
 
 export interface PanelHostHooks {
   /** Host-side gesture: the QuickPick that rebinds the space to a repo. */
@@ -222,7 +217,7 @@ async function renderBundleHtml(
     mediaRoot = joinUri(extensionUri, "media", "map");
     raw = await fs.readFile(joinUri(mediaRoot, "index.html").fsPath, "utf8");
   } catch {
-    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run compile</code> at the extension root (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
+    return `<!doctype html><html><body><h2>Map bundle missing</h2><p>Run <code>npm run build</code> in <code>webview/map</code> (expected ${path.join("media", "map", "index.html")}), then reopen.</p></body></html>`;
   }
   const nonce = Array.from({ length: 16 }, () =>
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(

@@ -12,12 +12,13 @@
  * unmarked is words nothing was read from, which is the part you would
  * otherwise only discover much later, as a question.
  *
- * The colour is a convenience. The subject's number and name are on the
- * mark itself, so nothing here depends on telling two hues apart.
+ * The colour is a convenience. Every mark and every entry of the subject
+ * key also carries the subject's label — S1, S2, S3 — as text a reader
+ * can read, so nothing here depends on telling two hues apart.
  */
 import { C, FS, label, O, SP, raised } from "./type";
 import { SpacePush } from "./vscode";
-import { markSentence, Piece } from "../../../src/derive/marks";
+import { markSentence, Piece, subjectKey } from "../../../src/derive/marks";
 
 type Model = NonNullable<SpacePush["pendingModel"]>;
 
@@ -27,8 +28,9 @@ const HUES = ["#3794ff", "#4ec9b0", "#e5c07b", "#c586c0", "#ce9178", "#9cdcfe"];
 const hue = (i: number): string => HUES[i % HUES.length];
 
 /** A word on a mark saying what the mark IS — the colour is the second
- *  cue, never the first. */
-function Tag(props: { text: string; color: string; title?: string }): JSX.Element {
+ *  cue, never the first. The subject's own label goes with it, so the
+ *  mark names which subject it is in words, not only in hue. */
+function Tag(props: { text: string; color: string; subjectKey: string; title?: string }): JSX.Element {
   return (
     <span
       data-mark-tag={props.text}
@@ -47,7 +49,7 @@ function Tag(props: { text: string; color: string; title?: string }): JSX.Elemen
         verticalAlign: "2px",
       }}
     >
-      {props.text}
+      {props.subjectKey} {props.text}
     </span>
   );
 }
@@ -72,7 +74,7 @@ function Named(props: { pieces: Piece[]; names: string[]; keyBase: string }): JS
             }}
           >
             {p.text}
-            <Tag text="subject" color={hue(p.subject)} title={props.names[p.subject]} />
+            <Tag text="subject" color={hue(p.subject)} subjectKey={subjectKey(p.subject)} title={props.names[p.subject]} />
           </span>
         ),
       )}
@@ -103,7 +105,7 @@ function Sentence(props: { model: Model; n: number }): JSX.Element {
                 [{names[p.subject]}]
               </em>
             ) : null}
-            <Tag text="claim" color={hue(p.subject)} title={p.claim} />
+            <Tag text="claim" color={hue(p.subject)} subjectKey={subjectKey(p.subject)} title={p.claim} />
           </span>
         ),
       )}
@@ -137,7 +139,8 @@ export function Analysis(props: {
               paddingLeft: SP.sm,
             }}
           >
-            {s.name} · {s.claims.length} claim{s.claims.length === 1 ? "" : "s"}
+            <strong>{subjectKey(i)}</strong> {s.name} · {s.claims.length} claim
+            {s.claims.length === 1 ? "" : "s"}
           </span>
         ))}
       </div>

@@ -5,15 +5,32 @@
 
 Click the Tandem icon in the activity bar (left edge), or run
 *Tandem: Open the Space*. Each thinking space you open gets its own
-editor tab, titled with that space's name — opening a second thinking
-space opens a second tab and leaves the first one open, so several
-thinking spaces stay open at the same time.
+editor tab, titled with that space's name — the name you gave it when
+you named it, or, when you never named it, its slug read back as plain
+words (dashes and underscores become spaces, only the first letter is
+capitalised — "docs-duty-and-tabs" becomes "Docs duty and tabs").
+Opening a second thinking space opens a second tab and leaves the first
+one open, so several thinking spaces stay open at the same time.
+
+When no space can be named — none is chosen, or the choice was never
+recorded — no tab opens at all: you are told why, in one plain sentence,
+instead.
 
 If your workspace has more than one folder, Tandem asks which repository
 you are working on — it never guesses. The choice shows in the status bar
 ("Tandem: <repo>") and can be changed any time from there, from the
 `<repo> ▾` button in the map, or with *Tandem: Switch Project /
 Repository*. Each repository gets its own space.
+
+The status bar is also the one place that says whether the machine is
+busy, across every open thinking space at once — not only the one you
+last looked at. While a space is working it names that space and how
+much of its work is done ("2/5 units"); with more than one space busy it
+counts them all. If a worker has stopped and is waiting on you, the
+status bar says so in plain words ("needs an answer") and changes color
+so it stands out. If a space has gone quiet — no change for a while — the
+status bar says how many minutes. When nothing anywhere is busy, the
+status bar goes back to naming the chosen repository, exactly as above.
 
 == Say what you want
 
@@ -51,7 +68,9 @@ token stops matching until you sign again.
 == Watch it build, then accept
 
 The run starts on its own; see xref:the-run.adoc[]. When the delivery
-arrives, its page lists every proof (green or red, with evidence) and
-every UNDELIVERED item. *Accept* merges it on your forge; a delivery
-with a red proof, or with an unmet documentation obligation, refuses to
-be accepted.
+arrives, its page names every acceptance criterion of the cut with its
+verdict — green, red, "for you to certify", or "not checked" for a
+criterion nothing judged — and every UNDELIVERED item. The pull request
+the gate opens carries that same list. *Accept* merges it on your
+forge; a delivery with a red criterion, or with an unmet documentation
+obligation, refuses to be accepted.

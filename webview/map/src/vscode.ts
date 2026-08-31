@@ -9,11 +9,18 @@
  * home. What stays here is what only a webview has: the vscode api handle
  * and the window listener.
  */
-import { can, noteAllowed } from "../../../src/surfaces/surfaceContract";
+import { can, noteAllowed, noteRefusal, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
 import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
-export { can, noteAllowed, whyNot } from "../../../src/surfaces/surfaceContract";
+export {
+  can,
+  noteAllowed,
+  refusalSentence,
+  refusalIfRefused,
+  SHAPING,
+} from "../../../src/surfaces/surfaceContract";
 export type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
+export { SURFACE_PAGES } from "../../../src/surfaces/surfaceLayout";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -25,8 +32,29 @@ const api: VsCodeApi =
     ? acquireVsCodeApi()
     : { postMessage: () => {} };
 
+/** Who to tell when a press was refused — the panel's own message line,
+ *  so it can show the sentence the moment the press happens rather than
+ *  waiting for the next push. */
+let onRefusal: ((sentence: string) => void) | undefined;
+export function watchRefusals(handler: (sentence: string) => void): () => void {
+  onRefusal = handler;
+  return () => {
+    if (onRefusal === handler) onRefusal = undefined;
+  };
+}
+
+/** Send a governed press to the host, or — when the phase refuses it —
+ *  record the sentence for it through the contract and send nothing. A
+ *  refused press is never silently dropped: the watcher registered through
+ *  `watchRefusals` carries the sentence straight to the panel's message
+ *  line. */
 export function post(msg: WebToHost): void {
-  if (!can(msg.action)) return;
+  const refusal = refusalIfRefused(msg.action);
+  if (refusal) {
+    noteRefusal(refusal);
+    onRefusal?.(refusal);
+    return;
+  }
   api.postMessage(msg);
 }
 
@@ -34,11 +62,11 @@ export function onSpace(handler: (push: SpacePush) => void): () => void {
   const listener = (ev: MessageEvent) => {
     const data = ev.data as SpacePush;
     if (data && data.kind === "space") {
-      if (Array.isArray(data.allowed)) noteAllowed(data.allowed);
+      if (Array.isArray(data.allowed)) noteAllowed(data.allowed, data.phase);
       handler(data);
     }
   };
   window.addEventListener("message", listener);
-  api.postMessage({ action: "load" });
+  post({ action: "load" });
   return () => window.removeEventListener("message", listener);
 }

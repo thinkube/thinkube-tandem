@@ -71,10 +71,52 @@ async function executedFiles(dir: string): Promise<{ files: string[]; read: bool
       const url = entry.url ?? "";
       if (!url.startsWith("file://")) continue;
       const ran = (entry.functions ?? []).some((f) => (f.ranges ?? []).some((r) => (r.count ?? 0) > 0));
-      if (ran) out.add(url.slice("file://".length));
+      if (!ran) continue;
+      const file = url.slice("file://".length);
+      out.add(file);
+      // A bundle that ran is its SOURCES running. V8 records the script it
+      // loaded, so a surface compiled into one artifact is credited entirely
+      // to that artifact and every file a person actually wrote reads as
+      // never reached — the drive renders the real page and the trace still
+      // says the code was never touched. Where the build left a source map,
+      // the files it names are added too: they are what executed, under the
+      // names the repository knows them by.
+      for (const src of await mappedSources(file)) out.add(src);
     }
   }
   return { files: [...out], read: understood > 0 };
+}
+
+/**
+ * The original files a built artifact was compiled from, taken from the
+ * source map the build wrote beside it. Empty when there is no map, when it
+ * cannot be read, or when it names nothing — a missing map is a fact about
+ * the build, never a claim about what ran.
+ *
+ * A map names what the bundler COMPILED IN, which is the fact wanted here:
+ * those files ran. Where they sit afterwards is a fact about the tree, not
+ * about the drive — a runner that copies only the built output still ran
+ * exactly the same code, and requiring the source to be present on disk
+ * made the answer depend on the copying rather than on the execution.
+ *
+ * A dependency's own internals are named by such a map too. They are
+ * harmless: the caller matches a subject by its trailing path segments, so
+ * a source can only satisfy a subject the promise actually named.
+ */
+async function mappedSources(file: string): Promise<string[]> {
+  const raw = await fs.readFile(`${file}.map`, "utf8").catch(() => undefined);
+  if (raw === undefined) return [];
+  let map: { sources?: unknown };
+  try {
+    map = JSON.parse(raw) as { sources?: unknown };
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(map.sources)) return [];
+  const base = path.dirname(file);
+  return map.sources
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .map((s) => path.resolve(base, s.replace(/^file:\/\//, "")));
 }
 
 /**
