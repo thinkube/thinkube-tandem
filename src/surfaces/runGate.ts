@@ -18,6 +18,7 @@ import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
 import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
+import { asFindings, lookAfterDeploy } from "../run/lookRound";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -443,6 +444,10 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
         },
         log: (l) => s.changed(l),
       });
+    // Once the pipeline has actually put the work in front of people, drive
+    // it once per ask and file what a person would notice. It runs after the
+    // merge, on work already accepted, so nothing it says can withhold
+    // anything — which is what makes saying it cheap.
     if (down === "gitops-app")
       void watchGitopsAfterAccept({
         gitRoot,
@@ -455,6 +460,25 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
           s.changed(note);
         },
         log: (l) => s.changed(l),
+        then: async (url) => {
+          const found = await lookAfterDeploy({
+            url,
+            space: s.space,
+            delivery: r.delivery,
+            deps: s.deps.round,
+            log: (l) => s.changed(l),
+          });
+          if (!found.length) return;
+          const said = asFindings(found);
+          s.space = {
+            ...s.space,
+            deliveries: s.space.deliveries.map((x) =>
+              x.id === r.delivery.id ? { ...x, findings: [...(x.findings ?? []), ...said] } : x,
+            ),
+          };
+          s.persist();
+          s.changed(`the look found ${said.length} thing${said.length === 1 ? "" : "s"} to weigh`);
+        },
       });
     return { ok: true };
   }

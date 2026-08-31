@@ -30,6 +30,14 @@ export function controlUrlOf(remote: string): string | undefined {
   return m ? `https://control.${m[1]}` : undefined;
 }
 
+/** Where the deployed app answers, from the same evidence: the platform
+ *  gives an app its own name under the platform's domain. Derived rather
+ *  than configured, so a look never drives a URL somebody typed. */
+function deployedUrlOf(remote: string, app: string): string | undefined {
+  const m = /^https?:\/\/(?:[^@/]+@)?git\.([^/]+)\//.exec(remote);
+  return m && app ? `https://${app}.${m[1]}` : undefined;
+}
+
 /** The token the deployer installed for exactly this kind of call. */
 function apiToken(home = process.env.HOME ?? "~"): string | undefined {
   try {
@@ -210,8 +218,14 @@ export async function watchGitopsAfterAccept(a: {
   sleep?: (ms: number) => Promise<void>;
   remote?: string;
   token?: string;
+  /** What to do once the deployed thing is actually serving, given its URL.
+   *  The wait already exists here and nothing else knows when a deploy has
+   *  landed; handing the moment over keeps that knowledge in one place and
+   *  leaves this function ignorant of what happens next. */
+  then?: (url: string) => Promise<void>;
 }): Promise<void> {
-  if (!a.delivery.proofs.some((p) => p.verdict === "pending" && p.settledBy)) return;
+  const stamping = a.delivery.proofs.some((p) => p.verdict === "pending" && p.settledBy);
+  if (!stamping && !a.then) return;
   const remote =
     a.remote ??
     (await new Promise<string>((resolve) =>
@@ -234,8 +248,12 @@ export async function watchGitopsAfterAccept(a: {
   for (let tick = 0; tick < 30; tick++) {
     const reading = await readPipeline({ controlUrl, app: a.app, since: a.acceptedAt, token, http: a.http });
     if (reading.settled) {
-      d = stampPending(d, reading);
-      a.update(d, `the pipeline settled (${reading.phase}) — its promises are answered`);
+      if (stamping) {
+        d = stampPending(d, reading);
+        a.update(d, `the pipeline settled (${reading.phase}) — its promises are answered`);
+      }
+      const url = deployedUrlOf(remote, a.app);
+      if (a.then && url) await a.then(url);
       return;
     }
     await sleep(20_000);
