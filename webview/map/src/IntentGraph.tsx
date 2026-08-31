@@ -294,6 +294,72 @@ export function IntentGraph(props: {
       </div>
     );
 
+/**
+ * The sets worth delivering on their own.
+ *
+ * Nineteen asks went into one cut and came back three days later as a single
+ * delivery, in which every page rendered at zero height. The correction that
+ * turns a tricycle into a car happens between deliveries, and there was one.
+ * Choosing a set here is choosing what the next delivery contains — the whole
+ * point being that it contains less than everything.
+ */
+function Sets(props: { push: SpacePush }): JSX.Element | null {
+  const sets = props.push.specs ?? [];
+  const phase = props.push.phase;
+  if (!props.push.subjects.length) return null;
+  return (
+    <div data-sets style={{ marginBottom: SP.md }}>
+      <div style={{ ...label, marginBottom: 4 }}>
+        Sets — what to build and look at, one at a time
+      </div>
+      {sets.length ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: SP.sm }}>
+          {sets.map((sp) => (
+            <button
+              key={sp.id}
+              data-choose-set={sp.id}
+              disabled={!can("choose-set")}
+              title={can("choose-set") ? `Put this set in the cut — ${sp.promises} promise(s).` : refusalSentence("choose-set", phase)}
+              onClick={() => post({ action: "choose-set", specId: sp.id })}
+              style={{
+                textAlign: "left",
+                padding: `${SP.sm}px ${SP.md}px`,
+                borderRadius: 6,
+                border: `1px solid ${sp.chosen ? C.ok : C.border}`,
+                background: sp.chosen ? "#4ec9b014" : undefined,
+                color: "inherit",
+                cursor: "pointer",
+                maxWidth: "22rem",
+              }}
+            >
+              <div style={{ fontSize: FS.body, fontWeight: 600 }}>{sp.name}</div>
+              <div style={{ fontSize: FS.caption, opacity: O.dim }}>
+                {sp.subjects} subject{sp.subjects === 1 ? "" : "s"} · {sp.promises} promise
+                {sp.promises === 1 ? "" : "s"}
+                {sp.chosen ? " · in the cut" : ""}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "baseline", gap: SP.sm }}>
+          <button
+            data-group-into-sets
+            disabled={!can("group-into-sets")}
+            title={can("group-into-sets") ? undefined : refusalSentence("group-into-sets", phase)}
+            onClick={() => post({ action: "group-into-sets" })}
+          >
+            Group these into sets
+          </button>
+          <span style={{ fontSize: FS.caption, opacity: O.dim }}>
+            so each one can be built and looked at on its own, instead of all of it at once
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
   const cost = push.cost;
   const total = push.subjects.length;
   const done = Math.max(0, total - cost.subjects);
@@ -305,6 +371,8 @@ export function IntentGraph(props: {
           Say a sentence differently if this reads wrong — nothing here costs anything yet.
         </span>
       </div>
+
+      <Sets push={push} />
 
       {push.pendingModel ? <Proposed push={push} /> : <Recorded
           push={push}
