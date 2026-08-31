@@ -135,8 +135,14 @@ function buildGroundingPrompt(args: {
     `Judged once by an independent reviewer when the work is delivered, recorded on the delivery, and never kept as a test — ` +
     `a permanent test pinning prose or an absence fails every later change that legitimately moves on. ` +
     `A documentation-wording check is ALWAYS "assessment".\n` +
-    `    A probe must name a seam a PLAIN TEST PROCESS CAN REACH: an exported function a test imports, or behavior ` +
-    `observable through an injected fake. Judge reachability PER SEAM, and never bundle two seams in one check — ` +
+    `    A RENDERED PAGE IS SUCH A SEAM. The surface is built, opened in a browser and measured through the DOM ` +
+    `(src/gates/renderedSurface.ts), so a criterion about what a PERSON SEES — a page can be seen, a control is ` +
+    `present and can be pressed, a mark survives at a distance, a word appears where it is read — is a PROBE against ` +
+    `the rendered product. Never an assessment, never "unverified". Nineteen asks about a surface became assertions ` +
+    `about the text of source files because this seam was not named here: every one of them was true of a window in ` +
+    `which every page was laid out at zero height, and the delivery went out green.\n` +
+    `    A probe must name a seam a PLAIN TEST PROCESS CAN REACH: an exported function a test imports, behavior ` +
+    `observable through an injected fake, or the rendered surface. Judge reachability PER SEAM, and never bundle two seams in one check — ` +
     `a criterion naming two functions is TWO criteria. For a seam a test cannot reach (module-private, only behind ` +
     `the live host), prefer PLANNING THE SEAM: add a touchpoint and words to the node so the work exports one, and ` +
     `keep the check a probe against it; otherwise make that check an "assessment" (a reviewer reads the delivered ` +

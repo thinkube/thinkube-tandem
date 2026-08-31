@@ -89,3 +89,32 @@ test("the round that writes criteria is told to state the property, not the meth
   assert.match(asked, /stating the PROPERTY the person wants to hold, never the way a check would look for it/);
   assert.match(asked, /descended to the level of its own proof/, "and says what goes wrong when it does");
 });
+
+/**
+ * A criterion about what a person sees has a home to be proved in.
+ *
+ * The seams a probe could name were an exported function and a fake. A
+ * rendered page was not among them, so every criterion about a surface fell
+ * to a reviewer reading code or to the unverified list. Nineteen asks about
+ * a window became assertions about the text of source files — each of them
+ * true of a window in which every page was laid out at zero height, which is
+ * how that delivery went out green.
+ */
+test("the writer of criteria is told the rendered surface is a seam", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-seam-"));
+  const prompts: string[] = [];
+  await runGrounding(
+    { repoRoot: dir, model: "sonnet" } as never,
+    { id: "ask-1", text: "the tab row should stay in one place" } as never,
+    { nextIndex: 1 },
+    async (_deps, prompt) => (prompts.push(prompt), NODES),
+  );
+  const asked = prompts[0];
+  assert.match(asked, /RENDERED PAGE IS SUCH A SEAM/, "a page a person looks at can be measured, so it can be a probe");
+  assert.match(asked, /renderedSurface/, "and where it is proved is named, so the tester does not invent a home");
+  assert.match(
+    asked,
+    /Never an assessment, never "unverified"/,
+    "otherwise it falls to a reviewer reading code, which is what happened",
+  );
+});
