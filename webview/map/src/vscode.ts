@@ -9,7 +9,7 @@
  * home. What stays here is what only a webview has: the vscode api handle
  * and the window listener.
  */
-import { can, noteAllowed, noteRefusal, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
+import { can, noteAllowed, refusalIfRefused } from "../../../src/surfaces/surfaceContract";
 import type { SpacePush, WebToHost } from "../../../src/surfaces/surfaceContract";
 
 export {
@@ -51,7 +51,6 @@ export function watchRefusals(handler: (sentence: string) => void): () => void {
 export function post(msg: WebToHost): void {
   const refusal = refusalIfRefused(msg.action);
   if (refusal) {
-    noteRefusal(refusal);
     onRefusal?.(refusal);
     return;
   }
