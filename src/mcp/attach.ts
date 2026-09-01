@@ -31,7 +31,7 @@ const EDITOR_STORAGE =
   "/home/thinkube/.local/share/code-server/User/globalStorage/thinkube.thinkube-tandem";
 
 /** The store, from the environment or the same default the editor uses. */
-function storeRootOf(env: NodeJS.ProcessEnv = process.env): string {
+export function storeRootOf(env: NodeJS.ProcessEnv = process.env): string {
   return env.TANDEM_STORE || path.join(env.HOME ?? "~", "thinkube-tandem-store");
 }
 

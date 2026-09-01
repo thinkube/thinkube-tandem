@@ -11,7 +11,9 @@ import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
-import { knownSpaces } from "./attach";
+import { knownSpaces, storeRootOf } from "./attach";
+import { createProduct, listProducts } from "../core/identity";
+import { allCards } from "../core/cards";
 import { requestStop } from "../run/record";
 
 export interface ToolCall {
@@ -107,6 +109,48 @@ function deliveryReport(c: ToolCall): string {
 
 export function toolTable(): ToolDef[] {
   return [
+    {
+      name: "list_products",
+      action: "read-space",
+      spaceless: true,
+      description:
+        "The products the store knows, and which repositories sit under each. A product is the thing being made; a repository is one place its code lives.",
+      inputSchema: { type: "object", properties: {} },
+      run: () => {
+        const root = storeRootOf();
+        const cards = allCards(root);
+        const names = listProducts(root, cards.map((c) => ({ card: c })) as never);
+        if (!names.length) return "no products yet — make one with new_product";
+        return names
+          .map((n) => {
+            const under = cards.filter((c) => c.product === n);
+            return (
+              `${n}\n` +
+              (under.length
+                ? under.map((c) => `    · ${c.label}${c.at ? ` — ${c.at}` : ""}`).join("\n")
+                : "    (nothing under it yet)")
+            );
+          })
+          .join("\n");
+      },
+    },
+    {
+      name: "new_product",
+      action: "new-product",
+      spaceless: true,
+      description:
+        "Make a product — the thing being built, which repositories are then filed under. Naming it is all this does; nothing is created anywhere else.",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string", description: "what the product is called, in your words" } },
+        required: ["name"],
+      },
+      run: (c) => {
+        const name = str(c, "name");
+        const r = createProduct(storeRootOf(), name);
+        return r.ok ? `product "${name}" made — nothing is filed under it yet` : r.reason;
+      },
+    },
     {
       name: "list_spaces",
       action: "read-space",
