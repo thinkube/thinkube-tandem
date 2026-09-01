@@ -503,3 +503,85 @@ days. Four minutes with a screenshot said more than three days of inference.
 - And the derivation, asked to work near those files, **read the missing
   accents as house style and resolved to write more of them.** A machine
   conforming to existing wrongness is not caught by any check we have.
+
+## The delivery must end in choices, not in a sentence
+
+Found by asking what a person can actually DO when a criterion fails. Today:
+read it, and run the whole thing again. That is the only lever, which makes
+better wording worth much less than it looks — a well-worded wall is a wall.
+
+**Three moves under the failing sentence:**
+
+1. **Ship it anyway.** On this platform the cost of being wrong is a re-run.
+   "I have read it, that is fine, deploy" should be one press. The two vetoes
+   are absolute today, which was right when a mistake cost a production
+   incident and is not right here.
+2. **Send it back with one sentence** — *"the row has to actually disappear"*
+   — straight to the worker that wrote it, resumed in its own session with
+   its own context. That rung exists; the gate uses it after a red check, and
+   a person cannot reach it.
+3. **Say the criterion was never what you meant.** The criteria are derived,
+   not written by you. Striking one is worth more than this delivery: it is a
+   correction to how your sentence was read, and the next derivation should
+   carry it.
+
+### And the criteria are two things wearing one word
+
+Measured on the nine promises re-derived today: 15 criteria, of which 12 are
+readable by the person who wrote the ask and 3 leak the machine — one opens
+with `GET /api/v1/tasks`, two are Given/When/Then.
+
+Worse, two of them are the same criterion at two altitudes:
+
+- *the task remains in the rendered list* — what must be true
+- *no delete request is sent* — how we know it was not faked
+
+They have equal standing today, so a delivery can be withheld on the second
+while the first passes, and the sentence in front of the person is about an
+HTTP request. That is the `surface-fix` failure exactly: withheld for a
+reason nobody could judge.
+
+The evidence must not stop vetoing — it catches the UI that lies, which is
+the stub-shaped failure this method exists to prevent. It must stop being a
+separate criterion. One optional field: a criterion names the criterion it is
+evidence for. Then the report shows nine things that must be true rather than
+fifteen, and a failure reads in the person's own terms with the mechanism as
+its reason:
+
+> **Deleting a task asks me first — not kept.** The task stayed in the list,
+> but a delete request was sent anyway, so it only looks right.
+
+**And make them readable at the source.** Not paraphrased for display — the
+contract must stay exact or the thing agreed is not the thing checked.
+*"the list comes back with high-priority tasks first"* is as checkable as the
+version with the endpoint in front, and one of them can be read.
+
+## The surface design is agreed in a mock, not in prose
+
+https://claude.ai/code/artifact/fd45846a-343c-4ee8-8e85-20e447b82591
+
+Seven states, the real nine asks, built to the webview's own CSP — no
+downloaded fonts, colour from theme variables — so what is agreed is what can
+ship. What it settles:
+
+- **Your sentences are set in a serif and the machine never uses that face.**
+- **The marks stay.** They are not machine vocabulary: they are feedback on
+  the ask. Two of the nine come back flagged "names nothing", which is the
+  signal that a sentence will derive badly, shown while it can still be
+  rewritten. What goes is the LABELLING — no `SUBJECT`, no
+  `CLAIMS — WHAT MUST BECOME TRUE OF IT`, and no second rendering of the same
+  nine sentences as dark cards.
+- **The nine-into-three collapse is shown, not asserted**, so a wrong merge
+  is visible in a second.
+- **The criteria are shown.** Hide the machine's filing — `SL-2#eu-1`, cut,
+  TEP; show its contract. The criteria are the only thing on the page a
+  person can disagree with before code exists, and the sort-order inversion
+  is caught there rather than after delivery.
+- **Building is a dependency graph**, not a list: the edges say what cannot
+  start until what finishes, which is what the existing graph gets right.
+  What it gets wrong is the words on it — `SL-2` where the promise belongs,
+  "0 log lines", and **"passed" painted in the failure colour**.
+- **One next action, always in the same place**, saying what will happen.
+
+The rule for colour, stated once: **never the only carrier, and never
+contradicting the word.**
