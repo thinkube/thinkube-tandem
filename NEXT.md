@@ -5,21 +5,28 @@ Evaluate this before anything else in this file.
 ## What happened
 
 The remote extension host died on every start with a JavaScript heap out of
-memory, about sixteen seconds after launch, with thinkube-tandem disabled.
-Moving the 276MB transcript named at `d9c0823` out of its picker directory
-changed nothing.
+memory, about sixteen seconds after launch. It died with Claude Code
+2.1.257, 2.1.258 and 2.1.252, with thinkube-tandem disabled and enabled,
+after the 276MB transcript named at `d9c0823` was moved out of its picker
+directory, after 3068 mirror links were deleted, and after code-server was
+restarted. The same workspace opened in a private browser window ran
+without a crash.
 
-The cause is count, not size. The workspace file opens `/home/thinkube/apps`
-first, so the Claude extension's session picker reads
-`~/.claude/projects/-home-thinkube-apps`. That directory held 3726
-transcripts, 3068 of them symlinks made by `sessionLinks.ts`. The Claude
-extension opens every transcript in the picker directory at once on each
-start, and thousands at once exhaust its heap before any extension finishes
-activating. Disabling tandem does not remove links it already made.
+The trigger was the browser's saved window state: the Claude panel of the
+276MB session was restored on every reload, and the extension rebuilt that
+conversation in the host's heap. The state lives in the browser, not on
+the server, which is why nothing changed server-side helped. Clearing site
+data for the editor's origin is the fix.
 
-The 3068 links were deleted by hand, with consent, because none of those
-sessions held work. The 658 real transcripts in that directory are untouched.
-The 276MB transcript is at `~/.claude/archive/`.
+The transcript move and the link deletion were done in that search and are
+not the cause. The 3068 links were deleted with consent because none of
+those sessions held work; the 658 real transcripts in
+`~/.claude/projects/-home-thinkube-apps` are untouched, and the 276MB
+transcript is at `~/.claude/archive/`. What remains true, and is the reason
+this item stays first: the sweep mirrored every transcript of every launch
+target into one picker directory, worker transcripts included, with no
+bound, and the picker opens every file in that directory at once on each
+start.
 
 ## The architecture the fix must respect
 
