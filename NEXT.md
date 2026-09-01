@@ -1,3 +1,56 @@
+# First to evaluate: the session-link sweep takes the editor down
+
+Evaluate this before anything else in this file.
+
+## What happened
+
+The remote extension host died on every start with a JavaScript heap out of
+memory, about sixteen seconds after launch, with thinkube-tandem disabled.
+Moving the 276MB transcript named at `d9c0823` out of its picker directory
+changed nothing.
+
+The cause is count, not size. The workspace file opens `/home/thinkube/apps`
+first, so the Claude extension's session picker reads
+`~/.claude/projects/-home-thinkube-apps`. That directory held 3726
+transcripts, 3068 of them symlinks made by `sessionLinks.ts`. The Claude
+extension opens every transcript in the picker directory at once on each
+start, and thousands at once exhaust its heap before any extension finishes
+activating. Disabling tandem does not remove links it already made.
+
+The 3068 links were deleted by hand, with consent, because none of those
+sessions held work. The 658 real transcripts in that directory are untouched.
+The 276MB transcript is at `~/.claude/archive/`.
+
+## The architecture the fix must respect
+
+- A worker gets its context back through the Agent SDK: cwd is the worktree,
+  and a repair passes `resume: session` with the worker's own id. The SDK
+  reads that transcript from its native project directory, encoded from the
+  worktree path. Nothing in a run reads the picker directory or any symlink.
+- The links exist for one reader: the human Session History picker. The
+  sweep mirrors every transcript in each "Open Claude Code Here" target
+  directory, worker transcripts included, and worker sessions are the bulk
+  of the pile. They were never meant for the picker.
+- The launcher does not learn a session's id when it opens a panel, so today
+  it cannot tell a human session from a worker's.
+
+## The options, for the person to choose
+
+1. Mirror only sessions the launcher started. Needs the launcher to learn
+   the session id, or the engine to name worker sessions so the sweep can
+   skip them. Keeps every human session in the picker.
+2. Bound the sweep: the newest N transcripts across targets, none above a
+   size ceiling, older links pruned. A draft with N=40 and 32MB was written
+   and discarded unverified. Cost: a human session older than the newest N
+   drops out of the picker; it stays resumable by id from the CLI.
+3. Remove the mirror. The picker shows only sessions native to the first
+   workspace folder; launcher sessions are reached by id.
+
+Whichever is chosen, the sweep must never again be able to build a pile
+the picker cannot open.
+
+---
+
 # What changes next, and why
 
 A plan, written after three days on `surface-fix` delivered a surface where
