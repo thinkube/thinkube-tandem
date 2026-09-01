@@ -20,6 +20,7 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseDocument } from "yaml";
 import { mintCard } from "../core/identity";
 
 export interface ControlAuth {
@@ -38,7 +39,7 @@ export interface CatalogTemplate {
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type Made =
-  | { ok: true; cardId: string; at: string; said: string }
+  | { ok: true; cardId: string; at: string; said: string; url?: string }
   | { ok: false; reason: string };
 
 /** Dig the control URL + bearer token out of a Claude MCP config. */
@@ -119,6 +120,43 @@ export function nameIsUsable(name: string): string | undefined {
   return /^[a-z][a-z0-9-]{1,38}$/.test(name)
     ? undefined
     : "lowercase letters, digits and dashes, starting with a letter — it becomes the repository name";
+}
+
+/**
+ * Write down where the new application will be seen, in its own file.
+ *
+ * `thinkube.yaml` grew a `deploy` block and nothing ever filled it in, so
+ * every repository was left to a filesystem guess about how it reaches
+ * production. Creation is the one moment somebody knows: the platform just
+ * made an app, an app is deployed by being pushed, and its address follows
+ * from the name it was given. Recorded here, nothing has to infer it later.
+ *
+ * `parseDocument` rather than parse-and-restringify, because a template's
+ * own file carries comments and losing them to a machine's edit is the kind
+ * of damage nobody notices until they go looking for the explanation.
+ *
+ * A file that already says how it deploys is left exactly as it is: the
+ * repository's own answer beats one derived from a clone URL.
+ */
+export function sayWhereItLives(repoRoot: string, appName: string, cloneUrl: string): string | undefined {
+  const domain = /https:\/\/[^\n/]*git\.([^\n/]+)\//.exec(cloneUrl)?.[1];
+  if (!domain) return undefined;
+  const at = `https://${appName}.${domain}`;
+  const file = path.join(repoRoot, "thinkube.yaml");
+  let doc;
+  try {
+    doc = parseDocument(fs.readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+  if (doc.getIn(["spec", "deploy"]) !== undefined) return undefined;
+  doc.setIn(["spec", "deploy", "at"], at);
+  try {
+    fs.writeFileSync(file, String(doc));
+  } catch {
+    return undefined;
+  }
+  return at;
 }
 
 /**
@@ -218,10 +256,15 @@ export async function createAppFromTemplate(a: {
 
   const minted = mintCard(dest, { label: a.appName, product: a.product }, a.storeRoot);
   if (!minted.ok) return { ok: false, reason: minted.reason };
+  const url = sayWhereItLives(dest, a.appName, cloneUrlFor(a.appsRoot, a.appName));
+  if (url) say(`it will be seen at ${url}, and its own file now says so`);
   return {
     ok: true,
     cardId: minted.card.id,
     at: dest,
-    said: `"${a.appName}" exists on the forge, is cloned to ${dest}, and is filed under ${a.product}`,
+    ...(url ? { url } : {}),
+    said:
+      `"${a.appName}" exists on the forge, is cloned to ${dest}, and is filed under ${a.product}` +
+      (url ? `. It will be seen at ${url}` : ""),
   };
 }
