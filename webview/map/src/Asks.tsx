@@ -19,6 +19,8 @@
 import { useState } from "react";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, aside, label, labelIn } from "./type";
+import { MarkLegend, Marked, NamesNothing } from "./Marked";
+import type { ReadSubject } from "../../../src/derive/marks";
 
 type Sentence = SpacePush["sentences"][number];
 
@@ -96,6 +98,41 @@ export function Asks(props: {
   const editing = props.editing;
   const setEditing = props.onEditing;
   if (!props.push.sentences.length) return <></>;
+
+  // What was read from each sentence, in the shape that marks it. The words
+  // and their marks belong together: the reading used to be shown a second
+  // time below, in the machine's arrangement, which is how the same nine
+  // sentences came to be on one page twice.
+  const read: ReadSubject[] = (props.push.subjects ?? []).map((sub) => ({
+    name: sub.name,
+    claims: sub.claims.map((c) => ({
+      text: c.text,
+      from: c.fromAskN,
+      ...(c.quote ? { quote: c.quote } : {}),
+      ...(c.mention !== undefined ? { mention: c.mention } : {}),
+    })),
+  }));
+  const names = read.map((r) => r.name);
+  // A sentence every claim of which stands in for its subject by a pronoun,
+  // or by nothing at all, says nothing about what it is about. It will
+  // derive badly, and this is the only warning before it does.
+  const namesNothing = new Set(
+    props.push.sentences
+      .map((_s, i) => i + 1)
+      .filter((n) => {
+        const mine = read.flatMap((r) => r.claims.filter((c) => c.from === n));
+        // A reading kept before the wording was carried has no `mention` at
+        // all, and saying "names nothing" about every one of those sentences
+        // is a false alarm on every space read before today. Only a reading
+        // that RECORDED what stood for the subject can say it stood for
+        // nothing.
+        const recorded = mine.filter((c) => c.mention !== undefined);
+        return (
+          recorded.length > 0 &&
+          recorded.every((c) => !c.mention || /^(it|its|they|them|their|this|that|these|those|one|ones)$/i.test(c.mention.trim()))
+        );
+      }),
+  );
   return (
     <div
       data-sentences
@@ -117,6 +154,7 @@ export function Asks(props: {
       <div style={{ ...label, marginBottom: 4 }}>
         Asks — what you wrote, kept word for word
       </div>
+      {read.length ? <MarkLegend /> : null}
       {props.push.sentences.map((s, i) => (
         <section
           key={s.id}
@@ -140,9 +178,10 @@ export function Asks(props: {
               supersedes: “{s.amends}”
             </div>
           ) : null}
-          <div style={{ fontSize: FS.body }}>
+          <div style={{ fontSize: FS.body, lineHeight: 1.9 }}>
             <span style={{ opacity: O.faint, marginRight: 4 }}>#{i + 1}</span>
-            {s.text}
+            <Marked text={s.text} subjects={read} names={names} n={i + 1} />
+            {namesNothing.has(i + 1) ? <NamesNothing /> : null}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginTop: 4 }}>
             <span style={{ fontSize: FS.caption, opacity: O.dim }}>
@@ -183,14 +222,20 @@ export function Asks(props: {
           {editing === s.id ? (
             <Editor s={s} phase={props.push.phase} onDone={() => setEditing(null)} />
           ) : null}
+          {/* Folded. Eight assumptions under one ask ran taller than the ask
+              itself and pushed the next sentence off the screen, so the page
+              led with what the machine decided and buried what you wrote.
+              They are one line until you want them. */}
           {s.assumptions.length ? (
-            <div style={{ marginTop: 6 }}>
-              <div style={{ ...labelIn(C.ask) }}>
-                Assumed{" "}
-                <span>
-                  — decided in this ask&apos;s name; recorded when you build
-                </span>
-              </div>
+            <details style={{ marginTop: 6 }}>
+              <summary
+                data-assumptions={s.id}
+                style={{ ...labelIn(C.ask), cursor: "pointer", width: "fit-content", listStyle: "revert" }}
+              >
+                {s.assumptions.length} thing{s.assumptions.length === 1 ? "" : "s"} decided in this
+                ask&apos;s name{" "}
+                <span style={{ opacity: O.dim }}>— recorded when you build</span>
+              </summary>
               {s.assumptions.map((a, i) => (
                 <div key={i} style={{ fontSize: FS.body, marginTop: 5 }}>
                   <div style={{ opacity: O.dim }}>{a.question}</div>
@@ -207,7 +252,7 @@ export function Asks(props: {
                   ) : null}
                 </div>
               ))}
-            </div>
+            </details>
           ) : null}
         </section>
       ))}

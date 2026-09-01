@@ -97,6 +97,11 @@ export function applyModel(
         text: c.text,
         ...(c.why ? { why: c.why } : {}),
         fromAsk: askOf(c.from),
+        // Kept, because the page shows your sentence back with the reading
+        // marked inside it. Dropped here, the marks can be drawn while a
+        // reading is pending and never again after it is kept.
+        ...(c.quote ? { quote: c.quote } : {}),
+        ...(c.mention !== undefined ? { mention: c.mention } : {}),
       });
     });
   });

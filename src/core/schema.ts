@@ -369,7 +369,15 @@ export interface Space {
   proposal?: {
     askIds: string[];
     texts: string[];
-    subjects: { name: string; from: number[]; claims: { text: string; why?: string; from: number }[] }[];
+    subjects: {
+      name: string;
+      from: number[];
+      // `quote` and `mention` ride all the way through: the reading marks
+      // your sentence with them, and the intent page marks it again after
+      // the reading is kept. Dropped at any hop, the marks work while a
+      // reading is pending and never afterwards.
+      claims: { text: string; why?: string; from: number; quote?: string; mention?: string }[];
+    }[];
     missing: number[];
   };
   /** A reading that failed, with the round's own words for why. */
@@ -423,6 +431,15 @@ export interface Claim {
   why?: string;
   /** The ask this claim was read from; its words are never replaced. */
   fromAsk: string;
+  /** The words of that ask this claim was read from, exactly as written —
+   *  what lets the sentence be shown back with the claim marked inside it. */
+  quote?: string;
+  /** The words in that ask that stand for the subject: the writer's own
+   *  wording for it there, or a pronoun. One subject is often written
+   *  differently in every sentence — "finished tasks", "the high priority
+   *  ones" — and its name can only be one of them, so without this the page
+   *  can point at the subject in one sentence and nowhere else. */
+  mention?: string;
 }
 
 export function emptySpace(): Space {

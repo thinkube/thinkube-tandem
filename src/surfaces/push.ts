@@ -214,6 +214,12 @@ export function spacePush(session: TandemSession, message?: string): unknown {
             fromAsk: session.space.asks.find((a) => a.id === c.fromAsk)?.text ?? "",
             fromAskId: c.fromAsk,
             fromAskN: session.space.asks.findIndex((a) => a.id === c.fromAsk) + 1,
+            // What the page marks inside your sentence: the words this
+            // claim was read from, and the words that stand for the subject
+            // there. Without them the page can only search for the
+            // subject's NAME, which is one sentence's wording out of five.
+            ...(c.quote ? { quote: c.quote } : {}),
+            ...(c.mention !== undefined ? { mention: c.mention } : {}),
             promises: promises.map((n) => ({
               id: n.id,
               text: n.sentence,
@@ -328,6 +334,18 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         id: sp.id,
         name: sp.name,
         subjects: sp.subjectIds.length,
+        // Which of YOUR sentences this set carries, by their own numbers.
+        // A count told you a set had two subjects and nothing told you
+        // which, so a wrong grouping was invisible until it was built.
+        asks: [
+          ...new Set(
+            (session.space.subjects ?? [])
+              .filter((sub) => sp.subjectIds.includes(sub.id))
+              .flatMap((sub) => sub.from)
+              .map((id) => session.space.asks.findIndex((a) => a.id === id) + 1)
+              .filter((n) => n > 0),
+          ),
+        ].sort((a, b) => a - b),
         promises: ids.length,
         chosen: session.cutSpecId === sp.id,
         built: ids.length > 0 && ids.every((id) => signed.has(id)),

@@ -105,91 +105,6 @@ function Proposed(props: { push: SpacePush }): JSX.Element {
 }
 
 /** What was recorded — the same shape, once the reading has been kept. */
-function Recorded(props: {
-  push: SpacePush;
-  selected: string | null;
-  onSelect: (id: string) => void;
-  onEditAsk: (id: string) => void;
-}): JSX.Element {
-  const { push } = props;
-  return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(21rem, 1fr))", gap: 10 }}>
-        {push.subjects.map((s) => (
-          <div key={s.id} data-subject={s.id} style={box}>
-            <div
-              data-subject-head={s.id}
-              onClick={() => props.onSelect(s.id)}
-              style={{
-                padding: `${SP.sm}px ${SP.md}px`,
-                cursor: "pointer",
-                borderBottom: `1px solid ${C.border}`,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={label}>Subject</span>
-                {s.thinking ? (
-                  <span style={{ fontSize: FS.caption, color: C.ok }}>
-                    ⟳ {s.thinking.label} {s.thinking.current}/{s.thinking.total}
-                  </span>
-                ) : null}
-              </div>
-              <strong style={{ fontSize: FS.body }}>{s.name}</strong>
-              {s.from.length ? (
-                <div style={{ fontSize: FS.caption, opacity: O.dim, marginTop: 2, display: "flex", gap: 6 }}>
-                  <span>read from your ask{s.from.length === 1 ? "" : "s"}</span>
-                  {s.from.map((f) => (
-                    <FromAsk
-                      key={f.id}
-                      n={f.n}
-                      id={f.id}
-                      text={f.text}
-                      phase={push.phase}
-                      onEditAsk={props.onEditAsk}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <div style={{ ...label, padding: `${SP.sm}px ${SP.md}px 0` }}>
-              Claims — what must become true of it
-            </div>
-            {s.claims.map((c) => (
-              <div
-                key={c.id}
-                data-claim={c.id}
-                onClick={() => props.onSelect(c.id)}
-                title={`Read from your ask #${c.fromAskN}: ${c.fromAsk}`}
-                style={{
-                  padding: `${SP.sm}px ${SP.md}px`,
-                  cursor: "pointer",
-                  borderBottom: `1px solid ${C.border}`,
-                  background:
-                    props.selected === c.fromAskId || props.selected === c.id
-                      ? "var(--vscode-list-inactiveSelectionBackground, #2a2d2e)"
-                      : undefined,
-                }}
-              >
-                <div style={{ fontSize: FS.body }}>
-                  <FromAsk
-                    n={c.fromAskN}
-                    id={c.fromAskId}
-                    text={c.fromAsk}
-                    phase={push.phase}
-                    onEditAsk={props.onEditAsk}
-                  />{" "}
-                  {c.text}
-                </div>
-                {c.why ? (
-                  <div style={aside}>so that {c.why}</div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-  );
-}
-
 export function IntentGraph(props: {
   push: SpacePush;
   selected: string | null;
@@ -307,14 +222,26 @@ function Sets(props: { push: SpacePush }): JSX.Element | null {
   const sets = props.push.specs ?? [];
   const phase = props.push.phase;
   if (!props.push.subjects.length) return null;
+
+  // In the order they should be built, not as peers. The first is the one
+  // the rest lean on; a set already built is behind you. Five equal chips
+  // told you nothing about which to press, which is the one decision this
+  // whole layer exists to make easy.
+  const order = [...sets].sort((a, b) => {
+    if (a.built !== b.built) return a.built ? 1 : -1;
+    return b.promises - a.promises;
+  });
+  const words = (i: number, sp: (typeof sets)[number]): string =>
+    sp.built ? "built" : i === 0 ? "first" : i === order.length - 1 ? "last" : "then";
+
   return (
     <div data-sets style={{ marginBottom: SP.md }}>
       <div style={{ ...label, marginBottom: 4 }}>
-        Sets — what to build and look at, one at a time
+        Sets — what to build and look at, one at a time, in this order
       </div>
-      {sets.length ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: SP.sm }}>
-          {sets.map((sp) => (
+      {order.length ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {order.map((sp, i) => (
             <button
               key={sp.id}
               data-choose-set={sp.id}
@@ -323,32 +250,59 @@ function Sets(props: { push: SpacePush }): JSX.Element | null {
                 sp.built
                   ? "This set is built — its promises are signed."
                   : can("choose-set")
-                    ? `Build this set on its own — ${sp.promises} promise(s).`
+                    ? `Work this set out and put it in the cut — ${sp.subjects} subject(s).`
                     : refusalSentence("choose-set", phase)
               }
               onClick={() => post({ action: "choose-set", specId: sp.id })}
               style={{
+                display: "grid",
+                gridTemplateColumns: "auto 1fr auto",
+                gap: SP.md,
+                alignItems: "baseline",
                 textAlign: "left",
                 padding: `${SP.sm}px ${SP.md}px`,
                 borderRadius: 6,
                 border: `1px solid ${sp.chosen ? C.ok : C.border}`,
                 background: sp.chosen ? "#4ec9b014" : undefined,
                 color: "inherit",
-                cursor: "pointer",
-                maxWidth: "22rem",
+                cursor: sp.built ? "default" : "pointer",
+                opacity: sp.built ? O.dim : 1,
               }}
             >
-              <div style={{ fontSize: FS.body, fontWeight: 600 }}>{sp.name}</div>
-              <div style={{ fontSize: FS.caption, opacity: O.dim }}>
-                {sp.subjects} subject{sp.subjects === 1 ? "" : "s"} · {sp.promises} promise
-                {sp.promises === 1 ? "" : "s"}
-                {/* Where it lands. More than one repository is fine and is
-                    said: the parts are delivered separately and accepted
-                    together, because a provider and its consumer are one
-                    piece of work — half of it landing is worse than none. */}
+              <span
+                data-set-when
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.09em",
+                  textTransform: "uppercase",
+                  color: i === 0 && !sp.built ? C.ok : C.quiet,
+                  border: `1px solid ${i === 0 && !sp.built ? C.ok : C.border}`,
+                  borderRadius: 999,
+                  padding: "1px 6px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {words(i, sp)}
+              </span>
+              <span>
+                <span style={{ fontSize: FS.body, fontWeight: 600 }}>{sp.name}</span>
+                {/* Which of YOUR sentences it carries. A count said "2
+                    subjects" and left a wrong grouping invisible until it
+                    was built. */}
+                {sp.asks?.length ? (
+                  <span data-set-asks style={{ fontSize: FS.caption, opacity: O.dim, marginLeft: SP.sm }}>
+                    your {sp.asks.length === 1 ? "sentence" : "sentences"} {sp.asks.map((n) => `#${n}`).join(", ")}
+                  </span>
+                ) : null}
+              </span>
+              <span style={{ fontSize: FS.caption, opacity: O.dim, whiteSpace: "nowrap" }}>
+                {sp.promises
+                  ? `${sp.promises} promise${sp.promises === 1 ? "" : "s"}`
+                  : `${sp.subjects} subject${sp.subjects === 1 ? "" : "s"} · not worked out yet`}
                 {sp.repos.length > 1 ? ` · in ${sp.repos.join(" and ")}` : ""}
-                {sp.built ? " · built" : sp.chosen ? " · in the cut" : ""}
-              </div>
+                {sp.chosen ? " · in the cut" : ""}
+              </span>
             </button>
           ))}
         </div>
@@ -385,12 +339,12 @@ function Sets(props: { push: SpacePush }): JSX.Element | null {
 
       <Sets push={push} />
 
-      {push.pendingModel ? <Proposed push={push} /> : <Recorded
-          push={push}
-          selected={props.selected}
-          onSelect={props.onSelect}
-          onEditAsk={props.onEditAsk}
-        />}
+      {/* A reading not yet kept is shown whole, because there is nothing
+          else on screen to read it from. Once kept, it is marked inside your
+          own sentences above — and drawing it a second time here, as cards
+          in the machine's arrangement, put the same nine sentences on one
+          page twice in two visual languages. */}
+      {push.pendingModel ? <Proposed push={push} /> : null}
 
       {props.working ? (
         <div

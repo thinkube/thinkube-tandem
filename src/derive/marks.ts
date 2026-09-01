@@ -157,13 +157,24 @@ export function markSentence(text: string, subjects: readonly ReadSubject[], n: 
     const said = s.claims
       .filter((c) => c.from === n && c.mention && naming(c.mention))
       .flatMap((c) => mentions(text, c.mention as string));
-    const seen = new Set<string>();
-    const found = [...mentions(text, s.name), ...said].filter((f) =>
-      seen.has(`${f.at}:${f.to}`) ? false : (seen.add(`${f.at}:${f.to}`), true),
-    );
+    // Two ways of finding the same subject in one sentence can land on
+    // overlapping words — the name at "My tasks" and a mention at "tasks".
+    // Drawn as two marks they re-emit the words they share, so the sentence
+    // reads "My tasks tasks". Keep the longer, drop anything it covers.
+    const kept: { at: number; to: number }[] = [];
+    for (const f of [...mentions(text, s.name), ...said].sort((a, b) => a.at - b.at || b.to - a.to))
+      if (!kept.some((k) => f.at < k.to && k.at < f.to)) kept.push(f);
+    const found = kept;
     named.set(si, found.length > 0);
     for (const f of found) marks.push({ ...f, subject: si });
   });
+  // Two different subjects can also land on overlapping words. The same
+  // duplication follows, so the whole set is thinned once more.
+  const spans: typeof marks = [];
+  for (const m of [...marks].sort((a, b) => a.at - b.at || b.to - a.to))
+    if (!spans.some((k) => m.at < k.to && k.at < m.to)) spans.push(m);
+  marks.length = 0;
+  marks.push(...spans);
 
   const claims: Omit<ClaimRun, "pieces" | "writeIn">[] = [];
   subjects.forEach((s, si) => {

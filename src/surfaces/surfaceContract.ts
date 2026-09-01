@@ -64,6 +64,12 @@ interface ClaimVM {
   /** Its id and its number in your list, so the claim can point back. */
   fromAskId: string;
   fromAskN: number;
+  /** The words of that sentence this claim was read from, and the words in
+   *  it that stand for the subject — what the page marks inside your own
+   *  sentence, so the reading is shown where you wrote it rather than
+   *  repeated underneath in the machine's arrangement. */
+  quote?: string;
+  mention?: string;
   promises: PromiseVM[];
 }
 
@@ -241,6 +247,8 @@ export interface SpacePush {
     id: string;
     name: string;
     subjects: number;
+    /** Which of the person's own sentences it carries, by their numbers. */
+    asks?: number[];
     promises: number;
     /** In the cut right now — one set at a time, so at most one is. */
     chosen: boolean;

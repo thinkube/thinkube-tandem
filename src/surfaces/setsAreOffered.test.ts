@@ -99,13 +99,25 @@ test("a set says where it lands, whether it is built, and which is in hand", asy
     }),
   );
 
+  // Found by name, never by position: the sets are drawn in the order they
+  // should be built, so where one sits is information rather than an echo
+  // of the order they arrived in.
+  const of = (name: string) => seen.sets.find((x) => x.text.includes(name))!;
+
   // Two repositories is said, not hidden: the parts are delivered separately
   // and accepted together, so a person choosing it should know before they do.
-  assert.match(seen.sets[0].text, /in thinkube-tandem and apps\/todo/);
-  assert.doesNotMatch(seen.sets[2].text, /in thinkube-tandem and/, "one repository needs no saying");
+  assert.match(of("the provider and its consumer").text, /in thinkube-tandem and apps\/todo/);
+  assert.doesNotMatch(of("the one in hand").text, /in thinkube-tandem and/, "one repository needs no saying");
 
-  assert.match(seen.sets[1].text, /built/, "a set already signed says so");
-  assert.equal(seen.sets[1].pressable, false, "and is not offered again");
+  assert.match(of("already done").text, /built/, "a set already signed says so");
+  assert.equal(of("already done").pressable, false, "and is not offered again");
+
+  // And a set already built is behind you, whatever its size.
+  assert.equal(
+    seen.sets[seen.sets.length - 1].text.includes("already done"),
+    true,
+    "what is built comes last — the order is what to do next, not a list",
+  );
 
   assert.match(seen.header, /the one in hand/, "no page is silent about which set it is showing");
 });
