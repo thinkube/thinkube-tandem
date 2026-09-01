@@ -407,3 +407,99 @@ else covers, which would be hitting a number instead of pruning.
 
   Left for you. What the ask behind it wanted — a second carrier at far zoom
   — is already delivered by `face`, the state word.
+
+---
+
+# What 2026-09-01 added, and nothing yet does
+
+Everything above is built. This is what came out of a day spent reading a
+real space instead of reasoning about one, and it is written here because
+the last analysis of this size lived in a plan file and was nearly lost.
+
+## The architecture — one declaration, three consumers
+
+An action is described in **four** places today: `surfaceContract.ts` (the
+webview's messages and labels), `phase.ts` (which phase allows it),
+`mcp/boundary.ts` (machine-may and person-only), and `extension.ts` plus
+`package.json` (the VS Code commands). They must agree by somebody
+remembering, and they don't: `look_at` shipped as a tool and was refused on
+every call because it was missing from the boundary.
+
+1. **One registry.** Each action declared once — who may run it, in which
+   phases, its label, its refusal sentence, its handler. The webview renders
+   from it, the MCP exposes from it, `extension.ts` registers from it.
+2. **Products, projects and template deploys become MCP-callable.** Nine
+   commands drive a tree view — `newProduct`, `newProject`, `activateProject`,
+   `setContextScope`, `setProduct`, and `newAppGesture`, which calls control
+   to instantiate a template into a real Gitea repository with CI. None is
+   reachable from the MCP; only a person clicking a tree can do any of it.
+3. **Creation writes the configuration.** `spec.deploy` and `spec.verify`
+   exist and nothing writes them. From a template the platform knows the
+   answer — it is an app, the push deploys it, the URL follows from the name.
+   Enabling an existing repository knows nothing, so ask once, there, while
+   the person is present.
+4. **The declaration beats the guess.** `downstream` is the one field in
+   `setup.json` that is inferred rather than proved, it is cached, and it
+   decides what happens after an accept. Where a repository declares, the
+   survey stands down.
+
+## The surface
+
+Judged from a screenshot of the real space, at 1400×900 — the first time
+anyone looked at it rather than measuring it.
+
+- **Tab 0 is 90% empty white** and says *"Nothing read yet"* directly under
+  *"9 subject(s)"*. It is false, and it is what "the UI shows nothing" was.
+- **The same nine sentences render twice** on the intent tab — once as asks,
+  once as dark SUBJECT/CLAIMS cards — in two visual languages.
+- **Five machine assumptions sit above the second ask**, so what you wrote is
+  buried under what the machine decided about it.
+- **No primary action anywhere.** Nothing says what to do next.
+- **The navigation is duplicated** — four tabs, then the same four as grey
+  text on the right.
+- **A stray vertical rule at x≈1080** cuts through every page.
+- **Sets show no membership and no order** — five peer chips reading
+  "2 subjects · 23 promises".
+- **Tabs carry a bare `data-tab`**, so nothing can address a specific tab —
+  neither a check nor the look worker.
+- **The navigation is linear** (0→1→2→3) and the work is a loop.
+
+The cause is architectural: `spacePush` ships 65KB of everything the machine
+knows and the page renders all of it, so every screen is a data dump with no
+notion of what matters now.
+
+**The orchestration graph is the exception and the model to learn from** — it
+works because it renders ONE thing, the flow, rather than everything.
+
+**And the check that would have caught all of it:** no surface change ships
+without being looked at. A mock gets rendered and fixed a dozen times in
+minutes; the real surface has been edited, measured, and shipped unseen for
+days. Four minutes with a screenshot said more than three days of inference.
+
+## The reading and the derivation
+
+- **A kept reading cannot be redone.** A space that was read before today is
+  stuck with the reading it has; there is no path back. This is why the todo
+  space still shows nine subjects.
+- **Re-deriving a subject appends instead of replacing**, so a second pass
+  writes the same answers again. Half of the todo space's 55 promises are
+  echoes, including one promise whose whole job is to deduplicate the two
+  the derivation itself created.
+- **"Already true" is not a state.** An ask the product already satisfies
+  derives nothing, which renders exactly like a failed round and like a
+  subject nobody asked about.
+- **`question.askId` holds a subject id.** `node.serves` does too, and
+  `sign.ts` fills a variable called `askIds` from it. One word, two facts —
+  the failure WORDS.md exists to record.
+
+## For the todo app — real asks, found by reading it
+
+- **All 168 Spanish and Catalan strings are unaccented ASCII.** `common.yes`
+  is `Si`, which means *if*. Catalan `Ultim us` means *last you*, not *last
+  use*. `Cancel-lar` should be `Cancel·lar`. Five strings end in `?` or `!`
+  and none opens with `¿` or `¡`.
+- **`app.title` is `Web Application`** and `index.html` still says
+  `K8s Dashboard Hub` — leftovers from the template it was copied from.
+- And the derivation, asked to work near those files, **read the missing
+  accents as house style and resolved to write more of them.** A machine
+  conforming to existing wrongness is not caught by any check we have.
