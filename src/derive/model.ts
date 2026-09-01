@@ -59,14 +59,22 @@ function buildModelPrompt(sentences: string[], map = ""): string {
     `things from different angles. Solve for what they are about.\n\n` +
     `Two kinds of thing, and nothing else:\n` +
     `- SUBJECT: the thing a sentence is ABOUT, in the writer's own words ` +
-    `("the delivery page", "documentation", "the worker brief"). Two ` +
-    `sentences about the same thing belong to ONE subject.\n` +
+    `("the delivery page", "documentation", "the worker brief").\n` +
     `- CLAIM: what must become true OF one subject. Actions and qualities ` +
     `both. A claim belongs to exactly one subject. Keep the writer's ` +
     `wording; if the sentence says why ("so that…"), carry that ` +
     `separately.\n\n` +
-    `Finding the subject is the whole job, and the grammar will mislead ` +
-    `you. Ask: what must become true, and OF WHAT? That is the subject. It ` +
+    `FINDING THE FEWEST SUBJECTS IS THE WHOLE JOB. A writer describes one ` +
+    `thing over and over in different words, and it wears a different ` +
+    `disguise each time: "the invoices", "the unpaid ones", "anything past ` +
+    `thirty days" are THREE DESCRIPTIONS OF ONE LIST, not three subjects. A ` +
+    `description that NARROWS a thing — the unpaid ones, the late ones, the ` +
+    `ones I starred — is never a subject of its own: it is a claim about the ` +
+    `thing it narrows.\n\n` +
+    `Ask of every sentence: what must become true, and OF WHAT? Then ask of ` +
+    `every subject you have: is this the same thing as another, seen from a ` +
+    `different angle? If it is, they are ONE subject with more claims.\n\n` +
+    `The grammar will mislead you. The subject ` +
     `is never the actor ("I want…"), never the place a gesture lives ("on ` +
     `the review page"), never where something is stored ("inside the TEP"), ` +
     `and never a thing that exists only because the sentence exists ("that ` +
@@ -98,19 +106,27 @@ function buildModelPrompt(sentences: string[], map = ""): string {
     `same thing said two ways — keep ONLY the later, and name the one it ` +
     `displaces in "replaces". Different attributes of one thing (bold AND ` +
     `bracketed) do not conflict; only mutually exclusive ones do.\n\n` +
-    `A subject's "name" is the words a sentence itself uses for it, copied ` +
-    `EXACTLY when a sentence names it — "The brief a worker receives" is ` +
-    `named "the brief a worker receives", never "the worker brief" — so the ` +
-    `name can be pointed at in the sentence. Only a subject no sentence ` +
-    `names gets a short name of your own.\n\n` +
+    `NAMING. A subject's "name" is words the writer used, never words of ` +
+    `your own. When ONE sentence names it, copy that naming exactly — "The ` +
+    `brief a worker receives" is named "the brief a worker receives", never ` +
+    `"the worker brief". When SEVERAL sentences name the same thing ` +
+    `differently, take the PLAINEST of those namings as the name and record ` +
+    `each sentence's own wording in that claim's "mention", so every way the ` +
+    `writer referred to it can still be pointed at where they wrote it. ` +
+    `Never merge two things under a name neither sentence used. Only a ` +
+    `subject no sentence names at all gets a short name of your own.\n\n` +
+    `BEFORE YOU ANSWER, COUNT. As many subjects as sentences means you have ` +
+    `copied the list rather than read it. Go back and ask which of them are ` +
+    `the same thing.\n\n` +
     `For every claim also give:\n` +
     `- "quote": the words of the sentence it was read from, copied EXACTLY ` +
     `— character for character, no paraphrase. Omit it if you cannot copy ` +
     `an exact span.\n` +
-    `- "mention": the words in that sentence that stand for the subject ` +
-    `when the sentence does not name it — a pronoun ("it", "they"), or "" ` +
-    `when nothing stands in for it at all. Omit when the sentence names ` +
-    `the subject outright.\n\n` +
+    `- "mention": the words in THAT sentence that stand for the subject — ` +
+    `the writer's own wording for it there, or a pronoun ("it", "they"), or ` +
+    `"" when nothing stands in for it at all. This is what lets the page ` +
+    `point at the subject inside the sentence, so give it whenever the ` +
+    `sentence's wording differs from the subject's name.\n\n` +
     `THE LIST:\n${listed}\n\n` +
     `Respond with ONE JSON object and nothing else:\n` +
     `{"subjects":[{"name":"the delivery page","from":[1,4],"claims":[` +

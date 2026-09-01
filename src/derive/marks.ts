@@ -66,6 +66,14 @@ const STOP = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "o
 const contentWords = (name: string): string[] =>
   name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w));
 
+/** Whether these words NAME the subject or merely stand in for it. A
+ *  pronoun points at something already known and identifies nothing on its
+ *  own, so it is never drawn as the subject — the page writes the subject
+ *  in instead. */
+function naming(words: string): boolean {
+  return !/^(it|its|they|them|their|this|that|these|those|one|ones|he|she|him|her)$/i.test(words.trim());
+}
+
 /**
  * Every place this sentence names this subject — by the name itself, or,
  * when the sentence phrases it differently, by the shortest stretch of
@@ -139,7 +147,20 @@ export function markSentence(text: string, subjects: readonly ReadSubject[], n: 
   const named = new Map<number, boolean>();
   const marks: { at: number; to: number; subject: number }[] = [];
   subjects.forEach((s, si) => {
-    const found = mentions(text, s.name);
+    // What this sentence itself called the subject, when the reading
+    // recorded it and it is a NAMING rather than a pronoun. One subject may
+    // be written differently in every sentence — "finished tasks", "the high
+    // priority ones" — and its name can only be one of them; searching for
+    // the name alone finds nothing in the others and the page then says no
+    // subject was found, which is false. A pronoun is not a naming: marking
+    // "it" tells a reader nothing, so those are still written in.
+    const said = s.claims
+      .filter((c) => c.from === n && c.mention && naming(c.mention))
+      .flatMap((c) => mentions(text, c.mention as string));
+    const seen = new Set<string>();
+    const found = [...mentions(text, s.name), ...said].filter((f) =>
+      seen.has(`${f.at}:${f.to}`) ? false : (seen.add(`${f.at}:${f.to}`), true),
+    );
     named.set(si, found.length > 0);
     for (const f of found) marks.push({ ...f, subject: si });
   });
