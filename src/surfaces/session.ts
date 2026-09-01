@@ -214,19 +214,41 @@ export class TandemSession {
     );
   }
 
-  /** Going to look at the work is what starts the thinking. */
+  /**
+   * Going to look at the work is what starts the thinking — and it stops at
+   * the sets.
+   *
+   * It used to ground every subject here, which made the grouping useless:
+   * the sets exist to decide what is worth working out, and working
+   * everything out first is the cost they were meant to avoid. Nineteen asks
+   * ground at once became one cut, one gate, one delivery and three days.
+   *
+   * So this reads the asks into subjects and proposes the sets. What a set
+   * costs to work out is paid when it is chosen, and never for the sets you
+   * do not build.
+   */
   async think(): Promise<{ ok: boolean; reason?: string }> {
     const pending = this.space.proposal;
     if (pending) {
       this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
     }
-    const ground = new Set(
-      this.space.nodes.flatMap((n) => n.serves).filter((x) => x.startsWith("subject-")),
-    );
-    const todo = (this.space.subjects ?? []).filter((s) => !ground.has(s.id)).map((s) => s.id);
-    if (!todo.length) return { ok: true };
-    await groundSubjectFlow(this, todo);
+    if (!(this.space.specs ?? []).length) return this.groupIntoSpecs();
     return { ok: true };
+  }
+
+  /**
+   * The subjects of a set that nothing has been derived from yet.
+   *
+   * Grounded means "some promise serves an ask this subject came from" —
+   * the same path `promisesOfSpec` walks to find a set's promises. Asking
+   * the question a second way, by the shape of an identifier, is how the
+   * two answers drift apart and a set is ground twice or never.
+   */
+  private ungrounded(spec: { subjectIds: string[] }): string[] {
+    const served = new Set(this.space.nodes.flatMap((n) => n.serves));
+    return (this.space.subjects ?? [])
+      .filter((s) => spec.subjectIds.includes(s.id) && !s.from.some((a) => served.has(a)))
+      .map((s) => s.id);
   }
 
   /** What thinking about the rest will cost, before it is spent. */
@@ -433,13 +455,18 @@ export class TandemSession {
    * Closed under needs like any other choice: a promise this one depends on
    * comes with it, or the work cannot stand.
    */
-  chooseSpec(specId: string): { ok: boolean; reason?: string } {
+  async chooseSpec(specId: string): Promise<{ ok: boolean; reason?: string }> {
     if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
     const spec = (this.space.specs ?? []).find((s) => s.id === specId);
     if (!spec) return { ok: false, reason: `no set called '${specId}'` };
+    // Choosing a set is what pays for working it out. Nothing is derived
+    // from a set nobody chose, which is the whole saving: the sets you do
+    // not build cost nothing to have considered.
+    const todo = this.ungrounded(spec);
+    if (todo.length) await groundSubjectFlow(this, todo);
     const ids = promisesOfSpec(this.space, spec);
     if (!ids.length)
-      return { ok: false, reason: `nothing is derived from "${spec.name}" yet — work it out first` };
+      return { ok: false, reason: `nothing came out of "${spec.name}" — say more about it, or pick another set` };
     this.cutNodeIds = new Set();
     this.cutSpecId = spec.id;
     const r = addWithNeeds(this.cutNodeIds, ids, this.space.nodes, signedIds(this.space.cuts));

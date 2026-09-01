@@ -49,15 +49,15 @@ function sessionWithSets(): TandemSession {
   return s;
 }
 
-test("a set becomes the cut — one delivery per set, which is the point", () => {
+test("a set becomes the cut — one delivery per set, which is the point", async () => {
   const s = sessionWithSets();
 
-  assert.deepEqual(s.chooseSpec("spec-1"), { ok: true });
+  assert.deepEqual(await s.chooseSpec("spec-1"), { ok: true });
   assert.deepEqual([...s.cutNodeIds], ["n1"], "one set's promises, and not the other's");
   assert.equal(s.cutSpecId, "spec-1");
 
   // Choosing again replaces; it never accumulates back into everything.
-  assert.deepEqual(s.chooseSpec("spec-2"), { ok: true });
+  assert.deepEqual(await s.chooseSpec("spec-2"), { ok: true });
   assert.deepEqual([...s.cutNodeIds], ["n2"]);
 
   // Touched by hand it is no longer the set it was offered as, and the cut
@@ -67,14 +67,30 @@ test("a set becomes the cut — one delivery per set, which is the point", () =>
   assert.equal(s.cutNodeIds.size, 2);
 });
 
-test("a set with nothing derived from it yet is refused, in words", () => {
+/**
+ * Choosing a set is what pays for working it out.
+ *
+ * It used to be the other way round: everything was worked out first, and
+ * only then could a set be chosen — which made the grouping useless, because
+ * the sets exist to decide what is worth working out. Nineteen asks worked
+ * out at once became one cut, one gate and three days. A set nobody chooses
+ * now costs nothing to have considered.
+ */
+test("choosing a set works out that set, and only that set", async () => {
   const s = sessionWithSets();
-  s.space = { ...s.space, nodes: [] } as never;
-  const r = s.chooseSpec("spec-1");
-  assert.equal(r.ok, false);
-  assert.match(r.reason ?? "", /nothing is derived from "the layout is stable" yet/);
+  // A set whose subjects are already served by promises is not worked out
+  // twice — choosing it a second time spends nothing.
+  assert.deepEqual(await s.chooseSpec("spec-1"), { ok: true });
+  assert.deepEqual(await s.chooseSpec("spec-1"), { ok: true });
 
-  const gone = s.chooseSpec("spec-99");
+  // And a set nobody chose is never worked out at all — the saving the
+  // whole layer exists for. Choosing spec-1 twice touched nothing of spec-2.
+  assert.deepEqual([...s.cutNodeIds], ["n1"]);
+});
+
+test("a set that does not exist is refused by name", async () => {
+  const s = sessionWithSets();
+  const gone = await s.chooseSpec("spec-99");
   assert.equal(gone.ok, false);
   assert.match(gone.reason ?? "", /no set called/);
 });

@@ -100,7 +100,8 @@ export async function handleInbound(
     const r = await session.groupIntoSpecs();
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "choose-set" && msg.specId) {
-    const r = session.chooseSpec(msg.specId);
+    push("Working out what this set needs…");
+    const r = await session.chooseSpec(msg.specId);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);
