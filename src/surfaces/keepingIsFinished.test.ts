@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { TandemSession } from "./session";
 import { emptySpace } from "../core/schema";
 import { keepDraftFlow } from "./draftFlow";
+import { panicFlow } from "./captureFlows";
 import { phaseOf } from "./phase";
 
 function sessionReading(): TandemSession {
@@ -84,4 +85,92 @@ test("an empty page with nothing read is still refused", () => {
   const s = sessionReading();
   s.space = { ...s.space, draft: "", proposal: undefined } as never;
   assert.equal(keepDraftFlow(s).ok, false);
+});
+
+/**
+ * Panic clears everything derived, and only what you wrote stays.
+ *
+ * It used to leave the subjects and the claims behind. A reading is derived
+ * exactly like a promise is, so leaving it meant a space could never be read
+ * again: its first reading was its only one, however much better a later one
+ * would be. Nine sentences read into nine subjects stayed nine subjects for
+ * ever, and the improvement that turned them into three could not reach a
+ * space that already existed.
+ */
+test("panic leaves your sentences and nothing else", () => {
+  const s = sessionReading();
+  keepDraftFlow(s);
+  s.space = {
+    ...s.space,
+    nodes: [{ id: "n1", serves: [s.space.subjects![0].id], sentence: "x", needs: [], acceptance: [] }],
+    specs: [{ id: "spec-1", name: "a set", subjectIds: [s.space.subjects![0].id] }],
+    questions: [
+      { id: "q1", askId: "a1", text: "undecided", recommendation: "r" },
+      { id: "q2", askId: "a1", text: "already yours", recommendation: "r", decided: { text: "yes", at: "" } },
+    ],
+  } as never;
+
+  const r = panicFlow(s.space);
+  assert.ok(!("reason" in r), "nothing is signed, so there is nothing to refuse");
+  const after = (r as { space: typeof s.space }).space;
+
+  assert.equal(after.asks.length, 2, "your words are not derived and never go");
+  assert.deepEqual(after.subjects, [], "the reading is derived, and goes with the rest");
+  assert.deepEqual(after.claims, []);
+  assert.deepEqual(after.nodes, []);
+  assert.deepEqual(after.specs, []);
+  assert.equal(after.proposal, undefined);
+  assert.deepEqual(after.questions.map((q) => q.id), ["q2"], "a decision you gave is yours, and stays");
+});
+
+/**
+ * Reading again REPLACES the reading it corrects.
+ *
+ * Saying one sentence differently re-reads every sentence, which is right —
+ * a reading is about the whole list. But keeping that reading used to ADD it
+ * to the one before: nine subjects became twelve, the promises of both
+ * readings sat side by side, and a correction made the space grow instead of
+ * change. There was no way to correct anything, only ways to add.
+ */
+test("a corrected reading replaces the one it corrects, and takes its work with it", () => {
+  const s = sessionReading();
+  keepDraftFlow(s);
+  const first = s.space.subjects!.map((x) => x.id);
+  assert.equal(first.length, 2);
+
+  // Promises derived from that reading.
+  s.space = {
+    ...s.space,
+    nodes: [
+      { id: "n1", serves: [first[0]], sentence: "from the old reading", needs: [], acceptance: [] },
+      { id: "n2", serves: [first[1]], sentence: "also old", needs: [], acceptance: [] },
+    ],
+  } as never;
+
+  // The same two sentences, read again — one subject this time.
+  s.space = {
+    ...s.space,
+    proposal: {
+      askIds: s.space.asks.map((a) => a.id),
+      texts: s.space.asks.map((a) => a.text),
+      subjects: [
+        {
+          name: "the surface",
+          from: [1, 2],
+          claims: [
+            { text: "the row stays put", from: 1, mention: "The tab row" },
+            { text: "cards say what they keep", from: 2, mention: "cards" },
+          ],
+        },
+      ],
+      missing: [],
+    },
+  } as never;
+  keepDraftFlow(s);
+
+  assert.equal(s.space.subjects!.length, 1, "one reading of these sentences, not two");
+  assert.equal(s.space.subjects![0].name, "the surface");
+  assert.equal(s.space.claims!.length, 2, "and its claims, not four");
+  assert.deepEqual(s.space.nodes, [], "what the old reading derived went with it");
+  assert.equal(s.space.asks.length, 2, "your sentences are untouched throughout");
 });

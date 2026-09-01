@@ -106,10 +106,35 @@ export function applyModel(
     });
   });
 
+  // A reading REPLACES the earlier reading of the sentences it covers.
+  //
+  // Appending was the reason a correction could not correct anything: the
+  // pencil re-reads every sentence, so keeping that reading added a second
+  // reading on top of the first — nine subjects became twelve, and the
+  // better reading was buried under the worse one it was meant to replace.
+  //
+  // Scoped to the sentences this reading actually read: a reading of newly
+  // written asks leaves the subjects of the older ones alone, which is what
+  // makes writing more sentences cheap.
+  const reread = new Set(pending.askIds.filter(Boolean));
+  const supersededClaim = (c: Claim): boolean => reread.has(c.fromAsk);
+  const keptClaims = (space.claims ?? []).filter((c) => !supersededClaim(c));
+  const keptSubjectIds = new Set(keptClaims.map((c) => c.subjectId));
+  const gone = new Set(
+    (space.subjects ?? []).filter((s) => !keptSubjectIds.has(s.id)).map((s) => s.id),
+  );
+  // What was derived from a reading that no longer stands goes with it. A
+  // promise left pointing at a subject nobody holds any more is not work,
+  // it is wreckage — and it is what made a corrected space grow instead of
+  // change.
+  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
   return {
     ...space,
-    subjects: [...(space.subjects ?? []), ...subjects],
-    claims: [...(space.claims ?? []), ...claims],
+    // A subject with no claim left is a subject nothing points at any more.
+    subjects: [...(space.subjects ?? []).filter((s) => keptSubjectIds.has(s.id)), ...subjects],
+    claims: [...keptClaims, ...claims],
+    // Signed work is a record and is never removed by a re-reading.
+    nodes: space.nodes.filter((n) => signed.has(n.id) || !n.serves.some((x) => gone.has(x))),
   };
 }
 

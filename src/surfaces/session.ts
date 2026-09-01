@@ -232,7 +232,17 @@ export class TandemSession {
     if (pending) {
       this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
     }
+    // First press: offer the sets, which costs nothing. A person who wants
+    // them takes one and pays for that one alone.
     if (!(this.space.specs ?? []).length) return this.groupIntoSpecs();
+    // Pressed again with the sets already on screen, it means the other
+    // thing: work all of it out. A set is an OFFER, not a gate — it is not
+    // an offer if declining it leaves you unable to build anything, and
+    // being marched through the sets one at a time is not a decision
+    // anybody asked to make.
+    const todo = this.ungrounded({ subjectIds: (this.space.subjects ?? []).map((s) => s.id) });
+    if (!todo.length) return { ok: true };
+    await groundSubjectFlow(this, todo);
     return { ok: true };
   }
 
@@ -245,9 +255,18 @@ export class TandemSession {
    * two answers drift apart and a set is ground twice or never.
    */
   private ungrounded(spec: { subjectIds: string[] }): string[] {
+    // A promise serves the SUBJECT it was derived from. Asking whether one
+    // serves the subject's ASK never matches, so every subject looked
+    // ungrounded and every think() derived all of them again and appended:
+    // nine asks reached eighty-five promises where an honest derivation
+    // gives nine. The asks are still accepted for spaces holding promises
+    // recorded before subjects existed.
     const served = new Set(this.space.nodes.flatMap((n) => n.serves));
     return (this.space.subjects ?? [])
-      .filter((s) => spec.subjectIds.includes(s.id) && !s.from.some((a) => served.has(a)))
+      .filter(
+        (s) =>
+          spec.subjectIds.includes(s.id) && !served.has(s.id) && !s.from.some((a) => served.has(a)),
+      )
       .map((s) => s.id);
   }
 

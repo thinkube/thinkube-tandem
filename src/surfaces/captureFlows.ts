@@ -49,10 +49,19 @@ export function decideQuestionFlow(args: {
 export function panicFlow(space: Space): { space: Space } | { reason: string } {
   if (space.cuts.some((c) => c.signature))
     return { reason: "a TEP was already signed in this space — panic is refused after a freeze" };
+  // Everything derived goes, and only what you wrote stays. The reading is
+  // derived like the rest of it: leaving the subjects and claims behind left
+  // no way back to plain sentences, so a space could never be read again —
+  // its first reading was its only one, however much better a later one
+  // would be.
   return {
     space: {
       ...space,
       nodes: [],
+      subjects: [],
+      claims: [],
+      specs: [],
+      proposal: undefined,
       questions: space.questions.filter((q) => q.decided),
       cuts: [],
     },
