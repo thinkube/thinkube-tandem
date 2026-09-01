@@ -45,6 +45,11 @@ export const MACHINE_MAY = [
   // Proposing how the asks group is derivation, like any other reading:
   // it invents nothing and decides nothing.
   "group-into-sets",
+  // Looking at something already deployed and saying what a person would
+  // notice. It is the weakest action in this list: it opens a page, reads
+  // it, and writes findings that withhold nothing and fail nothing. What it
+  // says is worth exactly what a person makes of it.
+  "look-at",
 ] as const;
 
 /**

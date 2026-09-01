@@ -297,13 +297,20 @@ Checks: 346 green. That is down from 404: ninety-six were removed as
 redundant — nine ways of asserting one function's behaviour, kept two — and
 the rest are new work.
 
-### Found while doing this, not chased
+### Found while doing this, and got wrong twice
 
-`todo.thinkube.com` answers 200, but what answers is not the todo app — the
-page title is "K8s Dashboard Hub" and its body has zero height. The HTTPRoute
-in `apps/todo/k8s/ingress.yaml` claims that hostname. Something else is
-serving it. This is exactly what the after-deploy look is for, and it is
-already true today.
+`todo.thinkube.com` answers 200 and its page title is "K8s Dashboard Hub".
+An earlier version of this note concluded that something other than the todo
+app was serving that hostname, and named the HTTPRoute as the suspect.
+
+That was wrong. The todo app's own `frontend/index.html` carries
+`<title>K8s Dashboard Hub</title>` — a leftover from the template it was
+copied from. The served page is the todo app; only its label is stale, which
+is a small real defect and a fine first ask for that space.
+
+Both times the conclusion came from reading a title and not the app's own
+source, which took one grep. It is recorded here because the corrected fact
+matters less than the habit that produced it.
 
 ## Where it stands
 
