@@ -386,6 +386,17 @@ else covers, which would be hitting a number instead of pruning.
 
 ## Two things already true and unfixed
 
+- **The session-link sweep mirrors transcripts without a size ceiling.**
+  `sessionLinks.ts` symlinks every `<uuid>.jsonl` from the target project
+  dirs into the picker dir — one picker dir now reaches 612MB of
+  transcripts through those links. Any consumer that scans that dir whole
+  (the Claude extension's picker runs in the same extension host) pays for
+  every mirrored byte. The sweep should skip transcripts past a size bound,
+  or the mirror needs a consumer that streams. Recorded here as the ask;
+  the extension-host out-of-memory crash of 2026-09-01 was traced to the
+  Claude extension loading one 276MB transcript on panel restore — the
+  mirror amplifies that class of failure, it did not cause that instance.
+
 - **`review-33` — fixed.** `viewMove.ts` declared its own copy of the
   four-page union; it now imports `SurfacePage`. One file names the pages.
 
