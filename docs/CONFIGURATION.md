@@ -39,17 +39,25 @@ first. Otherwise every app is identified as a template.
 | word | evidence | what the accept does today |
 |---|---|---|
 | `gitops-app` | the origin URL contains `/thinkube-deployments/` | watches the pipeline; stamps pending proofs; drives the look |
-| `ansible-component` | a `copier.yaml` at the root | runs the component's `18_test.yaml` on the live cluster |
+| `ansible-component` | a `copier.yaml` at the root | runs the component's `18_test.yaml` on the cluster |
 | `template` | `manifest.yaml` with `kind: TemplateManifest` **and** a `thinkube.yaml` | nothing |
-| `ansible` | any `18_test*.yaml` under `ansible/`, depth ≤ 4 | runs the component's `18_test.yaml` on the live cluster |
+| `ansible` | any `18_test*.yaml` under `ansible/`, depth ≤ 4 | runs the component's `18_test.yaml` on the cluster |
 | `package` | `src-tauri/` at the root or under `frontend/` | nothing — a person attests |
 | `script` | none of the above | nothing |
 
 **The evidence is not proportional to the consequence.** `template` needs two
 agreeing facts and does nothing afterwards. `ansible` needs one filename
-found by a walk and afterwards touches the live cluster. `script` is the
-fallback, and being wrong there is silent under-verification with no action —
-which makes it the right default.
+found by a walk and afterwards runs a playbook. `script` is the fallback, and
+being wrong there is silent under-verification with no action — which makes
+it the right default.
+
+**And keep the stakes in proportion.** This is a development platform.
+Nothing here serves customers, and the cost of a wrong answer is running it
+again. Earlier drafts of this file called the cluster "live" and built
+approval rules around it — production instinct imported into a workshop,
+which manufactures machinery to manage risks that are not present. The
+weight of a gate follows the cost of being wrong; here that cost is a
+re-run.
 
 Two consequences worth holding on to:
 
@@ -138,13 +146,25 @@ Harbor → the adapter commits `k8s/.argocd-source-<app>.yaml` pinning the new
 tag and triggers an ArgoCD sync. `todo` has tests enabled for both
 containers.
 
-**Progress is pushed to control; Tandem pulls it back out.** Corrected
-2026-08-31 by the platform's owner — an earlier version of this file said
-"pull-only, nothing reports back", which was wrong. Gitea, Argo and Kaniko
-call control's API to register progress as a build moves, and the VS Code
-CI/CD extension renders that flow. Tandem then reads it from control over
-HTTPS with the token at `~/.thinkube/api-token`; those endpoints carry no
-`operation_id`, so they are not MCP-exposed.
+**Nothing in the pipeline calls control. Everything reads.** Checked
+2026-08-31 in the files themselves, after a claim to the contrary was
+recorded here and had to be withdrawn:
+
+- Gitea's webhook targets `https://argo-events.<domain>/gitea`
+  (`ansible/roles/gitea/configure_webhook/defaults/main.yaml`).
+- `templates/k8s/build-workflow.j2` makes no outbound call but a `git clone`.
+- The Harbor webhook adapter runs in the `argocd` namespace and reads
+  workflow state from the Kubernetes API directly. Its header states its
+  purpose: *"Bootstrap capability: Can deploy before thinkube-control
+  exists."*
+- Control's own CLAUDE.md agrees: *"CI/CD data is queried directly from
+  Kubernetes (Argo Workflows)."*
+
+So the chain is bootstrap-safe by design at every step, and control is a
+reader of it. The CI/CD view in the editor reads that same Argo workflow
+data. Tandem reads it from control over HTTPS with the token at
+`~/.thinkube/api-token`; those endpoints carry no `operation_id`, so they are
+not MCP-exposed.
 
 Two facts about the working copy: the remote moves without Tandem (the
 adapter's own build commits), so a run refreshes from origin first; and a
@@ -188,20 +208,28 @@ acceptable — that is the owner's call, not the methodology's. Case 3 is
 case 1, not a special case.
 
 **Why control cannot become an app** (asked and answered 2026-08-31). It
-shares the app architecture, so converting it looks attractive: it would
-inherit the one chain that already works and gain continuous integration it
-does not have. It cannot, because the machinery that deploys apps lives in
-control, and every build of every app calls control's API to register its
-progress. An app-shaped control would participate in its own deployment, and
-a broken control could not ship its own fix.
+shares the app architecture, so converting it looks attractive. It cannot,
+and the reason is narrow: **the machinery that deploys an app lives inside
+control** — creating the Gitea repository, generating the copier answers,
+submitting the build workflow. Control cannot use its own machinery to
+deploy itself, so it is deployed by ansible and copier instead.
 
-What remains available, and is the thing to look at instead: **testing and
-deploying are separable.** Control's containers could be built and its tests
-run the way an app's are — the half of the chain that ends at Harbor — while
-deployment stays ansible and person-approved. That addresses twenty pytest
-modules run by hand and touches the bootstrap not at all. Whether the
-platform can express "test and build me, do not deploy me" is unchecked; it
-is the same shape as the per-container `test.enabled` flag, one level up.
+It is *not* because the pipeline depends on control. It does not — see case 2
+above, where every step is bootstrap-safe by design and the adapter says so
+in its own header. An earlier version of this file gave that as the reason,
+and it was wrong.
+
+**Control already goes through the app build chain.** Per its own CLAUDE.md:
+push to GitHub, run `12_deploy_dev.yaml`, and copier syncs to the runtime
+location — after which a webhook triggers the Argo Workflow build and ArgoCD
+deploys automatically. So it is not ansible-deployed end to end. Ansible
+performs the copier sync; the same chain as an app does the rest.
+
+Which makes the remaining gap small and concrete: control's containers are
+built by the pipeline but nothing runs its tests there, because it has no
+`thinkube.yaml` in which to declare `test.enabled` per container. Twenty
+pytest modules run by hand for want of a file that every app and every
+optional component already has.
 
 ### 4 — playbooks (`ansible`)
 
