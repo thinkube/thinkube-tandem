@@ -297,6 +297,32 @@ export function toolTable(): ToolDef[] {
       },
     },
     {
+      name: "read_asks",
+      action: "think",
+      description:
+        "Read the recorded asks again — the whole list, replacing the earlier reading — then apply it and group the subjects into sets. Use after the asks changed, or after the reading itself improved.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        const r = await c.session.retryModel();
+        if (!r.ok) return `the reading failed: ${r.reason ?? "no reason given"}`;
+        const t = await c.session.think();
+        if (!t.ok) return `read, but grouping said: ${t.reason ?? "nothing"}`;
+        return spaceReport(c);
+      },
+    },
+    {
+      name: "group_into_sets",
+      action: "group-into-sets",
+      description:
+        "Group the subjects into sets worth building and looking at one at a time. Proposing the grouping decides nothing — a person picks the set.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        const r = await c.session.groupIntoSpecs();
+        if (!r.ok) return r.reason ?? "it could not group them";
+        return spaceReport(c);
+      },
+    },
+    {
       name: "reground",
       action: "reground",
       description: "Read the code again and re-place every promise that has drifted.",

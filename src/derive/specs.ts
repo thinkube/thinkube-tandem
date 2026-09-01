@@ -138,8 +138,13 @@ export function specsFrom(proposed: ProposedSpecs, mint: (n: number) => string):
  */
 export function promisesOfSpec(space: Pick<Space, "nodes" | "subjects">, spec: Spec): string[] {
   const subjects = new Set(spec.subjectIds);
+  // A promise serves the SUBJECT it was derived from. Ask ids are accepted
+  // as well, because a space may hold promises recorded before subjects
+  // existed, and those serve asks directly.
   const asks = new Set(
     (space.subjects ?? []).filter((s) => subjects.has(s.id)).flatMap((s) => s.from),
   );
-  return space.nodes.filter((n) => n.serves.some((a) => asks.has(a))).map((n) => n.id);
+  return space.nodes
+    .filter((n) => n.serves.some((id) => subjects.has(id) || asks.has(id)))
+    .map((n) => n.id);
 }
