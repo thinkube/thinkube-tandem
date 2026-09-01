@@ -52,11 +52,50 @@ export interface ThinkubeDeploy {
   at?: string;
 }
 
+/**
+ * How this repository proves itself, when a written check would prove nothing.
+ *
+ * Some work is declarative. A playbook says a package is installed; a
+ * terraform file says a bucket exists. A check asserting that the file says
+ * what the file says is testing the tool, not the work — it restates the
+ * source in a second language and passes for something that could never run.
+ *
+ * The tool already knows how to answer. It can be asked to look without
+ * changing anything, to do the work, and then to say whether anything is
+ * left to do. That last answer is the one no test gives you: a second run
+ * that still changes things means the work does not settle, which is a real
+ * defect nobody writes a test for.
+ *
+ * Declared, because the commands belong to the tool and the tool belongs to
+ * the repository. Nothing in Tandem knows what ansible or terraform are.
+ */
+export interface ThinkubeVerify {
+  /** Commands that change nothing — lint, syntax, a dry run. */
+  still: string[];
+  /** The command that does the work. */
+  apply?: string;
+  /** What to ask afterwards to learn whether anything is left. Often the
+   *  same command again; for some tools a different one. */
+  ask?: string;
+  /** What `ask` must say for the work to have settled. Absent means its
+   *  exiting cleanly is the answer. */
+  settled?: string;
+}
+
 export interface ThinkubeDeclaration {
   /** `app`, `knative`, or `component`. */
   deploymentType: string;
   containers: ThinkubeContainer[];
   deploy?: ThinkubeDeploy;
+  verify?: ThinkubeVerify;
+}
+
+/** One command or several, written either way — a repository with one step
+ *  should not have to write a list to say so. */
+function lines(v: unknown): string[] {
+  return (Array.isArray(v) ? v : v !== undefined && v !== null ? [v] : [])
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    .map((x) => x.trim());
 }
 
 /** The declaration, or undefined when the repository makes none. A file
@@ -78,6 +117,7 @@ export function thinkubeDeclaration(
       spec?: {
         deployment?: { type?: string };
         deploy?: { run?: unknown; in?: unknown; at?: unknown };
+        verify?: { still?: unknown; apply?: unknown; ask?: unknown; settled?: unknown };
         containers?: {
           name?: string;
           build?: string;
@@ -101,11 +141,7 @@ export function thinkubeDeclaration(
           : {}),
       }));
     const d = doc?.spec?.deploy;
-    // One command or several, written either way — a repository with one
-    // step should not have to write a list to say so.
-    const run = (Array.isArray(d?.run) ? d.run : d?.run !== undefined ? [d.run] : [])
-      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
-      .map((x) => x.trim());
+    const run = lines(d?.run);
     const deploy: ThinkubeDeploy | undefined = d
       ? {
           run,
@@ -113,11 +149,21 @@ export function thinkubeDeclaration(
           ...(typeof d.at === "string" && d.at.trim() ? { at: d.at.trim() } : {}),
         }
       : undefined;
+    const v = doc?.spec?.verify;
+    const verify: ThinkubeVerify | undefined = v
+      ? {
+          still: lines(v.still),
+          ...(typeof v.apply === "string" && v.apply.trim() ? { apply: v.apply.trim() } : {}),
+          ...(typeof v.ask === "string" && v.ask.trim() ? { ask: v.ask.trim() } : {}),
+          ...(typeof v.settled === "string" && v.settled.trim() ? { settled: v.settled.trim() } : {}),
+        }
+      : undefined;
     return {
       declared: {
         deploymentType: doc?.spec?.deployment?.type ?? "app",
         containers,
         ...(deploy ? { deploy } : {}),
+        ...(verify ? { verify } : {}),
       },
     };
   } catch (e) {

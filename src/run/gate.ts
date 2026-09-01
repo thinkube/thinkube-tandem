@@ -43,6 +43,8 @@ import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
 import { treeShape } from "../gates/moduleSizes";
 import { runnerFor } from "./proved";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { askTheTool } from "./settles";
 
 export type { GateContext } from "./state";
 
@@ -243,7 +245,29 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // the delivery to, so the veto does not exist for this repository. The
   // proof row says so — "no standing suite runs here" is a fact the person
   // reads at Accept, not a green invented for a suite nobody ran.
-  if (!g.suite) log(`${tep}: no whole-suite command runs here — the standing-suite veto does not apply`);
+  // A repository whose work is declarative has no suite and needs none: a
+  // check asserting that a playbook declares what it declares restates the
+  // file in a second language. Where it says how to ask its own tool
+  // instead, that answer stands in for the suite — including the question
+  // no test asks, whether running the work again still changes anything.
+  const told = thinkubeDeclaration(worktree);
+  const verify = told && "declared" in told ? told.declared.verify : undefined;
+  if (!g.suite && verify) {
+    const settled = await askTheTool({
+      repoRoot: worktree,
+      verify,
+      invoke: async (command, cwd) => {
+        const r = await g.suiteExec(command, cwd);
+        return { code: r.code, out: r.output };
+      },
+      log,
+    });
+    log(`${tep}: the tool answered — ${settled.verdict}`);
+    if (settled.verdict === "red")
+      return { refusals: [`the repository's own tool says the work does not hold:\n${settled.detail}`], undelivered: [] };
+  } else if (!g.suite) {
+    log(`${tep}: no whole-suite command runs here — the standing-suite veto does not apply`);
+  }
   const ran = g.suite ? await judgeTree(g.suite, worktree) : undefined;
   // A runner that ANSWERED — green, or red in its own words — is judging
   // the work. A command that did not run at all is judging nothing, and
