@@ -8,7 +8,7 @@
  */
 import { addAsk } from "../core/intent";
 import { asksOfText } from "../derive/asks";
-import { readEverything } from "./modelFlow";
+import { applyModel, readEverything } from "./modelFlow";
 import type { TandemSession } from "./session";
 
 export function readDraftFlow(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
@@ -33,6 +33,14 @@ export function keepDraftFlow(s: TandemSession): { ok: boolean; reason?: string 
   const recorded = s.space.asks.length;
   const written = asksOfText(s.space.draft ?? "").map((a) => a.text);
   const read = pending.texts.slice(recorded);
+  // A reading whose sentences are all recorded already has nothing left to
+  // record — but it has not been KEPT until its subjects are, and until then
+  // the space sits on the reading screen offering "Keep 0 asks". Finish it.
+  if (!written.length && !read.length) {
+    s.space = { ...applyModel(s.space, pending, s.author), proposal: undefined, draft: "" };
+    s.changed("Kept — what your asks are about is on the intent page.");
+    return { ok: true };
+  }
   if (!written.length) return { ok: false, reason: "there is nothing written yet" };
   if (written.length !== read.length || written.some((t, i) => t !== read[i]))
     return { ok: false, reason: "what is written has changed since it was read — read it again" };
@@ -56,11 +64,15 @@ export function keepDraftFlow(s: TandemSession): { ok: boolean; reason?: string 
     s.space = r.space;
     ids.push(r.added.id);
   }
-  s.space = {
-    ...s.space,
-    draft: "",
-    proposal: { ...pending, askIds: [...pending.askIds.slice(0, recorded), ...ids] },
-  };
+  // Keeping a reading records the asks AND what the reading found them to be
+  // about. Recording only the asks left the reading pending for ever: the
+  // phase stayed on the reading screen, the subjects the sets are grouped
+  // from never existed, and the button offered to keep nothing.
+  //
+  // Applying the model costs nothing — no repository is read and no promise
+  // is derived. That happens when a set is chosen, and only for that set.
+  const bound = { ...pending, askIds: [...pending.askIds.slice(0, recorded), ...ids] };
+  s.space = { ...applyModel(s.space, bound, s.author), proposal: undefined, draft: "" };
   s.changed(`${ids.length} ask${ids.length === 1 ? "" : "s"} recorded, word for word.`);
   return { ok: true };
 }
