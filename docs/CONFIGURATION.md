@@ -297,29 +297,59 @@ evidence for keeping this file in the repository.
 - The plan describes settling points, pending proofs and delivery grouping as
   changes to make; they are built.
 
+## The boundary, drawn
+
+The question that stalled the descriptor discussion — *what does a repository
+declare about itself that no platform file already says?* — has an answer,
+and it is not a new file.
+
+**How it is made live, and how its own tool says the work holds.** Nothing
+else. `thinkube.yaml` already says what the containers are and how the build
+tests them; it said nothing about deploying, and nothing about repositories
+whose work is declarative. It says both now:
+
+```yaml
+spec:
+  deploy:
+    run: bash scripts/deploy.sh      # or a playbook, or a call into control
+    in: /elsewhere                   # when the command lives in another repo
+    at: https://…                    # where the result can be seen
+  verify:
+    still: [ … ]                     # commands that change nothing
+    apply: …                         # the command that does the work
+    ask: …                           # what says whether anything is left
+    settled: "changed=0"             # what that answer must say
+```
+
+The boundary is not which file. It is **who can know it**: a machine can
+watch a command and learn what it produces, and that stays proved in
+`setup.json`; only a person knows how a repository reaches production and
+which tool converges it, and that is declared here.
+
+Both are lists of commands rather than named methods, because a method name
+is a branch waiting to be written. `makeLive` and `askTheTool` run the
+strings and know what none of them mean — the check that proves it drives
+ansible and terraform through the same code path with no branch between
+them. Adding a tool is a line of configuration.
+
+Two things this retired. The look was driving a URL assembled from the
+directory name, and now uses the declared address. And this extension's own
+`scripts/deploy.sh` had always worked while nothing knew about it, so
+deploying was something a person remembered to do outside the loop; it is
+one line of `thinkube.yaml` now.
+
 ## What is still open
 
-- **A converging tool that is not Ansible has no row.** The shape is general
-  — validate, preview, apply, ask again and be told nothing is left to change
-  — and the tool knowledge belongs in configuration, not in code.
-- **Declaration has no home, and the discussion that would give it one was
-  never finished.** The proposal was that a repository declares itself once —
-  per-part commands, watched outputs, dependencies, how it deploys — with the
-  door proving it and stamping `provenAt`, instead of the inference we have
-  now. Inference is why `out` was never lent: `builds` listed `out-test`
-  because a build was watched producing it, and omitted `out` because nobody
-  watched the product build.
-
-  The objection that stopped it: for anything template-shaped, much of that
-  already lives in `thinkube.yaml` — containers, test commands, images. A
-  descriptor restating them breaks the rule the whole design rests on, that
-  those files are read at the moment of use and never copied.
-
-  So the shape was right and the boundary was never drawn. The open question
-  is **what a repository declares about itself that no platform file already
-  says** — and a converging tool's sequence is the first concrete answer,
-  because it is neither watched into existence nor written in
-  `thinkube.yaml`.
+- **`downstream` is still a guess.** The six-way filesystem inference in
+  `survey.ts` remains, and it still decides what happens after an accept for
+  repositories that declare nothing. Where a repository declares, the
+  declaration wins and the guess stands down — so the guess retires by
+  repositories saying what they are, one at a time, rather than by being
+  deleted.
+- **Two repositories have no `thinkube.yaml` at all** — the core playbooks
+  and control. Control's containers are built by the pipeline but its tests
+  never run there, for want of `test.enabled` in a file every app and every
+  optional component already has. That is a file to write, not a problem to
+  solve.
 - **The flow is never shown to anyone.** It is chosen silently and is
-  invisible until it acts on the world. The weight of a gate is set by the
-  cost of being wrong; the evidence required to pick a flow is not.
+  invisible until it acts.

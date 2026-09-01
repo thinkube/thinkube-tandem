@@ -288,22 +288,14 @@ judged at the **package**, not the file; Rust at the module tree, where a
 
 ## What is done
 
-| | item | state |
-|---|---|---|
-| 0 | the module rule reframed | **done** — the veto is gone, the delivery reports the shape, rule 9 is in RULES.md |
-| 1 | category B, on case 0 | **done** — `renderedSurface` + two checks; both fail on the broken surface naming the culprit and its pixels |
-| — | the layout bug itself | **fixed**, and green under those checks |
-| — | grounding knows B exists | **done** — a rendered page is now a seam a probe may name |
-| — | the same instrument opens a deployed thing | **done** — the after-deploy look has its tool |
-| 2 | the look, on case 2 | **not built.** The instrument works against a real deployed page; the worker-per-ask does not exist |
-| 3 | the spec layer | **not built** |
-| 4 | the light gate | **half** — appearance criteria are routed to B at grounding; the gate does not yet let unsettleable criteria leave |
-| 5 | case 4 testless | **not built** |
-| 6 | feedback routing | **not built** |
+Two scorecards used to live in this file, one written mid-way and one at the
+end, and they disagreed for a day. The one below "Where it stands" is the
+only one now — a second copy of the same table is how a document starts
+lying about itself.
 
-Checks: 404 green. Two rendering checks now exist that could not have
-existed before, and the criterion pair that held a delivery hostage for two
-days is replaced by one that asks whether the page can be seen.
+Checks: 346 green. That is down from 404: ninety-six were removed as
+redundant — nine ways of asserting one function's behaviour, kept two — and
+the rest are new work.
 
 ### Found while doing this, not chased
 
@@ -319,13 +311,30 @@ already true today.
 |---|---|---|
 | 0 | the module rule reframed | **done** |
 | 1 | category B — render and measure | **done**, and it caught the layout bug |
+| 2 | the look, on a deployed thing | **done** — a worker per ask, driving what was deployed |
 | 3 | the spec layer | **done** — one set is the cut, the surface says which |
-| 4 | the light gate | **half** — grounding routes appearance criteria to B; the gate does not yet let unsettleable criteria leave |
-| 2 | the look, on a deployed app | **not built** — the instrument works, the worker-per-ask does not exist |
-| 5 | case 4 testless | **not built** |
-| 6 | feedback routing | **not built** |
+| 4 | the light gate | **done** — what no check can settle is exercised by the look, not listed |
+| 5 | case 4 testless | **done** — the repository declares how to ask its own tool |
+| 6 | feedback routing | **done** — a finding lands on the writing page, already written |
 | — | `review-3` | **closed** — dead machinery removed |
 | — | `review-33` | **closed** |
+
+### What replaced the plan's own shape
+
+The plan wrote case 4 as an Ansible sequence. That was wrong, and the
+question that broke it was "what happens if it is terraform tomorrow?".
+Terraform asks a different question than it applies and answers with an exit
+code rather than a word in its output — so a hardcoded sequence is a branch
+per tool, forever.
+
+What replaced it is one question with the answer declared per repository:
+**how is this made live**, and **how does its own tool say the work holds**.
+`thinkube.yaml` grew `deploy` and `verify` blocks; `makeLive` and
+`askTheTool` run the strings and know what none of them mean. Adding a tool
+is a line of configuration.
+
+That also retired a guess: the look was driving a URL assembled from the
+directory name, and now uses the address the repository declares.
 
 The spec layer needed almost nothing: dispatch, the gate and the delivery
 were already per-cut. `buildFlow` took an EXCLUSION list — "one cut over
