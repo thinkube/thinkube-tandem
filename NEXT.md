@@ -596,3 +596,20 @@ ship. What it settles:
 
 The rule for colour, stated once: **never the only carrier, and never
 contradicting the word.**
+
+## The closing-gate plan is landed
+
+The plan "The closing gate: stop withholding on the machine's own doubt,
+and stop being slow" is in the code, in these commits:
+
+- `5cb4702` — the wiring probe informs and never vetoes; its doubt is a
+  finding on the delivery page, written in the person's words.
+- `6f930e8` — the gate's author reads the check that failed it, and still
+  may not write one at any rung.
+- `f785fe9` — the gate's reviews are asked five at a time, not one after
+  another.
+- `adce090` — the delivery page reads for someone who was not here: whole
+  criteria, the failing assertion instead of the command.
+
+`runAcVerifications` stays serial on purpose: in production it runs only
+the runnable commands, which share one cache and one CPU allowance.
