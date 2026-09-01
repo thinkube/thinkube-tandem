@@ -11,9 +11,11 @@ import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
+import * as path from "node:path";
 import { knownSpaces, storeRootOf } from "./attach";
 import { createProduct, listProducts } from "../core/identity";
 import { allCards } from "../core/cards";
+import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
 import { requestStop } from "../run/record";
 
 export interface ToolCall {
@@ -149,6 +151,65 @@ export function toolTable(): ToolDef[] {
         const name = str(c, "name");
         const r = createProduct(storeRootOf(), name);
         return r.ok ? `product "${name}" made — nothing is filed under it yet` : r.reason;
+      },
+    },
+    {
+      name: "list_templates",
+      action: "read-space",
+      spaceless: true,
+      description:
+        "The starting points the platform offers for a new application, from its own catalog. Each has a url, which new_app names.",
+      inputSchema: { type: "object", properties: {} },
+      run: async () => {
+        const auth = controlReachedBy();
+        if ("reason" in auth) return auth.reason;
+        try {
+          const catalog = await catalogOf(auth);
+          if (!catalog.length) return "the catalog is empty";
+          return catalog
+            .map((t) => `${t.name}\n    ${t.description ?? "(no description)"}\n    ${t.url}`)
+            .join("\n");
+        } catch (e) {
+          return `the catalog could not be read: ${String(e).slice(0, 200)}`;
+        }
+      },
+    },
+    {
+      name: "new_app",
+      action: "new-project",
+      spaceless: true,
+      description:
+        "Make a new application from a template: the platform creates the repository with its CI, it is cloned into the apps folder, and it is filed under a product. Minutes, not seconds — it waits for the platform to finish.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "the application's name — lowercase letters, digits and dashes; it becomes the repository name",
+          },
+          product: { type: "string", description: "the product it is filed under, as list_products reports it" },
+          template_url: { type: "string", description: "which starting point, as list_templates reports it" },
+          description: { type: "string", description: "one line: what this application is" },
+        },
+        required: ["name", "product", "template_url"],
+      },
+      run: async (c) => {
+        const auth = controlReachedBy();
+        if ("reason" in auth) return auth.reason;
+        const said: string[] = [];
+        const made = await createAppFromTemplate({
+          auth,
+          appName: str(c, "name"),
+          product: str(c, "product"),
+          templateUrl: str(c, "template_url"),
+          description: str(c, "description"),
+          appsRoot: path.join(process.env.HOME ?? "~", "apps"),
+          storeRoot: storeRootOf(),
+          say: (l) => said.push(l),
+        });
+        return made.ok
+          ? `${made.said}\n\n${said.join(" · ")}`
+          : `it was not made: ${made.reason}${said.length ? `\n\n${said.join(" · ")}` : ""}`;
       },
     },
     {
