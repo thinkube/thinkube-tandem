@@ -20,6 +20,9 @@ import { downstreamOf } from "../run/survey";
 import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
 import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
 import { draftWithFindings } from "../run/feedback";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { makeLive } from "../run/makeLive";
+import type { Delivery } from "../core/schema";
 import { factsOf } from "../run/facts";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
@@ -78,6 +81,84 @@ export function signCutGesture(s: TandemSession): GestureResult {
     void executeRun(s, r.cut.id);
     return { ok: true };
   }
+
+/** Whether the repository says where it lives, in its own file. A declared
+ *  address beats a URL assembled from a directory name, so the older
+ *  derivation stands down when there is one. */
+function declaresWhereItLives(gitRoot: string): boolean {
+  const read = thinkubeDeclaration(gitRoot);
+  return !!(read && "declared" in read && read.declared.deploy?.at);
+}
+
+/**
+ * Drive the deployed thing once per ask, and file what comes back.
+ *
+ * Findings land on the writing page as sentences that can be kept, and on
+ * the delivery for weighing. What the look exercised stops standing there as
+ * though someone still owed an answer.
+ */
+async function lookAndFile(s: TandemSession, url: string, delivery?: Delivery): Promise<void> {
+  const d = delivery ?? s.space.deliveries[s.space.deliveries.length - 1];
+  if (!d) return;
+  const { findings, driven } = await lookAfterDeploy({
+    url,
+    space: s.space,
+    delivery: d,
+    deps: s.deps.round,
+    log: (l) => s.changed(l),
+  });
+  if (!findings.length && !driven.length) return;
+  const said = asFindings(findings);
+  s.space = {
+    ...s.space,
+    draft: draftWithFindings(s.space.draft ?? "", findings),
+    deliveries: s.space.deliveries.map((x) =>
+      x.id === d.id
+        ? exercised(said.length ? { ...x, findings: [...(x.findings ?? []), ...said] } : x, driven)
+        : x,
+    ),
+  };
+  s.persist();
+  s.changed(
+    said.length
+      ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} — they are on the writing page, as sentences you can keep`
+      : "the look exercised what no check could reach, and found nothing to say",
+  );
+}
+
+/**
+ * What happens once the work is merged: it is made live, then it is looked at.
+ *
+ * The repository says how, in its `thinkube.yaml`. A playbook run from the
+ * core repo, a call into control, a script beside the code — this function
+ * knows none of them, and the tool nobody has chosen yet needs no change
+ * here. A repository that declares nothing is deployed as it always was, by
+ * the merge or by hand.
+ *
+ * Never awaited by the accept, which returns immediately; everything it
+ * learns arrives through the space.
+ */
+async function afterMerge(s: TandemSession, gitRoot: string): Promise<void> {
+  const read = thinkubeDeclaration(gitRoot);
+  const deploy = read && "declared" in read ? read.declared.deploy : undefined;
+  if (!deploy) return;
+
+  const went = await makeLive({
+    repoRoot: gitRoot,
+    deploy,
+    log: (l) => s.changed(l),
+  });
+  if (!went.live) {
+    // A deploy that failed is a fact about the world, not an unkept promise:
+    // the work was already accepted and merged. It is said where a person
+    // reads it and nothing is withheld, because there is nothing left to
+    // withhold.
+    s.changed(`it did not go live — ${went.detail?.split("\n")[0] ?? "the deploy failed"}`);
+    return;
+  }
+  if (!went.at) return;
+  await lookAndFile(s, went.at);
+}
 
 export async function executeRun(
   s: TandemSession,
@@ -424,6 +505,12 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     // accept returns; the watch reports through the space.
     const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
     const down = downstreamOf(gitRoot);
+    // How this repository is made live, in its own words. One question with
+    // a different answer per target, and nothing here knows any of them:
+    // a playbook run from the core repo, a call into control, a script
+    // beside the code. A repository that declares nothing is deployed by the
+    // merge, or by hand as it always was.
+    void afterMerge(s, gitRoot);
     // A playbook component proves itself on the live cluster, and Tandem
     // can run that itself — the one downstream it executes rather than
     // watches. Started, never awaited, like the pipeline watch.
@@ -461,39 +548,10 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
           s.changed(note);
         },
         log: (l) => s.changed(l),
-        then: async (url) => {
-          const { findings, driven } = await lookAfterDeploy({
-            url,
-            space: s.space,
-            delivery: r.delivery,
-            deps: s.deps.round,
-            log: (l) => s.changed(l),
-          });
-          if (!findings.length && !driven.length) return;
-          const said = asFindings(findings);
-          s.space = {
-            ...s.space,
-            // A finding lands where a new ask is written, already written.
-            // Seeing the delivered thing and wanting it fixed used to mean
-            // typing every sentence again; now the cost of disagreeing with
-            // one is deleting its line.
-            draft: draftWithFindings(s.space.draft ?? "", findings),
-            // What the look exercised stops standing on the delivery as
-            // though someone still owed an answer: what was wrong came back
-            // as a finding, and what was right needs no entry.
-            deliveries: s.space.deliveries.map((x) =>
-              x.id === r.delivery.id
-                ? exercised(said.length ? { ...x, findings: [...(x.findings ?? []), ...said] } : x, driven)
-                : x,
-            ),
-          };
-          s.persist();
-          s.changed(
-            said.length
-              ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} — they are on the writing page, as sentences you can keep`
-              : "the look exercised what no check could reach, and found nothing to say",
-          );
-        },
+        // Only when the repository does not say where it lives. A declared
+        // address is the repository's own answer and beats a URL assembled
+        // from a directory name.
+        ...(declaresWhereItLives(gitRoot) ? {} : { then: (url: string) => lookAndFile(s, url, r.delivery) }),
       });
     return { ok: true };
   }

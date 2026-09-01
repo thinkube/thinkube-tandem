@@ -1,0 +1,18 @@
+apiVersion: thinkube.io/v1
+kind: ThinkubeDeployment
+
+# What this repository is, and how it is made live.
+#
+# Tandem itself is not deployed by the platform: it is a VS Code extension,
+# packaged and installed into code-server by the script beside this file.
+# That script has always worked and nothing knew about it, so deploying was
+# a thing a person remembered to do outside the loop. Declared here, it is
+# the same one question every other target answers — how is this made live —
+# with this repository's own answer.
+
+spec:
+  deployment:
+    type: extension
+
+  deploy:
+    run: bash scripts/deploy.sh

@@ -28,10 +28,35 @@ interface ThinkubeContainer {
   test?: { enabled: boolean; command?: string; image?: string };
 }
 
+/**
+ * How this repository is made live, in its own words.
+ *
+ * Every target on this platform reaches production differently: an app by
+ * being pushed, a component by a playbook run from another repository, a
+ * template through a call into control, this extension by a shell script
+ * beside it. Nothing in Tandem needs to know which of those a repository
+ * uses — only what to invoke and where the result can be seen afterwards.
+ *
+ * That is why this is a list of commands and not a named method. A method
+ * name is a branch waiting to be written, and the next tool nobody has
+ * chosen yet would need one. Adding a way to deploy is adding a line here.
+ */
+export interface ThinkubeDeploy {
+  /** What to invoke, in order. Empty means the merge itself made it live. */
+  run: string[];
+  /** Where to run it, when that is not this repository — a component's
+   *  deploy playbook lives in the core repo, not beside the code. */
+  in?: string;
+  /** Where the result can be seen once it is live, so the look has an
+   *  address instead of a guess assembled from the directory name. */
+  at?: string;
+}
+
 export interface ThinkubeDeclaration {
   /** `app`, `knative`, or `component`. */
   deploymentType: string;
   containers: ThinkubeContainer[];
+  deploy?: ThinkubeDeploy;
 }
 
 /** The declaration, or undefined when the repository makes none. A file
@@ -52,6 +77,7 @@ export function thinkubeDeclaration(
     const doc = parseYaml(raw) as {
       spec?: {
         deployment?: { type?: string };
+        deploy?: { run?: unknown; in?: unknown; at?: unknown };
         containers?: {
           name?: string;
           build?: string;
@@ -74,8 +100,25 @@ export function thinkubeDeclaration(
             }
           : {}),
       }));
+    const d = doc?.spec?.deploy;
+    // One command or several, written either way — a repository with one
+    // step should not have to write a list to say so.
+    const run = (Array.isArray(d?.run) ? d.run : d?.run !== undefined ? [d.run] : [])
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      .map((x) => x.trim());
+    const deploy: ThinkubeDeploy | undefined = d
+      ? {
+          run,
+          ...(typeof d.in === "string" && d.in.trim() ? { in: d.in.trim() } : {}),
+          ...(typeof d.at === "string" && d.at.trim() ? { at: d.at.trim() } : {}),
+        }
+      : undefined;
     return {
-      declared: { deploymentType: doc?.spec?.deployment?.type ?? "app", containers },
+      declared: {
+        deploymentType: doc?.spec?.deployment?.type ?? "app",
+        containers,
+        ...(deploy ? { deploy } : {}),
+      },
     };
   } catch (e) {
     return { unreadable: `thinkube.yaml exists but does not parse: ${(e as Error).message}` };
