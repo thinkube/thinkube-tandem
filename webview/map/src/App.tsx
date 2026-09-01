@@ -257,9 +257,20 @@ export function App(props: {
             ))}
           </div>
         ) : null}
-        <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
-          write it · see what it means · see what it will build · build it
-        </span>
+        {/* A refused press says why, on whatever page you pressed it. This
+            used to live in the writing region, which is hidden on three of
+            the four pages — so the sentence was computed, delivered, stored
+            and rendered inside a display:none container. A press that does
+            nothing and says nothing is the worst thing a control can do. */}
+        {refusal ? (
+          <span data-refusal style={{ marginLeft: "auto", fontSize: FS.body, color: C.ask }}>{refusal}</span>
+        ) : push.message ? (
+          <span style={{ marginLeft: "auto", fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
+        ) : (
+          <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
+            write it · see what it means · see what it will build · build it
+          </span>
+        )}
       </div>
         );
         if (region === "capture") return (
@@ -344,11 +355,6 @@ export function App(props: {
         ) : null}
         {push.running ? (
           <span style={{ fontSize: FS.body, color: C.ok }}>● building…</span>
-        ) : null}
-        {refusal ? (
-          <span data-refusal style={{ fontSize: FS.body, color: C.ask }}>{refusal}</span>
-        ) : push.message ? (
-          <span style={{ fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
         ) : null}
       </div>
         );

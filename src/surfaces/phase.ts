@@ -6,6 +6,8 @@
  */
 import type { TandemSession } from "./session";
 import { refusalSentence } from "./surfaceContract";
+import { ACTIONS, liveIn } from "./actions";
+import type { Phase } from "./actions";
 
 /** Where the space is in its sequence of steps: one word the surface and
  *  the host both read, so a control is enabled exactly when the host would
@@ -19,7 +21,7 @@ import { refusalSentence } from "./surfaceContract";
  *    running    a run in flight
  *    delivered  a delivery waiting for accept/reject
  */
-export type Phase = "drafting" | "read" | "understood" | "signed" | "running" | "delivered";
+export type { Phase } from "./actions";
 
 export function phaseOf(session: TandemSession): Phase {
   if (session.running) return "running";
@@ -30,56 +32,18 @@ export function phaseOf(session: TandemSession): Phase {
   return "drafting";
 }
 
-/** The controls that shape work, and the phases in which the host acts on
- *  each. Every other action (reading a log, selecting a unit, answering a
- *  parked worker, saving the draft text, switching space) is always on. */
-const OPEN: readonly Phase[] = ["understood", "delivered"];
-const ALLOWED: Partial<Record<string, readonly Phase[]>> = {
-  // Whether there is text to read is the box's own knowledge.
-  "read-draft": ["drafting", "read", "understood", "delivered"],
-  "keep-draft": ["read"],
-  "cancel-capture": ["read"],
-  "capture-many": ["read"],
-  // The intent page's "see what this will build" keeps the reading first.
-  think: ["read", ...OPEN],
-  reground: OPEN,
-  reframe: OPEN,
-  amend: OPEN,
-  "dismiss-promise": OPEN,
-  "propose-check": OPEN,
-  "accept-check": OPEN,
-  "accept-question": OPEN,
-  "accept-impact": OPEN,
-  "dismiss-impact": OPEN,
-  "apply-all-impacts": OPEN,
-  "group-into-sets": OPEN,
-  "choose-set": OPEN,
-  "open-cut-review": OPEN,
-  "exempt-docs": OPEN,
-  build: OPEN,
-  rerun: ["signed", "delivered"],
-  "think-again": ["signed"],
-  "stop-run": ["running"],
-  "accept-delivery": ["delivered"],
-  // Attesting is what a person does AFTER the work is theirs — the answer
-  // to a promise nothing here could settle arrives once they have used it.
-  attest: ["delivered"],
-  "reject-delivery": ["delivered"],
-  panic: ["drafting", "read", "understood"],
-  "switch-repo": ["drafting", "read", "understood", "signed", "delivered"],
-};
-
 /** The shaping actions the host acts on in this phase — sent with every
- *  push so the surface enables exactly these and nothing else. */
+ *  push so the surface enables exactly these and nothing else. Read from
+ *  the one declaration in `actions.ts`; there is no second table here. */
 export function allowedNow(phase: Phase): string[] {
-  return Object.entries(ALLOWED).filter(([, phases]) => phases!.includes(phase)).map(([a]) => a);
+  return liveIn(phase);
 }
 
 /** Why an action is refused now, or nothing — the same sentence
  *  `refusalSentence` gives the surface for this action and phase, so the
  *  host and the surface never say two different things about one press. */
 export function refusedNow(action: string, phase: Phase): string | undefined {
-  const allowed = ALLOWED[action];
-  if (!allowed || allowed.includes(phase)) return undefined;
+  const a = ACTIONS[action];
+  if (!a?.when || a.when.includes(phase)) return undefined;
   return refusalSentence(action, phase);
 }

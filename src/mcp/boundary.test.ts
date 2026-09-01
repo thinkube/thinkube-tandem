@@ -7,7 +7,10 @@
  */
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {MACHINE_MAY, PERSON_ONLY, machineMay} from "./boundary";
+import {machineMay} from "./boundary";
+import {ACTIONS} from "../surfaces/actions";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 /**
  * What a machine may do on a person's behalf.
@@ -34,10 +37,25 @@ test("the machine boundary allows what is declared and refuses everything else",
   for (const a of ["read-space", "read-run", "save-draft", "reground"])
     assert.equal(machineMay(a).ok, true, `${a} should be allowed`);
   }
-  {
-  const both = MACHINE_MAY.filter((a) => a in PERSON_ONLY);
-  assert.deepEqual(both, [], "an action cannot be the machine's and the person's at once");
-  }
+});
+
+/**
+ * Every tool the server offers names an action that exists.
+ *
+ * This is the check the old two-list boundary could not make, and the bug it
+ * would have caught: `look_at` shipped as a tool, was absent from the
+ * boundary's list, and was refused on every call it ever received. The tool
+ * worked, the refusal worked, and they disagreed about whether the action
+ * existed. One declaration cannot disagree with itself, but a tool naming an
+ * action nobody declared still can — so the tools are read at source and
+ * every action they name must be a row.
+ */
+test("no tool can name an action that is not declared", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "..", "src", "mcp", "tools.ts"), "utf8");
+  const named = [...src.matchAll(/action:\s*"([a-z-]+)"/g)].map((m) => m[1]);
+  assert.ok(named.length > 8, `expected the tools to name actions; found ${named.length}`);
+  const undeclared = [...new Set(named)].filter((a) => !(a in ACTIONS));
+  assert.deepEqual(undeclared, [], "a tool naming an undeclared action is refused on every call");
 });
 
 /**

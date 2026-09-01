@@ -13,6 +13,7 @@
  * checks import it and drive it directly.
  */
 import type { SurfacePage } from "./surfaceLayout";
+import { ACTION_NAMES, labelOf, SHAPES } from "./actions";
 export type { SurfacePage } from "./surfaceLayout";
 
 /** The one page that draws your asks. Named here, once, so the surface
@@ -302,12 +303,7 @@ export type WebToHost =
 /** The actions that shape work, and so are governed by the phase. The
  *  hygiene check reads this set to prove it names exactly what the host's
  *  phase table governs — the two must not drift apart. */
-export const SHAPING = new Set([
-  "read-draft", "keep-draft", "cancel-capture", "capture-many", "think", "reground", "reframe",
-  "amend", "dismiss-promise", "propose-check", "accept-check", "accept-question", "accept-impact",
-  "dismiss-impact", "apply-all-impacts", "group-into-sets", "choose-set", "open-cut-review", "exempt-docs", "build", "rerun", "think-again",
-  "stop-run", "accept-delivery", "reject-delivery", "attest", "panic", "switch-repo",
-]);
+export const SHAPING = SHAPES;
 
 /** The shaping actions the host allows right now, from the last push, and
  *  the phase that push carried. Before the first push nothing is known, so
@@ -335,41 +331,9 @@ export function can(action: string): boolean {
  * it, so a control is never called one thing in a refusal and another in an
  * instruction.
  */
-export const CONTROL_NAMES: Readonly<Record<string, string>> = {
-  "save-draft": "Write",
-  "read-draft": "Read",
-  "keep-draft": "Keep",
-  "cancel-capture": "Cancel",
-  "capture-many": "Read",
-  build: "Build",
-  think: "Think",
-  reframe: "Reframe",
-  amend: "Amend",
-  "select-unit": "Select",
-  "accept-delivery": "Accept",
-  attest: "Attest",
-  "think-again": "Think again",
-  "reject-delivery": "Not this",
-  "answer-worker": "Answer",
-  "dismiss-promise": "Dismiss",
-  "retry-model": "Retry",
-  "read-log": "Read log",
-  "stop-run": "Stop",
-  panic: "Panic",
-  reground: "Reground",
-  "accept-impact": "Apply",
-  "dismiss-impact": "Set aside",
-  "apply-all-impacts": "Apply all",
-  "group-into-sets": "Group into sets",
-  "choose-set": "Build this set",
-  "propose-check": "Work out a check",
-  "accept-check": "Use this check",
-  "accept-question": "Decide",
-  "open-cut-review": "Read the cut review",
-  "exempt-docs": "Say why documentation is not needed",
-  rerun: "Run again",
-  "switch-repo": "Switch",
-};
+export const CONTROL_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
+  ACTION_NAMES.map((a) => [a, labelOf(a)]),
+);
 
 /** Why a control is off, for its tooltip — one sentence per phase, when this
  *  phase has its own reason. Absent for a phase with no phase-specific
