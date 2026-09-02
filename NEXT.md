@@ -1,3 +1,13 @@
+# The run is one graph, landed
+
+The door is the first card and the delivery the last: each with a state,
+what it is doing, and its own log, read by selecting the card like every
+worker's. The pane under the graph is gone; there is one way to read a
+line the run wrote. The progress line speaks by phase: preparing the tree,
+building, grading, handing it over, delivered or withheld. The step panel
+names the promise above the step id and reads the brief back into promise,
+files with their names, and criteria. 2.0.251.
+
 # The run's own honesty, landed
 
 - **The door refuses what did not hold.** A single-test command tried on a
