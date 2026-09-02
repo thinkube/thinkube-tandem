@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { thinkubeDeclaration } from "./thinkubeYaml";
+import { partsDeclared, thinkubeDeclaration } from "./thinkubeYaml";
 
 /** A repository whose only content is the declaration under test. */
 function tmp(yaml: string): string {
@@ -77,4 +77,56 @@ test("a repository saying nothing about deploying is left exactly as it was", ()
   const r = thinkubeDeclaration(dir);
   assert.ok(r && "declared" in r);
   assert.equal(r.declared.deploy, undefined, "no declaration is not an empty one");
+});
+
+test("a repository the platform does not deploy declares its parts, how it is made live, and where its docs land", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tky-"));
+  fs.writeFileSync(
+    path.join(dir, "thinkube.yaml"),
+    [
+      "apiVersion: thinkube.io/v1",
+      "kind: ThinkubeDeployment",
+      "spec:",
+      "  deployment: { type: none }",
+      "  parts:",
+      "    - name: playbooks",
+      "      root: ./ansible",
+      "      test: { enabled: true, command: 'ansible-lint', one: 'ansible-playbook --syntax-check <file>' }",
+      "  deploy: { run: bash scripts/deploy.sh }",
+      "  docs: { root: ./docs }",
+      "",
+    ].join("\n"),
+  );
+  const d = thinkubeDeclaration(dir);
+  assert.ok(d && "declared" in d);
+  assert.equal(d.declared.deploymentType, "none");
+  assert.deepEqual(partsDeclared(d.declared), [
+    { name: "playbooks", root: "ansible", test: { enabled: true, command: "ansible-lint", one: "ansible-playbook --syntax-check <file>" } },
+  ]);
+  assert.equal(d.declared.docsRoot, "docs");
+});
+
+test("an application's parts are its containers, by build directory, with how one test runs", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tky-"));
+  fs.writeFileSync(
+    path.join(dir, "thinkube.yaml"),
+    [
+      "apiVersion: thinkube.io/v1",
+      "kind: ThinkubeDeployment",
+      "spec:",
+      "  containers:",
+      "    - name: backend",
+      "      build: ./backend",
+      "      test: { enabled: true, command: ./run_tests.sh, one: 'pytest <file>' }",
+      "    - name: frontend",
+      "      build: ./frontend",
+      "",
+    ].join("\n"),
+  );
+  const d = thinkubeDeclaration(dir);
+  assert.ok(d && "declared" in d);
+  assert.deepEqual(
+    partsDeclared(d.declared).map((p) => [p.root, p.test?.one]),
+    [["backend", "pytest <file>"], ["frontend", undefined]],
+  );
 });

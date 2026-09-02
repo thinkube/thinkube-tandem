@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { ignoredFor, worthWalking } from "../core/ignored";
 
 export type Downstream =
@@ -110,11 +110,8 @@ export function downstreamOf(repoRoot: string): Downstream {
  */
 export function partsOf(repoRoot: string): Part[] {
   const declared = thinkubeDeclaration(repoRoot);
-  if (declared && "declared" in declared && declared.declared.containers.length)
-    return declared.declared.containers.map((c) => ({
-      root: path.posix.normalize(c.build.replace(/^\.\//, "")) || ".",
-      from: "thinkube.yaml" as const,
-    }));
+  if (declared && "declared" in declared && partsDeclared(declared.declared).length)
+    return partsDeclared(declared.declared).map((p) => ({ root: p.root, from: "thinkube.yaml" as const }));
   const parts: Part[] = [{ root: ".", from: "root" }];
   const skip = ignoredFor(repoRoot);
   const walk = (dir: string, depth: number): void => {

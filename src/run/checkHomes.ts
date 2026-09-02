@@ -22,7 +22,7 @@ import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
 
 /** Files a check can sit beside and import — source, in any language here. */
-const CODE = /\.(m|c)?[jt]sx?$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
+const CODE = /\.(m|c)?[jt]sx?$|\.(vue|svelte)$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
 
 interface TestIdiom {
   /** The suffix this repository's tests wear: `.test.ts`, `_test.go`. */
@@ -44,9 +44,20 @@ function suffixOf(rel: string): string {
   return m[1] === "test" ? `_test${m[2]}` : m[1];
 }
 
-/** How this repository names and houses its tests, read from the tests it has. */
-function inferTestIdiom(files: readonly string[]): TestIdiom | undefined {
-  const tests = files.filter((f) => f && isTestPath(f) && !isProbePath(f));
+/**
+ * How a tree names and houses its tests, read from the tests it has.
+ *
+ * Per tree, never per repository: a repository that carries a Python
+ * service and a Vue front end keeps two idioms, and one read over both
+ * minted `.test.js` files beside Python modules — checks the backend's
+ * runner never collects and the frontend's never reaches. `root` is the
+ * top-level directory whose tests are read; "" reads the whole repository.
+ */
+function inferTestIdiom(files: readonly string[], root = ""): TestIdiom | undefined {
+  const prefix = root ? `${root}/` : "";
+  const tests = files
+    .filter((f) => f && isTestPath(f) && !isProbePath(f) && f.startsWith(prefix))
+    .map((f) => f.slice(prefix.length));
   if (!tests.length) return undefined;
   const counted = new Map<string, number>();
   for (const t of tests) {
@@ -55,11 +66,27 @@ function inferTestIdiom(files: readonly string[]): TestIdiom | undefined {
   }
   const suffix = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   if (!suffix) return undefined;
-  // A test directory only counts when the repository puts EVERY test there;
-  // one stray `tests/` beside a hundred co-located tests is not the idiom.
+  // A test directory only counts when the tree puts EVERY test there; one
+  // stray `tests/` beside a hundred co-located tests is not the idiom.
   const tops = new Set(tests.map((t) => t.split("/")[0]));
-  const dir = tops.size === 1 && /^(tests?|spec|__tests__)$/.test([...tops][0]) ? `${[...tops][0]}/` : "";
+  const dir = tops.size === 1 && /^(tests?|spec|__tests__)$/.test([...tops][0]) ? `${prefix}${[...tops][0]}/` : "";
   return { suffix, dir };
+}
+
+/**
+ * The idiom a language's tests wear when the tree holds none to read it
+ * from: co-located, with the suffix that language's runners collect.
+ */
+function idiomOfLanguage(subject: string): TestIdiom | undefined {
+  const ext = /\.([a-z]+)$/i.exec(subject)?.[1]?.toLowerCase();
+  if (!ext) return undefined;
+  if (/^(m|c)?[jt]sx?$/.test(ext)) return { suffix: `.test.${ext.replace(/x$/, "")}`, dir: "" };
+  if (ext === "vue" || ext === "svelte") return { suffix: ".test.js", dir: "" };
+  if (ext === "py") return { suffix: "_test.py", dir: "" };
+  if (ext === "go") return { suffix: "_test.go", dir: "" };
+  if (ext === "rb") return { suffix: "_spec.rb", dir: "" };
+  if (ext === "rs") return undefined;
+  return undefined;
 }
 
 /**
@@ -126,10 +153,16 @@ export function rehouseChecks(
    *  criteria red for exactly that — every check present, every one at the
    *  address the plan no longer used. */
   alreadyWritten: ReadonlySet<string> = new Set(),
+  /** The repository's declared parts, by root. A file under a part is
+   *  placed by that part's idiom, and a declared part is a tree that runs
+   *  tests whether or not it holds one yet. */
+  partRoots: readonly string[] = [],
 ): { from: string; to: string }[] {
-  const idiom = inferTestIdiom(repoFiles);
-  if (!idiom) return [];
-  const runnable = testRootsOf(repoFiles);
+  if (!inferTestIdiom(repoFiles) && !partRoots.length) return [];
+  const runnable = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])];
+  const treeOf = (f: string): string =>
+    [...partRoots].filter((r) => r !== "." && (f === r || f.startsWith(`${r}/`))).sort((a, b) => b.length - a.length)[0] ??
+    f.split("/")[0];
   const moved: { from: string; to: string }[] = [];
   // Every address already spoken for: what the repository holds, and what
   // the slices before this one have just been given. A check this cut
@@ -150,13 +183,24 @@ export function rehouseChecks(
     // correct; the fix was a build configuration no worker is cleared for.
     // The subject is chosen from a runnable root when the slice touches
     // one, and only otherwise from anywhere.
-    const codeFiles = units
+    const files = units
       .filter((u) => (u.role ?? "code") === "code")
       .flatMap((u) => u.footprint)
-      .filter((f) => !isTestPath(f) && CODE.test(f));
-    const subject =
-      codeFiles.find((f) => runnable.includes(f.split("/")[0])) ?? codeFiles[0];
+      .filter((f) => !isTestPath(f));
+    const inRunnable = files.filter((f) => runnable.includes(treeOf(f)));
+    // Code in a runnable tree first; failing that, anything in a runnable
+    // tree — a view's locale file still sits where the tree's tests run;
+    // failing that, code anywhere.
+    const subject = inRunnable.find((f) => CODE.test(f)) ?? inRunnable[0] ?? files.find((f) => CODE.test(f));
     if (!subject) continue;
+    // The idiom of the subject's own tree, so a Python module gets a Python
+    // test and a Vue view a vitest one, whatever the rest of the repository
+    // does.
+    // The tree's own idiom; failing that, the idiom the subject's language
+    // wears everywhere — never another tree's, which minted Python checks
+    // beside a Vue view.
+    const idiom = inferTestIdiom(repoFiles, treeOf(subject)) ?? idiomOfLanguage(subject) ?? inferTestIdiom(repoFiles);
+    if (!idiom) continue;
     for (const u of units) {
       if ((u.role ?? "code") !== "test") continue;
       u.footprint = u.footprint.map((f) => {
@@ -256,13 +300,15 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
 export function unreachableCheckHomes(
   slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
   repoFiles: readonly string[],
+  partRoots: readonly string[] = [],
 ): { where: string[]; roots: string[] } {
-  const roots = testRootsOf(repoFiles);
+  const roots = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])].sort();
   if (!roots.length) return { where: [], roots };
+  const under = (f: string): boolean => roots.some((r) => f === r || f.startsWith(`${r}/`));
   const where: string[] = [];
   for (const s of slices)
     for (const u of s.workUnits ?? [])
       for (const f of u.footprint)
-        if (isTestPath(f) && !roots.includes(f.split("/")[0])) where.push(`${s.handle}: ${f}`);
+        if (isTestPath(f) && !under(f)) where.push(`${s.handle}: ${f}`);
   return { where: [...new Set(where)], roots };
 }

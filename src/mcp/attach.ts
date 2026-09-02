@@ -21,7 +21,8 @@ import { discoverProjects } from "../core/identity";
 import type { EnabledProject } from "../core/identity";
 import { listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
 import { allCards } from "../core/cards";
-import { configureDocsRoots, userDocsRoots } from "../core/docsDuty";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import { Forge, forgeFor } from "../dispatch/forge";
 
@@ -94,7 +95,9 @@ export async function attach(args: AttachArgs): Promise<Attached> {
       reason: `${args.repo} is not an enabled project — no card in ${storeRoot}/cards names it`,
     };
   const dirs = thinkingSpaceDirs(storeRoot, project.card.id, args.space, author);
-  configureDocsRoots(userDocsRoots(project.gitRoot));
+  configureDocsRoots(
+    docsRootsOf(project.gitRoot, (() => { const d = thinkubeDeclaration(project.gitRoot); return d && "declared" in d ? d.declared.docsRoot : undefined; })()),
+  );
   const told = factsOf(project.gitRoot);
   const forge = await forgeOf(project.gitRoot);
   const session = new TandemSession({

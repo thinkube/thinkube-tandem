@@ -338,8 +338,40 @@ directory name, and now uses the declared address. And this extension's own
 deploying was something a person remembered to do outside the loop; it is
 one line of `thinkube.yaml` now.
 
+## The specification, published
+
+`thinkube.yaml` is specified on the public site, thinkube.org, as the
+reference page `reference/thinkube-yaml.adoc`, with its JSON schema
+attached beside it. That page is the source; this file describes how Tandem
+reads it.
+
+What the specification says that Tandem reads:
+
+- `containers[].test.one` — how one test file runs in that container's
+  tree, `<file>` relative to its build directory. Declared, it is what the
+  door proves for that part; absent, the survey infers it and the door
+  keeps what it proves.
+- `spec.parts` — for a repository with `deployment.type: none`, its trees
+  with their own toolchain, each with the same `test` block. An
+  application's parts are its containers.
+- `spec.deploy`, `spec.verify` — how it is made live, and how declarative
+  work converges. Read by `makeLive` and `askTheTool`.
+- `spec.docs.root` — where documentation lands; an `antora.yml` inside it
+  marks an Antora site.
+
+Where checks are born follows the parts: a check sits in the tree of the
+file it drives, in that tree's own idiom, and a declared part is a tree that
+runs tests whether or not it holds one yet. The four things the survey used
+to guess for a whole repository at once — the idiom, the runnable roots, the
+single-test command, the documentation root — are each read per part from
+the declaration first.
+
 ## What is still open
 
+- **The four repositories that declare nothing yet.** thinkube-control,
+  the core playbooks and the installer have no `thinkube.yaml`; the
+  templates have one without `kind`-level intent. Each is one file to
+  write, in the shape the specification now gives them.
 - **`downstream` is still a guess.** The six-way filesystem inference in
   `survey.ts` remains, and it still decides what happens after an accept for
   repositories that declare nothing. Where a repository declares, the

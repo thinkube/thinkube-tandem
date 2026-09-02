@@ -24,8 +24,28 @@ interface ThinkubeContainer {
   name: string;
   /** Build context relative to the repository root, e.g. "." or "./backend". */
   build: string;
-  /** The CI test hook: run `command` in `image`, before the build. */
-  test?: { enabled: boolean; command?: string; image?: string };
+  /** The CI test hook: run `command` in `image`, before the build; `one`
+   *  runs a single test file, `<file>` relative to the build directory. */
+  test?: ThinkubeTest;
+}
+
+interface ThinkubeTest {
+  enabled: boolean;
+  command?: string;
+  image?: string;
+  one?: string;
+}
+
+/**
+ * A tree of the repository with its own toolchain. An application's parts
+ * are its containers; a repository the platform does not deploy declares
+ * them under `spec.parts`.
+ */
+export interface ThinkubePart {
+  name: string;
+  /** Repository-relative root, "/"-separated; "." is the whole repository. */
+  root: string;
+  test?: ThinkubeTest;
 }
 
 /**
@@ -83,11 +103,42 @@ export interface ThinkubeVerify {
 }
 
 export interface ThinkubeDeclaration {
-  /** `app`, `knative`, or `component`. */
+  /** `app`, `knative`, `component`, or `none` when the platform does not deploy it. */
   deploymentType: string;
   containers: ThinkubeContainer[];
+  /** The trees of a repository with no containers, as declared. */
+  parts: ThinkubePart[];
   deploy?: ThinkubeDeploy;
   verify?: ThinkubeVerify;
+  /** Where documentation lands, as declared; absent means the default. */
+  docsRoot?: string;
+}
+
+/** A path as the repository writes it, normalised: "./backend" is "backend", "." stays. */
+function rootOf(p: string): string {
+  const n = path.posix.normalize(p.replace(/^\.\//, "").replace(/\/$/, ""));
+  return n === "" || n === "./" ? "." : n;
+}
+
+function testOf(t: { enabled?: boolean; command?: string; image?: string; one?: string } | undefined): ThinkubeTest | undefined {
+  if (!t) return undefined;
+  return {
+    enabled: t.enabled === true,
+    ...(t.command ? { command: t.command } : {}),
+    ...(t.image ? { image: t.image } : {}),
+    ...(typeof t.one === "string" && t.one.trim() ? { one: t.one.trim() } : {}),
+  };
+}
+
+/**
+ * The parts of a declared repository, one toolchain each: the containers
+ * of an application by their build directories, or the parts a repository
+ * the platform does not deploy declares.
+ */
+export function partsDeclared(d: ThinkubeDeclaration): ThinkubePart[] {
+  if (d.containers.length)
+    return d.containers.map((c) => ({ name: c.name, root: rootOf(c.build), ...(c.test ? { test: c.test } : {}) }));
+  return d.parts;
 }
 
 /** One command or several, written either way — a repository with one step
@@ -116,30 +167,31 @@ export function thinkubeDeclaration(
     const doc = parseYaml(raw) as {
       spec?: {
         deployment?: { type?: string };
+        parts?: { name?: string; root?: string; test?: { enabled?: boolean; command?: string; image?: string; one?: string } }[];
+        docs?: { root?: unknown };
         deploy?: { run?: unknown; in?: unknown; at?: unknown };
         verify?: { still?: unknown; apply?: unknown; ask?: unknown; settled?: unknown };
         containers?: {
           name?: string;
           build?: string;
-          test?: { enabled?: boolean; command?: string; image?: string };
+          test?: { enabled?: boolean; command?: string; image?: string; one?: string };
         }[];
       };
     };
     const containers = (doc?.spec?.containers ?? [])
       .filter((c) => typeof c?.name === "string" && typeof c?.build === "string")
-      .map((c) => ({
-        name: c.name as string,
-        build: c.build as string,
-        ...(c.test
-          ? {
-              test: {
-                enabled: c.test.enabled === true,
-                ...(c.test.command ? { command: c.test.command } : {}),
-                ...(c.test.image ? { image: c.test.image } : {}),
-              },
-            }
-          : {}),
-      }));
+      .map((c) => {
+        const test = testOf(c.test);
+        return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}) };
+      });
+    const parts: ThinkubePart[] = (doc?.spec?.parts ?? [])
+      .filter((p) => typeof p?.name === "string" && typeof p?.root === "string")
+      .map((p) => {
+        const test = testOf(p.test);
+        return { name: p.name as string, root: rootOf(p.root as string), ...(test ? { test } : {}) };
+      });
+    const docsRoot =
+      typeof doc?.spec?.docs?.root === "string" && doc.spec.docs.root.trim() ? rootOf(doc.spec.docs.root) : undefined;
     const d = doc?.spec?.deploy;
     const run = lines(d?.run);
     const deploy: ThinkubeDeploy | undefined = d
@@ -162,8 +214,10 @@ export function thinkubeDeclaration(
       declared: {
         deploymentType: doc?.spec?.deployment?.type ?? "app",
         containers,
+        parts,
         ...(deploy ? { deploy } : {}),
         ...(verify ? { verify } : {}),
+        ...(docsRoot ? { docsRoot } : {}),
       },
     };
   } catch (e) {

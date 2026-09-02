@@ -19,6 +19,20 @@ import { openTheDoor, type TreeSetup } from "./setup";
 import { factsOf, rememberWhatHeld, type RepositoryFacts } from "./facts";
 import { missing, provisional, type Proved } from "./proved";
 import { downstreamOf, partsOf } from "./survey";
+import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
+
+/**
+ * Each declared part's own single-test command, as `thinkube.yaml` says it:
+ * `test.one` with `<file>` relative to the part's root. Declared beats
+ * guessed, so a part that says how one test runs is never inferred.
+ */
+export function declaredPartCommands(repoRoot: string): Record<string, { runOne: string }> {
+  const d = thinkubeDeclaration(repoRoot);
+  if (!d || !("declared" in d)) return {};
+  const out: Record<string, { runOne: string }> = {};
+  for (const p of partsDeclared(d.declared)) if (p.root !== "." && p.test?.one) out[p.root] = { runOne: p.test.one };
+  return out;
+}
 import type { DispatchDeps } from "./deps";
 import type { Cut, Space } from "../core/schema";
 import { groundThatMoved, regroundingNeeded } from "./groundStillThere";
@@ -69,6 +83,10 @@ export async function whatWeKnow(a: {
     ...(known ? { known } : {}),
     told: {
       ...deps.told,
+      ...((): { parts?: Record<string, { runOne: string }> } => {
+        const parts = declaredPartCommands(deps.repoRoot);
+        return Object.keys(parts).length ? { parts } : {};
+      })(),
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },

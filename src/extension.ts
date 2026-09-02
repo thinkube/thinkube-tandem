@@ -12,7 +12,8 @@ import { NoticeHost, notifyForSpace, SpacePanels } from "./surfaces/panels";
 import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
-import { configureDocsRoots, userDocsRoots } from "./core/docsDuty";
+import { thinkubeDeclaration } from "./core/thinkubeYaml";
+import { configureDocsRoots, docsRootsOf } from "./core/docsDuty";
 import { followFor } from "./hostui/storeWatch";
 import { registerServer } from "./hostui/mcpRegister";
 import { createProduct, EnabledProject, listProducts, setCardProduct } from "./core/identity";
@@ -202,7 +203,9 @@ async function ensureSession(
   // What this repository publishes to its readers, found from its own
   // documentation system, so the duty at signing names the pages a person
   // reads rather than any file that happens to sit under docs/.
-  configureDocsRoots(userDocsRoots(project.gitRoot));
+  configureDocsRoots(
+    docsRootsOf(project.gitRoot, (() => { const d = thinkubeDeclaration(project.gitRoot); return d && "declared" in d ? d.declared.docsRoot : undefined; })()),
+  );
   const forge = await resolveForge(
     project.gitRoot,
     config.get<string>("giteaToken", ""),

@@ -527,6 +527,8 @@ export async function openTheDoor(a: {
     build?: string;
     runOne?: string;
     suite?: string;
+    /** Each part's own commands, as the repository declares them. */
+    parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
     resetup?: SetupArgs["resetup"];
     proveSetup?: SetupArgs["proven"];
   };
@@ -548,7 +550,10 @@ export async function openTheDoor(a: {
       setupArgsFor({
         worktree: a.worktree,
         repoRoot: a.repoRoot,
-        ...(a.known?.parts ? { partCommands: a.known.parts } : {}),
+        // What the repository declares for a part wins over what an earlier
+        // run proved: the declaration is the newer word, and the door proves
+        // it again here.
+        ...(a.known?.parts || a.told.parts ? { partCommands: { ...(a.known?.parts ?? {}), ...(a.told.parts ?? {}) } } : {}),
         ...(a.known ? { known: a.known } : {}),
         told: { ...a.told, ...(suite ? { suite } : {}) },
         exec: a.exec,

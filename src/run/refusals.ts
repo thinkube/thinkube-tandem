@@ -15,6 +15,7 @@
  * Each refusal names the PROMISE, in the person's own words — never a file,
  * a unit, or an internal of the run.
  */
+import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import type { SliceForDag } from "../engine/core/dag";
 import type { Change, Space } from "../core/schema";
 import { isTestPath } from "./testHomes";
@@ -212,10 +213,16 @@ export async function refusedBeforeDispatch(a: {
   const repoFiles = (await a.exec("git", ["-C", a.repoRoot, "ls-files"], a.repoRoot)).out
     .split("\n")
     .map((l) => l.trim());
+  // The repository's own parts, as it declares them: where a check may be
+  // born is decided by the tree its subject lives in, never by one idiom
+  // read over the whole repository.
+  const declared = thinkubeDeclaration(a.repoRoot);
+  const partRoots = declared && "declared" in declared ? partsDeclared(declared.declared).map((p) => p.root) : [];
   const rehoused = rehouseChecks(
     a.slices,
     repoFiles,
     new Set([...onBranch, ...(a.recordedChecks ?? [])]),
+    partRoots,
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
@@ -244,7 +251,7 @@ export async function refusedBeforeDispatch(a: {
   // it never runs — and the unit holding it is failed for work that was
   // correct. The fix is a build configuration no worker is cleared for, so
   // the placement is refused here, before anybody spends a round on it.
-  const stranded = unreachableCheckHomes(a.slices, repoFiles);
+  const stranded = unreachableCheckHomes(a.slices, repoFiles, partRoots);
   if (stranded.where.length)
     return {
       dag,

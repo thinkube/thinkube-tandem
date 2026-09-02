@@ -172,3 +172,14 @@ export function documentationPromise(
     ],
   };
 }
+
+/**
+ * Where this repository's documentation lives: the declared root when
+ * `thinkube.yaml` names one — an Antora site inside it is recognised by
+ * its `antora.yml` — and otherwise the roots found by their markers.
+ */
+export function docsRootsOf(repoRoot: string, declaredRoot?: string): string[] {
+  if (!declaredRoot) return userDocsRoots(repoRoot);
+  const root = declaredRoot.replace(/^\.\//, "").replace(/\/$/, "");
+  return fs.existsSync(path.join(repoRoot, root, "antora.yml")) ? [`${root}/modules`] : [root];
+}

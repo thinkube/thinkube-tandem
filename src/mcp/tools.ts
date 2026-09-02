@@ -282,6 +282,7 @@ export function toolTable(): ToolDef[] {
       run: (c) => {
         c.session.readLog(str(c, "step") || null);
         const v = c.session.logView();
+        if (v === undefined || v === null) return "no run has been recorded for this space, so there is no log yet";
         return typeof v === "string" ? v : JSON.stringify(v, null, 2);
       },
     },
