@@ -10,7 +10,7 @@
  * in the interface face, with the newest verdict any delivery recorded.
  */
 import { useState } from "react";
-import { post, SpacePush } from "./vscode";
+import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, SAID, SP, label } from "./type";
 import { setsInOrder } from "../../../src/surfaces/nextAction";
 
@@ -25,8 +25,11 @@ function tick(c: Check): { glyph: string; color: string; word: string } {
   return { glyph: "○", color: C.quiet, word: c.kind === "assessment" ? "judged at delivery by a reviewer" : "checked when it is built" };
 }
 
-function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) => void }): JSX.Element {
+function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) => void; phase: SpacePush["phase"] }): JSX.Element {
   const { p } = props;
+  // A promise the machine added — documentation, or a gap the code
+  // demands. It says so, and it can be declined in one press.
+  const minted = /-gap-\d/.test(p.id);
   return (
     <section
       data-will={p.id}
@@ -47,6 +50,23 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
           {p.stale ? " · the code moved since this was read" : ""}
         </span>
       </div>
+      {minted ? (
+        <div data-minted style={{ display: "flex", alignItems: "center", gap: SP.md, fontSize: FS.caption, color: C.quiet, marginBottom: SP.sm }}>
+          <span>added by the machine — {/^The documentation/.test(p.text) ? "documentation is part of every delivery unless you say it is not needed" : "the code around this work demands it"}</span>
+          <button
+            data-dismiss-promise={p.id}
+            disabled={!can("dismiss-promise")}
+            title={can("dismiss-promise") ? "Take it out of this delivery. Say why on the line that appears." : refusalSentence("dismiss-promise", props.phase)}
+            onClick={(e) => {
+              e.stopPropagation();
+              post({ action: "dismiss-promise", unitId: p.id });
+            }}
+            style={{ fontSize: FS.caption }}
+          >
+            Not needed
+          </button>
+        </div>
+      ) : null}
       <ul data-criteria style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: SP.sm }}>
         {p.checks.map((c, i) => {
           const t = tick(c);
@@ -118,7 +138,7 @@ export function Wills(props: {
           {!chosen ? <div style={label}>{sp.name}</div> : null}
           <div style={{ display: "flex", flexDirection: "column", gap: SP.md }}>
             {promises.map((p) => (
-              <Will key={p.id} p={p} selected={props.selected === p.id} onSelect={props.onSelect} />
+              <Will key={p.id} p={p} selected={props.selected === p.id} onSelect={props.onSelect} phase={push.phase} />
             ))}
           </div>
         </div>
@@ -128,7 +148,7 @@ export function Wills(props: {
           <div style={label}>{s.name}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: SP.md }}>
             {s.promises.map((p) => (
-              <Will key={p.id} p={p} selected={props.selected === p.id} onSelect={props.onSelect} />
+              <Will key={p.id} p={p} selected={props.selected === p.id} onSelect={props.onSelect} phase={push.phase} />
             ))}
           </div>
         </div>
@@ -156,7 +176,7 @@ export function Wills(props: {
           ) : (
             <div data-docs-exemption style={{ marginTop: SP.sm, maxWidth: "44rem" }}>
               <label htmlFor="docs-exemption-reason" style={{ fontSize: FS.body }}>
-                This lands no documentation — say why it is not needed, and Build unlocks
+                Nothing in this delivery lands a documentation page. Say why none is needed, and Build unlocks.
               </label>
               <textarea
                 id="docs-exemption-reason"

@@ -20,7 +20,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Cut, Space } from "./schema";
+import { Change, Cut, Space } from "./schema";
 import { ignoredFor, worthWalking } from "./ignored";
 
 const DOCS_PREFIX = "docs/";
@@ -120,4 +120,55 @@ export function docsDuty(
   if (landings.length > 0) return { state: "landed", landings };
   if (cut.docsExemption) return { state: "exempt", landings, reason: cut.docsExemption.reason };
   return { state: "missing", landings };
+}
+
+/**
+ * Documentation is part of every delivery by default. When the promises of
+ * a thing land none, the machine adds the promise itself: a page, in the
+ * repository's own documentation root, that says what the thing does in
+ * the words of the person using it. It is minted, so it informs and never
+ * withholds a delivery; and it is a promise like any other on the page, so
+ * "not needed" is one press away — that press, with its reason, is the
+ * exemption. Nobody has to ask for documentation; somebody has to say no.
+ */
+export function documentationPromise(
+  space: Space,
+  thing: { name: string; subjectIds: string[] },
+  mintNodeId: (n: number) => string,
+): Change | undefined {
+  const subjects = new Set(thing.subjectIds);
+  const asks = new Set((space.subjects ?? []).filter((s) => subjects.has(s.id)).flatMap((s) => s.from));
+  const mine = space.nodes.filter((n) => n.serves.some((id) => subjects.has(id) || asks.has(id)));
+  if (docsDuty(space, { id: "pending", changeIds: mine.map((n) => n.id) }).state === "landed") return undefined;
+  if (mine.some((n) => n.sentence.startsWith("The documentation says what"))) return undefined;
+  // Where the page goes is the repository's convention, read from its
+  // marker: an Antora site takes an .adoc page in its ROOT module and a
+  // line in that module's nav; anything else takes markdown under docs/.
+  const roots = docsRootsInForce();
+  const antora = roots.find((r) => /(^|\/)modules$/.test(r));
+  const slug = thing.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "documentation";
+  const path = antora ? `${antora}/ROOT/pages/${slug}.adoc` : `${roots[0] ?? DOCS_PREFIX.replace(/\/$/, "")}/${slug}.md`;
+  const nav = antora ? `${antora}/ROOT/nav.adoc` : undefined;
+  let n = 1;
+  const taken = new Set(space.nodes.map((x) => x.id));
+  while (taken.has(mintNodeId(n))) n++;
+  const id = mintNodeId(n);
+  const claim = (space.claims ?? []).find((c) => subjects.has(c.subjectId));
+  return {
+    id,
+    sentence: `The documentation says what "${thing.name}" does, in the words of the person using it.`,
+    serves: [...thing.subjectIds],
+    ...(claim ? { servesClaim: claim.id } : {}),
+    needs: [],
+    grounding: { touchpoints: [{ path, planned: true }, ...(nav ? [{ path: nav }] : [])], stamp: [] },
+    acceptance: [
+      {
+        id: `${id}-check-1`,
+        kind: "assessment",
+        text:
+          `A page at ${path} says, in plain words, what "${thing.name}" does and how a person uses it` +
+          (nav ? `, and ${nav} lists it.` : "."),
+      },
+    ],
+  };
 }

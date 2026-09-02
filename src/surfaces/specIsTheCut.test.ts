@@ -50,22 +50,27 @@ function sessionWithSets(): TandemSession {
   return s;
 }
 
+/** The cut without what the machine minted for it: the person's own promises. */
+const own = (s: { cutNodeIds: Set<string> }): string[] => [...s.cutNodeIds].filter((id) => !/-gap-\d/.test(id));
+
 test("a set becomes the cut — one delivery per set, which is the point", async () => {
   const s = sessionWithSets();
 
   assert.deepEqual(await s.chooseSpec("spec-1"), { ok: true });
-  assert.deepEqual([...s.cutNodeIds], ["n1"], "one set's promises, and not the other's");
+  assert.deepEqual(own(s), ["n1"], "one set's promises, and not the other's");
   assert.equal(s.cutSpecId, "spec-1");
 
   // Choosing again replaces; it never accumulates back into everything.
   assert.deepEqual(await s.chooseSpec("spec-2"), { ok: true });
-  assert.deepEqual([...s.cutNodeIds], ["n2"]);
+  assert.deepEqual(own(s), ["n2"]);
+  // Documentation is part of every delivery: the set brings its page with it.
+  assert.equal([...s.cutNodeIds].filter((id) => /-gap-\d/.test(id)).length, 1, "the set's own documentation promise rides with it");
 
   // Touched by hand it is no longer the set it was offered as, and the cut
   // must not later claim it was.
   s.toggleCut(["n1"]);
   assert.equal(s.cutSpecId, undefined, "a cut edited by hand is nobody's set");
-  assert.equal(s.cutNodeIds.size, 2);
+  assert.equal(own(s).length, 2);
 });
 
 /**
@@ -86,7 +91,7 @@ test("choosing a set works out that set, and only that set", async () => {
 
   // And a set nobody chose is never worked out at all — the saving the
   // whole layer exists for. Choosing spec-1 twice touched nothing of spec-2.
-  assert.deepEqual([...s.cutNodeIds], ["n1"]);
+  assert.deepEqual(own(s), ["n1"]);
 });
 
 test("a set that does not exist is refused by name", async () => {

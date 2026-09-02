@@ -7,6 +7,7 @@
 import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import * as path from "node:path";
 import { emptySpace, Space, Unit, Spec } from "../core/schema";
+import { documentationPromise } from "../core/docsDuty";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
@@ -495,6 +496,11 @@ export class TandemSession {
     // not build cost nothing to have considered.
     const todo = this.ungrounded(spec);
     if (todo.length) await groundSubjectFlow(this, todo);
+    // Documentation is part of every delivery: when nothing in the thing
+    // lands a page, the machine promises one, and "not needed" is the
+    // person's move on the page, not "please document".
+    const docs = documentationPromise(this.space, spec, (n) => `node-${this.author}-gap-${n}`);
+    if (docs) this.space = { ...this.space, nodes: [...this.space.nodes, docs] };
     const ids = promisesOfSpec(this.space, spec);
     if (!ids.length)
       return { ok: false, reason: `nothing came out of "${spec.name}" — say more about it, or pick another set` };
