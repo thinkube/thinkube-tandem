@@ -18,6 +18,17 @@ files with their names, and criteria. 2.0.251.
   so a silent minute reads as time passing and not as a stall. The state
   already records `since`; only the card is missing it.
 
+# Working out has phases, like the run
+
+Reading the code once per repository state, and looking for what is still
+missing once per set, belong to no sentence, so they show as a floating
+pill borrowing a sentence's step count — "reading your code (1/4)" — with
+no place in the sequence and no clock. The thinking is a sequence:
+reading the code, deriving each sentence, looking for what is missing,
+grouping. Each phase in its place with its state and elapsed time, the
+sentence rows keeping their own stage under the deriving phase, and no pill
+over the group.
+
 # The end-to-end path is documented once it has been walked
 
 When the clean run of the todo space delivers, the methodology page in
