@@ -6,7 +6,6 @@ import { SourceStamp } from "../core/stamp";
 import { runDerivationPipeline } from "../derive/pipeline";
 import { RoundDeps, runReadRound } from "../derive/round";
 import type { Knowledge } from "../derive/knowledge";
-import { Forge } from "../dispatch/forge";
 import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { solveModel } from "../derive/model";
@@ -22,8 +21,6 @@ export interface SessionDeps {
    *  the session reads it from the environment: GITHUB_USERNAME, else the
    *  owner the GitHub CLI recorded for the token. Never a default. */
   author?: string;
-  /** The forge for this repo; absent means deliveries stay local branches. */
-  forge?: Forge;
   /**
    * What somebody told this session about the target repository — a
    * setting, its remembered facts, a reading. Candidates only: the door
@@ -62,7 +59,7 @@ export interface SessionDeps {
   /** Member scope id → its open repository; undefined = not open here. */
   resolveScope?: (
     scopeId: string,
-  ) => Promise<{ gitRoot: string; prefix: string; forge?: Forge } | undefined>;
+  ) => Promise<{ gitRoot: string; prefix: string } | undefined>;
   /** The fold dir holding every user's subtree; absent = single-user. */
   projectDir?: string;
   /** Called after every state change so the panel can re-push. */

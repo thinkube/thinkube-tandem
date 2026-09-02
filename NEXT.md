@@ -18,6 +18,23 @@ files with their names, and criteria. 2.0.251.
   so a silent minute reads as time passing and not as a stall. The state
   already records `since`; only the card is missing it.
 
+# Accept is the one act that lands work, landed
+
+A delivery is a local branch until the person accepts it. Nothing is pushed
+before that: the hand-over and a withheld gate commit and stop; a worker's
+tree is sealed so its `git push` fails in git's own words before any
+credential is looked for, and its brief says so once. Accept merges the
+branch into the checkout's own branch, pushes that, and lets the branch go.
+There is no pull request and no forge adapter: a second approval on the
+forge was the same decision asked twice.
+
+What made this urgent: the platform's build pipeline fires on a push to any
+branch that touches a non-Argo file, so a worker's mid-run push built and
+deployed half-finished work to the live todo app. That sensor still has no
+branch filter — a person's own branch push deploys too. Platform ask, for
+the core argo-workflows playbook: build only what lands on the default
+branch.
+
 # The run's own honesty, landed
 
 - **The door refuses what did not hold.** A single-test command tried on a

@@ -105,7 +105,7 @@ export async function sweepSpaceResidue(args: {
       args.repoRoot,
     );
     if (pushed.code === 0) removed.push(`forge branch ${b}`);
-    else
+    else if (!/remote ref does not exist|unable to delete/.test(pushed.out))
       notes.push(
         `the forge kept ${b}: ${pushed.out.trim().split("\n").pop()?.slice(0, 120) ?? "push refused"}`,
       );

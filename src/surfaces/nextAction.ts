@@ -120,7 +120,7 @@ export function nextAction(
     return {
       where: "delivered — waiting for your decision",
       label: "Accept it",
-      hint: "merges the work on the forge · Not this and Run again are on the page",
+      hint: "merges the work into your branch and pushes it · Not this and Run again are on the page",
       enabled: a.allowed("accept-delivery"),
       move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
     };

@@ -5,11 +5,9 @@
  * affordance.
  */
 import * as vscode from "vscode";
-import { execFile } from "node:child_process";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
 import { NoticeHost, notifyForSpace, SpacePanels } from "./surfaces/panels";
-import { Forge, forgeFor } from "./dispatch/forge";
 import { StoreSyncService } from "./engine/StoreSyncService";
 import { appendDefect } from "./engine/defectLog";
 import { thinkubeDeclaration } from "./core/thinkubeYaml";
@@ -49,44 +47,6 @@ let panels: SpacePanels;
 let projectsTree: ProjectsTreeProvider | undefined;
 let storeSync: StoreSyncService | undefined;
 
-function gitRemote(repoRoot: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    execFile(
-      "git",
-      ["-C", repoRoot, "remote", "get-url", "origin"],
-      { encoding: "utf8" },
-      (err, stdout) => resolve(err ? undefined : stdout.trim()),
-    );
-  });
-}
-
-async function resolveForge(repoRoot: string, giteaToken: string): Promise<Forge | undefined> {
-  let remote = await gitRemote(repoRoot);
-  if (!remote) return undefined;
-  // A credentialed remote (https://user:token@host/…) is stripped for
-  // parsing; the token doubles as the forge token when none is set.
-  const creds = /^https?:\/\/([^/@:]+):([^/@]+)@/.exec(remote);
-  if (creds) remote = remote.replace(`${creds[1]}:${creds[2]}@`, "");
-  try {
-    return forgeFor(remote, {
-      giteaToken: giteaToken || creds?.[2] || undefined,
-      http: async (method, url, token, payload) => {
-        const res = await fetch(url, {
-          method,
-          headers: {
-            Authorization: `token ${token}`,
-            "Content-Type": "application/json",
-          },
-          ...(payload ? { body: JSON.stringify(payload) } : {}),
-        });
-        if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
-        return res.json();
-      },
-    });
-  } catch {
-    return undefined;
-  }
-}
 
 const watches = new Map<string, { dispose(): void }>();
 const sessions = new Map<string, TandemSession>();
@@ -179,11 +139,6 @@ async function ensureSession(
       sessions,
       chooseSpace: (k, i) => chooseThinkingSpace(context, k, i),
       author,
-      resolveForge: (root) =>
-        resolveForge(
-          root,
-          vscode.workspace.getConfiguration("thinkubeTandem").get<string>("giteaToken", ""),
-        ),
       openRepos: openProjects,
       onChanged: (spaceKey, message) => pushActive(context, spaceKey, message),
       storageDir: context.globalStorageUri.fsPath,
@@ -206,10 +161,6 @@ async function ensureSession(
   configureDocsRoots(
     docsRootsOf(project.gitRoot, (() => { const d = thinkubeDeclaration(project.gitRoot); return d && "declared" in d ? d.declared.docsRoot : undefined; })()),
   );
-  const forge = await resolveForge(
-    project.gitRoot,
-    config.get<string>("giteaToken", ""),
-  );
   const bound = project;
   const s = new TandemSession({
     round: {
@@ -226,7 +177,6 @@ async function ensureSession(
     storageDir: context.globalStorageUri.fsPath,
     now: () => new Date().toISOString(),
     author,
-    forge,
     scope: {
       gitRoot: project.gitRoot,
       prefix: project.prefix,

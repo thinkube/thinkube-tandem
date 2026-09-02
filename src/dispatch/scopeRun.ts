@@ -58,7 +58,6 @@ export async function dispatchScopePlan(args: {
         ? {
             gitRoot: deps.scope?.gitRoot ?? deps.round.repoRoot,
             prefix: deps.scope?.prefix ?? "",
-            forge: deps.forge,
           }
         : await deps.resolveScope?.(sc);
     if (!target) {
@@ -95,7 +94,6 @@ export async function dispatchScopePlan(args: {
         model: deps.round.model,
         workerModel: deps.workerModel,
         concurrency: deps.maxConcurrent,
-        forge: target.forge ?? deps.forge,
         state: args.runState,
         spaceName: args.spaceName,
         storeDir: deps.storeDir,

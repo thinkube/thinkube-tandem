@@ -6,7 +6,6 @@
  * editor, the journey entry and every test — while the loop beside it is
  * a program.
  */
-import type { Forge } from "../dispatch/forge";
 import type { RunState } from "./state";
 import type { WorkerModelConfig } from "../engine/workerModel";
 import type { runUnitWorker, WorkerOutcome } from "./worker";
@@ -34,7 +33,6 @@ export interface DispatchDeps {
     build?: string;
     suite?: string;
   };
-  forge?: Forge;
   state: RunState;
   spaceName: string;
   /** Project identity — qualifies branch and worktree names so two

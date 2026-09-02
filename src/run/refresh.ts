@@ -13,6 +13,7 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import { defaultExec } from "./oracle";
 import { formatBuild } from "./execs";
+import { sealWorktree } from "./land";
 import type { Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
 
@@ -76,12 +77,14 @@ export async function refreshRunTrees(args: {
   if (!exists) {
     const wt = await exec("git", ["-C", repoRoot, "worktree", "add", "-b", branch, worktree], repoRoot);
     if (wt.code !== 0) return refuse("worktree", `worktree failed: ${wt.out.trim().slice(0, 300)}`);
+    await sealWorktree(repoRoot, worktree, exec);
     return { committedSlices: [], resumed: false };
   }
 
   // Resume: the branch stands; the base's new commits merge in first.
   const wt = await exec("git", ["-C", repoRoot, "worktree", "add", worktree, branch], repoRoot);
   if (wt.code !== 0) return refuse("worktree", `worktree failed: ${wt.out.trim().slice(0, 300)}`);
+  await sealWorktree(repoRoot, worktree, exec);
   const baseRef = (await exec("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], repoRoot)).out.trim();
   const behind = (await exec("git", ["-C", worktree, "rev-list", "--count", `${branch}..${baseRef}`], worktree)).out.trim();
   if (behind !== "0") {

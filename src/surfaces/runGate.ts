@@ -14,6 +14,8 @@ import { RunState, silentVerdict } from "../run/state";
 import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
+import { landDelivery } from "../run/land";
+import { execFile } from "node:child_process";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
@@ -186,14 +188,6 @@ export async function executeRun(
       s.changed(
         `${cut.tepId} was approved before the machine changed what a signature covers — running it, with the drift since then unchecked.`,
       );
-    // A project space resolves a forge PER REPOSITORY BATCH; only a
-    // plain repository session needs the anchor forge.
-    if (!s.deps.forge && !s.deps.resolveScope) {
-      s.runNote =
-        "The build could not start: no forge is reachable for this repository — set thinkubeTandem.giteaToken (or use a repository whose remote carries its credential). The cut stays signed, undelivered.";
-      s.changed(s.runNote);
-      return undefined;
-    }
     // The old note dies the moment a new press starts — a corpse is never news.
     s.runNote = undefined;
     s.running = true;
@@ -473,12 +467,26 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     if (!r.ok) return r;
     const cut = s.space.cuts.find((c) => c.id === d.cutId);
     const tepId = cut?.tepId;
+    const landRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
     try {
       await acceptOrder({
-        merge: async () => {
-          if (s.deps.forge && d.url) await s.deps.forge.merge(d.url);
-          return { merged: !!(s.deps.forge && d.url) };
-        },
+        // The one act: the branch merges into the checkout's own branch
+        // here, that is pushed, and the branch goes. No forge is asked.
+        merge: () =>
+          landDelivery({
+            repoRoot: landRoot,
+            branch: d.branch,
+            tep: tepId ?? d.id,
+            exec: (cmd, args, cwd) =>
+              new Promise((resolve) =>
+                execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
+                  resolve({
+                    code: err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0,
+                    out: `${stdout ?? ""}${stderr ?? ""}`,
+                  }),
+                ),
+              ),
+          }),
         stamp: async () => {
           s.space = {
             ...s.space,
@@ -494,7 +502,7 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     } catch (err) {
       return {
         ok: false,
-        reason: `the forge refused the merge: ${err instanceof Error ? err.message : String(err)}`,
+        reason: `not accepted — ${err instanceof Error ? err.message : String(err)}`,
       };
     }
     s.changed("Accepted and merged.");

@@ -84,9 +84,6 @@ export async function ensureWorkSession(args: {
   chooseSpace: (ownerKey: string, interactive: boolean) => Promise<string | undefined>;
   /** The person at the keyboard — resolved by the host, never a machine setting. */
   author: string;
-  resolveForge: (
-    gitRoot: string,
-  ) => Promise<import("../dispatch/forge").Forge | undefined>;
   openRepos: () => EnabledProject[];
   /** Carries the space key the change came from — never the remembered
    *  active space — so the panel registry can push to the right tab. */
@@ -124,8 +121,7 @@ export async function ensureWorkSession(args: {
     resolveScope: async (scopeId) => {
       const p = args.openRepos().find((x) => x.card.id === scopeId);
       if (!p) return undefined;
-      const forge = await args.resolveForge(p.gitRoot);
-      return { gitRoot: p.gitRoot, prefix: p.prefix, ...(forge ? { forge } : {}) };
+      return { gitRoot: p.gitRoot, prefix: p.prefix };
     },
     // A setting is a CANDIDATE, never a fact: the door runs it here first.
     ...(config.get<string>("suiteCommand", "").trim()

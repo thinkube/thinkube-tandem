@@ -13,7 +13,6 @@
  * resolves them — the store's cards, the person's git identity, and the
  * editor's own global storage — and never guessed.
  */
-import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { TandemSession } from "../surfaces/session";
 import { currentAuthor } from "../core/author";
@@ -24,7 +23,6 @@ import { allCards } from "../core/cards";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
-import { Forge, forgeFor } from "../dispatch/forge";
 
 /** Where the editor keeps approvals and the signing key. A session that
  *  reads anywhere else sees every signed cut as unapproved. */
@@ -41,32 +39,6 @@ function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefi
   return discoverProjects(repoRoot, storeRoot, 0)[0] ?? discoverProjects(repoRoot, storeRoot, 2)[0];
 }
 
-/** The repository's own forge, resolved as the run without a window does:
- *  from the remote, with the credential it may carry stripped from the URL
- *  but kept as the token. */
-async function forgeOf(repoRoot: string): Promise<Forge | undefined> {
-  const raw = await new Promise<string>((resolve) =>
-    execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"], (err, out) =>
-      resolve(err ? "" : out.trim()),
-    ),
-  );
-  if (!raw) return undefined;
-  const creds = /^https?:\/\/([^/@:]+):([^/@]+)@/.exec(raw);
-  const remote = creds ? raw.replace(`${creds[1]}:${creds[2]}@`, "") : raw;
-  const token = process.env.TANDEM_GITEA_TOKEN || creds?.[2];
-  return forgeFor(remote, {
-    ...(token ? { giteaToken: token } : {}),
-    http: async (method, url, tok, payload) => {
-      const res = await fetch(url, {
-        method,
-        headers: { Authorization: `token ${tok}`, "Content-Type": "application/json" },
-        ...(payload ? { body: JSON.stringify(payload) } : {}),
-      });
-      if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
-      return (await res.json()) as unknown;
-    },
-  });
-}
 
 export interface AttachArgs {
   /** The repository (or subtree) whose card names the project. */
@@ -99,7 +71,6 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     docsRootsOf(project.gitRoot, (() => { const d = thinkubeDeclaration(project.gitRoot); return d && "declared" in d ? d.declared.docsRoot : undefined; })()),
   );
   const told = factsOf(project.gitRoot);
-  const forge = await forgeOf(project.gitRoot);
   const session = new TandemSession({
     round: { model: "opus", volumeModel: "sonnet", repoRoot: project.anchorDir },
     storeDir: dirs.storeDir,
@@ -107,7 +78,6 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     storageDir: args.storageDir ?? EDITOR_STORAGE,
     now: () => new Date().toISOString(),
     author,
-    ...(forge ? { forge } : {}),
     scope: {
       gitRoot: project.gitRoot,
       prefix: project.prefix,

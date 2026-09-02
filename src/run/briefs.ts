@@ -21,6 +21,8 @@ export function renderTepBody(space: Space, cut: Cut): string {
     lines.push(`## Decisions in force (the human settled these — build under them)`);
     for (const q of decided) lines.push(`- ${q.decided!.text}`);
   }
+  lines.push(`## Your commits stay here`);
+  lines.push(`You never push. Your work is committed on this branch and the person's Accept merges and pushes it. There is no remote to push to from this tree.`);
   lines.push(`## The changes`);
   for (const c of members) {
     lines.push(`- ${c!.sentence}`);

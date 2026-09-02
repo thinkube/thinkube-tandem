@@ -522,7 +522,6 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (unkept.length) {
     await exec("git", ["add", "-A", "."], worktree);
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
-    await exec("git", ["push", "-u", "origin", branch, "--force"], worktree);
     const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
     // A person's Stop is not a verdict on the work. A run stopped
     // mid-grading once recorded every interrupted check as red — exit 124,
