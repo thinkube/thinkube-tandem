@@ -164,8 +164,29 @@ export function RunSection(props: {
   const blocked = run.units.filter((u) => u.state === "blocked").length;
   const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");
 
+  const phases = run.phases ?? { door: { state: "done" as const }, delivery: { state: "pending" as const } };
+  const phaseChip = (p: { state: string; doing?: string }): Chip =>
+    p.state === "running"
+      ? { text: p.doing ?? "working", kind: "run", why: "what this phase is doing right now" }
+      : p.state === "failed"
+        ? { text: clip(p.doing ?? "did not finish", 60), kind: "na", why: p.doing ?? "" }
+        : p.state === "done"
+          ? { text: p.doing ?? "done", kind: "pass", why: "finished" }
+          : { text: "waiting", kind: "plain", why: "not started" };
   const cards: CardData[] = useMemo(
     () => [
+      // The door: everything before the first worker — the run claimed,
+      // the checks placed, the tree provisioned and proved. A card like any
+      // other, with its own log, so a run that spends five minutes here is
+      // never a page of pending cards saying nothing.
+      {
+        id: "door",
+        band: { text: "door", color: C.quiet, why: "Before any worker: the run is claimed, the checks are placed, the tree is provisioned and proved." },
+        title: "preparing the tree",
+        abs: phases.door.state === "running" ? phases.door.doing : undefined,
+        chips: [phaseChip(phases.door), logChip("door", run)],
+        face: stateFace(phases.door.state === "running" ? "running" : phases.door.state === "failed" ? "failed" : phases.door.state === "done" ? "done" : "pending"),
+      },
       // A NODE CARRIES ITS TITLE. What it builds and what it did are read
       // on the right, when it is chosen — a graph whose every node holds a
       // paragraph is a graph nobody can take in, and this one was drawing
@@ -241,6 +262,16 @@ export function RunSection(props: {
       // gate card over an empty graph claims a run that never happened.
       ...(run.units.length
         ? [
+            // The delivery: everything after the gate — the report written,
+            // the branch pushed, the pull request opened, the look taken.
+            {
+              id: "delivery",
+              band: { text: "delivery", color: C.quiet, why: "After the gate: the report is written, the branch pushed, the delivery opened." },
+              title: "handing it over",
+              abs: phases.delivery.state === "running" ? phases.delivery.doing : undefined,
+              chips: [phaseChip(phases.delivery), logChip("delivery", run)],
+              face: stateFace(phases.delivery.state === "running" ? "running" : phases.delivery.state === "failed" ? "failed" : phases.delivery.state === "done" ? "done" : "pending"),
+            },
             {
               id: "gate",
               band: { ...ROLES.audit, text: "audit — everything together" },
@@ -269,7 +300,7 @@ export function RunSection(props: {
           ]
         : []),
     ],
-    [run.units, now, slices],
+    [run.units, now, slices, phases.door.state, phases.door.doing, phases.delivery.state, phases.delivery.doing],
   );
   // Why each arrow is there, looked up when it is drawn. An arrow that
   // says only THAT a unit waits leaves the reader unable to tell a
@@ -291,6 +322,10 @@ export function RunSection(props: {
         .filter((u) => u.role === "code")
         .map((u) => ({ from: u.id, to: `audit:${u.slice}` })),
       ...slices.map((slice) => ({ from: `audit:${slice}`, to: "gate" })),
+      // The door before every worker that waits for nothing else; the gate
+      // before the delivery.
+      ...run.units.filter((u) => !u.requires.length).map((u) => ({ from: "door", to: u.id })),
+      ...(run.units.length ? [{ from: "gate", to: "delivery" }] : []),
     ],
     [run.units, slices],
   );
@@ -336,8 +371,17 @@ export function RunSection(props: {
           <span style={{ color: C.quiet }}>╌╌</span> waits for its own probes
         </span>
         <span data-run-progress-text style={{ fontSize: FS.body, opacity: O.dim }}>
-          {done} of {run.units.length} workers done
-          {blocked ? ` · ${blocked} never ran` : ""}
+          {phases.door.state === "running"
+            ? `preparing the tree — ${phases.door.doing ?? ""}`
+            : phases.door.state === "failed"
+              ? "refused at the door"
+              : phases.delivery.state === "running"
+                ? `handing it over — ${phases.delivery.doing ?? ""}`
+                : phases.delivery.state === "done"
+                  ? "delivered"
+                  : phases.delivery.state === "failed"
+                    ? "withheld"
+                    : `${done} of ${run.units.length} workers done${blocked ? ` · ${blocked} never ran` : ""}`}
         </span>
         <span style={{ flex: 1, height: 5, background: "var(--vscode-input-background, #222)", borderRadius: 3, overflow: "hidden" }}>
           <span
@@ -446,28 +490,6 @@ export function RunSection(props: {
           })}
         </div>
       </div>
-      {!running && run.logs.length ? (
-        <div
-          data-run-log
-          style={{
-            borderTop: `1px solid ${C.border}`,
-            padding: `${SP.sm}px ${SP.lg}px`,
-            font: "11px/1.5 monospace",
-            whiteSpace: "pre-wrap",
-            maxHeight: 160,
-            overflowY: "auto",
-            overscrollBehavior: "none",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ fontFamily: "system-ui", fontSize: FS.body, marginBottom: 3, opacity: O.dim }}>
-            {failed.length
-              ? `The run stopped with ${failed.length} unit${failed.length === 1 ? "" : "s"} failed — what it reported:`
-              : "What the run reported:"}
-          </div>
-          {run.logs.slice(-14).join("\n")}
-        </div>
-      ) : null}
     </section>
   );
 }

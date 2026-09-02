@@ -25,6 +25,19 @@ import type { Proved } from "./proved";
  */
 export type UnitState = "ready" | "running" | "parked" | "done" | "failed" | "blocked";
 
+/**
+ * A phase of the run that is not a worker: the door before the first unit
+ * and the delivery after the gate. Drawn as a card like every other step,
+ * with a state, what it is doing now, and its own log under its name.
+ */
+export interface PhaseView {
+  state: "pending" | "running" | "done" | "failed";
+  /** What it is doing, or why it ended the way it did. */
+  doing?: string;
+  since?: number;
+}
+export type PhaseName = "door" | "delivery";
+
 export interface RunUnitView {
   /** What this unit builds — the sentences, where they land, what proves
    *  them. Set when the run is planned, never changed by what happens. */
@@ -80,6 +93,9 @@ export class RunState {
   logs: string[] = [];
   /** step id → its own lines. "run" holds what belongs to no single step. */
   stepLogs = new Map<string, string[]>();
+  phases: Record<PhaseName, PhaseView> = { door: { state: "pending" }, delivery: { state: "pending" } };
+  /** Where a line with no step of its own is filed: the phase in progress. */
+  phaseStep: "door" | "run" | "delivery" = "door";
   parked = new Map<string, { question: string; answer: (a: string) => void }>();
   aborts = new Map<string, AbortController>();
   halted = false;
@@ -106,10 +122,13 @@ export class RunState {
       stepLogs: Record<string, string[]>;
       runId?: string;
       sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
+      phases?: Record<PhaseName, PhaseView>;
     },
     onChange: () => void,
   ): RunState {
     const s = new RunState(onChange);
+    if (record.phases) s.phases = { door: { ...record.phases.door }, delivery: { ...record.phases.delivery } };
+    s.phaseStep = "delivery";
     for (const u of record.units) s.units.set(u.id, { ...u, question: undefined });
     s.logs = [...record.logs];
     s.stepLogs = new Map(Object.entries(record.stepLogs).map(([k, v]) => [k, [...v]]));
@@ -172,6 +191,19 @@ export class RunState {
     this.onChange();
   }
 
+  /** A phase moves: its state, and what it is doing or why it ended. Lines
+   *  with no step of their own are filed under the phase in progress. */
+  phase(name: PhaseName, state: PhaseView["state"], doing?: string): void {
+    const p = this.phases[name];
+    const moved = p.state !== state || p.doing !== doing;
+    p.state = state;
+    p.doing = doing;
+    if (state === "running" && (moved || !p.since)) p.since = Date.now();
+    if (name === "door" && state !== "running") this.phaseStep = state === "done" ? "run" : "door";
+    if (name === "delivery" && state === "running") this.phaseStep = "delivery";
+    this.onChange();
+  }
+
   /** What a unit is doing or waiting on right now; empty clears it. */
   doing(id: string, text: string | undefined): void {
     const u = this.units.get(id);
@@ -205,7 +237,11 @@ export class RunState {
    * the run's lines, and a reader watching the whole run must see it
    * without knowing which step wrote it.
    */
-  log(line: string, step = "run"): void {
+  log(line: string, step?: string): void {
+    // A line with no step of its own belongs to the phase in progress: the
+    // door's lines under "door", the run's under "run", the hand-over's
+    // under "delivery" — so each has a card, and each card has its log.
+    step = step ?? this.phaseStep;
     this.sink?.(line, step);
     this.logs.push(line);
     if (this.logs.length > 200) this.logs.shift();
@@ -272,9 +308,12 @@ export class RunState {
     runId?: string;
     /** Per-slice acceptance-criteria outcomes, from the last grading. */
     sliceChecks: Record<string, { ac: number; pass: boolean; text?: string }[]>;
+    /** The door and the delivery: the run's two phases that are not workers. */
+    phases: Record<PhaseName, PhaseView>;
   } {
     return {
       units: [...this.units.values()],
+      phases: { door: { ...this.phases.door }, delivery: { ...this.phases.delivery } },
       logs: this.logs.slice(-40),
       // A parent's count includes what its sub-steps wrote — the same fold
       // `logTail` gives its lines, so the number on a card and the log a

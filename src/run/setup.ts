@@ -404,10 +404,18 @@ async function proveRunOne(
   // A part's command is proved on a test OF THAT PART, in that part's own
   // directory. Proving the frontend's runner against a backend test says
   // nothing about either, and the wrong runner's "no such file" would be
-  // read as the command not holding at all.
-  const under = (f: string): boolean => part === "." || f === part || f.startsWith(`${part}/`);
+  // read as the command not holding at all. The repository-wide command,
+  // in turn, is never proved on a file a declared part owns: that file has
+  // its own command, and the wide one failing on it says nothing either.
+  const parts = Object.keys(args.partCommands ?? {}).filter((r) => r !== ".");
+  const owns = (r: string, f: string): boolean => f === r || f.startsWith(`${r}/`);
+  const under = (f: string): boolean =>
+    part === "." ? !parts.some((r) => owns(r, f)) : owns(part, f);
+  // A test, not a fixture beside one: nothing is proved on an `__init__.py`
+  // or a `conftest.py`, which are not tests and fail as if the command had.
+  const aTest = (f: string): boolean => !/(^|\/)(__init__|conftest|setup)\.py$|(^|\/)__pycache__\//.test(f);
   const sample = listed
-    .filter((f) => f && isTestPath(f) && !isProbePath(f) && under(f))
+    .filter((f) => f && isTestPath(f) && !isProbePath(f) && aTest(f) && under(f))
     .sort((a, b) => a.length - b.length)[0];
   if (!sample) {
     args.log(

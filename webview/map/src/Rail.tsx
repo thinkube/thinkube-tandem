@@ -59,6 +59,14 @@ function Builds(props: { what: string }): JSX.Element {
   );
 }
 
+/** The run's own steps, by the name a person reads. */
+const PHASE_TITLES: Record<string, string> = {
+  door: "The door — preparing the tree",
+  gate: "The closing gate — every check, on the real state",
+  delivery: "The delivery — handing it over",
+  run: "The run",
+};
+
 const btn: React.CSSProperties = {
   fontWeight: 600,
   padding: `${SP.xs}px ${SP.md}px`,
@@ -95,8 +103,11 @@ function StepLog(props: {
           {unit.promiseLabel.label}
         </div>
       ) : null}
+      {!unit && PHASE_TITLES[log.step] ? (
+        <div style={{ fontSize: FS.heading, lineHeight: 1.4 }}>{PHASE_TITLES[log.step]}</div>
+      ) : null}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <strong style={{ fontSize: FS.body, color: unit?.promiseLabel ? C.quiet : "inherit" }}>{log.step}</strong>
+        <strong style={{ fontSize: FS.body, color: unit?.promiseLabel || PHASE_TITLES[log.step] ? C.quiet : "inherit" }}>{log.step}</strong>
       </div>
       {unit ? (
         <>

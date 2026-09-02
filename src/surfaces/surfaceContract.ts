@@ -140,6 +140,9 @@ interface RunView {
   /** Per-slice acceptance-criteria outcomes, from the last grading — the
    *  audit card's own account of what passed and what did not. */
   sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
+  /** The door before the first worker and the delivery after the gate:
+   *  each a card on the page with a state, what it is doing, and a log. */
+  phases?: Record<"door" | "delivery", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
 }
 
 export interface SpacePush {

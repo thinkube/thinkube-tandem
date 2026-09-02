@@ -586,9 +586,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
 
   // The shape of what was delivered, said and never enforced.
   const moduleSizes = await treeShape(worktree);
+  g.state.phase("delivery", "running", "committing the work and opening the delivery");
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     ...(moduleSizes ? { moduleSizes } : {}),
-    rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec, log,
+    rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec,
+    log: (l: string) => log(l, "delivery"),
   });
 }

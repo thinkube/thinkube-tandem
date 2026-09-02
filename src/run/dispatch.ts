@@ -121,6 +121,7 @@ export async function dispatchTep(
   };
 
   const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
+    if (st.phases.door.state === "running") st.phase("door", "failed", refusal);
     // Said, not only recorded. A refusal that goes to the defect ledger
     // alone leaves the run's own log ending mid-sentence, and the person
     // reading it has no idea why nothing happened.
@@ -129,6 +130,7 @@ export async function dispatchTep(
     return { refusals: [refusal], undelivered: [] };
   };
 
+  st.phase("door", "running", "claiming the run");
   const lock = await claimRunLock(wtRoot, wtName, runName, slices, { log });
   if (lock.refusal) return refuse("run-lock", lock.refusal);
   const unlock = lock.unlock;
@@ -142,6 +144,7 @@ export async function dispatchTep(
   }); // a silent run says so and stops
   try {
   if (deps.affected) await bindTestHomeConsumes(slices, deps.affected, (l) => log(l));
+  st.phase("door", "running", "placing the checks in the repository's own test homes");
   const before = await refusedBeforeDispatch({
     slices,
     space,
@@ -174,14 +177,17 @@ export async function dispatchTep(
       });
     else if (fresh.nothing) log(`${tep}: ${fresh.nothing}`);
   }
+  st.phase("door", "running", "refreshing the worktree");
   const refreshed = await refreshRunTrees({ repoRoot: deps.repoRoot, branch, tep, worktree, deps, exec, log, defect });
   if (refreshed.refusal) return refuse(refreshed.refusal.trigger, refreshed.refusal.refusal, "gate");
   log(`${tep}: worktree on ${branch}`);
+  st.phase("door", "running", "preparing the tree: provisioning, then proving how it builds and how one test runs");
   const know = await whatWeKnow({
     deps, worktree, tep, space, cut, resumed: refreshed.resumed, halted: () => st.halted,
     exec, boundedExec, log, defect,
   });
   if (!know.ok) return refuse("setup", know.refusal, "gate");
+  st.phase("door", "done", "the tree is ready");
   const ready = know.ready;
   deps = know.deps;
   const { provisioned, built } = ready;
@@ -574,7 +580,7 @@ export async function dispatchTep(
     log(
       `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
     );
-  return await closeGate({
+  const outcome = await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     runOne: know.runOne, suite: know.suite,
     ...(ready.parts ? { parts: ready.parts } : {}),
@@ -588,6 +594,15 @@ export async function dispatchTep(
     runId,
     producedAt,
   });
+  // The delivery phase ends as the gate's outcome says: handed over, or
+  // withheld with the reason, or refused before anything was handed over.
+  const d = outcome.delivery;
+  st.phase(
+    "delivery",
+    d && !d.withheld ? "done" : "failed",
+    d?.withheld ? `withheld — ${d.withheld}` : d ? "handed over" : outcome.refusals[0] ?? "nothing was delivered",
+  );
+  return outcome;
   } finally {
     watch.stop();
     await unlock();
