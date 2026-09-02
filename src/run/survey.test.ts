@@ -142,8 +142,8 @@ test("each part's checks get that part's own runner, and the rest keep the repos
     "frontend/ui": { runOne: "vitest run <file>" },
   });
 
-  assert.equal(forCheck("backend/app_AC-1.test.py"), "pytest <file>", "the backend's own runner");
-  assert.equal(forCheck("frontend/ui/card_AC-2.test.ts"), "vitest run <file>", "the deepest part wins");
+  assert.equal(forCheck("backend/app_AC-1.test.py"), "cd backend && { pytest app_AC-1.test.py; }", "the backend's own runner, in its own tree");
+  assert.equal(forCheck("frontend/ui/card_AC-2.test.ts"), "cd frontend/ui && { vitest run card_AC-2.test.ts; }", "the deepest part wins");
   assert.equal(forCheck("src/core/schema_AC-1.test.ts"), wide, "a file no part claims keeps the repository's");
   assert.equal(forCheck("backendish/x.test.ts"), wide, "a name that merely starts the same is not that part");
 });

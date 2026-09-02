@@ -363,3 +363,14 @@ test("a criterion settled elsewhere gets no probe, rides as pending, and never w
   const probes = slices.flatMap((sl) => sl.workUnits.flatMap((u) => u.footprint)).filter((f) => /_AC-/.test(f));
   assert.equal(probes.length, 1, "one probe for the here-criterion; none for the staged one");
 });
+
+test("a part's check runs in the part's own tree, on the path its runner takes", () => {
+  const wide = proved(`node --test <file>`, true)!;
+  const run = runnerFor(wide, {
+    frontend: { runOne: "npx vitest run <file>" },
+    backend: { runOne: "set -a; . ./.env.test; set +a; pytest <file> -v;" },
+  });
+  assert.equal(run("frontend/src/views/Home_AC-1.test.js"), "cd frontend && { npx vitest run src/views/Home_AC-1.test.js; }");
+  assert.equal(run("backend/tests/tasks_AC-1_test.py"), "cd backend && { set -a; . ./.env.test; set +a; pytest tests/tasks_AC-1_test.py -v; }");
+  assert.equal(run("probes/x_AC-1.test.mjs"), wide, "a check outside every part keeps the repository's own command");
+});

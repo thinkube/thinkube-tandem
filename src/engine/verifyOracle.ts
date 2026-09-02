@@ -402,13 +402,21 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
     }
   };
   const round = async (): Promise<VerifyResult> => {
-    if (stallCount >= STALL_AFTER) return { kind: "stalled", rounds: stallCount };
+    const entries = parsePorcelain(await deps.porcelain(deps.codeWorktree));
+    const hash = await stateHash(entries);
+    // A stall is a stall of THIS tree. The guard refuses another round on
+    // the state it already answered twice; a tree that changed since is a
+    // new question, whoever asks it, and the count starts again.
+    if (stallCount >= STALL_AFTER) {
+      if (!hash || hash === lastRecord?.stateHash) return { kind: "stalled", rounds: stallCount };
+      log("  [oracle] the tree changed since the stall — rounds resume.");
+      stallCount = 0;
+      stallSig = undefined;
+    }
     if (used >= max) return { kind: "exhausted", invocations: used };
     used++;
     // 1. Fresh runner at the coder's base commit, then overlay the coder's dirty delta.
     await deps.resetRunner();
-    const entries = parsePorcelain(await deps.porcelain(deps.codeWorktree));
-    const hash = await stateHash(entries);
     for (const e of entries) {
       if (e.deleted) await deps.removeIn(e.path);
       else await deps.copyIn(deps.codeWorktree, e.path);

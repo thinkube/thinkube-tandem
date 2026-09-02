@@ -107,6 +107,12 @@ export function missing(name: RepositoryFact["name"]): string {
  * `frontend/` is run by the frontend's runner even when the repository has
  * one of its own. A part with no command of its own falls back to the
  * repository's — the single-toolchain case, unchanged.
+ *
+ * A part's command is written for the part's own tree: `<file>` is the
+ * path as that part's runner takes it, and the command runs where that
+ * part is. That is how the door proved it, so that is how every check
+ * runs it — from the repository root, the runner finds no configuration
+ * and the path names nothing.
  */
 export function runnerFor(
   wide: Proved,
@@ -117,6 +123,10 @@ export function runnerFor(
     .sort(([a], [b]) => b.length - a.length);
   return (checkPath) => {
     const hit = owned.find(([root]) => checkPath === root || checkPath.startsWith(`${root}/`));
-    return hit ? (hit[1].runOne as Proved) : wide;
+    if (!hit) return wide;
+    const [root, part] = hit;
+    const inPart = checkPath === root ? "." : checkPath.slice(root.length + 1);
+    const cmd = (part.runOne as string).replace(/<file>/g, inPart).trim().replace(/;+$/, "");
+    return `cd ${root} && { ${cmd}; }` as Proved;
   };
 }
