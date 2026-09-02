@@ -33,8 +33,12 @@ interface CheckVM {
   /** "assessment" = judged once at delivery by an independent reviewer;
    *  absent = a standing probe. */
   kind?: "assessment";
-  /** The newest verdict any delivery recorded for this check. */
-  verdict?: "green" | "red";
+  /** The newest verdict any delivery recorded for this check: proved, not
+   *  proved, or never judged because the check could not run. */
+  verdict?: "green" | "red" | "unjudged";
+  /** What that verdict means, in plain words: the failing assertion, or
+   *  why nothing was judged. Absent when it is proved. */
+  said?: string;
   tep?: string;
   accepted?: boolean;
   /** Where the standing proof lives in the repository's own suite. */

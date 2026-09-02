@@ -173,8 +173,9 @@ export function RunSection(props: {
       // which one it was.
       ...run.units.map((u) => {
         // A maintainer is named for the slice it serves, not as a slice of its own.
-        const fallback = u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice);
-        const fallbackFull = `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`;
+        // Never an identifier: a unit with no words of its own says what it is.
+        const fallback = u.role === "maintain" ? "the tests, brought under" : u.role === "test" ? "the checks" : "the code";
+        const fallbackFull = u.sliceTitle ?? fallback;
         // What the unit builds: the promise, and where it lands, read from
         // the unit's own brief when the space cannot name the promise.
         const said = u.what?.split(/\s+—\s+lands at\s+/);
@@ -186,7 +187,7 @@ export function RunSection(props: {
           band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
           title: spoken ?? fallback,
           said: !!spoken,
-          titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : spoken ? `${u.id} — ${u.what}` : fallbackFull,
+          titleFull: u.promiseLabel ? u.promiseLabel.full : spoken ? u.what : fallbackFull,
           ...(lands ? { abs: lands } : {}),
           chips: [chipFor(u, now, run.logCounts?.[u.id] ?? 0), logChip(u.id, run)],
           face: stateFace(u.state),
@@ -219,9 +220,9 @@ export function RunSection(props: {
         return {
           id: `audit:${slice}`,
           band: ROLES.audit,
-          title: u?.promiseLabel?.label ?? u?.what?.split(/\s+—\s+lands at\s+/)[0]?.trim() ?? u?.sliceTitle ?? slice,
+          title: u?.promiseLabel?.label ?? u?.what?.split(/\s+—\s+lands at\s+/)[0]?.trim() ?? u?.sliceTitle ?? "this piece",
           said: !!(u?.promiseLabel ?? u?.what),
-          titleFull: u?.promiseLabel ? `audit:${slice} — ${u.promiseLabel.full}` : undefined,
+          titleFull: u?.promiseLabel ? u.promiseLabel.full : undefined,
           abs: "every check of this piece, on the real state",
           chips,
           face: stateFace(isGraded ? "done" : "running"),

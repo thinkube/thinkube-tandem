@@ -46,7 +46,6 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
         <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.4 }}>{p.text}</span>
         <span style={{ marginLeft: "auto", fontSize: FS.caption, color: C.quiet, whiteSpace: "nowrap" }}>
           {p.file || "where it lands is not known yet"}
-          {p.tep ? ` · ${p.tep}` : ""}
           {p.stale ? " · the code moved since this was read" : ""}
         </span>
       </div>

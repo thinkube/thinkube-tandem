@@ -61,10 +61,9 @@ export function namesNothing(push: SpacePush, read: ReadSubject[]): Set<number> 
  * lying about the one thing the human came to check.
  */
 function boundWords(b: Sentence["bound"]): string {
-  const as = b?.tep ? ` as ${b.tep}` : "";
-  if (b?.stage === "accepted") return `built and accepted${as} — it is in the project`;
-  if (b?.stage === "delivered") return `built${as} — delivered, waiting for you to accept it`;
-  return `approved${as} — these words are part of the record now; nothing is built from them yet`;
+  if (b?.stage === "accepted") return "built and accepted — it is in the project";
+  if (b?.stage === "delivered") return "built — delivered, waiting for you to accept it";
+  return "approved — these words are part of the record now; nothing is built from them yet";
 }
 
 function Editor(props: { s: Sentence; phase: SpacePush["phase"]; onDone: () => void }): JSX.Element {

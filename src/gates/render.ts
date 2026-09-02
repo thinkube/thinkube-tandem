@@ -245,7 +245,7 @@ const MARK: Record<string, string> = { green: "✓", red: "✗" };
  * judge says that, in those words. The command, the exit code and the tail
  * stay in the run record and the log, where a developer goes looking.
  */
-function saidPlainly(p: Delivery["proofs"][number]): string {
+export function saidPlainly(p: Delivery["proofs"][number]): string {
   if (p.verdict === "green") return "";
   if (p.verdict === "pending")
     return p.settledBy ? `settled after the merge, by ${p.settledBy}` : "settled after the merge";

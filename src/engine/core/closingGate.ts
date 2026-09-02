@@ -54,6 +54,27 @@ export interface AcResult {
 export const PROBE_UNRUNNABLE_CODES: ReadonlySet<number> = new Set([124, 126, 127]);
 
 /**
+ * A check that failed without ever reporting a test result did not judge
+ * the code: the runner could not start it — a missing setting, a module
+ * that would not import, a collection error. Twenty-four backend checks
+ * once turned red on one missing database variable, and the report read
+ * as twenty-four failures of the work. What a runner prints when a test
+ * really ran, pass or fail, is the marker read here.
+ */
+export function checkNeverStarted(code: number | null, output: string): boolean {
+  if (code === 0) return false;
+  // A test that reported a result ran, whatever else it printed.
+  if (/^(not )?ok \d+|\b\d+ (passed|failed|errors?)\b|^(--- )?(PASS|FAIL)\b|\bTests?:\s+\d+|\bAssertionError\b/m.test(output)) return false;
+  // The runner's own setup failed, before any test: pytest's usage,
+  // interruption, internal-error and nothing-collected exits, a conftest
+  // that would not import, a settings object missing its values, a runner
+  // that is not installed. A product module the check cannot import is
+  // none of these: that is the code not being there, which is the verdict.
+  if (code !== null && [2, 3, 4, 5].includes(code)) return true;
+  return /ImportError while loading conftest|INTERNALERROR|Field required|ValidationError|No module named ['"]?(pytest|vitest|jest|mocha)|usage: (pytest|vitest)|command not found/.test(output);
+}
+
+/**
  * A red that says "the check was not there to run" is the gate's own
  * failure, never a verdict on the code — but a missing CHECK exits with the
  * runner's ordinary failure code, so the exit code alone cannot tell. One
@@ -391,16 +412,20 @@ export async function runAcVerifications(
         unrunnable: true,
       });
     } else {
+      const neverStarted = cached.code !== 0 && checkNeverStarted(cached.code, cached.output);
       const unrunnable =
         (cached.code !== null && PROBE_UNRUNNABLE_CODES.has(cached.code)) ||
-        (cached.code !== 0 && checkItselfMissing(v.run, cached.output));
+        (cached.code !== 0 && checkItselfMissing(v.run, cached.output)) ||
+        neverStarted;
       out.push({
         ac: v.ac,
         pass: cached.code === 0,
         evidence:
           acEvidence(v.run, cached.code, cached.output) +
           (unrunnable
-            ? "\n(probe unrunnable — the runner or the check itself was not there: a GATE defect, not a code failure)"
+            ? neverStarted
+              ? "\n(the check could not start — the runner's environment, not the code: nothing was judged)"
+              : "\n(probe unrunnable — the runner or the check itself was not there: a GATE defect, not a code failure)"
             : ""),
         ...(unrunnable ? { unrunnable: true } : {}),
       });

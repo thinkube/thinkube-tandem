@@ -12,6 +12,7 @@ import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 import { docsDuty } from "../core/docsDuty";
 import { promiseLabelOf } from "./runPromiseLabel";
+import { saidPlainly } from "../gates/render";
 import { signedIdleNotice } from "./runGate";
 
 const TITLE_CLIP = 64;
@@ -80,14 +81,17 @@ function assumptionsFor(
 function latestVerdictOf(
   session: TandemSession,
   criterionId: string,
-): { verdict: "green" | "red"; tep?: string; accepted: boolean } | undefined {
+): { verdict: "green" | "red" | "unjudged"; said?: string; tep?: string; accepted: boolean } | undefined {
   const ds = session.space.deliveries;
   for (let i = ds.length - 1; i >= 0; i--) {
     const proof = ds[i].proofs.find((p) => p.criterionId === criterionId);
     if (!proof || proof.verdict === "pending") continue;
     const tep = session.space.cuts.find((c) => c.id === ds[i].cutId)?.tepId;
+    const verdict = proof.verdict === "green" ? "green" : proof.verdict === "unjudged" ? "unjudged" : "red";
+    const said = verdict === "green" ? "" : saidPlainly(proof);
     return {
-      verdict: proof.verdict === "green" ? "green" : "red",
+      verdict,
+      ...(said ? { said } : {}),
       ...(tep ? { tep } : {}),
       accepted: !!ds[i].acceptedAt,
     };

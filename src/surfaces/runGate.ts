@@ -440,7 +440,7 @@ export function signedIdleNotice(view: {
     heading: view.runNote ? "Nothing is running." : "This work is signed and has not run.",
     sentence:
       view.runNote ??
-      `${view.unrun.tepId ?? "This work"} is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it.`,
+      "This work is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it.",
     canRerun: true,
     canThinkAgain: true,
   };
