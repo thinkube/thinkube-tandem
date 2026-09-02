@@ -158,3 +158,10 @@ test("while subjects are being worked out, the strip says how far, and is busy",
   assert.equal(n.enabled, false);
   assert.match(n.where, /1 of 2 subjects worked out — reading the code/);
 });
+
+test("a re-reading of sentences already kept is kept as a reading, not as zero sentences", () => {
+  const pending = { subjects: [{ name: "my tasks" }], texts: ["a", "b"], fresh: [], missing: [] } as never;
+  const keep = nextAction(quiet({ pendingModel: pending }), { behind: false, allowed: () => true });
+  assert.equal(keep.label, "Keep this reading");
+  assert.deepEqual(keep.move, { kind: "post", action: { action: "keep-draft" } });
+});

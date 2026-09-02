@@ -22,6 +22,12 @@ echo "▸ version bumped to ${VERSION}"
 echo "▸ compile (tsc + webview)…"
 npm run compile
 
+# The walk: every press a person makes, in order, over a real session and
+# store. Nothing ships that breaks the sequence, whatever the units say.
+echo "▸ the walk…"
+npx tsc -p tsconfig.test.json
+node --test out-test/surfaces/theWalk.test.js
+
 # The packaged extension is a COPY: git can say nothing about where it came
 # from, and the closing gate needs that answer to know whether a run judges
 # its own machinery. The build is the only place that knows, so it writes it

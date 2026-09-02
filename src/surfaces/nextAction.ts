@@ -95,13 +95,23 @@ export function nextAction(
           enabled: a.allowed("read-draft"),
           move: { kind: "post", action: { action: "read-draft" } },
         }
-      : {
-          where: `${plural(n, "sentence")} read, not kept`,
-          label: `Keep these ${n}`,
-          hint: "recorded word for word · costs nothing · nothing is built yet",
-          enabled: true,
-          move: { kind: "post", action: { action: "keep-draft" } },
-        };
+      : n
+        ? {
+            where: `${plural(n, "sentence")} read, not kept`,
+            label: `Keep these ${n}`,
+            hint: "recorded word for word · costs nothing · nothing is built yet",
+            enabled: true,
+            move: { kind: "post", action: { action: "keep-draft" } },
+          }
+        : {
+            // A reading of sentences already kept: nothing new is recorded
+            // by keeping it; the reading itself is what is taken or not.
+            where: "your sentences, read again",
+            label: "Keep this reading",
+            hint: "replaces the earlier reading · costs nothing · nothing is built yet",
+            enabled: true,
+            move: { kind: "post", action: { action: "keep-draft" } },
+          };
   }
 
   // Delivered: the page is what came back, and the one press is the

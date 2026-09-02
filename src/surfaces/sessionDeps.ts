@@ -10,6 +10,7 @@ import { dispatchTep } from "../run/dispatch";
 import { WorkerModelConfig } from "../engine/workerModel";
 import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
+import { proposeSpecs } from "../derive/specs";
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -51,6 +52,8 @@ export interface SessionDeps {
   /** The round that reads a pasted list as one description. */
   solveModel?: typeof solveModel;
   proposeCheck?: typeof proposeCheckRound;
+  /** Injectable grouping round (tests swap it). */
+  proposeSpecs?: typeof proposeSpecs;
   nextTepNumber?: () => number; // owner-level, unique across the owner's spaces
   anchorless?: boolean; // a project space: the anchor is the store, never a code home
   scopes?: () => { id: string; dir: string; label?: string }[]; // project space's checked repos, read live

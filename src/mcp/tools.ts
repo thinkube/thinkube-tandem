@@ -309,10 +309,8 @@ export function toolTable(): ToolDef[] {
         "Read the recorded asks again — the whole list, replacing the earlier reading — then apply it and group the subjects into sets. Use after the asks changed, or after the reading itself improved.",
       inputSchema: IN_SPACE,
       run: async (c) => {
-        const r = await c.session.retryModel();
+        const r = await c.session.rereadAll();
         if (!r.ok) return `the reading failed: ${r.reason ?? "no reason given"}`;
-        const t = await c.session.think();
-        if (!t.ok) return `read, but grouping said: ${t.reason ?? "nothing"}`;
         return spaceReport(c);
       },
     },

@@ -157,11 +157,19 @@ export class TandemSession {
   }
 
   /** Read every sentence again from nothing: what they produced goes,
-   *  signed work stays, and the reading is applied and grouped. */
+   *  signed work stays, and the reading is applied and grouped. The words
+   *  were kept by the person already, so the reading is not put to them
+   *  again — it is applied the moment it arrives. */
   async rereadAll(): Promise<{ ok: boolean; reason?: string }> {
     const r = await readEverything(this);
     if (!r.ok) return r;
-    return this.think();
+    const pending = this.space.proposal;
+    if (pending) this.space = { ...applyModel(this.space, pending, this.author), proposal: undefined };
+    // What was chosen and cut was of the old reading; nothing is in hand.
+    this.cutSpecId = undefined;
+    this.cutNodeIds = new Set();
+    this.changed(`Read again: ${(this.space.subjects ?? []).length} subject(s). Grouping them into things…`);
+    return this.groupIntoSpecs();
   }
 
   /**
@@ -474,10 +482,17 @@ export class TandemSession {
     const subjects = this.space.subjects ?? [];
     if (subjects.length < 2)
       return { ok: false, reason: "there is nothing to group yet — read some asks first" };
-    const proposed = await proposeSpecs(
-      { repoRoot: this.deps.round.repoRoot, model: this.deps.round.model },
-      this.space,
-    );
+    this.activity = { label: "grouping your sentences into things to build", current: 1, total: 1 };
+    this.deps.onChanged?.();
+    let proposed;
+    try {
+      proposed = await (this.deps.proposeSpecs ?? proposeSpecs)(
+        { repoRoot: this.deps.round.repoRoot, model: this.deps.round.model },
+        this.space,
+      );
+    } finally {
+      this.activity = undefined;
+    }
     if (!proposed) return { ok: false, reason: "I could not see sets in these — group them yourself" };
     this.space = { ...this.space, specs: specsFrom(proposed, (n) => `spec-${this.spaceName}-${n}`) };
     this.changed(`${this.space.specs!.length} sets, each worth delivering on its own.`);
