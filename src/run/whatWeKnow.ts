@@ -50,6 +50,29 @@ export type Known =
     }
   | { ok: false; refusal: string };
 
+/**
+ * No repository-wide command, on purpose: every check runs with the command
+ * of the part it lives in. The wide command is the fallback for a check
+ * outside every part; empty, it reaches the gate, which reads it as "no
+ * command runs this check" rather than running nothing and calling it green.
+ */
+function partsRunOne(_ready: TreeSetup): Proved {
+  return provisional("", "every check runs with the command of the part it lives in");
+}
+
+/**
+ * Whether this run can run one check and read its verdict: a repository-wide
+ * command proved or told, or — a repository that is several parts — every
+ * check's part with a proved command of its own.
+ */
+export function canJudgeOne(
+  ready: { runOne?: string; parts?: Record<string, { runOne?: string }> },
+  told: { runOne?: string } | undefined,
+): boolean {
+  if (ready.runOne || told?.runOne) return true;
+  return Object.values(ready.parts ?? {}).some((p) => !!p.runOne);
+}
+
 export async function whatWeKnow(a: {
   deps: DispatchDeps;
   worktree: string;
@@ -121,16 +144,19 @@ export async function whatWeKnow(a: {
           ? "; its declared tests run in the platform pipeline, after the merge"
           : ""),
     );
-  if (!ready.runOne && !deps.told?.runOne)
-    return { ok: false, refusal: missing("runOne") };
+  if (!canJudgeOne(ready, deps.told)) return { ok: false, refusal: missing("runOne") };
   rememberWhatHeld(deps.repoRoot, known, { ...ready, downstream }, deps.told ?? {}, new Date().toISOString());
   const runOne =
     ready.runOne ??
-    provisional(
-      deps.told!.runOne!,
-      "no test exists yet to prove it on — the first check the tester writes proves it in use",
-      a.log,
-    );
+    (deps.told?.runOne
+      ? provisional(
+          deps.told.runOne,
+          "no test exists yet to prove it on — the first check the tester writes proves it in use",
+          a.log,
+        )
+      : partsRunOne(ready));
+  if (!ready.runOne && !deps.told?.runOne)
+    a.log("no repository-wide single-test command: every check runs with the command of the part it lives in");
   return {
     ok: true,
     ready,
