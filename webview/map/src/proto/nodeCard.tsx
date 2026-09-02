@@ -10,7 +10,7 @@
  * colour or a word.
  */
 import { useLayoutEffect, useRef, useState } from "react";
-import { C, FS, SP } from "../type";
+import { C, FS, SAID, SP } from "../type";
 
 export const NODE_W = 230;
 
@@ -27,6 +27,8 @@ export interface CardData {
   /** The whole sentence behind a clipped title — shown on hover. */
   titleFull?: string;
   abs?: string;
+  /** The title is a promise in the person's words, set in their face. */
+  said?: boolean;
   chips: Chip[];
   decision?: string;
   /** What this card IS, in a word: the band across its top. */
@@ -151,9 +153,18 @@ export function NodeCard(props: {
           {card.band.text}
         </div>
       ) : null}
+      {/* The promise, in the person's own words and face; a card that has
+          no promise to keep says what it is in the interface face. */}
       <h3
         title={card.titleFull ?? undefined}
-        style={{ margin: "0 0 4px", fontSize: far ? 15 : 13, fontWeight: 600, overflowWrap: "anywhere" }}
+        style={{
+          margin: "0 0 4px",
+          fontFamily: card.said ? SAID : undefined,
+          fontSize: far ? 15 : card.said ? 14 : 13,
+          fontWeight: card.said ? 400 : 600,
+          lineHeight: 1.35,
+          overflowWrap: "anywhere",
+        }}
       >
         {card.title}
       </h3>

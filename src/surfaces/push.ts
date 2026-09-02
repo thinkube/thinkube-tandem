@@ -145,6 +145,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
             nodes: session.space.nodes,
             units: session.units,
             slice: u.slice,
+            criterionIds: session.runState?.plan?.find((s) => s.handle === u.slice)?.criterionIds ?? [],
           });
           return {
             ...u,

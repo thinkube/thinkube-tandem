@@ -170,12 +170,19 @@ export function RunSection(props: {
         // A maintainer is named for the slice it serves, not as a slice of its own.
         const fallback = u.role === "maintain" ? `${u.slice.replace(/-tests$/, "")} · tests` : (u.sliceTitle ?? u.slice);
         const fallbackFull = `${u.id} — ${u.role === "maintain" ? `brings ${u.slice.replace(/-tests$/, "")}'s tests under` : (u.sliceTitle ?? u.slice)}`;
+        // What the unit builds: the promise, and where it lands, read from
+        // the unit's own brief when the space cannot name the promise.
+        const said = u.what?.split(/\s+—\s+lands at\s+/);
+        const lands =
+          said && said.length > 1 ? `lands at ${said.slice(1).join(" ").split(/\s+—\s+|\n/)[0].trim()}` : undefined;
+        const spoken = u.promiseLabel?.label ?? (said?.[0]?.trim() || undefined);
         return {
           id: u.id,
           band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
-          title: u.promiseLabel?.label ?? fallback,
-          titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : fallbackFull,
-          abs: u.id,
+          title: spoken ?? fallback,
+          said: !!spoken,
+          titleFull: u.promiseLabel ? `${u.id} — ${u.promiseLabel.full}` : spoken ? `${u.id} — ${u.what}` : fallbackFull,
+          ...(lands ? { abs: lands } : {}),
           chips: [chipFor(u, now, run.logCounts?.[u.id] ?? 0), logChip(u.id, run)],
           face: stateFace(u.state),
         };
@@ -207,9 +214,10 @@ export function RunSection(props: {
         return {
           id: `audit:${slice}`,
           band: ROLES.audit,
-          title: u?.promiseLabel?.label ?? u?.sliceTitle ?? slice,
+          title: u?.promiseLabel?.label ?? u?.what?.split(/\s+—\s+lands at\s+/)[0]?.trim() ?? u?.sliceTitle ?? slice,
+          said: !!(u?.promiseLabel ?? u?.what),
           titleFull: u?.promiseLabel ? `audit:${slice} — ${u.promiseLabel.full}` : undefined,
-          abs: `audit:${slice}`,
+          abs: "every check of this piece, on the real state",
           chips,
           face: stateFace(isGraded ? "done" : "running"),
         };
@@ -221,7 +229,7 @@ export function RunSection(props: {
         ? [
             {
               id: "gate",
-              band: { ...ROLES.audit, text: "Audit — everything together" },
+              band: { ...ROLES.audit, text: "audit — everything together" },
               // The gate keeps the whole cut's promise, so it is titled the
               // way every other card is: by the promise, in the person's own
               // words, with the full sentences on hover. One promise names

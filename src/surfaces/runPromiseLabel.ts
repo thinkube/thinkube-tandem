@@ -22,13 +22,22 @@ export function promiseLabelOf(a: {
   nodes: Change[];
   units: Unit[];
   slice: string;
+  /** The criteria the plan gave this slice. A cut built from a set has no
+   *  unit record of its own, so the promises are read back through the
+   *  criteria the slice carries — each names the promise it proves. */
+  criterionIds?: readonly string[];
 }): { label: string; full: string } | undefined {
-  const unit = a.units.find((u) => sliceOf(u.id) === a.slice);
-  if (!unit) return undefined;
   const byId = new Map(a.nodes.map((n) => [n.id, n]));
-  const sentences = unit.changeIds
-    .map((id) => byId.get(id)?.sentence)
-    .filter((s): s is string => !!s);
+  const unit = a.units.find((u) => sliceOf(u.id) === a.slice);
+  const fromUnit = (unit?.changeIds ?? []).map((id) => byId.get(id)?.sentence).filter((s): s is string => !!s);
+  const fromCriteria = [
+    ...new Set(
+      (a.criterionIds ?? [])
+        .map((cid) => a.nodes.find((n) => n.acceptance.some((c) => c.id === cid))?.sentence)
+        .filter((s): s is string => !!s),
+    ),
+  ];
+  const sentences = fromUnit.length ? fromUnit : fromCriteria;
   if (!sentences.length) return undefined;
   return labelOf(sentences);
 }
