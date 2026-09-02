@@ -28,6 +28,7 @@
  * run is refused with the output — never dispatched into a wall. The
  * repository's own suite is judged once, at the gate.
  */
+import { storeIsForAnotherLibc } from "./storeFits";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Exec } from "./oracle";
@@ -254,7 +255,15 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     // and watches what appears, which is how the answer is learned in the
     // first place. Slow and correct beats fast and silently wrong.
     const dependencies = new Set(args.dependencies ?? []);
-    const lendable = [...theirs].filter((e) => !mine.has(e) && dependencies.has(e));
+    const lendable: string[] = [];
+    for (const e of [...theirs].filter((x) => !mine.has(x) && dependencies.has(x))) {
+      // A store installed under another C library — a test container on
+      // Alpine writing into the shared checkout — carries native modules
+      // nothing here can load; borrowing it fails the build for that alone.
+      const why = storeIsForAnotherLibc(path.join(args.repoRoot, e));
+      if (why) args.log(`  not borrowing the checkout's ${e}: ${why}`);
+      else lendable.push(e);
+    }
     if (lendable.length) {
       await linkProvisioned(args.worktree, args.repoRoot, lendable);
       provisioned.push(...lendable);
