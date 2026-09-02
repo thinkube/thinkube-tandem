@@ -1,7 +1,7 @@
 /**
- * The Tandem space surface: capture at the top, the units map in the
- * middle, the two gates on the right. Renders exactly what the host
- * pushes; every abstract flips to its machine face with one gesture.
+ * The Tandem space surface. A strip across the top always says where the
+ * space is and holds the one thing to press next; under it, the pages.
+ * Renders exactly what the host pushes.
  */
 import { useEffect, useMemo, useState } from "react";
 import { can, onSpace, post, refusalSentence, SpacePush, watchRefusals } from "./vscode";
@@ -15,11 +15,11 @@ import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
 import { WorkGraph } from "./WorkGraph";
 import { Rail } from "./Rail";
-import { Asks } from "./Asks";
+import { nextAction, NextAction } from "../../../src/surfaces/nextAction";
 import { useWorld, ZoomControls } from "./proto/world";
 import { nextView, ViewState } from "../../../src/surfaces/viewMove";
 import { surfaceRegions } from "../../../src/surfaces/surfaceLayout";
-import { ASKS_PAGE, drawsAskList, SurfacePage } from "../../../src/surfaces/surfaceContract";
+import { ASKS_PAGE, SurfacePage } from "../../../src/surfaces/surfaceContract";
 
 
 /** Whether the Orchestration page is currently showing the delivery
@@ -118,6 +118,20 @@ export function App(props: {
   }, [push]);
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
+  const next: NextAction = nextAction(push, { behind, allowed: can });
+  // Pressing the one next action: a governed message, or a move to the
+  // page that holds what comes next. Starting the thinking also parks the
+  // reader on the intent page until it is worked out.
+  const press = (n: NextAction): void => {
+    if (n.move.kind === "tab") {
+      setView((v) => nextView(v, { kind: "reader-tab", tab: n.move.kind === "tab" ? n.move.tab : "write", hasReport }));
+      return;
+    }
+    if (n.move.kind !== "post") return;
+    if (n.move.action.action === "think") setView((v) => nextView(v, { kind: "reader-awaits-work" }));
+    if (n.move.action.action === "read-draft") setClassifying(true);
+    post(n.move.action);
+  };
   const spinStyle = (
     <style>{`@keyframes tandemSpinKf { from { transform: rotate(0) } to { transform: rotate(360deg) } } .tandem-spin { animation: tandemSpinKf 1.1s linear infinite }`}</style>
   );
@@ -164,37 +178,66 @@ export function App(props: {
           </span>
         </div>
       ) : null}
+      {/* The strip: where you are, and the one thing to press. Always here,
+          whatever page is showing, so the answer to "what do I press" never
+          depends on finding the right page first. */}
       <div
         data-asking-in
+        data-strip
         style={{
           display: "flex",
-          gap: 8,
-          alignItems: "baseline",
-          padding: `${SP.sm}px ${SP.lg}px 0`,
+          gap: SP.lg,
+          alignItems: "center",
+          flexWrap: "wrap",
+          padding: `${SP.md}px ${SP.lg}px`,
           fontSize: FS.body,
+          background: C.raised,
+          borderBottom: `1px solid ${C.border}`,
         }}
       >
+        <span data-where style={{ fontWeight: 600 }}>
+          {push.repoName ?? "no project chosen"}
+          <span style={{ fontWeight: 400, color: C.quiet }}> — {next.where}</span>
+        </span>
         {(() => {
           const here = (push.specs ?? []).find((sp) => sp.chosen);
           return here ? (
-            <span data-set-in-hand style={{ fontSize: FS.body }}>
-              <span style={{ opacity: O.faint }}>{" › "}</span>
-              {here.name}
+            <span data-set-in-hand style={{ fontSize: FS.caption, color: C.quiet }}>
+              in hand: {here.name}
             </span>
           ) : null;
         })()}
-        <span style={{ opacity: O.dim }}>Asking in</span>
-        <strong style={{ fontSize: FS.body }}>{push.repoName ?? "no project chosen"}</strong>
-        <span style={{ opacity: O.faint }}>— its code is read; its repository receives the delivery</span>
         <button
           data-switch-repo
           disabled={!can("switch-repo")}
           title={can("switch-repo") ? "Switch the repository this space works on." : refusalSentence("switch-repo", push.phase)}
-          style={{ marginLeft: "auto", fontSize: FS.caption, background: "none", border: "1px solid var(--vscode-input-border, #444)", borderRadius: 4, cursor: "pointer", color: "inherit", padding: `1px ${SP.sm}px` }}
+          style={{ fontSize: FS.caption, background: "none", border: `1px solid ${C.border}`, borderRadius: 4, cursor: "pointer", color: C.quiet, padding: `1px ${SP.sm}px` }}
           onClick={() => post({ action: "switch-repo" })}
         >
           switch
         </button>
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: SP.md }}>
+          <span data-next-hint style={{ fontSize: FS.caption, color: C.quiet }}>{next.hint}</span>
+          <button
+            data-next
+            disabled={!next.enabled}
+            title={next.hint}
+            onClick={() => press(next)}
+            style={{
+              fontSize: FS.body,
+              fontWeight: 600,
+              padding: `${SP.sm}px ${SP.lg}px`,
+              borderRadius: 6,
+              border: "1px solid var(--vscode-button-background, #0e639c)",
+              background: "var(--vscode-button-background, #0e639c)",
+              color: "var(--vscode-button-foreground, #fff)",
+              cursor: next.enabled ? "pointer" : "default",
+              opacity: next.enabled ? 1 : 0.45,
+            }}
+          >
+            {next.label}
+          </button>
+        </span>
       </div>
       {regionOrder.map((region) => {
         if (region === "tabs") return (
@@ -266,11 +309,7 @@ export function App(props: {
           <span data-refusal style={{ marginLeft: "auto", fontSize: FS.body, color: C.ask }}>{refusal}</span>
         ) : push.message ? (
           <span style={{ marginLeft: "auto", fontSize: FS.body, opacity: O.dim }}>{push.message}</span>
-        ) : (
-          <span style={{ marginLeft: "auto", color: C.quiet, fontSize: FS.body }}>
-            write it · see what it means · see what it will build · build it
-          </span>
-        )}
+        ) : null}
       </div>
         );
         if (region === "capture") return (
@@ -328,9 +367,6 @@ export function App(props: {
             </button>
           </div>
         ) : null}
-                <span data-identity style={{ fontSize: FS.caption, opacity: O.dim, whiteSpace: "nowrap" }}>
-          {push.subjects.length} subject(s) · {push.cutCount} in cut · {push.signedTeps} TEP(s)
-        </span>
         {can("panic") && (push.subjects.length > 0 || push.questions.length > 0) ? (
           panicArmed ? (
             <button
@@ -358,16 +394,7 @@ export function App(props: {
         ) : null}
       </div>
         );
-        if (region === "asks") return drawsAskList(tab) ? (
-          <Asks
-            key="asks"
-            push={push}
-            selected={selected}
-            onSelect={setSelected}
-            editing={editingAsk}
-            onEditing={setEditingAsk}
-          />
-        ) : null;
+        if (region === "asks") return null;
         if (region === "legacy") return (
           <span key="legacy">
             <Implications push={push} />
@@ -418,24 +445,9 @@ export function App(props: {
               push={push}
               selected={selected}
               onSelect={setSelected}
-              onWork={() => {
-                if (allWorkedOut) {
-                  setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
-                  return;
-                }
-                setView((v) => nextView(v, { kind: "reader-awaits-work" }));
-                post({ action: "think" });
-              }}
+              editing={editingAsk}
+              onEditing={setEditingAsk}
               working={working}
-              canWork={allWorkedOut || can("think")}
-              onEditAsk={(id) => {
-                setSelected(id);
-                setEditingAsk(id);
-              }}
-              onOpenWork={(id) => {
-                setWorkSubject(id);
-                setView((v) => nextView(v, { kind: "reader-tab", tab: "work", hasReport }));
-              }}
             />
           </div>
         ) : tab === "work" ? (

@@ -162,13 +162,18 @@ export function Rail(props: {
    *  act that cannot be undone, and it must not sit beside a reading the
    *  human has not been shown the work for. */
   canBuild: boolean;
-}): JSX.Element {
+}): JSX.Element | null {
   const { push } = props;
   const ready = push.ready;
   const doc = push.documentation;
   const docSettled = doc.state === "landed" || doc.state === "exempt";
   const [docReason, setDocReason] = useState("");
   const docReasonReady = docReason.trim().length > 0;
+  // A rail with nothing to say draws nothing: an empty column beside a page
+  // is a rule down the screen with no reason on it.
+  const parked = push.run?.parked?.length ?? 0;
+  const says = parked > 0 || !!push.runLog || (props.canBuild && (ready.thinking || ready.subjects > 0));
+  if (!says) return null;
 
   return (
     <div

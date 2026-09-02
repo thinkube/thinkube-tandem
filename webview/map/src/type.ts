@@ -27,6 +27,13 @@ export const SP = { xs: 3, sm: 6, md: 10, lg: 16, xl: 24 } as const;
 /** The type scale. Four sizes: a caption, the text, a title, a heading. */
 export const FS = { caption: 11, body: 13, title: 14, heading: 16 } as const;
 
+/**
+ * The face your own sentences are set in. A serif, and the machine never
+ * uses it: whatever is in this face is what you wrote, word for word, and
+ * everything in the interface face is the machine talking.
+ */
+export const SAID = 'Georgia, "Iowan Old Style", "Times New Roman", serif';
+
 /** The corner of everything that has one. */
 const R = { sm: 4, md: 6 } as const;
 
