@@ -66,7 +66,10 @@ ln -sfn "${HOME}/.local/share/code-server/extensions/thinkube.thinkube-tandem-${
 echo "▸ prune stale versions (keeping the last ten, and any version in use)…"
 EXT_ROOT="${HOME}/.local/share/code-server/extensions"
 KEEP=$(ls -d "${EXT_ROOT}"/thinkube.thinkube-tandem-* 2>/dev/null | sort -V | tail -10)
-IN_USE=$(ls -l /proc/*/cwd /proc/*/exe 2>/dev/null | grep -o "thinkube.thinkube-tandem-[0-9.]*" | sort -u)
+# `|| true`: with no process inside any version, grep matches nothing and
+# exits 1, which under pipefail would end the script here — before the
+# release is recorded.
+IN_USE=$(ls -l /proc/*/cwd /proc/*/exe 2>/dev/null | grep -o "thinkube.thinkube-tandem-[0-9.]*" | sort -u || true)
 for v in $IN_USE; do KEEP="${KEEP}
 ${EXT_ROOT}/${v}"; done
 for d in "${EXT_ROOT}"/thinkube.thinkube-tandem-*; do
