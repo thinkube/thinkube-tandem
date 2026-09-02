@@ -259,11 +259,20 @@ export function saidPlainly(p: Delivery["proofs"][number]): string {
   if (failed) return failed.replace(/^not ok\s+\d+\s+-\s+/, "");
   // A reviewer answers in prose, which reads as it is; a command does not.
   if (!/^\$ /.test(said[0] ?? "")) return said[0] ?? "";
+  if (said.some((l) => /the run was halted|stopped/i.test(l)))
+    return "the check did not finish — the run was stopped before it answered";
+  // pytest marks what went wrong with an `E` margin, and names the file
+  // that could not even be collected. Its own words are the reason.
+  const pytest = said.find((l) => /^E\s+\S/.test(l));
+  if (pytest) return pytest.replace(/^E\s+/, "");
+  const summary = said.find((l) => /^(FAILED|ERROR)\s/.test(l));
+  if (summary) return summary;
+  // Whatever the command printed last, before the machine's own note.
+  const printed = said.slice(1).find((l) => !/^\$ /.test(l) && !/^\(/.test(l) && !/^#/.test(l));
+  if (printed) return printed;
   // A command and nothing to quote from it. Saying nothing at all leaves a
   // failure with no reason beside it, so say the one thing that is known
   // and point at where the command and its output are kept.
-  if (said.some((l) => /the run was halted|stopped/i.test(l)))
-    return "the check did not finish — the run was stopped before it answered";
   return "the check did not pass; the command it ran and its output are in the run record";
 }
 

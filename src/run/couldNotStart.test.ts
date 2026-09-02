@@ -42,3 +42,17 @@ test("the marker reads every runner's way of saying a test ran", () => {
 test("a product module the check cannot import is the code not being there — a red, not an environment", () => {
   assert.equal(checkNeverStarted(1, "Error: Cannot find module '../out/greet.js'\nimported from probes/a_AC-1.test.mjs"), false);
 });
+
+test("what pytest said travels with the evidence, however long the output was", async () => {
+  const noise = Array.from({ length: 30 }, (_, i) => `collecting ... line ${i}`).join("\n");
+  const [r] = await runAcVerifications(
+    [{ ac: 1, run: "pytest tests/tasks_AC-1_test.py", env: "local" }],
+    "/nowhere",
+    async () => ({
+      code: 1,
+      output: `${noise}\nE     AssertionError: expected 3 tasks, got 0\nFAILED tests/tasks_AC-1_test.py::test_order - AssertionError\n${noise}`,
+    }),
+  );
+  assert.match(r.evidence, /^E\s+AssertionError: expected 3 tasks, got 0/m, "the E line is the reason a person reads");
+  assert.match(r.evidence, /^FAILED tests\/tasks_AC-1_test\.py/m);
+});

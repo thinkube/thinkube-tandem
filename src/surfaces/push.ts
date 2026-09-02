@@ -233,6 +233,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
               // check, the newest verdict, and whether the world moved
               // since — independent of how many iterations built it.
               checks: n.acceptance.map((a) => ({
+                id: a.id,
                 text: a.text,
                 ...(a.kind === "assessment" ? { kind: "assessment" as const } : {}),
                 ...(latestVerdictOf(session, a.id) ?? {}),
@@ -395,6 +396,13 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       })(),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
       ...(d.withheld ? { withheld: d.withheld } : {}),
+      proofs: d.proofs
+        .filter((p) => p.criterionId && p.verdict !== "pending")
+        .map((p) => {
+          const verdict = p.verdict === "green" ? ("green" as const) : p.verdict === "unjudged" ? ("unjudged" as const) : ("red" as const);
+          const said = verdict === "green" ? "" : saidPlainly(p);
+          return { criterionId: p.criterionId!, verdict, ...(said ? { said } : {}) };
+        }),
       // The way back in, on every delivery that is not accepted: withheld,
       // blocked by a red check, or simply still waiting for your decision.
       ...(d.acceptedAt ? {} : { rerun: session.unrunCut() }),

@@ -311,6 +311,8 @@ function acEvidence(run: string, code: number | null, output: string): string {
   // assertion block too: from the first `not ok` line through its YAML diagnostic
   // (name, error, failureType), capped. This is what the re-authoring worker and
   // the human read; without it every red is "see the logs" archaeology.
+  // pytest says it with `E` margin lines and a FAILED/ERROR summary; a
+  // collection error has no assertion at all, only those.
   let failDetail = "";
   if (code !== 0) {
     const at = lines.findIndex((l) => /^\s*not ok /.test(l));
@@ -319,6 +321,10 @@ function acEvidence(run: string, code: number | null, output: string): string {
         .slice(at, at + 14)
         .join("\n")
         .trim();
+    else {
+      const pytest = lines.filter((l) => /^E\s+\S/.test(l) || /^(FAILED|ERROR)\s/.test(l)).slice(0, 12);
+      if (pytest.length) failDetail = pytest.join("\n").trim();
+    }
   }
   const body = [
     failDetail ? clip(failDetail, 900) : "",
@@ -392,6 +398,18 @@ export async function runAcVerifications(
           evidence: `assessment AC #${v.ac} → could not run: ${(err as Error).message}`,
         });
       }
+      continue;
+    }
+    // A check with no command to run it — its file belongs to no declared
+    // part and no repository-wide command was proved — is not run at all,
+    // and never counted green for having run nothing.
+    if (!v.run.trim()) {
+      out.push({
+        ac: v.ac,
+        pass: false,
+        unrunnable: true,
+        evidence: `no command runs check #${v.ac}: its file belongs to no declared part, and no repository-wide single-test command was proved`,
+      });
       continue;
     }
     // AC7 de-dup: exec a given command once, then map its result to every AC that declared it.

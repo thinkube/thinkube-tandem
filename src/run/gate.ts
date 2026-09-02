@@ -209,7 +209,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         kind: "probe" as const,
         label,
         verdict,
-        ...(r.evidence ? { ref: r.evidence.slice(0, 300) } : {}),
+        ...(r.evidence ? { ref: r.evidence.slice(0, 1200) } : {}),
         ...(criterionId ? { criterionId } : {}),
       };
     }),
@@ -529,7 +529,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // "[stopped]" — and withheld with "34 promises are not kept", which
     // reads as the work failing thirty-four times when what happened is
     // one person pressing one button. Stopped work is ungraded, not bad.
+    // A stop during the repair round leaves verdicts that were reached
+    // before it; those stand, and the stop only says the repair did not.
     if (g.state.halted) {
+      const judged = unkept.filter((p) => !/the run was halted|\[stopped/i.test(p.ref ?? ""));
       say(`${tep}: stopped by the person — ${unkept.length} promise(s) were still being graded; nothing is judged from a stop`);
       return {
         refusals: [],
@@ -537,9 +540,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         delivery: withheldDelivery({
           tep, cut, branch, runId, producedAt, proofs, undelivered, observations, findings,
           rulings: g.rulings, decisions: g.decisions,
-          reason:
-            `the run was stopped while ${unkept.length} promise(s) were still being graded — nothing was judged from the stop. ` +
-            `The branch holds the work; run it again to finish the grading.`,
+          reason: judged.length
+            ? `the run was stopped with ${judged.length} promise(s) found not kept and their repair unfinished. ` +
+              `The branch holds the work; run it again to finish.`
+            : `the run was stopped while ${unkept.length} promise(s) were still being graded — nothing was judged from the stop. ` +
+              `The branch holds the work; run it again to finish the grading.`,
         }),
       };
     }

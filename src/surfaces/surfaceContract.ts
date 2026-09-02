@@ -29,6 +29,8 @@ export function drawsAskList(page: SurfacePage): boolean {
 /** One check, with its verification state — read on the claim card
  *  independently of how many iterations produced it. */
 interface CheckVM {
+  /** The criterion's own id — what a delivery's proof is recorded against. */
+  id: string;
   text: string;
   /** "assessment" = judged once at delivery by an independent reviewer;
    *  absent = a standing probe. */
@@ -104,6 +106,9 @@ interface DeliveryVM {
   pending?: { criterionId?: string; text: string; settledBy: string; ref?: string }[];
   /** Why the delivery was withheld, and the signed work to run again. */
   withheld?: string;
+  /** This delivery's own verdicts, by criterion — what the report is
+   *  painted from, never a newer or older run's. */
+  proofs?: { criterionId: string; verdict: "green" | "red" | "unjudged"; said?: string }[];
   rerun?: { id: string; tepId?: string };
 }
 

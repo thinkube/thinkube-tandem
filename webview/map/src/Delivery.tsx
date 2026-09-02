@@ -13,14 +13,15 @@ import { can, post, refusalSentence, SpacePush } from "./vscode";
 type Delivery_ = SpacePush["deliveries"][number];
 type Promise_ = SpacePush["subjects"][number]["claims"][number]["promises"][number];
 
-/** How a sentence fared, read from the verdicts of the promises made from it. */
+/** How a sentence fared, read from THIS delivery's verdicts on the promises made from it. */
 type Fate = "done" | "not kept" | "not judged" | "being built" | "not started";
+type Verdict = { verdict: "green" | "red" | "unjudged"; said?: string };
 
-function fateOf(promises: Promise_[], stage: string | undefined): Fate {
-  const checks = promises.flatMap((p) => p.checks);
-  if (checks.some((c) => c.verdict === "red")) return "not kept";
-  if (checks.length && checks.every((c) => c.verdict === "green")) return "done";
-  if (checks.some((c) => c.verdict === "unjudged")) return "not judged";
+function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: string | undefined): Fate {
+  const verdicts = promises.flatMap((p) => p.checks.map((c) => judged.get(c.id)));
+  if (verdicts.some((v) => v?.verdict === "red")) return "not kept";
+  if (verdicts.length && verdicts.every((v) => v?.verdict === "green")) return "done";
+  if (verdicts.some((v) => !v || v.verdict === "unjudged")) return "not judged";
   if (stage === "delivered" || stage === "accepted") return "done";
   if (stage === "signed") return "being built";
   return "not started";
@@ -66,26 +67,36 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
       for (const c of s.claims) for (const p of c.promises) if (!list.some((x) => x.id === p.id)) list.push(p);
       byN.set(f.n, list);
     }
+  // This delivery's own verdicts, by criterion. A page painted from the
+  // newest verdict anywhere showed one run's reds over another run's news.
+  const judged = new Map<string, Verdict>(
+    d.proofs
+      ? d.proofs.map((p) => [p.criterionId, { verdict: p.verdict, ...(p.said ? { said: p.said } : {}) }])
+      : push.subjects
+          .flatMap((s) => s.claims.flatMap((c) => c.promises.flatMap((p) => p.checks)))
+          .filter((c) => !!c.verdict)
+          .map((c) => [c.id, { verdict: c.verdict!, ...(c.said ? { said: c.said } : {}) }]),
+  );
   const rows = push.sentences.map((s, i) => {
     const promises = byN.get(i + 1) ?? [];
-    return { n: i + 1, text: s.text, promises, fate: fateOf(promises, s.bound?.stage) };
+    return { n: i + 1, text: s.text, promises, fate: fateOf(promises, judged, s.bound?.stage) };
   });
   const happened = rows.filter((r) => r.fate !== "not started");
   const later = rows.filter((r) => r.fate === "not started");
 
-  // What could not be judged, once, by its cause — each check counted once,
-  // however many sentences share the promise it belongs to.
+  // Failures said once. Twenty-four checks failing the same way is one
+  // failure; the report names it once, and the sentences point at it.
+  const shared = new Map<string, number>();
   const unjudged = new Map<string, number>();
-  const counted = new Set<string>();
-  for (const r of rows)
-    for (const p of r.promises)
-      for (const c of p.checks) {
-        const key = `${p.id}\u0000${c.text}`;
-        if (c.verdict !== "unjudged" || counted.has(key)) continue;
-        counted.add(key);
-        const why = c.said ?? "the check could not run";
-        unjudged.set(why, (unjudged.get(why) ?? 0) + 1);
-      }
+  for (const v of judged.values()) {
+    if (v.verdict === "red" && v.said) shared.set(v.said, (shared.get(v.said) ?? 0) + 1);
+    if (v.verdict === "unjudged") unjudged.set(v.said ?? "the check could not run", (unjudged.get(v.said ?? "the check could not run") ?? 0) + 1);
+  }
+  const commonFailures = [...shared.entries()].filter(([, n]) => n >= 2);
+  const isCommon = (said: string | undefined): boolean => !!said && (shared.get(said) ?? 0) >= 2;
+  // The latest run's own outcome comes first when it produced nothing.
+  const lastRun = push.run?.phases;
+  const refusedAtDoor = lastRun?.door.state === "failed" ? lastRun.door.doing : undefined;
 
   const seen = d.observations ?? [];
   const stuck = d.withheld ?? d.blocked;
@@ -94,6 +105,22 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
   return (
     <div data-delivery-report style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.xl}px ${SP.xl}px` }}>
       <article data-delivery={d.id} style={{ maxWidth: "60rem" }}>
+        {refusedAtDoor ? (
+          <div data-refused-at-door style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
+            <strong style={{ fontSize: FS.body }}>The last run was refused at the door. Nothing below is from it.</strong>
+            <div style={{ fontSize: FS.body, marginTop: SP.xs }}>{refusedAtDoor}</div>
+          </div>
+        ) : null}
+        {commonFailures.length ? (
+          <div data-common-failures style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
+            <div style={{ ...label, marginTop: 0 }}>One failure, many checks</div>
+            {commonFailures.map(([said, n]) => (
+              <div key={said} style={{ fontSize: FS.body, lineHeight: 1.5 }}>
+                {n} checks failed the same way — {said}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {stuck ? (
           <div data-withheld={d.id} style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
             <strong style={{ fontSize: FS.body }}>{d.withheld ? "Nothing was delivered." : "This cannot be accepted."}</strong>
@@ -122,18 +149,21 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 </div>
                 {r.fate === "not kept"
                   ? r.promises
-                      .filter((p) => p.checks.some((c) => c.verdict === "red"))
+                      .filter((p) => p.checks.some((c) => judged.get(c.id)?.verdict === "red"))
                       .map((p) => (
                         <div key={p.id} data-broken={p.id} style={{ margin: `${SP.sm}px 0 0 38px`, padding: `${SP.sm}px ${SP.md}px`, borderLeft: `3px solid ${C.bad}`, background: C.raised, borderRadius: 4 }}>
                           <div style={{ fontFamily: SAID, fontSize: FS.body, lineHeight: 1.5 }}>{p.text}</div>
                           {p.checks
-                            .filter((c) => c.verdict === "red")
-                            .map((c, i) => (
-                              <div key={i} style={{ fontSize: FS.body, marginTop: SP.xs }}>
-                                {c.said ? c.said : "did not hold"}
-                                <span style={{ color: C.quiet }}> — {c.text}</span>
-                              </div>
-                            ))}
+                            .filter((c) => judged.get(c.id)?.verdict === "red")
+                            .map((c, i) => {
+                              const v = judged.get(c.id);
+                              return (
+                                <div key={i} style={{ fontSize: FS.body, marginTop: SP.xs }}>
+                                  {isCommon(v?.said) ? "the same failure as above" : v?.said ? v.said : "did not hold"}
+                                  <span style={{ color: C.quiet }}> — {c.text}</span>
+                                </div>
+                              );
+                            })}
                         </div>
                       ))
                   : null}

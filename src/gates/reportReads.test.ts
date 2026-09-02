@@ -71,3 +71,15 @@ test("a reviewer's own words are printed as the reviewer wrote them", () => {
   const p = page([{ kind: "assessment", label: "review-3: an in-cut card still reads as in the cut", verdict: "red", ref: said }]);
   assert.match(p, /Run\.tsx never sets card\.inCut/, "prose needs no translation — only a command does");
 });
+
+test("a pytest failure is said in pytest's own words, not the generic sentence", () => {
+  const ref =
+    `$ f=backend/tests/tasks_AC-1_test.py; case "$f" in backend/*) (cd backend && pytest "\${f#backend/}" -v) ;; esac → exit 4\n` +
+    `E     Field required [type=missing, input_value={'POSTGRES_HOST': 'postgres'}, input_type=dict]\n` +
+    `E       For further information visit https://errors.pydantic.dev\n` +
+    `ERROR tests/tasks_AC-1_test.py - pydantic_core.ValidationError: 5 validation errors for Settings`;
+  const p = page([{ kind: "probe", label: "a task lists with its priority", verdict: "red", ref }]);
+  assert.match(p, /Field required \[type=missing/, "the first thing pytest marked is the reason");
+  assert.doesNotMatch(p, /did not pass; the command it ran/, "the generic sentence is for a failure with no words at all");
+  assert.doesNotMatch(p, /\$ f=backend/, "the command stays in the run record");
+});
