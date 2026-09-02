@@ -21,9 +21,12 @@ files with their names, and criteria. 2.0.251.
 # Working out has phases, like the run
 
 Reading the code once per repository state, and looking for what is still
-missing once per set, belong to no sentence, so they show as a floating
-pill borrowing a sentence's step count — "reading your code (1/4)" — with
-no place in the sequence and no clock. The thinking is a sequence:
+missing once per set, belong to no sentence. The first shows nothing at
+all: the subjects' rows are marked "waiting · 0 of 4" before the code is
+read, and the page hides the activity pill while any row exists, so the
+longest step of the thinking looks like nine idle rows. The second shows
+as a floating pill over the group, with no place in the sequence and no
+clock. The thinking is a sequence:
 reading the code, deriving each sentence, looking for what is missing,
 grouping. Each phase in its place with its state and elapsed time, the
 sentence rows keeping their own stage under the deriving phase, and no pill
