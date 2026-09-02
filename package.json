@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.254",
+  "version": "2.0.255",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
