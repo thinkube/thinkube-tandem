@@ -133,9 +133,12 @@ function withoutReadingOf(space: Space, askIds: ReadonlySet<string>): Space {
         signed.has(n.id) ||
         (!n.serves.some((x) => goneSubjects.has(x) || askIds.has(x)) && !(n.servesClaim && goneClaims.has(n.servesClaim))),
     ),
+    // A thing stands only while every subject it names stands.
     ...(space.specs
-      ? { specs: space.specs.filter((sp) => signedSpecs.has(sp.id) || !sp.subjectIds.some((id) => goneSubjects.has(id))) }
+      ? { specs: space.specs.filter((sp) => signedSpecs.has(sp.id) || sp.subjectIds.every((id) => keptSubjectIds.has(id))) }
       : {}),
-    questions: space.questions.filter((q) => q.decided || !askIds.has(q.askId)),
+    // A question is raised in the name of a sentence or of a subject read
+    // from one; either way it goes with the reading, unless it was decided.
+    questions: space.questions.filter((q) => q.decided || !(askIds.has(q.askId) || goneSubjects.has(q.askId))),
   };
 }
