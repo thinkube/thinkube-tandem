@@ -49,6 +49,10 @@ export function App(props: {
   const [refusal, setRefusal] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
+  // A press was sent and no push has answered yet. The strip says so at
+  // once: a press that changes nothing on screen for a second reads as a
+  // press that did nothing.
+  const [pressed, setPressed] = useState<string | null>(null);
   const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   // The one rule that decides which page is shown: a push from the host
@@ -115,6 +119,7 @@ export function App(props: {
   useEffect(() => watchRefusals(setRefusal), []);
   useEffect(() => {
     setRefusal(undefined);
+    setPressed(null);
   }, [push]);
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
@@ -130,8 +135,10 @@ export function App(props: {
     if (n.move.kind !== "post") return;
     if (n.move.action.action === "think") setView((v) => nextView(v, { kind: "reader-awaits-work" }));
     if (n.move.action.action === "read-draft") setClassifying(true);
+    setPressed(n.label);
     post(n.move.action);
   };
+  const moving = next.busy || (pressed !== null && !refusal);
   const spinStyle = (
     <style>{`@keyframes tandemSpinKf { from { transform: rotate(0) } to { transform: rotate(360deg) } } .tandem-spin { animation: tandemSpinKf 1.1s linear infinite }`}</style>
   );
@@ -197,7 +204,11 @@ export function App(props: {
       >
         <span data-where style={{ fontWeight: 600 }}>
           {push.repoName ?? "no project chosen"}
-          <span style={{ fontWeight: 400, color: C.quiet }}> — {next.where}</span>
+          <span style={{ fontWeight: 400, color: C.quiet }}>
+            {" — "}
+            {moving ? <span className="tandem-spin" style={{ display: "inline-block", marginRight: 4 }}>⟳</span> : null}
+            {pressed && !next.busy ? `${pressed} — starting…` : next.where}
+          </span>
         </span>
         {(() => {
           const here = (push.specs ?? []).find((sp) => sp.chosen);
@@ -220,7 +231,8 @@ export function App(props: {
           <span data-next-hint style={{ fontSize: FS.caption, color: C.quiet }}>{next.hint}</span>
           <button
             data-next
-            disabled={!next.enabled}
+            data-busy={moving ? "1" : undefined}
+            disabled={!next.enabled || moving}
             title={next.hint}
             onClick={() => press(next)}
             style={{
@@ -235,7 +247,7 @@ export function App(props: {
               opacity: next.enabled ? 1 : 0.45,
             }}
           >
-            {next.label}
+            {moving && !next.busy ? "Starting…" : next.label}
           </button>
         </span>
       </div>

@@ -120,3 +120,18 @@ test("delivered and not accepted: read what came back", () => {
   assert.equal(n.label, "Read what came back");
   assert.deepEqual(n.move, { kind: "tab", tab: "flow" });
 });
+
+test("while subjects are being worked out, the strip says how far, and is busy", () => {
+  const push = quiet({
+    grounding: [{ askId: "s-1", label: "reading the code", current: 2, total: 5 }],
+    cost: { subjects: 1, rounds: 2 },
+    subjects: [
+      { id: "s-1", name: "my tasks", claims: [], from: [], thinking: { label: "reading the code", current: 2, total: 5 } },
+      { id: "s-2", name: "the box", claims: [], from: [] },
+    ],
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.busy, true);
+  assert.equal(n.enabled, false);
+  assert.match(n.where, /1 of 2 subjects worked out — reading the code/);
+});

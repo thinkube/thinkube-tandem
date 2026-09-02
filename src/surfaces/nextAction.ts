@@ -26,6 +26,8 @@ export interface NextAction {
   /** Beside the button: the cost, the size, or why it cannot be pressed. */
   hint: string;
   enabled: boolean;
+  /** The machine is busy on this state's behalf: the strip shows it moving. */
+  busy?: boolean;
   move: NextMove;
 }
 
@@ -63,15 +65,25 @@ export function nextAction(
       move: { kind: "post", action: { action: "stop-run" } },
     };
 
-  const working = !!push.activity || (push.grounding?.length ?? 0) > 0;
-  if (working)
+  const grounding = push.grounding ?? [];
+  if (push.activity || grounding.length) {
+    // The same count the page shows: what the cost still holds is not done.
+    const done = Math.max(0, push.subjects.length - push.cost.subjects);
+    const progress = push.activity
+      ? `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`
+      : `${done} of ${plural(push.subjects.length, "subject")} worked out — ${grounding
+          .map((g) => g.label)
+          .filter((l, i, all) => all.indexOf(l) === i)
+          .join(" · ")}`;
     return {
-      where: "working out what to build",
+      where: `working out what to build — ${progress}`,
       label: "Working it out…",
       hint: "you stay here until every subject is done — then the work page opens by itself",
       enabled: false,
+      busy: true,
       move: { kind: "none" },
     };
+  }
 
   if (push.pendingModel) {
     const n = push.pendingModel.fresh.length;

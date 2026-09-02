@@ -37,6 +37,37 @@ function sizeWords(sp: Set): string {
   return `${carries} · ${state}${lands}${sp.chosen ? " · in the cut" : ""}`;
 }
 
+/**
+ * The subjects of a thing being worked out right now, with how far each
+ * has got. Drawn under the thing's header while it is happening, so the
+ * page says where the work is instead of going quiet until it is done.
+ */
+function Thinking(props: { push: SpacePush; asks: number[] }): JSX.Element | null {
+  const mine = props.push.subjects.filter(
+    (sub) => sub.thinking && sub.from.some((f) => props.asks.includes(f.n)),
+  );
+  if (!mine.length) return null;
+  return (
+    <div data-thinking-subjects style={{ padding: `${SP.sm}px ${SP.lg}px 0`, display: "flex", flexDirection: "column", gap: SP.xs }}>
+      {mine.map((sub) => {
+        const t = sub.thinking!;
+        const pct = t.total ? Math.round((t.current / t.total) * 100) : 0;
+        return (
+          <div key={sub.id} data-thinking-subject={sub.id} style={{ display: "flex", alignItems: "center", gap: SP.md, fontSize: FS.caption, color: C.quiet }}>
+            <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span>
+            <span style={{ whiteSpace: "nowrap" }}>
+              {sub.name} — {t.label} · {t.current} of {t.total}
+            </span>
+            <span style={{ flex: 1, height: 4, background: "var(--vscode-input-background, #222)", borderRadius: 2, overflow: "hidden" }}>
+              <span style={{ display: "block", height: "100%", width: `${pct}%`, background: C.live, transition: "width 300ms" }} />
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** What the machine decided in the name of these sentences, folded. */
 function Decided(props: { sentences: Sentence[]; id: string }): JSX.Element | null {
   const decided = props.sentences.flatMap((s) => s.assumptions.map((a) => ({ ...a, n: s.id })));
@@ -174,6 +205,7 @@ export function Things(props: {
                     {sizeWords(sp)}
                   </span>
                 </button>
+                <Thinking push={push} asks={sp.asks ?? []} />
                 {mine.length ? (
                   <div style={{ padding: `${SP.sm}px ${SP.md}px ${SP.md}px` }}>
                     {mine.map((s) => row(s, sentences.indexOf(s)))}
