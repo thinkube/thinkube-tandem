@@ -502,7 +502,7 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     } catch (err) {
       return {
         ok: false,
-        reason: `not accepted — ${err instanceof Error ? err.message : String(err)}`,
+        reason: err instanceof Error ? err.message : String(err),
       };
     }
     s.changed("Accepted and merged.");

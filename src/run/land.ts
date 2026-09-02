@@ -24,7 +24,24 @@ export async function landDelivery(a: {
   const git = (...args: string[]) => a.exec("git", ["-C", a.repoRoot, ...args], a.repoRoot);
   const has = await git("rev-parse", "--verify", "--quiet", a.branch);
   if (has.code !== 0) throw new Error(`the branch ${a.branch} is not here — the work it held is gone`);
-  const merge = await git("merge", "--no-ff", "--no-edit", "-m", `tandem: accept ${a.tep}`, a.branch);
+  // The remote moves on its own: the platform's pipeline commits to main
+  // after every build. What is there is brought in first, so the push
+  // that follows is a plain one; and a landing refused at the push last
+  // time, with the merge already made here, carries on from where it was.
+  await git("fetch", "--quiet", "origin");
+  const remote = (await git("rev-parse", "--verify", "--quiet", "origin/main")).out.trim();
+  if (remote) {
+    const behind = (await git("merge-base", "--is-ancestor", "origin/main", "HEAD")).code !== 0;
+    if (behind) {
+      const up = await git("merge", "--no-edit", "origin/main");
+      if (up.code !== 0) {
+        await git("merge", "--abort");
+        throw new Error(`main has moved on the remote in ways that conflict with what is here: ${up.out.trim().split("\n").pop() ?? ""}`);
+      }
+    }
+  }
+  const already = (await git("merge-base", "--is-ancestor", a.branch, "HEAD")).code === 0;
+  const merge = already ? { code: 0, out: "" } : await git("merge", "--no-ff", "--no-edit", "-m", `tandem: accept ${a.tep}`, a.branch);
   if (merge.code !== 0) {
     const conflicted = (await git("diff", "--name-only", "--diff-filter=U")).out.trim();
     await git("merge", "--abort");

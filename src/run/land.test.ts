@@ -105,3 +105,42 @@ test("a sealed worktree cannot push, and the checkout still can", async () => {
   await git(root, "commit", "-q", "-m", "person");
   assert.equal((await git(root, "push", "-q", "origin", "main")).code, 0, "the person's checkout pushes as before");
 });
+
+test("main that moved on the remote is brought in first, and the push is plain", async () => {
+  const { origin, root } = await repo();
+  await branchWith(root, "tandem/x/TEP-6", "b.txt", "two\n");
+  // The pipeline commits to main on the remote, as it does after every build.
+  const other = path.join(path.dirname(root), "other");
+  await exec("git", ["clone", "-q", origin, other], root);
+  await git(other, "config", "user.email", "p@p");
+  await git(other, "config", "user.name", "pipeline");
+  fs.writeFileSync(path.join(other, "k8s.yaml"), "image: 1\n");
+  await git(other, "add", "k8s.yaml");
+  await git(other, "commit", "-q", "-m", "build: automatic update");
+  await git(other, "push", "-q", "origin", "main");
+  const r = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-6", tep: "TEP-6", exec });
+  assert.equal(r.merged, true);
+  assert.ok(fs.existsSync(path.join(root, "k8s.yaml")), "the remote's commit is here");
+  assert.ok(fs.existsSync(path.join(root, "b.txt")), "and so is the work");
+  assert.equal((await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim(), r.head, "pushed");
+});
+
+test("a landing refused at the push carries on from the merge already made", async () => {
+  const { origin, root } = await repo();
+  await branchWith(root, "tandem/x/TEP-7", "b.txt", "two\n");
+  // The merge was made here, and the remote had moved, so the push was refused.
+  await git(root, "merge", "--no-ff", "--no-edit", "-m", "tandem: accept TEP-7", "tandem/x/TEP-7");
+  const other = path.join(path.dirname(root), "other");
+  await exec("git", ["clone", "-q", origin, other], root);
+  await git(other, "config", "user.email", "p@p");
+  await git(other, "config", "user.name", "pipeline");
+  fs.writeFileSync(path.join(other, "k8s.yaml"), "image: 1\n");
+  await git(other, "add", "k8s.yaml");
+  await git(other, "commit", "-q", "-m", "build: automatic update");
+  await git(other, "push", "-q", "origin", "main");
+  assert.equal((await git(root, "push", "-q", "origin", "HEAD")).code, 1, "the plain push is refused");
+  const r = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-7", tep: "TEP-7", exec });
+  assert.equal(r.merged, true);
+  assert.equal((await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim(), r.head, "pushed this time");
+  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-7")).code, 1, "and the branch is gone");
+});

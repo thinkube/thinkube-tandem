@@ -262,6 +262,15 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   fs.mkdirSync(path.join(root, ".tandem"), { recursive: true });
   fs.writeFileSync(path.join(root, ".tandem/setup.json"), "{}");
   fs.appendFileSync(path.join(root, "thinkube.yaml"), "  deploy:\n    at: https://todo.example\n");
+  //     And the remote has moved: the platform's pipeline committed to main.
+  const other = path.join(path.dirname(root), "pipeline");
+  execFileSync("git", ["clone", "-q", path.join(path.dirname(root), "origin.git"), other]);
+  git(other, "config", "user.email", "p@p");
+  git(other, "config", "user.name", "pipeline");
+  fs.writeFileSync(path.join(other, "k8s.yaml"), "image: 1\n");
+  git(other, "add", "k8s.yaml");
+  git(other, "commit", "-q", "-m", "build: automatic update");
+  git(other, "push", "-q", "origin", "main");
   await press(s, { action: "accept-delivery", deliveryId: v.push.deliveries[0].id });
   v = seen(s);
   assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
