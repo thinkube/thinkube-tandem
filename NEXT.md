@@ -30,10 +30,9 @@ forge was the same decision asked twice.
 
 What made this urgent: the platform's build pipeline fires on a push to any
 branch that touches a non-Argo file, so a worker's mid-run push built and
-deployed half-finished work to the live todo app. That sensor still has no
-branch filter — a person's own branch push deploys too. Platform ask, for
-the core argo-workflows playbook: build only what lands on the default
-branch.
+deployed half-finished work to the live todo app. The sensor stays as it
+is: how branches and versions of a thinkube app are handled is not decided
+yet, and tandem no longer pushes anything but the default branch.
 
 # The run's own honesty, landed
 
