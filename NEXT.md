@@ -1,3 +1,55 @@
+# Where the surface stands against the mock
+
+The mock at https://claude.ai/code/artifact/fd45846a-343c-4ee8-8e85-20e447b82591
+is the source. Each state below is either landed, with the commit, or open.
+
+- **Understood** — landed at `1a4352c`, deployed as 2.0.238. The strip says
+  where the space is and holds the one next action, decided once in
+  `src/surfaces/nextAction.ts` for every state. Your sentences are set in
+  the serif, once each, inside the things they became, in build order, with
+  the marks and the folded "things I decided for you". The empty rail no
+  longer draws a rule down the page. Verified by a headless screenshot of
+  the real todo space.
+- **Nothing written / Written** — the strip is right; the write page still
+  shows its own Read button, a Panic button and the old empty-state
+  sentence under the box. Open.
+- **What it will do** — open. The work page still draws claim cards with
+  the subject's name as a label and "nothing derived" under each; the mock
+  shows each promise with its criteria as ticks, a disagreement line, and
+  "Build these N" as the one action. The strip already moves there.
+- **Building** — open. The run graph exists; the words on it are still
+  slice ids and counts, not the promise.
+- **Controls** — open. Every control is governed, but the refused ones do
+  not yet say why beside themselves, in one list.
+- **Live / Came back** — open. The delivery report is a page; the three
+  moves under a failing criterion (ship it anyway, send it back with one
+  sentence, strike the criterion) are not built.
+- **The tabs** — still there. The mock has none: one page, whose body is
+  the state. They stay until the four states above are built on the strip.
+
+Fixed on the way, at `29dfc53`: the fold dropped subjects, claims and sets
+whenever two authors had written; and a session invented the author
+"user" when none was given — it now reads GITHUB_USERNAME, else the owner
+the GitHub CLI recorded for the token, and refuses otherwise.
+
+# A platform ask: code-server must be upgradeable
+
+Recorded here because nothing on the platform holds it yet. The running
+code-server pod predates its own playbook: the deployment carries two
+environment variables where the playbook declares three, and the links
+playbook 15 injects with kubectl exec (tk_ansible, tk_ssh, tk_images) are
+gone from this pod. There is no path to roll the pod that a person can run:
+10_deploy from inside the pod kills itself at the pod deletion, the full
+install would re-clone the repositories over uncommitted work, and
+thinkube-control refuses core components.
+
+What it needs: one action that builds or pulls the image, applies the pod
+specification with the environment resolved from the token (core commit
+`45aa78c` does the resolving), and rolls the pods — never cloning, never
+rewriting the shared `.env`. Everything playbook 15 injects by exec moves
+into the image or the pod specification. thinkube-control runs it from
+outside the pod being replaced.
+
 # First to evaluate: the session-link sweep takes the editor down
 
 Evaluate this before anything else in this file.
