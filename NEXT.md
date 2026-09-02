@@ -8,6 +8,13 @@ building, grading, handing it over, delivered or withheld. The step panel
 names the promise above the step id and reads the brief back into promise,
 files with their names, and criteria. 2.0.251.
 
+## Next on the run graph
+
+- **The door and the delivery cards keep a clock.** While a phase runs, its
+  chip shows the elapsed time from the phase's `since`, as a worker's does,
+  so a silent minute reads as time passing and not as a stall. The state
+  already records `since`; only the card is missing it.
+
 # The run's own honesty, landed
 
 - **The door refuses what did not hold.** A single-test command tried on a
