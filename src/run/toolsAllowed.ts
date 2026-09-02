@@ -88,6 +88,36 @@ export function describeTool(b: Record<string, unknown>): string {
  *  Held-out evidence is any test-shaped path, so the fence asks `isTestPath`
  *  itself: a local alias for that one rule is a second name the reader must
  *  chase, and a place the rule can quietly come to mean something else. */
+/**
+ * A shell command that reaches past the worktree into the cluster. A
+ * worker builds and checks in a tree; the cluster is the engine's to touch,
+ * through what the repository declares, after a person approves it. The
+ * words are matched as commands, so a file merely named `kubectl.md` is
+ * not a reach.
+ */
+export function clusterReach(command: string): string | undefined {
+  const REACH = new Set([
+    "kubectl", "helm", "oc", "k9s", "psql", "pg_dump", "pg_restore", "redis-cli", "ssh", "scp", "sshpass",
+    "ansible", "ansible-playbook", "argo", "argocd", "podman", "docker", "nerdctl", "crictl", "talosctl",
+  ]);
+  const WRAPPERS = new Set(["sudo", "nohup", "exec", "time", "env", "command", "builtin", "timeout"]);
+  // Each simple command of the line, by the word in command position —
+  // never a word that merely appears as an argument.
+  for (const segment of command.split(/;|&&|\|\||\||\(|\$\(|`|\n/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < words.length && (WRAPPERS.has(words[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]) || /^-/.test(words[i]))) i++;
+    const head = words[i]?.split("/").pop();
+    if (head && REACH.has(head))
+      return (
+        `${head} is refused: a worker builds and checks in its worktree and never reaches the cluster, a database, ` +
+        `another machine or a container runtime. If a check needs something the tree does not have, say so in your ` +
+        `closing words — the run gives the runner what the repository declares.`
+      );
+  }
+  return undefined;
+}
+
 export function refusedToolUse(
   deps: { role: "code" | "test"; blind?: boolean },
   tool: string,

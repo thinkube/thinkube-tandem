@@ -23,7 +23,7 @@ import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { appendDefect } from "../engine/defectLog";
 import { resolveWorkerModel } from "../engine/workerModel";
-import { defaultExec, scrubbedEnv, sliceOracleFactory } from "./oracle";
+import { defaultExec, runnerEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
 import { refreshRunTrees } from "./refresh";
 import { discardRunBranch } from "./freshStart";
@@ -86,7 +86,7 @@ export async function dispatchTep(
   const testerWt = worktree;
   if (deps.storeDir) st.sink = runLogSink(deps.storeDir, tep, runId);
   const log = (l: string, step?: string) => st.log(l, step);
-  const env = scrubbedEnv();
+  const env = runnerEnv();
   const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
 
   /**

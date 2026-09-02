@@ -39,6 +39,33 @@ export function scrubbedEnv(): NodeJS.ProcessEnv {
   return withCpuTruth(env);
 }
 
+/**
+ * What a part's tests are given when the run executes them: the same two
+ * variables the platform's pipeline hands its test container, taken from
+ * the database credentials this pod carries. The runner is the engine's
+ * own process; no worker sees this environment.
+ */
+export function runnerEnv(): NodeJS.ProcessEnv {
+  const env = scrubbedEnv();
+  if (!env.ADMIN_USERNAME && env.POSTGRES_USER) env.ADMIN_USERNAME = env.POSTGRES_USER;
+  if (!env.ADMIN_PASSWORD && env.POSTGRES_PASSWORD) env.ADMIN_PASSWORD = env.POSTGRES_PASSWORD;
+  return env;
+}
+
+/** A name that carries a credential, or a way into the cluster. */
+const SECRET = /PASSWORD|SECRET|TOKEN|^POSTGRES_|^ADMIN_|^KUBECONFIG$|^GITHUB_|^ANSIBLE_|^HARBOR_|^ARGO|^HF_|_KEY$|^AWS_|^AZURE_|^GOOGLE_/i;
+
+/**
+ * What a worker is spawned with: a working directory, a toolchain, and
+ * nothing that opens a door. A worker that found the platform's database
+ * password in its environment used it; one that finds nothing cannot.
+ */
+export function workerEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(scrubbedEnv())) if (v !== undefined && !SECRET.test(k)) out[k] = v;
+  return out;
+}
+
 export type Exec = (
   cmd: string,
   args: string[],

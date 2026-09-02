@@ -6,11 +6,12 @@
  * parked worker (the NEEDS-INPUT sentinel) keeps its session alive while
  * the human answers through the run view — the oracle lesson's door.
  */
+import { workerEnv } from "./oracle";
 import { execFile } from "node:child_process";
 import { extractNeedsInput } from "../engine/core/preflight";
 import { extractUndelivered } from "../engine/core/redispatch";
 import { rtkRewrite } from "../engine/rtkRewrite";
-import { clearanceLesson, refusedToolUse, toolsRefusedTo } from "./toolsAllowed";
+import { clearanceLesson, refusedToolUse, toolsRefusedTo, clusterReach } from "./toolsAllowed";
 export { clearanceLesson, refusedToolUse, toolsRefusedTo, FENCED_TOOLS } from "./toolsAllowed";
 import { describeTool } from "./toolsAllowed";
 
@@ -377,6 +378,9 @@ export async function runUnitWorker(
       options: {
         model: deps.model,
         cwd: deps.worktree,
+        // A worker's environment carries no credential and no way into the
+        // cluster; what a check needs, the runner is given by the engine.
+        env: workerEnv(),
         ...(deps.resume ? { resume: deps.resume } : {}),
         permissionMode: "bypassPermissions",
         thinking: { type: "disabled" },
@@ -397,7 +401,9 @@ export async function runUnitWorker(
                   const target = [h.tool_input?.file_path, h.tool_input?.path, h.tool_input?.pattern]
                     .filter((x): x is string => !!x)
                     .join(" ");
-                  const refused = refusedToolUse(deps, h.tool_name ?? "", target);
+                  const refused =
+                    refusedToolUse(deps, h.tool_name ?? "", target) ??
+                    (h.tool_name === "Bash" && h.tool_input?.command ? clusterReach(h.tool_input.command) : undefined);
                   if (refused)
                     return {
                       hookSpecificOutput: {

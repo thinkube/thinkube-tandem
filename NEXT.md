@@ -1,3 +1,24 @@
+# The run's own honesty, landed
+
+- **The door refuses what did not hold.** A single-test command tried on a
+  real test and failed refuses the run, naming the test and the last line.
+  A missing test runner — pytest, for a Python tree — is installed once
+  before the command is tried.
+- **The runner is given what CI gives.** The engine's own runner carries
+  the two variables the pipeline hands a test container, `ADMIN_USERNAME`
+  and `ADMIN_PASSWORD`, taken from the database credentials this pod holds.
+  The todo app declares, per container, how one test runs with them.
+- **A worker reaches nothing.** Its environment carries no credential and
+  no cluster access, and a command that names kubectl, helm, psql, ssh,
+  ansible, argo or a container runtime in command position is refused with
+  the reason.
+- **A check that could not start judges nothing.** It is "not judged", said
+  once per cause on the report, never a red against the work.
+
+Still a platform decision: a test database with its own credentials per
+app, provisioned by thinkube-control, so that CI and the runner stop
+handing the admin password to a test container at all.
+
 # Where the surface stands against the mock
 
 The mock at https://claude.ai/code/artifact/fd45846a-343c-4ee8-8e85-20e447b82591

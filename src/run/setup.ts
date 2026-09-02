@@ -331,15 +331,35 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // Each command that RAN here is minted; one that did not is absent, not
   // an empty string. An empty string was accepted by every consumer and
   // executed by one of them.
-  const ranOne = await proveRunOne(args);
+  const one = await proveRunOne(args);
+  // Tried on a real test and failed is not "nothing to prove it on": a run
+  // that starts here has no way to judge a single check, and every unit
+  // would end "not judged". Refused at the door, naming what failed.
+  if (one.tried && !one.held)
+    return {
+      provisioned,
+      built,
+      refusal:
+        `the single-test command did not hold on ${one.sample}: ${one.why ?? "it did not run the test"} — ` +
+        `nothing could judge a check here. Fix the command or the tree it runs in, and run again.`,
+    };
+  const ranOne = one.held;
   // Each part's own command, proved in its own tree on one of its own
   // tests. A part with nothing to prove it on yet keeps what it was told —
   // the first check written there proves it in use.
   const parts: Record<string, { provision?: string; prepare?: string; runOne?: string }> = {};
   for (const [root, told] of Object.entries(args.partCommands ?? {})) {
     if (root === "." || !told.runOne) continue;
-    const held = await proveRunOne({ ...args, runOne: told.runOne }, root);
-    parts[root] = { ...told, ...(held ? { runOne: held } : {}) };
+    const proved = await proveRunOne({ ...args, runOne: told.runOne }, root);
+    if (proved.tried && !proved.held)
+      return {
+        provisioned,
+        built,
+        refusal:
+          `${root}'s single-test command did not hold on ${proved.sample}: ${proved.why ?? "it did not run the test"} — ` +
+          `nothing could judge a check in ${root}. Fix the command or the tree it runs in, and run again.`,
+      };
+    parts[root] = { ...told, ...(proved.held ? { runOne: proved.held } : {}) };
   }
   const ranSuite = args.suite
     ? args.suiteProvenBefore
@@ -359,11 +379,27 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   };
 }
 
-/** The single-test command, tried on one of the repository's own tests.
- *  Held → kept; failed or nothing to try it on → "" (the gate's whole suite
- *  still stands behind every slice), with the reason said. */
-async function proveRunOne(args: SetupArgs, part = "."): Promise<string> {
-  if (!args.runOne) return "";
+/**
+ * The test runners a tree may need that its runtime dependencies do not
+ * install, with how to install each. A part's tests run in CI inside an
+ * image that carries the runner; the worktree carries only what the
+ * repository's own provisioning installs, which is the product's needs.
+ */
+const TEST_RUNNERS: { tool: string; install: string; when: RegExp }[] = [
+  { tool: "pytest", install: "python3 -m pip install --break-system-packages pytest", when: /\.py$/ },
+];
+
+/**
+ * The single-test command, tried on one of the repository's own tests.
+ * `tried` says a test was there to try it on; `held` is the command when
+ * it ran that test, or "" with `why` when it did not. The gate's whole
+ * suite still stands behind every slice either way.
+ */
+async function proveRunOne(
+  args: SetupArgs,
+  part = ".",
+): Promise<{ held: string; tried: boolean; sample?: string; why?: string }> {
+  if (!args.runOne) return { held: "", tried: false };
   const listed = (await args.exec("git", ["-C", args.worktree, "ls-files"], args.worktree)).out.split("\n").map((l) => l.trim());
   // A part's command is proved on a test OF THAT PART, in that part's own
   // directory. Proving the frontend's runner against a backend test says
@@ -379,7 +415,18 @@ async function proveRunOne(args: SetupArgs, part = "."): Promise<string> {
         ? "  no test of the repository's own to prove the single-test command on — slices run without it"
         : `  ${part} has no test of its own yet — its command proves itself on the first check written there`,
     );
-    return "";
+    return { held: "", tried: false };
+  }
+  const where = part === "." ? args.worktree : `${args.worktree}/${part}`;
+  // The runner the tests need, when the tree's own provisioning did not
+  // bring it: installed here, once, and said so.
+  for (const runner of TEST_RUNNERS) {
+    if (!runner.when.test(sample) || !new RegExp(`\\b${runner.tool}\\b`).test(args.runOne)) continue;
+    const there = await args.boundedExec(`command -v ${runner.tool}`, where);
+    if (there.code === 0) continue;
+    args.log(`installing ${part === "." ? "the" : `${part}'s`} test runner, ${runner.tool}: ${runner.install}`);
+    const got = await args.boundedExec(runner.install, where);
+    args.log(`  ${got.code === 0 ? "installed" : `did not install — ${tail(got.output, 200).split("\n").pop() ?? ""}`}`);
   }
   // The command is written for the part's own tree: `<file>` is the path as
   // that part's runner takes it, and the command runs where that part is.
@@ -387,13 +434,14 @@ async function proveRunOne(args: SetupArgs, part = "."): Promise<string> {
   const cmd = args.runOne.replace(/<file>/g, inPart);
   args.log(`proving ${part === "." ? "the" : `${part}'s`} single-test command on ${sample}: ${cmd}`);
   const t0 = Date.now();
-  const r = await args.boundedExec(cmd, part === "." ? args.worktree : `${args.worktree}/${part}`);
+  const r = await args.boundedExec(cmd, where);
   // Held means the runner RAN the test — green, or red in the runner's own
   // words. A red test on the base is the base's business; a command that
   // cannot run one file at all is not a way to run one.
   const ran = r.code === 0 || /^(not )?ok \d+|\b\d+ (passed|failed)\b|^(--- )?(PASS|FAIL)\b/m.test(r.output);
-  args.log(`  ${ran ? "held" : "did not hold"} in ${since(t0)}${ran ? "" : ` — ${tail(r.output, 300).split("\n").pop() ?? ""}`}`);
-  return ran ? args.runOne : "";
+  const why = tail(r.output, 300).split("\n").filter((l) => l.trim()).pop() ?? "";
+  args.log(`  ${ran ? "held" : "did not hold"} in ${since(t0)}${ran ? "" : ` — ${why}`}`);
+  return ran ? { held: args.runOne, tried: true, sample } : { held: "", tried: true, sample, why };
 }
 
 /**
