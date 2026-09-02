@@ -50,7 +50,7 @@ function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
       return { text: `needs you${elapsed}`, kind: "q" };
     case "done": {
       const proof = proofOfPass(logLines);
-      return { text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why };
+      return { text: proof.text, kind: proof.proven ? "pass" : "plain", why: proof.why };
     }
     case "failed":
       return { text: "failed", kind: "na" };
@@ -179,8 +179,16 @@ export function RunSection(props: {
         // What the unit builds: the promise, and where it lands, read from
         // the unit's own brief when the space cannot name the promise.
         const said = u.what?.split(/\s+—\s+lands at\s+/);
-        const lands =
-          said && said.length > 1 ? `lands at ${said.slice(1).join(" ").split(/\s+—\s+|\n/)[0].trim()}` : undefined;
+        // The file, and the name of the thing in it — never its signature:
+        // a card is read at a glance, and code is not read at a glance.
+        const landsAt = said && said.length > 1 ? said.slice(1).join(" ").split(/\s+—\s+|\n/)[0].trim() : "";
+        const lands = landsAt
+          ? `lands at ${landsAt
+              .split(/\s*›\s*/)
+              .map((part, i) => (i === 0 ? part : part.replace(/\(.*$/, "").trim()))
+              .filter(Boolean)
+              .join(" › ")}`
+          : undefined;
         const spoken = u.promiseLabel?.label ?? (said?.[0]?.trim() || undefined);
         return {
           id: u.id,
@@ -245,7 +253,7 @@ export function RunSection(props: {
               abs: "every check, on the real state",
               chips: [
                 allDone
-                  ? ((proof) => ({ text: proof.text, kind: proof.proven ? "pass" : "na", why: proof.why }) as Chip)(
+                  ? ((proof) => ({ text: proof.text, kind: proof.proven ? "pass" : "plain", why: proof.why }) as Chip)(
                       proofOfPass(run.logCounts?.["gate"] ?? 0),
                     )
                   : anyFailed

@@ -8,8 +8,56 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
-import { C, FS, O, SP, label, labelIn } from "./type";
+import { C, FS, O, SAID, SP, label, labelIn } from "./type";
 import { proofOfPass } from "../../../src/surfaces/surfaceContract";
+import { parseBrief } from "../../../src/surfaces/briefText";
+
+/**
+ * What a unit builds, in its parts: each promise in the person's words,
+ * where it lands as a file and a name, and what must be true when it is
+ * done — never the brief's one unbroken line.
+ */
+function Builds(props: { what: string }): JSX.Element {
+  const built = parseBrief(props.what);
+  if (!built.length) return <div style={{ fontSize: FS.caption, whiteSpace: "pre-wrap" }}>{props.what}</div>;
+  return (
+    <div data-builds style={{ display: "flex", flexDirection: "column", gap: SP.md }}>
+      {built.map((b, i) => (
+        <div key={i} data-builds-promise>
+          <div style={{ fontFamily: SAID, fontSize: FS.title, lineHeight: 1.45 }}>{b.promise}</div>
+          {b.lands.length ? (
+            <ul style={{ listStyle: "none", margin: `${SP.xs}px 0 0`, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+              {b.lands.map((l, j) => (
+                <li key={j} style={{ fontSize: FS.caption, color: C.quiet, overflowWrap: "anywhere" }} title={l.signature}>
+                  <code style={{ fontSize: FS.caption }}>{l.path}</code>
+                  {l.name ? (
+                    <>
+                      {" › "}
+                      <code style={{ fontSize: FS.caption, color: "inherit" }}>{l.name}</code>
+                    </>
+                  ) : null}
+                  {l.isNew ? <span> · new file</span> : null}
+                  {l.signature ? (
+                    <div style={{ fontFamily: "var(--vscode-editor-font-family, monospace)", fontSize: 10, opacity: O.dim, whiteSpace: "pre-wrap", marginLeft: SP.md }}>
+                      {l.signature}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {b.criteria.length ? (
+            <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: SP.lg, fontSize: FS.caption, lineHeight: 1.5 }}>
+              {b.criteria.map((c, j) => (
+                <li key={j}>{c}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const btn: React.CSSProperties = {
   fontWeight: 600,
@@ -40,20 +88,25 @@ function StepLog(props: {
   }, [log.lines.length, log.total, following]);
   return (
     <section data-step-log style={{ marginBottom: 14 }}>
+      {/* The card's title first — the promise, in the person's words — and
+          the step's own name under it, for the developer reading the log. */}
+      {unit?.promiseLabel ? (
+        <div style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.4 }} title={unit.promiseLabel.full}>
+          {unit.promiseLabel.label}
+        </div>
+      ) : null}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <strong style={{ fontSize: FS.body }}>{log.step}</strong>
-
+        <strong style={{ fontSize: FS.body, color: unit?.promiseLabel ? C.quiet : "inherit" }}>{log.step}</strong>
       </div>
       {unit ? (
         <>
           <div style={{ fontSize: FS.caption, color: C.quiet }}>
-            {unit.role === "test" ? "writes the checks" : "writes the code"} for{" "}
-            {unit.sliceTitle ?? unit.slice}
+            {unit.role === "test" ? "writes the checks" : unit.role === "maintain" ? "brings the tests under" : "writes the code"}
           </div>
           {unit.what ? (
             <>
               <div style={label}>What it builds</div>
-              <div style={{ fontSize: FS.caption, whiteSpace: "pre-wrap" }}>{unit.what}</div>
+              <Builds what={unit.what} />
             </>
           ) : null}
           {unit.waits?.length ? (
