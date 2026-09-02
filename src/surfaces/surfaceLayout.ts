@@ -15,19 +15,20 @@ export const SURFACE_PAGES: readonly SurfacePage[] = ["write", "intent", "work",
 
 /** A drawn band of the surface, top to bottom. "rail" is the one place a
  *  parked worker's question is answered — naming it here means a page
- *  drawn from this list can never leave it out. */
+ *  drawn from this list can never leave it out. "notice" is where a
+ *  refused press says why, on every page. */
 type SurfaceRegion =
   | "asking-in"
-  | "tabs"
+  | "notice"
   | "legacy"
   | "capture"
   | "asks"
   | "page"
   | "rail";
 
-/** The regions this page draws, top to bottom. "asking-in" then "tabs"
- *  come first for every page, at the same index, so the tab row's
- *  position never depends on which page is showing. "page" then "rail"
+/** The regions this page draws, top to bottom. "asking-in" then "notice"
+ *  come first for every page, at the same index, so the strip's position
+ *  never depends on which page is showing. "page" then "rail"
  *  come last for every page, at the same index, so the rail — the
  *  surface's one place to answer a parked worker — is always drawn.
  *  What is between them is the page's own business. */
@@ -37,5 +38,5 @@ export function surfaceRegions(page: SurfacePage): SurfaceRegion[] {
     page === "intent" ? ["asks", "page"] :
     page === "work" ? ["legacy", "page"] :
     ["legacy", "page"];
-  return ["asking-in", "tabs", ...below, "rail"];
+  return ["asking-in", "notice", ...below, "rail"];
 }

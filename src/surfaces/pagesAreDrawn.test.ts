@@ -15,28 +15,23 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { canRender, openSurface } from "../gates/renderedSurface";
 import { AFFORDANCES, PAGES } from "./affordances";
+import { SURFACE_PAGES } from "./surfaceLayout";
+import { pushFor } from "./pages.fixture";
 
 const MEDIA = path.resolve(__dirname, "..", "..", "media", "map");
-const FIXTURE = path.resolve(__dirname, "..", "..", "src", "surfaces", "surfaceFits.push.json");
-const PUSH = JSON.parse(
-  fs.readFileSync(fs.existsSync(FIXTURE) ? FIXTURE : path.join(__dirname, "surfaceFits.push.json"), "utf8"),
-) as Record<string, unknown>;
 
-/** Which declared handles are in the document, and whether they have a size. */
+/** Which declared handles are in the document, and whether they have a size.
+ *  The page follows the state, so each page is reached by the state that
+ *  leads there. */
 async function drawn(handles: readonly string[]): Promise<Record<string, { there: boolean; sized: boolean }>> {
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
   try {
-    await s.push(PUSH);
     const seen: Record<string, { there: boolean; sized: boolean }> = {};
-    const tabs = await s.read(() => document.querySelectorAll("[data-tabs] button").length);
-    for (let at = 0; at < tabs; at++) {
-      await s.act((i: number) => {
-        ([...document.querySelectorAll("[data-tabs] button")][i] as HTMLElement)?.click();
-      }, at);
+    for (const page of SURFACE_PAGES) {
+      await s.push(pushFor(page));
       const here = await s.readWith(
         (hs: string[]) =>
           Object.fromEntries(

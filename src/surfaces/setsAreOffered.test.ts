@@ -9,33 +9,23 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { canRender, openSurface } from "../gates/renderedSurface";
+import { quietPush } from "./pages.fixture";
 
 const MEDIA = path.resolve(__dirname, "..", "..", "media", "map");
-const FIXTURE = path.resolve(__dirname, "..", "..", "src", "surfaces", "surfaceFits.push.json");
-const BASE = JSON.parse(
-  fs.readFileSync(fs.existsSync(FIXTURE) ? FIXTURE : path.join(__dirname, "surfaceFits.push.json"), "utf8"),
-) as Record<string, unknown>;
 
 const withSets = (specs: unknown[]): Record<string, unknown> => ({
-  ...BASE,
-  phase: "understood",
+  ...quietPush(),
   allowed: ["group-into-sets", "choose-set", "think", "build"],
   specs,
 });
 
+/** An understood space lands on the intent page by itself. */
 async function onIntent<T>(push: Record<string, unknown>, read: () => T): Promise<T> {
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
   try {
     await s.push(push);
-    await s.act(() => {
-      const b = [...document.querySelectorAll("[data-tabs] button")].find((x) =>
-        /Intent/.test(x.textContent ?? ""),
-      ) as HTMLElement | undefined;
-      b?.click();
-    }, 0);
     return await s.read(read);
   } finally {
     await s.close();

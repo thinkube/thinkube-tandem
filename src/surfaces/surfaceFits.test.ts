@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { canRender, openSurface, type OpenSurface } from "../gates/renderedSurface";
 import { SURFACE_PAGES } from "./surfaceLayout";
+import { pushFor } from "./pages.fixture";
 
 const MEDIA = path.resolve(__dirname, "..", "..", "media", "map");
 
@@ -70,18 +71,9 @@ test("every page can be seen in the window it is drawn in", async (t) => {
   for (const size of SIZES) {
     const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: size.width, height: size.height } });
     try {
-      await s.push(PUSH);
-      const tabs = await s.read(() =>
-        [...document.querySelectorAll("[data-tabs] button")].map((b) => (b.textContent ?? "").trim()),
-      );
-      assert.ok(tabs.length >= SURFACE_PAGES.length, `${size.name}: the surface did not draw its pages`);
-
-      for (const [at, label] of tabs.entries()) {
-        await s.act((i: number) => {
-          const b = [...document.querySelectorAll("[data-tabs] button")][i] as HTMLElement;
-          b?.click();
-        }, at);
-        const drawn = await s.read(() => document.querySelectorAll("[data-tabs] button").length);
+      for (const label of SURFACE_PAGES) {
+        await s.push(pushFor(label));
+        const drawn = await s.read(() => document.querySelectorAll("[data-strip]").length);
         assert.ok(
           drawn > 0,
           `${size.name} · ${label}: the surface stopped drawing entirely — a page that throws ` +
@@ -116,12 +108,8 @@ test("the page keeps most of the column it is drawn in", async (t) => {
   // the thing the window is for.
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1100, height: 800 } });
   try {
-    await s.push(PUSH);
-    const tabs = await s.read(() => document.querySelectorAll("[data-tabs] button").length);
-    for (let at = 0; at < tabs; at++) {
-      await s.act((i: number) => {
-        ([...document.querySelectorAll("[data-tabs] button")][i] as HTMLElement)?.click();
-      }, at);
+    for (const page of SURFACE_PAGES) {
+      await s.push(pushFor(page));
       const share = await s.read(() => {
         const app = document.querySelector("#root")?.children[0];
         const column = app?.getBoundingClientRect().height ?? 0;
@@ -139,7 +127,7 @@ test("the page keeps most of the column it is drawn in", async (t) => {
       });
       assert.ok(
         share.page >= share.column / 2,
-        `page ${at}: the page has ${share.page}px of a ${share.column}px column — ` +
+        `page ${page}: the page has ${share.page}px of a ${share.column}px column — ` +
           `${share.worst?.what ?? "something above it"} takes ${share.worst?.height ?? 0}px`,
       );
     }

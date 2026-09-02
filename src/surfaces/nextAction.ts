@@ -104,18 +104,38 @@ export function nextAction(
         };
   }
 
+  // Delivered: the page is what came back, and the one press is the
+  // decision — or the way back in when the gate would refuse it.
   const delivered = push.deliveries.find((d) => !d.accepted);
-  if (delivered)
+  if (delivered) {
+    const stuck = delivered.withheld ?? delivered.blocked;
+    if (stuck)
+      return {
+        where: `delivered — ${delivered.withheld ? "withheld" : "cannot be accepted"}`,
+        label: "Run it again",
+        hint: stuck,
+        enabled: !!delivered.rerun && a.allowed("rerun"),
+        move: { kind: "post", action: { action: "rerun" } },
+      };
     return {
-      where: `delivered — waiting for you to read it`,
-      label: "Read what came back",
-      hint: "what was made true, and the decision left to you",
-      enabled: true,
-      move: { kind: "tab", tab: "flow" },
+      where: "delivered — waiting for your decision",
+      label: "Accept it",
+      hint: "merges the work on the forge · Not this and Run again are on the page",
+      enabled: a.allowed("accept-delivery"),
+      move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
     };
+  }
 
+  const written = asksOfText(push.draft ?? "").length;
+  if (written && sentences)
+    return {
+      where: `${plural(written, "new line")} written, not read`,
+      label: `Read these ${written}`,
+      hint: "costs one round · records nothing",
+      enabled: a.allowed("read-draft"),
+      move: { kind: "post", action: { action: "read-draft" } },
+    };
   if (sentences === 0) {
-    const written = asksOfText(push.draft ?? "").length;
     return written
       ? {
           where: `${plural(written, "line")} written, none read`,

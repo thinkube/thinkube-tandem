@@ -129,11 +129,19 @@ test("building: the only press is stop", () => {
   assert.match(n.where, /building — set s1/);
 });
 
-test("delivered and not accepted: read what came back", () => {
+test("delivered and not accepted: the one press is the decision", () => {
   const push = quiet({ deliveries: [{ id: "d1", page: "", accepted: false }] });
   const n = nextAction(push, { behind: false, allowed: () => true });
-  assert.equal(n.label, "Read what came back");
-  assert.deepEqual(n.move, { kind: "tab", tab: "flow" });
+  assert.equal(n.label, "Accept it");
+  assert.deepEqual(n.move, { kind: "post", action: { action: "accept-delivery", deliveryId: "d1" } });
+});
+
+test("withheld: the one press is the way back in, and the reason is beside it", () => {
+  const push = quiet({ deliveries: [{ id: "d1", page: "", accepted: false, withheld: "2 promises are not kept", rerun: { id: "cut-1" } }] });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Run it again");
+  assert.match(n.hint, /not kept/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "rerun" } });
 });
 
 test("while subjects are being worked out, the strip says how far, and is busy", () => {
