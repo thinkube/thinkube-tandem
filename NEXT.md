@@ -20,9 +20,14 @@ real todo space and of a delivered fixture:
   you asked for and what happened to each sentence, then what was seen
   when it was used and what was not delivered; the run's own report is
   folded under it. Accept, Not this and Run again stay at the end.
-- **The tabs** are quiet pills now, and the surface moves by itself: choose
-  a thing and its page opens when it is worked out; build and the run
-  opens; keep a reading and the intent page opens.
+- **No tab row.** The page follows the state (`src/surfaces/pageFor.ts`):
+  the box while nothing is read, your sentences once they are, what it
+  will do once a thing is chosen and worked out, the run while it runs,
+  what came back once it is delivered. The earlier screens are quiet links
+  under the strip, "the box", "your sentences", "what it will do", "the
+  run", to look back at; the next state change brings the current page
+  back. Delivered, the one press is "Accept it", or "Run it again" with
+  the gate's reason beside it when it cannot be accepted. 2.0.241.
 
 Still open against the mock:
 
@@ -33,8 +38,6 @@ Still open against the mock:
   with one sentence, strike the criterion.
 - The run graph's words: the cards are titled by the promise already, but
   the audit and gate cards still speak in checks and slices.
-- Removing the tab row altogether, once every state above is reached from
-  the strip alone.
 
 # A platform ask: code-server must be upgradeable
 
