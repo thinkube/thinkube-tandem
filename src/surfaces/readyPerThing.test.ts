@@ -52,3 +52,20 @@ test("a worked-out thing is ready to build while another is not", () => {
   assert.equal(r.asks, 1, "the one sentence it locks");
   assert.equal(readyToBuild(sp, false).thinking, true, "space-wide, the box still blocks");
 });
+
+test("the act of building judges the chosen thing alone", async () => {
+  const { buildFlow } = await import("./buildFlow");
+  const sp = space();
+  const fake = {
+    space: sp,
+    activity: undefined,
+    groundingView: () => [],
+    deps: { now: () => "2026-01-01T00:00:00.000Z" },
+  } as never;
+  // With the list in hand and worked out, the box being unthought is no reason.
+  const r = await buildFlow(fake, "s1").catch((e: Error) => ({ ok: false, reason: e.message }));
+  assert.doesNotMatch(r.reason ?? "", /still working out/, `refused for the wrong reason: ${r.reason}`);
+  // The box itself, not worked out, is refused by its own name.
+  const r2 = await buildFlow(fake, "s2").catch((e: Error) => ({ ok: false, reason: e.message }));
+  assert.match(r2.reason ?? "", /still working out "add without the mouse"/);
+});

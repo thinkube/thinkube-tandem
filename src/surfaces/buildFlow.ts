@@ -110,16 +110,16 @@ export async function buildFlow(
   // would commit work that does not exist yet, and this is the one act
   // that cannot be undone — so the guard is here, in the act itself, not
   // in a button the surface can forget to hide.
-  const state = readyToBuild(s.space, !!s.activity || s.groundingView().length > 0);
+  const spec = (s.space.specs ?? []).find((x) => x.id === specId);
+  if (!spec) return { ok: false, reason: `no set called '${specId}' — group your asks into sets first` };
+  // Judged over this thing alone: what the others still cost to think
+  // about is no reason to refuse the one that is worked out.
+  const state = readyToBuild(s.space, !!s.activity || s.groundingView().length > 0, spec);
   if (state.thinking)
     return {
       ok: false,
-      reason:
-        "still working out what to build — nothing can be committed until every object is thought through",
+      reason: `still working out "${spec.name}" — nothing can be signed until every subject of it is thought through`,
     };
-
-  const spec = (s.space.specs ?? []).find((x) => x.id === specId);
-  if (!spec) return { ok: false, reason: `no set called '${specId}' — group your asks into sets first` };
   const ids = promisesOfSpec(s.space, spec);
   if (!ids.length)
     return { ok: false, reason: `nothing is derived from "${spec.name}" yet — work it out first` };
