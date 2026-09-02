@@ -1,36 +1,40 @@
 # Where the surface stands against the mock
 
 The mock at https://claude.ai/code/artifact/fd45846a-343c-4ee8-8e85-20e447b82591
-is the source. Each state below is either landed, with the commit, or open.
+is the source. Landed as 2.0.240, verified by headless screenshots of the
+real todo space and of a delivered fixture:
 
-- **Understood** — landed at `1a4352c`, deployed as 2.0.238. The strip says
-  where the space is and holds the one next action, decided once in
-  `src/surfaces/nextAction.ts` for every state. Your sentences are set in
-  the serif, once each, inside the things they became, in build order, with
-  the marks and the folded "things I decided for you". The empty rail no
-  longer draws a rule down the page. Verified by a headless screenshot of
-  the real todo space.
-- **Nothing written / Written** — the strip is right; the write page still
-  shows its own Read button, a Panic button and the old empty-state
-  sentence under the box. Open.
-- **What it will do** — open. The work page still draws claim cards with
-  the subject's name as a label and "nothing derived" under each; the mock
-  shows each promise with its criteria as ticks, a disagreement line, and
-  "Build these N" as the one action. The strip already moves there.
-- **Building** — open. The run graph exists; the words on it are still
-  slice ids and counts, not the promise.
-- **Controls** — open. Every control is governed, but the refused ones do
-  not yet say why beside themselves, in one list.
-- **Live / Came back** — open. The delivery report is a page; the three
-  moves under a failing criterion (ship it anyway, send it back with one
-  sentence, strike the criterion) are not built.
-- **The tabs** — still there. The mock has none: one page, whose body is
-  the state. They stay until the four states above are built on the strip.
+- **The strip.** Where the space is, and the one next press, decided once
+  in `src/surfaces/nextAction.ts` for every state: read these N, keep
+  these N, group into things, build the first, work it out, build these N,
+  stop, read what came back. It moves while the machine works, from the
+  press to the last subject, and says how far.
+- **Understood.** Your sentences in the serif, once each, inside the things
+  they became, in build order, with the marks and the folded decisions.
+- **What it will do.** The work page is the thing in hand: each promise in
+  your face, where it lands, its criteria as ticks with the newest verdict,
+  the line that unlocks Build, and what pressing Build does. The price and
+  the readiness are the chosen thing's alone (`readyPerThing.test.ts`).
+  The old graph of every claim in the space is gone.
+- **Live / came back.** The delivery page opens with the link, then what
+  you asked for and what happened to each sentence, then what was seen
+  when it was used and what was not delivered; the run's own report is
+  folded under it. Accept, Not this and Run again stay at the end.
+- **The tabs** are quiet pills now, and the surface moves by itself: choose
+  a thing and its page opens when it is worked out; build and the run
+  opens; keep a reading and the intent page opens.
 
-Fixed on the way, at `29dfc53`: the fold dropped subjects, claims and sets
-whenever two authors had written; and a session invented the author
-"user" when none was given — it now reads GITHUB_USERNAME, else the owner
-the GitHub CLI recorded for the token, and refuses otherwise.
+Still open against the mock:
+
+- The disagreement line under a criterion ("you wrote due date first —
+  this settles it the other way") and striking a criterion. The criteria
+  are read-only ticks today.
+- The three moves under a failing criterion: ship it anyway, send it back
+  with one sentence, strike the criterion.
+- The run graph's words: the cards are titled by the promise already, but
+  the audit and gate cards still speak in checks and slices.
+- Removing the tab row altogether, once every state above is reached from
+  the strip alone.
 
 # A platform ask: code-server must be upgradeable
 
