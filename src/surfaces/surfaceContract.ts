@@ -282,7 +282,7 @@ export type WebToHost =
   | { action: "reframe"; unitId: string; text: string }
   | { action: "amend"; unitId: string; text: string }
   | { action: "think" }
-  | { action: "build"; changeIds?: string[] }
+  | { action: "build"; specId?: string; changeIds?: string[] }
   | { action: "dismiss-promise"; unitId: string; text?: string }
   | { action: "read-log"; stepId?: string }
   | { action: "stop-run" }

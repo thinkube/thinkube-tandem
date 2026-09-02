@@ -76,7 +76,9 @@ export async function handleInbound(
     note = "Cancelled.";
   } else if (msg.action === "build") {
     push("Building…");
-    const r = await session.build(msg.specId ?? "");
+    // The thing in hand, unless the press names one: a build with no set
+    // is a build of what was chosen, never of nothing.
+    const r = await session.build(msg.specId ?? session.cutSpecId ?? "");
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "think") {
     const c = session.thinkingCost();

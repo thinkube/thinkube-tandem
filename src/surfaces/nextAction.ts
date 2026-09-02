@@ -222,6 +222,6 @@ export function nextAction(
       ? `signs ${plural(push.ready.asks, "sentence")} read-only and starts the workers — this is what spends`
       : "say why no documentation is needed — the line for it is on the page",
     enabled: docs && promises > 0 && a.allowed("build"),
-    move: { kind: "post", action: { action: "build" } },
+    move: { kind: "post", action: { action: "build", specId: chosen.id } },
   };
 }

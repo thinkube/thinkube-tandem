@@ -107,7 +107,7 @@ test("chosen and worked out: build these — and it signs", () => {
   assert.equal(n.label, "Build these 5");
   assert.equal(n.enabled, true);
   assert.match(n.hint, /signs 3 sentences read-only/);
-  assert.deepEqual(n.move, { kind: "post", action: { action: "build" } });
+  assert.deepEqual(n.move, { kind: "post", action: { action: "build", specId: "s1" } });
 });
 
 test("build waits for the documentation line, and says so", () => {
