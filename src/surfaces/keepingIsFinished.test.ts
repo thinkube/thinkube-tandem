@@ -23,6 +23,7 @@ import { phaseOf } from "./phase";
 function sessionReading(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-keep-"));
   const s = new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

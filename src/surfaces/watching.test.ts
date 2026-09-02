@@ -22,6 +22,7 @@ import { saveRun } from "../run/record";
 function watcher(): { session: TandemSession; dir: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-watching-"));
   const session = new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

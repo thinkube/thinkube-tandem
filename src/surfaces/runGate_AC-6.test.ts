@@ -17,6 +17,7 @@ import { emptySpace } from "../core/schema";
 function sessionWithSignedUndeliveredWork(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-signed-idle-"));
   const session = new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

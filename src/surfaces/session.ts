@@ -4,6 +4,7 @@
  * delivery. Long rounds MERGE results into the present space — they
  * never replace it with a copy of their past.
  */
+import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import * as path from "node:path";
 import { emptySpace, Space, Unit } from "../core/schema";
 import { assessCurrency } from "./currency";
@@ -91,7 +92,13 @@ export class TandemSession {
   }
 
   get author(): string {
-    return this.deps.author ?? "user";
+    // Who is thinking, from the environment when the caller did not say:
+    // GITHUB_USERNAME, else the owner the GitHub CLI recorded for the
+    // token. Never a default — an invented name is the same on every
+    // installation and separates nobody.
+    const author = this.deps.author ?? currentAuthor();
+    if (!author) throw new Error(AUTHOR_MISSING);
+    return author;
   }
 
   tepApproval(tepId: string): { approved: boolean; reason?: string } {

@@ -16,6 +16,7 @@ import { CONTROL_NAMES } from "./surfaceContract";
 function throwawaySession(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-surfacecontract-ac7-"));
   return new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

@@ -21,6 +21,7 @@ import { RunState } from "../run/state";
 function throwawaySession(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-affordances-ac1-"));
   return new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

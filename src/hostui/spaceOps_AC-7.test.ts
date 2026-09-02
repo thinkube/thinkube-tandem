@@ -17,6 +17,7 @@ import { emptySpace } from "../core/schema";
 function throwawaySession(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spaceops-ac7-session-"));
   const session = new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),

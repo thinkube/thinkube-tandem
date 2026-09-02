@@ -118,6 +118,9 @@ const qual = (id: string, author: string): string => `${id}~${author}`;
 function rewriteIds(space: Space, ren: Map<string, string>): Space {
   const r = (id: string): string => ren.get(id) ?? id;
   return {
+    ...space,
+    subjects: space.subjects?.map((s) => ({ ...s, from: s.from.map(r) })),
+    claims: space.claims?.map((c) => ({ ...c, fromAsk: r(c.fromAsk) })),
     asks: space.asks.map((a) => ({ ...a, id: r(a.id) })),
     nodes: space.nodes.map((n) => ({
       ...n,
@@ -188,6 +191,23 @@ function foldSpaces(latest: SnapshotRecord[]): Space {
     }
     for (const c of space.cuts) put(merged.cuts, c);
     for (const u of space.units) put(merged.units, u);
+    // The reading and its grouping fold like everything else: the first
+    // writer of an id owns it. A fold that rebuilt the space from a fixed
+    // list of fields dropped these, and a space read by two authors showed
+    // nothing derived while both readings sat in the store.
+    for (const sub of space.subjects ?? []) {
+      if (!merged.subjects) merged.subjects = [];
+      put(merged.subjects, sub);
+    }
+    for (const cl of space.claims ?? []) {
+      if (!merged.claims) merged.claims = [];
+      put(merged.claims, cl);
+    }
+    for (const sp of space.specs ?? []) {
+      if (!merged.specs) merged.specs = [];
+      put(merged.specs, sp);
+    }
+    if (space.draft && !merged.draft) merged.draft = space.draft;
     for (const p of space.proposals ?? []) {
       if (!merged.proposals) merged.proposals = [];
       if (!merged.proposals.some((x) => x.id === p.id)) merged.proposals.push(p);

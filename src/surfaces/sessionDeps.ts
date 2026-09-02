@@ -18,7 +18,9 @@ export interface SessionDeps {
   /** Machine-local secret + token store home (globalStorage in the host). */
   storageDir: string;
   now: () => string;
-  /** Author identity (git user.name), for author-scoped TEP numbers. */
+  /** Who is thinking. Every record path and minted id carries it. Absent,
+   *  the session reads it from the environment: GITHUB_USERNAME, else the
+   *  owner the GitHub CLI recorded for the token. Never a default. */
   author?: string;
   /** The forge for this repo; absent means deliveries stay local branches. */
   forge?: Forge;

@@ -27,6 +27,7 @@ import { can, CONTROL_NAMES, noteAllowed, refusalSentence, WebToHost } from "./s
 function throwawaySession(): TandemSession {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-inbound-ac1-"));
   const session = new TandemSession({
+    author: "tester",
     round: { model: "sonnet", repoRoot: dir },
     storeDir: dir,
     storageDir: path.join(dir, ".local"),
