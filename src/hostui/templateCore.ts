@@ -175,6 +175,10 @@ export async function createAppFromTemplate(a: {
   description?: string;
   appsRoot: string;
   storeRoot: string;
+  /** The platform already knows this name: deploy over what it has. Without
+   *  it, a known name is refused with the platform's own words, so nothing
+   *  is replaced that a person did not say to replace. */
+  replace?: boolean;
   say?: (line: string) => void;
   http?: Http;
   sleep?: (ms: number) => Promise<void>;
@@ -205,12 +209,24 @@ export async function createAppFromTemplate(a: {
       body: JSON.stringify({
         template_url: a.templateUrl,
         template_name: a.appName,
-        variables: { project_description: a.description ?? "" },
+        variables: { project_description: a.description ?? "", ...(a.replace ? { _overwrite_confirmed: true } : {}) },
         execution_mode: "background",
       }),
     });
     if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
-    deploymentId = ((await res.json()) as { deployment_id: string }).deployment_id;
+    const answer = (await res.json()) as { deployment_id?: string; status?: string; message?: string };
+    // The platform answers 200 to a name it already knows, with no
+    // deployment and a question. Polling an empty id read the whole list
+    // of deployments for fifteen minutes and called that waiting.
+    if (!answer.deployment_id)
+      return {
+        ok: false,
+        reason:
+          answer.status === "conflict"
+            ? `the platform already has "${a.appName}": ${answer.message ?? "the name is taken"} — say replace to deploy over it`
+            : `the platform made no deployment: ${answer.message ?? answer.status ?? "no reason given"}`,
+      };
+    deploymentId = answer.deployment_id;
   } catch (e) {
     return { ok: false, reason: `the platform refused to make it: ${String(e).slice(0, 300)}` };
   }
@@ -225,7 +241,8 @@ export async function createAppFromTemplate(a: {
       if (!res.ok) continue;
       const st = (await res.json()) as { status: string; output?: string };
       say(st.status);
-      if (st.status === "completed") break;
+      // The platform says "success" when it is done.
+      if (st.status === "success" || st.status === "completed") break;
       if (["failed", "cancelled", "error"].includes(st.status))
         return { ok: false, reason: `it did not finish: ${(st.output ?? st.status).slice(-600)}` };
     } catch {

@@ -190,6 +190,10 @@ export function toolTable(): ToolDef[] {
           product: { type: "string", description: "the product it is filed under, as list_products reports it" },
           template_url: { type: "string", description: "which starting point, as list_templates reports it" },
           description: { type: "string", description: "one line: what this application is" },
+          replace: {
+            type: "boolean",
+            description: "the platform already knows this name: deploy over what it has. Refused otherwise, with the platform's words.",
+          },
         },
         required: ["name", "product", "template_url"],
       },
@@ -203,6 +207,7 @@ export function toolTable(): ToolDef[] {
           product: str(c, "product"),
           templateUrl: str(c, "template_url"),
           description: str(c, "description"),
+          ...(c.args.replace === true ? { replace: true } : {}),
           appsRoot: path.join(process.env.HOME ?? "~", "apps"),
           storeRoot: storeRootOf(),
           say: (l) => said.push(l),
