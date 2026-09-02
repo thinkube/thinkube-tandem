@@ -202,8 +202,9 @@ export function RunSection(props: {
         // and names, read from the unit's own brief when the space cannot
         // name the promise. Never a signature: a card is read at a glance,
         // and code is not read at a glance.
+        // A card wears the promise and nothing else: where it lands is read
+        // in the step panel, never on a card.
         const words = cardWords(u.what);
-        const lands = words.lands;
         const spoken = u.promiseLabel?.label ?? words.title;
         return {
           id: u.id,
@@ -211,7 +212,6 @@ export function RunSection(props: {
           title: spoken ?? fallback,
           said: !!spoken,
           titleFull: u.promiseLabel ? u.promiseLabel.full : spoken ? u.what : fallbackFull,
-          ...(lands ? { abs: lands } : {}),
           chips: [chipFor(u, now, run.logCounts?.[u.id] ?? 0), logChip(u.id, run)],
           face: stateFace(u.state),
         };

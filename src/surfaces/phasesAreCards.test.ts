@@ -38,3 +38,34 @@ test("a run at the door shows the door working, and the delivery waiting", async
     await s.close();
   }
 });
+
+test("a card wears its promise and nothing that reads as code or as an id", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("flow");
+  push.running = true;
+  push.deliveries = [];
+  for (const u of push.run!.units) u.promiseLabel = undefined;
+  push.run!.units.push({
+    id: "SL-1-tests#eu-0",
+    slice: "SL-1-tests",
+    role: "maintain",
+    state: "ready",
+    requires: [],
+    what: "[The task list comes back sorted.] The tests that already exist are brought under it.",
+  } as never);
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const cards = await s.read(() => [...document.querySelectorAll("[data-node]")].map((el) => el.textContent ?? ""));
+    assert.ok(cards.length > 2);
+    for (const c of cards) {
+      assert.doesNotMatch(c, /lands at/, c.slice(0, 80));
+      assert.doesNotMatch(c, /SL-\d+'s|#eu-\d/, c.slice(0, 80));
+      assert.doesNotMatch(c, /\(\w+: \w+/, `a signature on a card: ${c.slice(0, 80)}`);
+    }
+    assert.ok(cards.some((c) => /The task list comes back sorted\./.test(c)), "the maintain card wears the promise it serves");
+  } finally {
+    await s.close();
+  }
+});

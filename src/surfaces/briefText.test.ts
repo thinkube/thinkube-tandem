@@ -69,3 +69,10 @@ test("a card's words: the first promise with a count, and files with names — n
   assert.equal(tester.lands, undefined);
   assert.deepEqual(cardWords(undefined), {});
 });
+
+test("a maintain unit's words: the promise it serves, and what it does to the tests", () => {
+  const words = cardWords("[The list comes back sorted.] The tests that already exist are brought under it.; [Cards show priority.] The tests that already exist are brought under it.");
+  assert.equal(words.title, "The list comes back sorted. (+1 more)");
+  assert.equal(words.lands, undefined);
+  assert.doesNotMatch(words.title, /SL-\d/);
+});

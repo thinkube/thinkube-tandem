@@ -96,7 +96,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     return planned.length ? planned : touch(false);
   };
 
-  const maintain: { of: string; production: string[]; testHomes: string[]; testHomeWork: { path: string; sentence: string; criteria: string[] }[] }[] = [];
+  const maintain: { of: string; sentences: string[]; production: string[]; testHomes: string[]; testHomeWork: { path: string; sentence: string; criteria: string[] }[] }[] = [];
   const main = units.map((unit, idx) => {
     const no = idx + 1;
     const handle = `${handlePrefix ?? ""}SL-${no}`;
@@ -226,7 +226,7 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
     // own (appended after every production slice, below): scheduled after
     // the code its tests import, worked as a tester, never batched with the
     // coder, committed on its own once the code has landed.
-    if (testHomes.length) maintain.push({ of: handle, production, testHomes, testHomeWork });
+    if (testHomes.length) maintain.push({ of: handle, sentences: changes.map((c) => c.sentence), production, testHomes, testHomeWork });
 
     // THE CONTRACT: the seam this slice introduces, by name.
     //
@@ -289,7 +289,9 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       cleared: m.testHomes.map((path: string) => ({ action: "change" as const, path })),
         execution: "serial",
         role: "code",
-        note: `[bring the existing test homes under ${m.of}'s promises]`,
+        // Said in the promises' own words, as a tester's brief is: the
+        // card wears the promise, and no slice id reaches a person.
+        note: m.sentences.map((s) => `[${s}] The tests that already exist are brought under it.`).join("; "),
         // Always after its parent's code — graph or no graph, new file or
         // old — plus whatever else the graph adds at run start.
         ...(m.production.length ? { consumes: m.production } : {}),
