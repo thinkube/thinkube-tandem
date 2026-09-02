@@ -43,6 +43,30 @@ grouping. Each phase in its place with its state and elapsed time, the
 sentence rows keeping their own stage under the deriving phase, and no pill
 over the group.
 
+# Defects: a delivery's existing tests are not run on a repository made of parts
+
+Found in the first clean run of the todo app, by reading the run's log.
+On a repository declared as parts — every app from the template — the
+existing tests are never actually run by tandem before it hands over:
+
+- The reading of the repository invents a repository-wide single-test
+  command even when the parts declare their own. This run's guess was a
+  bash wrapper for the backend alone.
+- The door cannot prove such a guess (no test outside any part) and
+  carries it as told instead of dropping it.
+- The standing-suite check that runs when a unit finishes runs a part's
+  file with that wide command, not the part's own — the gate's per-check
+  runs use the part's, this check does not. The frontend's existing test
+  file went to pytest and exited 4.
+- That "red" was tagged as the maintainer's and the unit was committed; a
+  check that could not run is "not judged", never a red to ignore.
+
+Bounded at the platform: after Accept, the pipeline runs the parts' test
+scripts before it builds, so a broken existing test fails the build there.
+Not silent, but after the accept, not before. Fix all four, and extend the
+walk with a two-part repository whose standing tests must run at the gate
+with the part's command.
+
 # The end-to-end path is documented once it has been walked
 
 When the clean run of the todo space delivers, the methodology page in
