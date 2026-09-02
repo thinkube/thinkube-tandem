@@ -16,6 +16,7 @@ import { C, FS, O, ROLES, SP } from "./type";
 import { sliceCheckTally, unpassedWorkers } from "../../../src/surfaces/auditCard";
 import { stateFace } from "../../../src/surfaces/runCardFace";
 import { gateTitle } from "../../../src/surfaces/runPromiseLabel";
+import { cardWords } from "../../../src/surfaces/briefText";
 import { proofOfPass } from "../../../src/surfaces/surfaceContract";
 
 
@@ -197,20 +198,13 @@ export function RunSection(props: {
         // Never an identifier: a unit with no words of its own says what it is.
         const fallback = u.role === "maintain" ? "the tests, brought under" : u.role === "test" ? "the checks" : "the code";
         const fallbackFull = u.sliceTitle ?? fallback;
-        // What the unit builds: the promise, and where it lands, read from
-        // the unit's own brief when the space cannot name the promise.
-        const said = u.what?.split(/\s+—\s+lands at\s+/);
-        // The file, and the name of the thing in it — never its signature:
-        // a card is read at a glance, and code is not read at a glance.
-        const landsAt = said && said.length > 1 ? said.slice(1).join(" ").split(/\s+—\s+|\n/)[0].trim() : "";
-        const lands = landsAt
-          ? `lands at ${landsAt
-              .split(/\s*›\s*/)
-              .map((part, i) => (i === 0 ? part : part.replace(/\(.*$/, "").trim()))
-              .filter(Boolean)
-              .join(" › ")}`
-          : undefined;
-        const spoken = u.promiseLabel?.label ?? (said?.[0]?.trim() || undefined);
+        // What the unit builds: the promise, and where it lands as files
+        // and names, read from the unit's own brief when the space cannot
+        // name the promise. Never a signature: a card is read at a glance,
+        // and code is not read at a glance.
+        const words = cardWords(u.what);
+        const lands = words.lands;
+        const spoken = u.promiseLabel?.label ?? words.title;
         return {
           id: u.id,
           band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,

@@ -10,6 +10,9 @@ files with their names, and criteria. 2.0.251.
 
 ## Next on the run graph
 
+- **An audit card's chips name the check, not its number.** "AC-1 failed"
+  is a key no one read on the intent page; the chip says the criterion's
+  first words, as the report does.
 - **The door and the delivery cards keep a clock.** While a phase runs, its
   chip shows the elapsed time from the phase's `since`, as a worker's does,
   so a silent minute reads as time passing and not as a stall. The state
@@ -31,6 +34,16 @@ files with their names, and criteria. 2.0.251.
   the reason.
 - **A check that could not start judges nothing.** It is "not judged", said
   once per cause on the report, never a red against the work.
+- **A part's check runs in the part's own tree.** The command the door
+  proved in `frontend/` on a part-relative path is the command every check
+  under `frontend/` runs, from `frontend/`. Run from the repository root
+  it found no test configuration and every frontend check collected
+  nothing.
+- **A stalled oracle answers a changed tree.** The stall guard refuses
+  another round on the state it already answered twice, and lifts when the
+  tree changes, whoever changed it. Latched for the rest of the run, it
+  refused the actor who had fixed the cause three times without running a
+  check.
 
 Still a platform decision: a test database with its own credentials per
 app, provisioned by thinkube-control, so that CI and the runner stop

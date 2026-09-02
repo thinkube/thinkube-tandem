@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SAID, SP, label, labelIn } from "./type";
 import { proofOfPass } from "../../../src/surfaces/surfaceContract";
-import { parseBrief } from "../../../src/surfaces/briefText";
+import { landingLine, parseBrief } from "../../../src/surfaces/briefText";
 
 /**
  * What a unit builds, in its parts: each promise in the person's words,
@@ -26,32 +26,27 @@ function Builds(props: { what: string }): JSX.Element {
         <div key={i} data-builds-promise>
           <div style={{ fontFamily: SAID, fontSize: FS.title, lineHeight: 1.45 }}>{b.promise}</div>
           {b.lands.length ? (
-            <ul style={{ listStyle: "none", margin: `${SP.xs}px 0 0`, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-              {b.lands.map((l, j) => (
-                <li key={j} style={{ fontSize: FS.caption, color: C.quiet, overflowWrap: "anywhere" }} title={l.signature}>
-                  <code style={{ fontSize: FS.caption }}>{l.path}</code>
-                  {l.name ? (
-                    <>
-                      {" › "}
-                      <code style={{ fontSize: FS.caption, color: "inherit" }}>{l.name}</code>
-                    </>
-                  ) : null}
-                  {l.isNew ? <span> · new file</span> : null}
-                  {l.signature ? (
-                    <div style={{ fontFamily: "var(--vscode-editor-font-family, monospace)", fontSize: 10, opacity: O.dim, whiteSpace: "pre-wrap", marginLeft: SP.md }}>
-                      {l.signature}
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <>
+              <div style={label}>Where it lands</div>
+              <ul data-lands style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                {b.lands.map((l, j) => (
+                  <li key={j} style={{ fontSize: FS.caption, overflowWrap: "anywhere" }} title={l.signature}>
+                    <code style={{ fontSize: FS.caption }}>{landingLine(l)}</code>
+                    {l.isNew ? <span style={{ color: C.quiet }}> · new file</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : null}
           {b.criteria.length ? (
-            <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: SP.lg, fontSize: FS.caption, lineHeight: 1.5 }}>
-              {b.criteria.map((c, j) => (
-                <li key={j}>{c}</li>
-              ))}
-            </ul>
+            <>
+              <div style={label}>Done when</div>
+              <ul data-done-when style={{ margin: 0, paddingLeft: SP.lg, fontSize: FS.caption, lineHeight: 1.5 }}>
+                {b.criteria.map((c, j) => (
+                  <li key={j}>{c}</li>
+                ))}
+              </ul>
+            </>
           ) : null}
         </div>
       ))}

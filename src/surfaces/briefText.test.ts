@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBrief } from "./briefText";
+import { cardWords, parseBrief } from "./briefText";
 
 const CODER =
   "The task list comes back already sorted — soonest due date first — instead of whatever order the database happens to return. — lands at backend/app/api/tasks.py › list_tasks(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)) -> List[Task], backend/app/models/task.py › TaskPriority — done when: Tasks with a due date come back before tasks with no due date at all.; Among tasks that have due dates, the one due soonest comes back first.\n" +
@@ -43,4 +43,29 @@ test("a tester's brief: criteria grouped under the promise each proves", () => {
 test("nothing said is nothing built", () => {
   assert.deepEqual(parseBrief(undefined), []);
   assert.deepEqual(parseBrief("  "), []);
+});
+
+test("a name stops where code begins — a type, a body, a comment stay in the signature", () => {
+  const built = parseBrief(
+    "A task past its due date is marked. — lands at frontend/src/views/Home.vue › isOverdue: ComputedRef<boolean>, frontend/src/locales/en.json › task: { dueDate: string /*existing*/, dueOn: string }, frontend/src/views/Home.vue › template: task card due-date block — done when: A late task shows a mark.",
+  );
+  assert.deepEqual(
+    built[0].lands.map((l) => [l.path, l.name]),
+    [
+      ["frontend/src/views/Home.vue", "isOverdue"],
+      ["frontend/src/locales/en.json", "task"],
+      ["frontend/src/views/Home.vue", "template"],
+    ],
+  );
+  assert.deepEqual(built[0].criteria, ["A late task shows a mark."]);
+});
+
+test("a card's words: the first promise with a count, and files with names — never a paragraph", () => {
+  const coder = cardWords(CODER);
+  assert.equal(coder.title, "The task list comes back already sorted — soonest due date first — instead of whatever order the database happens to return. (+1 more)");
+  assert.equal(coder.lands, "lands at backend/app/api/tasks.py › list_tasks, backend/app/models/task.py › TaskPriority, docs/i-can-see.md");
+  const tester = cardWords("[The list is sorted.] Tasks with a due date come first.; [The list is sorted.] Soonest first.; [The mark is visible.] A late task shows a mark.");
+  assert.equal(tester.title, "The list is sorted. (+1 more)");
+  assert.equal(tester.lands, undefined);
+  assert.deepEqual(cardWords(undefined), {});
 });

@@ -30,7 +30,9 @@ function landingOf(text: string): Landing {
   const [path, ...rest] = cleaned.split(/\s*›\s*/);
   const symbol = rest.join(" › ").trim();
   if (!symbol) return { path: path.trim(), ...(isNew ? { isNew } : {}) };
-  const name = symbol.replace(/\(.*$/s, "").replace(/\s*->.*$/, "").trim();
+  // The name stops where code begins: a parameter list, a type, a body, a
+  // return arrow, a comment. What follows is the signature, for the hover.
+  const name = symbol.split(/\s*(?:\(|\{|:\s|\s->|\/\*|\s=\s)/)[0].trim();
   const signature = symbol !== name ? symbol : undefined;
   return { path: path.trim(), name, ...(signature ? { signature } : {}), ...(isNew ? { isNew } : {}) };
 }
@@ -42,8 +44,8 @@ function splitOutside(text: string, sep: RegExp): string[] {
   let start = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch === "(" || ch === "[") depth++;
-    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
     else if (depth === 0) {
       const m = sep.exec(text.slice(i));
       if (m && m.index === 0) {
@@ -64,6 +66,30 @@ function criteriaOf(text: string): string[] {
     .map((c) => c.trim().replace(/[.;]+$/, "").trim())
     .filter(Boolean)
     .map((c) => (/[.!?”"]$/.test(c) ? c : `${c}.`));
+}
+
+/** A landing as a person reads it: the file, then the name of the thing in it. */
+export function landingLine(l: Landing): string {
+  return l.name ? `${l.path} › ${l.name}` : l.path;
+}
+
+/**
+ * The words a run card wears when the space cannot name its promise: the
+ * first promise of the brief with a count of the rest, and where it lands
+ * as files and names — never the brief's own line, which is a paragraph.
+ */
+export function cardWords(what: string | undefined): { title?: string; lands?: string } {
+  const built = parseBrief(what);
+  if (!built.length) return {};
+  const rest = built.length - 1;
+  const title = rest > 0 ? `${built[0].promise} (+${rest} more)` : built[0].promise;
+  const lands = built.flatMap((b) => b.lands).map(landingLine);
+  const shown = lands.slice(0, 3);
+  const more = lands.length - shown.length;
+  return {
+    title,
+    ...(shown.length ? { lands: `lands at ${shown.join(", ")}${more > 0 ? ` (+${more} more)` : ""}` } : {}),
+  };
 }
 
 export function parseBrief(what: string | undefined): Built[] {
