@@ -29,6 +29,10 @@ export interface AssessArgs {
    *  gate's first pass once held three repaired promises red for an hour
    *  while the closer's edits could not move it. */
   only?: (label: string) => boolean;
+  /** The run was stopped: no further review is asked, and the ones in
+   *  flight are aborted through the controllers handed to `abortable`. */
+  halted?: () => boolean;
+  abortable?: (ab: AbortController, label: string) => void;
 }
 
 /** The reviewer's word: the last line that starts with GREEN, RED or
@@ -92,9 +96,14 @@ async function gradeOne(
     return mine;
   }
   const ask = a.space.asks.find((x) => n.serves.includes(x.id));
+  // A review in flight is aborted by Stop like any worker: its controller
+  // is registered with the run, under a name the run can list.
+  const abort = new AbortController();
+  a.abortable?.(abort, `review-${ord}`);
   const deps: RoundDeps = {
     model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
     repoRoot: a.testerWt,
+    abort,
     ...(a.log ? { log: a.log } : {}),
   };
   // Where to look: the promise's own files and the checks that prove it
@@ -208,6 +217,9 @@ export async function gradeAssessments(
   let next = 0;
   const reviewer = async (): Promise<void> => {
     for (;;) {
+      // Stopped: nothing more is asked. What was graded stands; what was
+      // not is absent, which the report reads as not judged.
+      if (a.halted?.()) return;
       const i = next++;
       if (i >= pending.length) return;
       graded[i] = await gradeOne(a, pending[i].n, pending[i].c, pending[i].ord);
@@ -215,8 +227,8 @@ export async function gradeAssessments(
   };
   await Promise.all(Array.from({ length: Math.min(REVIEWS_AT_ONCE, pending.length) }, reviewer));
   return {
-    proofs: graded.flatMap((g) => g.proofs),
-    observations: graded.flatMap((g) => g.observations),
+    proofs: graded.flatMap((g) => g?.proofs ?? []),
+    observations: graded.flatMap((g) => g?.observations ?? []),
   };
 }
 

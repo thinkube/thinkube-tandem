@@ -30,6 +30,11 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** The first words of what a worker says it is doing; the rest is on hover. */
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
 function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
   const elapsed =
     u.startedAt && (u.state === "running" || u.state === "parked")
@@ -39,7 +44,7 @@ function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
   switch (u.state) {
     case "running":
       return doing
-        ? { text: `${doing}`, kind: "run", why: `running for ${formatElapsed(now - (u.startedAt ?? now))}` }
+        ? { text: clip(doing, 60), kind: "run", why: `${doing} — running for ${formatElapsed(now - (u.startedAt ?? now))}` }
         : { text: `running${elapsed}`, kind: "run" };
     case "parked":
       return { text: `needs you${elapsed}`, kind: "q" };
@@ -56,7 +61,7 @@ function chipFor(u: RunUnits[number], now: number, logLines: number): Chip {
         why: "The run stopped, or something this waits on failed, so this was never dispatched. It is not a failure.",
       };
     default:
-      return doing ? { text: doing, kind: "plain" } : { text: "pending", kind: "plain" };
+      return doing ? { text: clip(doing, 60), kind: "plain", why: doing } : { text: "pending", kind: "plain" };
   }
 }
 

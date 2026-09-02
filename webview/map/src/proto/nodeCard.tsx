@@ -74,7 +74,12 @@ function ChipEl(props: { chip: Chip }): JSX.Element {
         background: c.bg,
         fontWeight: props.chip.kind === "q" ? 600 : undefined,
         animation: props.chip.kind === "run" ? "tandemPulse 1.2s infinite" : undefined,
-        whiteSpace: "nowrap",
+        // A chip says what a worker is doing, in its own words, and those
+        // words are as long as they are: they wrap inside the card rather
+        // than run out of it.
+        maxWidth: "100%",
+        overflowWrap: "anywhere",
+        lineHeight: 1.35,
       }}
     >
       {props.chip.text}

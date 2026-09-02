@@ -119,6 +119,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     testerWt: worktree,
     model: deps.workerModel?.workerModel ?? "sonnet",
     ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
+    // Stop reaches the reviews like every worker: none more is asked, and
+    // the ones in flight are aborted by name.
+    halted: () => g.state.halted,
+    abortable: (ab, label) => g.state.aborts.set(`${GATE_STEP}#${label}`, ab),
     log,
     onRed: (label, ref) =>
       defect({
@@ -140,6 +144,20 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         detail: `${label} — ${criterion}`.slice(0, 400),
       }),
   });
+  if (g.state.halted) {
+    say(`${tep}: the run was stopped during the closing gate — what was graded stands, nothing else is judged; the branch holds the work.`);
+    return {
+      refusals: [],
+      undelivered,
+      delivery: withheldDelivery({
+        tep, cut, branch, runId, producedAt, proofs: [], undelivered,
+        rulings: g.rulings, decisions: g.decisions,
+        reason:
+          `the run was stopped while its promises were being graded — nothing is delivered from a stopped run. ` +
+          `The branch holds the work; run it again to finish the grading.`,
+      }),
+    };
+  }
   // The rules that decide whether a promise is kept come from the TREE
   // UNDER TEST when that tree is the one that defines them. A cut that
   // corrects a judging rule was otherwise judged by the rule it corrects:
