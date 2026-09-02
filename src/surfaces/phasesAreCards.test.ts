@@ -18,7 +18,7 @@ test("a run at the door shows the door working, and the delivery waiting", async
   push.deliveries = [];
   push.run = {
     ...push.run!,
-    phases: { door: { state: "running", doing: "proving the product build" }, delivery: { state: "pending" } },
+    phases: { door: { state: "running", doing: "proving the product build" }, gate: { state: "pending" }, delivery: { state: "pending" } },
   };
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
   try {
@@ -65,6 +65,35 @@ test("a card wears its promise and nothing that reads as code or as an id", asyn
       assert.doesNotMatch(c, /\(\w+: \w+/, `a signature on a card: ${c.slice(0, 80)}`);
     }
     assert.ok(cards.some((c) => /The task list comes back sorted\./.test(c)), "the maintain card wears the promise it serves");
+  } finally {
+    await s.close();
+  }
+});
+
+test("a run at the closing gate shows the gate grading, in its own words", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("flow");
+  push.running = true;
+  push.deliveries = [];
+  push.run = {
+    ...push.run!,
+    phases: {
+      door: { state: "done", doing: "the tree is ready" },
+      gate: { state: "running", doing: "running the repository's own suite" },
+      delivery: { state: "pending" },
+    },
+  };
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const seen = await s.read(() => ({
+      gate: document.querySelector('[data-node="gate"]')?.textContent ?? "",
+      progress: document.querySelector("[data-run-progress-text]")?.textContent ?? "",
+    }));
+    assert.match(seen.gate, /running the repository's own suite/);
+    assert.doesNotMatch(seen.gate, /passed/, "a gate still grading has not passed");
+    assert.match(seen.progress, /grading — running the repository's own suite/);
   } finally {
     await s.close();
   }

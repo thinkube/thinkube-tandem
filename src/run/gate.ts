@@ -590,6 +590,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
 
   // The shape of what was delivered, said and never enforced.
   const moduleSizes = await treeShape(worktree);
+  g.state.phase("gate", "done", "every check held");
   g.state.phase("delivery", "running", "committing the work and opening the delivery");
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,

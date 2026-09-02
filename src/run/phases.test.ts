@@ -42,3 +42,18 @@ test("a phase's card says its latest line while it runs", () => {
   st.log("a worker's line");
   assert.equal(st.view().phases.door.doing, "the tree is ready", "a finished phase keeps its last word");
 });
+
+test("the closing gate is a phase: its lines file under its card, which says what it is doing", () => {
+  const st = new RunState(() => {});
+  st.phase("door", "done", "the tree is ready");
+  st.log("a worker's line");
+  st.phase("gate", "running", "grading every check on the real state");
+  st.log("TEP-1: running the repository's own suite");
+  assert.deepEqual(st.logTail("gate").lines, ["TEP-1: running the repository's own suite"]);
+  assert.equal(st.view().phases.gate.doing, "running the repository's own suite");
+  st.phase("gate", "done", "every check held");
+  const back = RunState.from({ units: [], logs: [], stepLogs: {}, phases: st.view().phases }, () => {});
+  assert.equal(back.view().phases.gate.state, "done");
+  const old = RunState.from({ units: [], logs: [], stepLogs: {}, phases: { door: { state: "done" }, gate: { state: "pending" }, delivery: { state: "pending" } } as never }, () => {});
+  assert.equal(old.view().phases.gate.state, "pending", "a record from before the gate was a phase still reads");
+});

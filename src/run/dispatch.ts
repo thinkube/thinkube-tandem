@@ -580,6 +580,9 @@ export async function dispatchTep(
     log(
       `${tep}: ${machineAttention} attention event(s) about the machine in this run — the number this design is judged by, and its target is zero`,
     );
+  // The closing gate is a phase like the door: its lines file under its
+  // card while it grades, and the card says what it is doing.
+  st.phase("gate", "running", "grading every check on the real state");
   const outcome = await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     runOne: know.runOne, suite: know.suite,
@@ -597,6 +600,12 @@ export async function dispatchTep(
   // The delivery phase ends as the gate's outcome says: handed over, or
   // withheld with the reason, or refused before anything was handed over.
   const d = outcome.delivery;
+  if (st.phases.gate.state === "running")
+    st.phase(
+      "gate",
+      d && !d.withheld ? "done" : "failed",
+      d?.withheld ? `withheld — ${d.withheld}` : d ? "every check held" : outcome.refusals[0] ?? "nothing was judged",
+    );
   st.phase(
     "delivery",
     d && !d.withheld ? "done" : "failed",

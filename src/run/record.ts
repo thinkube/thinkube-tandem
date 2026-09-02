@@ -37,7 +37,7 @@ export interface PlanRecord {
 
 export interface RunRecord {
   /** The door and the delivery, as they ended. */
-  phases?: Record<"door" | "delivery", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
+  phases?: Record<"door" | "gate" | "delivery", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
   cutId: string;
   tepId?: string;
   /** When the run finished — the newest record is the one shown. */
@@ -119,7 +119,7 @@ export function saveRun(
       units: [...state.units.values()],
       ...(state.plan?.length ? { plan: state.plan } : {}),
       logs: state.logs.slice(-KEPT_LINES),
-      phases: { door: { ...state.phases.door }, delivery: { ...state.phases.delivery } },
+      phases: { door: { ...state.phases.door }, gate: { ...state.phases.gate }, delivery: { ...state.phases.delivery } },
       stepLogs: Object.fromEntries(
         [...state.stepLogs].map(([k, v]) => [k, v.slice(-KEPT_LINES)]),
       ),

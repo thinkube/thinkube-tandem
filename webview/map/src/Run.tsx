@@ -165,7 +165,13 @@ export function RunSection(props: {
   const blocked = run.units.filter((u) => u.state === "blocked").length;
   const allDone = run.units.length > 0 && run.units.every((u) => u.state === "done");
 
-  const phases = run.phases ?? { door: { state: "done" as const }, delivery: { state: "pending" as const } };
+  const phases = {
+    door: run.phases?.door ?? { state: "done" as const },
+    // A run recorded before the gate was a phase has no word for it.
+    gate: run.phases?.gate ?? { state: "pending" as const },
+    delivery: run.phases?.delivery ?? { state: "pending" as const },
+  };
+  const gatePhased = phases.gate.state !== "pending";
   const phaseChip = (p: { state: string; doing?: string }): Chip =>
     p.state === "running"
       ? { text: p.doing ?? "working", kind: "run", why: "what this phase is doing right now" }
@@ -275,9 +281,11 @@ export function RunSection(props: {
               // itself; several are named by the first and a count, the same
               // shape a worker card uses when its unit carries more than one.
               ...gateTitle(run.units),
-              abs: "every check, on the real state",
+              abs: gatePhased && phases.gate.state === "running" ? phases.gate.doing : "every check, on the real state",
               chips: [
-                allDone
+                gatePhased
+                  ? phaseChip(phases.gate)
+                  : allDone
                   ? ((proof) => ({ text: proof.text, kind: proof.proven ? "pass" : "plain", why: proof.why }) as Chip)(
                       proofOfPass(run.logCounts?.["gate"] ?? 0),
                     )
@@ -289,12 +297,16 @@ export function RunSection(props: {
                 // delivery are filed under this same step name.
                 logChip("gate", run),
               ],
-              face: stateFace(allDone ? "done" : anyFailed ? "failed" : "running"),
+              face: stateFace(
+                gatePhased
+                  ? phases.gate.state === "running" ? "running" : phases.gate.state === "failed" ? "failed" : "done"
+                  : allDone ? "done" : anyFailed ? "failed" : "running",
+              ),
             },
           ]
         : []),
     ],
-    [run.units, now, slices, phases.door.state, phases.door.doing, phases.delivery.state, phases.delivery.doing],
+    [run.units, now, slices, phases.door.state, phases.door.doing, phases.gate.state, phases.gate.doing, phases.delivery.state, phases.delivery.doing],
   );
   // Why each arrow is there, looked up when it is drawn. An arrow that
   // says only THAT a unit waits leaves the reader unable to tell a
@@ -369,7 +381,9 @@ export function RunSection(props: {
             ? `preparing the tree — ${phases.door.doing ?? ""}`
             : phases.door.state === "failed"
               ? "refused at the door"
-              : phases.delivery.state === "running"
+              : phases.gate.state === "running"
+                ? `grading — ${phases.gate.doing ?? ""}`
+                : phases.delivery.state === "running"
                 ? `handing it over — ${phases.delivery.doing ?? ""}`
                 : phases.delivery.state === "done"
                   ? "delivered"

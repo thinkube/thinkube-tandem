@@ -147,7 +147,7 @@ interface RunView {
   sliceChecks?: Record<string, { ac: number; pass: boolean; text?: string }[]>;
   /** The door before the first worker and the delivery after the gate:
    *  each a card on the page with a state, what it is doing, and a log. */
-  phases?: Record<"door" | "delivery", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
+  phases?: Record<"door" | "gate" | "delivery", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
 }
 
 export interface SpacePush {
