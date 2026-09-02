@@ -170,6 +170,10 @@ export async function handleInbound(
       msg.text ?? "",
       msg.kind === "assessment" ? "assessment" : "probe",
     );
+  } else if (msg.action === "reread") {
+    push("Reading your sentences again from nothing…");
+    const r = await session.rereadAll();
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "think-again") {
     push("Withdrawing the signed cut and thinking its promises through again…");
     const r = await session.thinkAgain();

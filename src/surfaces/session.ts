@@ -156,6 +156,14 @@ export class TandemSession {
     return readEverything(this);
   }
 
+  /** Read every sentence again from nothing: what they produced goes,
+   *  signed work stays, and the reading is applied and grouped. */
+  async rereadAll(): Promise<{ ok: boolean; reason?: string }> {
+    const r = await readEverything(this);
+    if (!r.ok) return r;
+    return this.think();
+  }
+
   /**
    * Corrections that are still the human's own: remove work that should
    * not exist, and retire a rule. Everything about SHAPE — what is one

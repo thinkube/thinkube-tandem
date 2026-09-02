@@ -81,10 +81,14 @@ export function applyModel(
   pending: NonNullable<Space["proposal"]>,
   author: string,
 ): Space {
+  // A reading of some sentences starts by deleting what those sentences
+  // produced before: their subjects and claims, the promises derived from
+  // them, the things grouped around them, and the questions they raised.
+  // Signed work is a record and stays. Then the new reading is added.
+  const cleared = withoutReadingOf(space, new Set(pending.askIds.filter(Boolean)));
   const subjects: Subject[] = [];
   const claims: Claim[] = [];
   const askOf = (n: number): string => pending.askIds[n - 1] ?? pending.askIds[0] ?? "";
-
   pending.subjects.forEach((sub, i) => {
     const id = `subject-${author}-${(space.subjects?.length ?? 0) + i + 1}`;
     subjects.push({ id, name: sub.name, from: sub.from.map(askOf) });
@@ -105,36 +109,33 @@ export function applyModel(
       });
     });
   });
-
-  // A reading REPLACES the earlier reading of the sentences it covers.
-  //
-  // Appending was the reason a correction could not correct anything: the
-  // pencil re-reads every sentence, so keeping that reading added a second
-  // reading on top of the first — nine subjects became twelve, and the
-  // better reading was buried under the worse one it was meant to replace.
-  //
-  // Scoped to the sentences this reading actually read: a reading of newly
-  // written asks leaves the subjects of the older ones alone, which is what
-  // makes writing more sentences cheap.
-  const reread = new Set(pending.askIds.filter(Boolean));
-  const supersededClaim = (c: Claim): boolean => reread.has(c.fromAsk);
-  const keptClaims = (space.claims ?? []).filter((c) => !supersededClaim(c));
-  const keptSubjectIds = new Set(keptClaims.map((c) => c.subjectId));
-  const gone = new Set(
-    (space.subjects ?? []).filter((s) => !keptSubjectIds.has(s.id)).map((s) => s.id),
-  );
-  // What was derived from a reading that no longer stands goes with it. A
-  // promise left pointing at a subject nobody holds any more is not work,
-  // it is wreckage — and it is what made a corrected space grow instead of
-  // change.
-  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
   return {
-    ...space,
-    // A subject with no claim left is a subject nothing points at any more.
-    subjects: [...(space.subjects ?? []).filter((s) => keptSubjectIds.has(s.id)), ...subjects],
-    claims: [...keptClaims, ...claims],
-    // Signed work is a record and is never removed by a re-reading.
-    nodes: space.nodes.filter((n) => signed.has(n.id) || !n.serves.some((x) => gone.has(x))),
+    ...cleared,
+    subjects: [...(cleared.subjects ?? []), ...subjects],
+    claims: [...(cleared.claims ?? []), ...claims],
   };
 }
 
+/** The space without anything the named sentences produced. */
+function withoutReadingOf(space: Space, askIds: ReadonlySet<string>): Space {
+  const goneClaims = new Set((space.claims ?? []).filter((c) => askIds.has(c.fromAsk)).map((c) => c.id));
+  const keptClaims = (space.claims ?? []).filter((c) => !goneClaims.has(c.id));
+  const keptSubjectIds = new Set(keptClaims.map((c) => c.subjectId));
+  const goneSubjects = new Set((space.subjects ?? []).filter((s) => !keptSubjectIds.has(s.id)).map((s) => s.id));
+  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
+  const signedSpecs = new Set(space.cuts.filter((c) => c.signature && c.specId).map((c) => c.specId));
+  return {
+    ...space,
+    subjects: (space.subjects ?? []).filter((s) => keptSubjectIds.has(s.id)),
+    claims: keptClaims,
+    nodes: space.nodes.filter(
+      (n) =>
+        signed.has(n.id) ||
+        (!n.serves.some((x) => goneSubjects.has(x) || askIds.has(x)) && !(n.servesClaim && goneClaims.has(n.servesClaim))),
+    ),
+    ...(space.specs
+      ? { specs: space.specs.filter((sp) => signedSpecs.has(sp.id) || !sp.subjectIds.some((id) => goneSubjects.has(id))) }
+      : {}),
+    questions: space.questions.filter((q) => q.decided || !askIds.has(q.askId)),
+  };
+}

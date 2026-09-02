@@ -309,6 +309,7 @@ export type WebToHost =
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }
+  | { action: "reread" }
   | { action: "accept-question"; questionId: string; text?: string }
   | { action: "accept-impact"; impactId: string }
   | { action: "dismiss-impact"; impactId: string }

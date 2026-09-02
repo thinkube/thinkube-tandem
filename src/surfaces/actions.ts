@@ -61,6 +61,11 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
 
   // ── working out what was asked ─────────────────────────────────────
   think: { label: "Think", when: ["read", ...OPEN] },
+  reread: {
+    label: "Read again",
+    when: OPEN,
+    mine: "reading your sentences again from nothing deletes what they produced — yours to decide",
+  },
   reground: { label: "Reground", when: OPEN },
   reframe: {
     label: "Reframe",

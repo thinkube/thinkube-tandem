@@ -133,10 +133,23 @@ export function Things(props: {
 
   return (
     <div data-things style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.lg}px 56px` }}>
-      <div style={{ ...label, marginTop: 0 }}>
-        {sets.length
-          ? `Your ${sentences.length} sentence${sentences.length === 1 ? "" : "s"} became ${sets.length} thing${sets.length === 1 ? "" : "s"}`
-          : `Your ${sentences.length} sentence${sentences.length === 1 ? "" : "s"}, as they were read`}
+      <div style={{ ...label, marginTop: 0, display: "flex", alignItems: "baseline", gap: SP.md }}>
+        <span>
+          {sets.length
+            ? `Your ${sentences.length} sentence${sentences.length === 1 ? "" : "s"} became ${sets.length} thing${sets.length === 1 ? "" : "s"}`
+            : `Your ${sentences.length} sentence${sentences.length === 1 ? "" : "s"}, as they were read`}
+        </span>
+        {read.length ? (
+          <button
+            data-reread
+            disabled={!can("reread")}
+            title={can("reread") ? "Read your sentences again from nothing: what they produced goes; signed work stays." : refusalSentence("reread", push.phase)}
+            onClick={() => post({ action: "reread" })}
+            style={{ fontSize: FS.caption, textTransform: "none", letterSpacing: 0, fontWeight: 400, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+          >
+            read again
+          </button>
+        ) : null}
       </div>
       {read.length ? <MarkLegend /> : null}
 
