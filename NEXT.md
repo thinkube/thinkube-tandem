@@ -18,17 +18,16 @@ files with their names, and criteria. 2.0.251.
   so a silent minute reads as time passing and not as a stall. The state
   already records `since`; only the card is missing it.
 
-# A minted promise is judged against the sentence it serves
+# A promise exists because a sentence requires it, landed
 
-The "what is still missing" pass mints a promise for everything it
-notices. On a fresh reading of the todo template it turned five promises
-from the person's sentences into seventeen: eleven were review remarks on
-the template's existing tests and conventions, none required by any
-sentence, each a worker at build time and a "Not needed" press to avoid.
-The prompt's rule — only gaps a sentence requires and real ripples — is
-held by nothing after the prompt. A gap is kept only when a promise from
-the sentences cannot hold without it; everything else the pass noticed
-goes on the delivery as a finding for the person to read, never as work.
+The completeness pass adds no promise. What it finds — a caller, a
+definition kept single, a test that pins the old rule, a page that states
+it — lands ON the promise it serves, as another place that promise must
+touch. What it notices that serves no derived promise is dropped. The
+count of promises a person sees is the count their sentences made, plus
+the documentation promise they can decline. On the todo template the old
+pass had turned five promises into seventeen, eleven of them remarks on
+code the work did not change, each a worker at build time.
 
 # Working out has phases, like the run
 

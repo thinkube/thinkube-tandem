@@ -140,23 +140,24 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
   const affected = (await Promise.all(touched.slice(0, 40).map((p) => k.affected(p))))
     .filter(Boolean)
     .join("\n");
-  const gaps = await (s.deps.completeCut ?? completeCut)(s.deps.round, {
+  // What else must move for these promises to hold lands ON them. The
+  // pass adds no promise: a promise exists because a sentence requires it.
+  const grown = await (s.deps.completeCut ?? completeCut)(s.deps.round, {
     digest: k.digest,
     ...(affected ? { affected } : {}),
     decisions: s.decisionsInForce(),
     claims,
     subjects: (s.space.subjects ?? []).filter((x) => subjectIds.includes(x.id)),
     changes: s.space.nodes.filter((n) => n.servesClaim && claims.some((c) => c.id === n.servesClaim)),
-    mintNodeId: (n) => `node-${s.author}-gap-${n}`,
-    nextIndex: 1,
   });
-  if (gaps.length) {
-    s.space = { ...s.space, nodes: [...s.space.nodes, ...gaps] };
-    tally.promises += gaps.length;
+  if (grown.length) {
+    const byId = new Map(grown.map((g) => [g.id, g]));
+    s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
   }
   s.activity = undefined;
   s.changed(
     `Derived ${tally.promises} promise(s) across ${subjectIds.length} subject(s).` +
+      (grown.length ? ` ${grown.length} of them gained a landing for what must move with them.` : "") +
       (tally.questions ? ` ${tally.questions} question(s) need you.` : ""),
   );
 }

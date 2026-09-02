@@ -458,7 +458,7 @@ export async function runGrounding(
  * Resolve a derived batch into ChangeNodes: assign ids, rewrite needs
  * indices to node ids, attach the round's stamp to every grounded node.
  */
-export function resolveDerived(
+function resolveDerived(
   derived: DerivedNode[],
   askId: string,
   stamp: SourceStamp[],

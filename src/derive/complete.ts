@@ -1,20 +1,22 @@
 /**
- * The completeness round: given what was derived, what does the set still
- * MISS — gaps the ask requires and nobody covers, and the adjacent code
- * that must move too.
+ * MISS — what must also move for a derived change to hold.
  *
- * Its input is deliberately consumable: every anchor carries what its
- * grounding round saw there (or the literal source line, host-quoted),
- * and the affected listing carries the lines it names. The round is told
- * to JUDGE that material and to read only where it doubts it — a round
- * handed bare pointers has no choice but to re-read the repository the
- * earlier rounds already read.
+ * A promise exists because a sentence requires it; this round never adds
+ * one. Given the changes derived from the sentences, it names the OTHER
+ * places each change must also touch to hold — a caller, a definition
+ * kept single, a test that pins the old rule, a page that states it —
+ * and each becomes a landing on the change it serves. What it notices
+ * that serves no derived change is not work, and is dropped.
+ *
+ * The round is handed the material: the graph's own list of what moves
+ * with the touched files, quoted, and the digest. It is asked to JUDGE
+ * that material and to read only where it doubts it.
  */
-import { Ask, Change } from "../core/schema";
-import { readStamp } from "../core/stamp";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { Anchor, Ask, Change, validateAnchor } from "../core/schema";
 import { quoteAnchor } from "./spans";
 import { RoundDeps, runReadRound } from "./round";
-import { parseGroundedNodes, resolveDerived } from "./ground";
 
 type Round = (deps: RoundDeps, prompt: string) => Promise<string | null>;
 
@@ -65,7 +67,6 @@ export function buildCompletenessPrompt(args: {
   changes: Change[];
   repoRoot: string;
   digest?: string;
-  claims?: { text: string; why?: string }[];
   /** What the graph says moves when these files move — computed, cited,
    *  and handed over. This round used to go looking for it. */
   affected?: string;
@@ -73,19 +74,21 @@ export function buildCompletenessPrompt(args: {
   decisions?: string[];
 }): string {
   return (
-    `You are the COMPLETENESS round: given ONE ask and the changes derived ` +
-    `from it, return every change the set still MISSES — in both senses:\n` +
-    `1. GAPS: something the ask requires that no change covers.\n` +
-    `2. AFFECTED CODE: other places in the repository at ${args.repoRoot} ` +
-    `that must move too — callers of touched symbols, configuration that ` +
-    `names touched files, documentation that states the old behavior.\n\n` +
-    // The misses this round produces are not random: they are whole
+    `You are the COMPLETENESS round: given the changes derived from what a ` +
+    `person asked, name every OTHER PLACE in the repository at ${args.repoRoot} ` +
+    `that must also move for one of those changes to hold — callers of ` +
+    `touched symbols, configuration that names touched files, a definition ` +
+    `that must stay single, documentation and tests that state the old ` +
+    `behavior. Each place is a LANDING on the change it serves.\n` +
+    `You add no change of your own. A new behavior, an improvement, a ` +
+    `weakness you noticed in code this work does not change, a test you ` +
+    `would write for existing code: none of these is a landing. If nothing ` +
+    `else must move, say so.\n\n` +
+    // The misses this round finds are not random: they are whole
     // families skipped — every doc page, every fixture, every copy of a
     // rule. A family answered even when empty cannot be skipped.
     `Sweep these families ONE BY ONE. An empty family is an answer; a ` +
-    `skipped family is not. What a sweep finds is returned as its own ` +
-    `node with its own acceptance — a defect mentioned inside another ` +
-    `node's evidence has not been returned:\n` +
+    `skipped family is not:\n` +
     `a. DOCUMENTATION — every page that states behavior this work changes: ` +
     `the published pages a person reads (search them for the old ` +
     `behavior's words) AND the repository's own registers of decisions ` +
@@ -103,12 +106,6 @@ export function buildCompletenessPrompt(args: {
     `or they will disagree later.\n` +
     `e. LIFECYCLE — the create, open, close, delete and shutdown paths of ` +
     `anything this work multiplies: what held one must now hold many.\n` +
-    `f. THE WORLD — every criterion that would ACT on anything outside the ` +
-    `repository to prove itself (the cluster this runs in, a service, a ` +
-    `process, a file outside the worktree): re-mark it — the observable ` +
-    `part at a seam through a fake becomes the "probe", the effect itself ` +
-    `becomes an "assessment" the person judges once. No check acts on the ` +
-    `world.\n` +
     (args.affected
       ? `\nWHAT MOVES WITH THIS, from the code graph — every caller, ` +
         `importer and referencer of what these changes touch, with its file ` +
@@ -129,44 +126,38 @@ export function buildCompletenessPrompt(args: {
       ? `DECISIONS IN FORCE (the human already settled these — a "gap" that ` +
         `re-opens one is not a gap):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
       : "") +
-    (args.claims?.length
-      ? `EVERY node you return names the claim it makes true, as "claim": ` +
-        `the NUMBER from this list:\n` +
-        args.claims
-          .map((c, i) => `    ${i + 1}. ${c.text}${c.why ? ` (so that ${c.why})` : ""}`)
-          .join("\n") +
-        `\nA gap or ripple that serves none of these is not part of this ` +
-        `work — leave it out rather than returning it unattached.\n\n`
-      : "") +
     `Respond with ONE JSON object and nothing else:\n` +
-    `{"nodes":[{"sentence":"…"${args.claims?.length ? `,"claim":1` : ""},` +
-    `"touchpoints":[{"path":"…"}],"needs":[],` +
-    `"acceptance":[{"text":"…","kind":"probe"}]}]} — each node one MISSING or AFFECTED ` +
-    `change in the same shape grounding uses (needs indices refer to THIS ` +
-    `list only). Each acceptance carries its LIFETIME as "kind": "probe" for ` +
-    `STANDING BEHAVIOR a machine should still check in five years (a permanent ` +
-    `regression test), "assessment" for proof of THIS TRANSITION — something ` +
-    `removed, renamed or reworded, documentation now saying something — judged ` +
-    `once at delivery by an independent reviewer and never kept as a test. A ` +
-    `documentation-wording check is ALWAYS "assessment"; most ripples from the ` +
-    `DOCUMENTATION family are. An effect the machine cannot verify — it needs ` +
-    `the running product, or acts on the world — is NOT a check: it goes in the ` +
-    `node's "unverified" list as {"text":"…","why":"…"}, and the delivery ` +
-    `reports it as not verified with that reason; nobody is assigned a check.\n` +
-    `Complete and nothing affected → {"nodes":[]}. Never ` +
-    `restate an existing change; only genuine gaps and real ripples.`
+    `{"landings":[{"change":0,"path":"…","symbol":"…","why":"…"}]} — "change" ` +
+    `is the NUMBER of the derived change the place serves, from the list ` +
+    `above; "path" is repository-relative; "symbol" the function, section or ` +
+    `key there, when there is one; "why" one sentence: what is there and why ` +
+    `it must move with that change. A place that serves none of the derived ` +
+    `changes is left out. Nothing else must move → {"landings":[]}.`
   );
+}
+
+/** The first JSON object in a round's answer, or nothing. */
+function firstJson(raw: string): unknown {
+  const start = raw.indexOf("{");
+  if (start < 0) return undefined;
+  for (let end = raw.lastIndexOf("}"); end > start; end = raw.lastIndexOf("}", end - 1)) {
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      /* a brace inside prose — try the previous one */
+    }
+  }
+  return undefined;
 }
 
 /**
  * ONE completeness pass over everything a cut has derived.
  *
- * Per subject, this round is nine tool-using reads of the same repository
- * that cannot see each other: each finds the same documentation page and
- * the same callers, attributes them to whichever claims it happens to
- * hold, and the human is handed the overlap. Run once, it sees every
- * subject's claims at the same time — so a ripple lands under the claim it
- * actually serves, and it is derived once.
+ * Run once over every subject's changes, so a place that must move lands
+ * on the change it actually serves and is found once. Returns the changes
+ * that gained a landing, with it added; never a change that did not
+ * exist. The count of promises a person sees is the count their
+ * sentences made.
  */
 export async function completeCut(
   deps: RoundDeps,
@@ -181,14 +172,11 @@ export async function completeCut(
      *  round, so it judges rather than searches. */
     affected?: string;
     decisions?: string[];
-    mintNodeId: (n: number) => string;
-    nextIndex: number;
   },
   round: Round = runReadRound,
 ): Promise<Change[]> {
   const log = deps.log ?? (() => {});
   if (!args.claims.length || !args.changes.length) return [];
-  const nameOf = new Map(args.subjects.map((s) => [s.id, s.name]));
   const text =
     `Everything below belongs to one piece of work. What must become ` +
     `true, by subject:\n` +
@@ -211,37 +199,61 @@ export async function completeCut(
       digest: args.digest,
       ...(args.affected ? { affected: args.affected } : {}),
       ...(args.decisions?.length ? { decisions: args.decisions } : {}),
-      claims: args.claims.map((c) => ({
-        text: `${nameOf.get(c.subjectId) ?? "?"} — ${c.text}`,
-        ...(c.why ? { why: c.why } : {}),
-      })),
     }),
   );
   if (raw === null) {
-    log("completeness: round unavailable — no gaps or ripples were looked for");
+    log("completeness: round unavailable — nothing was looked for beyond the derived changes");
     return [];
   }
-  const derived = parseGroundedNodes(raw, deps.repoRoot);
-  const stamp = [await readStamp(deps.repoRoot)];
-  const out: Change[] = [];
-  for (const d of derived) {
-    // A gap serves the claim it names, and lands under THAT claim's
-    // subject — which is the whole reason for running this once.
-    const claim = d.claim ? args.claims[d.claim - 1] : undefined;
-    if (!claim) {
-      log(`completeness: dropped "${d.sentence.slice(0, 60)}" — it named no claim`);
+  return applyLandings(deps.repoRoot, args.changes, raw, log);
+}
+
+/**
+ * The round's answer applied: each landing goes on the change it names,
+ * once; a landing that names no derived change, or no place, is dropped.
+ * Returns the changes that grew, and nothing that did not exist before.
+ */
+export function applyLandings(
+  repoRoot: string,
+  changes: Change[],
+  raw: string,
+  log: (line: string) => void = () => {},
+): Change[] {
+  const parsed = firstJson(raw) as { landings?: unknown } | undefined;
+  const landings = Array.isArray(parsed?.landings) ? (parsed!.landings as Record<string, unknown>[]) : [];
+  const grown = new Map<string, Change>();
+  let added = 0;
+  let dropped = 0;
+  for (const l of landings) {
+    const n = typeof l.change === "number" ? l.change : Number(l.change);
+    const change = Number.isInteger(n) ? changes[n] : undefined;
+    const at = typeof l.path === "string" ? l.path.trim() : "";
+    if (!change || !at) {
+      dropped++;
       continue;
     }
-    const [made] = resolveDerived(
-      [d],
-      claim.subjectId,
-      stamp,
-      args.nextIndex + out.length,
-      args.mintNodeId,
-      [claim.id],
-    );
-    out.push({ ...made, servesClaim: claim.id });
+    const anchor: Anchor = {
+      path: at,
+      ...(typeof l.symbol === "string" && l.symbol.trim() ? { symbol: l.symbol.trim() } : {}),
+      ...(typeof l.why === "string" && l.why.trim() ? { evidence: l.why.trim() } : {}),
+      ...(fs.existsSync(path.join(repoRoot, at)) ? {} : { planned: true }),
+    };
+    if (validateAnchor(anchor)) {
+      dropped++;
+      continue;
+    }
+    const current = grown.get(change.id) ?? change;
+    const had = current.grounding?.touchpoints ?? [];
+    if (had.some((t) => t.path === anchor.path && (t.symbol ?? "") === (anchor.symbol ?? ""))) continue;
+    grown.set(change.id, {
+      ...current,
+      grounding: { touchpoints: [...had, anchor], stamp: current.grounding?.stamp ?? [] },
+    });
+    added++;
   }
-  log(`completeness: ${out.length} gap(s) and ripple(s) across the whole cut`);
-  return out;
+  log(
+    `completeness: ${added} landing(s) added to ${grown.size} promise(s)` +
+      (dropped ? `; ${dropped} named no derived change and were dropped` : ""),
+  );
+  return [...grown.values()];
 }

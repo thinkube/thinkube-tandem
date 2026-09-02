@@ -27,16 +27,10 @@ import { attributePromises } from "./attribute";
 import { judgeRaised } from "../gates/assumptions";
 import type { Knowledge } from "./knowledge";
 import { runContextualize } from "./contextualize";
-import { buildCompletenessPrompt, withAnchorQuotes } from "./complete";
+import { applyLandings, buildCompletenessPrompt, withAnchorQuotes } from "./complete";
 
 export { completeCut } from "./complete";
-import {
-  GroundingResult,
-  parseGroundedNodes,
-  parseGroundedQuestions,
-  resolveDerived,
-  runGrounding,
-} from "./ground";
+import { GroundingResult, parseGroundedQuestions, runGrounding } from "./ground";
 
 type Round = (deps: RoundDeps, prompt: string) => Promise<string | null>;
 
@@ -273,7 +267,6 @@ export async function runDerivationPipeline(
   //    map comes from the code itself and costs no tokens; the reading on
   //    top of it is cached under the same stamp. Only a caller with no
   //    knowledge (an old test, a bare pipeline) pays for a reading here.
-  const stamp = [await readStamp(deps.repoRoot)];
   let digest = opts.knowledge?.digest ?? opts.digest;
   const map = opts.knowledge?.map ?? "";
   stage(digest ? "using what I read of your code" : "reading your code");
@@ -320,43 +313,27 @@ export async function runDerivationPipeline(
   if (changes.length === 0)
     return { changes, questions: speakable(questions, ask, opts) };
 
-  const addFrom = async (raw: string | null, label: string): Promise<void> => {
-    if (raw === null) {
-      log(`${label}: round unavailable — skipped`);
-      return;
-    }
-    const derived = parseGroundedNodes(raw, deps.repoRoot);
-    if (!derived.length) return;
-    const added = resolveDerived(
-      derived,
-      ask.id,
-      stamp,
-      opts.nextIndex + changes.length,
-      opts.mintNodeId,
-      opts.claims?.map((c) => c.id),
-    );
-    changes = [...changes, ...added];
-    log(`${label}: ${added.length} change(s) added`);
-  };
 
   // 3. Completeness — gaps AND affected code, one digest-warm round.
   //    Skipped when the caller runs one pass over the whole cut instead.
-  if (opts.skipCompleteness) stage("leaving gaps and ripples to the whole-cut pass");
-  else
-    await addFrom(
-    await round(
+  //    What must move lands ON the derived changes; no change is added.
+  if (opts.skipCompleteness) stage("leaving what must move with it to the whole-cut pass");
+  else {
+    const raw = await round(
       deps,
       buildCompletenessPrompt({
         ask,
         changes: withAnchorQuotes(deps.repoRoot, changes),
         repoRoot: deps.repoRoot,
         digest,
-        ...(opts.claims ? { claims: opts.claims } : {}),
         ...(opts.decisions?.length ? { decisions: opts.decisions } : {}),
       }),
-    ),
-    "completeness",
-  );
+    );
+    if (raw !== null) {
+      const grown = new Map(applyLandings(deps.repoRoot, changes, raw, log).map((g) => [g.id, g]));
+      changes = changes.map((c) => grown.get(c.id) ?? c);
+    }
+  }
 
   // 4. The tail — coverage, criteria and challenger in ONE tool-less
   //    volume-model call; its entire input is the prompt.
