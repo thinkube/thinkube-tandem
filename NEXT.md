@@ -18,6 +18,17 @@ files with their names, and criteria. 2.0.251.
   so a silent minute reads as time passing and not as a stall. The state
   already records `since`; only the card is missing it.
 
+# The end-to-end path is documented once it has been walked
+
+When the clean run of the todo space delivers, the methodology page in
+tandem's documentation records the path as it happened, step by step: an
+application is deployed from a template through thinkube-control; a
+thinking space is created on it; a set of asks is written in the person's
+words; the machine grounds them, the person builds, the run judges, and
+the delivery is accepted, which is the one act that lands the work. Each
+step names the page, the press, and what the person sees. Written from the
+record of that run, not from memory.
+
 # Accept is the one act that lands work, landed
 
 A delivery is a local branch until the person accepts it. Nothing is pushed
