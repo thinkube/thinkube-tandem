@@ -166,3 +166,56 @@ test("a setup file beside the tests is never the sample; a file wearing a test's
   });
   assert.deepEqual(tried, ["cd frontend && npx vitest run frontend/src/views/__tests__/Home.test.js"]);
 });
+
+test("a corrected install is tried on a tree of its own, never over the store that already failed", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  fs.mkdirSync(path.join(base, "frontend", "node_modules", "dep"), { recursive: true });
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const said: string[] = [];
+  let builds = 0;
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    provision: "cd frontend && npm ci",
+    build: "cd frontend && npm run build",
+    dependencies: ["frontend/node_modules"],
+    resetup: async () => ({ provision: "cd frontend && npm install", prepare: "" }),
+    exec: async (cmd, args, cwd) =>
+      cmd === "git" && args[2] === "status"
+        ? { code: 0, out: cwd === base ? "!! frontend/node_modules/\n" : "" }
+        : { code: 0, out: "frontend/package-lock.json" },
+    boundedExec: async (cmd) => {
+      // The borrowed store was built for another platform: the build over it dies.
+      if (/npm run build/.test(cmd)) {
+        builds++;
+        return builds === 1 ? { code: 1, output: "Error: Cannot find module @rollup/rollup-linux-x64-gnu" } : { code: 0, output: "built" };
+      }
+      if (/npm ci/.test(cmd)) return { code: 1, output: "npm error The `npm ci` command can only install with an existing package-lock.json" };
+      return { code: 0, output: "" };
+    },
+    log: (l) => said.push(l),
+  });
+  assert.equal(setup.refusal, undefined, said.join("\n"));
+  assert.equal(said.filter((l) => /^borrowing the checkout's/.test(l)).length, 1, "the store that did not build is borrowed once, never again after the correction");
+  assert.ok(said.some((l) => /did not hold in \ds — npm error/.test(l)), "a failed install says so, with its last line");
+});
+
+test("npm ci on a repository that keeps no lock file is npm install", async () => {
+  const { base, wt } = tree();
+  const said: string[] = [];
+  const ran: string[] = [];
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    provision: "cd frontend && npm ci",
+    exec: async (cmd, args) => (cmd === "git" && args[2] === "ls-files" ? { code: 0, out: "" } : { code: 0, out: "" }),
+    boundedExec: async (cmd) => {
+      ran.push(cmd);
+      return { code: 0, output: "" };
+    },
+    log: (l) => said.push(l),
+  });
+  assert.equal(setup.refusal, undefined);
+  assert.ok(ran.includes("cd frontend && npm install"), ran.join(" | "));
+  assert.ok(said.some((l) => /npm ci becomes npm install/.test(l)));
+});

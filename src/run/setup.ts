@@ -204,7 +204,9 @@ async function correctAndRetry(args: SetupArgs, first: TreeSetup): Promise<TreeS
   args.log(
     `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
   );
-  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, runOne: again.runOne ?? args.runOne });
+  // The store already borrowed did not build; the corrected answer is
+  // tried on a tree of its own, never over that store again.
+  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, runOne: again.runOne ?? args.runOne }, false);
   if (!second.refusal)
     args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne ?? "" });
   return second.refusal ? second : { ...second, corrected: { provision: again.provision, prepare: again.prepare } };
@@ -273,15 +275,27 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     for (const rel of freed)
       args.log(`  released the borrowed ${rel} — installing into it would have emptied the lender`);
     const before = await ignoredEntries(args.worktree, args.exec);
-    args.log(`provisioning the worktree: ${args.provision}`);
+    // `npm ci` needs a lock file the repository keeps; one it ignores is
+    // not in a fresh worktree, and the install dies in a second for that
+    // alone. On such a tree the same install is `npm install`.
+    let provision = args.provision;
+    if (/\bnpm ci\b/.test(provision)) {
+      const locks = (await args.exec("git", ["-C", args.worktree, "ls-files", "--", "package-lock.json", "*/package-lock.json"], args.worktree)).out.trim();
+      if (!locks) {
+        provision = provision.replace(/\bnpm ci\b/g, "npm install");
+        args.log(`  no package-lock.json is kept in this repository, so npm ci becomes npm install`);
+      }
+    }
+    args.log(`provisioning the worktree: ${provision}`);
     const t0 = Date.now();
-    const p = await args.boundedExec(args.provision, args.worktree);
-    args.log(`  provisioned in ${since(t0)}`);
+    const p = await args.boundedExec(provision, args.worktree);
+    const last = tail(p.output, 300).split("\n").filter((l) => l.trim()).pop() ?? "";
+    args.log(`  ${p.code === 0 ? "provisioned" : "did not hold"} in ${since(t0)}${p.code === 0 || !last ? "" : ` — ${last}`}`);
     if (p.code !== 0)
       return {
         provisioned,
         built: [],
-        refusal: `the repository's own provisioning step (${args.provision}) fails on an untouched checkout — no worker can build here until it does:\n${tail(p.output)}`,
+        refusal: `the repository's own provisioning step (${provision}) fails on an untouched checkout — no worker can build here until it does:\n${tail(p.output)}`,
       };
     const after = await ignoredEntries(args.worktree, args.exec);
     for (const e of after) if (!before.has(e)) provisioned.push(e);
