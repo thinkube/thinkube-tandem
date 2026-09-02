@@ -165,13 +165,40 @@ export interface SetupArgs {
  *  worker runs; a setup answer that fails is re-read once with the failure
  *  as evidence, and the corrected answer is tried before the run refuses. */
 export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
-  const first = await proveTree(args);
+  let borrowed = false;
+  const first = await proveTree({
+    ...args,
+    log: (l) => {
+      if (/^borrowing the checkout's/.test(l)) borrowed = true;
+      args.log(l);
+    },
+  });
   if (!first.refusal) {
     args.proven?.({ provision: args.provision ?? "", prepare: args.prepare ?? "", runOne: first.runOne ?? "" });
     return first;
   }
+  // A borrowed store that does not build is the borrow's failure, not the
+  // repository's: the remembered install is run instead, at once. Asking a
+  // model to correct a provisioning that was never tried cost five silent
+  // minutes a run, to arrive at the answer already on file.
+  if (borrowed && args.provision) {
+    args.log(`the borrowed dependencies did not build — installing instead: ${args.provision}`);
+    const own = await proveTree(args, false);
+    if (!own.refusal) {
+      args.proven?.({ provision: args.provision, prepare: args.prepare ?? "", runOne: own.runOne ?? "" });
+      return own;
+    }
+    if (!args.resetup) return own;
+    return await correctAndRetry(args, own);
+  }
   if (!args.resetup) return first;
-  const again = await args.resetup(first.refusal).catch(() => undefined);
+  return await correctAndRetry(args, first);
+}
+
+/** The setup answer re-read once with the failure as evidence, and the corrected answer tried. */
+async function correctAndRetry(args: SetupArgs, first: TreeSetup): Promise<TreeSetup> {
+  args.log(`asking how this tree is provisioned, from the failure — this takes a few minutes`);
+  const again = await args.resetup!(first.refusal!).catch(() => undefined);
   if (!again || (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")))
     return first;
   args.log(
@@ -317,7 +344,8 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     args.log(`proving the product build on the untouched tree: ${args.build}`);
     const t0 = Date.now();
     const b = await args.boundedExec(args.build, args.worktree);
-    args.log(`  ${b.code === 0 ? "held" : "did not hold"} in ${since(t0)}`);
+    const last = tail(b.output, 300).split("\n").filter((l) => l.trim()).pop() ?? "";
+    args.log(`  ${b.code === 0 ? "held" : "did not hold"} in ${since(t0)}${b.code === 0 || !last ? "" : ` — ${last}`}`);
     if (b.code === 0)
       for (const e of await ignoredEntries(args.worktree, args.exec))
         if (!before.has(e) && !provisioned.includes(e) && !built.includes(e)) built.push(e);

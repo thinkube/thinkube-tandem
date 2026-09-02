@@ -19,7 +19,7 @@ test("a line with no step of its own is filed under the phase in progress", () =
   assert.deepEqual(st.logTail("run").lines, ["SL-1#eu-0 starts"]);
   assert.deepEqual(st.logTail("delivery").lines, ["pushed the branch"]);
   assert.equal(st.view().phases.door.state, "done");
-  assert.equal(st.view().phases.delivery.doing, "opening the delivery");
+  assert.equal(st.view().phases.delivery.doing, "pushed the branch", "the card follows the latest line");
 });
 
 test("a refusal at the door fails the door, and the record keeps both phases", () => {
@@ -31,4 +31,14 @@ test("a refusal at the door fails the door, and the record keeps both phases", (
   assert.match(v.phases.door.doing ?? "", /did not hold/);
   const back = RunState.from({ units: [], logs: [], stepLogs: {}, phases: v.phases }, () => {});
   assert.deepEqual(back.view().phases.door, v.phases.door);
+});
+
+test("a phase's card says its latest line while it runs", () => {
+  const st = new RunState(() => {});
+  st.phase("door", "running", "starting");
+  st.log("TEP-1: proving the product build on the untouched tree: npm run build");
+  assert.equal(st.view().phases.door.doing, "proving the product build on the untouched tree: npm run build");
+  st.phase("door", "done", "the tree is ready");
+  st.log("a worker's line");
+  assert.equal(st.view().phases.door.doing, "the tree is ready", "a finished phase keeps its last word");
 });

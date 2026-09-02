@@ -242,6 +242,10 @@ export class RunState {
     // door's lines under "door", the run's under "run", the hand-over's
     // under "delivery" — so each has a card, and each card has its log.
     step = step ?? this.phaseStep;
+    // A phase's card says what it is doing now: its latest line, while it
+    // is the phase in progress.
+    if ((step === "door" || step === "delivery") && this.phases[step].state === "running")
+      this.phases[step].doing = line.replace(/^[^:]{1,24}:\s+/, "").trim().slice(0, 110);
     this.sink?.(line, step);
     this.logs.push(line);
     if (this.logs.length > 200) this.logs.shift();
