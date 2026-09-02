@@ -311,6 +311,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       : undefined,
     draft: session.space.draft ?? "",
     ...(session.buildRefusal ? { buildRefusal: session.buildRefusal } : {}),
+    ...(session.acceptRefusal ? { acceptRefusal: session.acceptRefusal } : {}),
     pendingModel: session.pendingModel
       ? {
           subjects: session.pendingModel.subjects,

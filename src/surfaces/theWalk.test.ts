@@ -256,8 +256,15 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.equal(v.page, "flow");
   assert.equal(v.strip, "Accept it");
 
-  // 11. Accepted: the branch is merged into main here and pushed; nothing is left to accept.
+  // 11. Accepted, over a checkout that carries what the run itself left
+  //     there — tandem's own facts file, untracked, and an unrelated edit:
+  //     the branch is merged into main here and pushed.
+  fs.mkdirSync(path.join(root, ".tandem"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".tandem/setup.json"), "{}");
+  fs.appendFileSync(path.join(root, "thinkube.yaml"), "  deploy:\n    at: https://todo.example\n");
   await press(s, { action: "accept-delivery", deliveryId: v.push.deliveries[0].id });
+  v = seen(s);
+  assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
   v = seen(s);
   assert.equal(v.push.deliveries[0].accepted, true);
   assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);

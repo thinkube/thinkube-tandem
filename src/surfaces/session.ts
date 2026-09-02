@@ -308,6 +308,8 @@ export class TandemSession {
    *  button until a press succeeds. A refusal that only scrolls past in
    *  the header is a button that appears to do nothing. */
   buildRefusal?: string;
+  /** Why the last press of Accept did nothing — beside the button until a press succeeds. */
+  acceptRefusal?: string;
 
   /** Commit: assumptions become decisions, whole components go into one cut. */
   async build(specId: string): Promise<GestureResult> {
@@ -649,8 +651,14 @@ export class TandemSession {
 
   /** Gate 2. Acceptance in the engine's canonical order — merge → stamp →
    *  retire (best-effort) — refused without green proof BEFORE the merge. */
-  acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
-    return acceptDeliveryGesture(this, deliveryId);
+  async acceptDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
+    this.acceptRefusal = undefined;
+    const r = await acceptDeliveryGesture(this, deliveryId);
+    if (!r.ok) {
+      this.acceptRefusal = r.reason ?? "the delivery was not accepted";
+      this.changed(this.acceptRefusal);
+    }
+    return r;
   }
 
   /** What only a person can settle, settled — kept in `./attesting`. */

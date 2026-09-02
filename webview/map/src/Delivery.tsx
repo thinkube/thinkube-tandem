@@ -235,7 +235,7 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 data-accept-delivery={d.id}
                 disabled={!can("accept-delivery")}
                 style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
-                title={can("accept-delivery") ? "Accept it — this merges the work on the project's forge." : refusalSentence("accept-delivery", push.phase)}
+                title={can("accept-delivery") ? "Accept it — this merges the work into your branch and pushes it." : refusalSentence("accept-delivery", push.phase)}
                 onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
               >
                 Accept
@@ -250,6 +250,11 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 Not this
               </button>
               {d.rerun ? <RunAgain phase={push.phase} /> : null}
+              {push.acceptRefusal ? (
+                <div data-accept-refusal style={{ fontSize: FS.body, color: C.bad, flexBasis: "100%", marginTop: SP.xs }}>
+                  Not accepted — {push.acceptRefusal}
+                </div>
+              ) : null}
             </>
           )}
           {d.pending?.length ? (

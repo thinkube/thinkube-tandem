@@ -274,7 +274,14 @@ export async function createAppFromTemplate(a: {
   const minted = mintCard(dest, { label: a.appName, product: a.product }, a.storeRoot);
   if (!minted.ok) return { ok: false, reason: minted.reason };
   const url = sayWhereItLives(dest, a.appName, cloneUrlFor(a.appsRoot, a.appName));
-  if (url) say(`it will be seen at ${url}, and its own file now says so`);
+  if (url) {
+    say(`it will be seen at ${url}, and its own file now says so`);
+    // Committed here, so the checkout is clean from its first day: a
+    // change left uncommitted is one the next merge has to be made over.
+    await new Promise<void>((resolve) =>
+      execFile("git", ["-C", dest, "commit", "-q", "-am", "tandem: where it lives"], () => resolve()),
+    );
+  }
   return {
     ok: true,
     cardId: minted.card.id,

@@ -54,16 +54,28 @@ test("accepting merges the branch here, pushes the result, and lets the branch g
   assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-1")).code, 1, "the branch is gone");
 });
 
-test("a checkout with uncommitted changes is refused before anything moves", async () => {
+test("an unrelated local change or an untracked file is no obstacle to landing", async () => {
   const { root } = await repo();
   await branchWith(root, "tandem/x/TEP-2", "b.txt", "two\n");
   fs.writeFileSync(path.join(root, "a.txt"), "edited by hand\n");
+  fs.mkdirSync(path.join(root, ".tandem"));
+  fs.writeFileSync(path.join(root, ".tandem/setup.json"), "{}");
+  const r = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-2", tep: "TEP-2", exec });
+  assert.equal(r.merged, true);
+  assert.equal(fs.readFileSync(path.join(root, "a.txt"), "utf8"), "edited by hand\n", "the person's change is untouched");
+  assert.ok(fs.existsSync(path.join(root, "b.txt")), "and the work landed");
+});
+
+test("a local change to a file the delivery also changes is refused in git's words, and nothing moves", async () => {
+  const { root } = await repo();
+  await branchWith(root, "tandem/x/TEP-5", "a.txt", "theirs\n");
+  fs.writeFileSync(path.join(root, "a.txt"), "edited by hand\n");
   await assert.rejects(
-    landDelivery({ repoRoot: root, branch: "tandem/x/TEP-2", tep: "TEP-2", exec }),
-    /uncommitted changes/,
+    landDelivery({ repoRoot: root, branch: "tandem/x/TEP-5", tep: "TEP-5", exec }),
+    /uncommitted changes in files this delivery also changes: a\.txt/,
   );
   assert.equal(fs.readFileSync(path.join(root, "a.txt"), "utf8"), "edited by hand\n", "untouched");
-  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-2")).code, 0, "the branch stays");
+  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-5")).code, 0, "the branch stays");
 });
 
 test("a conflicting merge is undone and refused with the file named", async () => {

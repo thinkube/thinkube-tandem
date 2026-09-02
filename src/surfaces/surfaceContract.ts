@@ -222,6 +222,8 @@ export interface SpacePush {
   ready: { subjects: number; promises: number; asks: number; thinking: boolean };
   /** Why the last Sign and build was refused — beside the button, until a press succeeds. */
   buildRefusal?: string;
+  /** Why the last press of Accept did nothing — beside the button, until a press succeeds. */
+  acceptRefusal?: string;
   /** A reading that failed: nothing derived, and why. */
   modelFailure?: { reason: string; sentences: number };
   /** What you are writing, kept with the space so it survives a reload. */
