@@ -6,7 +6,7 @@
  */
 import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import * as path from "node:path";
-import { emptySpace, Space, Unit } from "../core/schema";
+import { emptySpace, Space, Unit, Spec } from "../core/schema";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
@@ -278,8 +278,13 @@ export class TandemSession {
   }
 
   /** What thinking about the rest will cost, before it is spent. */
+  /** The thing in hand, when a set was chosen and not touched since. */
+  chosenSpec(): Spec | undefined {
+    return (this.space.specs ?? []).find((s) => s.id === this.cutSpecId);
+  }
+
   thinkingCost(): WorkCost {
-    return costOfThinking(this.space);
+    return costOfThinking(this.space, this.chosenSpec()?.subjectIds);
   }
 
   /** Why the last press of Sign and build did nothing — shown under the

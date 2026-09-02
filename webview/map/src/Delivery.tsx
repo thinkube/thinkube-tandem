@@ -7,8 +7,78 @@
  * reader arrives having read what they are accepting.
  */
 import { Markdown } from "./Markdown";
-import { C, FS, O, raised, SP } from "./type";
+import { C, FS, O, SAID, label, raised, SP } from "./type";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
+
+/**
+ * What you asked for, and what happened to each sentence: done and live,
+ * still to come, or already true. Your words, in your face, with one word
+ * beside each — the report a person reads first, before the machine's.
+ */
+function Asked(props: { push: SpacePush }): JSX.Element | null {
+  const rows = props.push.sentences.map((s, i) => {
+    const stage = s.bound?.stage;
+    const word = stage === "accepted" ? "in the project" : stage === "delivered" ? "done" : stage === "signed" ? "being built" : "not started";
+    const tone = stage === "delivered" || stage === "accepted" ? C.ok : C.quiet;
+    return { n: i + 1, text: s.text, word, tone, done: !!stage };
+  });
+  if (!rows.length) return null;
+  const done = rows.filter((r) => r.done);
+  const later = rows.filter((r) => !r.done);
+  const list = (items: typeof rows): JSX.Element => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {items.map((r) => (
+        <div key={r.n} data-asked={r.n} style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: SP.md, alignItems: "baseline", padding: `${SP.sm}px ${SP.md}px` }}>
+          <span style={{ fontSize: FS.caption, color: C.quiet }}>{r.n}</span>
+          <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.5 }}>{r.text}</span>
+          <span style={{ fontSize: FS.caption, color: r.tone, fontWeight: r.done ? 600 : 400, whiteSpace: "nowrap" }}>{r.word}</span>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div data-asked-list style={{ marginBottom: SP.lg }}>
+      {done.length ? (
+        <>
+          <div style={label}>What you asked for, and what happened</div>
+          {list(done)}
+        </>
+      ) : null}
+      {later.length ? (
+        <>
+          <div style={{ ...label, marginTop: SP.lg }}>Not started</div>
+          {list(later)}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** What was seen when it was used, and what could not be delivered. */
+function Found(props: { d: SpacePush["deliveries"][number] }): JSX.Element | null {
+  const seen = props.d.observations ?? [];
+  const missing = props.d.undelivered ?? [];
+  if (!seen.length && !missing.length) return null;
+  return (
+    <div data-found style={{ marginBottom: SP.lg }}>
+      <div style={label}>What I saw when I used it</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: SP.md }}>
+        {seen.map((o, i) => (
+          <div key={`s${i}`} style={{ padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.ask}`, borderRadius: 6, background: C.raised }}>
+            <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.5 }}>{o}</span>
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>only you can certify this — the machine cannot watch the running product</div>
+          </div>
+        ))}
+        {missing.map((m, i) => (
+          <div key={`m${i}`} style={{ padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.bad}`, borderRadius: 6, background: C.raised }}>
+            <span style={{ fontSize: FS.body }}>{m}</span>
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>not delivered — it stays on the branch</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** The way back in: the signed work runs again. It is offered on every
  *  delivery that is not accepted — withheld, refused by the gate, or still
@@ -53,7 +123,22 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
           data-delivery={d.id}
           style={{ ...raised, padding: `${SP.md}px ${SP.lg}px`, marginBottom: SP.lg, maxWidth: "56rem" }}
         >
-          <Markdown text={d.page} />
+          {d.url ? (
+            <div data-live style={{ display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap", padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.ok}`, borderRadius: 7, marginBottom: SP.lg, background: "#4ec9b014" }}>
+              <a href={d.url} style={{ color: "inherit", fontWeight: 600, fontSize: FS.title }}>{d.url.replace(/^https?:\/\//, "")}</a>
+              <span style={{ fontSize: FS.caption, color: C.quiet }}>
+                {/\/pull\/|\/pulls\/|\/merge_requests\//.test(d.url)
+                  ? "the work, as a pull request — read it before you decide"
+                  : "live — open it and use it before you decide"}
+              </span>
+            </div>
+          ) : null}
+          <Asked push={props.push} />
+          <Found d={d} />
+          <details data-full-report>
+            <summary style={{ cursor: "pointer", fontSize: FS.caption, color: C.quiet }}>The full report, as the run wrote it</summary>
+            <Markdown text={d.page} />
+          </details>
           <div
             style={{
               marginTop: SP.lg,

@@ -13,7 +13,7 @@
  */
 import { Component, components, promisesOf } from "../core/component";
 import { promisesOfSpec } from "../derive/specs";
-import { Space } from "../core/schema";
+import { Space, Spec } from "../core/schema";
 import { signedIds } from "../core/cutClosure";
 import type { TandemSession } from "./session";
 
@@ -36,9 +36,24 @@ export interface WorkCost {
 export function readyToBuild(
   space: Space,
   thinking: boolean,
+  /** The thing in hand. With one chosen, readiness is that thing's alone:
+   *  the others are not being built, so what they still cost to think
+   *  about is not a reason to wait. */
+  chosen?: Spec,
 ): { subjects: number; promises: number; asks: number; thinking: boolean } {
-  if (thinking || costOfThinking(space).subjects > 0)
+  if (thinking || costOfThinking(space, chosen?.subjectIds).subjects > 0)
     return { subjects: 0, promises: 0, asks: 0, thinking: true };
+  if (chosen) {
+    const signed = signedIds(space.cuts);
+    const promises = promisesOfSpec(space, chosen).filter((id) => !signed.has(id));
+    const subjects = (space.subjects ?? []).filter((s) => chosen.subjectIds.includes(s.id));
+    return {
+      subjects: subjects.length,
+      promises: promises.length,
+      asks: new Set(subjects.flatMap((s) => s.from)).size,
+      thinking: false,
+    };
+  }
   const cs = buildable(space);
   return {
     subjects: cs.reduce((n, c) => n + c.subjectIds.length, 0),
@@ -59,13 +74,17 @@ export function readyToBuild(
  * nobody had spent a round on — and the press that was supposed to start
  * the thinking started nothing at all.
  */
-export function costOfThinking(space: Space): WorkCost {
+export function costOfThinking(space: Space, only?: readonly string[]): WorkCost {
   const ground = new Set(
     space.nodes.flatMap((n) => n.serves).filter((s) => s.startsWith("subject-")),
   );
+  // With a thing in hand, only its subjects are priced: the others are not
+  // being thought about, and pricing them offered to work out the wrong
+  // things under the name of the one chosen.
+  const mine = (space.subjects ?? []).filter((s) => !only || only.includes(s.id));
   const subjects =
-    (space.subjects ?? []).filter((s) => !ground.has(s.id)).length +
-    (space.proposal?.subjects.length ?? 0);
+    mine.filter((s) => !ground.has(s.id)).length +
+    (only ? 0 : (space.proposal?.subjects.length ?? 0));
   return { subjects, rounds: subjects ? subjects * 2 + 2 : 0 };
 }
 

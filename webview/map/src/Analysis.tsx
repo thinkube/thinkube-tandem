@@ -117,8 +117,6 @@ export function Analysis(props: {
   model: Model;
   /** The reading is behind the words: it was read from other text. */
   behind: boolean;
-  onKeep: () => void;
-  onRead: () => void;
 }): JSX.Element {
   const { model } = props;
   const replaced = model.subjects.flatMap((s) =>
@@ -175,27 +173,11 @@ export function Analysis(props: {
         </div>
       ) : null}
 
-      <div style={{ display: "flex", gap: SP.md, alignItems: "center", marginTop: SP.md }}>
-        {props.behind ? (
-          <>
-            <button data-read-again style={{ fontWeight: 600 }} onClick={props.onRead}>
-              Read it again
-            </button>
-            <span style={{ fontSize: FS.caption, color: C.ask }}>
-              you have changed the words since this was read — it cannot be kept until it matches
-            </span>
-          </>
-        ) : (
-          <>
-            <button data-keep-draft style={{ fontWeight: 600 }} onClick={props.onKeep}>
-              Keep {model.fresh.length} ask{model.fresh.length === 1 ? "" : "s"}
-            </button>
-            <span style={{ fontSize: FS.caption, color: C.quiet }}>
-              recorded word for word · costs nothing · nothing is built yet
-            </span>
-          </>
-        )}
-      </div>
+      {props.behind ? (
+        <div style={{ fontSize: FS.caption, color: C.ask, marginTop: SP.md }}>
+          you have changed the words since this was read — it cannot be kept until it matches
+        </div>
+      ) : null}
     </section>
   );
 }

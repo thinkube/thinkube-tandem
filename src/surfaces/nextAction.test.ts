@@ -89,22 +89,37 @@ test("a built set is never the first to build", () => {
   assert.deepEqual(n.move, { kind: "post", action: { action: "choose-set", specId: "next" } });
 });
 
-test("chosen and not worked out: see what it will do, at a stated cost", () => {
-  const push = quiet({ specs: [set("s1", { chosen: true })], cost: { subjects: 2, rounds: 4 } });
+test("chosen and not worked out: work it out, at its own stated cost", () => {
+  const push = quiet({ specs: [set("s1", { chosen: true })], cost: { subjects: 2, rounds: 6 } });
   const n = nextAction(push, { behind: false, allowed: () => true });
-  assert.equal(n.label, "See what it will do");
-  assert.match(n.hint, /2 subjects .* 4 rounds/);
-  assert.deepEqual(n.move, { kind: "post", action: { action: "think" } });
+  assert.equal(n.label, "Work it out");
+  assert.match(n.hint, /2 subjects .* 6 rounds/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "choose-set", specId: "s1" } });
 });
 
-test("chosen and worked out: build these, on the page that states the price", () => {
+test("chosen and worked out: build these — and it signs", () => {
   const push = quiet({
     specs: [set("s1", { chosen: true, promises: 5 })],
     ready: { subjects: 2, promises: 5, asks: 3, thinking: false },
+    documentation: { state: "exempt", landings: [], reason: "nothing to document" },
   });
   const n = nextAction(push, { behind: false, allowed: () => true });
   assert.equal(n.label, "Build these 5");
-  assert.deepEqual(n.move, { kind: "tab", tab: "work" });
+  assert.equal(n.enabled, true);
+  assert.match(n.hint, /signs 3 sentences read-only/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "build" } });
+});
+
+test("build waits for the documentation line, and says so", () => {
+  const push = quiet({
+    specs: [set("s1", { chosen: true, promises: 5 })],
+    ready: { subjects: 2, promises: 5, asks: 3, thinking: false },
+    documentation: { state: "missing", landings: [] },
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Build these 5");
+  assert.equal(n.enabled, false);
+  assert.match(n.hint, /documentation/);
 });
 
 test("building: the only press is stop", () => {

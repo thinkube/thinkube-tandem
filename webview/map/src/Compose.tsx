@@ -179,23 +179,10 @@ export function Compose(props: {
   return (
     <div data-compose style={{ flexBasis: "100%", minWidth: 0 }}>
       <div ref={host} data-compose-editor />
-      <div style={{ display: "flex", gap: SP.md, alignItems: "center", marginTop: SP.sm }}>
-        <button
-          data-read-draft
-          disabled={!count || props.busy || !props.canRead}
-          style={{ fontWeight: 600 }}
-          title={
-            props.canRead
-              ? "Read these words: what are they about? Nothing is recorded and nothing is built."
-              : props.whyNotRead ?? "Not now."
-          }
-          onClick={() => props.onRead()}
-        >
-          {count ? `Read ${count} ask${count === 1 ? "" : "s"}` : "Read"}
-        </button>
+      <div data-compose-hint style={{ display: "flex", gap: SP.md, alignItems: "center", marginTop: SP.sm }}>
         <span style={{ fontSize: FS.caption, color: C.quiet }}>
-          one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by
-          reading
+          {count ? `${count} line${count === 1 ? "" : "s"} · ` : ""}one line is one ask · Enter starts another ·
+          Ctrl+Enter reads · nothing is recorded by reading
         </span>
       </div>
     </div>

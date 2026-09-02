@@ -173,13 +173,15 @@ export function nextAction(
     };
   }
 
+  // The thing in hand still has subjects nothing was derived from: choosing
+  // it again works out exactly those, and the price is theirs alone.
   if (push.cost.subjects > 0)
     return {
       where: `${chosen.name} — not worked out yet`,
-      label: "See what it will do",
+      label: "Work it out",
       hint: `${plural(push.cost.subjects, "subject")} to think about — about ${plural(push.cost.rounds, "round")}`,
-      enabled: a.allowed("think"),
-      move: { kind: "post", action: { action: "think" } },
+      enabled: a.allowed("choose-set"),
+      move: { kind: "post", action: { action: "choose-set", specId: chosen.id } },
     };
 
   if (push.signedIdle)
@@ -192,11 +194,14 @@ export function nextAction(
     };
 
   const promises = push.ready.promises;
+  const docs = push.documentation.state === "landed" || push.documentation.state === "exempt";
   return {
     where: `${chosen.name} — ${plural(promises, "promise")}, not started`,
     label: `Build these ${promises}`,
-    hint: "the price is said on the work page before you sign",
-    enabled: true,
-    move: { kind: "tab", tab: "work" },
+    hint: docs
+      ? `signs ${plural(push.ready.asks, "sentence")} read-only and starts the workers — this is what spends`
+      : "say why no documentation is needed — the line for it is on the page",
+    enabled: docs && promises > 0 && a.allowed("build"),
+    move: { kind: "post", action: { action: "build" } },
   };
 }

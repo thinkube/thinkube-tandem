@@ -13,13 +13,13 @@ import { asksOfText } from "../../../src/derive/asks";
 import { Delivery } from "./Delivery";
 import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
-import { WorkGraph } from "./WorkGraph";
+import { Wills } from "./Wills";
 import { Rail } from "./Rail";
 import { nextAction, NextAction } from "../../../src/surfaces/nextAction";
 import { useWorld, ZoomControls } from "./proto/world";
 import { nextView, ViewState } from "../../../src/surfaces/viewMove";
 import { surfaceRegions } from "../../../src/surfaces/surfaceLayout";
-import { ASKS_PAGE, SurfacePage } from "../../../src/surfaces/surfaceContract";
+import { SurfacePage } from "../../../src/surfaces/surfaceContract";
 
 
 /** Whether the Orchestration page is currently showing the delivery
@@ -53,7 +53,6 @@ export function App(props: {
   // once: a press that changes nothing on screen for a second reads as a
   // press that did nothing.
   const [pressed, setPressed] = useState<string | null>(null);
-  const [panicArmed, setPanicArmed] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   // The one rule that decides which page is shown: a push from the host
   // never moves it (except to land a move the reader already asked for),
@@ -69,8 +68,6 @@ export function App(props: {
   // claim that reads wrong must be able to open the ask it came
   // from, and they are drawn on another surface.
   const [editingAsk, setEditingAsk] = useState<string | null>(null);
-  const [workSubject, setWorkSubject] = useState<string | null>(null);
-  const unitsWorld = useWorld();
   const flowWorld = useWorld();
   // Working out what to build, right now: a stage is running or subjects
   // are in flight. Not the same as having work left to think about, which
@@ -133,8 +130,13 @@ export function App(props: {
       return;
     }
     if (n.move.kind !== "post") return;
-    if (n.move.action.action === "think") setView((v) => nextView(v, { kind: "reader-awaits-work" }));
+    // Choosing a thing works it out, and the page for what it will do opens
+    // by itself when that is done. Building opens the run.
+    if (n.move.action.action === "choose-set") setView((v) => nextView(v, { kind: "reader-awaits-work" }));
+    if (n.move.action.action === "build") setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport: false }));
     if (n.move.action.action === "read-draft") setClassifying(true);
+    if (n.move.action.action === "keep-draft")
+      setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
     setPressed(n.label);
     post(n.move.action);
   };
@@ -272,13 +274,13 @@ export function App(props: {
             // button, and the phase says whether that button is on.
             onClick={() => setView((v) => nextView(v, { kind: "reader-tab", tab: id, hasReport }))}
             style={{
-              background: C.raised,
-              color: tab === id ? C.focus : "inherit",
-              border: `1px solid ${tab === id ? C.focus : C.border}`,
-              padding: `${SP.sm}px ${SP.lg}px`,
-              borderRadius: 4,
+              background: tab === id ? C.raised : "transparent",
+              color: tab === id ? "inherit" : C.quiet,
+              border: `1px solid ${tab === id ? C.border : "transparent"}`,
+              padding: `${SP.xs}px ${SP.md}px`,
+              borderRadius: 999,
               cursor: "pointer",
-              fontSize: FS.body,
+              fontSize: FS.caption,
             }}
           >
             {label}
@@ -379,28 +381,6 @@ export function App(props: {
             </button>
           </div>
         ) : null}
-        {can("panic") && (push.subjects.length > 0 || push.questions.length > 0) ? (
-          panicArmed ? (
-            <button
-              data-panic-confirm
-              style={{ fontSize: FS.caption, color: C.bad, background: "none", border: "1px solid #f85149", borderRadius: 4, cursor: "pointer" }}
-              onClick={() => {
-                setPanicArmed(false);
-                post({ action: "panic" });
-              }}
-            >
-              Really clear derived thinking?
-            </button>
-          ) : (
-            <button
-              data-panic
-              style={{ fontSize: FS.caption, opacity: O.dim, background: "none", border: "none", cursor: "pointer", color: "inherit" }}
-              onClick={() => setPanicArmed(true)}
-            >
-              Panic
-            </button>
-          )
-        ) : null}
         {push.running ? (
           <span style={{ fontSize: FS.body, color: C.ok }}>● building…</span>
         ) : null}
@@ -432,24 +412,8 @@ export function App(props: {
         {tab === "write" ? (
           <div data-write-page style={{ flex: 1, overflowY: "auto", padding: `0 ${SP.lg}px ${SP.xl}px` }}>
             {push.pendingModel ? (
-              <Analysis
-                model={push.pendingModel}
-                behind={behind}
-                onRead={() => {
-                  setClassifying(true);
-                  post({ action: "read-draft" });
-                }}
-                onKeep={() => {
-                  post({ action: "keep-draft" });
-                  setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
-                }}
-              />
-            ) : (
-              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.lg }}>
-                Nothing read yet. Write what you want above — one ask per line — and press Read.
-                It costs one round and records nothing.
-              </div>
-            )}
+              <Analysis model={push.pendingModel} behind={behind} />
+            ) : null}
           </div>
         ) : tab === "intent" ? (
           <div data-intent-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
@@ -464,29 +428,13 @@ export function App(props: {
           </div>
         ) : tab === "work" ? (
           <div data-work-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
-            <WorkGraph
+            <Wills
               push={push}
-              onEditAsk={(id) => {
-                setSelected(id);
-                setEditingAsk(id);
-                setView((v) => nextView(v, { kind: "reader-tab", tab: ASKS_PAGE, hasReport }));
-              }}
-              world={unitsWorld}
-              subjectId={workSubject}
-              onSubject={setWorkSubject}
               selected={selected}
               onSelect={(id) => {
                 setSelected(id);
                 post({ action: "select-unit", unitId: id });
               }}
-              onUp={(id) => {
-                setSelected(id);
-                setView((v) => nextView(v, { kind: "reader-tab", tab: "intent", hasReport }));
-              }}
-              // The signed-idle link promises the run page's notice, so it
-              // lands on the workers view and never on a past delivery's
-              // report: a link that shows something other than what it names
-              // is a link the reader stops trusting.
               onGoToRun={() =>
                 setView((v) => nextView(v, { kind: "reader-tab", tab: "flow", hasReport: false }))
               }
@@ -532,12 +480,8 @@ export function App(props: {
         {/* Only where there is something to zoom. The intent page is a
             list of cards that scrolls; drawing zoom controls over it gave
             three buttons that did nothing at all. */}
-        {tab === "work" ? (
-          <ZoomControls world={unitsWorld} />
-        ) : tab === "flow" && push.run && !reportIsShown ? (
-          <ZoomControls world={flowWorld} />
-        ) : null}
-        {regionOrder.includes("rail") ? <Rail push={push} canBuild={tab === "work"} /> : null}
+        {tab === "flow" && push.run && !reportIsShown ? <ZoomControls world={flowWorld} /> : null}
+        {regionOrder.includes("rail") ? <Rail push={push} canBuild={false} /> : null}
       </div>
     </div>
   );

@@ -84,14 +84,14 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
     kind: "human",
     affordance: {
       page: "work",
-      gesture: "press Build — it says what it costs and which sentences it makes read-only",
+      gesture: "press Build these N in the strip — the page says what it costs and which sentences it makes read-only",
     },
   },
   think: {
     kind: "human",
     affordance: {
       page: "intent",
-      gesture: "go to the work page — that is what starts Think, and it says what it will cost",
+      gesture: "press Build the first — working a thing out is what starts Think, and the strip says what it costs first",
     },
   },
   reframe: {
@@ -104,8 +104,8 @@ export const AFFORDANCES: Record<string, AffordanceEntry> = {
   amend: {
     kind: "human",
     affordance: {
-      page: "work",
-      gesture: "press Amend and add a new sentence that supersedes it — built work only changes through new work",
+      page: "intent",
+      gesture: "press the pencil on the sentence, then Amend — a new sentence supersedes it, because built work only changes through new work",
     },
   },
   "select-unit": {

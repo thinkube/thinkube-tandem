@@ -294,6 +294,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     ready: readyToBuild(
       session.space,
       !!session.activity || session.groundingView().length > 0,
+      session.chosenSpec(),
     ),
     /** Promises attached to no claim — the machine could not place them. */
     orphans: session.space.nodes
