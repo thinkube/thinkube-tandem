@@ -29,6 +29,14 @@ real todo space and of a delivered fixture:
   back. Delivered, the one press is "Accept it", or "Run it again" with
   the gate's reason beside it when it cannot be accepted. 2.0.241.
 
+- **Documentation by default.** Choosing a thing that lands no page adds
+  the page as a promise the machine minted: markdown under `docs/` at the
+  repository root, or an `.adoc` page in `docs/modules/ROOT/pages` with a
+  line in `nav.adoc` when `docs/antora.yml` marks an Antora site, which is
+  how thinkube repositories mark theirs. It informs and never withholds.
+  "Not needed" on the promise takes it out, and the reason line that then
+  appears is the exemption. 2.0.242.
+
 Still open against the mock:
 
 - The disagreement line under a criterion ("you wrote due date first —
