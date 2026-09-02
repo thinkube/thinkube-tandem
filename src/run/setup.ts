@@ -439,9 +439,16 @@ async function proveRunOne(
   const owns = (r: string, f: string): boolean => f === r || f.startsWith(`${r}/`);
   const under = (f: string): boolean =>
     part === "." ? !parts.some((r) => owns(r, f)) : owns(part, f);
-  // A test, not a fixture beside one: nothing is proved on an `__init__.py`
-  // or a `conftest.py`, which are not tests and fail as if the command had.
-  const aTest = (f: string): boolean => !/(^|\/)(__init__|conftest|setup)\.py$|(^|\/)__pycache__\//.test(f);
+  // A test, not a fixture beside one: nothing is proved on an `__init__.py`,
+  // a `conftest.py` or a `setup.js`, which are not tests and fail as if
+  // the command had. A test wears a test's name — `.test.js`, `.spec.ts`,
+  // `test_x.py`, `x_test.go` — and only such a file is tried.
+  const aTest = (f: string): boolean => {
+    const base = f.split("/").pop() ?? f;
+    if (/^(__init__|conftest|setup|vitest\.setup|jest\.setup|testSetup|setupTests)\.[a-z]+$/.test(base)) return false;
+    if (/(^|\/)__pycache__\//.test(f)) return false;
+    return /\.(test|spec)\.[a-z]+$|_(test|spec)\.[a-z]+$|^test_.*\.[a-z]+$/.test(base);
+  };
   const sample = listed
     .filter((f) => f && isTestPath(f) && !isProbePath(f) && aTest(f) && under(f))
     .sort((a, b) => a.length - b.length)[0];

@@ -146,3 +146,23 @@ test("a borrowed store that does not build is installed over, without asking a m
   assert.ok(said.some((l) => /borrowed dependencies did not build — installing instead/.test(l)));
   assert.ok(said.some((l) => /did not hold in \ds — sh: 1: vite: not found/.test(l)), "the build's last line is said");
 });
+
+test("a setup file beside the tests is never the sample; a file wearing a test's name is", async () => {
+  const { base, wt } = tree();
+  const tried: string[] = [];
+  await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    runOne: "cd frontend && npx vitest run <file>",
+    exec: async (cmd, args) =>
+      cmd === "git" && args.includes("ls-files")
+        ? { code: 0, out: "frontend/src/test/setup.js\nfrontend/src/views/__tests__/Home.test.js\n" }
+        : { code: 0, out: "" },
+    boundedExec: async (cmd) => {
+      if (/vitest run/.test(cmd)) tried.push(cmd);
+      return { code: 0, output: "1 passed" };
+    },
+    log: () => {},
+  });
+  assert.deepEqual(tried, ["cd frontend && npx vitest run frontend/src/views/__tests__/Home.test.js"]);
+});
