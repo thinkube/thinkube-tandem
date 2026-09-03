@@ -14,7 +14,7 @@ type Delivery_ = SpacePush["deliveries"][number];
 type Promise_ = SpacePush["subjects"][number]["claims"][number]["promises"][number];
 
 /** How a sentence fared, read from THIS delivery's verdicts on the promises made from it. */
-type Fate = "done" | "not kept" | "not judged" | "being built" | "not started";
+type Fate = "done" | "not kept" | "not judged" | "being built" | "not started" | "landed earlier";
 type Verdict = { verdict: "green" | "red" | "unjudged"; said?: string };
 
 function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: string | undefined): Fate {
@@ -33,6 +33,7 @@ const TONE: Record<Fate, string> = {
   "not judged": C.ask,
   "being built": C.live,
   "not started": C.quiet,
+  "landed earlier": C.quiet,
 };
 
 /** The way back in: the signed work runs again. Off, it says why. */
@@ -77,11 +78,24 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
           .filter((c) => !!c.verdict)
           .map((c) => [c.id, { verdict: c.verdict!, ...(c.said ? { said: c.said } : {}) }]),
   );
+  // This report is about ONE delivery. A sentence delivered by an earlier
+  // one is not judged again here: its work is already in the project, and
+  // reading "not judged" over merged code is a lie about what happened.
   const rows = push.sentences.map((s, i) => {
     const promises = byN.get(i + 1) ?? [];
-    return { n: i + 1, text: s.text, promises, fate: fateOf(promises, judged, s.bound?.stage) };
+    const elsewhere = !!s.bound?.tep && !!d.tep && s.bound.tep !== d.tep;
+    return {
+      n: i + 1,
+      text: s.text,
+      promises,
+      fate: elsewhere
+        ? ("landed earlier" as Fate)
+        : fateOf(promises, judged, s.bound?.stage),
+      tep: s.bound?.tep,
+    };
   });
-  const happened = rows.filter((r) => r.fate !== "not started");
+  const happened = rows.filter((r) => r.fate !== "not started" && r.fate !== "landed earlier");
+  const earlier = rows.filter((r) => r.fate === "landed earlier");
   const later = rows.filter((r) => r.fate === "not started");
 
   // Failures said once. Twenty-four checks failing the same way is one
@@ -194,6 +208,19 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                 </div>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {earlier.length ? (
+          <div data-landed-earlier style={{ marginBottom: SP.lg }}>
+            <div style={label}>Already in the project, from an earlier delivery</div>
+            {earlier.map((r) => (
+              <div key={r.n} data-asked={r.n} data-fate={r.fate} style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: SP.md, alignItems: "baseline", padding: `${SP.sm}px ${SP.md}px`, fontSize: FS.body, color: C.quiet }}>
+                <span style={{ fontSize: FS.caption }}>{r.n}</span>
+                <span>{r.text}</span>
+                <span style={{ fontSize: FS.caption, whiteSpace: "nowrap" }}>accepted</span>
+              </div>
+            ))}
           </div>
         ) : null}
 

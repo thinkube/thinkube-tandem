@@ -74,3 +74,39 @@ test("one failure behind many checks is said once, and the report is painted fro
     await s.close();
   }
 });
+
+test("a sentence delivered by an earlier delivery is not judged again here", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("flow");
+  // Two deliveries: the first accepted and merged, the second waiting.
+  const first = push.sentences[0];
+  const second = push.sentences[1];
+  first.bound = { tep: "TEP-1", stage: "accepted" };
+  second.bound = { tep: "TEP-2", stage: "delivered" };
+  const promises = push.subjects.flatMap((s) => s.claims.flatMap((c) => c.promises));
+  promises.forEach((p, i) => {
+    p.checks = [{ id: `c-${i}`, text: `check ${i}`, verdict: "green" }];
+  });
+  push.deliveries = [
+    { ...push.deliveries[0], id: "delivery-TEP-2", tep: "TEP-2", accepted: false, proofs: [] },
+  ] as never;
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const seen = await s.read(() => {
+      const report = document.querySelector("[data-delivery-report]");
+      const rows = [...(report?.querySelectorAll("[data-asked]") ?? [])].map((el) => [
+        el.getAttribute("data-asked"),
+        el.getAttribute("data-fate"),
+      ]);
+      return { rows, earlier: report?.querySelector("[data-landed-earlier]")?.textContent ?? "" };
+    });
+    const fateOfOne = seen.rows.find(([n]) => n === "1")?.[1];
+    assert.equal(fateOfOne, "landed earlier", "merged work is not re-judged by another delivery's report");
+    assert.match(seen.earlier, /Already in the project/);
+    assert.match(seen.earlier, /accepted/);
+  } finally {
+    await s.close();
+  }
+});

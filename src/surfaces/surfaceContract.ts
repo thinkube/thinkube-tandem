@@ -92,6 +92,9 @@ interface SubjectVM {
 
 interface DeliveryVM {
   id: string;
+  /** The signed work this delivery came from, by the name its run wore —
+   *  what tells a sentence of this delivery from a sentence of another. */
+  tep?: string;
   page: string;
   accepted: boolean;
   /** Why it cannot be accepted, from the gate that would refuse it. */
