@@ -298,7 +298,8 @@ async function scopedTests(args: {
  * proven single-test command; the verdicts, named per file, as one suite.
  */
 export async function runScopedSuite(args: {
-  runOne: string;
+  /** How one test runs, for whichever part the file lives in. */
+  runOne: string | ((file: string) => string);
   root: string;
   exec: (cmd: string) => Promise<{ code: number | null; output: string }>;
   footprint: readonly string[];
@@ -315,7 +316,14 @@ export async function runScopedSuite(args: {
   const failures: SuiteFailure[] = [];
   let pass = 0;
   for (const f of files) {
-    const r = await args.exec(args.runOne.replace(/<file>/g, f));
+    const runOne = typeof args.runOne === "function" ? args.runOne(f) : args.runOne;
+    // A file no command runs is not a red against the work: nothing was
+    // judged. It used to be pinned on whoever owned the file.
+    if (!runOne.trim()) {
+      args.log?.(`[suite] no command runs ${f} — nothing was judged there`);
+      continue;
+    }
+    const r = await args.exec(runOne.replace(/<file>/g, f));
     const v = suiteVerdictOf(r.code, r.output, args.root);
     if (v.green) {
       pass++;
@@ -330,14 +338,14 @@ export async function runScopedSuite(args: {
 /** The oracle's suite arguments for a run: the proven single-test command,
  *  the graph's importers, the tests that bit before, and the plan's owners. */
 export function sliceSuiteArgs(a: {
-  runOne: string;
+  runOne: string | ((file: string) => string);
   exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   affected?: (path: string) => Promise<string>;
   reds?: readonly string[];
   slices: readonly { workUnits: readonly { role?: string; footprint: readonly string[] }[] }[];
   pendingPlanned: () => readonly string[];
 }): {
-  runOne: string;
+  runOne: string | ((file: string) => string);
   exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   importersOf: (path: string) => Promise<readonly string[]>;
   reds: readonly string[];

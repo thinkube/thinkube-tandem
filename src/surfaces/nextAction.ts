@@ -132,6 +132,18 @@ export function nextAction(
           };
   }
 
+  // Merged work the world then refused: the one press is to repair it.
+  // Nothing else on the page matters while code in the project is broken.
+  const broke = push.deliveries.find((d) => d.accepted && d.afterMerge?.outcome === "broke");
+  if (broke)
+    return {
+      where: "accepted — and the merged work did not build",
+      label: "Run it again",
+      hint: `${broke.afterMerge!.detail ?? "it did not pass"} — said by ${broke.afterMerge!.said}`,
+      enabled: a.allowed("rerun"),
+      move: { kind: "post", action: { action: "rerun" } },
+    };
+
   // Delivered: the page is what came back, and the one press is the
   // decision — or the way back in when the gate would refuse it.
   const delivered = push.deliveries.find((d) => !d.accepted);

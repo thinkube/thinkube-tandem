@@ -263,8 +263,9 @@ export interface OracleFactoryArgs {
   /** The repository's own standing tests, run in the slice's runner once its
    *  checks are green — scoped to the tests that import the slice's files. */
   suite?: {
-    /** Runs one test file (`<file>` = its source path); "" runs nothing here. */
-    runOne: string;
+    /** Runs one test file (`<file>` = its source path); "" runs nothing
+     *  here. A function answers per file, for a repository of parts. */
+    runOne: string | ((file: string) => string);
     exec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
     /** The graph's importers of a path. */
     importersOf: (path: string) => Promise<readonly string[]>;

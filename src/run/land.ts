@@ -7,6 +7,10 @@
  * pushes that, and lets the branch go. There is no pull request, because
  * a second approval on the forge would be the same decision asked twice.
  *
+ * The branch is kept, not deleted: what a merge puts into the project can
+ * still turn out wrong, and the work has to be somewhere to run again from.
+ * It goes when the platform says the merged tree built and deployed.
+ *
  * The person's checkout is theirs. Git decides whether the merge can be
  * made over what is there: an unrelated local change or an untracked file
  * is no obstacle, a local change to a file the branch also changes is
@@ -63,7 +67,6 @@ export async function landDelivery(a: {
     throw new Error(
       `merged here, but the push was refused: ${pushed.out.trim().split("\n").pop() ?? ""} — push it yourself when the remote is reachable`,
     );
-  await git("branch", "-d", a.branch);
   return { merged: true, head };
 }
 

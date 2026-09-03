@@ -225,7 +225,6 @@ export async function watchGitopsAfterAccept(a: {
   then?: (url: string) => Promise<void>;
 }): Promise<void> {
   const stamping = a.delivery.proofs.some((p) => p.verdict === "pending" && p.settledBy);
-  if (!stamping && !a.then) return;
   const remote =
     a.remote ??
     (await new Promise<string>((resolve) =>
@@ -248,17 +247,41 @@ export async function watchGitopsAfterAccept(a: {
   for (let tick = 0; tick < 30; tick++) {
     const reading = await readPipeline({ controlUrl, app: a.app, since: a.acceptedAt, token, http: a.http });
     if (reading.settled) {
-      if (stamping) {
-        d = stampPending(d, reading);
-        a.update(d, `the pipeline settled (${reading.phase}) — its promises are answered`);
-      }
+      if (stamping) d = stampPending(d, reading);
+      // What the platform did with the merged work comes home, whichever
+      // way it went. A delivery whose merged tree failed to build read
+      // "accepted, every check green" for ever, and nobody was told.
+      const held = reading.phase === "Succeeded";
+      const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
+      d = {
+        ...d,
+        afterMerge: {
+          at: new Date().toISOString(),
+          outcome: held ? "held" : "broke",
+          said: "the platform's pipeline",
+          ...(held
+            ? {}
+            : {
+                detail: broke.length
+                  ? `${broke.map((s) => s.name).join(", ")} — ${broke.length === 1 ? "this step" : "these steps"} did not pass`
+                  : `the pipeline ended ${reading.phase || "without succeeding"}`,
+              }),
+        },
+      };
+      a.update(
+        d,
+        held
+          ? "the platform built and deployed the merged work" +
+            (stamping ? " — the promises settled after the merge are answered" : "")
+          : `the merged work did not build: ${d.afterMerge!.detail} — run it again to repair it`,
+      );
       const url = deployedUrlOf(remote, a.app);
-      if (a.then && url) await a.then(url);
+      if (held && a.then && url) await a.then(url);
       return;
     }
     await sleep(20_000);
   }
-  a.log("the pipeline did not settle within the watch — its promises stay pending; read them again later");
+  a.log("the pipeline did not settle within the watch — what it did with the merged work is not known here yet; read it again later");
 }
 
 /**

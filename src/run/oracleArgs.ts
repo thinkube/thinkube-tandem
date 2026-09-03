@@ -37,7 +37,7 @@ export function buildOracleArgs(a: {
   criterionOf: (slice: string, ac: number) => { id: string; text: string } | undefined;
   rulings: { criterionId: string; unit: string; granted: boolean; reason: string }[];
   decisions: { unit: string; text: string }[];
-  runOneTest: string;
+  runOneTest: string | ((file: string) => string);
   pending: (unitId: string) => boolean;
   plannedPending: () => string[];
   /** Who is changing which files at this moment — the door reads it. */

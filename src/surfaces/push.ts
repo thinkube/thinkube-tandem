@@ -410,6 +410,15 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         return cut?.tepId ? { tep: cut.tepId } : {};
       })(),
       ...(d.withheld ? { withheld: d.withheld } : {}),
+      ...(d.afterMerge
+        ? {
+            afterMerge: {
+              outcome: d.afterMerge.outcome,
+              said: d.afterMerge.said,
+              ...(d.afterMerge.detail ? { detail: d.afterMerge.detail } : {}),
+            },
+          }
+        : {}),
       proofs: d.proofs
         .filter((p) => p.criterionId && p.verdict !== "pending")
         .map((p) => {

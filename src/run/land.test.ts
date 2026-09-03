@@ -51,7 +51,7 @@ test("accepting merges the branch here, pushes the result, and lets the branch g
   assert.ok(fs.existsSync(path.join(root, "b.txt")), "the work is on the checkout's branch");
   const remoteHead = (await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim();
   assert.equal(remoteHead, r.head, "and pushed");
-  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-1")).code, 1, "the branch is gone");
+  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-1")).code, 0, "the branch is kept: merged work can still turn out wrong");
 });
 
 test("an unrelated local change or an untracked file is no obstacle to landing", async () => {
@@ -142,5 +142,5 @@ test("a landing refused at the push carries on from the merge already made", asy
   const r = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-7", tep: "TEP-7", exec });
   assert.equal(r.merged, true);
   assert.equal((await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim(), r.head, "pushed this time");
-  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-7")).code, 1, "and the branch is gone");
+  assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-7")).code, 0, "and the branch is kept");
 });

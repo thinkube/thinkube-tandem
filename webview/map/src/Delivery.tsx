@@ -119,6 +119,21 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
   return (
     <div data-delivery-report style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.xl}px ${SP.xl}px` }}>
       <article data-delivery={d.id} style={{ maxWidth: "60rem" }}>
+        {d.afterMerge?.outcome === "broke" ? (
+          <div data-after-merge style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
+            <strong style={{ fontSize: FS.body }}>This was accepted, and then the merged work did not build.</strong>
+            <div style={{ fontSize: FS.body, marginTop: SP.xs }}>
+              {d.afterMerge.detail ?? "it did not pass"} — said by {d.afterMerge.said}.
+            </div>
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+              The work is in the project and its branch is kept. Run it again to repair it.
+            </div>
+          </div>
+        ) : d.afterMerge?.outcome === "held" ? (
+          <div data-after-merge style={{ marginBottom: SP.lg, fontSize: FS.body, color: C.ok }}>
+            The merged work built and deployed, said by {d.afterMerge.said}.
+          </div>
+        ) : null}
         {refusedAtDoor ? (
           <div data-refused-at-door style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
             <strong style={{ fontSize: FS.body }}>The last run was refused at the door. Nothing below is from it.</strong>
@@ -252,7 +267,12 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
         </details>
 
         <div style={{ paddingTop: SP.md, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap" }}>
-          {d.accepted ? (
+          {d.accepted && d.afterMerge?.outcome === "broke" ? (
+            <>
+              <span data-accepted={d.id} style={{ color: C.quiet, fontSize: FS.body }}>Accepted, and it did not build</span>
+              <RunAgain phase={push.phase} />
+            </>
+          ) : d.accepted ? (
             <span data-accepted={d.id} style={{ color: C.ok, fontSize: FS.body, fontWeight: 600 }}>✓ Accepted</span>
           ) : stuck ? (
             <>{d.rerun ? <RunAgain phase={push.phase} /> : null}</>

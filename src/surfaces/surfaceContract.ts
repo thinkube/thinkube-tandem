@@ -99,6 +99,9 @@ interface DeliveryVM {
   accepted: boolean;
   /** Why it cannot be accepted, from the gate that would refuse it. */
   blocked?: string;
+  /** What became of the merged work: the platform's own build of it, or a
+   *  person saying it was wrong. Absent until it is known. */
+  afterMerge?: { outcome: "held" | "broke"; said: string; detail?: string };
   url?: string;
   undelivered?: string[];
   /** What only the person can certify, by using the delivered thing. */

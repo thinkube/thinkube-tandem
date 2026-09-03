@@ -293,6 +293,25 @@ export interface Delivery {
    *  without it, the only way to reject was to leave the page and never
    *  come back. */
   rejectedAt?: string;
+  /**
+   * What happened to this work AFTER it was merged: the platform's own
+   * build and test of the merged tree, or a person saying it was wrong.
+   *
+   * Accept was the end of the story. A delivery whose merged work then
+   * broke the build stayed "accepted, every check green" for ever, the
+   * branch was already gone, and the only one who could act was the
+   * person, by hand, in an editor. What comes back lands here, the work
+   * can be run again from it, and the page says so.
+   */
+  afterMerge?: {
+    at: string;
+    /** "held" — the platform built and deployed it; "broke" — it did not. */
+    outcome: "held" | "broke";
+    /** What said so: the platform's pipeline, or the person. */
+    said: string;
+    /** In its own words: the failing stage, the person's sentence. */
+    detail?: string;
+  };
 }
 
 /** One project's working graph. */

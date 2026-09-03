@@ -43,29 +43,26 @@ grouping. Each phase in its place with its state and elapsed time, the
 sentence rows keeping their own stage under the deriving phase, and no pill
 over the group.
 
-# Defects: a delivery's existing tests are not run on a repository made of parts
+# A delivery can be recovered from, landed
 
-Found in the first clean run of the todo app, by reading the run's log.
-On a repository declared as parts — every app from the template — the
-existing tests are never actually run by tandem before it hands over:
+Accept was the end of the story: it merged, pushed and deleted the branch,
+and the platform's build of the merged tree — the last word on the work —
+never came back into the space. A delivery whose merged code broke the
+build stayed "accepted, every check green" for ever, and the only one who
+could act was the person, by hand, in an editor.
 
-- The reading of the repository invents a repository-wide single-test
-  command even when the parts declare their own. This run's guess was a
-  bash wrapper for the backend alone.
-- The door cannot prove such a guess (no test outside any part) and
-  carries it as told instead of dropping it.
-- The standing-suite check that runs when a unit finishes runs a part's
-  file with that wide command, not the part's own — the gate's per-check
-  runs use the part's, this check does not. The frontend's existing test
-  file went to pytest and exited 4.
-- That "red" was tagged as the maintainer's and the unit was committed; a
-  check that could not run is "not judged", never a red to ignore.
+- The branch is kept until the world says the work held.
+- The pipeline's verdict comes home whichever way it went, onto the
+  delivery, in its own words.
+- Merged work that broke is signed work waiting to run again: the report
+  says so above everything and the one press on the strip is to repair it.
+- The standing tests run with the command of the part each file lives in,
+  and a file no command runs judges nothing instead of failing its owner.
+- A repository whose parts declare their own commands is told no
+  repository-wide one, so nothing unprovable is carried.
 
-Bounded at the platform: after Accept, the pipeline runs the parts' test
-scripts before it builds, so a broken existing test fails the build there.
-Not silent, but after the accept, not before. Fix all four, and extend the
-walk with a two-part repository whose standing tests must run at the gate
-with the part's command.
+The walk presses through it: accept, the pipeline breaking the merged
+work, and the repair.
 
 # The end-to-end path is documented once it has been walked
 

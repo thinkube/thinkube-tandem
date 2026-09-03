@@ -106,9 +106,14 @@ export async function whatWeKnow(a: {
     ...(known ? { known } : {}),
     told: {
       ...deps.told,
-      ...((): { parts?: Record<string, { runOne: string }> } => {
+      ...((): { parts?: Record<string, { runOne: string }>; runOne?: string } => {
         const parts = declaredPartCommands(deps.repoRoot);
-        return Object.keys(parts).length ? { parts } : {};
+        if (!Object.keys(parts).length) return {};
+        // Each part says how one of its tests runs, so nothing repository-
+        // wide is wanted: a guessed wide command that no test outside a
+        // part can prove was carried anyway, and every check that fell to
+        // it ran with the wrong part's runner.
+        return { parts, runOne: "" };
       })(),
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),

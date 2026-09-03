@@ -42,7 +42,11 @@ export type GestureResult = { ok: true } | { ok: false; reason: string };
  * back in must stay reachable.
  */
 export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
-  const delivered = new Set(space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
+  // Work merged whose merged tree then broke is waiting to run again: the
+  // accept is not the end of the story when the world says otherwise.
+  const delivered = new Set(
+    space.deliveries.filter((d) => d.acceptedAt && d.afterMerge?.outcome !== "broke").map((d) => d.cutId),
+  );
   const c = [...space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
   return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
 }

@@ -191,10 +191,14 @@ export async function dispatchTep(
   const ready = know.ready;
   deps = know.deps;
   const { provisioned, built } = ready;
-  const runOneTest = know.runOne;
+  // Every check runs with the command of the part it lives in — the gate
+  // does this, and the standing-suite check must do the same: a frontend
+  // test handed to the backend's command exits usage-error, and that read
+  // as the test failing.
+  const runOneTest = runnerFor(know.runOne, ready.parts);
   const baseSha = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
   // Per-slice bookkeeping for the oracle + the slice-commit countdown.
-  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runnerFor(runOneTest, ready.parts));
+  const { sliceProbes, sliceVerifs, sliceFiles, checkOf, rehomed } = sliceBookkeeping(slices, runOneTest);
   if (deps.storeDir)
     await putBackDeliveredChecks(deps.storeDir, tep, worktree, [...sliceProbes.values()].flat(), log);
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
