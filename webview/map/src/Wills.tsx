@@ -20,13 +20,70 @@ type Check = Promise_["checks"][number];
 
 /** The tick a criterion carries: proved, failed, or not yet checked. */
 function tick(c: Check): { glyph: string; color: string; word: string } {
+  // The world answered back: proved once, and not any more.
+  if (c.contradicted) return { glyph: "✗", color: C.bad, word: `no longer holds — ${c.contradicted.said}` };
   if (c.verdict === "green") return { glyph: "✓", color: C.ok, word: c.drifted ? "proved, then the code moved" : "proved" };
   if (c.verdict === "red") return { glyph: "✗", color: C.bad, word: "not proved" };
   return { glyph: "○", color: C.quiet, word: c.kind === "assessment" ? "judged at delivery by a reviewer" : "checked when it is built" };
 }
 
+/** Saying a delivered promise, or one criterion of it, does not hold. The
+ *  press is off until there are words: a repair is told what to fix. */
+function DoesNotHold(props: { target: { unitId?: string; criterionId?: string }; phase: SpacePush["phase"]; what: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [said, setSaid] = useState("");
+  if (!open)
+    return (
+      <button
+        data-does-not-hold={props.target.criterionId ?? props.target.unitId}
+        disabled={!can("contradict")}
+        title={can("contradict") ? `Say that ${props.what} does not hold, and what you saw.` : refusalSentence("contradict", props.phase)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        style={{ fontSize: FS.caption, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+      >
+        it does not hold
+      </button>
+    );
+  return (
+    <div data-does-not-hold-form style={{ marginTop: SP.xs, maxWidth: "44rem" }} onClick={(e) => e.stopPropagation()}>
+      <textarea
+        data-does-not-hold-said
+        rows={2}
+        autoFocus
+        placeholder="what you saw…"
+        value={said}
+        onChange={(e) => setSaid(e.target.value)}
+        style={{ width: "100%", fontSize: FS.body, fontFamily: "inherit" }}
+      />
+      <div style={{ display: "flex", gap: SP.md, marginTop: SP.xs }}>
+        <button
+          data-does-not-hold-commit
+          disabled={!said.trim()}
+          title={said.trim() ? "Record it: this comes back as work." : "Say what you saw — a repair is told what to fix."}
+          onClick={() => {
+            post({ action: "contradict", ...props.target, reason: said });
+            setOpen(false);
+            setSaid("");
+          }}
+          style={{ fontSize: FS.caption }}
+        >
+          It does not hold
+        </button>
+        <button onClick={() => setOpen(false)} style={{ fontSize: FS.caption }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) => void; phase: SpacePush["phase"] }): JSX.Element {
   const { p } = props;
+  // Only delivered work can be refused: what nobody built is already work.
+  const delivered = p.checks.some((c) => c.tep || c.verdict === "green");
   // A promise the machine added — documentation, or a gap the code
   // demands. It says so, and it can be declined in one press.
   const minted = /-gap-\d/.test(p.id);
@@ -49,6 +106,11 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
           {p.stale ? " · the code moved since this was read" : ""}
         </span>
       </div>
+      {delivered && !p.checks.every((c) => c.contradicted) ? (
+        <div style={{ marginBottom: SP.sm }}>
+          <DoesNotHold target={{ unitId: p.id }} phase={props.phase} what="this promise" />
+        </div>
+      ) : null}
       {minted ? (
         <div data-minted style={{ display: "flex", alignItems: "center", gap: SP.md, fontSize: FS.caption, color: C.quiet, marginBottom: SP.sm }}>
           <span>added by the machine — {/^The documentation/.test(p.text) ? "documentation is part of every delivery unless you say it is not needed" : "the code around this work demands it"}</span>
@@ -72,7 +134,18 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
           return (
             <li key={i} data-criterion style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: SP.sm, alignItems: "baseline", fontSize: FS.body, lineHeight: 1.5 }}>
               <span title={t.word} style={{ color: t.color }}>{t.glyph}</span>
-              <span>{c.text}</span>
+              <span>
+                {c.text}
+                {c.contradicted ? (
+                  <span data-contradicted style={{ display: "block", fontSize: FS.caption, color: C.bad }}>
+                    no longer holds — {c.contradicted.said} · said by {c.contradicted.by}
+                  </span>
+                ) : delivered && !c.contradicted ? (
+                  <span style={{ marginLeft: SP.md }}>
+                    <DoesNotHold target={{ criterionId: c.id }} phase={props.phase} what="this" />
+                  </span>
+                ) : null}
+              </span>
             </li>
           );
         })}

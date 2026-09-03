@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { watchGitopsAfterAccept } from "../run/harvest";
+import { stepJudged, watchGitopsAfterAccept } from "../run/harvest";
 import { unrunCutOf } from "./runGate";
 import { emptySpace, type Delivery, type Space } from "../core/schema";
 
@@ -61,7 +61,7 @@ test("a pipeline that succeeded lands too, so 'not known yet' is never mistaken 
   assert.equal(d.afterMerge?.outcome, "held");
 });
 
-test("merged work that broke is signed work waiting to run again", () => {
+test("merged work the platform judged wanting is not a cut to run again — its promises are work", () => {
   const space: Space = {
     ...emptySpace(),
     cuts: [{ id: "cut-1", tepId: "TEP-1", changeIds: ["n1"], askIds: ["a1"], signature: "s" }] as never,
@@ -76,10 +76,10 @@ test("merged work that broke is signed work waiting to run again", () => {
       },
     ] as never,
   };
-  assert.deepEqual(unrunCutOf(space), { id: "cut-1", tepId: "TEP-1" });
-  // The same delivery, once the world says the work held, is finished.
-  const held = { ...space, deliveries: [{ ...space.deliveries[0], afterMerge: { ...space.deliveries[0].afterMerge!, outcome: "held" as const } }] };
-  assert.equal(unrunCutOf(held), undefined);
+  // An accepted cut is history whatever the world then said: nothing is
+  // re-run. What comes back is the promises, through the contradictions
+  // the verdict wrote, and the ordinary Build press repairs them.
+  assert.equal(unrunCutOf(space), undefined);
 });
 
 test("the platform's own shape is read: epoch clocks, an id, uppercase words, and the step's message", async () => {
@@ -121,4 +121,51 @@ test("the platform's own shape is read: epoch clocks, an id, uppercase words, an
   });
   assert.equal(d.afterMerge?.outcome, "broke");
   assert.match(d.afterMerge?.detail ?? "", /run-test \(main: Error \(exit code 1\)\)/);
+});
+
+test("a step that could not run judges nothing, and a step that judged says so", () => {
+  // The machinery, in its own words: nothing about the work is known.
+  for (const log of [
+    "npm error code EACCES\nnpm error syscall mkdir\nnpm error path /workspace",
+    "Error: ImagePullBackOff",
+    "context deadline exceeded",
+  ])
+    assert.equal(stepJudged(log).judged, false, log.split("\n")[0]);
+
+  // A runner or a compiler that reached a verdict.
+  for (const log of [
+    " FAIL  src/views/__tests__/Home.test.js > Home.vue > opens a question\n Tests  1 failed | 71 passed",
+    "not ok 3 - the list is sorted",
+    "src/a.ts(4,1): error TS2304: Cannot find name 'x'",
+  ])
+    assert.equal(stepJudged(log).judged, true, log.split("\n")[0]);
+
+  assert.match(stepJudged(" FAIL  src/views/__tests__/Home.test.js > Home.vue").said, /FAIL/);
+  assert.match(stepJudged("npm error code EACCES\nnpm error path /workspace").said, /EACCES|workspace/);
+});
+
+test("the platform that could not judge makes no work, and can be asked again", async () => {
+  const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-todo-"));
+  let d: Delivery = { id: "delivery-TEP-4", cutId: "cut-4", branch: "b", proofs: [], acceptedAt: "2026-09-03T10:24:00.000Z" } as never;
+  const http = async (url: string) => {
+    if (url.endsWith("/pipelines")) return { pipelines: [{ id: "todo-build-x", appName: "todo", status: "FAILED", startedAt: 1788431103.0 }] };
+    if (url.includes("/logs/")) return { logs: "npm error code EACCES\nnpm error path /workspace" };
+    return { status: "FAILED", stages: [{ stageName: "run-test", status: "FAILED", errorMessage: "main: Error (exit code 1)", podName: "p-1" }] };
+  };
+  await watchGitopsAfterAccept({
+    gitRoot,
+    app: "todo",
+    delivery: d,
+    acceptedAt: "2026-09-03T10:24:00.000Z",
+    update: (u) => {
+      d = u;
+    },
+    log: () => {},
+    http: http as never,
+    sleep: async () => {},
+    remote: "https://git.thinkube.com/thinkube-deployments/todo.git",
+    token: "t",
+  });
+  assert.equal(d.afterMerge?.outcome, "unjudged", "a cache it could not write is not the work failing");
+  assert.match(d.afterMerge?.detail ?? "", /could not run/);
 });

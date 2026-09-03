@@ -59,7 +59,11 @@ export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
       delivery: d,
       acceptedAt: d.acceptedAt!,
       update: (updated, note) => {
-        s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === updated.id ? updated : x)) };
+        s.space = {
+          ...s.space,
+          deliveries: s.space.deliveries.map((x) => (x.id === updated.id ? updated : x)),
+        };
+        if (updated.afterMerge?.outcome === "broke") s.space = worldRefused(s.space, updated);
         s.persist();
         s.changed(note);
       },
@@ -68,12 +72,46 @@ export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
   }
 }
 
-export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
-  // Work merged whose merged tree then broke is waiting to run again: the
-  // accept is not the end of the story when the world says otherwise.
-  const delivered = new Set(
-    space.deliveries.filter((d) => d.acceptedAt && d.afterMerge?.outcome !== "broke").map((d) => d.cutId),
+/**
+ * The platform judged merged work wanting: its criteria no longer hold.
+ *
+ * Narrowed to the delivery the pipeline was about — the accept that fired
+ * it — and, within it, to the promises whose footprint holds the file the
+ * failing step named, when it named one. A pipeline builds all of main;
+ * it is evidence about what changed since the last one that held, and
+ * nothing older is put back to work.
+ */
+function worldRefused(space: TandemSession["space"], d: Delivery): TandemSession["space"] {
+  const detail = d.afterMerge?.detail ?? "";
+  const cut = space.cuts.find((c) => c.id === d.cutId);
+  const mine = new Set(cut?.changeIds ?? []);
+  const nodes = space.nodes.filter((n) => mine.has(n.id));
+  // A named file narrows it to the promises that land there; no file
+  // named leaves the whole delivery answering for it.
+  const named = [...detail.matchAll(/[\w./-]+\.[a-z]{1,4}\b/g)].map((m) => m[0]);
+  const touched = named.length
+    ? nodes.filter((n) => (n.grounding?.touchpoints ?? []).some((t) => named.some((f) => t.path.endsWith(f) || f.endsWith(t.path))))
+    : [];
+  const answering = touched.length ? touched : nodes;
+  const at = new Date().toISOString();
+  const proved = new Set(d.proofs.filter((p) => p.verdict === "green" && p.criterionId).map((p) => p.criterionId!));
+  const made = answering.flatMap((n) =>
+    n.acceptance
+      .filter((c) => proved.has(c.id))
+      .map((c) => ({
+        criterionId: c.id,
+        at,
+        by: "the platform's pipeline",
+        source: "pipeline" as const,
+        said: detail || "the merged work did not build",
+      })),
   );
+  if (!made.length) return space;
+  return { ...space, contradictions: [...(space.contradictions ?? []), ...made] };
+}
+
+export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
+  const delivered = new Set(space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
   const c = [...space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
   return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
 }

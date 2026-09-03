@@ -13,7 +13,7 @@ import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label } from "./type";
 import { MarkLegend } from "./Marked";
 import { namesNothing, readingOf, SentenceRow } from "./Asks";
-import { isClosed, setsInOrder } from "../../../src/surfaces/nextAction";
+import { isClosed, refusedLine, setsInOrder } from "../../../src/surfaces/nextAction";
 
 type Sentence = SpacePush["sentences"][number];
 type Set = NonNullable<SpacePush["specs"]>[number];
@@ -32,6 +32,7 @@ function whyPress(sp: Set, allowed: boolean, refusal: string): string {
   if (sp.fate === "accepted") return "Accepted into the project.";
   if (sp.fate === "delivered") return "Delivered — the decision is on the run page.";
   if (sp.fate === "building") return "Being built now.";
+  if (sp.fate === "no longer holds") return `${refusedLine(sp)} — press this to build it again.`;
   if (sp.fate === "not run") return "Signed, and its run delivered nothing. Run it again on the strip, or press this to work it out afresh.";
   if (!allowed) return refusal;
   return "Work this out and put it in the cut: it is what the next delivery contains.";
@@ -222,7 +223,11 @@ export function Things(props: {
                   </span>
                   <span style={{ fontSize: FS.title, fontWeight: 650 }}>{sp.name}</span>
                   <span data-set-asks style={{ marginLeft: "auto", fontSize: FS.caption, color: C.quiet }}>
-                    {sp.fate === "not run" ? "signed, and its run delivered nothing" : sizeWords(sp)}
+                    {sp.fate === "no longer holds"
+                      ? `${sp.refused!.promises} promise${sp.refused!.promises === 1 ? "" : "s"} no longer hold — said by ${sp.refused!.by}`
+                      : sp.fate === "not run"
+                        ? "signed, and its run delivered nothing"
+                        : sizeWords(sp)}
                   </span>
                 </button>
                 <Thinking push={push} asks={sp.asks ?? []} />

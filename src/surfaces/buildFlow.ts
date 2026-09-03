@@ -14,7 +14,7 @@
 import { Component, components, promisesOf } from "../core/component";
 import { promisesOfSpec } from "../derive/specs";
 import { Space, Spec } from "../core/schema";
-import { signedIds } from "../core/cutClosure";
+import { builtIds } from "../core/contradiction";
 import type { TandemSession } from "./session";
 
 /** What a component costs to think about, and what it will make true. */
@@ -44,7 +44,7 @@ export function readyToBuild(
   if (thinking || costOfThinking(space, chosen?.subjectIds).subjects > 0)
     return { subjects: 0, promises: 0, asks: 0, thinking: true };
   if (chosen) {
-    const signed = signedIds(space.cuts);
+    const signed = builtIds(space);
     const promises = promisesOfSpec(space, chosen).filter((id) => !signed.has(id));
     const subjects = (space.subjects ?? []).filter((s) => chosen.subjectIds.includes(s.id));
     return {
@@ -90,7 +90,7 @@ export function costOfThinking(space: Space, only?: readonly string[]): WorkCost
 
 /** Everything ready to build: components with promises and nothing signed. */
 function buildable(space: Space): Component[] {
-  const signed = signedIds(space.cuts);
+  const signed = builtIds(space);
   return components(space).filter((c) => {
     const ids = promisesOf(space, c);
     return ids.length > 0 && !ids.some((id) => signed.has(id));
@@ -123,7 +123,7 @@ export async function buildFlow(
   const ids = promisesOfSpec(s.space, spec);
   if (!ids.length)
     return { ok: false, reason: `nothing is derived from "${spec.name}" yet — work it out first` };
-  const signed = signedIds(s.space.cuts);
+  const signed = builtIds(s.space);
   if (ids.every((id) => signed.has(id)))
     return { ok: false, reason: `"${spec.name}" is already built` };
 

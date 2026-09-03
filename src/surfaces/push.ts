@@ -6,7 +6,7 @@
  */
 import { TandemSession } from "./session";
 import { promisesOfSpec } from "../derive/specs";
-import { signedIds } from "../core/cutClosure";
+import { builtIds, contradicted, unkeptPromises } from "../core/contradiction";
 import { allowedNow, phaseOf } from "./phase";
 import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
@@ -101,6 +101,9 @@ function latestVerdictOf(
 
 export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
+  // What the world answered back, read once for the whole push.
+  const against = contradicted(session.space);
+  const unkept = unkeptPromises(session.space);
   // Read once, held for every delivery this push renders — not once per
   // delivery and not skipped for a push that has any.
   const surfaceText = session.readBuiltSurfaceOnce();
@@ -235,6 +238,10 @@ export function spacePush(session: TandemSession, message?: string): unknown {
               checks: n.acceptance.map((a) => ({
                 id: a.id,
                 text: a.text,
+                ...((): { contradicted?: { said: string; by: string; source: string } } => {
+                  const c = against.get(a.id);
+                  return c ? { contradicted: { said: c.said, by: c.by, source: c.source } } : {};
+                })(),
                 ...(a.kind === "assessment" ? { kind: "assessment" as const } : {}),
                 ...(latestVerdictOf(session, a.id) ?? {}),
                 ...(a.proof
@@ -336,7 +343,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     // person choosing one can see its size before they build it.
     specs: (session.space.specs ?? []).map((sp) => {
       const ids = promisesOfSpec(session.space, sp);
-      const signed = signedIds(session.space.cuts);
+      const signed = builtIds(session.space);
       const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
       return {
         id: sp.id,
@@ -357,7 +364,20 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         promises: ids.length,
         chosen: session.cutSpecId === sp.id,
         built: ids.length > 0 && ids.every((id) => signed.has(id)),
-        ...((): { fate?: "accepted" | "delivered" | "building" | "not run" } => {
+        ...((): {
+          fate?: "accepted" | "delivered" | "building" | "not run" | "no longer holds";
+          refused?: { promises: number; by: string; said: string };
+        } => {
+          // A promise the world refused is work again, whatever its cut
+          // says: that is what brings delivered work back to this page.
+          const mine = ids.filter((id) => unkept.has(id));
+          if (mine.length) {
+            const newest = mine.map((id) => unkept.get(id)!).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+            return {
+              fate: "no longer holds",
+              refused: { promises: mine.length, by: newest.source === "person" ? newest.by : newest.source, said: newest.said },
+            };
+          }
           const cut = session.space.cuts.find((c) => c.signature && c.specId === sp.id);
           if (!cut) return {};
           const delivery = session.space.deliveries.find((d) => d.cutId === cut.id);

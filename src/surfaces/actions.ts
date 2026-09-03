@@ -138,6 +138,14 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   },
   // Attesting is what a person does AFTER the work is theirs — the answer
   // to a promise nothing here could settle arrives once they have used it.
+  "ask-platform-again": { label: "Ask the platform again", when: OPEN },
+  contradict: {
+    label: "It does not hold",
+    when: OPEN,
+    mine:
+      "saying a delivered promise does not hold is the person's own judgement of the running thing — " +
+      "a machine that could tell would have told at the gate",
+  },
   attest: {
     label: "Attest",
     when: ["delivered"],

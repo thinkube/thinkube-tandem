@@ -43,6 +43,8 @@ interface CheckVM {
   said?: string;
   tep?: string;
   accepted?: boolean;
+  /** It was proved, and the world answered back: in whose words. */
+  contradicted?: { said: string; by: string; source: string };
   /** Where the standing proof lives in the repository's own suite. */
   proof?: { path: string; test?: string };
   /** The world moved since this was verified — proved-then, not proved-now. */
@@ -101,7 +103,7 @@ interface DeliveryVM {
   blocked?: string;
   /** What became of the merged work: the platform's own build of it, or a
    *  person saying it was wrong. Absent until it is known. */
-  afterMerge?: { outcome: "held" | "broke"; said: string; detail?: string };
+  afterMerge?: { outcome: "held" | "broke" | "unjudged"; said: string; detail?: string };
   url?: string;
   undelivered?: string[];
   /** What only the person can certify, by using the delivered thing. */
@@ -278,7 +280,9 @@ export interface SpacePush {
      *  project, delivered and waiting, being built, or signed and never run
      *  — a refusal at the door or a window closed on it. Absent while it
      *  is not signed. */
-    fate?: "accepted" | "delivered" | "building" | "not run";
+    fate?: "accepted" | "delivered" | "building" | "not run" | "no longer holds";
+    /** When it no longer holds: how many promises, and who said so. */
+    refused?: { promises: number; by: string; said: string };
     /** The repositories it lands in. More than one is fine and is said: the
      *  parts are delivered separately and accepted together, because a
      *  provider and its consumer are one piece of work. */
@@ -319,6 +323,8 @@ export type WebToHost =
    *  seen working in the running product. Closes the one pending promise
    *  it names, in the person's own words. */
   | { action: "attest"; deliveryId: string; criterionId: string; held: boolean; note?: string }
+  | { action: "contradict"; unitId?: string; criterionId?: string; reason: string }
+  | { action: "ask-platform-again"; deliveryId: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }

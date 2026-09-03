@@ -347,7 +347,7 @@ export function App(props: {
         ) : (
           <div data-flow-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
             {reportIsShown ? (
-              <Delivery push={push} />
+              <Delivery push={push} onGoToWork={() => setLookingAt("work")} />
             ) : push.run || push.runNote ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
                 {push.signedIdle ? <RunNote notice={push.signedIdle} phase={push.phase} /> : null}

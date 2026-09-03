@@ -4,6 +4,8 @@
  * delivery. Long rounds MERGE results into the present space — they
  * never replace it with a copy of their past.
  */
+import { builtIds } from "../core/contradiction";
+import { contradictOn } from "./contradicting";
 import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import * as path from "node:path";
 import { emptySpace, Space, Unit, Spec } from "../core/schema";
@@ -18,7 +20,7 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, signCutGesture, unrunCutOf } from "./runGate";
+import { acceptDeliveryGesture, catchUpOnMergedWork, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, signCutGesture, unrunCutOf } from "./runGate";
 import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
@@ -531,7 +533,7 @@ export class TandemSession {
       return { ok: false, reason: `nothing came out of "${spec.name}" — say more about it, or pick another set` };
     this.cutNodeIds = new Set();
     this.cutSpecId = spec.id;
-    const r = addWithNeeds(this.cutNodeIds, ids, this.space.nodes, signedIds(this.space.cuts));
+    const r = addWithNeeds(this.cutNodeIds, ids, this.space.nodes, builtIds(this.space));
     this.changed(r.note ?? `"${spec.name}" — ${this.cutNodeIds.size} promise(s) to build and look at.`);
     return { ok: true };
   }
@@ -542,7 +544,7 @@ export class TandemSession {
     this.cutSpecId = undefined;
     const adding = changeIds.some((id) => !this.cutNodeIds.has(id));
     const r = adding
-      ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes, signedIds(this.space.cuts))
+      ? addWithNeeds(this.cutNodeIds, changeIds, this.space.nodes, builtIds(this.space))
       : removeWithDependents(this.cutNodeIds, changeIds, this.space.nodes);
     this.changed(r.note);
   }
@@ -660,6 +662,28 @@ export class TandemSession {
     }
     return r;
   }
+
+  /** What the platform did with merged work, asked again: a verdict of
+   *  "could not judge" is not an answer about the work, and the person can
+   *  ask for another. */
+  askPlatformAgain(): Promise<void> {
+    this.space = {
+      ...this.space,
+      deliveries: this.space.deliveries.map((d) =>
+        d.afterMerge?.outcome === "unjudged" ? { ...d, afterMerge: undefined } : d,
+      ),
+    };
+    this.persist();
+    return catchUpOnMergedWork(this);
+  }
+
+  /** A delivered promise, or one criterion of it, does not hold — kept in
+   *  `./contradicting`. The mirror of attesting, and in half of this
+   *  platform's targets the only word the world can send back. */
+  contradict = (
+    target: { promiseId?: string; criterionId?: string },
+    said: string,
+  ): { ok: boolean; reason?: string } => contradictOn(this, target, said);
 
   /** What only a person can settle, settled — kept in `./attesting`. */
   attestDelivery = (

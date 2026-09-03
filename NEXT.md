@@ -43,26 +43,36 @@ grouping. Each phase in its place with its state and elapsed time, the
 sentence rows keeping their own stage under the deriving phase, and no pill
 over the group.
 
-# A delivery can be recovered from, landed
+# What no longer holds is work again, landed
 
-Accept was the end of the story: it merged, pushed and deleted the branch,
-and the platform's build of the merged tree — the last word on the work —
-never came back into the space. A delivery whose merged code broke the
-build stayed "accepted, every check green" for ever, and the only one who
-could act was the person, by hand, in an editor.
+A delivery's proofs are claims about the world, and the world answers
+back. The answer lands on a CRITERION — the grain a proof is about — and
+a criterion that does not hold makes its promise unkept, its thing
+unbuilt, and the ordinary Build press the repair. Nothing is un-accepted,
+no history is edited, and no cut is re-run.
 
-- The branch is kept until the world says the work held.
-- The pipeline's verdict comes home whichever way it went, onto the
-  delivery, in its own words.
-- Merged work that broke is signed work waiting to run again: the report
-  says so above everything and the one press on the strip is to repair it.
-- The standing tests run with the command of the part each file lives in,
-  and a file no command runs judges nothing instead of failing its owner.
-- A repository whose parts declare their own commands is told no
-  repository-wide one, so nothing unprovable is carried.
+Who can answer, in one shape (when, who, in what words):
 
-The walk presses through it: accept, the pipeline breaking the merged
-work, and the repair.
+- **A person**, on the promise or on one of its criteria, at any time.
+  In half of this platform's targets — the extension, a template, the
+  installer — no machine speaks after the merge, so this is the primary
+  path, not the pipeline.
+- **The platform's pipeline**, for an app, control or a template's app.
+- **A component's own validation**, for playbooks.
+- **A later run's gate**, re-running standing checks.
+
+Machine evidence is classified before it counts, by the step's own log,
+the same rule the gate applies to its own checks: a step that ran and
+judged is a contradiction; a step that could not run — an unwritable
+cache, an image it could not pull, a timeout — says nothing about the
+work, creates none, and can be asked again. A pipeline builds all of
+main, so it is evidence about the accept that fired it, narrowed within
+that delivery to the promises whose footprint holds the file the failing
+step named.
+
+What was undone: the branch is deleted at the merge again (a repair
+starts from the project, not from a branch of history), and "Run it
+again" is not offered on an accepted delivery.
 
 # The end-to-end path is documented once it has been walked
 

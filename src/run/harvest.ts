@@ -51,10 +51,12 @@ function apiToken(home = process.env.HOME ?? "~"): string | undefined {
 export interface PipelineReading {
   /** The pipeline reached an end state. */
   settled: boolean;
+  /** The run's own name, for reading a step's log. */
+  id?: string;
   /** Terminal phase when settled: Succeeded, Failed, Error. */
   phase?: string;
   /** Per-stage names and statuses, test steps included. */
-  stages: { name: string; status: string; said?: string }[];
+  stages: { name: string; status: string; said?: string; pod?: string }[];
   /** Why nothing could be read, when the machine could not reach it. */
   unreachable?: string;
 }
@@ -110,21 +112,52 @@ export async function readPipeline(a: {
       return { settled: false, stages: [], unreachable: `no pipeline for ${a.app} since ${a.since} yet` };
     const full = (await get(`${a.controlUrl}/api/v1/cicd/pipelines/${id}`, a.token)) as {
       status?: string;
-      stages?: { name?: string; stageName?: string; component?: string; status?: string; errorMessage?: string }[];
+      stages?: { name?: string; stageName?: string; component?: string; status?: string; errorMessage?: string; podName?: string }[];
     };
     const phase = full.status ?? mine?.status ?? "";
     return {
       settled: ENDED.includes(phase.toLowerCase()),
       phase,
+      id,
       stages: (full.stages ?? []).map((s) => ({
         name: s.stageName || s.name || s.component || "a step",
         status: s.status ?? "",
         ...(s.errorMessage ? { said: s.errorMessage } : {}),
+        ...(s.podName ? { pod: s.podName } : {}),
       })),
     };
   } catch (e) {
     return { settled: false, stages: [], unreachable: (e as Error).message };
   }
+}
+
+/**
+ * Whether a failed step JUDGED the work, or could not run at all.
+ *
+ * The same rule the closing gate applies to its own checks, applied to
+ * the world: a step that never reached a test or a compiler says nothing
+ * about the work, and turning that into unkept promises sends people to
+ * repair code nobody found fault with. An exit code cannot tell the two
+ * apart — `main: Error (exit code 1)` is what a failing suite and an
+ * unwritable cache both leave behind — so the step's own log is read.
+ */
+export function stepJudged(log: string): { judged: boolean; said: string } {
+  const lines = log.split("\n").map((l) => l.trim()).filter(Boolean);
+  // What a runner or a compiler says when it has actually judged.
+  const judgment = lines.find((l) =>
+    /^(FAIL|not ok\b|FAILED\b|E\s{2,}|AssertionError|\d+ (?:tests? )?failed|Tests:\s|--- FAIL)/.test(l) ||
+      /\berror TS\d+:|\bSyntaxError\b|\bcompilation failed\b/i.test(l),
+  );
+  if (judgment) return { judged: true, said: judgment.slice(0, 200) };
+  // What the machinery says when it never got that far.
+  const machinery = lines
+    .reverse()
+    .find((l) =>
+      /EACCES|EPERM|ENOSPC|ErrImagePull|ImagePullBackOff|permission denied|no space left|Killed|OOMKilled|context deadline|timed out|connection refused|could not resolve|unauthorized|forbidden|command not found|no such file/i.test(
+        l,
+      ),
+    );
+  return { judged: false, said: (machinery ?? lines[0] ?? "nothing in its log says what happened").slice(0, 200) };
 }
 
 /**
@@ -263,6 +296,7 @@ export async function watchGitopsAfterAccept(a: {
     return;
   }
   const sleep = a.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms).unref()));
+  const get = a.http ?? httpGet;
   let d = a.delivery;
   // ~10 minutes: the pipeline's own scale is about ninety seconds.
   for (let tick = 0; tick < 30; tick++) {
@@ -274,18 +308,43 @@ export async function watchGitopsAfterAccept(a: {
       // "accepted, every check green" for ever, and nobody was told.
       const held = (reading.phase ?? "").toLowerCase() === "succeeded";
       const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
+      // A failed step either JUDGED the work or could not run at all, and
+      // its exit code cannot tell them apart. Its own log can.
+      let judged = broke.length > 0;
+      const words: string[] = [];
+      for (const st of broke) {
+        let said = st.said ?? "";
+        if (st.pod && reading.id) {
+          const answer: unknown = await get(
+            `${controlUrl}/api/v1/cicd/pipelines/${reading.id}/logs/${st.pod}`,
+            token,
+          ).catch(() => "");
+          const log =
+            typeof answer === "string"
+              ? answer
+              : ((answer as { logs?: string; content?: string }).logs ??
+                (answer as { content?: string }).content ??
+                "");
+          if (log) {
+            const read = stepJudged(log);
+            judged = read.judged;
+            said = read.said;
+          }
+        }
+        words.push(`${st.name}${said ? ` (${said})` : ""}`);
+      }
+      const outcome = held ? "held" : judged ? "broke" : "unjudged";
       d = {
         ...d,
         afterMerge: {
           at: new Date().toISOString(),
-          outcome: held ? "held" : "broke",
+          outcome,
           said: "the platform's pipeline",
           ...(held
             ? {}
             : {
-                detail: broke.length
-                  ? `${broke.map((s) => s.name + (s.said ? ` (${s.said})` : "")).join(", ")} — ` +
-                    `${broke.length === 1 ? "this step" : "these steps"} did not pass`
+                detail: words.length
+                  ? `${words.join(", ")} — ${words.length === 1 ? "this step" : "these steps"} ${judged ? "did not pass" : "could not run"}`
                   : `the pipeline ended ${reading.phase || "without succeeding"}`,
               }),
         },
@@ -295,7 +354,9 @@ export async function watchGitopsAfterAccept(a: {
         held
           ? "the platform built and deployed the merged work" +
             (stamping ? " — the promises settled after the merge are answered" : "")
-          : `the merged work did not build: ${d.afterMerge!.detail} — run it again to repair it`,
+          : judged
+            ? `the merged work did not build: ${d.afterMerge!.detail}`
+            : `the platform could not judge the merged work: ${d.afterMerge!.detail} — nothing is known about the work from this`,
       );
       const url = deployedUrlOf(remote, a.app);
       if (held && a.then && url) await a.then(url);

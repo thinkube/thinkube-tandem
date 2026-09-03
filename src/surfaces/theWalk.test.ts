@@ -314,23 +314,24 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);
   assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "pushed");
   assert.equal(v.page, "intent");
-  assert.equal(git(root, "rev-parse", "--verify", "--quiet", `tandem/todo-x/${v.push.deliveries[0].tep ?? ""}`).length > 0, true, "the branch is kept: merged work can still turn out wrong");
+  assert.equal(
+    execFileSync("git", ["-C", root, "branch", "--list", `tandem/todo-x/${v.push.deliveries[0].tep ?? ""}`], { encoding: "utf8" }).trim(),
+    "",
+    "the branch goes with the merge: a repair starts from the project",
+  );
 
-  // 12. And then the platform builds the merged work and it does not hold.
-  //     The verdict comes home: the report says so, the one press is to
-  //     repair it, and the signed work is waiting to run again.
-  const merged = s.space.deliveries[0];
-  s.space = {
-    ...s.space,
-    deliveries: s.space.deliveries.map((d) =>
-      d.id === merged.id
-        ? { ...d, afterMerge: { at: new Date().toISOString(), outcome: "broke" as const, said: "the platform's pipeline", detail: "test-frontend — this step did not pass" } }
-        : d,
-    ),
-  };
+  // 12. And then the person uses it and one promise does not do what they
+  //     asked. They say so, in their own words, on the promise itself.
+  //     The work comes back — no delivery un-accepted, nothing re-run.
+  const promise = s.space.nodes.find((n) => s.space.cuts[0].changeIds.includes(n.id))!;
+  assert.deepEqual(s.contradict({ promiseId: promise.id }, "the list still comes back in the old order"), { ok: true });
   v = seen(s);
-  assert.equal(v.push.deliveries[0].afterMerge?.outcome, "broke");
-  assert.equal(v.strip, "Run it again", "merged work that broke is what needs the person");
-  assert.match(v.push.deliveries[0].afterMerge?.detail ?? "", /test-frontend/);
-  assert.ok(v.push.unrun, "the signed work is waiting to run again, though it was accepted");
+  const back = v.things.find((t) => t.fate === "no longer holds")!;
+  assert.ok(back, "the thing it belongs to is work again");
+  assert.equal(v.things[0], back, "and it leads the page: code in the project does not do what was asked");
+  assert.equal(back.open, true, "it can be pressed");
+  // The thing is still the one in hand from the accept, so the press is
+  // the ordinary one over exactly what no longer holds.
+  assert.equal(v.strip, "Build these 1");
+  assert.match(v.push.deliveries[0].accepted ? "accepted" : "", /accepted/, "the delivery is still accepted: history stands");
 });

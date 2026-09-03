@@ -305,13 +305,36 @@ export interface Delivery {
    */
   afterMerge?: {
     at: string;
-    /** "held" — the platform built and deployed it; "broke" — it did not. */
-    outcome: "held" | "broke";
+    /** "held" — the platform built and deployed it; "broke" — it ran and
+     *  judged the work wanting; "unjudged" — it could not run at all, and
+     *  says nothing about the work. */
+    outcome: "held" | "broke" | "unjudged";
     /** What said so: the platform's pipeline, or the person. */
     said: string;
     /** In its own words: the failing stage, the person's sentence. */
     detail?: string;
   };
+}
+
+/**
+ * A criterion that does not hold, and who says so.
+ *
+ * The grain is the criterion, because that is what a proof is about: a
+ * promise is unkept when one of its criteria is, and nothing coarser can
+ * say which part of a delivery the world refused.
+ */
+export interface Contradiction {
+  criterionId: string;
+  at: string;
+  /** Who says so: a person by name, or the machine that judged. */
+  by: string;
+  /** Where it came from — what decides how much it is worth. */
+  source: "person" | "pipeline" | "validation" | "gate";
+  /** In their own words: what was seen. A contradiction without words
+   *  tells a repair nothing, so it is refused. */
+  said: string;
+  /** Machine face of the evidence: a pipeline step, a log excerpt. */
+  ref?: string;
 }
 
 /** One project's working graph. */
@@ -371,6 +394,17 @@ export interface Space {
   settled?: string[];
   /** Staged decision impacts awaiting the human. */
   impacts?: ImpactSuggestionShape[];
+  /**
+   * Evidence that a criterion once proved does NOT hold.
+   *
+   * A delivery's proofs are claims about the world, and the world can
+   * answer back: a person using the delivered thing, the platform's own
+   * build of the merged work, a component's validation, a later gate
+   * re-running a standing check. Appended, never edited — the newest
+   * evidence about a criterion is what counts, so a later delivery that
+   * proves it green again needs nothing removed here.
+   */
+  contradictions?: Contradiction[];
   /** The model the capture round solved: what the asks are about. */
   subjects?: Subject[];
   /** What must become true of each subject. */

@@ -55,7 +55,7 @@ function RunAgain(props: { phase: SpacePush["phase"] }): JSX.Element {
   );
 }
 
-export function Delivery(props: { push: SpacePush }): JSX.Element {
+export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): JSX.Element {
   const { push } = props;
   const d: Delivery_ | undefined = [...push.deliveries].reverse()[0];
   if (!d) return <div data-delivery-report style={{ padding: SP.xl, color: C.quiet }}>Nothing has been delivered yet.</div>;
@@ -119,14 +119,30 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
   return (
     <div data-delivery-report style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.xl}px ${SP.xl}px` }}>
       <article data-delivery={d.id} style={{ maxWidth: "60rem" }}>
-        {d.afterMerge?.outcome === "broke" ? (
+        {d.afterMerge?.outcome === "unjudged" ? (
+          <div data-after-merge style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderRadius: 7 }}>
+            <strong style={{ fontSize: FS.body }}>The platform could not judge this.</strong>
+            <div style={{ fontSize: FS.body, marginTop: SP.xs }}>{d.afterMerge.detail ?? "nothing ran"} — said by {d.afterMerge.said}.</div>
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+              Nothing is known about the work from this. It can be asked again.
+            </div>
+            <button
+              data-ask-again
+              disabled={!can("rerun")}
+              onClick={() => post({ action: "ask-platform-again", deliveryId: d.id })}
+              style={{ marginTop: SP.sm, fontSize: FS.caption }}
+            >
+              Ask the platform again
+            </button>
+          </div>
+        ) : d.afterMerge?.outcome === "broke" ? (
           <div data-after-merge style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
             <strong style={{ fontSize: FS.body }}>This was accepted, and then the merged work did not build.</strong>
             <div style={{ fontSize: FS.body, marginTop: SP.xs }}>
               {d.afterMerge.detail ?? "it did not pass"} — said by {d.afterMerge.said}.
             </div>
             <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-              The work is in the project and its branch is kept. Run it again to repair it.
+              The promises this broke are work again, on your sentences. Building them repairs it, from the project as it stands.
             </div>
           </div>
         ) : d.afterMerge?.outcome === "held" ? (
@@ -175,6 +191,16 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
                   <span style={{ fontSize: FS.caption, color: TONE[r.fate], fontWeight: r.fate === "done" || r.fate === "not kept" ? 600 : 400, whiteSpace: "nowrap" }}>
                     {r.fate}
                   </span>
+                  {r.fate === "done" ? (
+                    <button
+                      data-did-not-work={r.n}
+                      title="Say it does not hold, on the promise it came from."
+                      onClick={() => props.onGoToWork?.()}
+                      style={{ fontSize: FS.caption, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                    >
+                      it did not work
+                    </button>
+                  ) : null}
                 </div>
                 {r.fate === "not kept"
                   ? r.promises
@@ -268,10 +294,9 @@ export function Delivery(props: { push: SpacePush }): JSX.Element {
 
         <div style={{ paddingTop: SP.md, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap" }}>
           {d.accepted && d.afterMerge?.outcome === "broke" ? (
-            <>
-              <span data-accepted={d.id} style={{ color: C.quiet, fontSize: FS.body }}>Accepted, and it did not build</span>
-              <RunAgain phase={push.phase} />
-            </>
+            <span data-accepted={d.id} style={{ color: C.quiet, fontSize: FS.body }}>
+              Accepted, and it did not build — the promises it broke are on your sentences, to build again
+            </span>
           ) : d.accepted ? (
             <span data-accepted={d.id} style={{ color: C.ok, fontSize: FS.body, fontWeight: 600 }}>✓ Accepted</span>
           ) : stuck ? (

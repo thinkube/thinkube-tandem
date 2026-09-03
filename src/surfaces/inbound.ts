@@ -108,6 +108,15 @@ export async function handleInbound(
   } else if (msg.action === "accept-delivery" && msg.deliveryId) {
     const r = await session.acceptDelivery(msg.deliveryId);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "ask-platform-again") {
+    push("Asking the platform what it did with the merged work…");
+    await session.askPlatformAgain();
+  } else if (msg.action === "contradict" && (msg.unitId || msg.criterionId)) {
+    const r = session.contradict(
+      { ...(msg.unitId ? { promiseId: msg.unitId } : {}), ...(msg.criterionId ? { criterionId: msg.criterionId } : {}) },
+      msg.reason ?? "",
+    );
+    note = r.ok ? undefined : r.reason;
   } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;

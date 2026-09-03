@@ -46,10 +46,10 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
  * not the thing to start with. Then what is running, what is delivered
  * and waiting, and last what is accepted and needs nobody.
  */
-const NEEDS_YOU: Record<string, number> = { "not run": 0, delivered: 3, building: 4, accepted: 5 };
+const NEEDS_YOU: Record<string, number> = { "no longer holds": 0, "not run": 1, delivered: 4, building: 5, accepted: 6 };
 export function setsInOrder(push: SpacePush): NonNullable<SpacePush["specs"]> {
   const rank = (sp: NonNullable<SpacePush["specs"]>[number]): number =>
-    sp.fate ? (NEEDS_YOU[sp.fate] ?? 2) : sp.promises > 0 ? 1 : 2;
+    sp.fate ? (NEEDS_YOU[sp.fate] ?? 3) : sp.promises > 0 ? 2 : 3;
   return [...(push.specs ?? [])].sort((a, b) => {
     const r = rank(a) - rank(b);
     if (r !== 0) return r;
@@ -60,6 +60,13 @@ export function setsInOrder(push: SpacePush): NonNullable<SpacePush["specs"]> {
 /** A thing whose work has landed or is landing: not offered again. */
 export function isClosed(sp: NonNullable<SpacePush["specs"]>[number]): boolean {
   return sp.fate === "accepted" || sp.fate === "delivered" || sp.fate === "building";
+}
+
+/** A thing the world refused: work again, and what it says on itself. */
+export function refusedLine(sp: NonNullable<SpacePush["specs"]>[number]): string | undefined {
+  if (sp.fate !== "no longer holds" || !sp.refused) return undefined;
+  const { promises, by, said } = sp.refused;
+  return `${promises} promise${promises === 1 ? "" : "s"} no longer hold${promises === 1 ? "s" : ""} — said by ${by}: ${said}`;
 }
 
 export function nextAction(
@@ -131,18 +138,6 @@ export function nextAction(
             move: { kind: "post", action: { action: "keep-draft" } },
           };
   }
-
-  // Merged work the world then refused: the one press is to repair it.
-  // Nothing else on the page matters while code in the project is broken.
-  const broke = push.deliveries.find((d) => d.accepted && d.afterMerge?.outcome === "broke");
-  if (broke)
-    return {
-      where: "accepted — and the merged work did not build",
-      label: "Run it again",
-      hint: `${broke.afterMerge!.detail ?? "it did not pass"} — said by ${broke.afterMerge!.said}`,
-      enabled: a.allowed("rerun"),
-      move: { kind: "post", action: { action: "rerun" } },
-    };
 
   // Delivered: the page is what came back, and the one press is the
   // decision — or the way back in when the gate would refuse it.
@@ -225,6 +220,17 @@ export function nextAction(
     };
 
   const toBuild = sets.filter((sp) => !isClosed(sp) && sp.fate !== "not run");
+  // Work the world refused comes before anything else: code in the
+  // project does not do what a person asked, and they said so.
+  const refused = sets.find((sp) => sp.fate === "no longer holds");
+  if (refused && !chosen)
+    return {
+      where: `${refused.name} — no longer holds`,
+      label: "Build the first",
+      hint: refusedLine(refused)!,
+      enabled: a.allowed("choose-set"),
+      move: { kind: "post", action: { action: "choose-set", specId: refused.id } },
+    };
   if (!chosen) {
     const first = toBuild[0];
     if (!first)
