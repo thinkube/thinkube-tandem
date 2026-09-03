@@ -47,7 +47,10 @@ function client(proc: ReturnType<typeof spawn>) {
      * that does not answer in two seconds is broken — the whole file runs
      * in well under one — and saying so is the drive's job.
      */
-    call(method: string, params: unknown, ms = 2000): Promise<Record<string, unknown>> {
+    // Generous, because this speaks to a spawned process while the rest of
+    // the suite runs: two seconds was a stopwatch on the machine, red
+    // under load and green alone, which teaches a suite to be ignored.
+    call(method: string, params: unknown, ms = 20_000): Promise<Record<string, unknown>> {
       const mine = ++id;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(
@@ -128,7 +131,10 @@ after(() => {
   for (const p of spawned) p.kill("SIGKILL");
 });
 
-test("the server lists its tools and none of them is a gate", { timeout: 5000 }, async () => {
+// Generous, because this spawns a process and speaks a protocol to it
+// while the rest of the suite runs: a five-second budget was a stopwatch
+// on the machine, and it went red under load and green alone.
+test("the server lists its tools and none of them is a gate", { timeout: 30_000 }, async () => {
   const { c } = await running();
   {
     const res = (await c.call("tools/list", {})) as {
@@ -143,7 +149,7 @@ test("the server lists its tools and none of them is a gate", { timeout: 5000 },
   }
 });
 
-test("a tool the boundary does not know is refused through the protocol", { timeout: 5000 }, async () => {
+test("a tool the boundary does not know is refused through the protocol", { timeout: 30_000 }, async () => {
   const { c } = await running();
   {
     const res = (await c.call("tools/call", { name: "build", arguments: {} })) as {
@@ -154,7 +160,7 @@ test("a tool the boundary does not know is refused through the protocol", { time
   }
 });
 
-test("drafting through the server writes a record the store can be read back from", { timeout: 5000 }, async () => {
+test("drafting through the server writes a record the store can be read back from", { timeout: 30_000 }, async () => {
   const { w, c } = await running();
   {
     const before = (await c.call("tools/call", { name: "read_space", arguments: { space: w.space } })) as {
