@@ -163,7 +163,7 @@ function session(root: string): TandemSession {
 function seen(s: TandemSession) {
   const push = spacePush(s) as SpacePush;
   const strip = nextAction(push, { behind: false, allowed: (a) => push.allowed.includes(a as never) });
-  const things = (push.specs ?? []).map((sp) => ({ name: sp.name, asks: sp.asks ?? [], promises: sp.promises, chosen: !!sp.chosen }));
+  const things = (push.specs ?? []).map((sp) => ({ name: sp.name, asks: sp.asks ?? [], promises: sp.promises, chosen: !!sp.chosen, fate: sp.fate }));
   const inSome = new Set(things.flatMap((t) => t.asks));
   return {
     push,
@@ -262,12 +262,14 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   v = seen(s);
   assert.equal(v.push.deliveries.length, 0);
   assert.equal(v.strip, "Run it again", JSON.stringify({ signedIdle: v.push.signedIdle, unrun: v.push.unrun, allowed: v.push.allowed }));
+  assert.equal(v.things[0].fate, "not run", "a thing whose run was refused is not 'built'");
   await press(s, { action: "rerun" });
   await untilRunEnds(s);
   v = seen(s);
   assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
   assert.equal(v.page, "flow");
   assert.equal(v.strip, "Accept it");
+  assert.equal(v.things[0].fate, "delivered");
 
   // 11. Accepted, over a checkout that carries what the run itself left
   //     there — tandem's own facts file, untracked, and an unrelated edit:
@@ -289,6 +291,7 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
   v = seen(s);
   assert.equal(v.push.deliveries[0].accepted, true);
+  assert.equal(v.things[0].fate, "accepted");
   assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);
   assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "pushed");
   assert.equal(v.page, "intent");

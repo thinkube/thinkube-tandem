@@ -268,6 +268,11 @@ export interface SpacePush {
     chosen: boolean;
     /** Every promise of it is signed: built already, and not offered again. */
     built: boolean;
+    /** What became of its signed work, when it is signed: accepted into the
+     *  project, delivered and waiting, being built, or signed and never run
+     *  — a refusal at the door or a window closed on it. Absent while it
+     *  is not signed. */
+    fate?: "accepted" | "delivered" | "building" | "not run";
     /** The repositories it lands in. More than one is fine and is said: the
      *  parts are delivered separately and accepted together, because a
      *  provider and its consumer are one piece of work. */

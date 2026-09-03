@@ -18,9 +18,11 @@ import { setsInOrder } from "../../../src/surfaces/nextAction";
 type Sentence = SpacePush["sentences"][number];
 type Set = NonNullable<SpacePush["specs"]>[number];
 
-/** The word on a thing: where it sits in the order, or that it is done. */
+/** The word on a thing: where it sits in the order, or what became of its
+ *  signed work — never "built" for work that never ran. */
 function whenWord(i: number, sp: Set, count: number): string {
-  if (sp.built) return "built";
+  if (sp.fate) return sp.fate;
+  if (sp.built) return "signed";
   if (i === 0) return "first";
   return i === count - 1 ? "later" : "then";
 }
@@ -174,7 +176,13 @@ export function Things(props: {
                   disabled={!can("choose-set") || sp.built}
                   title={
                     sp.built
-                      ? "This is built — its promises are signed."
+                      ? sp.fate === "accepted"
+                        ? "Accepted into the project."
+                        : sp.fate === "delivered"
+                          ? "Delivered — waiting for your decision on the run page."
+                          : sp.fate === "building"
+                            ? "Being built now."
+                            : "Signed, and its run did not deliver — Run it again on the strip."
                       : can("choose-set")
                         ? "Work this out and put it in the cut: it is what the next delivery contains."
                         : refusalSentence("choose-set", push.phase)

@@ -357,6 +357,15 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         promises: ids.length,
         chosen: session.cutSpecId === sp.id,
         built: ids.length > 0 && ids.every((id) => signed.has(id)),
+        ...((): { fate?: "accepted" | "delivered" | "building" | "not run" } => {
+          const cut = session.space.cuts.find((c) => c.signature && c.specId === sp.id);
+          if (!cut) return {};
+          const delivery = session.space.deliveries.find((d) => d.cutId === cut.id);
+          if (delivery?.acceptedAt) return { fate: "accepted" };
+          if (delivery) return { fate: "delivered" };
+          if (session.running && session.cutSpecId === sp.id) return { fate: "building" };
+          return { fate: "not run" };
+        })(),
         repos: [
           ...new Set(
             ids.flatMap((id) =>
