@@ -74,6 +74,7 @@ function repository(): string {
 function session(root: string): TandemSession {
   const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-walk-store-"));
   let tep = 0;
+  let refusedOnce = false;
   const s: TandemSession = new TandemSession({
     author: "me",
     round: { model: "m", repoRoot: root },
@@ -125,8 +126,14 @@ function session(root: string): TandemSession {
       questions: [],
     }),
     completeCut: async () => [],
-    // The run, replaced: the branch is made with one commit, every check is green.
+    // The run, replaced: the first press is refused at the door, as a tree
+    // that does not build refuses it; the next makes the branch with one
+    // commit, every check green.
     dispatch: async (_deps: unknown, space: { nodes: Change[] }, cut: { id: string; tepId?: string; changeIds: string[] }) => {
+      if (!refusedOnce) {
+        refusedOnce = true;
+        return { refusals: ["the repository's own product build fails on the untouched tree"], undelivered: [] };
+      }
       const tepId = cut.tepId ?? cut.id;
       const branch = `tandem/todo-x/${tepId}`;
       git(root, "branch", branch);
@@ -248,8 +255,14 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.equal(v.push.ready.promises, 6);
   assert.equal(v.strip, "Build these 6");
 
-  // 10. Built: signed, run, delivered — the run is the fake's, green.
+  // 10. Built: signed and run — and refused at the door. The one press is
+  //     to run it again, and nothing else on the page is offered instead.
   await press(s, { action: "build", specId: again });
+  await untilRunEnds(s);
+  v = seen(s);
+  assert.equal(v.push.deliveries.length, 0);
+  assert.equal(v.strip, "Run it again", JSON.stringify({ signedIdle: v.push.signedIdle, unrun: v.push.unrun, allowed: v.push.allowed }));
+  await press(s, { action: "rerun" });
   await untilRunEnds(s);
   v = seen(s);
   assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));

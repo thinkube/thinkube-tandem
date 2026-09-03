@@ -165,3 +165,16 @@ test("a re-reading of sentences already kept is kept as a reading, not as zero s
   assert.equal(keep.label, "Keep this reading");
   assert.deepEqual(keep.move, { kind: "post", action: { action: "keep-draft" } });
 });
+
+test("signed work that never ran: the one press is Run it again, before any other thing to build", () => {
+  const push = quiet({
+    unrun: { id: "cut-1", tepId: "TEP-1" },
+    signedIdle: { heading: "Nothing is running.", sentence: "The build stopped: the product build fails on the untouched tree", canRerun: true, canThinkAgain: true },
+    specs: [{ id: "s1", name: "first", subjectIds: ["a"], built: true, promises: 3 }, { id: "s2", name: "second", subjectIds: ["b"], promises: 0 }],
+  } as never);
+  const n = nextAction(push, { behind: false, allowed: (x) => x === "rerun" });
+  assert.equal(n.label, "Run it again");
+  assert.equal(n.enabled, true);
+  assert.match(n.hint, /product build fails/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "rerun" } });
+});

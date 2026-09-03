@@ -136,6 +136,18 @@ export function nextAction(
     };
   }
 
+  // Signed work that never ran — refused at the door, or the window closed
+  // on it — comes before anything else to build: the one press is to run
+  // it again, whatever else is on the page.
+  if (push.signedIdle && push.unrun)
+    return {
+      where: push.signedIdle.heading,
+      label: "Run it again",
+      hint: push.signedIdle.sentence,
+      enabled: push.signedIdle.canRerun && a.allowed("rerun"),
+      move: { kind: "post", action: { action: "rerun" } },
+    };
+
   const written = asksOfText(push.draft ?? "").length;
   if (written && sentences)
     return {
