@@ -22,11 +22,10 @@ echo "▸ version bumped to ${VERSION}"
 echo "▸ compile (tsc + webview)…"
 npm run compile
 
-# The walk: every press a person makes, in order, over a real session and
-# store. Nothing ships that breaks the sequence, whatever the units say.
-echo "▸ the walk…"
-npx tsc -p tsconfig.test.json
-node --test out-test/surfaces/theWalk.test.js
+# The whole suite, the walk included: every press a person makes, in
+# order, over a real session and store. Nothing ships red.
+echo "▸ the suite…"
+npm test > /dev/null 2>&1 || { echo "the suite is red — nothing ships; run npm test"; exit 1; }
 
 # The packaged extension is a COPY: git can say nothing about where it came
 # from, and the closing gate needs that answer to know whether a run judges
