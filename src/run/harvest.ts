@@ -54,7 +54,7 @@ export interface PipelineReading {
   /** Terminal phase when settled: Succeeded, Failed, Error. */
   phase?: string;
   /** Per-stage names and statuses, test steps included. */
-  stages: { name: string; status: string }[];
+  stages: { name: string; status: string; said?: string }[];
   /** Why nothing could be read, when the machine could not reach it. */
   unreachable?: string;
 }
@@ -72,6 +72,18 @@ const httpGet: Http = async (url, token) => {
  * Argo Workflow objects; nothing pushes results anywhere, so pull is the
  * only honest read.
  */
+/** A moment, however the platform writes it: epoch seconds, epoch
+ *  milliseconds, or a date. Comparing them as text put every run before
+ *  every accept, and the answer was never found. */
+function momentOf(v: unknown): number {
+  if (typeof v === "number") return v > 1e11 ? v : v * 1000;
+  const n = typeof v === "string" ? Date.parse(v) : NaN;
+  return Number.isNaN(n) ? 0 : n;
+}
+
+/** The platform's own words for an outcome, in any case it writes them. */
+const ENDED = ["succeeded", "failed", "error"];
+
 export async function readPipeline(a: {
   controlUrl: string;
   app: string;
@@ -82,24 +94,33 @@ export async function readPipeline(a: {
   http?: Http;
 }): Promise<PipelineReading> {
   const get = a.http ?? httpGet;
+  // The accept's push and the pipeline's start are two clocks: a run that
+  // began a few seconds before the record was written is still this
+  // accept's run.
+  const since = momentOf(a.since) - 120_000;
   try {
     const list = (await get(`${a.controlUrl}/api/v1/cicd/pipelines`, a.token)) as {
-      pipelines?: { name?: string; appName?: string; status?: string; startedAt?: string }[];
+      pipelines?: { id?: string; name?: string; appName?: string; status?: string; startedAt?: unknown }[];
     };
     const mine = (list.pipelines ?? [])
-      .filter((p) => p.appName === a.app && (p.startedAt ?? "") >= a.since)
-      .sort((x, y) => (y.startedAt ?? "").localeCompare(x.startedAt ?? ""))[0];
-    if (!mine?.name)
+      .filter((p) => p.appName === a.app && momentOf(p.startedAt) >= since)
+      .sort((x, y) => momentOf(y.startedAt) - momentOf(x.startedAt))[0];
+    const id = mine?.id ?? mine?.name;
+    if (!id)
       return { settled: false, stages: [], unreachable: `no pipeline for ${a.app} since ${a.since} yet` };
-    const full = (await get(`${a.controlUrl}/api/v1/cicd/pipelines/${mine.name}`, a.token)) as {
+    const full = (await get(`${a.controlUrl}/api/v1/cicd/pipelines/${id}`, a.token)) as {
       status?: string;
-      stages?: { name?: string; status?: string }[];
+      stages?: { name?: string; stageName?: string; component?: string; status?: string; errorMessage?: string }[];
     };
-    const phase = full.status ?? mine.status ?? "";
+    const phase = full.status ?? mine?.status ?? "";
     return {
-      settled: ["Succeeded", "Failed", "Error"].includes(phase),
+      settled: ENDED.includes(phase.toLowerCase()),
       phase,
-      stages: (full.stages ?? []).map((s) => ({ name: s.name ?? "", status: s.status ?? "" })),
+      stages: (full.stages ?? []).map((s) => ({
+        name: s.stageName || s.name || s.component || "a step",
+        status: s.status ?? "",
+        ...(s.errorMessage ? { said: s.errorMessage } : {}),
+      })),
     };
   } catch (e) {
     return { settled: false, stages: [], unreachable: (e as Error).message };
@@ -251,7 +272,7 @@ export async function watchGitopsAfterAccept(a: {
       // What the platform did with the merged work comes home, whichever
       // way it went. A delivery whose merged tree failed to build read
       // "accepted, every check green" for ever, and nobody was told.
-      const held = reading.phase === "Succeeded";
+      const held = (reading.phase ?? "").toLowerCase() === "succeeded";
       const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
       d = {
         ...d,
@@ -263,7 +284,8 @@ export async function watchGitopsAfterAccept(a: {
             ? {}
             : {
                 detail: broke.length
-                  ? `${broke.map((s) => s.name).join(", ")} — ${broke.length === 1 ? "this step" : "these steps"} did not pass`
+                  ? `${broke.map((s) => s.name + (s.said ? ` (${s.said})` : "")).join(", ")} — ` +
+                    `${broke.length === 1 ? "this step" : "these steps"} did not pass`
                   : `the pipeline ended ${reading.phase || "without succeeding"}`,
               }),
         },

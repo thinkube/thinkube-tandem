@@ -81,3 +81,44 @@ test("merged work that broke is signed work waiting to run again", () => {
   const held = { ...space, deliveries: [{ ...space.deliveries[0], afterMerge: { ...space.deliveries[0].afterMerge!, outcome: "held" as const } }] };
   assert.equal(unrunCutOf(held), undefined);
 });
+
+test("the platform's own shape is read: epoch clocks, an id, uppercase words, and the step's message", async () => {
+  // What control actually returns for an app's pipelines. Read as ISO
+  // strings and camel names, every run sorted before every accept and the
+  // answer was never found at all.
+  const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-todo-"));
+  let d: Delivery = { id: "delivery-TEP-3", cutId: "cut-3", branch: "b", proofs: [], acceptedAt: "2026-09-03T10:24:00.000Z" } as never;
+  const http = async (url: string) => {
+    if (url.endsWith("/pipelines"))
+      return {
+        pipelines: [
+          { id: "todo-build-jc46h", appName: "todo", status: "FAILED", startedAt: 1788431103.0, name: null },
+          { id: "todo-build-old", appName: "todo", status: "SUCCEEDED", startedAt: 1788429175.0, name: null },
+        ],
+      };
+    assert.match(url, /todo-build-jc46h$/, "the newest run for this app is the one read");
+    return {
+      status: "FAILED",
+      stages: [
+        { stageName: "build-backend", status: "SUCCEEDED" },
+        { stageName: "run-test", component: "run-test", status: "FAILED", errorMessage: "main: Error (exit code 1)" },
+      ],
+    };
+  };
+  await watchGitopsAfterAccept({
+    gitRoot,
+    app: "todo",
+    delivery: d,
+    acceptedAt: "2026-09-03T10:24:00.000Z",
+    update: (u) => {
+      d = u;
+    },
+    log: () => {},
+    http: http as never,
+    sleep: async () => {},
+    remote: "https://git.thinkube.com/thinkube-deployments/todo.git",
+    token: "t",
+  });
+  assert.equal(d.afterMerge?.outcome, "broke");
+  assert.match(d.afterMerge?.detail ?? "", /run-test \(main: Error \(exit code 1\)\)/);
+});
