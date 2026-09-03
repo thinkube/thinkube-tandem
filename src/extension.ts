@@ -4,6 +4,7 @@
  * the project's forge — and every webview action is a registered
  * affordance.
  */
+import { catchUpOnMergedWork } from "./surfaces/runGate";
 import * as vscode from "vscode";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
@@ -202,6 +203,9 @@ async function ensureSession(
     onChanged: (message) => pushActive(context, sessionKey, message),
   });
   sessions.set(sessionKey, s);
+  // What the platform did with work merged earlier — a verdict this window
+  // was not open to hear. Asked once, on the way in.
+  void catchUpOnMergedWork(s).catch(() => undefined);
   // The space follows what is written to it, whoever wrote: a server
   // acting on the person's behalf, or a run started outside this window.
   followFor(vscode, watches, sessionKey, {

@@ -41,6 +41,33 @@ export type GestureResult = { ok: true } | { ok: false; reason: string };
  * either. In all three the signed work is still there to run, and the way
  * back in must stay reachable.
  */
+/**
+ * What the platform did with work merged before this window existed.
+ *
+ * The verdict is watched from the accept that started it, so a window
+ * closed, reloaded or opened elsewhere never heard the answer, and a
+ * delivery whose merged tree broke stayed green for ever. Asked again
+ * here, once per accepted delivery that has no answer yet.
+ */
+export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
+  const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  if (downstreamOf(gitRoot) !== "gitops-app") return;
+  for (const d of s.space.deliveries.filter((x) => x.acceptedAt && !x.afterMerge)) {
+    await watchGitopsAfterAccept({
+      gitRoot,
+      app: path.basename(gitRoot),
+      delivery: d,
+      acceptedAt: d.acceptedAt!,
+      update: (updated, note) => {
+        s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === updated.id ? updated : x)) };
+        s.persist();
+        s.changed(note);
+      },
+      log: (l) => s.changed(l),
+    }).catch(() => undefined);
+  }
+}
+
 export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
   // Work merged whose merged tree then broke is waiting to run again: the
   // accept is not the end of the story when the world says otherwise.
