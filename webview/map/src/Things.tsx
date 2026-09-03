@@ -13,18 +13,28 @@ import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { C, FS, O, SP, label } from "./type";
 import { MarkLegend } from "./Marked";
 import { namesNothing, readingOf, SentenceRow } from "./Asks";
-import { setsInOrder } from "../../../src/surfaces/nextAction";
+import { isClosed, setsInOrder } from "../../../src/surfaces/nextAction";
 
 type Sentence = SpacePush["sentences"][number];
 type Set = NonNullable<SpacePush["specs"]>[number];
 
-/** The word on a thing: where it sits in the order, or what became of its
- *  signed work — never "built" for work that never ran. */
+/** The word on a thing: what became of its signed work, or where it sits
+ *  in the order of what is still to build. */
 function whenWord(i: number, sp: Set, count: number): string {
   if (sp.fate) return sp.fate;
   if (sp.built) return "signed";
   if (i === 0) return "first";
   return i === count - 1 ? "later" : "then";
+}
+
+/** What pressing this thing does now, in the person's words. */
+function whyPress(sp: Set, allowed: boolean, refusal: string): string {
+  if (sp.fate === "accepted") return "Accepted into the project.";
+  if (sp.fate === "delivered") return "Delivered — the decision is on the run page.";
+  if (sp.fate === "building") return "Being built now.";
+  if (sp.fate === "not run") return "Signed, and its run delivered nothing. Run it again on the strip, or press this to work it out afresh.";
+  if (!allowed) return refusal;
+  return "Work this out and put it in the cut: it is what the next delivery contains.";
 }
 
 /** What a thing carries, said before it is built. */
@@ -158,7 +168,8 @@ export function Things(props: {
       {sets.length ? (
         <div data-sets style={{ display: "flex", flexDirection: "column", gap: SP.lg }}>
           {sets.map((sp, i) => {
-            const first = i === 0 && !sp.built;
+            const closed = isClosed(sp);
+            const first = i === 0 && !closed;
             const mine = (sp.asks ?? []).map((n) => sentences[n - 1]).filter(Boolean);
             return (
               <section
@@ -168,25 +179,13 @@ export function Things(props: {
                   border: `1px solid ${sp.chosen ? C.ok : C.border}`,
                   borderRadius: 7,
                   overflow: "hidden",
-                  opacity: sp.built ? O.dim : 1,
+                  opacity: closed ? O.dim : 1,
                 }}
               >
                 <button
                   data-choose-set={sp.id}
-                  disabled={!can("choose-set") || sp.built}
-                  title={
-                    sp.built
-                      ? sp.fate === "accepted"
-                        ? "Accepted into the project."
-                        : sp.fate === "delivered"
-                          ? "Delivered — waiting for your decision on the run page."
-                          : sp.fate === "building"
-                            ? "Being built now."
-                            : "Signed, and its run did not deliver — Run it again on the strip."
-                      : can("choose-set")
-                        ? "Work this out and put it in the cut: it is what the next delivery contains."
-                        : refusalSentence("choose-set", push.phase)
-                  }
+                  disabled={!can("choose-set") || closed}
+                  title={whyPress(sp, can("choose-set"), refusalSentence("choose-set", push.phase))}
                   onClick={() => post({ action: "choose-set", specId: sp.id })}
                   style={{
                     display: "flex",
@@ -201,7 +200,7 @@ export function Things(props: {
                     borderStyle: "solid",
                     borderColor: C.border,
                     color: "inherit",
-                    cursor: sp.built ? "default" : "pointer",
+                    cursor: closed ? "default" : "pointer",
                   }}
                 >
                   <span
@@ -223,7 +222,7 @@ export function Things(props: {
                   </span>
                   <span style={{ fontSize: FS.title, fontWeight: 650 }}>{sp.name}</span>
                   <span data-set-asks style={{ marginLeft: "auto", fontSize: FS.caption, color: C.quiet }}>
-                    {sizeWords(sp)}
+                    {sp.fate === "not run" ? "signed, and its run delivered nothing" : sizeWords(sp)}
                   </span>
                 </button>
                 <Thinking push={push} asks={sp.asks ?? []} />

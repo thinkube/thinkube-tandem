@@ -37,11 +37,29 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
  * The sets in the order they should be built: the ones still to build
  * first, largest first; what is built comes last, behind you.
  */
+/**
+ * The order things are read in: what needs the person first.
+ *
+ * Signed work that never ran comes first — it is the one press the strip
+ * offers, and it read as finished at the bottom of the page. Then what is
+ * still to build, largest first, because a thing with nothing derived is
+ * not the thing to start with. Then what is running, what is delivered
+ * and waiting, and last what is accepted and needs nobody.
+ */
+const NEEDS_YOU: Record<string, number> = { "not run": 0, delivered: 3, building: 4, accepted: 5 };
 export function setsInOrder(push: SpacePush): NonNullable<SpacePush["specs"]> {
+  const rank = (sp: NonNullable<SpacePush["specs"]>[number]): number =>
+    sp.fate ? (NEEDS_YOU[sp.fate] ?? 2) : sp.promises > 0 ? 1 : 2;
   return [...(push.specs ?? [])].sort((a, b) => {
-    if (a.built !== b.built) return a.built ? 1 : -1;
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
     return b.promises - a.promises;
   });
+}
+
+/** A thing whose work has landed or is landing: not offered again. */
+export function isClosed(sp: NonNullable<SpacePush["specs"]>[number]): boolean {
+  return sp.fate === "accepted" || sp.fate === "delivered" || sp.fate === "building";
 }
 
 export function nextAction(
@@ -194,7 +212,7 @@ export function nextAction(
       move: { kind: "post", action: { action: "group-into-sets" } },
     };
 
-  const toBuild = sets.filter((sp) => !sp.built);
+  const toBuild = sets.filter((sp) => !isClosed(sp) && sp.fate !== "not run");
   if (!chosen) {
     const first = toBuild[0];
     if (!first)

@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { TandemSession } from "./session";
 import { handleInbound } from "./inbound";
 import { spacePush } from "./push";
-import { nextAction } from "./nextAction";
+import { isClosed, nextAction, setsInOrder } from "./nextAction";
 import { pageFor } from "./pageFor";
 import type { SpacePush } from "./surfaceContract";
 import type { InboundAction } from "./inbound";
@@ -163,7 +163,16 @@ function session(root: string): TandemSession {
 function seen(s: TandemSession) {
   const push = spacePush(s) as SpacePush;
   const strip = nextAction(push, { behind: false, allowed: (a) => push.allowed.includes(a as never) });
-  const things = (push.specs ?? []).map((sp) => ({ name: sp.name, asks: sp.asks ?? [], promises: sp.promises, chosen: !!sp.chosen, fate: sp.fate }));
+  const things = setsInOrder(push).map((sp) => ({
+    name: sp.name,
+    asks: sp.asks ?? [],
+    promises: sp.promises,
+    chosen: !!sp.chosen,
+    fate: sp.fate,
+    // What the page draws: a thing whose work landed is closed and dim;
+    // everything else can be pressed.
+    open: !isClosed(sp),
+  }));
   const inSome = new Set(things.flatMap((t) => t.asks));
   return {
     push,
@@ -223,6 +232,7 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.equal(v.things.length, 3);
   assert.deepEqual(v.things.map((t) => t.asks), [[1, 2, 3, 4, 5], [6, 7, 8], [9]]);
   assert.deepEqual(v.notInAny, []);
+  assert.deepEqual(v.things.map((t) => t.open), [true, true, true], "nothing is built: every thing can be pressed");
   assert.equal(v.strip, "Build the first");
 
   // 6. Chosen: the first thing is in hand, and choosing is what pays for
@@ -262,14 +272,20 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   v = seen(s);
   assert.equal(v.push.deliveries.length, 0);
   assert.equal(v.strip, "Run it again", JSON.stringify({ signedIdle: v.push.signedIdle, unrun: v.push.unrun, allowed: v.push.allowed }));
-  assert.equal(v.things[0].fate, "not run", "a thing whose run was refused is not 'built'");
+  const refused = v.things.find((t) => t.fate === "not run")!;
+  assert.ok(refused, "a thing whose run was refused says so, never 'built'");
+  assert.equal(v.things[0], refused, "and it leads the page: it is what needs the person");
+  assert.equal(refused.open, true, "it can still be pressed — nothing of it landed");
   await press(s, { action: "rerun" });
   await untilRunEnds(s);
   v = seen(s);
   assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
   assert.equal(v.page, "flow");
   assert.equal(v.strip, "Accept it");
-  assert.equal(v.things[0].fate, "delivered");
+  const delivered = v.things.find((t) => t.fate === "delivered")!;
+  assert.ok(delivered, "the thing that delivered says so");
+  assert.equal(delivered.open, false, "and is not offered again while its delivery waits");
+  assert.notEqual(v.things[0], delivered, "what is still to build comes first");
 
   // 11. Accepted, over a checkout that carries what the run itself left
   //     there — tandem's own facts file, untracked, and an unrelated edit:
@@ -291,7 +307,10 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
   v = seen(s);
   assert.equal(v.push.deliveries[0].accepted, true);
-  assert.equal(v.things[0].fate, "accepted");
+  const accepted = v.things.find((t) => t.fate === "accepted")!;
+  assert.ok(accepted, "the thing that landed says so");
+  assert.equal(accepted.open, false);
+  assert.equal(v.things[v.things.length - 1], accepted, "and it sits last: it needs nobody");
   assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);
   assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "pushed");
   assert.equal(v.page, "intent");

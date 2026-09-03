@@ -83,8 +83,16 @@ test("grouped and nothing chosen: build the first, and say how much of yours it 
   assert.match(n.where, /2 things to build/);
 });
 
-test("a built set is never the first to build", () => {
-  const push = quiet({ specs: [set("done", { built: true, promises: 9 }), set("next")] });
+test("a set whose work landed is never the first to build", () => {
+  const push = quiet({ specs: [set("done", { built: true, fate: "accepted", promises: 9 }), set("next")] });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.deepEqual(n.move, { kind: "post", action: { action: "choose-set", specId: "next" } });
+});
+
+test("a set signed whose run delivered nothing is not offered as the next thing to build", () => {
+  // Its one press is Run it again, on the strip; offering it here as the
+  // next thing to build would sign it a second time.
+  const push = quiet({ specs: [set("refused", { built: true, fate: "not run", promises: 9 }), set("next")] });
   const n = nextAction(push, { behind: false, allowed: () => true });
   assert.deepEqual(n.move, { kind: "post", action: { action: "choose-set", specId: "next" } });
 });
