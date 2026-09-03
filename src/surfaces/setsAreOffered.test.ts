@@ -77,7 +77,7 @@ test("a set says where it lands, whether it is built, and which is in hand", asy
   const seen = await onIntent(
     withSets([
       { id: "s1", name: "the provider and its consumer", subjects: 2, promises: 6, chosen: false, built: false, repos: ["thinkube-tandem", "apps/todo"] },
-      { id: "s2", name: "already done", subjects: 1, promises: 3, chosen: false, built: true, repos: ["thinkube-tandem"] },
+      { id: "s2", name: "already done", subjects: 1, promises: 3, chosen: false, built: true, fate: "accepted", repos: ["thinkube-tandem"] },
       { id: "s3", name: "the one in hand", subjects: 4, promises: 9, chosen: true, built: false, repos: ["thinkube-tandem"] },
     ]),
     () => ({
@@ -99,7 +99,7 @@ test("a set says where it lands, whether it is built, and which is in hand", asy
   assert.match(of("the provider and its consumer").text, /in thinkube-tandem and apps\/todo/);
   assert.doesNotMatch(of("the one in hand").text, /in thinkube-tandem and/, "one repository needs no saying");
 
-  assert.match(of("already done").text, /built/, "a set already signed says so");
+  assert.match(of("already done").text, /accepted/, "a set whose work landed says what became of it, never merely 'built'");
   assert.equal(of("already done").pressable, false, "and is not offered again");
 
   // And a set already built is behind you, whatever its size.
