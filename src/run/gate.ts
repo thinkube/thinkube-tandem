@@ -252,6 +252,28 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       output: `${suite.output}\nnot ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
     };
   };
+  /**
+   * The product build, judged on its own.
+   *
+   * A repository whose tests run in the platform pipeline has no whole
+   * suite that runs here — but it still builds here, and the build is the
+   * one judgement this run can make about the tree it is about to merge.
+   * Skipping it merged a tree whose own build rejected it: a check the run
+   * wrote did not type-check, every test passed because the test runner
+   * does not type-check, and the platform found it after the merge.
+   *
+   * Its answer is written in the suite's own shape, so one verdict, one
+   * repair loop and one proof row serve both.
+   */
+  const buildAlone = async (cwd: string): Promise<{ code: number | null; output: string }> => {
+    const b = await boundedExec(deps.build!, cwd);
+    return b.code === 0
+      ? { code: 0, output: `ok 1 - the product build (${deps.build}) builds as shipped` }
+      : { code: b.code, output: `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}` };
+  };
+  const judgeWith = async (cmd: string, cwd: string): Promise<{ code: number | null; output: string }> =>
+    g.suite ? judgeTree(cmd, cwd) : buildAlone(cwd);
+  const treeCmd = g.suite ?? deps.build;
   log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
   // judgeTree runs the product build EVERY time it judges, and folds a
   // failure into the output as a named "not ok", so the verdict below is
@@ -285,15 +307,19 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     if (settled.verdict === "red")
       return { refusals: [`the repository's own tool says the work does not hold:\n${settled.detail}`], undelivered: [] };
   } else if (!g.suite) {
-    log(`${tep}: no whole-suite command runs here — the standing-suite veto does not apply`);
+    log(
+      deps.build
+        ? `${tep}: no whole-suite command runs here — the tree is judged by its own product build (${deps.build})`
+        : `${tep}: no whole-suite command runs here — the standing-suite veto does not apply`,
+    );
   }
-  const ran = g.suite ? await judgeTree(g.suite, worktree) : undefined;
+  const ran = treeCmd ? await judgeWith(treeCmd, worktree) : undefined;
   // A runner that ANSWERED — green, or red in its own words — is judging
   // the work. A command that did not run at all is judging nothing, and
   // reporting it as a red suite tells a person their work broke when what
   // broke is this run's idea of how to test their repository. That is the
   // sentence a whole delivery was withheld on.
-  if (ran && !aRunnerAnswered(ran.code, ran.output)) {
+  if (ran && g.suite && !aRunnerAnswered(ran.code, ran.output)) {
     const why =
       `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
       `no test runner answered, so nothing here is a verdict about the work. ` +
@@ -312,14 +338,14 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // A red suite has owners in the run: the finisher brings the delivered
     // tree under the repository's checks, bounded; only then is it withheld.
     const repaired = await repairSuiteAtGate({
-      suite: g.suite!,
+      suite: treeCmd!,
       tep,
       worktree,
       baseSha: g.baseSha,
       deps,
       state: g.state,
       exec,
-      suiteExec: judgeTree,
+      suiteExec: judgeWith,
       verdict,
       log,
       defect,
@@ -349,7 +375,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         model: deps.model,
         ...(deps.workerModel ? { workerModel: deps.workerModel } : {}),
         measure: async () => {
-          const r = await judgeTree(g.suite!, worktree);
+          const r = await judgeWith(treeCmd!, worktree);
           const v = suiteVerdictOf(r.code, r.output, worktree);
           // Build first: an unbuildable tree is one failure, not many, so a
           // repair that breaks imports for a round is not read as a collapse.
@@ -382,7 +408,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
       if (closed.green) {
-        const again = await judgeTree(g.suite!, worktree);
+        const again = await judgeWith(treeCmd!, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
           await exec("git", ["add", "-A", "."], worktree);
@@ -391,10 +417,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       }
     }
   }
-  if (g.suite)
+  if (treeCmd)
     proofs.push({
       kind: "suite",
-      label: "repo suite",
+      label: g.suite ? "repo suite" : "the product build",
       verdict: verdict.green ? "green" : "red",
       ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
     });
