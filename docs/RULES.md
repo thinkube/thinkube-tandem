@@ -1,4 +1,4 @@
-# Nine rules, and what each one deletes
+# Eleven rules, and what each one deletes
 
 These came out of a week in which the machine ran 140 times and delivered
 nothing, while its own test suite reported 796 passing checks and 91%
@@ -166,6 +166,35 @@ passes every gate while being compiled into what people install.
 
 *Remedy:* **name it a fixture, and let the build exclude it.**
 
+## 11. A check owns the data it needs
+
+A check that reads rows it did not write is judging another check's work,
+or last week's. Two runs of the same suite then disagree for reasons
+neither of them can see: one counted six tasks, the next counted six
+hundred and sixteen, and the ordering it was written to prove was never
+what failed.
+
+So a check creates what it needs and leaves nothing behind, and the store
+says how that is done — because it differs per store and nothing above the
+store should have to know:
+
+- a relational store (PostgreSQL, MariaDB): the check runs inside one
+  transaction that is rolled back when it ends, and the code under test
+  commits into a savepoint inside it, so it behaves exactly as it does in
+  production;
+- a store with no transactions (Qdrant, and its kind): the check works in
+  a collection of its own, named for the run, and drops it at the end.
+
+Two checks running at the same time then never meet, and a thousand runs
+leave the store as they found it. The store itself is named after the
+application, so two applications built from one template never share one.
+
+*Prevents:* a red that is nobody's work, and the hunt through a shared
+store that follows it.
+*Deletes:* clean-up between runs, per-run store names in test code, and
+the rule that checks must not run in parallel.
+*Costs:* one fixture per store, written once.
+
 ## The ledger
 
 | Rule | Removes | Adds |
@@ -179,7 +208,9 @@ passes every gate while being compiled into what people install.
 | 7 a fix names its removal | one mechanism per fix | — |
 | 8 silence is an event | — | the log and the watchdog |
 | 9 one nameable thing | a line limit, and the incentive to delete explanation | a sentence a reviewer reads |
+| 10 fixtures never ship | support code from the shipped build | a naming convention |
+| 11 a check owns its data | clean-up runs, and the no-parallel rule | one fixture per store |
 
-Five rules delete more than they add. Two are free. One is an honest
+Seven rules delete more than they add. Two are free. One is an honest
 addition. If a future rule cannot fill the middle column, it does not
 belong here.

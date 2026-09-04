@@ -12,7 +12,7 @@ page for how the two relate.
 |---|---|
 | [TERMINOLOGY.md](TERMINOLOGY.md) | the canonical word for a thing. One meaning per word. A term not on this list is either plain English or does not belong in the product. |
 | [PROCESS.md](PROCESS.md) | who decides what, and what happens at each control point when the answer is no. The actors, the states, the eight gates G0–G8, the artifacts, and why the loop ends. |
-| [RULES.md](RULES.md) | the eight rules, each naming the failure it prevents **and what it removes**. A rule that only adds machinery is the disease, not the cure. |
+| [RULES.md](RULES.md) | the eleven rules, each naming the failure it prevents **and what it removes**. A rule that only adds machinery is the disease, not the cure. |
 
 Those three carry the design. Everything else is evidence, history, or
 work in flight.
