@@ -110,3 +110,55 @@ test("a sentence delivered by an earlier delivery is not judged again here", asy
     await s.close();
   }
 });
+
+test("a sentence is judged by its own promises, and a check the pipeline answers is not 'not judged'", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("flow");
+  // One subject, two sentences: the first's promise waits on the platform,
+  // the second's is proved here.
+  const subject = push.subjects[0];
+  subject.from = [
+    { id: "a1", n: 1, text: push.sentences[0].text },
+    { id: "a2", n: 2, text: push.sentences[1].text },
+  ] as never;
+  const [first, second] = subject.claims.flatMap((c) => c.promises);
+  subject.claims = [
+    { ...subject.claims[0], fromAskId: "a1", fromAskN: 1, promises: [first] },
+    { ...subject.claims[0], id: "c2", fromAskId: "a2", fromAskN: 2, promises: [second] },
+  ] as never;
+  first.checks = [{ id: "k1", text: "the list comes back sorted" }] as never;
+  second.checks = [{ id: "k2", text: "the mark is on the card" }] as never;
+  for (const s of push.subjects.slice(1)) s.claims = [];
+  push.deliveries = [
+    {
+      ...push.deliveries[0],
+      accepted: false,
+      proofs: [
+        { criterionId: "k1", verdict: "pending" },
+        { criterionId: "k2", verdict: "green" },
+      ],
+      pending: [{ criterionId: "k1", text: "the list comes back sorted", settledBy: "the backend suite in the build pipeline" }],
+    },
+  ] as never;
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const seen = await s.read(() => {
+      const report = document.querySelector("[data-delivery-report]");
+      return {
+        fates: [...(report?.querySelectorAll("[data-asked]") ?? [])].map((el) => [
+          el.getAttribute("data-asked"),
+          el.getAttribute("data-fate"),
+        ]),
+        text: report?.textContent ?? "",
+      };
+    });
+    const fate = (n: string) => seen.fates.find(([x]) => x === n)?.[1];
+    assert.equal(fate("2"), "done", "a sentence proved here is done");
+    assert.equal(fate("1"), "answered after the merge", "and one waiting on the platform says so, never 'not judged'");
+    assert.match(seen.text, /the backend suite in the build pipeline/);
+  } finally {
+    await s.close();
+  }
+});

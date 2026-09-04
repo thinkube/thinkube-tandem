@@ -439,10 +439,20 @@ export function spacePush(session: TandemSession, message?: string): unknown {
             },
           }
         : {}),
+      // A criterion whose answer comes after the merge is not unjudged:
+      // it is waiting, on a named source, and saying "not judged" over it
+      // told a person their work had not been looked at.
       proofs: d.proofs
-        .filter((p) => p.criterionId && p.verdict !== "pending")
+        .filter((p) => p.criterionId)
         .map((p) => {
-          const verdict = p.verdict === "green" ? ("green" as const) : p.verdict === "unjudged" ? ("unjudged" as const) : ("red" as const);
+          const verdict =
+            p.verdict === "green"
+              ? ("green" as const)
+              : p.verdict === "unjudged"
+                ? ("unjudged" as const)
+                : p.verdict === "pending"
+                  ? ("pending" as const)
+                  : ("red" as const);
           const said = verdict === "green" ? "" : saidPlainly(p);
           return { criterionId: p.criterionId!, verdict, ...(said ? { said } : {}) };
         }),

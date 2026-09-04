@@ -14,13 +14,24 @@ type Delivery_ = SpacePush["deliveries"][number];
 type Promise_ = SpacePush["subjects"][number]["claims"][number]["promises"][number];
 
 /** How a sentence fared, read from THIS delivery's verdicts on the promises made from it. */
-type Fate = "done" | "not kept" | "not judged" | "being built" | "not started" | "landed earlier";
-type Verdict = { verdict: "green" | "red" | "unjudged"; said?: string };
+type Fate =
+  | "done"
+  | "not kept"
+  | "not judged"
+  | "answered after the merge"
+  | "being built"
+  | "not started"
+  | "landed earlier";
+type Verdict = { verdict: "green" | "red" | "unjudged" | "pending"; said?: string };
 
 function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: string | undefined): Fate {
   const verdicts = promises.flatMap((p) => p.checks.map((c) => judged.get(c.id)));
   if (verdicts.some((v) => v?.verdict === "red")) return "not kept";
   if (verdicts.length && verdicts.every((v) => v?.verdict === "green")) return "done";
+  // Waiting on the platform, the cluster or a person is not "not judged":
+  // it is an answer that comes after the merge, from a named source.
+  if (verdicts.length && verdicts.every((v) => v?.verdict === "green" || v?.verdict === "pending"))
+    return "answered after the merge";
   if (verdicts.some((v) => !v || v.verdict === "unjudged")) return "not judged";
   if (stage === "delivered" || stage === "accepted") return "done";
   if (stage === "signed") return "being built";
@@ -30,6 +41,7 @@ function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: strin
 const TONE: Record<Fate, string> = {
   done: C.ok,
   "not kept": C.bad,
+  "answered after the merge": C.quiet,
   "not judged": C.ask,
   "being built": C.live,
   "not started": C.quiet,
@@ -60,13 +72,18 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   const d: Delivery_ | undefined = [...push.deliveries].reverse()[0];
   if (!d) return <div data-delivery-report style={{ padding: SP.xl, color: C.quiet }}>Nothing has been delivered yet.</div>;
 
-  // Your sentences, each with the promises made from it.
+  // Your sentences, each with the promises made from IT.
+  //
+  // Every promise of the subject was listed under every sentence the
+  // subject came from, so one promise waiting on the pipeline made all
+  // five sentences read the same. A claim knows the sentence it was read
+  // from; that is the link.
   const byN = new Map<number, Promise_[]>();
   for (const s of push.subjects)
-    for (const f of s.from) {
-      const list = byN.get(f.n) ?? [];
-      for (const c of s.claims) for (const p of c.promises) if (!list.some((x) => x.id === p.id)) list.push(p);
-      byN.set(f.n, list);
+    for (const c of s.claims) {
+      const list = byN.get(c.fromAskN) ?? [];
+      for (const p of c.promises) if (!list.some((x) => x.id === p.id)) list.push(p);
+      byN.set(c.fromAskN, list);
     }
   // This delivery's own verdicts, by criterion. A page painted from the
   // newest verdict anywhere showed one run's reds over another run's news.
