@@ -332,19 +332,31 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 data-accept-delivery={d.id}
                 disabled={!can("accept-delivery")}
                 style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
-                title={can("accept-delivery") ? "Accept it — this merges the work into your branch and pushes it." : refusalSentence("accept-delivery", push.phase)}
+                title={
+                  can("accept-delivery")
+                    ? d.merged
+                      ? "Keep it — the work is already in the project and running; this closes the decision."
+                      : "Accept it — this merges the work into your branch and pushes it."
+                    : refusalSentence("accept-delivery", push.phase)
+                }
                 onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
               >
-                Accept
+                {d.merged ? "Keep it" : "Accept"}
               </button>
               <button
                 data-reject-delivery={d.id}
                 disabled={!can("reject-delivery")}
                 style={{ padding: `${SP.xs}px ${SP.md}px` }}
-                title={can("reject-delivery") ? "Not this — the work stays on its branch and the signed promises can run again." : refusalSentence("reject-delivery", push.phase)}
+                title={
+                  can("reject-delivery")
+                    ? d.merged
+                      ? "Roll it back — the merge is taken out and pushed, the platform builds the project as it was, and the signed promises can run again."
+                      : "Not this — the work stays on its branch and the signed promises can run again."
+                    : refusalSentence("reject-delivery", push.phase)
+                }
                 onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
               >
-                Not this
+                {d.merged ? "Roll it back" : "Not this"}
               </button>
               {d.rerun ? <RunAgain phase={push.phase} /> : null}
               {push.acceptRefusal ? (

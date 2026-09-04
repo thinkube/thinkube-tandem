@@ -430,6 +430,8 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         return cut?.tepId ? { tep: cut.tepId } : {};
       })(),
       ...(d.withheld ? { withheld: d.withheld } : {}),
+      ...(d.mergedAt ? { merged: true } : {}),
+      ...(d.liveAt ? { liveAt: d.liveAt } : {}),
       ...(d.afterMerge
         ? {
             afterMerge: {

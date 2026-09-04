@@ -1,7 +1,7 @@
 /**
- * Accept is the one act that lands work: the branch merges here, the
- * result is pushed, and nothing is pushed before that — a worker's tree
- * cannot push at all.
+ * The hand-over is the one act that lands work: the branch merges here,
+ * the result is pushed, and nothing is pushed before that — a worker's
+ * tree cannot push at all. Saying no afterwards takes it back out.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
-import { landDelivery, sealWorktree, type GitExec } from "./land";
+import { landDelivery, revertDelivery, sealWorktree, type GitExec } from "./land";
 
 const exec: GitExec = (cmd, args, cwd) =>
   new Promise((resolve) =>
@@ -143,4 +143,36 @@ test("a landing refused at the push carries on from the merge already made", asy
   assert.equal(r.merged, true);
   assert.equal((await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim(), r.head, "pushed this time");
   assert.equal((await git(root, "rev-parse", "--verify", "--quiet", "tandem/x/TEP-7")).code, 1, "and the branch is gone");
+});
+
+test("saying no takes the work back out of the project and pushes that", async () => {
+  const { origin, root } = await repo();
+  await branchWith(root, "tandem/x/TEP-9", "b.txt", "two\n");
+  const landed = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-9", tep: "TEP-9", exec });
+  assert.ok(fs.existsSync(path.join(root, "b.txt")), "the work went in");
+  const back = await revertDelivery({ repoRoot: root, head: landed.head, tep: "TEP-9", exec });
+  assert.equal(back.ok, true, back.why);
+  assert.equal(fs.existsSync(path.join(root, "b.txt")), false, "and it is out again");
+  const remoteHead = (await exec("git", ["--git-dir", origin, "rev-parse", "main"], root)).out.trim();
+  const here = (await git(root, "rev-parse", "HEAD")).out.trim();
+  assert.equal(remoteHead, here, "the platform is told, so it builds the project as it was");
+  const said = (await git(root, "log", "-1", "--format=%s")).out.trim();
+  assert.equal(said, "tandem: roll back TEP-9", "and the history says what happened");
+});
+
+test("a rollback already made is not made twice", async () => {
+  const { root } = await repo();
+  await branchWith(root, "tandem/x/TEP-10", "b.txt", "two\n");
+  const landed = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-10", tep: "TEP-10", exec });
+  assert.equal((await revertDelivery({ repoRoot: root, head: landed.head, tep: "TEP-10", exec })).ok, true);
+  const before = (await git(root, "rev-parse", "HEAD")).out.trim();
+  assert.equal((await revertDelivery({ repoRoot: root, head: landed.head, tep: "TEP-10", exec })).ok, true);
+  assert.equal((await git(root, "rev-parse", "HEAD")).out.trim(), before, "nothing moved");
+});
+
+test("a merge this repository does not have cannot be rolled back, and says so", async () => {
+  const { root } = await repo();
+  const back = await revertDelivery({ repoRoot: root, head: "0".repeat(40), tep: "TEP-11", exec });
+  assert.equal(back.ok, false);
+  assert.match(back.why ?? "", /not in this repository/);
 });

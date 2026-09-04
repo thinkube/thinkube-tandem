@@ -43,7 +43,7 @@ export async function handOver(a: {
   recordPath: string | undefined;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   /** Merge this branch into the checkout's own and push it. */
-  land: () => Promise<{ ok: boolean; pushed?: boolean; why?: string }>;
+  land: () => Promise<{ ok: boolean; pushed?: boolean; head?: string; why?: string }>;
   log: (line: string) => void;
 }): Promise<DispatchOutcome> {
   const { tep, branch, worktree, cut, deps, proofs, observations, undelivered, kept, recordPath, exec, log } = a;
@@ -112,6 +112,7 @@ export async function handOver(a: {
     delivery: {
       ...delivery,
       mergedAt: a.producedAt,
+      ...(landed.head ? { mergedHead: landed.head } : {}),
       ...(landed.pushed === false && landed.why ? { notPushed: landed.why } : {}),
     },
   };

@@ -693,8 +693,9 @@ export class TandemSession {
     note?: string,
   ): { ok: boolean; reason?: string } => attestOn(this, deliveryId, criterionId, held, note);
 
-  /** Refuse a delivery: the cut goes back to signed and can run again. */
-  rejectDelivery(deliveryId: string): { ok: boolean; reason?: string } {
+  /** Say no to a delivery: the work is taken back out of the project, and
+   *  the cut goes back to signed so it can run again. */
+  rejectDelivery(deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
     return rejectDeliveryGesture(this, deliveryId, this.deps.now());
   }
 

@@ -121,7 +121,8 @@ export async function handleInbound(
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "reject-delivery" && msg.deliveryId) {
-    const r = session.rejectDelivery(msg.deliveryId);
+    push("Taking the work back out of the project…");
+    const r = await session.rejectDelivery(msg.deliveryId);
     note = r.ok ? undefined : r.reason;
   } else if (msg.action === "accept-question" && msg.questionId) {
     push("Recording the decision…");

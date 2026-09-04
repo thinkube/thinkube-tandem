@@ -90,3 +90,60 @@ export async function sealWorktree(repoRoot: string, worktree: string, exec: Git
   await exec("git", ["-C", repoRoot, "config", "extensions.worktreeConfig", "true"], repoRoot);
   await exec("git", ["-C", worktree, "config", "--worktree", "remote.origin.pushurl", "no-push"], worktree);
 }
+
+/**
+ * Taking the work back out.
+ *
+ * The hand-over put the work in the project so the platform could build
+ * it; the person's decision comes after, and one of the answers is no.
+ * That answer is a revert of the one merge commit, pushed like any other
+ * commit: the platform builds the project as it was, and the history says
+ * what happened rather than pretending it never did.
+ *
+ * The work itself is not lost. It is in the merge that was reverted, and
+ * a later run starts from what was learned by taking it back out.
+ */
+export async function revertDelivery(a: {
+  repoRoot: string;
+  head: string;
+  tep: string;
+  exec: GitExec;
+}): Promise<{ ok: boolean; why?: string }> {
+  const git = (...args: string[]) => a.exec("git", ["-C", a.repoRoot, ...args], a.repoRoot);
+  const known = await git("cat-file", "-e", `${a.head}^{commit}`);
+  if (known.code !== 0) return { ok: false, why: `the merge ${a.head.slice(0, 8)} is not in this repository` };
+  const already = await git("log", "--format=%s", `${a.head}..HEAD`);
+  if (already.out.includes(`tandem: roll back ${a.tep}`)) return { ok: true };
+  await git("fetch", "--quiet", "origin");
+  const remote = (await git("rev-parse", "--verify", "--quiet", "origin/main")).out.trim();
+  if (remote && (await git("merge-base", "--is-ancestor", "origin/main", "HEAD")).code !== 0) {
+    const up = await git("merge", "--no-edit", "origin/main");
+    if (up.code !== 0) {
+      await git("merge", "--abort");
+      return { ok: false, why: `main has moved on the remote in ways that conflict with what is here: ${up.out.trim().split("\n").pop() ?? ""}` };
+    }
+  }
+  // The first parent is the project as it was before the merge, so this
+  // takes out exactly what the merge brought in.
+  const back = await git("revert", "--no-commit", "-m", "1", a.head);
+  if (back.code === 0) {
+    const said = await git("commit", "-m", `tandem: roll back ${a.tep}`);
+    if (said.code !== 0)
+      return { ok: false, why: `the revert could not be committed: ${said.out.trim().split("\n").pop() ?? ""}` };
+  }
+  if (back.code !== 0) {
+    await git("revert", "--abort");
+    await git("reset", "--hard", "HEAD");
+    return {
+      ok: false,
+      why: `the work cannot be taken back out on its own — something since the merge builds on it: ${back.out.trim().split("\n").pop() ?? ""}`,
+    };
+  }
+  const pushed = await git("push", "origin", "HEAD");
+  if (pushed.code !== 0)
+    return {
+      ok: false,
+      why: `taken out here, but the push was refused: ${pushed.out.trim().split("\n").pop() ?? ""} — the platform still has the work`,
+    };
+  return { ok: true };
+}

@@ -14,7 +14,7 @@ import { RunState, silentVerdict } from "../run/state";
 import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
-import { landDelivery } from "../run/land";
+import { landDelivery, revertDelivery } from "../run/land";
 import { execFile } from "node:child_process";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
@@ -510,22 +510,50 @@ export function signedIdleNotice(view: {
 }
 
 /**
- * Refuse a delivery: it ends nothing, and the way back in stays open.
+ * Say no to a delivery: it ends nothing, and the way back in stays open.
  *
- * The work stays on its branch — nothing is thrown away — the delivery
- * keeps its proofs as the record of what was tried, and the cut returns to
- * signed, so the same signed promises can run again against what was
- * learned by refusing.
+ * The hand-over put the work in the project so the platform could build
+ * it, so saying no takes it back out: the merge is reverted and pushed,
+ * and the platform builds the project as it was. Nothing is thrown away —
+ * the work is in the reverted merge, the delivery keeps its proofs as the
+ * record of what was tried, and the cut returns to signed, so the same
+ * signed promises can run again against what was learned by saying no.
+ *
+ * A rollback that cannot be made is said, and nothing is stamped: a
+ * delivery marked refused while its work is still live and building would
+ * be the report lying about the product.
  */
-export function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): { ok: boolean; reason?: string } {
+export async function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): Promise<{ ok: boolean; reason?: string }> {
   const d = s.space.deliveries.find((x) => x.id === deliveryId);
   if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
   if (d.acceptedAt) return { ok: false, reason: "it was already accepted" };
+  const cut = s.space.cuts.find((c) => c.id === d.cutId);
+  if (d.mergedAt && d.mergedHead) {
+    const back = await revertDelivery({
+      repoRoot: s.deps.scope?.gitRoot ?? s.deps.round.repoRoot,
+      head: d.mergedHead,
+      tep: cut?.tepId ?? d.id,
+      exec: (cmd, args, cwd) =>
+        new Promise((resolve) =>
+          execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
+            resolve({
+              code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0,
+              out: `${stdout ?? ""}${stderr ?? ""}`,
+            }),
+          ),
+        ),
+    });
+    if (!back.ok) return { ok: false, reason: back.why ?? "the work could not be taken back out" };
+  }
   s.space = {
     ...s.space,
     deliveries: s.space.deliveries.map((x) => (x.id === deliveryId ? { ...x, rejectedAt: at } : x)),
   };
-  s.changed("The delivery was refused — the work stays on its branch, and the signed promises can run again.");
+  s.changed(
+    d.mergedAt
+      ? "The work was rolled back — the platform is building the project as it was, and the signed promises can run again."
+      : "The delivery was refused — the work stays on its branch, and the signed promises can run again.",
+  );
   return { ok: true };
 }
 
@@ -539,10 +567,14 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     const landRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
     try {
       await acceptOrder({
-        // The one act: the branch merges into the checkout's own branch
-        // here, that is pushed, and the branch goes. No forge is asked.
-        merge: () =>
-          landDelivery({
+        // On a development platform the hand-over already put the work in
+        // the project, so the platform could build it: keeping it is a
+        // decision, not a merge. A delivery from before that — or one
+        // whose merge never happened — still lands here.
+        merge: async () =>
+          d.mergedAt
+            ? { merged: true as const }
+            : landDelivery({
             repoRoot: landRoot,
             branch: d.branch,
             tep: tepId ?? d.id,

@@ -285,6 +285,9 @@ export interface Delivery {
    *  work and its proofs are on the record, nothing was opened, and it
    *  cannot be accepted. */
   withheld?: string;
+  /** The merge the hand-over made. Taking the work back out is reverting
+   *  this one commit. */
+  mergedHead?: string;
   /** Why the merge never reached the remote, when it did not. The work is
    *  in the project; the platform has not seen it. */
   notPushed?: string;

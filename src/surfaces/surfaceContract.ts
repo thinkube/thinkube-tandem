@@ -99,6 +99,11 @@ interface DeliveryVM {
   tep?: string;
   page: string;
   accepted: boolean;
+  /** The work is in the project already: the hand-over merged it so the
+   *  platform could build it. What is left is the person's decision. */
+  merged?: boolean;
+  /** Where the merged work answers, once the platform has it live. */
+  liveAt?: string;
   /** Why it cannot be accepted, from the gate that would refuse it. */
   blocked?: string;
   /** What became of the merged work: the platform's own build of it, or a
