@@ -175,7 +175,6 @@ export function RunSection(props: {
     live: run.phases?.live ?? { state: "pending" as const },
   };
   const gatePhased = phases.gate.state !== "pending";
-  const livePhased = phases.live.state !== "pending";
   const phaseChip = (p: { state: string; doing?: string }): Chip =>
     p.state === "running"
       ? { text: p.doing ?? "working", kind: "run", why: "what this phase is doing right now" }
@@ -320,7 +319,7 @@ export function RunSection(props: {
       // starts answering. Everything judged on the running product waits
       // here, so the wait is a node of its own and says what it is waiting
       // on — never a still graph between the last check and the first look.
-      ...(run.units.length && livePhased
+      ...(run.units.length
         ? [
             {
               id: "live",
@@ -333,7 +332,7 @@ export function RunSection(props: {
           ]
         : []),
     ],
-    [run.units, now, slices, phases.door.state, phases.door.doing, phases.gate.state, phases.gate.doing, phases.delivery.state, phases.delivery.doing, phases.live.state, phases.live.doing, livePhased],
+    [run.units, now, slices, phases.door.state, phases.door.doing, phases.gate.state, phases.gate.doing, phases.delivery.state, phases.delivery.doing, phases.live.state, phases.live.doing],
   );
   // Why each arrow is there, looked up when it is drawn. An arrow that
   // says only THAT a unit waits leaves the reader unable to tell a
@@ -360,9 +359,9 @@ export function RunSection(props: {
       ...run.units.filter((u) => !u.requires.length).map((u) => ({ from: "door", to: u.id })),
       ...(run.units.length ? [{ from: "gate", to: "delivery" }] : []),
       // The work is merged in the hand-over, so going live waits on it.
-      ...(run.units.length && livePhased ? [{ from: "delivery", to: "live" }] : []),
+      ...(run.units.length ? [{ from: "delivery", to: "live" }] : []),
     ],
-    [run.units, slices, livePhased],
+    [run.units, slices],
   );
   const { heights, probe } = useMeasuredHeights(cards, "", world.far);
   const [layout, setLayout] = useState<LaidOut | null>(null);

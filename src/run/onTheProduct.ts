@@ -17,6 +17,31 @@ import { driveAll, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
 import { DispatchOutcome, RunState } from "./state";
 
+/** The id a criterion's reviewer is drawn under, from the first frame of
+ *  the run to its verdict. */
+function driverId(n: number): string {
+  return `on-the-product-${n}`;
+}
+
+/**
+ * The reviewers this cut will need, seeded before anything runs.
+ *
+ * A graph that only grows a node once its work starts cannot say what the
+ * person is waiting for: from the last check to the first look it stood
+ * still and ended at the delivery. These sit there from the beginning,
+ * waiting on the deployment, so the shape of the whole run is visible
+ * while it is still being built.
+ */
+export function seedDrivers(st: RunState, space: Space, cut: Cut, pageRoots: readonly string[]): string[] {
+  const list = toDriveOf(space, cut, pageRoots);
+  list.forEach((c, i) =>
+    st.seed(driverId(i + 1), "live", "drive", ["live"], `${c.promise} — ${c.criterion}`, [
+      { on: "live", kind: "needs", what: "it can only be judged once the product is answering" },
+    ]),
+  );
+  return list.map((_, i) => driverId(i + 1));
+}
+
 export async function judgeOnTheProduct(a: {
   at: string;
   st: RunState;
@@ -25,17 +50,15 @@ export async function judgeOnTheProduct(a: {
   space: Space;
   cut: Cut;
   outcome: DispatchOutcome;
+  /** Where the page is built, as the repository declares it. */
+  pageRoots: readonly string[];
   /** Injectable for tests: what actually opens the browser. */
   drive?: typeof driveAll;
 }): Promise<DispatchOutcome> {
-  const list: ToDrive[] = toDriveOf(a.space, a.cut);
+  const list: ToDrive[] = toDriveOf(a.space, a.cut, a.pageRoots);
   if (!list.length) return a.outcome;
-  const ids = list.map((c, i) => `on-the-product-${i + 1}`);
-  list.forEach((c, i) =>
-    a.st.seed(ids[i], "live", "drive", ["live"], `${c.promise} — ${c.criterion}`, [
-      { on: "live", kind: "needs", what: "it can only be judged once the product is answering" },
-    ]),
-  );
+  const ids = list.map((_, i) => driverId(i + 1));
+  for (const id of ids) if (!a.st.units.has(id)) seedDrivers(a.st, a.space, a.cut, a.pageRoots);
   for (const id of ids) a.st.set(id, "running");
   const proofs = await (a.drive ?? driveAll)(
     {

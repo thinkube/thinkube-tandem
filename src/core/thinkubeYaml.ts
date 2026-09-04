@@ -29,6 +29,12 @@ interface ThinkubeContainer {
   test?: ThinkubeTest;
 }
 
+/** A path of the deployed address, and the container that answers it. */
+interface ThinkubeRoute {
+  path: string;
+  to: string;
+}
+
 interface ThinkubeTest {
   enabled: boolean;
   command?: string;
@@ -106,6 +112,9 @@ export interface ThinkubeDeclaration {
   /** `app`, `knative`, `component`, or `none` when the platform does not deploy it. */
   deploymentType: string;
   containers: ThinkubeContainer[];
+  /** Which container answers at which path of the address. The one that
+   *  answers at the root serves the pages a person opens. */
+  routes: ThinkubeRoute[];
   /** The trees of a repository with no containers, as declared. */
   parts: ThinkubePart[];
   deploy?: ThinkubeDeploy;
@@ -176,6 +185,7 @@ export function thinkubeDeclaration(
           build?: string;
           test?: { enabled?: boolean; command?: string; image?: string; one?: string };
         }[];
+        routes?: { path?: string; to?: string }[];
       };
     };
     const containers = (doc?.spec?.containers ?? [])
@@ -184,6 +194,9 @@ export function thinkubeDeclaration(
         const test = testOf(c.test);
         return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}) };
       });
+    const routes: ThinkubeRoute[] = (doc?.spec?.routes ?? [])
+      .filter((r) => typeof r?.path === "string" && typeof r?.to === "string")
+      .map((r) => ({ path: r.path as string, to: r.to as string }));
     const parts: ThinkubePart[] = (doc?.spec?.parts ?? [])
       .filter((p) => typeof p?.name === "string" && typeof p?.root === "string")
       .map((p) => {
@@ -214,6 +227,7 @@ export function thinkubeDeclaration(
       declared: {
         deploymentType: doc?.spec?.deployment?.type ?? "app",
         containers,
+        routes,
         parts,
         ...(deploy ? { deploy } : {}),
         ...(verify ? { verify } : {}),

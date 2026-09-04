@@ -32,16 +32,31 @@ export function observationShaped(text: string): string | undefined {
  * driver can be told what it is judging and on whose behalf. A promise's
  * own `unverified` notes are not here: they are what nobody can drive.
  */
-export function toDriveOf(space: Space, cut: Cut): { promise: string; criterion: string; criterionId?: string; ask?: string }[] {
+export function toDriveOf(
+  space: Space,
+  cut: Cut,
+  /** The directories that build what answers at the address, as the
+   *  repository declares them. A promise landing in one of them is a
+   *  promise about the page. */
+  pageRoots: readonly string[] = [],
+): { promise: string; criterion: string; criterionId?: string; ask?: string }[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const out: { promise: string; criterion: string; criterionId?: string; ask?: string }[] = [];
+  const onThePage = (n: Change): boolean =>
+    (n.grounding?.touchpoints ?? []).some((t) => pageRoots.some((r) => t.path === r || t.path.startsWith(`${r}/`)));
   for (const id of cut.changeIds) {
     const n: Change | undefined = byId.get(id);
     if (!n) continue;
     const ask = space.asks.find((x) => n.serves.includes(x.id))?.text;
-    for (const c of n.acceptance)
-      if (observationShaped(c.text))
+    const page = onThePage(n);
+    for (const c of n.acceptance) {
+      // Something to do and see on the page, or a criterion worded for a
+      // person watching. Never one that is answered elsewhere, and never
+      // an assessment: those are read, not driven.
+      const drivable = observationShaped(c.text) || (page && c.kind !== "assessment" && !c.settledBy);
+      if (drivable)
         out.push({ promise: n.sentence, criterion: c.text, ...(c.id ? { criterionId: c.id } : {}), ...(ask ? { ask } : {}) });
+    }
   }
   return out;
 }

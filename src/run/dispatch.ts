@@ -14,8 +14,8 @@
  */
 import * as path from "node:path";
 import { waitUntilLive } from "./goLive";
-import { judgeOnTheProduct } from "./onTheProduct";
-import { deployedAddress, knock, readLive } from "./live";
+import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
+import { deployedAddress, knock, pageRoots as pageRootsOf, readLive } from "./live";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -165,6 +165,11 @@ export async function dispatchTep(
   st.plan = planRecordOf(slices); // kept even when refused — that is the case a later rule must keep refusing
   if (before.refusal) return refuse(before.refusal.trigger, before.refusal.refusal, "gate");
   seedUnitViews(st, dag, slices); // the surface's view of every unit: role, edges, and why it waits
+  // And what will be judged on the running product, waiting on the
+  // deployment from the first frame — the run's whole shape, before any of
+  // it has happened.
+  const pageRoots = pageRootsOf(deps.repoRoot);
+  const drivers = seedDrivers(st, space, cut, pageRoots);
 
   // Asked to start from nothing: the branch that holds the earlier run's
   // committed slices goes, so the door below cuts a fresh one from the base
@@ -621,11 +626,22 @@ export async function dispatchTep(
   );
   // Where the work is seen, once the platform has it: every promise about
   // a page is about this, and until it answers nothing can be judged on it.
-  if (d?.notPushed) st.phase("live", "done", `the platform has not seen it — ${d.notPushed}`);
-  else if (d && !d.withheld) {
+  // A reviewer of the running product is only ever blocked by the run
+  // never getting there — never by its own silence.
+  const noProduct = (why: string): void => {
+    for (const id of drivers) st.block(id, why);
+  };
+  if (!d || d.withheld) {
+    st.phase("live", "failed", d?.withheld ?? "nothing was delivered");
+    noProduct(d?.withheld ?? "nothing was delivered, so there is nothing to judge");
+  } else if (d.notPushed) {
+    st.phase("live", "done", `the platform has not seen it — ${d.notPushed}`);
+    noProduct(`the platform never saw the work — ${d.notPushed}`);
+  } else {
     const at = deployedAddress(deps.repoRoot);
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");
+      noProduct("this repository is not deployed by the platform, so nothing can be driven");
     } else {
       st.phase("live", "running", "waiting for the platform to notice the push");
       const went = await waitUntilLive({
@@ -640,13 +656,14 @@ export async function dispatchTep(
         },
       });
       st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
+      if (!went.live) noProduct(went.why ?? "the work never went live");
       outcome = went.live
         ? { ...outcome, delivery: { ...d, liveAt: at } }
         : { ...outcome, delivery: { ...d, afterMerge: { at: new Date().toISOString(), outcome: "broke", said: "the platform", ...(went.why ? { detail: went.why } : {}) } } };
       // What only the running product can show is judged on the running
       // product. Each criterion is its own reviewer, and each waits on the
       // deployment — so the graph says what the person is waiting for.
-      if (went.live) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome });
+      if (went.live) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots });
     }
   }
   return outcome;

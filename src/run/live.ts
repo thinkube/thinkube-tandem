@@ -18,6 +18,29 @@ export function deployedAddress(repoRoot: string): string | undefined {
   return at && /^https?:\/\//.test(at) ? at : undefined;
 }
 
+/**
+ * The parts of this repository that answer at the address a person opens.
+ *
+ * The repository says it: a route with the shortest path is the one a
+ * person lands on, and the container it names is built from a directory.
+ * Promises that land in that directory are promises about the page, and a
+ * page is judged in a browser.
+ *
+ * Nothing here knows what a frontend is made of. A repository that
+ * declares no routes has no page, and nothing is driven.
+ */
+export function pageRoots(repoRoot: string): string[] {
+  const read = thinkubeDeclaration(repoRoot);
+  if (!read || !("declared" in read)) return [];
+  const { routes, containers } = read.declared;
+  if (!routes.length) return [];
+  const shortest = routes.reduce((a, b) => (b.path.length < a.path.length ? b : a));
+  return containers
+    .filter((c) => c.name === shortest.to)
+    .map((c) => c.build.replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter((r) => r && r !== ".");
+}
+
 function apiToken(home = process.env.HOME ?? "~"): string | undefined {
   try {
     const t = fs.readFileSync(path.join(home, ".thinkube", "api-token"), "utf8").trim();
