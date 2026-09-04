@@ -78,3 +78,62 @@ test("nothing on this page is a mark whose meaning is not written beside it", as
     await s.close();
   }
 });
+
+test("saying a promise does not hold is offered only once the work is in the project", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("work");
+  const promise = push.subjects.flatMap((s) => s.claims.flatMap((c) => c.promises))[0];
+  // Delivered, and waiting for the person's decision: nothing is deployed,
+  // so nobody can have used it.
+  promise.checks = [{ id: "k1", text: "the list comes back sorted", verdict: "green", tep: "TEP-1", accepted: false }] as never;
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const before = await s.read(() => document.querySelectorAll("[data-does-not-hold]").length);
+    assert.equal(before, 0, "asking whether something works before it is deployed is a riddle");
+
+    // Accepted: the work is in the project, and the person can say so.
+    promise.checks = [{ id: "k1", text: "the list comes back sorted", verdict: "green", tep: "TEP-1", accepted: true }] as never;
+    await s.push(push);
+    const seen = await s.read(() => ({
+      count: document.querySelectorAll("[data-does-not-hold]").length,
+      label: document.querySelector("[data-does-not-hold]")?.textContent ?? "",
+    }));
+    assert.ok(seen.count > 0, "and once it is, it can be said");
+    assert.match(seen.label, /^Say /, "a control is named for what pressing it does");
+  } finally {
+    await s.close();
+  }
+});
+
+test("saying a promise does not hold is offered only once the work is in the project, and is named for what it does", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("work");
+  const promise = push.subjects.flatMap((s) => s.claims.flatMap((c) => c.promises))[0];
+  // Delivered and waiting for a decision: nothing is deployed, so nobody
+  // can have used it.
+  promise.checks = [{ id: "k1", text: "the list comes back sorted", verdict: "green", tep: "TEP-1", accepted: false }] as never;
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    assert.equal(
+      await s.read(() => document.querySelectorAll("[data-does-not-hold]").length),
+      0,
+      "asking whether something works before it is deployed is a riddle",
+    );
+
+    // Accepted: the work is in the project, and the person can say so.
+    promise.checks = [{ id: "k1", text: "the list comes back sorted", verdict: "green", tep: "TEP-1", accepted: true }] as never;
+    await s.push(push);
+    const seen = await s.read(() => ({
+      count: document.querySelectorAll("[data-does-not-hold]").length,
+      label: document.querySelector("[data-does-not-hold]")?.textContent ?? "",
+    }));
+    assert.ok(seen.count > 0, "and once it is, it can be said");
+    assert.match(seen.label, /^Say /, "a control is named for what pressing it does");
+  } finally {
+    await s.close();
+  }
+});

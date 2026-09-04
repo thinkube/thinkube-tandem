@@ -205,19 +205,27 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 <div style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: SP.md, alignItems: "baseline" }}>
                   <span style={{ fontSize: FS.caption, color: C.quiet }}>{r.n}</span>
                   <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.5 }}>{r.text}</span>
-                  <span style={{ fontSize: FS.caption, color: TONE[r.fate], fontWeight: r.fate === "done" || r.fate === "not kept" ? 600 : 400, whiteSpace: "nowrap" }}>
-                    {r.fate}
+                  {/* The state and the way to answer it sit in one cell:
+                      a fourth child of a three-column row falls to the
+                      next line and reads as a stray link. */}
+                  <span style={{ display: "flex", alignItems: "baseline", gap: SP.md, whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: FS.caption, color: TONE[r.fate], fontWeight: r.fate === "done" || r.fate === "not kept" ? 600 : 400 }}>
+                      {r.fate}
+                    </span>
+                    {r.fate === "done" && d.accepted ? (
+                      // Only once the work is in the project and running: on
+                      // a delivery still waiting for a decision this asked a
+                      // person whether something they had not seen yet worked.
+                      <button
+                        data-did-not-work={r.n}
+                        title="Open the promise this came from, where you can say it does not hold."
+                        onClick={() => props.onGoToWork?.()}
+                        style={{ fontSize: FS.caption, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                      >
+                        Say it does not hold
+                      </button>
+                    ) : null}
                   </span>
-                  {r.fate === "done" ? (
-                    <button
-                      data-did-not-work={r.n}
-                      title="Say it does not hold, on the promise it came from."
-                      onClick={() => props.onGoToWork?.()}
-                      style={{ fontSize: FS.caption, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
-                    >
-                      it did not work
-                    </button>
-                  ) : null}
                 </div>
                 {r.fate === "not kept"
                   ? r.promises

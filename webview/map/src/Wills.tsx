@@ -52,14 +52,14 @@ function DoesNotHold(props: { target: { unitId?: string; criterionId?: string };
       <button
         data-does-not-hold={props.target.criterionId ?? props.target.unitId}
         disabled={!can("contradict")}
-        title={can("contradict") ? `Say that ${props.what} does not hold, and what you saw.` : refusalSentence("contradict", props.phase)}
+        title={can("contradict") ? `Say that ${props.what} does not hold, and what you saw using it.` : refusalSentence("contradict", props.phase)}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
         style={{ fontSize: FS.caption, background: "none", border: "none", color: C.quiet, textDecoration: "underline", cursor: "pointer", padding: 0 }}
       >
-        it does not hold
+        Say it does not hold
       </button>
     );
   return (
@@ -97,8 +97,10 @@ function DoesNotHold(props: { target: { unitId?: string; criterionId?: string };
 
 function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) => void; phase: SpacePush["phase"] }): JSX.Element {
   const { p } = props;
-  // Only delivered work can be refused: what nobody built is already work.
-  const delivered = p.checks.some((c) => c.tep || c.verdict === "green");
+  // Only work that is IN THE PROJECT can be refused. Offered on a delivery
+  // still waiting for a decision, it asked a person whether something they
+  // had not seen yet worked — nothing is deployed until they accept.
+  const landed = p.checks.some((c) => c.accepted);
   // A promise the machine added — documentation, or a gap the code
   // demands. It says so, and it can be declined in one press.
   const minted = /-gap-\d/.test(p.id);
@@ -121,7 +123,7 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
           {p.stale ? " · the code moved since this was read" : ""}
         </span>
       </div>
-      {delivered && !p.checks.every((c) => c.contradicted) ? (
+      {landed && !p.checks.every((c) => c.contradicted) ? (
         <div style={{ marginBottom: SP.sm }}>
           <DoesNotHold target={{ unitId: p.id }} phase={props.phase} what="this promise" />
         </div>
@@ -156,7 +158,7 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
                   <span data-contradicted style={{ display: "block", color: C.bad }}>
                     {c.contradicted.said} · said by {c.contradicted.by}
                   </span>
-                ) : delivered && !c.contradicted ? (
+                ) : landed && !c.contradicted ? (
                   <span style={{ marginLeft: SP.md }}>
                     <DoesNotHold target={{ criterionId: c.id }} phase={props.phase} what="this" />
                   </span>
