@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { acceptDelivery, signCut, verifyCutSignature } from "./sign";
 import { renderCutScreen, renderDeliveryPage } from "./render";
-import { emptySpace } from "../core/schema";
+import { emptySpace, type Space } from "../core/schema";
 import { signedIds } from "../core/cutClosure";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -119,8 +119,8 @@ test("a signature covers the promises, not the page or the place they live in", 
   }
   {
   // The signature covers two halves. The grounded half is the substance —
-  // every sentence, where it lands, every check's own words, what each
-  // needs. The other is the PAGE those facts are drawn on, and it moves
+  // every sentence, where it lands, every check's own words. The other is
+  // the PAGE those facts are drawn on, and it moves
   // whenever the drawing code moves: nobody signs a wording, and nobody
   // changed one on purpose. Refusing on it stopped a re-run of a cut whose
   // work was already built and proved, saying "the promises changed after
@@ -423,3 +423,38 @@ test("a withdrawn cut releases its promises, its run and its hold on the space",
 
 
 
+
+test("the machine's own plan edges are not signed: the door prunes them before it plans", async () => {
+  // An edge two promises share only through a test file belongs to the
+  // maintain slice, and the door drops it on its way to the work. Hashed,
+  // that made the run refuse the signature it had made four seconds
+  // earlier: "where the promises land changed after they were signed".
+  const node = (id: string, needs: string[]) => ({
+    id,
+    sentence: `promise ${id}`,
+    serves: [],
+    needs,
+    acceptance: [{ id: `${id}-c1`, text: "it holds" }],
+    grounding: { touchpoints: [{ path: `src/${id}.ts`, planned: false }], stamp: [] },
+  });
+  const space: Space = { ...emptySpace(), nodes: [node("n1", []), node("n2", ["n1"])] as never };
+  const signed = signCut(
+    space,
+    { id: "cut-1", changeIds: ["n1", "n2"], askIds: [], docsExemption: { reason: "an example, not a delivery", at: "2026-01-01T00:00:00Z" } } as never,
+    "2026-01-01T00:00:00Z",
+    "me",
+  );
+  assert.ok("cut" in signed, JSON.stringify(signed));
+  assert.equal(verifyCutSignature(space, signed.cut).ok, true);
+
+  // The door prunes the edge; nothing a person read has changed.
+  const pruned: Space = { ...space, nodes: space.nodes.map((n) => ({ ...n, needs: [] })) };
+  assert.equal(verifyCutSignature(pruned, signed.cut).ok, true, "the run may plan without unsigning its own work");
+
+  // What a person did read still holds the signature to account.
+  const moved: Space = {
+    ...space,
+    nodes: space.nodes.map((n) => (n.id === "n2" ? { ...n, sentence: "something else entirely" } : n)),
+  };
+  assert.equal(verifyCutSignature(moved, signed.cut).ok, false, "a sentence that moved is drift");
+});

@@ -45,7 +45,12 @@ function groundingHashOf(space: Space, cut: Cut): string {
           kind: a.kind,
           probePath: a.probePath,
         })),
-        needs: n?.needs,
+        // NOT the edges between promises. They are the machine's own plan,
+        // derived from the landings above and never read by the person who
+        // signs — and the run rewrites them: an edge two promises share
+        // only through a test file belongs to the maintain slice, so the
+        // door drops it before planning. Hashing them made the machine
+        // refuse its own signature four seconds after making it.
       });
     })
     .join("\n");
@@ -157,9 +162,10 @@ export function signCut(
 }
 
 /** The current hashing rule. Raised whenever what is hashed changes — most
- *  recently when the documentation duty stopped counting a maintainer note
- *  as documentation, which moved the landings a signature covers. */
-export const SIGNATURE_RULE = 4;
+ *  recently when the edges between promises left the hash, because the
+ *  door prunes them before planning and a signature cannot cover what the
+ *  machine rewrites on its way to the work. */
+export const SIGNATURE_RULE = 5;
 
 export type SignatureVerdict =
   | { ok: true; unchecked?: string }
@@ -181,8 +187,8 @@ export function verifyCutSignature(space: Space, cut: Cut): SignatureVerdict {
       reason: "the grounded members changed since the signature",
     };
   // The grounded half held, so WHAT WAS APPROVED has not changed: the
-  // sentences, where each lands, every check's own words, and what each
-  // needs are all as they were signed. What is left in the render is the
+  // sentences, where each lands, and every check's own words are all as
+  // they were signed. What is left in the render is the
   // page those facts are drawn on — its wording, its ordering, its
   // sections — and that moves whenever the drawing code moves, which
   // nobody signed and nobody changed on purpose.
