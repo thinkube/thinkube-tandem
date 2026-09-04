@@ -154,13 +154,32 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
           </div>
         ) : d.afterMerge?.outcome === "broke" ? (
           <div data-after-merge style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.bad}`, borderRadius: 7 }}>
-            <strong style={{ fontSize: FS.body }}>This was accepted, and then the merged work did not build.</strong>
+            <strong style={{ fontSize: FS.body }}>
+              {d.merged && !d.accepted ? "The work is in the project, and the platform will not build it." : "This was accepted, and then the merged work did not build."}
+            </strong>
             <div style={{ fontSize: FS.body, marginTop: SP.xs }}>
               {d.afterMerge.detail ?? "it did not pass"} — said by {d.afterMerge.said}.
             </div>
-            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-              The promises this broke are work again, on your sentences. Building them repairs it, from the project as it stands.
-            </div>
+            {d.afterMerge.tried ? (
+              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+                Tandem repaired it and pushed again {d.afterMerge.tried} time{d.afterMerge.tried > 1 ? "s" : ""}, and the
+                platform still refuses it. What it can do on its own is spent.
+              </div>
+            ) : (
+              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+                The promises this broke are work again, on your sentences. Building them repairs it, from the project as it stands.
+              </div>
+            )}
+            {d.afterMerge.tried ? (
+              <button
+                data-ask-for-help={d.id}
+                onClick={() => post({ action: "ask-for-help", deliveryId: d.id })}
+                style={{ marginTop: SP.sm, fontSize: FS.caption, fontWeight: 600 }}
+                title="Opens a Claude session in this repository, with the platform's own words and what the run already tried."
+              >
+                Ask Claude for help
+              </button>
+            ) : null}
           </div>
         ) : d.afterMerge?.outcome === "held" ? (
           <div data-after-merge style={{ marginBottom: SP.lg, fontSize: FS.body, color: C.ok }}>

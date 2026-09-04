@@ -15,7 +15,10 @@
 import * as path from "node:path";
 import { waitUntilLive } from "./goLive";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
-import { deployedAddress, knock, pageRoots as pageRootsOf, readLive } from "./live";
+import { repairUntilLive } from "./tryAgain";
+import { repairAfterTheMerge } from "./repairLive";
+import { landDelivery } from "./land";
+import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -644,7 +647,7 @@ export async function dispatchTep(
       noProduct("this repository is not deployed by the platform, so nothing can be driven");
     } else {
       st.phase("live", "running", "waiting for the platform to notice the push");
-      const went = await waitUntilLive({
+      let went = await waitUntilLive({
         at,
         app: path.basename(deps.repoRoot),
         since: producedAt,
@@ -655,11 +658,65 @@ export async function dispatchTep(
           doing: (l) => st.phase("live", "running", l),
         },
       });
+      // The platform refused it. That is a red like any other red, and
+      // this run has a closer: repair what the platform's words name,
+      // prove it builds here, push again. Twice, then stop and say so.
+      let tried = { attempts: 0, spent: false };
+      if (!went.live && !st.halted) {
+        const again = await repairUntilLive({
+          whyItFailed: () => whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
+          repair: (found, attempt) =>
+            repairAfterTheMerge({
+              tep, attempt, worktree, deps, st, exec, boundedExec,
+              evidence: found.evidence, files: found.files,
+              log: (l) => log(l, "live"),
+            }),
+          buildsHere: async () => {
+            if (!deps.build) return { ok: true, output: "" };
+            const b = await boundedExec(deps.build, worktree);
+            return { ok: b.code === 0, output: b.output };
+          },
+          land: async () => {
+            try {
+              const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+              return l.pushed ? { ok: true } : { ok: false, ...(l.why ? { why: l.why } : {}) };
+            } catch (err) {
+              return { ok: false, why: err instanceof Error ? err.message : String(err) };
+            }
+          },
+          waitUntilLive: () =>
+            waitUntilLive({
+              at,
+              app: path.basename(deps.repoRoot),
+              since: new Date().toISOString(),
+              read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
+              knock,
+              step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
+            }),
+          say: (l) => log(l, "live"),
+          doing: (l) => st.phase("live", "running", l),
+          halted: () => st.halted,
+        });
+        tried = { attempts: again.attempts, spent: again.spent };
+        went = again.live ? { live: true } : { live: false, ...(again.why ? { why: again.why } : {}) };
+      }
       st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
       if (!went.live) noProduct(went.why ?? "the work never went live");
       outcome = went.live
         ? { ...outcome, delivery: { ...d, liveAt: at } }
-        : { ...outcome, delivery: { ...d, afterMerge: { at: new Date().toISOString(), outcome: "broke", said: "the platform", ...(went.why ? { detail: went.why } : {}) } } };
+        : {
+            ...outcome,
+            delivery: {
+              ...d,
+              afterMerge: {
+                at: new Date().toISOString(),
+                outcome: "broke",
+                said: "the platform",
+                ...(went.why ? { detail: went.why } : {}),
+                ...(tried.attempts ? { tried: tried.attempts } : {}),
+              },
+            },
+          };
       // What only the running product can show is judged on the running
       // product. Each criterion is its own reviewer, and each waits on the
       // deployment — so the graph says what the person is waiting for.

@@ -438,6 +438,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
               outcome: d.afterMerge.outcome,
               said: d.afterMerge.said,
               ...(d.afterMerge.detail ? { detail: d.afterMerge.detail } : {}),
+              ...(d.afterMerge.tried ? { tried: d.afterMerge.tried } : {}),
             },
           }
         : {}),

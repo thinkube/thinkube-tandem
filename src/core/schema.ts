@@ -325,6 +325,9 @@ export interface Delivery {
     said: string;
     /** In its own words: the failing stage, the person's sentence. */
     detail?: string;
+    /** How many times the run repaired and pushed again before giving the
+     *  answer back to the person. Absent when it never tried. */
+    tried?: number;
   };
 }
 

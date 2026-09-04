@@ -16,6 +16,10 @@ import { vs } from "../core/vscodeHost";
 export interface PanelHostHooks {
   /** Host-side gesture: the QuickPick that rebinds the space to a repo. */
   onSwitchRepo?: () => Promise<void>;
+  /** Host-side gesture: open a Claude session on this repository with the
+   *  question already written. Used where the run has spent what it can do
+   *  and the next move is a person's, with a machine beside them. */
+  onAskForHelp?: (a: { cwd: string; prompt: string }) => Promise<void>;
 }
 
 /** The surface of a webview panel that SpacePanel actually drives — small

@@ -108,7 +108,7 @@ interface DeliveryVM {
   blocked?: string;
   /** What became of the merged work: the platform's own build of it, or a
    *  person saying it was wrong. Absent until it is known. */
-  afterMerge?: { outcome: "held" | "broke" | "unjudged"; said: string; detail?: string };
+  afterMerge?: { outcome: "held" | "broke" | "unjudged"; said: string; detail?: string; tried?: number };
   url?: string;
   undelivered?: string[];
   /** What only the person can certify, by using the delivered thing. */
@@ -330,6 +330,9 @@ export type WebToHost =
   | { action: "attest"; deliveryId: string; criterionId: string; held: boolean; note?: string }
   | { action: "contradict"; unitId?: string; criterionId?: string; reason: string }
   | { action: "ask-platform-again"; deliveryId: string }
+  /** The run tried what it could and the platform still refuses the work:
+   *  open a Claude session on this repository with the failure written out. */
+  | { action: "ask-for-help"; deliveryId: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }

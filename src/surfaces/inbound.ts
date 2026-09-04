@@ -32,6 +32,7 @@ export interface InboundAction {
   page?: number;
   into?: string;
 }
+import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
 
 export async function handleInbound(
@@ -120,6 +121,18 @@ export async function handleInbound(
   } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "ask-for-help" && msg.deliveryId) {
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else if (!hooks?.onAskForHelp) note = "this window cannot open a Claude session";
+    else {
+      const cut = session.space.cuts.find((c) => c.id === d.cutId);
+      const repoRoot = session.deps.scope?.gitRoot ?? session.deps.round.repoRoot;
+      await hooks.onAskForHelp({
+        cwd: repoRoot,
+        prompt: helpPrompt({ repoRoot, delivery: d, space: session.space, ...(cut?.tepId ? { tep: cut.tepId } : {}) }),
+      });
+    }
   } else if (msg.action === "reject-delivery" && msg.deliveryId) {
     push("Taking the work back out of the project…");
     const r = await session.rejectDelivery(msg.deliveryId);

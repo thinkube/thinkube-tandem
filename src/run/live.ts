@@ -65,6 +65,77 @@ export async function readLive(repoRoot: string, app: string, since: string): Pr
   return readPipeline({ controlUrl, app, since, token });
 }
 
+/**
+ * Why the platform refused the pushed commit, in its own words.
+ *
+ * The failing step's name, and its log where the platform will give it —
+ * which is what names the files to repair. Nothing is inferred: a step
+ * that says nothing leaves the evidence thin, and the loop says so.
+ */
+export async function whyItFailed(repoRoot: string, app: string, since: string): Promise<{ evidence: string; files: string[] }> {
+  const controlUrl = controlUrlOf(await remoteOf(repoRoot));
+  const token = apiToken();
+  const reading = await readLive(repoRoot, app, since);
+  const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
+  const parts: string[] = [];
+  for (const st of broke) {
+    parts.push(`── ${st.name} ── ${st.said ?? ""}`);
+    if (st.pod && reading.id && controlUrl && token) {
+      const log = await stepLog(controlUrl, reading.id, st.pod, token);
+      if (log) parts.push(log.split("\n").slice(-120).join("\n"));
+    }
+  }
+  const evidence = parts.join("\n").slice(-8000) || `the platform's build ended ${reading.phase ?? "without succeeding"}`;
+  return { evidence, files: namedFiles(evidence, repoRoot) };
+}
+
+/**
+ * The files a tool's words name, as paths in THIS repository.
+ *
+ * A compiler runs inside the part it builds, so it says
+ * "src/lib/taskView.test.tsx" for a file the repository keeps at
+ * "frontend/src/lib/taskView.test.tsx". Each part the repository declares
+ * is tried as a prefix, and only a path that exists is kept — a guess that
+ * does not exist is not a file, and sending a repair after one is worse
+ * than sending it after none.
+ */
+export function namedFiles(words: string, repoRoot: string): string[] {
+  const read = thinkubeDeclaration(repoRoot);
+  const prefixes = read && "declared" in read
+    ? [
+        "",
+        ...read.declared.containers.map((c) => c.build.replace(/^\.\//, "").replace(/\/$/, "")),
+        ...read.declared.parts.map((p) => p.root),
+      ].filter((p) => p !== ".")
+    : [""];
+  const out = new Set<string>();
+  for (const m of words.matchAll(/(?:[\w.@-]+\/)+[\w.@-]+\.[a-zA-Z]{1,5}/g)) {
+    const said = m[0].replace(/^\.\//, "");
+    for (const p of prefixes) {
+      const rel = p ? `${p}/${said}` : said;
+      if (fs.existsSync(path.join(repoRoot, rel))) {
+        out.add(rel);
+        break;
+      }
+    }
+  }
+  return [...out];
+}
+
+async function stepLog(controlUrl: string, id: string, pod: string, token: string): Promise<string> {
+  try {
+    const res = await fetch(`${controlUrl}/api/v1/cicd/pipelines/${id}/logs/${pod}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return "";
+    const body: unknown = await res.json().catch(() => "");
+    return typeof body === "string" ? body : ((body as { logs?: string; content?: string })?.logs ?? (body as { content?: string })?.content ?? "");
+  } catch {
+    return "";
+  }
+}
+
 /** Does the address answer, and with what? Nothing when it does not. */
 export async function knock(url: string): Promise<number | undefined> {
   try {

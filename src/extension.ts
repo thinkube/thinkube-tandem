@@ -319,6 +319,12 @@ export function activate(context: vscode.ExtensionContext): void {
     onSwitchRepo: async () => {
       await vscode.commands.executeCommand("thinkube-tandem.switchProject");
     },
+    // The run is spent and the next move is a person's. The launcher's own
+    // wrapper opens the session in the repository that will not build,
+    // with the question already written.
+    onAskForHelp: async (a: { cwd: string; prompt: string }) => {
+      await launcher.openHere(vscode.Uri.file(a.cwd), a.prompt);
+    },
   };
   // One panel per thinking space: opening a space never disposes another
   // space's panel — each is made once per key and reused after that. A tab

@@ -354,6 +354,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // The finisher is spent and the tree still does not stand: the closer
     // takes the whole delivery, with full sight and authority (§4).
     if (!verdict.green && !g.state.halted) {
+      // What the tree looked like before the last actor touched it, so the
+      // person can be told exactly what it changed — a repair that goes
+      // wider than the failure is work nobody asked for, and it was
+      // invisible until it arrived in the delivery.
+      const beforeCloser = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
       const closed = await close({
         subject: `${tep} (the delivery)`,
         worktree,
@@ -407,6 +412,39 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
+      // Everything the closer touched, whether it committed or not.
+      const touchedByCloser = [
+        ...new Set([
+          ...(await exec("git", ["-C", worktree, "diff", "--name-only", `${beforeCloser}..HEAD`], worktree)).out
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean),
+          ...(await porcelainPaths(worktree)),
+        ]),
+      ];
+      // What the failures actually named. A file outside that is the last
+      // actor working beyond what was asked of it: said here, and said on
+      // the delivery, so the person reads it before deciding.
+      const named = new Set(
+        [
+          ...verdict.failures.map((f) => f.file).filter((f): f is string => !!f),
+          ...filesNamedIn(verdict.failures.map((f) => f.detail).join("\n"), worktree),
+          ...[...g.sliceProbes.values()].flat(),
+        ].filter(Boolean),
+      );
+      const beyond = touchedByCloser.filter((p) => !named.has(p));
+      if (beyond.length) {
+        const said = `the closer changed ${beyond.length} file(s) no failure named: ${beyond.slice(0, 8).join(", ")}${beyond.length > 8 ? "…" : ""}`;
+        log(`⚖ ${tep}: ${said} — repair beyond what was failing is work you did not ask for`);
+        findings.push(`${said} — read these before you keep the work`);
+        defect({
+          activity: "closing gate",
+          trigger: "closer-beyond-the-failure",
+          type: "gate",
+          impact: "the delivery carries changes no criterion asked for",
+          detail: beyond.slice(0, 20).join(", ").slice(0, 500),
+        });
+      }
       if (closed.green) {
         const again = await judgeWith(treeCmd!, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
