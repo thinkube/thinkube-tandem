@@ -1,6 +1,6 @@
 /**
  * What will be true when this is done: the promises of the thing in hand,
- * each with its criteria as ticks. This is the contract, readable and
+ * each with its criteria. This is the contract, readable and
  * arguable — the one thing on the surface a person can disagree with
  * before any code exists, and the last point where saying "no, the other
  * way round" costs nothing.
@@ -18,13 +18,28 @@ type Subject = SpacePush["subjects"][number];
 type Promise_ = Subject["claims"][number]["promises"][number];
 type Check = Promise_["checks"][number];
 
-/** The tick a criterion carries: proved, failed, or not yet checked. */
-function tick(c: Check): { glyph: string; color: string; word: string } {
+/**
+ * Where a criterion stands, in words.
+ *
+ * A mark only earns its place when everyone reads it the same way: a
+ * tick and a cross do, a hollow circle and a middle dot do not. Those two
+ * carried four different meanings between them, each written in a tooltip
+ * nobody hovers — a riddle in front of a person who came to read what
+ * their work will do. What is not proved or broken says what it is, on
+ * the line, in the same size as everything else.
+ */
+function stands(c: Check): { mark: string; color: string; word: string } {
   // The world answered back: proved once, and not any more.
-  if (c.contradicted) return { glyph: "✗", color: C.bad, word: `no longer holds — ${c.contradicted.said}` };
-  if (c.verdict === "green") return { glyph: "✓", color: C.ok, word: c.drifted ? "proved, then the code moved" : "proved" };
-  if (c.verdict === "red") return { glyph: "✗", color: C.bad, word: "not proved" };
-  return { glyph: "○", color: C.quiet, word: c.kind === "assessment" ? "judged at delivery by a reviewer" : "checked when it is built" };
+  if (c.contradicted) return { mark: "✗", color: C.bad, word: "no longer holds" };
+  if (c.verdict === "green")
+    return { mark: "✓", color: C.ok, word: c.drifted ? "proved, then the code moved" : "" };
+  if (c.verdict === "red") return { mark: "✗", color: C.bad, word: "not proved" };
+  if (c.verdict === "unjudged") return { mark: "", color: C.quiet, word: "nothing could judge it" };
+  return {
+    mark: "",
+    color: C.quiet,
+    word: c.kind === "assessment" ? "judged by a reviewer at delivery" : "checked when it is built",
+  };
 }
 
 /** Saying a delivered promise, or one criterion of it, does not hold. The
@@ -130,15 +145,16 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
       ) : null}
       <ul data-criteria style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: SP.sm }}>
         {p.checks.map((c, i) => {
-          const t = tick(c);
+          const t = stands(c);
           return (
             <li key={i} data-criterion style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: SP.sm, alignItems: "baseline", fontSize: FS.body, lineHeight: 1.5 }}>
-              <span title={t.word} style={{ color: t.color }}>{t.glyph}</span>
+              <span style={{ color: t.color }}>{t.mark}</span>
               <span>
                 {c.text}
+                {t.word ? <span style={{ color: t.color }}> · {t.word}</span> : null}
                 {c.contradicted ? (
-                  <span data-contradicted style={{ display: "block", fontSize: FS.caption, color: C.bad }}>
-                    no longer holds — {c.contradicted.said} · said by {c.contradicted.by}
+                  <span data-contradicted style={{ display: "block", color: C.bad }}>
+                    {c.contradicted.said} · said by {c.contradicted.by}
                   </span>
                 ) : delivered && !c.contradicted ? (
                   <span style={{ marginLeft: SP.md }}>
@@ -150,10 +166,10 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
           );
         })}
         {(p.unverified ?? []).map((u, i) => (
-          <li key={`u${i}`} style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: SP.sm, alignItems: "baseline", fontSize: FS.body, color: C.quiet }}>
-            <span>·</span>
+          <li key={`u${i}`} data-unverified style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: SP.sm, alignItems: "baseline", fontSize: FS.body, lineHeight: 1.5, color: C.quiet }}>
+            <span />
             <span>
-              {u.text} <span style={{ fontSize: FS.caption }}>— for you to see: {u.why}</span>
+              {u.text} · only you can see this: {u.why}
             </span>
           </li>
         ))}
@@ -199,7 +215,7 @@ export function Wills(props: {
       <div style={{ ...label, marginTop: 0 }}>What will be true when this is done</div>
       <div style={{ fontSize: FS.caption, color: C.quiet, marginBottom: SP.md }}>
         {total
-          ? "Read the ticks. This is the last point where saying “no, the other way round” costs nothing — the pencil on the sentence is how."
+          ? "Each line under a promise is one thing that must become true, and says where it stands. This is the last point where saying “no, the other way round” costs nothing — the pencil on the sentence is how."
           : chosen
             ? "Nothing has been worked out for this yet."
             : "Choose a thing on the intent page and its promises appear here."}

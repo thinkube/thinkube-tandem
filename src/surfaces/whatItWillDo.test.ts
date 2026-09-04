@@ -37,3 +37,44 @@ test("the thing in hand shows its promises with their criteria", async (t) => {
     await s.close();
   }
 });
+
+test("nothing on this page is a mark whose meaning is not written beside it", async (t) => {
+  const why = await canRender(MEDIA);
+  if (why) return t.skip(why);
+  const push = pushFor("work");
+  const promise = push.subjects.flatMap((s) => s.claims.flatMap((c) => c.promises))[0];
+  promise.checks = [
+    { id: "k1", text: "the list comes back sorted", verdict: "green" },
+    { id: "k2", text: "the mark is on the card", verdict: "red" },
+    { id: "k3", text: "a reviewer reads the page", kind: "assessment" },
+    { id: "k4", text: "the count matches the cards" },
+    { id: "k5", text: "the runner was not there", verdict: "unjudged" },
+  ] as never;
+  promise.unverified = [{ text: "the overdue mark reads at arm's length", why: "it needs the running product" }] as never;
+  const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
+  try {
+    await s.push(push);
+    const seen = await s.read(() => {
+      const page = document.querySelector("[data-work-page]");
+      return {
+        text: page?.textContent ?? "",
+        // The mark's own cell, never the words beside it: a separator
+        // between text and words means nothing and is read as nothing.
+        marks: [...(page?.querySelectorAll("[data-criterion],[data-unverified]") ?? [])]
+          .map((el) => (el.firstElementChild?.textContent ?? "").trim())
+          .join("|"),
+      };
+    });
+    // Only a tick and a cross: everyone reads those the same way.
+    for (const mark of seen.marks.split("|"))
+      assert.ok(["", "✓", "✗"].includes(mark), `a mark no one can read: "${mark}"`);
+    // And every state that is not proved says what it is, in words.
+    assert.match(seen.text, /checked when it is built/);
+    assert.match(seen.text, /judged by a reviewer at delivery/);
+    assert.match(seen.text, /nothing could judge it/);
+    assert.match(seen.text, /only you can see this: it needs the running product/);
+    assert.match(seen.text, /not proved/);
+  } finally {
+    await s.close();
+  }
+});
