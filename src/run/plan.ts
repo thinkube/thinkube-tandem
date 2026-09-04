@@ -170,10 +170,13 @@ export function sliceBookkeeping(
   // must build and keep the parent's promises green.
   const rehomed: { parent: string; maintainer: string; ac: number; check: string }[] = [];
   for (const s of slices) {
-    const parent = (s as { maintains?: string }).maintains;
-    if (parent && sliceProbes.has(parent)) {
-      sliceProbes.set(s.handle, sliceProbes.get(parent)!);
-      sliceVerifs.set(s.handle, sliceVerifs.get(parent)!);
+    const parents = ((s as { maintains?: string[] }).maintains ?? []).filter((p) => sliceProbes.has(p));
+    if (parents.length) {
+      const parent = parents[0];
+      // Every promise this file serves: the tree it leaves must keep all
+      // of them green, not only the first one's.
+      sliceProbes.set(s.handle, [...new Set(parents.flatMap((p) => sliceProbes.get(p)!))]);
+      sliceVerifs.set(s.handle, parents.flatMap((p) => sliceVerifs.get(p)!));
       // A check whose words name one of this maintainer's test homes is the
       // maintainer's to prove — the parent's runner prunes those very files.
       const homes = s.workUnits.filter(isMaintainUnit).flatMap((u) => u.footprint);
@@ -286,7 +289,7 @@ export function plannedByPending(
  *  and a maintainer sees only its own homes. */
 export function maintainedElsewhere(slices: readonly SliceForDag[], slice: string): string[] {
   return slices
-    .filter((x) => (x as { maintains?: string }).maintains && x.handle !== slice)
+    .filter((x) => (x as { maintains?: string[] }).maintains?.length && x.handle !== slice)
     .flatMap((x) => x.files ?? []);
 }
 

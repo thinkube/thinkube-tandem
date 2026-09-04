@@ -38,7 +38,10 @@ export type TandemSlice = SliceForDag & {
   criterionIds: string[];
   /** A maintain slice: brings its parent slice's test homes under, after the
    *  code they import has landed; its checks are its parent's probes. */
-  maintains?: string;
+  /** The slices whose test homes this unit brings under. A file two
+   *  promises land in serves both, so the tree it leaves must keep both
+   *  their promises green. */
+  maintains?: string[];
 };
 
 export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs): TandemSlice[] {
@@ -272,36 +275,55 @@ export function tepSlices({ space, cut, spaceName, handlePrefix }: TepSlicesArgs
       contract,
     };
   });
-  // One maintain slice per production slice with test homes: its unit is
-  // code-role (so no tests-first rule makes anything wait on it), its own
-  // execution unit, consuming — bound at run time from the code graph — the
-  // production its test homes import; it carries its parent's probes as
-  // its checks, so the tree it leaves builds and the parent's promises
-  // still hold.
-  const extra: TandemSlice[] = maintain.map((m) => ({
-    // Named for the slice it serves: "SL-5-tests" brings SL-5's tests under.
-    handle: `${m.of}-tests`,
+  // ONE MAINTAIN UNIT PER TEST FILE, never one per slice.
+  //
+  // A test home is a file, and two promises often land in the same one: a
+  // page's tests are brought under the promise that changes the page and
+  // the promise that changes what it counts. Made per slice, two units
+  // owned the same file, ran at the same time, and the second overwrote
+  // what the first had just written — with the footprint guard content
+  // that both, honestly, owned it. Grouped by the file, one unit brings it
+  // under every promise that touches it, in one pass.
+  const byHome = new Map<
+    string,
+    { of: string[]; sentences: string[]; production: string[]; work: { path: string; sentence: string; criteria: string[] }[] }
+  >();
+  for (const m of maintain)
+    for (const home of m.testHomes) {
+      const seat = byHome.get(home) ?? { of: [], sentences: [], production: [], work: [] };
+      seat.of.push(m.of);
+      for (const s of m.sentences) if (!seat.sentences.includes(s)) seat.sentences.push(s);
+      for (const p of m.production) if (!seat.production.includes(p)) seat.production.push(p);
+      for (const w of m.testHomeWork) if (w.path === home) seat.work.push(w);
+      byHome.set(home, seat);
+    }
+  const extra: TandemSlice[] = [...byHome.entries()].map(([home, seat], i) => ({
+    // Named for the slices it serves; a file serving several is named for
+    // the first of them and its place in the order, so the handle stays
+    // unique and stable. No handle reaches a person: the card wears the
+    // promises.
+    handle: seat.of.length === 1 ? `${seat.of[0]}-tests` : `${seat.of[0]}-tests-${i + 1}`,
     status: "ready",
-    files: m.testHomes,
+    files: [home],
     workUnits: [
       {
-        footprint: m.testHomes,
-      cleared: m.testHomes.map((path: string) => ({ action: "change" as const, path })),
+        footprint: [home],
+        cleared: [{ action: "change" as const, path: home }],
         execution: "serial",
         role: "code",
         // Said in the promises' own words, as a tester's brief is: the
         // card wears the promise, and no slice id reaches a person.
-        note: m.sentences.map((s) => `[${s}] The tests that already exist are brought under it.`).join("; "),
+        note: seat.sentences.map((s) => `[${s}] The tests that already exist are brought under it.`).join("; "),
         // Always after its parent's code — graph or no graph, new file or
         // old — plus whatever else the graph adds at run start.
-        ...(m.production.length ? { consumes: m.production } : {}),
-        testHomeWork: m.testHomeWork,
-      } as WorkUnit & { note?: string; testHomeWork?: typeof m.testHomeWork },
+        ...(seat.production.length ? { consumes: seat.production } : {}),
+        testHomeWork: seat.work,
+      } as WorkUnit & { note?: string; testHomeWork?: typeof maintain[number]["testHomeWork"] },
     ],
     satisfies: [],
     criterionIds: [],
     contract: "",
-    maintains: m.of,
+    maintains: seat.of,
   }));
   return [...main, ...extra];
 }
