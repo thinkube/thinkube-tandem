@@ -123,6 +123,11 @@ export const ROLES = {
     color: C.gold,
     why: "This worker brings the existing tests of its slice under the new behavior — after the code has landed, seeing it. It writes tests only, never code, and the slice's checks must stay green behind it.",
   },
+  drive: {
+    text: "on the running product",
+    color: C.ask,
+    why: "This reviewer judges the promise on the product itself: it opens the address in a browser and does what the criterion describes. It cannot read the code and cannot write anything.",
+  },
   audit: {
     text: "audit",
     color: C.ask,

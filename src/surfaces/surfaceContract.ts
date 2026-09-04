@@ -131,7 +131,7 @@ interface RunView {
      *  hover, in the space's own wording. Absent when no change could be
      *  matched to the unit; the card falls back to its slice title. */
     promiseLabel?: { label: string; full: string };
-    role: "code" | "test" | "maintain";
+    role: "code" | "test" | "maintain" | "drive";
     /** What this unit builds, in the reading's own words. */
     what?: string;
     state: string;

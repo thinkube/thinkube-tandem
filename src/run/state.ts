@@ -44,7 +44,7 @@ export interface RunUnitView {
   what?: string;
   id: string;
   slice: string;
-  role: "code" | "test" | "maintain";
+  role: "code" | "test" | "maintain" | "drive";
   state: UnitState;
   /** Unit ids this unit waits on — the run graph's edges. */
   requires: string[];
@@ -160,7 +160,7 @@ export class RunState {
   seed(
     id: string,
     slice: string,
-    role: "code" | "test" | "maintain",
+    role: "code" | "test" | "maintain" | "drive",
     requires: string[] = [],
     /** What this unit is here to build, in the words the reading used —
      *  a card that names only itself tells a reader nothing. */

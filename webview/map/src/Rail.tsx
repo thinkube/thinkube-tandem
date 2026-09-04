@@ -107,7 +107,7 @@ function StepLog(props: {
       {unit ? (
         <>
           <div style={{ fontSize: FS.caption, color: C.quiet }}>
-            {unit.role === "test" ? "writes the checks" : unit.role === "maintain" ? "brings the tests under" : "writes the code"}
+            {unit.role === "drive" ? "judges it on the running product" : unit.role === "test" ? "writes the checks" : unit.role === "maintain" ? "brings the tests under" : "writes the code"}
           </div>
           {unit.what ? (
             <>

@@ -28,6 +28,25 @@ export function observationShaped(text: string): string | undefined {
 }
 
 /**
+ * The same criteria, with the promise and the ask they belong to, so a
+ * driver can be told what it is judging and on whose behalf. A promise's
+ * own `unverified` notes are not here: they are what nobody can drive.
+ */
+export function toDriveOf(space: Space, cut: Cut): { promise: string; criterion: string; criterionId?: string; ask?: string }[] {
+  const byId = new Map(space.nodes.map((n) => [n.id, n]));
+  const out: { promise: string; criterion: string; criterionId?: string; ask?: string }[] = [];
+  for (const id of cut.changeIds) {
+    const n: Change | undefined = byId.get(id);
+    if (!n) continue;
+    const ask = space.asks.find((x) => n.serves.includes(x.id))?.text;
+    for (const c of n.acceptance)
+      if (observationShaped(c.text))
+        out.push({ promise: n.sentence, criterion: c.text, ...(c.id ? { criterionId: c.id } : {}), ...(ask ? { ask } : {}) });
+  }
+  return out;
+}
+
+/**
  * Everything a cut's delivery must hand the person to certify: the
  * promises' own unverified notes, and any signed criterion the rule above
  * classifies as an observation. Both by name, with the reason.

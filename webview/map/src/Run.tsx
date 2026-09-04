@@ -170,8 +170,12 @@ export function RunSection(props: {
     // A run recorded before the gate was a phase has no word for it.
     gate: run.phases?.gate ?? { state: "pending" as const },
     delivery: run.phases?.delivery ?? { state: "pending" as const },
+    // A run recorded before the work went live before the decision has no
+    // word for it either.
+    live: run.phases?.live ?? { state: "pending" as const },
   };
   const gatePhased = phases.gate.state !== "pending";
+  const livePhased = phases.live.state !== "pending";
   const phaseChip = (p: { state: string; doing?: string }): Chip =>
     p.state === "running"
       ? { text: p.doing ?? "working", kind: "run", why: "what this phase is doing right now" }
@@ -202,7 +206,14 @@ export function RunSection(props: {
       ...run.units.map((u) => {
         // A maintainer is named for the slice it serves, not as a slice of its own.
         // Never an identifier: a unit with no words of its own says what it is.
-        const fallback = u.role === "maintain" ? "the tests, brought under" : u.role === "test" ? "the checks" : "the code";
+        const fallback =
+          u.role === "maintain"
+            ? "the tests, brought under"
+            : u.role === "test"
+              ? "the checks"
+              : u.role === "drive"
+                ? "on the running product"
+                : "the code";
         const fallbackFull = u.sliceTitle ?? fallback;
         // What the unit builds: the promise, and where it lands as files
         // and names, read from the unit's own brief when the space cannot
@@ -214,7 +225,7 @@ export function RunSection(props: {
         const spoken = u.promiseLabel?.label ?? words.title;
         return {
           id: u.id,
-          band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : ROLES.code,
+          band: u.role === "test" ? ROLES.test : u.role === "maintain" ? ROLES.maintain : u.role === "drive" ? ROLES.drive : ROLES.code,
           title: spoken ?? fallback,
           said: !!spoken,
           titleFull: u.promiseLabel ? u.promiseLabel.full : spoken ? u.what : fallbackFull,
@@ -305,8 +316,24 @@ export function RunSection(props: {
             },
           ]
         : []),
+      // Going live: the platform builds what was merged and the address
+      // starts answering. Everything judged on the running product waits
+      // here, so the wait is a node of its own and says what it is waiting
+      // on — never a still graph between the last check and the first look.
+      ...(run.units.length && livePhased
+        ? [
+            {
+              id: "live",
+              band: { text: "live", color: C.quiet, why: "After the hand-over: the platform builds what was merged, and the address starts answering." },
+              title: "taking it live",
+              abs: phases.live.state === "running" ? phases.live.doing : undefined,
+              chips: [phaseChip(phases.live), logChip("live", run)],
+              face: stateFace(phases.live.state === "running" ? "running" : phases.live.state === "failed" ? "failed" : phases.live.state === "done" ? "done" : "pending"),
+            },
+          ]
+        : []),
     ],
-    [run.units, now, slices, phases.door.state, phases.door.doing, phases.gate.state, phases.gate.doing, phases.delivery.state, phases.delivery.doing],
+    [run.units, now, slices, phases.door.state, phases.door.doing, phases.gate.state, phases.gate.doing, phases.delivery.state, phases.delivery.doing, phases.live.state, phases.live.doing, livePhased],
   );
   // Why each arrow is there, looked up when it is drawn. An arrow that
   // says only THAT a unit waits leaves the reader unable to tell a
@@ -332,8 +359,10 @@ export function RunSection(props: {
       // before the delivery.
       ...run.units.filter((u) => !u.requires.length).map((u) => ({ from: "door", to: u.id })),
       ...(run.units.length ? [{ from: "gate", to: "delivery" }] : []),
+      // The work is merged in the hand-over, so going live waits on it.
+      ...(run.units.length && livePhased ? [{ from: "delivery", to: "live" }] : []),
     ],
-    [run.units, slices],
+    [run.units, slices, livePhased],
   );
   const { heights, probe } = useMeasuredHeights(cards, "", world.far);
   const [layout, setLayout] = useState<LaidOut | null>(null);

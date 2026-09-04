@@ -10,7 +10,7 @@
 interface RunUnitLike {
   id: string;
   slice: string;
-  role: "code" | "test" | "maintain";
+  role: "code" | "test" | "maintain" | "drive";
   state: string;
 }
 

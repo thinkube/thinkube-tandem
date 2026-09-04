@@ -14,6 +14,7 @@
  */
 import * as path from "node:path";
 import { waitUntilLive } from "./goLive";
+import { judgeOnTheProduct } from "./onTheProduct";
 import { deployedAddress, knock, readLive } from "./live";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
@@ -642,6 +643,10 @@ export async function dispatchTep(
       outcome = went.live
         ? { ...outcome, delivery: { ...d, liveAt: at } }
         : { ...outcome, delivery: { ...d, afterMerge: { at: new Date().toISOString(), outcome: "broke", said: "the platform", ...(went.why ? { detail: went.why } : {}) } } };
+      // What only the running product can show is judged on the running
+      // product. Each criterion is its own reviewer, and each waits on the
+      // deployment — so the graph says what the person is waiting for.
+      if (went.live) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome });
     }
   }
   return outcome;
