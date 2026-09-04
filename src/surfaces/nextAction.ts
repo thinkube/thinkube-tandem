@@ -153,9 +153,13 @@ export function nextAction(
         move: { kind: "post", action: { action: "rerun" } },
       };
     return {
-      where: "delivered — waiting for your decision",
-      label: "Accept it",
-      hint: "merges the work into your branch and pushes it · Not this and Run again are on the page",
+      where: delivered.merged
+        ? `${delivered.liveAt ? "live" : "in the project"} — waiting for your decision`
+        : "delivered — waiting for your decision",
+      label: delivered.merged ? "Keep it" : "Accept it",
+      hint: delivered.merged
+        ? "the work is in the project already · Roll it back and Run again are on the page"
+        : "merges the work into your branch and pushes it · Not this and Run again are on the page",
       enabled: a.allowed("accept-delivery"),
       move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
     };

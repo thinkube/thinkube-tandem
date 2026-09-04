@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
+import { landDelivery } from "../run/land";
 import { TandemSession } from "./session";
 import { handleInbound } from "./inbound";
 import { spacePush } from "./push";
@@ -143,12 +144,29 @@ function session(root: string): TandemSession {
       git(wt, "add", "-A");
       git(wt, "commit", "-q", "-m", `tandem: ${tepId}`);
       git(root, "worktree", "remove", "--force", wt);
+      // The hand-over puts the work in the project, so the platform can
+      // build it while the person reads the report.
+      const landed = await landDelivery({
+        repoRoot: root,
+        branch,
+        tep: tepId,
+        exec: async (cmd, args, cwd) => {
+          try {
+            return { code: 0, out: execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) };
+          } catch (err) {
+            const e = err as { status?: number; stdout?: string; stderr?: string };
+            return { code: e.status ?? 1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
+          }
+        },
+      });
       const delivery: Delivery = {
         id: `delivery-${tepId}`,
         cutId: cut.id,
         branch,
         runId: `run-${tepId}`,
         producedAt: new Date().toISOString(),
+        mergedAt: new Date().toISOString(),
+        mergedHead: landed.head,
         proofs: space.nodes
           .filter((n) => cut.changeIds.includes(n.id))
           .flatMap((n) => n.acceptance.map((a) => ({ kind: "probe" as const, label: a.text, verdict: "green" as const, criterionId: a.id }))),
@@ -276,24 +294,11 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.ok(refused, "a thing whose run was refused says so, never 'built'");
   assert.equal(v.things[0], refused, "and it leads the page: it is what needs the person");
   assert.equal(refused.open, true, "it can still be pressed — nothing of it landed");
-  await press(s, { action: "rerun" });
-  await untilRunEnds(s);
-  v = seen(s);
-  assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
-  assert.equal(v.page, "flow");
-  assert.equal(v.strip, "Accept it");
-  const delivered = v.things.find((t) => t.fate === "delivered")!;
-  assert.ok(delivered, "the thing that delivered says so");
-  assert.equal(delivered.open, false, "and is not offered again while its delivery waits");
-  assert.notEqual(v.things[0], delivered, "what is still to build comes first");
-
-  // 11. Accepted, over a checkout that carries what the run itself left
-  //     there — tandem's own facts file, untracked, and an unrelated edit:
-  //     the branch is merged into main here and pushed.
+  // The checkout carries what the run itself leaves there, and the remote
+  // has moved: the platform's pipeline commits to main after every build.
   fs.mkdirSync(path.join(root, ".tandem"), { recursive: true });
   fs.writeFileSync(path.join(root, ".tandem/setup.json"), "{}");
   fs.appendFileSync(path.join(root, "thinkube.yaml"), "  deploy:\n    at: https://todo.example\n");
-  //     And the remote has moved: the platform's pipeline committed to main.
   const other = path.join(path.dirname(root), "pipeline");
   execFileSync("git", ["clone", "-q", path.join(path.dirname(root), "origin.git"), other]);
   git(other, "config", "user.email", "p@p");
@@ -302,6 +307,31 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   git(other, "add", "k8s.yaml");
   git(other, "commit", "-q", "-m", "build: automatic update");
   git(other, "push", "-q", "origin", "main");
+  await press(s, { action: "rerun" });
+  await untilRunEnds(s);
+  v = seen(s);
+  assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
+  assert.equal(v.page, "flow");
+  assert.equal(v.strip, "Keep it", "the work is in the project already — the press is the decision");
+  const delivered = v.things.find((t) => t.fate === "delivered")!;
+  assert.ok(delivered, "the thing that delivered says so");
+  assert.equal(delivered.open, false, "and is not offered again while its delivery waits");
+  assert.notEqual(v.things[0], delivered, "what is still to build comes first");
+
+  // 11. The decision, on work that is already in the project: the
+  //     hand-over merged and pushed it so the platform could build it,
+  //     over a checkout carrying what the run itself left there — tandem's
+  //     own facts file, untracked, and an unrelated edit — and over a
+  //     remote the platform's own pipeline had moved.
+  assert.equal(v.push.deliveries[0].merged, true, "the work is in the project");
+  assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);
+  assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "and pushed");
+  assert.equal(
+    execFileSync("git", ["-C", root, "branch", "--list", `tandem/todo-x/${v.push.deliveries[0].tep ?? ""}`], { encoding: "utf8" }).trim(),
+    "",
+    "the branch goes with the merge: a repair starts from the project",
+  );
+  assert.equal(v.strip, "Keep it", "and the one press is the decision, not another merge");
   await press(s, { action: "accept-delivery", deliveryId: v.push.deliveries[0].id });
   v = seen(s);
   assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
@@ -311,14 +341,7 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   assert.ok(accepted, "the thing that landed says so");
   assert.equal(accepted.open, false);
   assert.equal(v.things[v.things.length - 1], accepted, "and it sits last: it needs nobody");
-  assert.match(git(root, "log", "--oneline", "-1"), /tandem: accept/);
-  assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "pushed");
   assert.equal(v.page, "intent");
-  assert.equal(
-    execFileSync("git", ["-C", root, "branch", "--list", `tandem/todo-x/${v.push.deliveries[0].tep ?? ""}`], { encoding: "utf8" }).trim(),
-    "",
-    "the branch goes with the merge: a repair starts from the project",
-  );
 
   // 12. And then the person uses it and one promise does not do what they
   //     asked. They say so, in their own words, on the promise itself.
@@ -334,4 +357,43 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   // the ordinary one over exactly what no longer holds.
   assert.equal(v.strip, "Build these 1");
   assert.match(v.push.deliveries[0].accepted ? "accepted" : "", /accepted/, "the delivery is still accepted: history stands");
+});
+
+/**
+ * The other answer. The work is in the project because that is how it
+ * gets built and looked at; saying no takes it back out, and the platform
+ * builds the project as it was.
+ */
+test("the walk, refused: the work is taken back out of the project and the thing can be built again", async () => {
+  const root = repository();
+  const s = session(root);
+  await press(s, { action: "save-draft", text: SENTENCES.join("\n") });
+  await press(s, { action: "read-draft" });
+  await press(s, { action: "keep-draft" });
+  await press(s, { action: "think" });
+  let v = seen(s);
+  await press(s, { action: "choose-set", specId: v.push.specs![0].id });
+  v = seen(s);
+  await press(s, { action: "build", specId: v.push.specs![0].id });
+  await untilRunEnds(s);
+  await press(s, { action: "rerun" });
+  await untilRunEnds(s);
+  v = seen(s);
+  assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
+  assert.equal(v.push.deliveries[0].merged, true);
+  const worked = fs.readFileSync(path.join(root, "backend/app/api/tasks.py"), "utf8");
+  assert.match(worked, /# sorted/, "the work is in the project");
+
+  await press(s, { action: "reject-delivery", deliveryId: v.push.deliveries[0].id });
+  v = seen(s);
+  assert.equal(
+    fs.readFileSync(path.join(root, "backend/app/api/tasks.py"), "utf8").includes("# sorted"),
+    false,
+    "and out again",
+  );
+  assert.equal(git(root, "log", "--format=%s", "-1"), `tandem: roll back ${v.push.deliveries[0].tep}`);
+  assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "the platform is told");
+  assert.equal(v.push.deliveries[0].accepted, false, "nothing was accepted");
+  const again = v.things.find((t) => t.open);
+  assert.ok(again, "the thing can be built again");
 });
