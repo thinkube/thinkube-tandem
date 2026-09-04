@@ -18,7 +18,7 @@ test("a run at the door shows the door working, and the delivery waiting", async
   push.deliveries = [];
   push.run = {
     ...push.run!,
-    phases: { door: { state: "running", doing: "proving the product build" }, gate: { state: "pending" }, delivery: { state: "pending" } },
+    phases: { door: { state: "running", doing: "proving the product build" }, gate: { state: "pending" }, live: { state: "pending" }, delivery: { state: "pending" } },
   };
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });
   try {
@@ -81,7 +81,7 @@ test("a run at the closing gate shows the gate grading, in its own words", async
     phases: {
       door: { state: "done", doing: "the tree is ready" },
       gate: { state: "running", doing: "running the repository's own suite" },
-      delivery: { state: "pending" },
+      live: { state: "pending" }, delivery: { state: "pending" },
     },
   };
   const s = await openSurface({ mediaRoot: MEDIA, viewport: { width: 1280, height: 900 } });

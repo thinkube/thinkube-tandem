@@ -36,7 +36,7 @@ export interface PhaseView {
   doing?: string;
   since?: number;
 }
-export type PhaseName = "door" | "gate" | "delivery";
+export type PhaseName = "door" | "gate" | "delivery" | "live";
 
 export interface RunUnitView {
   /** What this unit builds — the sentences, where they land, what proves
@@ -93,9 +93,14 @@ export class RunState {
   logs: string[] = [];
   /** step id → its own lines. "run" holds what belongs to no single step. */
   stepLogs = new Map<string, string[]>();
-  phases: Record<PhaseName, PhaseView> = { door: { state: "pending" }, gate: { state: "pending" }, delivery: { state: "pending" } };
+  phases: Record<PhaseName, PhaseView> = {
+    door: { state: "pending" },
+    gate: { state: "pending" },
+    delivery: { state: "pending" },
+    live: { state: "pending" },
+  };
   /** Where a line with no step of its own is filed: the phase in progress. */
-  phaseStep: "door" | "run" | "gate" | "delivery" = "door";
+  phaseStep: "door" | "run" | "gate" | "delivery" | "live" = "door";
   parked = new Map<string, { question: string; answer: (a: string) => void }>();
   aborts = new Map<string, AbortController>();
   halted = false;
@@ -130,9 +135,11 @@ export class RunState {
     if (record.phases)
       s.phases = {
         door: { ...record.phases.door },
-        // A record written before the gate was a phase carries none.
+        // A record written before the gate or the deployment was a phase
+        // carries neither.
         gate: { ...(record.phases.gate ?? { state: "pending" }) },
         delivery: { ...record.phases.delivery },
+        live: { ...(record.phases.live ?? { state: "pending" }) },
       };
     s.phaseStep = "delivery";
     for (const u of record.units) s.units.set(u.id, { ...u, question: undefined });
@@ -208,6 +215,7 @@ export class RunState {
     if (name === "door" && state !== "running") this.phaseStep = state === "done" ? "run" : "door";
     if (name === "gate" && state === "running") this.phaseStep = "gate";
     if (name === "delivery" && state === "running") this.phaseStep = "delivery";
+    if (name === "live" && state === "running") this.phaseStep = "live";
     this.onChange();
   }
 
@@ -251,7 +259,7 @@ export class RunState {
     step = step ?? this.phaseStep;
     // A phase's card says what it is doing now: its latest line, while it
     // is the phase in progress.
-    if ((step === "door" || step === "gate" || step === "delivery") && this.phases[step].state === "running")
+    if ((step === "door" || step === "gate" || step === "delivery" || step === "live") && this.phases[step].state === "running")
       this.phases[step].doing = line.replace(/^[^:]{1,24}:\s+/, "").trim().slice(0, 110);
     this.sink?.(line, step);
     this.logs.push(line);
@@ -319,12 +327,18 @@ export class RunState {
     runId?: string;
     /** Per-slice acceptance-criteria outcomes, from the last grading. */
     sliceChecks: Record<string, { ac: number; pass: boolean; text?: string }[]>;
-    /** The door, the gate and the delivery: the run's phases that are not workers. */
+    /** The door, the gate, the hand-over and the deployment: the run's
+     *  phases that are not workers. */
     phases: Record<PhaseName, PhaseView>;
   } {
     return {
       units: [...this.units.values()],
-      phases: { door: { ...this.phases.door }, gate: { ...this.phases.gate }, delivery: { ...this.phases.delivery } },
+      phases: {
+        door: { ...this.phases.door },
+        gate: { ...this.phases.gate },
+        delivery: { ...this.phases.delivery },
+        live: { ...this.phases.live },
+      },
       logs: this.logs.slice(-40),
       // A parent's count includes what its sub-steps wrote — the same fold
       // `logTail` gives its lines, so the number on a card and the log a

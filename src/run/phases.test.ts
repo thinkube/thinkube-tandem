@@ -54,6 +54,6 @@ test("the closing gate is a phase: its lines file under its card, which says wha
   st.phase("gate", "done", "every check held");
   const back = RunState.from({ units: [], logs: [], stepLogs: {}, phases: st.view().phases }, () => {});
   assert.equal(back.view().phases.gate.state, "done");
-  const old = RunState.from({ units: [], logs: [], stepLogs: {}, phases: { door: { state: "done" }, gate: { state: "pending" }, delivery: { state: "pending" } } as never }, () => {});
+  const old = RunState.from({ units: [], logs: [], stepLogs: {}, phases: { door: { state: "done" }, gate: { state: "pending" }, live: { state: "pending" }, delivery: { state: "pending" } } as never }, () => {});
   assert.equal(old.view().phases.gate.state, "pending", "a record from before the gate was a phase still reads");
 });
