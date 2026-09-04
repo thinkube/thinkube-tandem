@@ -27,6 +27,7 @@ import { porcelainPaths } from "./worker";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
+import { landDelivery } from "./land";
 import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
@@ -596,6 +597,16 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     ...(moduleSizes ? { moduleSizes } : {}),
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec,
+    // The work goes into the project here, so the platform can start
+    // building it while the record is written.
+    land: async () => {
+      try {
+        const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+        return l.pushed ? { ok: true, pushed: true } : { ok: true, pushed: false, why: l.why };
+      } catch (err) {
+        return { ok: false, why: err instanceof Error ? err.message : String(err) };
+      }
+    },
     log: (l: string) => log(l, "delivery"),
   });
 }

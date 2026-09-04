@@ -1,11 +1,11 @@
 /**
- * Accept is the one act that lands work.
+ * The hand-over is the one act that lands work.
  *
- * A delivery is a local branch until a person accepts it. Nothing is
- * pushed before that: not by a worker, not by the gate, not by the
- * hand-over. Accepting merges the branch into the checkout's own branch,
- * pushes that, and lets the branch go. There is no pull request, because
- * a second approval on the forge would be the same decision asked twice.
+ * A delivery is a local branch until the run hands it over. The merge
+ * happens then, and the push with it, so the platform can build what was
+ * promised and the promises about a running product can be judged on the
+ * running product. There is no pull request, because a second approval on
+ * the forge would be the same decision asked twice.
  *
  * The branch goes with the merge: what it held is in the project now, and
  * a repair starts from the project, not from a branch of history.
@@ -15,6 +15,9 @@
  * is no obstacle, a local change to a file the branch also changes is
  * refused in git's own words, and a merge that conflicts is undone, so the
  * checkout is left as it was found.
+ *
+ * A merge that cannot be pushed is still a merge: the work is in the
+ * project, and the caller is told the remote never saw it.
  */
 export type GitExec = (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
 
@@ -23,7 +26,7 @@ export async function landDelivery(a: {
   branch: string;
   tep: string;
   exec: GitExec;
-}): Promise<{ merged: true; head: string }> {
+}): Promise<{ merged: true; head: string; pushed: boolean; why?: string }> {
   const git = (...args: string[]) => a.exec("git", ["-C", a.repoRoot, ...args], a.repoRoot);
   const has = await git("rev-parse", "--verify", "--quiet", a.branch);
   if (has.code !== 0) throw new Error(`the branch ${a.branch} is not here — the work it held is gone`);
@@ -63,11 +66,14 @@ export async function landDelivery(a: {
   const head = (await git("rev-parse", "HEAD")).out.trim();
   const pushed = await git("push", "origin", "HEAD");
   if (pushed.code !== 0)
-    throw new Error(
-      `merged here, but the push was refused: ${pushed.out.trim().split("\n").pop() ?? ""} — push it yourself when the remote is reachable`,
-    );
+    return {
+      merged: true,
+      head,
+      pushed: false,
+      why: `the push was refused: ${pushed.out.trim().split("\n").pop() ?? ""} — push it yourself when the remote is reachable`,
+    };
   await git("branch", "-d", a.branch);
-  return { merged: true, head };
+  return { merged: true, head, pushed: true };
 }
 
 /**

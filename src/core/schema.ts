@@ -285,7 +285,16 @@ export interface Delivery {
    *  work and its proofs are on the record, nothing was opened, and it
    *  cannot be accepted. */
   withheld?: string;
-  /** Set when the human accepts; acceptance merges on the project's forge. */
+  /** Why the merge never reached the remote, when it did not. The work is
+   *  in the project; the platform has not seen it. */
+  notPushed?: string;
+  /** Where the work is seen, once the platform has taken it live. */
+  liveAt?: string;
+  /** When the run merged this work into the project. On a development
+   *  platform the work goes live before it is judged: what the person
+   *  decides afterwards is whether to keep it or roll it back. */
+  mergedAt?: string;
+  /** Set when the human keeps it: the work stands, and nothing else moves. */
   acceptedAt?: string;
   /** When the person refused it. A refused delivery ends nothing: the work
    *  stays on its branch, the cut goes back to signed, and it can run

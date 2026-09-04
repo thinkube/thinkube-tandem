@@ -3,9 +3,14 @@
  *
  * Everything before this decided whether the work may be delivered. This
  * is the delivery itself: the checks stay in the tree, the branch is
- * committed, and the record is assembled — the thing the person reads and
- * signs. Nothing is pushed: the branch is local until Accept lands it
- * (src/run/land.ts), so nothing unaccepted can reach a pipeline.
+ * committed, and it is put in front of the person the only way that lets
+ * them judge it — merged, pushed, and running.
+ *
+ * This is a development platform with one person on it. Holding finished
+ * work on a branch until they approve it asked them to judge something
+ * they had no way to see, and left every promise about a page provable
+ * only in a browser that is not a browser. So the work goes live and the
+ * decision comes after: keep it, or roll it back.
  *
  * It lives apart from the gate because it is a different job. The gate
  * judges; this hands over. Mixing them made one function that both decided
@@ -37,6 +42,8 @@ export async function handOver(a: {
   kept: { path: string; criterionId: string }[];
   recordPath: string | undefined;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
+  /** Merge this branch into the checkout's own and push it. */
+  land: () => Promise<{ ok: boolean; pushed?: boolean; why?: string }>;
   log: (line: string) => void;
 }): Promise<DispatchOutcome> {
   const { tep, branch, worktree, cut, deps, proofs, observations, undelivered, kept, recordPath, exec, log } = a;
@@ -83,11 +90,29 @@ export async function handOver(a: {
     ...(a.rulings?.length ? { rulings: a.rulings } : {}),
     ...(a.decisions?.length ? { decisions: a.decisions } : {}),
   };
-  log(`${tep}: the branch ${branch} holds the delivery — Accept merges and pushes it`);
+  // Merged and pushed here, so the platform starts building it while the
+  // record is written. A merge that cannot be made says so on the delivery
+  // and the work stays on its branch — nothing is lost either way.
+  const landed = await a.land();
+  if (!landed.ok) {
+    log(`${tep}: the work stays on ${branch} — ${landed.why}`);
+    return {
+      refusals: [],
+      undelivered,
+      ...(proofAnchors.length ? { proofAnchors } : {}),
+      delivery: { ...delivery, withheld: `it could not be merged into the project: ${landed.why}` },
+    };
+  }
+  if (landed.pushed === false) log(`${tep}: merged into the project, but ${landed.why}`);
+  else log(`${tep}: merged and pushed — the platform is building it`);
   return {
     refusals: [],
     undelivered,
     ...(proofAnchors.length ? { proofAnchors } : {}),
-    delivery,
+    delivery: {
+      ...delivery,
+      mergedAt: a.producedAt,
+      ...(landed.pushed === false && landed.why ? { notPushed: landed.why } : {}),
+    },
   };
 }

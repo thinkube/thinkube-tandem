@@ -12,6 +12,9 @@
  * slice is committed on the branch. Every failure lands as an artifact —
  * UNDELIVERED, containment, red proofs — never as silence.
  */
+import * as path from "node:path";
+import { waitUntilLive } from "./goLive";
+import { deployedAddress, knock, readLive } from "./live";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -587,7 +590,7 @@ export async function dispatchTep(
   // The closing gate is a phase like the door: its lines file under its
   // card while it grades, and the card says what it is doing.
   st.phase("gate", "running", "grading every check on the real state");
-  const outcome = await closeGate({
+  let outcome = await closeGate({
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     runOne: know.runOne, suite: know.suite,
     ...(ready.parts ? { parts: ready.parts } : {}),
@@ -613,8 +616,34 @@ export async function dispatchTep(
   st.phase(
     "delivery",
     d && !d.withheld ? "done" : "failed",
-    d?.withheld ? `withheld — ${d.withheld}` : d ? "handed over" : outcome.refusals[0] ?? "nothing was delivered",
+    d?.withheld ? `withheld — ${d.withheld}` : d ? "merged and pushed" : outcome.refusals[0] ?? "nothing was delivered",
   );
+  // Where the work is seen, once the platform has it: every promise about
+  // a page is about this, and until it answers nothing can be judged on it.
+  if (d?.notPushed) st.phase("live", "done", `the platform has not seen it — ${d.notPushed}`);
+  else if (d && !d.withheld) {
+    const at = deployedAddress(deps.repoRoot);
+    if (!at) {
+      st.phase("live", "done", "this repository is not deployed by the platform");
+    } else {
+      st.phase("live", "running", "waiting for the platform to notice the push");
+      const went = await waitUntilLive({
+        at,
+        app: path.basename(deps.repoRoot),
+        since: producedAt,
+        read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
+        knock,
+        step: {
+          say: (l) => log(l, "live"),
+          doing: (l) => st.phase("live", "running", l),
+        },
+      });
+      st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
+      outcome = went.live
+        ? { ...outcome, delivery: { ...d, liveAt: at } }
+        : { ...outcome, delivery: { ...d, afterMerge: { at: new Date().toISOString(), outcome: "broke", said: "the platform", ...(went.why ? { detail: went.why } : {}) } } };
+    }
+  }
   return outcome;
   } finally {
     watch.stop();

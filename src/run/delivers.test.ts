@@ -111,7 +111,8 @@ for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
       tepSlices({ space, cut, spaceName: "delivers" }),
     );
 
-    // What the person asked for is on the branch, and the delivery is open.
+    // What the person asked for is in the project: the hand-over merges,
+    // so the platform can build it while the person reads the report.
     assert.ok(outcome.delivery, `the run reached a delivery — said:\n${said.slice(-6).map((l) => l.slice(0, 160)).join("\n")}`);
     assert.equal(outcome.delivery?.withheld, undefined, `the delivery was withheld: ${outcome.delivery?.withheld}`);
     assert.deepEqual(
@@ -119,7 +120,8 @@ for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
       [],
       "every unit finished",
     );
-    assert.ok(fs.existsSync(path.join(repo, "src", "greet.mjs")) === false, "the work lands on the branch, not in the base checkout");
+    assert.ok(outcome.delivery?.mergedAt, "the hand-over merged the work into the project");
+    assert.ok(fs.existsSync(path.join(repo, "src", "greet.mjs")), "and the checkout has it");
     assert.ok(
       outcome.delivery!.proofs.some((p) => p.kind === "probe" && p.verdict === "green"),
       "and the promise carries a proof that ran",
