@@ -79,7 +79,11 @@ export function nextAction(
   },
 ): NextAction {
   const sentences = push.sentences.length;
-  const chosen = (push.specs ?? []).find((sp) => sp.chosen);
+  // A set whose work has landed is no longer the thing in hand. Leaving it
+  // there offered "Build these 0", greyed, with the next thing to build
+  // sitting right under it — the press that ends a walk in a dead end.
+  const inHand = (push.specs ?? []).find((sp) => sp.chosen);
+  const chosen = inHand && (inHand.fate === "accepted" || inHand.fate === "delivered") ? undefined : inHand;
 
   if (push.running)
     return {
@@ -158,7 +162,7 @@ export function nextAction(
     if (delivered.merged && delivered.afterMerge?.outcome === "broke")
       return {
         where: "in the project — the platform will not build it",
-        label: "Roll it back",
+        label: "Take it back out",
         hint: `${delivered.afterMerge.detail ?? "it did not build"} · nothing else can be built here until the project builds · Ask Claude to fix it is on the page`,
         enabled: a.allowed("reject-delivery"),
         move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
@@ -167,9 +171,9 @@ export function nextAction(
       where: delivered.merged
         ? `${delivered.liveAt ? "live" : "in the project"} — waiting for your decision`
         : "delivered — waiting for your decision",
-      label: delivered.merged ? "Keep it" : "Accept it",
+      label: delivered.merged ? "It stays" : "Accept it",
       hint: delivered.merged
-        ? "the work is in the project already · Roll it back and Run again are on the page"
+        ? `the work is already in the project${delivered.liveAt ? ` and running at ${delivered.liveAt}` : ""} — this closes the decision · Take it back out is on the page`
         : "merges the work into your branch and pushes it · Not this and Run again are on the page",
       enabled: a.allowed("accept-delivery"),
       move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },

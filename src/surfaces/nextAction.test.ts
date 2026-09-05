@@ -189,7 +189,7 @@ test("signed work that never ran: the one press is Run it again, before any othe
 
 /**
  * Work that is in the project and will not build is not offered as
- * something to keep. "Keep it" over a failed build reads as keeping the
+ * something to keep: a press to keep a failed build reads as keeping the
  * failure, and the act that leaves the project working is the other one.
  */
 test("when the platform refuses the merged work, the one press is to take it back out", () => {
@@ -205,8 +205,71 @@ test("when the platform refuses the merged work, the one press is to take it bac
     ],
   });
   const n = nextAction(push, { behind: false, allowed: () => true });
-  assert.equal(n.label, "Roll it back");
+  assert.equal(n.label, "Take it back out");
   assert.match(n.where, /the platform will not build it/);
   assert.match(n.hint ?? "", /build-frontend did not pass/, "in the platform's own words");
   assert.deepEqual(n.move, { kind: "post", action: { action: "reject-delivery", deliveryId: "d1" } });
+});
+
+/**
+ * The strip's promise is that there is always one thing to press. A
+ * greyed press with nothing behind it breaks the walk: a set that had
+ * been built and accepted stayed "in hand", so the strip offered "Build
+ * these 0", disabled, while the next thing to build sat underneath it.
+ */
+test("a set that has landed is no longer in hand: the press moves to the next thing", () => {
+  const push = quiet({
+    specs: [
+      set("s1", { chosen: true, built: true, fate: "accepted", promises: 6 }),
+      set("s2", { promises: 0 }),
+      set("s3", { promises: 0 }),
+    ],
+    deliveries: [{ id: "d1", page: "", accepted: true }],
+    ready: { subjects: 0, promises: 0, asks: 0, thinking: false },
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Build the first");
+  assert.equal(n.enabled, true, "and it can be pressed");
+  assert.deepEqual(n.move, { kind: "post", action: { action: "choose-set", specId: "s2" } });
+});
+
+test("no state offers a press that cannot be pressed while something is still to build", () => {
+  // Every shape a space passes through on the walk, with everything
+  // allowed: the one press must either do something or say plainly that
+  // there is nothing left.
+  const shapes: { name: string; push: SpacePush }[] = [
+    { name: "nothing written", push: quiet({}) },
+    { name: "a draft", push: quiet({ draft: "one\ntwo" }) },
+    { name: "sets proposed", push: quiet({ specs: [set("s1"), set("s2")] }) },
+    {
+      name: "one in hand, worked out",
+      push: quiet({
+        specs: [set("s1", { chosen: true, promises: 3 })],
+        ready: { subjects: 0, promises: 3, asks: 3, thinking: false },
+        // The documentation decision is its own gate, with its own line on
+        // the page; made, so what is left is the build itself.
+        documentation: { state: "landed", landings: [] },
+      }),
+    },
+    {
+      name: "one accepted, another to build",
+      push: quiet({
+        specs: [set("s1", { chosen: true, fate: "accepted", built: true }), set("s2")],
+        deliveries: [{ id: "d1", page: "", accepted: true }],
+      }),
+    },
+    {
+      name: "everything accepted",
+      push: quiet({
+        specs: [set("s1", { chosen: true, fate: "accepted", built: true })],
+        deliveries: [{ id: "d1", page: "", accepted: true }],
+      }),
+    },
+  ];
+  for (const { name, push } of shapes) {
+    const n = nextAction(push, { behind: false, allowed: () => true });
+    if (n.label === "Everything is built") continue; // the one honest dead end
+    assert.equal(n.enabled, true, `"${name}" offers "${n.label}", which cannot be pressed`);
+    assert.notEqual(n.move.kind, "none", `"${name}" offers "${n.label}", which does nothing`);
+  }
 });

@@ -132,7 +132,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   const seen = d.observations ?? [];
   const stuck = d.withheld ?? d.blocked;
   // In the project, and the platform refuses it: the decision is not the
-  // ordinary one, and offering "Keep it" for work that does not build
+  // ordinary one, and offering to keep work that does not build
   // reads as keeping a failure.
   const broken = !!d.merged && d.afterMerge?.outcome === "broke";
   const account = [...(d.undelivered ?? [])];
@@ -366,12 +366,12 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
                 title={
                   can("reject-delivery")
-                    ? "Roll it back — the merge is taken out and pushed, and the platform builds the project as it was."
+                    ? "Take it back out — the merges are reverted and pushed, and the platform builds the project as it was."
                     : refusalSentence("reject-delivery", push.phase)
                 }
                 onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
               >
-                Roll it back
+                Take it back out
               </button>
               {d.rerun ? <RunAgain phase={push.phase} /> : null}
               {push.acceptRefusal ? (
@@ -389,13 +389,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 title={
                   can("accept-delivery")
                     ? d.merged
-                      ? "Keep it — the work is already in the project and running; this closes the decision."
+                      ? "It stays — the work is already in the project and running. This closes the decision; nothing moves."
                       : "Accept it — this merges the work into your branch and pushes it."
                     : refusalSentence("accept-delivery", push.phase)
                 }
                 onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
               >
-                {d.merged ? "Keep it" : "Accept"}
+                {d.merged ? "It stays" : "Accept"}
               </button>
               <button
                 data-reject-delivery={d.id}
@@ -404,13 +404,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 title={
                   can("reject-delivery")
                     ? d.merged
-                      ? "Roll it back — the merge is taken out and pushed, the platform builds the project as it was, and the signed promises can run again."
+                      ? "Take it back out — this delivery's merges are reverted and pushed, the platform builds the project as it was, and the signed promises can run again."
                       : "Not this — the work stays on its branch and the signed promises can run again."
                     : refusalSentence("reject-delivery", push.phase)
                 }
                 onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
               >
-                {d.merged ? "Roll it back" : "Not this"}
+                {d.merged ? "Take it back out" : "Not this"}
               </button>
               {d.rerun ? <RunAgain phase={push.phase} /> : null}
               {push.acceptRefusal ? (

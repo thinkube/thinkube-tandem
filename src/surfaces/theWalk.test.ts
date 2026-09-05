@@ -312,7 +312,7 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
   v = seen(s);
   assert.equal(v.push.deliveries.length, 1, JSON.stringify(v.push.runNote ?? v.push.signedIdle));
   assert.equal(v.page, "flow");
-  assert.equal(v.strip, "Keep it", "the work is in the project already — the press is the decision");
+  assert.equal(v.strip, "It stays", "the work is in the project already — the press is the decision");
   const delivered = v.things.find((t) => t.fate === "delivered")!;
   assert.ok(delivered, "the thing that delivered says so");
   assert.equal(delivered.open, false, "and is not offered again while its delivery waits");
@@ -331,7 +331,7 @@ test("the walk: write, read, keep, group, choose, work out, read again, build, r
     "",
     "the branch goes with the merge: a repair starts from the project",
   );
-  assert.equal(v.strip, "Keep it", "and the one press is the decision, not another merge");
+  assert.equal(v.strip, "It stays", "and the one press is the decision, not another merge");
   await press(s, { action: "accept-delivery", deliveryId: v.push.deliveries[0].id });
   v = seen(s);
   assert.equal(v.push.acceptRefusal, undefined, "nothing refused the accept");
