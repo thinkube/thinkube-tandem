@@ -94,7 +94,7 @@ export async function dispatchTep(
   if (deps.storeDir) st.sink = runLogSink(deps.storeDir, tep, runId);
   const log = (l: string, step?: string) => st.log(l, step);
   const env = runnerEnv();
-  const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env);
+  const { boundedExec, suiteExec } = haltableExecs(() => st.halted, env, st.stop.signal);
 
   /**
    * Attention events ABOUT THE MACHINE — the number this design is judged
@@ -247,6 +247,7 @@ export async function dispatchTep(
     changingNow: () => waits.door.changingNow(), // who is changing what right now (docs/WORDS.md)
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
+    stop: st.stop.signal,
     // The audit card's own account: which criteria passed, per slice, from
     // the oracle's own verdicts — replaced whole on every re-grade.
     onGrade: (slice, results) =>
@@ -657,6 +658,7 @@ export async function dispatchTep(
           say: (l) => log(l, "live"),
           doing: (l) => st.phase("live", "running", l),
         },
+        stop: st.stop.signal,
       });
       // The platform refused it. That is a red like any other red, and
       // this run has a closer: repair what the platform's words name,
@@ -697,6 +699,7 @@ export async function dispatchTep(
               read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
               knock,
               step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
+              stop: st.stop.signal,
             }),
           say: (l) => log(l, "live"),
           doing: (l) => st.phase("live", "running", l),

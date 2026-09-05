@@ -7,7 +7,7 @@
  * surface's one answer box), Stop and a determinate progress header
  * above the canvas.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
 import { World } from "./proto/world";
 import { CardData, Chip, NodeCard, NODE_W, useMeasuredHeights } from "./proto/nodeCard";
@@ -365,6 +365,8 @@ export function RunSection(props: {
   );
   const { heights, probe } = useMeasuredHeights(cards, "", world.far);
   const [layout, setLayout] = useState<LaidOut | null>(null);
+  /** Where the door sat in the last layout — the point the view holds. */
+  const anchor = useRef<{ x: number; y: number } | null>(null);
   const shape = cards
     .map((c) => `${c.id}@${heights.get(c.id) ?? 0}`)
     .join("|") + "#" + edges.map((e) => `${e.from}>${e.to}`).join(",");
@@ -377,7 +379,22 @@ export function RunSection(props: {
     })
       .catch(() => stackLayout(cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 }))))
       .then((l) => {
-        if (alive) setLayout(l);
+        if (!alive) return;
+        // The graph is re-laid out whenever it changes shape — a unit
+        // finishing, the reviewers of the running product appearing at the
+        // door. The engine is free to move everything to make room, and the
+        // view keeps the pan it had, so the cards being watched slid out
+        // from under it and the canvas looked emptied.
+        //
+        // The door is the first card of the tree and the one thing every
+        // layout starts from, so it is the anchor: the world is shifted by
+        // however far the door moved, and the picture stays where the
+        // reader put it while the rest re-flows around it.
+        const was = anchor.current;
+        const now = l.nodes.get("door");
+        if (was && now) world.shiftBy((was.x - now.x) * world.k, (was.y - now.y) * world.k);
+        if (now) anchor.current = { x: now.x, y: now.y };
+        setLayout(l);
       });
     return () => {
       alive = false;
@@ -392,8 +409,11 @@ export function RunSection(props: {
       ? layout
       : stackLayout(cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 })));
 
-  const done = run.units.filter((u) => u.state === "done").length;
-  const total = run.units.length || 1;
+  const workers = run.units.filter((u) => u.role !== "drive");
+  const reviewers = run.units.filter((u) => u.role === "drive");
+  const done = workers.filter((u) => u.state === "done").length;
+  const reviewed = reviewers.filter((u) => u.state === "done").length;
+  const total = workers.length || 1;
   const running = run.units.find((u) => u.state === "running");
   const failed = run.units.filter((u) => u.state === "failed");
 
@@ -417,7 +437,11 @@ export function RunSection(props: {
                   ? "delivered"
                   : phases.delivery.state === "failed"
                     ? "withheld"
-                    : `${done} of ${run.units.length} workers done${blocked ? ` · ${blocked} never ran` : ""}`}
+                    : `${done} of ${workers.length} workers done${
+                        reviewers.length
+                          ? ` · ${reviewed} of ${reviewers.length} judged on the running product`
+                          : ""
+                      }${blocked ? ` · ${blocked} never ran` : ""}`}
         </span>
         <span style={{ flex: 1, height: 5, background: "var(--vscode-input-background, #222)", borderRadius: 3, overflow: "hidden" }}>
           <span

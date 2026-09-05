@@ -45,7 +45,17 @@ async function gateWithNoSuite(build: { code: number; output: string }) {
     slices: [],
     space: emptySpace(),
     cut: { id: "cut-1", tepId: "TEP-1", changeIds: [] },
-    deps: { repoRoot: worktree, state: st, build: "npm run build" },
+    // The worker belongs in deps: the repair path reads it from there, and
+    // a test that only passes it at the top level sends the finisher and
+    // the closer to the real model — minutes of live rounds inside a unit
+    // test, which is what turned a 45-second suite into a ten-minute one.
+    deps: {
+      repoRoot: worktree,
+      state: st,
+      build: "npm run build",
+      model: "test",
+      worker: async () => ({ ok: true, finalText: "UNDELIVERED: nothing here can fix it" }),
+    },
     runOne: proved("npm test -- <file>", true)!,
     sliceProbes: new Map(),
     sliceCommitted: new Set(),

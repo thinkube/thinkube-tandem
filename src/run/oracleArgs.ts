@@ -4,6 +4,7 @@
  * exercise. It lives apart from the pump so the run's own loop stays
  * readable.
  */
+import { waitOrStop } from "./waiting";
 import type { AcVerification } from "../engine/core/closingGate";
 import type { SliceForDag, SchedUnit } from "../engine/core/dag";
 import { maintainedElsewhere } from "./plan";
@@ -45,6 +46,9 @@ export function buildOracleArgs(a: {
   /** Commit a waiting unit's work, so it holds nothing while it waits. */
   commitBeforeWaiting: (unitId: string, why: string) => Promise<void>;
   halted: () => boolean;
+  /** The run's stop signal, so every wait under the oracle hears Stop at
+   *  once instead of finishing its sleep first. */
+  stop?: AbortSignal;
   /** Every per-AC results verdict a slice's oracle produces — the run's
    *  own account of which criteria passed. */
   onGrade?: (slice: string, results: readonly OracleAcResult[]) => void;
@@ -84,7 +88,7 @@ export function buildOracleArgs(a: {
       changingNow: a.changingNow,
       commitBeforeWaiting: a.commitBeforeWaiting,
       halted: a.halted,
-      sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+      sleep: async (ms) => void (await waitOrStop(ms, a.stop)),
       log: a.log,
       onRuling: (r) => rulings.push(r),
       defect: a.defect,

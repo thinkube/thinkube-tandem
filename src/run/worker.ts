@@ -6,6 +6,7 @@
  * parked worker (the NEEDS-INPUT sentinel) keeps its session alive while
  * the human answers through the run view — the oracle lesson's door.
  */
+import { theModel } from "../engine/theModel";
 import { workerEnv } from "./oracle";
 import { execFile } from "node:child_process";
 import { extractNeedsInput } from "../engine/core/preflight";
@@ -289,7 +290,7 @@ export async function runUnitWorker(
   let query: SdkQuery;
   let mcpServers: Record<string, unknown> | undefined;
   try {
-    const mod = (await import("@anthropic-ai/claude-agent-sdk")) as {
+    const mod = (await theModel("the unit worker")) as {
       query: SdkQuery;
       tool?: SdkTool;
       createSdkMcpServer?: SdkCreateServer;

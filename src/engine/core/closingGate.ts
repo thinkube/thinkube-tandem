@@ -149,6 +149,14 @@ export interface BoundedOptions {
   env: NodeJS.ProcessEnv;
   /** Grace between SIGTERM and the SIGKILL backstop (ms). Default 250. */
   killGraceMs?: number;
+  /**
+   * The run was stopped. A bound is not a stop: a twenty-minute suite went
+   * on running for twenty minutes after the person pressed the button,
+   * because refusing to START a command is all a flag can do. When this
+   * fires the child's whole process group is killed, exactly as the bound
+   * kills it, and the call answers at once.
+   */
+  stop?: AbortSignal;
 }
 
 /** Exit code we resolve with when a bounded run is killed for exceeding its `timeoutMs`. */
@@ -263,6 +271,24 @@ export function runBounded(
     });
     proc.on("close", (code) => settle({ code, output }));
 
+    const killGroup = (): void => {
+      const pid = proc.pid;
+      if (typeof pid !== "number") return;
+      for (const child of groupDescendants(pid)) signal(child, "SIGTERM");
+      setTimeout(() => {
+        for (const child of groupDescendants(pid)) signal(child, "SIGKILL");
+        signal(-pid, "SIGKILL");
+      }, opts.killGraceMs ?? 250).unref?.();
+    };
+    if (opts.stop) {
+      const onStop = (): void => {
+        if (settled) return;
+        killGroup();
+        settle({ code: TIMED_OUT_CODE, output: `${output}\n[stopped — the run was halted]` });
+      };
+      if (opts.stop.aborted) onStop();
+      else opts.stop.addEventListener("abort", onStop, { once: true });
+    }
     killTimer = setTimeout(() => {
       const pid = proc.pid;
       if (typeof pid === "number") {

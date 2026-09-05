@@ -6,6 +6,7 @@
  * criterion, a delivery's checks merged into the suite — where the fence
  * is a simple allowlist and the result is the round's final text.
  */
+import { theModel } from "../engine/theModel";
 import { FENCED_TOOLS } from "./worker";
 import { collectText } from "../derive/round";
 import * as path from "node:path";
@@ -33,7 +34,7 @@ export async function runAuthoringRound(
 ): Promise<string | null> {
   let query: SdkQuery;
   try {
-    const mod = (await import("@anthropic-ai/claude-agent-sdk")) as { query: SdkQuery };
+    const mod = (await theModel("the authoring round")) as { query: SdkQuery };
     query = mod.query;
   } catch (err) {
     deps.log?.(

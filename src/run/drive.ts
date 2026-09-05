@@ -21,6 +21,7 @@
  * a browser that never starts, leaves the criterion unjudged — never a
  * pass nobody saw, and never a red the work did not earn.
  */
+import { theModel } from "../engine/theModel";
 import { Proof } from "../core/schema";
 import { collectText } from "../derive/round";
 
@@ -100,7 +101,7 @@ async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
   const ask =
     a.ask ??
     (async (p: string, options: Record<string, unknown>) => {
-      const mod = (await import("@anthropic-ai/claude-agent-sdk")) as {
+      const mod = (await theModel("the driver of the running product")) as {
         query: (args: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown>;
       };
       return mod.query({ prompt: p, options });

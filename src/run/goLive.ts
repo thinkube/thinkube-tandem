@@ -12,6 +12,7 @@
  * them in a browser that is not a browser.
  */
 import type { PipelineReading } from "./harvest";
+import { waitOrStop } from "./waiting";
 
 export type Step = { say: (line: string) => void; doing: (line: string) => void };
 
@@ -39,15 +40,24 @@ export async function waitUntilLive(a: {
   /** Does the address answer? Its status, or nothing when it does not. */
   knock: (url: string) => Promise<number | undefined>;
   step: Step;
+  /** The run's stop signal. Every wait in a run takes it: a wait that
+   *  cannot hear Stop is a run that ignores the one control it always
+   *  offers, and it slept its full patience whatever the person pressed. */
+  stop?: AbortSignal;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait in all, in ticks of ten seconds. */
   patience?: number;
 }): Promise<{ live: boolean; why?: string }> {
-  const sleep = a.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref()));
+  const sleep = a.sleep ?? (async (ms: number) => void (await waitOrStop(ms, a.stop)));
   const patience = a.patience ?? 90;
   let built = false;
   let saidNoticed = false;
+  const stopped = (): { live: false; why: string } => {
+    a.step.say("the run was stopped while it waited");
+    return { live: false, why: "the run was stopped" };
+  };
   for (let tick = 0; tick < patience; tick++) {
+    if (a.stop?.aborted) return stopped();
     if (!built) {
       const reading = await a.read(a.since);
       if (reading.unreachable && !saidNoticed) {
@@ -81,6 +91,7 @@ export async function waitUntilLive(a: {
       }
     }
     await sleep(10_000);
+    if (a.stop?.aborted) return stopped();
   }
   const why = built
     ? `${a.at} never answered`

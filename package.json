@@ -430,7 +430,7 @@
   "scripts": {
     "compile": "tsc -p ./ && cd webview/map && npm run build",
     "pretest": "cd webview/map && npm run build",
-    "test": "tsc -p tsconfig.test.json && node --test out-test/",
+    "test": "tsc -p tsconfig.test.json && TANDEM_NO_MODEL=1 node --test out-test/",
     "docs": "node scripts/docs-build.mjs"
   },
   "devDependencies": {

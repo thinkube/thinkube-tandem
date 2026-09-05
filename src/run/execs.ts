@@ -12,11 +12,17 @@ export type HaltableExec = (cmd: string, cwd: string) => Promise<{ code: number 
 export function haltableExecs(
   halted: () => boolean,
   env: NodeJS.ProcessEnv,
+  /** The run's stop signal. A command already running is killed by it —
+   *  refusing to START one is all a flag could ever do, and a suite takes
+   *  twenty minutes. */
+  stop?: AbortSignal,
 ): { boundedExec: HaltableExec; suiteExec: HaltableExec } {
   const stopped = () => Promise.resolve({ code: 124, output: "[stopped — the run was halted]" });
   return {
-    boundedExec: (cmd, cwd) => (halted() ? stopped() : runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env })),
-    suiteExec: (cmd, cwd) => (halted() ? stopped() : runBounded(cmd, cwd, { timeoutMs: SUITE_TIMEOUT_MS, env })),
+    boundedExec: (cmd, cwd) =>
+      halted() ? stopped() : runBounded(cmd, cwd, { timeoutMs: DEFAULT_AC_TIMEOUT_MS, env, ...(stop ? { stop } : {}) }),
+    suiteExec: (cmd, cwd) =>
+      halted() ? stopped() : runBounded(cmd, cwd, { timeoutMs: SUITE_TIMEOUT_MS, env, ...(stop ? { stop } : {}) }),
   };
 }
 

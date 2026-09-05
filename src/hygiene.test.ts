@@ -134,3 +134,32 @@ test("only the minting site casts to Proved", () => {
     "a command about the target repository was asserted rather than run — mint it with proved() at the site that ran it",
   );
 });
+
+/**
+ * Stop is a promise the whole run keeps, or it is a lie on a button.
+ *
+ * It was a flag, and a flag only stops what remembers to read it: a wait
+ * for the platform slept its full patience, a suite ran to its end, and
+ * each was found and fixed on its own while the person pressed a button
+ * that did nothing. There is one way to wait now, it takes the run's stop
+ * signal, and nothing under the run may invent another.
+ */
+test("every wait inside a run goes through the one that hears Stop", () => {
+  const dir = path.join(__dirname, "run");
+  const offenders: string[] = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".ts") || f.endsWith(".test.ts") || f === "waiting.ts") continue;
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    // A sleep is a timer that resolves a promise. A timer used to arm a
+    // kill or to poll something else is not a wait the person is sitting
+    // through, and those name what they are.
+    for (const line of src.split("\n"))
+      if (/setTimeout\s*\(/.test(line) && /(resolve|r\)|=>\s*r\b|Promise)/.test(line))
+        offenders.push(`${f}: ${line.trim().slice(0, 100)}`);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these wait without hearing Stop — use waitOrStop from ./waiting:\n${offenders.join("\n")}`,
+  );
+});

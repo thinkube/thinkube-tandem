@@ -4,6 +4,7 @@
  * work orders, never through a round. Fail-soft: null on any failure, so a
  * broken round never blocks the space.
  */
+import { theModel } from "../engine/theModel";
 
 export interface RoundDeps {
   model: string;
@@ -51,7 +52,7 @@ export async function runReadRound(
 ): Promise<string | null> {
   let query: SdkQuery;
   try {
-    const mod = (await import("@anthropic-ai/claude-agent-sdk")) as {
+    const mod = (await theModel("round")) as {
       query: SdkQuery;
     };
     query = mod.query;

@@ -3,6 +3,7 @@
  * ride into the code tree and the slice commits — later tester snapshots see
  * committed truth — and everyone waiting on "the next commit" wakes.
  */
+import { waitOrStop } from "./waiting";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Exec } from "./oracle";
@@ -57,19 +58,18 @@ export function makeCommitBook(a: {
   /** Sleep on the clock, waking on the next commit or on Stop. Stop must be
    *  visible at once: a wait that only watches for a commit leaves a halted
    *  run looking alive for as long as its timeout. */
+  // One way to wait, and it hears Stop the moment it is pressed — this
+  // one polled the flag once a second, which is a second of a stopped run
+  // still working, and a second kind of wait to keep right.
   const sleepOnTheClock = (ms: number, wake: (fn: () => void) => void): Promise<void> =>
     new Promise((resolve) => {
-      let t: NodeJS.Timeout;
-      let halt: NodeJS.Timeout;
+      let woken = false;
       const done = (): void => {
-        clearTimeout(t);
-        clearInterval(halt);
+        if (woken) return;
+        woken = true;
         resolve();
       };
-      t = setTimeout(done, ms);
-      halt = setInterval(() => {
-        if (a.st.halted) done();
-      }, 1000);
+      void waitOrStop(ms, a.st.stop.signal).then(done);
       wake(done);
     });
   const nextCommit = (ms: number): Promise<void> =>
