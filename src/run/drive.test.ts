@@ -17,10 +17,10 @@ function says(reply: string) {
 }
 
 test("a driver is given a browser, one address, and no way to touch the repository", async () => {
-  const { ask, seen } = says("GREEN typed a task, it appeared in the list");
+  const { ask, seen } = says("1. GREEN typed a task, it appeared in the list");
   await driveOne(
     { at: "https://todo.example.com/app", model: "m", ask },
-    { promise: "a task added is shown", criterion: "the user adds a task and sees it in the list" },
+    { promise: "a task added is shown", criteria: [{ text: "the user adds a task and sees it in the list" }] },
     1,
   );
   const o = seen[0];
@@ -35,31 +35,39 @@ test("a driver is given a browser, one address, and no way to touch the reposito
     assert.ok((o.disallowedTools as string[]).includes(forbidden), `${forbidden} is refused`);
 });
 
-test("the driver's word is the verdict, and its line is the reason", async () => {
-  const { ask } = says("I opened the page.\nRED the Add button does nothing — no task appears");
-  const p = await driveOne(
+test("one session answers every criterion of its promise, each in its own words", async () => {
+  const { ask } = says(
+    "I opened the page.\n1. GREEN the list showed the soonest first\n2. RED the Add button does nothing — no task appears",
+  );
+  const ps = await driveOne(
     { at: "https://x.test", model: "m", ask },
-    { promise: "a task added is shown", criterion: "adding a task shows it", criterionId: "AC-1" },
+    {
+      promise: "a task added is shown",
+      criteria: [
+        { id: "AC-1", text: "the list is in due-date order" },
+        { id: "AC-2", text: "adding a task shows it" },
+      ],
+    },
     1,
   );
-  assert.equal(p.verdict, "red");
-  assert.equal(p.criterionId, "AC-1");
-  assert.equal(p.ref, "https://x.test", "the proof says where to go and look");
-  assert.match(p.label, /the Add button does nothing/);
+  assert.deepEqual(ps.map((p) => p.verdict), ["green", "red"], "a verdict per criterion, from one browser");
+  assert.deepEqual(ps.map((p) => p.criterionId), ["AC-1", "AC-2"]);
+  assert.equal(ps[1].ref, "https://x.test", "the proof says where to go and look");
+  assert.match(ps[1].label, /the Add button does nothing/);
 });
 
 test("a driver that never answers leaves the promise unjudged — never a pass nobody saw", async () => {
   const { ask } = says("I could not reach the page.");
-  const p = await driveOne(
+  const ps = await driveOne(
     { at: "https://x.test", model: "m", ask },
-    { promise: "p", criterion: "c" },
+    { promise: "p", criteria: [{ text: "c" }] },
     1,
   );
-  assert.equal(p.verdict, "unjudged");
+  assert.deepEqual(ps.map((p) => p.verdict), ["unjudged"]);
 });
 
-test("every criterion is judged, and each proof answers its own criterion", async () => {
-  const replies = ["GREEN one", "RED two", "GREEN three"];
+test("every promise is judged, and the verdicts come back grouped as they were asked", async () => {
+  const replies = ["1. GREEN one", "1. RED two", "1. GREEN three"];
   let i = 0;
   const ask = async () =>
     ({
@@ -68,13 +76,13 @@ test("every criterion is judged, and each proof answers its own criterion", asyn
       },
     }) as AsyncIterable<unknown>;
   const proofs = await driveAll({ at: "https://x.test", model: "m", ask }, [
-    { promise: "p1", criterion: "c1" },
-    { promise: "p2", criterion: "c2" },
-    { promise: "p3", criterion: "c3" },
+    { promise: "p1", criteria: [{ text: "c1" }] },
+    { promise: "p2", criteria: [{ text: "c2" }] },
+    { promise: "p3", criteria: [{ text: "c3" }] },
   ]);
-  assert.equal(proofs.length, 3);
+  assert.equal(proofs.length, 3, "one list per promise");
   assert.deepEqual(
-    proofs.map((p) => p.verdict).sort(),
+    proofs.flat().map((p) => p.verdict).sort(),
     ["green", "green", "red"],
     "each one carries its own verdict",
   );

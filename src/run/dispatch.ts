@@ -646,6 +646,20 @@ export async function dispatchTep(
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");
       noProduct("this repository is not deployed by the platform, so nothing can be driven");
+    } else if (d.alreadyThere) {
+      st.phase("live", "running", `the project already had this work — asking ${at}`);
+      const code = await knock(at);
+      const answering = code !== undefined && code < 500;
+      st.phase(
+        "live",
+        answering ? "done" : "failed",
+        answering ? `live at ${at}` : `${at} does not answer`,
+      );
+      if (!answering) noProduct(`${at} does not answer`);
+      outcome = answering
+        ? { ...outcome, delivery: { ...d, liveAt: at } }
+        : outcome;
+      if (answering) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots });
     } else {
       st.phase("live", "running", "waiting for the platform to notice the push");
       let went = await waitUntilLive({

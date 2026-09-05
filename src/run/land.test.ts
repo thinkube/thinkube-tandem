@@ -210,3 +210,17 @@ test("what sits on top of a merge is ours or it is not: tandem's own commits and
   assert.equal(foreign.length, 1, JSON.stringify(foreign));
   assert.equal(foreign[0].subject, "my own fix", "and it is named, so nothing takes it out silently");
 });
+
+test("a merge that moves nothing says so, so nothing waits for a build that will never start", async () => {
+  const { root } = await repo();
+  await branchWith(root, "tandem/x/TEP-13", "b.txt", "two\n");
+  const first = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-13", tep: "TEP-13", exec });
+  assert.equal(first.moved, true, "the first landing moved the project");
+
+  // The same work, landed again: the branch is gone with the merge, so a
+  // re-run lands a branch whose commits main already holds.
+  await git(root, "branch", "tandem/x/TEP-13b", "HEAD");
+  const again = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-13b", tep: "TEP-13", exec });
+  assert.equal(again.merged, true);
+  assert.equal(again.moved, false, "and this one moved nothing — there is no build coming");
+});

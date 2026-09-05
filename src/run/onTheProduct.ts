@@ -35,9 +35,14 @@ function driverId(n: number): string {
 export function seedDrivers(st: RunState, space: Space, cut: Cut, pageRoots: readonly string[]): string[] {
   const list = toDriveOf(space, cut, pageRoots);
   list.forEach((c, i) =>
-    st.seed(driverId(i + 1), "live", "drive", ["live"], `${c.promise} — ${c.criterion}`, [
-      { on: "live", kind: "needs", what: "it can only be judged once the product is answering" },
-    ]),
+    st.seed(
+      driverId(i + 1),
+      "live",
+      "drive",
+      ["live"],
+      `${c.promise}\n${c.criteria.map((x) => `- ${x.text}`).join("\n")}`,
+      [{ on: "live", kind: "needs", what: "it can only be judged once the product is answering" }],
+    ),
   );
   return list.map((_, i) => driverId(i + 1));
 }
@@ -68,19 +73,26 @@ export async function judgeOnTheProduct(a: {
     },
     list,
   );
-  proofs.forEach((p, i) => {
-    if (p.verdict === "unjudged") a.st.fail(ids[i], "no verdict came back — the promise stays for you to certify");
+  // One reviewer per promise, and its card says what it found: red when a
+  // criterion did not hold, failed when nothing came back at all.
+  proofs.forEach((forOne, i) => {
+    const red = forOne.find((p) => p.verdict === "red");
+    if (forOne.every((p) => p.verdict === "unjudged"))
+      a.st.fail(ids[i], "no verdict came back — the promise stays for you to certify");
+    else if (red) a.st.fail(ids[i], red.label);
     else a.st.set(ids[i], "done");
   });
   const d = a.outcome.delivery;
   if (!d) return a.outcome;
   // A criterion that was judged is no longer the person's to certify.
-  const settled = list.filter((_, i) => proofs[i]?.verdict !== "unjudged").map((c) => c.criterion);
+  const settled = list.flatMap((c, i) =>
+    c.criteria.filter((_, j) => proofs[i]?.[j]?.verdict !== "unjudged").map((x) => x.text),
+  );
   return {
     ...a.outcome,
     delivery: {
       ...d,
-      proofs: [...d.proofs, ...proofs],
+      proofs: [...d.proofs, ...proofs.flat()],
       ...(d.observations
         ? { observations: d.observations.filter((o) => !settled.some((c) => o.startsWith(c))) }
         : {}),

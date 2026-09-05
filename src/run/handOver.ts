@@ -43,7 +43,7 @@ export async function handOver(a: {
   recordPath: string | undefined;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   /** Merge this branch into the checkout's own and push it. */
-  land: () => Promise<{ ok: boolean; pushed?: boolean; head?: string; why?: string }>;
+  land: () => Promise<{ ok: boolean; pushed?: boolean; head?: string; why?: string; moved?: boolean }>;
   log: (line: string) => void;
 }): Promise<DispatchOutcome> {
   const { tep, branch, worktree, cut, deps, proofs, observations, undelivered, kept, recordPath, exec, log } = a;
@@ -104,6 +104,7 @@ export async function handOver(a: {
     };
   }
   if (landed.pushed === false) log(`${tep}: merged into the project, but ${landed.why}`);
+  else if (landed.moved === false) log(`${tep}: the project already has this work — nothing was merged, and nothing was pushed`);
   else log(`${tep}: merged and pushed — the platform is building it`);
   return {
     refusals: [],
@@ -113,6 +114,7 @@ export async function handOver(a: {
       ...delivery,
       mergedAt: a.producedAt,
       ...(landed.head ? { mergedHead: landed.head } : {}),
+      ...(landed.moved === false ? { alreadyThere: true } : {}),
       ...(landed.pushed === false && landed.why ? { notPushed: landed.why } : {}),
     },
   };

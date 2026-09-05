@@ -79,10 +79,11 @@ test("a promise that lands where the page is built is judged on the page — rea
     promise("n2", "backend/app/api/tasks.py", [{ id: "c4", text: "the endpoint returns tasks in order" }]),
   ]);
   const driven = toDriveOf(s, cut(["n1", "n2"]), ["frontend"]);
+  assert.equal(driven.length, 1, "one reviewer, for the one promise about the page");
   assert.deepEqual(
-    driven.map((d) => d.criterionId),
+    driven[0].criteria.map((c) => c.id),
     ["c1"],
-    "only what a person can do and see on the page",
+    "and it judges only what a person can do and see on the page",
   );
   assert.equal(driven[0].ask, "I can see my tasks in order", "and the reviewer is told what was asked");
 });
@@ -94,7 +95,7 @@ test("a criterion worded for a person watching is driven wherever it lands", () 
     ]),
   ]);
   assert.deepEqual(
-    toDriveOf(s, cut(["n1"]), []).map((d) => d.criterionId),
+    toDriveOf(s, cut(["n1"]), []).flatMap((d) => d.criteria.map((c) => c.id)),
     ["c1"],
   );
 });
@@ -108,7 +109,7 @@ test("the graph carries the reviewers from the first frame, each waiting on the 
     ]),
   ]);
   const ids = seedDrivers(st, s, cut(["n1"]), ["frontend"]);
-  assert.equal(ids.length, 2, "one reviewer per criterion");
+  assert.equal(ids.length, 1, "one reviewer for the promise, not one per criterion");
   for (const id of ids) {
     const u = st.units.get(id)!;
     assert.equal(u.role, "drive");
@@ -116,5 +117,7 @@ test("the graph carries the reviewers from the first frame, each waiting on the 
     assert.deepEqual(u.requires, ["live"], "on the deployment");
     assert.equal(u.waits?.[0]?.what, "it can only be judged once the product is answering");
   }
-  assert.match(st.units.get(ids[0])!.what ?? "", /soonest due date/, "and each says what it will judge");
+  const what = st.units.get(ids[0])!.what ?? "";
+  assert.match(what, /soonest due date/, "and it says what it will judge");
+  assert.match(what, /count matches the cards/, "every criterion of the promise, in one session");
 });

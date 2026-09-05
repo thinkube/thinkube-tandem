@@ -39,9 +39,9 @@ export function toDriveOf(
    *  repository declares them. A promise landing in one of them is a
    *  promise about the page. */
   pageRoots: readonly string[] = [],
-): { promise: string; criterion: string; criterionId?: string; ask?: string }[] {
+): { promise: string; criteria: { id?: string; text: string }[]; ask?: string }[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
-  const out: { promise: string; criterion: string; criterionId?: string; ask?: string }[] = [];
+  const out: { promise: string; criteria: { id?: string; text: string }[]; ask?: string }[] = [];
   const onThePage = (n: Change): boolean =>
     (n.grounding?.touchpoints ?? []).some((t) => pageRoots.some((r) => t.path === r || t.path.startsWith(`${r}/`)));
   for (const id of cut.changeIds) {
@@ -49,14 +49,18 @@ export function toDriveOf(
     if (!n) continue;
     const ask = space.asks.find((x) => n.serves.includes(x.id))?.text;
     const page = onThePage(n);
-    for (const c of n.acceptance) {
-      // Something to do and see on the page, or a criterion worded for a
-      // person watching. Never one that is answered elsewhere, and never
-      // an assessment: those are read, not driven.
-      const drivable = observationShaped(c.text) || (page && c.kind !== "assessment" && !c.settledBy);
-      if (drivable)
-        out.push({ promise: n.sentence, criterion: c.text, ...(c.id ? { criterionId: c.id } : {}), ...(ask ? { ask } : {}) });
-    }
+    // Something to do and see on the page, or a criterion worded for a
+    // person watching. Never one that is answered elsewhere, and never an
+    // assessment: those are read, not driven.
+    const criteria = n.acceptance
+      .filter((c) => observationShaped(c.text) || (page && c.kind !== "assessment" && !c.settledBy))
+      .map((c) => ({ ...(c.id ? { id: c.id } : {}), text: c.text }));
+    // ONE reviewer per promise, not per criterion. A promise is what the
+    // person cares about; its criteria are the script the reviewer follows
+    // in a single browser session. One session per criterion opened the
+    // same product five times to check five things about it, and filled
+    // the graph with cards that all said the same promise.
+    if (criteria.length) out.push({ promise: n.sentence, criteria, ...(ask ? { ask } : {}) });
   }
   return out;
 }

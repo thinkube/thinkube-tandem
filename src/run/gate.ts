@@ -666,7 +666,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     land: async () => {
       try {
         const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
-        return { ok: true, pushed: l.pushed, head: l.head, ...(l.why ? { why: l.why } : {}) };
+        return { ok: true, pushed: l.pushed, head: l.head, moved: l.moved, ...(l.why ? { why: l.why } : {}) };
       } catch (err) {
         return { ok: false, why: err instanceof Error ? err.message : String(err) };
       }

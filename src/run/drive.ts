@@ -25,13 +25,13 @@ import { theModel } from "../engine/theModel";
 import { Proof } from "../core/schema";
 import { collectText } from "../derive/round";
 
-/** What a driver is asked to settle. */
+/** What a driver is asked to settle: one promise, and the criteria that
+ *  say what it means. They are judged in one session, on one product. */
 export interface ToDrive {
-  /** The promise this criterion belongs to, in the person's own words. */
+  /** The promise, in the person's own words. */
   promise: string;
-  /** The criterion, as signed. */
-  criterion: string;
-  criterionId?: string;
+  /** Its criteria, as signed — the script the reviewer follows. */
+  criteria: { id?: string; text: string }[];
   /** The ask that wanted it, when there is one. */
   ask?: string;
 }
@@ -74,27 +74,21 @@ export function originOf(at: string): string {
   }
 }
 
-function verdictOf(reply: string | null | undefined): "GREEN" | "RED" | undefined {
+/**
+ * The reviewer's word for one criterion, from a reply that answers them
+ * all: the last line that names that criterion by its number.
+ */
+function verdictFor(reply: string | null | undefined, ord: number): { verdict: "GREEN" | "RED"; said: string } | undefined {
   if (!reply) return undefined;
-  const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, "").toUpperCase());
+  const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, ""));
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^GREEN\b/.test(lines[i])) return "GREEN";
-    if (/^RED\b/.test(lines[i])) return "RED";
+    const m = new RegExp(`^${ord}[).:\\s]+\\s*(GREEN|RED)\\b[:\\s—-]*(.*)$`, "i").exec(lines[i]);
+    if (m) return { verdict: m[1].toUpperCase() as "GREEN" | "RED", said: (m[2] ?? "").trim() };
   }
   return undefined;
 }
 
-/** The driver's one line, without its verdict word. */
-function reasonOf(reply: string): string {
-  const line =
-    reply
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .reverse()
-      .find((l) => /^(GREEN|RED)\b/i.test(l.replace(/^[*_`#>\-\s]+/, ""))) ?? "";
-  return line.replace(/^[*_`#>\-\s]+/, "").replace(/^(GREEN|RED)\b[:\s—-]*/i, "").trim();
-}
+
 
 async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
   const b = browserOf(a);
@@ -149,9 +143,8 @@ async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
  * Judge one criterion on the running product. The proof carries the
  * address, so a reader can go and look at the same thing the driver did.
  */
-export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<Proof> {
-  const label = `${c.promise} — ${c.criterion}`;
-  a.log?.(`live check ${ord}: opening ${a.at}`);
+export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<Proof[]> {
+  a.log?.(`on the running product ${ord}: opening ${a.at} — ${c.criteria.length} thing(s) to check`);
   const reply = await drive(
     a,
     [
@@ -163,44 +156,49 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       `THE ADDRESS: ${a.at} — the only address you may open.`,
       ...(c.ask ? [`THE ASK (the person's words): ${c.ask}`] : []),
       `THE PROMISE: ${c.promise}`,
-      `WHAT YOU ARE JUDGING: ${c.criterion}`,
       "",
-      "Open the address, do what the criterion describes, and look at what",
-      "happens. If the page needs you to sign in and no way in is offered,",
-      "that is a RED with that as the reason.",
+      "WHAT YOU ARE JUDGING, one by one:",
+      ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
+      "",
+      "Open the address once and check them in order, doing what each one",
+      "describes. If the page needs you to sign in and no way in is offered,",
+      "every one of them is RED with that as the reason.",
       "",
       "Leave the product as you found it where you can.",
       "",
-      "Answer with a LAST LINE of exactly one of:",
-      "GREEN <one line: what you did and what you saw>",
-      "RED <one line: what you did and what happened instead>",
+      "Answer with ONE LINE PER ITEM at the end, numbered as above:",
+      "1. GREEN <what you did and what you saw>",
+      "2. RED <what you did and what happened instead>",
     ].join("\n"),
   );
-  const verdict = verdictOf(reply);
-  if (!verdict) {
-    a.log?.(`live check ${ord}: no answer came back — it stays unjudged`);
+  return c.criteria.map((x, i) => {
+    const answer = verdictFor(reply, i + 1);
+    const label = `${c.promise} — ${x.text}`;
+    if (!answer) {
+      a.log?.(`on the running product ${ord}.${i + 1}: no answer came back — it stays unjudged`);
+      return {
+        kind: "assessment" as const,
+        label,
+        verdict: "unjudged" as const,
+        ref: a.at,
+        ...(x.id ? { criterionId: x.id } : {}),
+      };
+    }
+    a.log?.(`on the running product ${ord}.${i + 1}: ${answer.verdict}${answer.said ? ` — ${answer.said}` : ""}`);
     return {
-      kind: "assessment",
-      label,
-      verdict: "unjudged",
+      kind: "assessment" as const,
+      label: answer.said ? `${label} — ${answer.said}` : label,
+      verdict: (answer.verdict === "GREEN" ? "green" : "red") as "green" | "red",
       ref: a.at,
-      ...(c.criterionId ? { criterionId: c.criterionId } : {}),
+      ...(x.id ? { criterionId: x.id } : {}),
     };
-  }
-  const said = reasonOf(reply ?? "");
-  a.log?.(`live check ${ord}: ${verdict}${said ? ` — ${said}` : ""}`);
-  return {
-    kind: "assessment",
-    label: said ? `${label} — ${said}` : label,
-    verdict: verdict === "GREEN" ? "green" : "red",
-    ref: a.at,
-    ...(c.criterionId ? { criterionId: c.criterionId } : {}),
-  };
+  });
 }
 
-/** Judge every one of them, a few at a time — each waits on a browser. */
-export async function driveAll(a: DriveArgs, list: ToDrive[]): Promise<Proof[]> {
-  const out: Proof[] = [];
+/** Judge every promise, a few at a time — each waits on a browser. The
+ *  verdicts come back grouped as they were asked: one list per promise. */
+export async function driveAll(a: DriveArgs, list: ToDrive[]): Promise<Proof[][]> {
+  const out: Proof[][] = [];
   const AT_ONCE = 3;
   for (let i = 0; i < list.length; i += AT_ONCE) {
     const batch = list.slice(i, i + AT_ONCE);

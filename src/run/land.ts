@@ -26,7 +26,7 @@ export async function landDelivery(a: {
   branch: string;
   tep: string;
   exec: GitExec;
-}): Promise<{ merged: true; head: string; pushed: boolean; why?: string }> {
+}): Promise<{ merged: true; head: string; pushed: boolean; why?: string; moved: boolean }> {
   const git = (...args: string[]) => a.exec("git", ["-C", a.repoRoot, ...args], a.repoRoot);
   const has = await git("rev-parse", "--verify", "--quiet", a.branch);
   if (has.code !== 0) throw new Error(`the branch ${a.branch} is not here — the work it held is gone`);
@@ -46,6 +46,10 @@ export async function landDelivery(a: {
       }
     }
   }
+  // The project may already hold everything this branch has — a run of a
+  // cut whose slices all stood, or a repair somebody pushed first. Then
+  // the merge is a no-op and so is the push: saying "merged and pushed"
+  // sends the run off to wait for a build that will never be triggered.
   const already = (await git("merge-base", "--is-ancestor", a.branch, "HEAD")).code === 0;
   const merge = already ? { code: 0, out: "" } : await git("merge", "--no-ff", "--no-edit", "-m", `tandem: accept ${a.tep}`, a.branch);
   if (merge.code !== 0) {
@@ -64,16 +68,19 @@ export async function landDelivery(a: {
     );
   }
   const head = (await git("rev-parse", "HEAD")).out.trim();
+  const remoteHas = remote && (await git("merge-base", "--is-ancestor", "HEAD", "origin/main")).code === 0;
+  const moved = !already || !remoteHas;
   const pushed = await git("push", "origin", "HEAD");
   if (pushed.code !== 0)
     return {
       merged: true,
       head,
       pushed: false,
+      moved,
       why: `the push was refused: ${pushed.out.trim().split("\n").pop() ?? ""} — push it yourself when the remote is reachable`,
     };
   await git("branch", "-d", a.branch);
-  return { merged: true, head, pushed: true };
+  return { merged: true, head, pushed: true, moved };
 }
 
 /**
