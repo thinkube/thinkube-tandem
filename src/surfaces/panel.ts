@@ -20,6 +20,9 @@ export interface PanelHostHooks {
    *  question already written. Used where the run has spent what it can do
    *  and the next move is a person's, with a machine beside them. */
   onAskForHelp?: (a: { cwd: string; prompt: string }) => Promise<void>;
+  /** Host-side gesture: open a file the run produced — a reviewer's
+   *  screenshot — in the editor beside the space. */
+  onOpenFile?: (path: string) => Promise<void>;
 }
 
 /** The surface of a webview panel that SpacePanel actually drives — small

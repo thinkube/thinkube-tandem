@@ -15,6 +15,8 @@
 import { Cut, Space } from "../core/schema";
 import { driveAll, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { DispatchOutcome, RunState } from "./state";
 
 /** The id a criterion's reviewer is drawn under, from the first frame of
@@ -57,6 +59,10 @@ export async function judgeOnTheProduct(a: {
   outcome: DispatchOutcome;
   /** Where the page is built, as the repository declares it. */
   pageRoots: readonly string[];
+  /** Where this run keeps its record — the reviewers' pictures go beside
+   *  it, one directory each. */
+  storeDir?: string;
+  runId?: string;
   /** Injectable for tests: what actually opens the browser. */
   drive?: typeof driveAll;
 }): Promise<DispatchOutcome> {
@@ -65,14 +71,36 @@ export async function judgeOnTheProduct(a: {
   const ids = list.map((_, i) => driverId(i + 1));
   for (const id of ids) if (!a.st.units.has(id)) seedDrivers(a.st, a.space, a.cut, a.pageRoots);
   for (const id of ids) a.st.set(id, "running");
+  // One directory per reviewer, named for it, beside the run's record.
+  const looksIn = (id: string): string | undefined =>
+    a.storeDir ? path.join(a.storeDir, "looks", a.runId ?? "run", id) : undefined;
+  for (const id of ids) {
+    const dir = looksIn(id);
+    if (dir) fs.mkdirSync(dir, { recursive: true });
+  }
   const proofs = await (a.drive ?? driveAll)(
     {
       at: a.at,
       model: a.deps.model,
       log: (l) => a.log(l, "live"),
+      looksIn: (id: string) => looksIn(id),
     },
     list,
+    ids,
   );
+  // What each reviewer looked at, on its own card.
+  for (const id of ids) {
+    const dir = looksIn(id);
+    if (!dir) continue;
+    const shots = (() => {
+      try {
+        return fs.readdirSync(dir).filter((f) => /\.(png|jpe?g)$/i.test(f)).sort().map((f) => path.join(dir, f));
+      } catch {
+        return [];
+      }
+    })();
+    a.st.looked(id, shots);
+  }
   // One reviewer per promise, and its card says what it found: red when a
   // criterion did not hold, failed when nothing came back at all.
   proofs.forEach((forOne, i) => {

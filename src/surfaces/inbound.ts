@@ -31,6 +31,8 @@ export interface InboundAction {
   stepId?: string;
   page?: number;
   into?: string;
+  /** open-look: which of a reviewer's screenshots to open. */
+  path?: string;
 }
 import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
@@ -121,6 +123,13 @@ export async function handleInbound(
   } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "open-look" && msg.path) {
+    // Only what this run wrote: a path from anywhere else is not the
+    // surface's to open.
+    const looks = (session.runState?.view().units ?? []).flatMap((u) => u.looks ?? []);
+    if (!looks.includes(msg.path)) note = "that picture does not belong to this run";
+    else if (!hooks?.onOpenFile) note = "this window cannot open files";
+    else await hooks.onOpenFile(msg.path);
   } else if (msg.action === "ask-for-help" && msg.deliveryId) {
     const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
     if (!d) note = "that delivery is not here any more";

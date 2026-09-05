@@ -66,7 +66,7 @@ export function mintId(label: string, rand: () => string = () => randomBytes(3).
  * store and every clone re-links itself, which a file in the working tree
  * could never do.
  */
-function readCard(dir: string, storeRoot: string, seen?: Lookup): SpaceCard | undefined {
+export function readCard(dir: string, storeRoot: string, seen?: Lookup): SpaceCard | undefined {
   const gitRoot = findGitRoot(dir) ?? dir;
   if (linkedWorktree(gitRoot)) return undefined;
   const prefix = path.relative(gitRoot, dir).split(path.sep).join("/");

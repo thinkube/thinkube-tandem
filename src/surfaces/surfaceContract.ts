@@ -137,6 +137,9 @@ interface RunView {
      *  matched to the unit; the card falls back to its slice title. */
     promiseLabel?: { label: string; full: string };
     role: "code" | "test" | "maintain" | "drive";
+    /** Pictures this unit decided on, as absolute paths — a reviewer of
+     *  the running product takes one per criterion. */
+    looks?: string[];
     /** What this unit builds, in the reading's own words. */
     what?: string;
     state: string;
@@ -333,6 +336,8 @@ export type WebToHost =
   /** The run tried what it could and the platform still refuses the work:
    *  open a Claude session on this repository with the failure written out. */
   | { action: "ask-for-help"; deliveryId: string }
+  /** Open one of a reviewer's screenshots in the editor. */
+  | { action: "open-look"; path: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }

@@ -19,6 +19,7 @@ import { repairUntilLive } from "./tryAgain";
 import { repairAfterTheMerge } from "./repairLive";
 import { landDelivery } from "./land";
 import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
+import { stampPending } from "./harvest";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -659,7 +660,7 @@ export async function dispatchTep(
       outcome = answering
         ? { ...outcome, delivery: { ...d, liveAt: at } }
         : outcome;
-      if (answering) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots });
+      if (answering) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots, ...(deps.storeDir ? { storeDir: deps.storeDir } : {}), ...(runId ? { runId } : {}) });
     } else {
       st.phase("live", "running", "waiting for the platform to notice the push");
       let went = await waitUntilLive({
@@ -725,8 +726,15 @@ export async function dispatchTep(
       st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
       if (!went.live) noProduct(went.why ?? "the work never went live");
       const heads = alsoMerged.length && d.mergedHead ? { mergedHeads: [d.mergedHead, ...alsoMerged] } : {};
+      // What the pipeline settles, the pipeline has now answered. The run
+      // watched that build; leaving those criteria "pending" reported work
+      // as unreachable minutes after the machine that reaches it had said
+      // yes.
+      const settledByThePipeline = went.live
+        ? stampPending(d, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt))
+        : d;
       outcome = went.live
-        ? { ...outcome, delivery: { ...d, ...heads, liveAt: at } }
+        ? { ...outcome, delivery: { ...settledByThePipeline, ...heads, liveAt: at } }
         : {
             ...outcome,
             delivery: {
@@ -744,7 +752,7 @@ export async function dispatchTep(
       // What only the running product can show is judged on the running
       // product. Each criterion is its own reviewer, and each waits on the
       // deployment — so the graph says what the person is waiting for.
-      if (went.live) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots });
+      if (went.live) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots, ...(deps.storeDir ? { storeDir: deps.storeDir } : {}), ...(runId ? { runId } : {}) });
     }
   }
   return outcome;

@@ -142,6 +142,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   // that the code was written, checked, merged, built and deployed.
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
   const pending = d.pending?.length ?? 0;
+  const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand/i.test(p.settledBy)).length;
   const story = !d.merged
     ? undefined
     : [
@@ -152,7 +153,10 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
             : "This was coded, its checks were written and run, it passed the closing gate, and it was merged into the project.",
         d.liveAt && !broken ? `It is running at ${d.liveAt}.` : "",
         kept ? `${kept} check${kept === 1 ? "" : "s"} passed.` : "",
-        pending ? `${pending} promise${pending === 1 ? " is" : "s are"} answered somewhere this run cannot reach — listed below.` : "",
+        pending - onlyYou
+          ? `${pending - onlyYou} check${pending - onlyYou === 1 ? " is" : "s are"} settled where the work runs — the pipeline's own tests — and are listed below.`
+          : "",
+        onlyYou ? `${onlyYou} thing${onlyYou === 1 ? "" : "s"} only you can settle, listed below.` : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -450,7 +454,11 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
           )}
           {d.pending?.length ? (
             <div data-pending={d.id} style={{ fontSize: FS.body, flexBasis: "100%", marginTop: SP.sm }}>
-              <strong>Answered after the merge — not by anything this run could reach:</strong>
+              <strong>
+                {d.pending.every((p) => /attest|person|clean node|install|by hand/i.test(p.settledBy))
+                  ? "Only you can settle these:"
+                  : "Answered where the work runs, not in this tree:"}
+              </strong>
               <ul style={{ margin: `${SP.xs}px 0 0`, paddingLeft: 18 }}>
                 {d.pending.map((p, i) => (
                   <li key={i} style={{ marginBottom: SP.xs }}>

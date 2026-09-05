@@ -62,6 +62,10 @@ export interface RunUnitView {
   /** What the unit is doing or waiting on right now, and since when — the
    *  card says "waiting on verify — round 3, 4m" instead of "running". */
   activity?: { text: string; since: number };
+  /** Pictures of what this unit decided on: a reviewer of the running
+   *  product takes one per criterion, and the card links them so the
+   *  person looks at the same page it did. Absolute paths. */
+  looks?: string[];
 }
 
 /**
@@ -233,6 +237,14 @@ export class RunState {
   }
 
   /** A failure that cannot say why is a failure the human cannot act on. */
+  /** What a unit looked at, for the card to link. */
+  looked(id: string, files: readonly string[]): void {
+    const u = this.units.get(id);
+    if (!u || !files.length) return;
+    u.looks = [...files];
+    this.onChange();
+  }
+
   fail(id: string, why: string): void {
     const u = this.units.get(id);
     if (!u) return;

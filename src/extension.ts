@@ -325,6 +325,9 @@ export function activate(context: vscode.ExtensionContext): void {
     onAskForHelp: async (a: { cwd: string; prompt: string }) => {
       await launcher.openHere(vscode.Uri.file(a.cwd), a.prompt);
     },
+    onOpenFile: async (p: string) => {
+      await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(p));
+    },
   };
   // One panel per thinking space: opening a space never disposes another
   // space's panel — each is made once per key and reused after that. A tab

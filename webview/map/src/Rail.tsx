@@ -115,6 +115,24 @@ function StepLog(props: {
               <Builds what={unit.what} />
             </>
           ) : null}
+          {unit.looks?.length ? (
+            <>
+              <div style={label}>What it looked at</div>
+              <div style={{ display: "flex", gap: SP.xs, flexWrap: "wrap", marginBottom: SP.sm }}>
+                {unit.looks.map((p, i) => (
+                  <button
+                    key={p}
+                    data-look={p}
+                    onClick={() => post({ action: "open-look", path: p })}
+                    style={{ fontSize: FS.caption, cursor: "pointer" }}
+                    title={p}
+                  >
+                    look {i + 1}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
           {unit.waits?.length ? (
             <>
               <div style={label}>Waits for</div>

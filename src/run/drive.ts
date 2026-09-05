@@ -40,6 +40,10 @@ export interface DriveArgs {
   /** Where the product answers. The only address the driver may open. */
   at: string;
   model: string;
+  /** Where a reviewer's screenshots are written — one directory per
+   *  reviewer, kept beside the run's own record, so what it decided on can
+   *  be looked at afterwards. */
+  looksIn?: string | ((id: string) => string | undefined);
   /** The browser the driver reaches through, as a command to run. */
   browser?: { command: string; args: string[] };
   log?: (line: string) => void;
@@ -59,7 +63,19 @@ function browserOf(a: DriveArgs): { command: string; args: string[] } {
   return (
     a.browser ?? {
       command: "npx",
-      args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated", "--allowed-origins", originOf(a.at)],
+      args: [
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless",
+        "--isolated",
+        "--allowed-origins",
+        originOf(a.at),
+        // Big enough to read afterwards: a screenshot of a phone-sized
+        // window proves nothing about the page a person opens.
+        "--viewport-size",
+        "1440,900",
+        ...(typeof a.looksIn === "string" ? ["--output-dir", a.looksIn] : []),
+      ],
     }
   );
 }
@@ -164,6 +180,10 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "describes. If the page needs you to sign in and no way in is offered,",
       "every one of them is RED with that as the reason.",
       "",
+      "Take a screenshot of the page for each item, at the moment you decide",
+      "it — that picture is what the person will look at, so let it show the",
+      "thing you are judging.",
+      "",
       "Leave the product as you found it where you can.",
       "",
       "Answer with ONE LINE PER ITEM at the end, numbered as above:",
@@ -197,12 +217,16 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
 
 /** Judge every promise, a few at a time — each waits on a browser. The
  *  verdicts come back grouped as they were asked: one list per promise. */
-export async function driveAll(a: DriveArgs, list: ToDrive[]): Promise<Proof[][]> {
+export async function driveAll(a: DriveArgs, list: ToDrive[], ids: readonly string[] = []): Promise<Proof[][]> {
   const out: Proof[][] = [];
   const AT_ONCE = 3;
+  const mine = (i: number): DriveArgs => {
+    const dir = typeof a.looksIn === "function" ? a.looksIn(ids[i] ?? `${i + 1}`) : a.looksIn;
+    return { ...a, ...(dir ? { looksIn: dir } : {}) };
+  };
   for (let i = 0; i < list.length; i += AT_ONCE) {
     const batch = list.slice(i, i + AT_ONCE);
-    out.push(...(await Promise.all(batch.map((c, j) => driveOne(a, c, i + j + 1)))));
+    out.push(...(await Promise.all(batch.map((c, j) => driveOne(mine(i + j), c, i + j + 1)))));
   }
   return out;
 }
