@@ -181,6 +181,12 @@ export function App(props: {
         </button>
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: SP.md }}>
           <span data-next-hint style={{ fontSize: FS.caption, color: C.quiet }}>{next.hint}</span>
+          {/* One press, once. The run draws its own Stop beside the
+              progress it stops; repeating it here put two Stops on the
+              same screen, in two colours, for one act. The strip still
+              says where you are, and it keeps the press whenever that
+              view is not the one being read. */}
+          {next.move?.kind === "post" && next.move.action.action === "stop-run" && tab === "flow" && push.run ? null : (
           <button
             data-next
             data-busy={moving ? "1" : undefined}
@@ -201,6 +207,7 @@ export function App(props: {
           >
             {moving && !next.busy ? "Starting…" : next.label}
           </button>
+          )}
         </span>
       </div>
       {regionOrder.map((region) => {
