@@ -186,3 +186,27 @@ test("signed work that never ran: the one press is Run it again, before any othe
   assert.match(n.hint, /product build fails/);
   assert.deepEqual(n.move, { kind: "post", action: { action: "rerun" } });
 });
+
+/**
+ * Work that is in the project and will not build is not offered as
+ * something to keep. "Keep it" over a failed build reads as keeping the
+ * failure, and the act that leaves the project working is the other one.
+ */
+test("when the platform refuses the merged work, the one press is to take it back out", () => {
+  const push = quiet({
+    deliveries: [
+      {
+        id: "d1",
+        page: "",
+        accepted: false,
+        merged: true,
+        afterMerge: { outcome: "broke" as const, said: "the platform", detail: "build-frontend did not pass", tried: 2 },
+      },
+    ],
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Roll it back");
+  assert.match(n.where, /the platform will not build it/);
+  assert.match(n.hint ?? "", /build-frontend did not pass/, "in the platform's own words");
+  assert.deepEqual(n.move, { kind: "post", action: { action: "reject-delivery", deliveryId: "d1" } });
+});

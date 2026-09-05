@@ -131,6 +131,10 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
 
   const seen = d.observations ?? [];
   const stuck = d.withheld ?? d.blocked;
+  // In the project, and the platform refuses it: the decision is not the
+  // ordinary one, and offering "Keep it" for work that does not build
+  // reads as keeping a failure.
+  const broken = !!d.merged && d.afterMerge?.outcome === "broke";
   const account = [...(d.undelivered ?? [])];
 
   return (
@@ -345,6 +349,45 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
             <span data-accepted={d.id} style={{ color: C.ok, fontSize: FS.body, fontWeight: 600 }}>✓ Accepted</span>
           ) : stuck ? (
             <>{d.rerun ? <RunAgain phase={push.phase} /> : null}</>
+          ) : broken ? (
+            // The platform will not build what is in the project. Taking it
+            // back out is the act that leaves the project working, so it
+            // leads; keeping it is a real choice, and it is named for what
+            // it is rather than offered as the ordinary one.
+            <>
+              <button
+                data-reject-delivery={d.id}
+                disabled={!can("reject-delivery")}
+                style={{ fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
+                title={
+                  can("reject-delivery")
+                    ? "Roll it back — the merge is taken out and pushed, and the platform builds the project as it was."
+                    : refusalSentence("reject-delivery", push.phase)
+                }
+                onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
+              >
+                Roll it back
+              </button>
+              <button
+                data-accept-delivery={d.id}
+                disabled={!can("accept-delivery")}
+                style={{ padding: `${SP.xs}px ${SP.md}px` }}
+                title={
+                  can("accept-delivery")
+                    ? "Keep it anyway — the work stays in the project and the platform goes on refusing it, for you to fix by hand."
+                    : refusalSentence("accept-delivery", push.phase)
+                }
+                onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
+              >
+                Keep it anyway
+              </button>
+              {d.rerun ? <RunAgain phase={push.phase} /> : null}
+              {push.acceptRefusal ? (
+                <div data-accept-refusal style={{ fontSize: FS.body, color: C.bad, flexBasis: "100%", marginTop: SP.xs }}>
+                  Not done — {push.acceptRefusal}
+                </div>
+              ) : null}
+            </>
           ) : (
             <>
               <button

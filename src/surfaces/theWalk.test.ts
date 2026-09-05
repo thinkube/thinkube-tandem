@@ -391,7 +391,11 @@ test("the walk, refused: the work is taken back out of the project and the thing
     false,
     "and out again",
   );
-  assert.equal(git(root, "log", "--format=%s", "-1"), `tandem: roll back ${v.push.deliveries[0].tep}`);
+  assert.match(
+    git(root, "log", "--format=%s", "-1"),
+    new RegExp(`^tandem: roll back ${v.push.deliveries[0].tep} \\([0-9a-f]{8}\\)$`),
+    "the history says what was taken out, and which merge",
+  );
   assert.equal(git(root, "rev-parse", "main"), git(root, "rev-parse", "origin/main"), "the platform is told");
   assert.equal(v.push.deliveries[0].accepted, false, "nothing was accepted");
   const again = v.things.find((t) => t.open);

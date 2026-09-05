@@ -103,6 +103,56 @@ export async function sealWorktree(repoRoot: string, worktree: string, exec: Git
  * The work itself is not lost. It is in the merge that was reverted, and
  * a later run starts from what was learned by taking it back out.
  */
+/**
+ * What sits on main between a merge and the tip, and whether it is ours.
+ *
+ * A space knows the merges it landed by name. Everything else on the
+ * first-parent line is either the platform's own — it commits an image tag
+ * to the deployment manifests after every build, which touches nothing the
+ * work touches — or somebody's commit, and reverting over that is taking
+ * out work this space never made.
+ */
+export async function foreignSince(a: {
+  repoRoot: string;
+  head: string;
+  /** Every merge this space landed, by commit. */
+  ours: readonly string[];
+  exec: GitExec;
+}): Promise<{ commit: string; subject: string }[]> {
+  const git = (...args: string[]) => a.exec("git", ["-C", a.repoRoot, ...args], a.repoRoot);
+  const mine = new Set(a.ours);
+  const line = (await git("log", "--first-parent", "--format=%H%x00%s", `${a.head}..HEAD`)).out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const [commit, subject] = l.split("\u0000");
+      return { commit, subject: subject ?? "" };
+    });
+  const out: { commit: string; subject: string }[] = [];
+  for (const c of line) {
+    if (mine.has(c.commit)) continue;
+    // Tandem's own commits after a deploy: the merge, a repair the
+    // platform's refusal asked for, a rollback. Only this machine writes
+    // them, and they belong to the space that is being taken back out.
+    if (/^tandem: /.test(c.subject)) continue;
+    // The platform's own commit after a build: it writes an image tag into
+    // the deployment manifests and nothing else.
+    const touched = (await git("show", "--name-only", "--format=", c.commit)).out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (touched.length && touched.every((p) => /^k8s\//.test(p) || /kustomization\.ya?ml$/.test(p))) continue;
+    out.push(c);
+  }
+  return out;
+}
+
+/** What a rollback commit says: which delivery, and which of its merges. */
+function rollbackSubject(tep: string, head: string): string {
+  return `tandem: roll back ${tep} (${head.slice(0, 8)})`;
+}
+
 export async function revertDelivery(a: {
   repoRoot: string;
   head: string;
@@ -113,7 +163,7 @@ export async function revertDelivery(a: {
   const known = await git("cat-file", "-e", `${a.head}^{commit}`);
   if (known.code !== 0) return { ok: false, why: `the merge ${a.head.slice(0, 8)} is not in this repository` };
   const already = await git("log", "--format=%s", `${a.head}..HEAD`);
-  if (already.out.includes(`tandem: roll back ${a.tep}`)) return { ok: true };
+  if (already.out.includes(rollbackSubject(a.tep, a.head))) return { ok: true };
   await git("fetch", "--quiet", "origin");
   const remote = (await git("rev-parse", "--verify", "--quiet", "origin/main")).out.trim();
   if (remote && (await git("merge-base", "--is-ancestor", "origin/main", "HEAD")).code !== 0) {
@@ -127,7 +177,7 @@ export async function revertDelivery(a: {
   // takes out exactly what the merge brought in.
   const back = await git("revert", "--no-commit", "-m", "1", a.head);
   if (back.code === 0) {
-    const said = await git("commit", "-m", `tandem: roll back ${a.tep}`);
+    const said = await git("commit", "-m", rollbackSubject(a.tep, a.head));
     if (said.code !== 0)
       return { ok: false, why: `the revert could not be committed: ${said.out.trim().split("\n").pop() ?? ""}` };
   }

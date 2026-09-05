@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
-import { landDelivery, revertDelivery, sealWorktree, type GitExec } from "./land";
+import { foreignSince, landDelivery, revertDelivery, sealWorktree, type GitExec } from "./land";
 
 const exec: GitExec = (cmd, args, cwd) =>
   new Promise((resolve) =>
@@ -157,7 +157,11 @@ test("saying no takes the work back out of the project and pushes that", async (
   const here = (await git(root, "rev-parse", "HEAD")).out.trim();
   assert.equal(remoteHead, here, "the platform is told, so it builds the project as it was");
   const said = (await git(root, "log", "-1", "--format=%s")).out.trim();
-  assert.equal(said, "tandem: roll back TEP-9", "and the history says what happened");
+  assert.equal(
+    said,
+    `tandem: roll back TEP-9 (${landed.head.slice(0, 8)})`,
+    "and the history says what happened, and to which merge",
+  );
 });
 
 test("a rollback already made is not made twice", async () => {
@@ -175,4 +179,34 @@ test("a merge this repository does not have cannot be rolled back, and says so",
   const back = await revertDelivery({ repoRoot: root, head: "0".repeat(40), tep: "TEP-11", exec });
   assert.equal(back.ok, false);
   assert.match(back.why ?? "", /not in this repository/);
+});
+
+test("what sits on top of a merge is ours or it is not: tandem's own commits and the platform's image tags are ours", async () => {
+  const { root } = await repo();
+  await branchWith(root, "tandem/x/TEP-12", "b.txt", "two\n");
+  const first = await landDelivery({ repoRoot: root, branch: "tandem/x/TEP-12", tep: "TEP-12", exec });
+
+  // The platform commits an image tag after every build.
+  fs.mkdirSync(path.join(root, "k8s"), { recursive: true });
+  fs.writeFileSync(path.join(root, "k8s/kustomization.yaml"), "images:\n  - newTag: abc\n");
+  await git(root, "add", "k8s/kustomization.yaml");
+  await git(root, "commit", "-q", "-m", "build: automatic image update");
+  // And the run repaired what the platform refused, and pushed again.
+  fs.writeFileSync(path.join(root, "b.txt"), "two, fixed\n");
+  await git(root, "add", "b.txt");
+  await git(root, "commit", "-q", "-m", "tandem: TEP-12 — what the platform refused (attempt 1)");
+
+  assert.deepEqual(
+    await foreignSince({ repoRoot: root, head: first.head, ours: [first.head], exec }),
+    [],
+    "neither of those is somebody else's work",
+  );
+
+  // A person's own commit is.
+  fs.writeFileSync(path.join(root, "a.txt"), "edited by hand\n");
+  await git(root, "add", "a.txt");
+  await git(root, "commit", "-q", "-m", "my own fix");
+  const foreign = await foreignSince({ repoRoot: root, head: first.head, ours: [first.head], exec });
+  assert.equal(foreign.length, 1, JSON.stringify(foreign));
+  assert.equal(foreign[0].subject, "my own fix", "and it is named, so nothing takes it out silently");
 });

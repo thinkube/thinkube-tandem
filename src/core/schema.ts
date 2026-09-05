@@ -288,6 +288,10 @@ export interface Delivery {
   /** The merge the hand-over made. Taking the work back out is reverting
    *  this one commit. */
   mergedHead?: string;
+  /** Every merge this delivery made, oldest first, when the platform
+   *  refused the first one and the run repaired and pushed again. Taking
+   *  the work back out means reverting all of them, newest first. */
+  mergedHeads?: string[];
   /** Why the merge never reached the remote, when it did not. The work is
    *  in the project; the platform has not seen it. */
   notPushed?: string;

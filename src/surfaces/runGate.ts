@@ -14,7 +14,7 @@ import { RunState, silentVerdict } from "../run/state";
 import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
 import { appendDefect } from "../engine/defectLog";
 import { acceptOrder } from "../engine/acceptOrder";
-import { landDelivery, revertDelivery } from "../run/land";
+import { foreignSince, landDelivery, revertDelivery } from "../run/land";
 import { execFile } from "node:child_process";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
@@ -526,34 +526,71 @@ export function signedIdleNotice(view: {
 export async function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): Promise<{ ok: boolean; reason?: string }> {
   const d = s.space.deliveries.find((x) => x.id === deliveryId);
   if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
-  if (d.acceptedAt) return { ok: false, reason: "it was already accepted" };
-  const cut = s.space.cuts.find((c) => c.id === d.cutId);
-  if (d.mergedAt && d.mergedHead) {
-    const back = await revertDelivery({
-      repoRoot: s.deps.scope?.gitRoot ?? s.deps.round.repoRoot,
+  const repoRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  const exec = (cmd: string, args: string[], cwd: string): Promise<{ code: number; out: string }> =>
+    new Promise((resolve) =>
+      execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
+        resolve({
+          code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0,
+          out: `${stdout ?? ""}${stderr ?? ""}`,
+        }),
+      ),
+    );
+  const tepOf = (x: Delivery): string => s.space.cuts.find((c) => c.id === x.cutId)?.tepId ?? x.id;
+  // A delivery the run had to repair after merging made more than one
+  // merge. All of them come out, newest first.
+  const headsOf = (x: Delivery): string[] => x.mergedHeads ?? (x.mergedHead ? [x.mergedHead] : []);
+  // Everything this space put in the project, oldest first. Undoing one
+  // means undoing what was merged on top of it, newest first — otherwise
+  // the revert takes out a later cut's ground from under it.
+  const landed = s.space.deliveries
+    .filter((x) => x.mergedHead && !x.rejectedAt)
+    .sort((p, q) => (p.mergedAt ?? "").localeCompare(q.mergedAt ?? ""));
+  const from = landed.findIndex((x) => x.id === deliveryId);
+  if (d.mergedHead && from >= 0) {
+    // Only over this space's own commits. Somebody else's work on top is
+    // named and nothing is touched.
+    const foreign = await foreignSince({
+      repoRoot,
       head: d.mergedHead,
-      tep: cut?.tepId ?? d.id,
-      exec: (cmd, args, cwd) =>
-        new Promise((resolve) =>
-          execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
-            resolve({
-              code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0,
-              out: `${stdout ?? ""}${stderr ?? ""}`,
-            }),
-          ),
-        ),
+      ours: landed.flatMap(headsOf),
+      exec,
     });
-    if (!back.ok) return { ok: false, reason: back.why ?? "the work could not be taken back out" };
+    if (foreign.length)
+      return {
+        ok: false,
+        reason:
+          `commits that are not this space's sit on top of it: ${foreign
+            .map((c) => `${c.commit.slice(0, 8)} ${c.subject}`)
+            .slice(0, 3)
+            .join("; ")} — taking this out would take those with it`,
+      };
+    const undo = landed.slice(from).reverse();
+    for (const x of undo)
+      for (const head of headsOf(x).slice().reverse()) {
+        const back = await revertDelivery({ repoRoot, head, tep: tepOf(x), exec });
+        if (!back.ok) return { ok: false, reason: back.why ?? "the work could not be taken back out" };
+      }
+    const out = new Set(undo.map((x) => x.id));
+    s.space = {
+      ...s.space,
+      deliveries: s.space.deliveries.map((x) =>
+        out.has(x.id) ? { ...x, rejectedAt: at, acceptedAt: undefined } : x,
+      ),
+    };
+    s.changed(
+      undo.length === 1
+        ? "The work was taken back out — the platform is building the project as it was, and the signed promises can run again."
+        : `${undo.length} deliveries were taken back out, newest first — the platform is building the project as it was.`,
+    );
+    return { ok: true };
   }
+  if (d.acceptedAt) return { ok: false, reason: "it was already accepted" };
   s.space = {
     ...s.space,
     deliveries: s.space.deliveries.map((x) => (x.id === deliveryId ? { ...x, rejectedAt: at } : x)),
   };
-  s.changed(
-    d.mergedAt
-      ? "The work was rolled back — the platform is building the project as it was, and the signed promises can run again."
-      : "The delivery was refused — the work stays on its branch, and the signed promises can run again.",
-  );
+  s.changed("The delivery was refused — the work stays on its branch, and the signed promises can run again.");
   return { ok: true };
 }
 

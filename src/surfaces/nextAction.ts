@@ -152,6 +152,17 @@ export function nextAction(
         enabled: !!delivered.rerun && a.allowed("rerun"),
         move: { kind: "post", action: { action: "rerun" } },
       };
+    // The work is in the project and the platform will not build it.
+    // Keeping it is not the move: the project is broken until this is
+    // taken back out or fixed by hand, so the press that undoes it leads.
+    if (delivered.merged && delivered.afterMerge?.outcome === "broke")
+      return {
+        where: "in the project — the platform will not build it",
+        label: "Roll it back",
+        hint: `${delivered.afterMerge.detail ?? "it did not build"} · Keep it anyway and Ask Claude for help are on the page`,
+        enabled: a.allowed("reject-delivery"),
+        move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
+      };
     return {
       where: delivered.merged
         ? `${delivered.liveAt ? "live" : "in the project"} — waiting for your decision`

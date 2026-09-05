@@ -662,6 +662,7 @@ export async function dispatchTep(
       // this run has a closer: repair what the platform's words name,
       // prove it builds here, push again. Twice, then stop and say so.
       let tried = { attempts: 0, spent: false };
+      const alsoMerged: string[] = [];
       if (!went.live && !st.halted) {
         const again = await repairUntilLive({
           whyItFailed: () => whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
@@ -679,6 +680,10 @@ export async function dispatchTep(
           land: async () => {
             try {
               const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+              // Every merge this delivery made is remembered: taking the
+              // work back out means reverting all of them, and a repair
+              // pushed after the first merge is one of them.
+              if (l.head) alsoMerged.push(l.head);
               return l.pushed ? { ok: true } : { ok: false, ...(l.why ? { why: l.why } : {}) };
             } catch (err) {
               return { ok: false, why: err instanceof Error ? err.message : String(err) };
@@ -702,12 +707,14 @@ export async function dispatchTep(
       }
       st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
       if (!went.live) noProduct(went.why ?? "the work never went live");
+      const heads = alsoMerged.length && d.mergedHead ? { mergedHeads: [d.mergedHead, ...alsoMerged] } : {};
       outcome = went.live
-        ? { ...outcome, delivery: { ...d, liveAt: at } }
+        ? { ...outcome, delivery: { ...d, ...heads, liveAt: at } }
         : {
             ...outcome,
             delivery: {
               ...d,
+              ...heads,
               afterMerge: {
                 at: new Date().toISOString(),
                 outcome: "broke",
