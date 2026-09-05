@@ -78,6 +78,9 @@
     <a class="nav-link" href="the-run.html">The run and the orchestration graph</a>
   </li>
   <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="end-to-end.html">The whole path, end to end</a>
+  </li>
+  <li class="nav-item" data-depth="1">
     <a class="nav-link" href="configuration.html">Configuration and settings</a>
   </li>
   <li class="nav-item" data-depth="1">
@@ -131,10 +134,23 @@
 <div class="paragraph">
 <p>Signing starts the run; watching it is optional. The run view appears in
 the space with the <strong>orchestration graph</strong>: one node per execution unit,
-edges for the order the engine derived, colors for live state (grey
-ready, green running — pulsing, amber parked, blue done, red failed).
-Click a node for its detail; the log tail runs beneath; <strong>Stop</strong> aborts
-every live worker.</p>
+edges for the order the engine derived. Each card — worker, auditor and
+the closing gate alike — is titled with the promise it is keeping, in
+your own words; the worker id and the full promise sentence move to the
+card&#8217;s hover text, so the title reads as what is being built rather than
+as a raw id.</p>
+</div>
+<div class="paragraph">
+<p>Live state is never carried by colour alone. Every card wears a coloured
+frame <strong>and</strong> a short state word — ready, running, needs you, passed,
+failed, never ran — and both survive zooming out, at the point where the
+card&#8217;s chips are dropped for space. A card that is part of the signed
+work being built now carries a separate gold mark saying "cut" — a
+different fact from its live state, so a card can be both in the cut and
+running at once without either mark hiding the other. Click a node for
+its detail; the log tail runs beneath; <strong>Stop</strong> aborts every live worker.
+The closing gate&#8217;s own card opens its own log the same way, on the same
+single click as every worker card.</p>
 </div>
 </div>
 </div>
@@ -204,9 +220,13 @@ your own words; you are never asked about files, names or tools.</p>
 <p>The closing gate re-runs every probe from a clean environment, the
 honesty scan reads the delivered files for self-declared deferrals, the
 repository&#8217;s own suite runs, and the branch becomes a pull request whose
-description carries the proofs, the tester&#8217;s decisions and every
-UNDELIVERED line. The machine face — the structured verification trace —
-persists in the store beside the space.</p>
+description carries every acceptance criterion of the cut with its
+verdict — including "not checked" for a criterion nothing judged — the
+tester&#8217;s decisions and every UNDELIVERED line. The same complete list
+is what the delivery page shows, so the pull request and the delivery
+page never disagree about a criterion. The machine face — the
+structured verification trace — persists in the store beside the
+space.</p>
 </div>
 <div class="paragraph">
 <p>A run ends in exactly one of three states:</p>

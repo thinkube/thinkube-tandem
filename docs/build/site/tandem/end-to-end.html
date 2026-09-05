@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The whole path, end to end :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="tandem" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-menu is-active" data-panel="menu">
+  <nav class="nav-menu">
+    <button class="nav-menu-toggle" aria-label="Toggle expand/collapse all" style="display: none"></button>
+    <h3 class="title"><a href="index.html">Thinkube Tandem</a></h3>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="0">
+    <button class="nav-item-toggle"></button>
+    <span class="nav-text">Thinkube Tandem</span>
+<ul class="nav-list">
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="index.html">What Tandem is</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="getting-started.html">Getting started</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="the-space.html">The space — asks, changes, units</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="identity.html">Projects and identity</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="gates.html">The two gates</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="the-run.html">The run and the orchestration graph</a>
+  </li>
+  <li class="nav-item is-current-page" data-depth="1">
+    <a class="nav-link" href="end-to-end.html">The whole path, end to end</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="configuration.html">Configuration and settings</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="store.html">The store</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="defects.html">The defect ledger</a>
+  </li>
+  <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="troubleshooting.html">When something goes wrong</a>
+  </li>
+</ul>
+  </li>
+</ul>
+  </nav>
+</div>
+<div class="nav-panel-explore" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube Tandem</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+    <li class="component is-current">
+      <div class="title"><a href="index.html">Thinkube Tandem</a></div>
+    </li>
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li>Thinkube Tandem</li>
+    <li><a href="end-to-end.html">The whole path, end to end</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/ROOT/pages/end-to-end.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The whole path, end to end</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>This page walks the path once, from an empty box to a product running,
+and says at every step: what happens, what you can press, how it can
+fail, and what to do about it.</p>
+</div>
+<div class="paragraph">
+<p>One rule runs through all of it. This is a development platform, so work
+is not held back waiting for approval: when a run finishes, it merges,
+pushes, and waits for the platform to build and answer. What comes back
+to you is not "may I merge" but "here it is, running". Everything you
+decide, you decide about a product you can open.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_path_in_one_list"><a class="anchor" href="#_the_path_in_one_list"></a>The path in one list</h2>
+<div class="sectionbody">
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Write</strong> — sentences in your own words.</p>
+</li>
+<li>
+<p><strong>Read</strong> — the machine reads them into subjects and claims.</p>
+</li>
+<li>
+<p><strong>Keep</strong> — you keep the reading, or you do not.</p>
+</li>
+<li>
+<p><strong>Group</strong> — the subjects are grouped into things worth building.</p>
+</li>
+<li>
+<p><strong>Choose</strong> — you pick one, and it is worked out into promises.</p>
+</li>
+<li>
+<p><strong>Build</strong> — you sign, and the run starts.</p>
+</li>
+<li>
+<p><strong>The run</strong> — the door, the workers, the auditors, the closing gate.</p>
+</li>
+<li>
+<p><strong>The hand-over</strong> — the work is merged and pushed.</p>
+</li>
+<li>
+<p><strong>Live</strong> — the platform builds it; the address starts answering.</p>
+</li>
+<li>
+<p><strong>On the running product</strong> — the promises about pages are judged there.</p>
+</li>
+<li>
+<p><strong>The report</strong> — what you asked for, and what happened to each of it.</p>
+</li>
+<li>
+<p><strong>The decision</strong> — it stays, or it comes back out.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The strip across the top always names where you are and the one thing to
+press. If you never look anywhere else, the strip is enough.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_write_read_keep"><a class="anchor" href="#_write_read_keep"></a>Write, read, keep</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>You type sentences, one per line, and press <strong>Read these N</strong>. The reading
+groups them into subjects and turns each into a claim, quoting your own
+words back. Nothing is recorded yet.</p>
+</div>
+<div class="paragraph">
+<p>Press <strong>Keep these N</strong> and they become asks — the only thing in the store
+that is yours rather than derived. Everything after this can be thrown
+away and made again; these cannot.</p>
+</div>
+<div class="paragraph">
+<p><strong>If the reading is wrong</strong> — it split one sentence into two subjects, or
+missed one — fix the words and read again. The reading of kept asks can
+be redone at any time with <strong>Read again</strong>: it replaces the earlier reading
+whole, and nothing derived from the old one survives.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_group_and_choose"><a class="anchor" href="#_group_and_choose"></a>Group and choose</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><strong>Group into things to build</strong> proposes sets: a few subjects that are worth
+building and looking at together. Proposing decides nothing.</p>
+</div>
+<div class="paragraph">
+<p><strong>Choose a set</strong> is what pays for working it out. Only then are its
+promises derived: one sentence each, where it lands in the code, and the
+acceptance criteria that will prove it. A documentation promise is added
+here when nothing else in the set lands a page.</p>
+</div>
+<div class="paragraph">
+<p><strong>If a set comes back empty</strong> — the machine found nothing to build from
+those subjects — say more about them and choose again.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_build_the_signing_gate"><a class="anchor" href="#_build_the_signing_gate"></a>Build: the signing gate</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><strong>Build these N</strong> opens the cut review: every promise, every criterion, and
+the documentation decision. This is the last place where changing your
+mind is free.</p>
+</div>
+<div class="paragraph">
+<p>Signing records what was signed, by content. If the promises change
+after that, the run refuses itself rather than build something you did
+not sign.</p>
+</div>
+<div class="paragraph">
+<p>A criterion nothing can drive from outside the product is declared
+unprovable here, and rides the delivery as an observation for you rather
+than as a check somebody faked.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_run"><a class="anchor" href="#_the_run"></a>The run</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_the_door"><a class="anchor" href="#_the_door"></a>The door</h3>
+<div class="paragraph">
+<p>Before any worker starts, the run claims the repository, provisions a
+tree, and <strong>proves the repository&#8217;s own commands on the untouched tree</strong> —
+the build, the suite, the way it runs a single test. Then it places the
+checks a previous delivery left, and seeds the graph.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Failure</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What to do</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>the repository&#8217;s own product build fails on the untouched tree</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The project does not build before this run touched anything, so nothing
+it delivers could ship. Fix the project first — usually the last thing
+merged. This is also what you see when a previous deployment failed and
+was never put right.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>no command was proved for running a check</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The repository does not say how it runs one test. Add it to
+<code>thinkube.yaml</code> or the facts file, and run again.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>the signature does not match</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The promises changed after signing. Sign again from the cut review.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_the_workers"><a class="anchor" href="#_the_workers"></a>The workers</h3>
+<div class="paragraph">
+<p>Each slice gets its own workers, and they cannot see each other&#8217;s work:
+the one writing checks never sees the code, and the one writing code
+never sees the checks. A third brings the repository&#8217;s existing tests
+under the new behaviour, after the code lands.</p>
+</div>
+<div class="paragraph">
+<p>The graph draws one card per unit, titled with the promise it keeps. Its
+own log is one click away. <strong>Stop</strong> aborts every live worker; the run
+drains and reports what it had.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Failure</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What to do</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a unit <strong>needs you</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">It asked a question it cannot answer alone. Answer it in the rail; the
+worker carries on from your words.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a unit <strong>failed</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Its own note says why. The run goes on with the rest and the gate
+reports the promise as undelivered. <strong>Run it again</strong> repairs from what is
+there.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the run goes silent</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">It says so itself, names what has not moved, and stops rather than sit
+there. Run it again.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_the_auditors_and_the_closing_gate"><a class="anchor" href="#_the_auditors_and_the_closing_gate"></a>The auditors and the closing gate</h3>
+<div class="paragraph">
+<p>Every slice is graded against its own criteria, on the real state. Then
+the closing gate judges the whole delivery: the repository&#8217;s suite on the
+delivered tree — or, where no suite runs locally, <strong>the repository&#8217;s own
+product build</strong> — every assessment read by a fresh reviewer, then the
+finisher and, last, the closer.</p>
+</div>
+<div class="paragraph">
+<p>The closer repairs what is failing and nothing else. Anything it changes
+that no failure named is reported to you on the delivery.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Failure</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What to do</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the suite or the build is red and stays red</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The delivery is <strong>withheld</strong>: nothing is merged. The report names what
+failed. <strong>Run it again</strong> is the one press.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a check could not run at all</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">That is the machine&#8217;s failure, not the work&#8217;s. It is reported as
+unjudged and never counted against a promise.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_hand_over"><a class="anchor" href="#_the_hand_over"></a>The hand-over</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The record is written, the work is committed, merged into the project and
+pushed. The branch goes with the merge: a repair starts from the project,
+not from a branch of history.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Failure</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What to do</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the merge conflicts with your checkout</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Named in git&#8217;s own words, with the files. Commit or stash what is in
+the way, then run again. Nothing was changed.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">merged, but the push was refused</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The work is in the project; the platform never saw it. Push it yourself
+when the remote is reachable.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_live"><a class="anchor" href="#_live"></a>Live</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The run waits, and says what it is waiting on: the platform noticing the
+push, then the build step by step, then the address answering. The
+deployment is a node in the graph like any other, because everything
+judged on the running product waits for it.</p>
+</div>
+<div class="paragraph">
+<p>If the platform refuses the build, the run repairs what the platform&#8217;s
+own words name — only those files — proves the repository&#8217;s build passes
+locally, and pushes again. Twice. Then it stops and gives the answer
+back to you.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Failure</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What to do</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>the platform will not build it</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The card says so in the platform&#8217;s words, and that until the project
+builds, nothing else can be built here. Three presses: <strong>Ask Claude to fix
+it</strong> opens a session in that repository with the platform&#8217;s words and what
+was already tried; <strong>Ask the platform again</strong> re-reads the build, which is
+what you press after a fix; <strong>Roll it back</strong> takes the work out of the
+project.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>the address never answered</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The platform built it, but the app did not come up. Look at the app&#8217;s
+own logs; the work is in the project and the build is green.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><em>this repository is not deployed by the platform</em></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Nothing is waiting for. The delivery is judged on its checks alone.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_on_the_running_product"><a class="anchor" href="#_on_the_running_product"></a>On the running product</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A promise about a page cannot be settled by reading code. Once the
+address answers, one reviewer per criterion opens the product in a
+browser and does what the criterion describes.</p>
+</div>
+<div class="paragraph">
+<p>Which criteria those are is read from the repository: the route with the
+shortest path names the container that answers at the address, and a
+promise landing in that container&#8217;s directory is a promise about the
+page. What is read rather than driven — an assessment — and what is
+settled elsewhere stay where they are.</p>
+</div>
+<div class="paragraph">
+<p>Each reviewer is held to three limits: no repository is opened to it, it
+carries only the address, and the browser refuses every other origin. A
+reviewer that never answers leaves the criterion unjudged — never a pass
+nobody saw.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_report"><a class="anchor" href="#_the_report"></a>The report</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The report answers, sentence by sentence, what you asked for and what
+happened to it. Under it: what the machine could not judge, what only you
+can certify, the promises answered after the merge, and the run&#8217;s own
+account for a developer.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 66.6667%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><strong>Button</strong></th>
+<th class="tableblock halign-left valign-top"><strong>What it does</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Keep it</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The work is already in the project. This closes the decision, retires
+the run&#8217;s number, and lets the promises stand as built. It moves nothing
+in git.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Accept it</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The same press for a delivery that was never merged — an older one, or
+a repository the platform does not deploy. Here it does merge and push.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Roll it back</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reverts this delivery&#8217;s merges and every delivery this space merged
+after it, newest first, and pushes. The project builds as it did before.
+Refused, with the commit named, if somebody else&#8217;s commit sits on top —
+taking this out would take that with it.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Not this</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The same press for a delivery that was never merged: the work stays on
+its branch, and the signed promises can run again.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Run it again</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Runs the signed promises again, from the project as it stands.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Ask Claude to fix it</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Opens a Claude session in that repository, with the promises, the
+address, the platform&#8217;s own words and what the run already tried.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Ask the platform again</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Re-reads what the platform did with the merged work. Press it after a
+fix: a card frozen at a failed build stops saying so.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>It held</strong> / <strong>It did not</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For a promise only a person can settle — installed on a clean machine,
+seen working. Your word closes it.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Say it does not hold</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For a promise that is in the project and does not do what you asked.
+Available at any time, on any cut, however old. It puts that promise back
+on the board, and the ordinary <strong>Build</strong> repairs it.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_when_something_is_wrong_later"><a class="anchor" href="#_when_something_is_wrong_later"></a>When something is wrong later</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Nothing about a delivery is final. Work that is live and wrong is said to
+be wrong on the promise itself — <strong>Say it does not hold</strong>, in your own
+words — and that promise becomes work again. This is the same act for a
+cut from an hour ago and a cut from last month, and it is the honest one:
+the product is what it does, not what its checks said on the day.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_two_things_that_stay_true"><a class="anchor" href="#_two_things_that_stay_true"></a>Two things that stay true</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><strong>A run leaves the project buildable, or it says exactly how it did not.</strong>
+The door proves the build before anything starts, the gate proves it
+before anything merges, and the live phase repairs what the platform
+refuses. When it cannot, it says so in the platform&#8217;s words and hands
+you the presses that change something.</p>
+</div>
+<div class="paragraph">
+<p><strong>What cannot be proven is never claimed.</strong> An unjudged check is unjudged,
+an unreachable reviewer is unreachable, and a criterion nobody could
+drive is yours to certify. A green that nobody earned is the one thing
+this machine will not print.</p>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../_/js/site.js" data-ui-root-path="../_"></script>
+<script async src="../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

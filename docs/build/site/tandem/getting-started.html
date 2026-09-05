@@ -78,6 +78,9 @@
     <a class="nav-link" href="the-run.html">The run and the orchestration graph</a>
   </li>
   <li class="nav-item" data-depth="1">
+    <a class="nav-link" href="end-to-end.html">The whole path, end to end</a>
+  </li>
+  <li class="nav-item" data-depth="1">
     <a class="nav-link" href="configuration.html">Configuration and settings</a>
   </li>
   <li class="nav-item" data-depth="1">
@@ -132,9 +135,17 @@
 <div class="paragraph">
 <p>Click the Tandem icon in the activity bar (left edge), or run
 <strong>Tandem: Open the Space</strong>. Each thinking space you open gets its own
-editor tab, titled with that space&#8217;s name — opening a second thinking
-space opens a second tab and leaves the first one open, so several
-thinking spaces stay open at the same time.</p>
+editor tab, titled with that space&#8217;s name — the name you gave it when
+you named it, or, when you never named it, its slug read back as plain
+words (dashes and underscores become spaces, only the first letter is
+capitalised — "docs-duty-and-tabs" becomes "Docs duty and tabs").
+Opening a second thinking space opens a second tab and leaves the first
+one open, so several thinking spaces stay open at the same time.</p>
+</div>
+<div class="paragraph">
+<p>When no space can be named — none is chosen, or the choice was never
+recorded — no tab opens at all: you are told why, in one plain sentence,
+instead.</p>
 </div>
 <div class="paragraph">
 <p>If your workspace has more than one folder, Tandem asks which repository
@@ -142,6 +153,17 @@ you are working on — it never guesses. The choice shows in the status bar
 ("Tandem: &lt;repo&gt;") and can be changed any time from there, from the
 <code>&lt;repo&gt; ▾</code> button in the map, or with <strong>Tandem: Switch Project /
 Repository</strong>. Each repository gets its own space.</p>
+</div>
+<div class="paragraph">
+<p>The status bar is also the one place that says whether the machine is
+busy, across every open thinking space at once — not only the one you
+last looked at. While a space is working it names that space and how
+much of its work is done ("2/5 units"); with more than one space busy it
+counts them all. If a worker has stopped and is waiting on you, the
+status bar says so in plain words ("needs an answer") and changes color
+so it stands out. If a space has gone quiet — no change for a while — the
+status bar says how many minutes. When nothing anywhere is busy, the
+status bar goes back to naming the chosen repository, exactly as above.</p>
 </div>
 </div>
 </div>
@@ -204,10 +226,12 @@ token stops matching until you sign again.</p>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The run starts on its own; see <a href="the-run.html" class="xref page">The run and the orchestration graph</a>. When the delivery
-arrives, its page lists every proof (green or red, with evidence) and
-every UNDELIVERED item. <strong>Accept</strong> merges it on your forge; a delivery
-with a red proof, or with an unmet documentation obligation, refuses to
-be accepted.</p>
+arrives, its page names every acceptance criterion of the cut with its
+verdict — green, red, "for you to certify", or "not checked" for a
+criterion nothing judged — and every UNDELIVERED item. The pull request
+the gate opens carries that same list. <strong>Accept</strong> merges it on your
+forge; a delivery with a red criterion, or with an unmet documentation
+obligation, refuses to be accepted.</p>
 </div>
 </div>
 </div>
