@@ -52,12 +52,15 @@ export type GestureResult = { ok: true } | { ok: false; reason: string };
 export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
   const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
   if (downstreamOf(gitRoot) !== "gitops-app") return;
-  for (const d of s.space.deliveries.filter((x) => x.acceptedAt && !x.afterMerge)) {
+  // Merged is enough. The hand-over puts the work in the project before
+  // anyone decides, so a delivery waiting for a decision is exactly the
+  // one whose build the person wants read again.
+  for (const d of s.space.deliveries.filter((x) => (x.acceptedAt || x.mergedAt) && !x.afterMerge && !x.rejectedAt)) {
     await watchGitopsAfterAccept({
       gitRoot,
       app: path.basename(gitRoot),
       delivery: d,
-      acceptedAt: d.acceptedAt!,
+      acceptedAt: d.acceptedAt ?? d.mergedAt!,
       update: (updated, note) => {
         s.space = {
           ...s.space,

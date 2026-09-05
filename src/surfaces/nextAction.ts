@@ -159,7 +159,7 @@ export function nextAction(
       return {
         where: "in the project — the platform will not build it",
         label: "Roll it back",
-        hint: `${delivered.afterMerge.detail ?? "it did not build"} · Keep it anyway and Ask Claude for help are on the page`,
+        hint: `${delivered.afterMerge.detail ?? "it did not build"} · nothing else can be built here until the project builds · Ask Claude to fix it is on the page`,
         enabled: a.allowed("reject-delivery"),
         move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
       };

@@ -164,26 +164,31 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
             <div style={{ fontSize: FS.body, marginTop: SP.xs }}>
               {d.afterMerge.detail ?? "it did not pass"} — said by {d.afterMerge.said}.
             </div>
-            {d.afterMerge.tried ? (
-              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-                Tandem repaired it and pushed again {d.afterMerge.tried} time{d.afterMerge.tried > 1 ? "s" : ""}, and the
-                platform still refuses it. What it can do on its own is spent.
-              </div>
-            ) : (
-              <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-                The promises this broke are work again, on your sentences. Building them repairs it, from the project as it stands.
-              </div>
-            )}
-            {d.afterMerge.tried ? (
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+              {d.afterMerge.tried
+                ? `Tandem repaired it and pushed again ${d.afterMerge.tried} time${d.afterMerge.tried > 1 ? "s" : ""}, and the platform still refuses it. What it can do on its own is spent.`
+                : "Tandem did not repair it."}{" "}
+              Until the project builds, nothing else can be built here: every run proves the build before it starts.
+            </div>
+            <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap", marginTop: SP.sm }}>
               <button
                 data-ask-for-help={d.id}
                 onClick={() => post({ action: "ask-for-help", deliveryId: d.id })}
-                style={{ marginTop: SP.sm, fontSize: FS.caption, fontWeight: 600 }}
+                style={{ fontSize: FS.caption, fontWeight: 600 }}
                 title="Opens a Claude session in this repository, with the platform's own words and what the run already tried."
               >
-                Ask Claude for help
+                Ask Claude to fix it
               </button>
-            ) : null}
+              <button
+                data-ask-again={d.id}
+                disabled={!can("rerun")}
+                onClick={() => post({ action: "ask-platform-again", deliveryId: d.id })}
+                style={{ fontSize: FS.caption }}
+                title="Reads the platform again. If the project builds now — because it was fixed here or elsewhere — this card stops saying it does not."
+              >
+                Ask the platform again
+              </button>
+            </div>
           </div>
         ) : d.afterMerge?.outcome === "held" ? (
           <div data-after-merge style={{ marginBottom: SP.lg, fontSize: FS.body, color: C.ok }}>
@@ -367,19 +372,6 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 onClick={() => post({ action: "reject-delivery", deliveryId: d.id })}
               >
                 Roll it back
-              </button>
-              <button
-                data-accept-delivery={d.id}
-                disabled={!can("accept-delivery")}
-                style={{ padding: `${SP.xs}px ${SP.md}px` }}
-                title={
-                  can("accept-delivery")
-                    ? "Keep it anyway — the work stays in the project and the platform goes on refusing it, for you to fix by hand."
-                    : refusalSentence("accept-delivery", push.phase)
-                }
-                onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
-              >
-                Keep it anyway
               </button>
               {d.rerun ? <RunAgain phase={push.phase} /> : null}
               {push.acceptRefusal ? (

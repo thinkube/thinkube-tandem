@@ -663,14 +663,17 @@ export class TandemSession {
     return r;
   }
 
-  /** What the platform did with merged work, asked again: a verdict of
-   *  "could not judge" is not an answer about the work, and the person can
-   *  ask for another. */
+  /** What the platform did with merged work, asked again.
+   *
+   *  "Could not judge" is not an answer about the work. Neither is a
+   *  refusal that has since been fixed — here or by anyone — and a card
+   *  frozen at the moment a build failed goes on offering to undo work
+   *  whose only fault is already gone. Both are re-read on request. */
   askPlatformAgain(): Promise<void> {
     this.space = {
       ...this.space,
       deliveries: this.space.deliveries.map((d) =>
-        d.afterMerge?.outcome === "unjudged" ? { ...d, afterMerge: undefined } : d,
+        d.afterMerge && d.afterMerge.outcome !== "held" ? { ...d, afterMerge: undefined } : d,
       ),
     };
     this.persist();
