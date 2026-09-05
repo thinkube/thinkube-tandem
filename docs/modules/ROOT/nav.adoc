@@ -5,6 +5,7 @@
 * xref:identity.adoc[Projects and identity]
 * xref:gates.adoc[The two gates]
 * xref:the-run.adoc[The run and the orchestration graph]
+* xref:end-to-end.adoc[The whole path, end to end]
 * xref:configuration.adoc[Configuration and settings]
 * xref:store.adoc[The store]
 * xref:defects.adoc[The defect ledger]

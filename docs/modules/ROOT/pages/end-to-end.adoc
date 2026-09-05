@@ -1,0 +1,292 @@
+= The whole path, end to end
+:page-type: reference
+
+This page walks the path once, from an empty box to a product running,
+and says at every step: what happens, what you can press, how it can
+fail, and what to do about it.
+
+One rule runs through all of it. This is a development platform, so work
+is not held back waiting for approval: when a run finishes, it merges,
+pushes, and waits for the platform to build and answer. What comes back
+to you is not "may I merge" but "here it is, running". Everything you
+decide, you decide about a product you can open.
+
+== The path in one list
+
+. *Write* — sentences in your own words.
+. *Read* — the machine reads them into subjects and claims.
+. *Keep* — you keep the reading, or you do not.
+. *Group* — the subjects are grouped into things worth building.
+. *Choose* — you pick one, and it is worked out into promises.
+. *Build* — you sign, and the run starts.
+. *The run* — the door, the workers, the auditors, the closing gate.
+. *The hand-over* — the work is merged and pushed.
+. *Live* — the platform builds it; the address starts answering.
+. *On the running product* — the promises about pages are judged there.
+. *The report* — what you asked for, and what happened to each of it.
+. *The decision* — it stays, or it comes back out.
+
+The strip across the top always names where you are and the one thing to
+press. If you never look anywhere else, the strip is enough.
+
+== Write, read, keep
+
+You type sentences, one per line, and press *Read these N*. The reading
+groups them into subjects and turns each into a claim, quoting your own
+words back. Nothing is recorded yet.
+
+Press *Keep these N* and they become asks — the only thing in the store
+that is yours rather than derived. Everything after this can be thrown
+away and made again; these cannot.
+
+*If the reading is wrong* — it split one sentence into two subjects, or
+missed one — fix the words and read again. The reading of kept asks can
+be redone at any time with *Read again*: it replaces the earlier reading
+whole, and nothing derived from the old one survives.
+
+== Group and choose
+
+*Group into things to build* proposes sets: a few subjects that are worth
+building and looking at together. Proposing decides nothing.
+
+*Choose a set* is what pays for working it out. Only then are its
+promises derived: one sentence each, where it lands in the code, and the
+acceptance criteria that will prove it. A documentation promise is added
+here when nothing else in the set lands a page.
+
+*If a set comes back empty* — the machine found nothing to build from
+those subjects — say more about them and choose again.
+
+== Build: the signing gate
+
+*Build these N* opens the cut review: every promise, every criterion, and
+the documentation decision. This is the last place where changing your
+mind is free.
+
+Signing records what was signed, by content. If the promises change
+after that, the run refuses itself rather than build something you did
+not sign.
+
+A criterion nothing can drive from outside the product is declared
+unprovable here, and rides the delivery as an observation for you rather
+than as a check somebody faked.
+
+== The run
+
+=== The door
+
+Before any worker starts, the run claims the repository, provisions a
+tree, and *proves the repository's own commands on the untouched tree* —
+the build, the suite, the way it runs a single test. Then it places the
+checks a previous delivery left, and seeds the graph.
+
+[cols="1,3"]
+|===
+| *Failure* | *What to do*
+
+| _the repository's own product build fails on the untouched tree_
+| The project does not build before this run touched anything, so nothing
+it delivers could ship. Fix the project first — usually the last thing
+merged. This is also what you see when a previous deployment failed and
+was never put right.
+
+| _no command was proved for running a check_
+| The repository does not say how it runs one test. Add it to
+`thinkube.yaml` or the facts file, and run again.
+
+| _the signature does not match_
+| The promises changed after signing. Sign again from the cut review.
+|===
+
+=== The workers
+
+Each slice gets its own workers, and they cannot see each other's work:
+the one writing checks never sees the code, and the one writing code
+never sees the checks. A third brings the repository's existing tests
+under the new behaviour, after the code lands.
+
+The graph draws one card per unit, titled with the promise it keeps. Its
+own log is one click away. *Stop* aborts every live worker; the run
+drains and reports what it had.
+
+[cols="1,3"]
+|===
+| *Failure* | *What to do*
+
+| a unit *needs you*
+| It asked a question it cannot answer alone. Answer it in the rail; the
+worker carries on from your words.
+
+| a unit *failed*
+| Its own note says why. The run goes on with the rest and the gate
+reports the promise as undelivered. *Run it again* repairs from what is
+there.
+
+| the run goes silent
+| It says so itself, names what has not moved, and stops rather than sit
+there. Run it again.
+|===
+
+=== The auditors and the closing gate
+
+Every slice is graded against its own criteria, on the real state. Then
+the closing gate judges the whole delivery: the repository's suite on the
+delivered tree — or, where no suite runs locally, *the repository's own
+product build* — every assessment read by a fresh reviewer, then the
+finisher and, last, the closer.
+
+The closer repairs what is failing and nothing else. Anything it changes
+that no failure named is reported to you on the delivery.
+
+[cols="1,3"]
+|===
+| *Failure* | *What to do*
+
+| the suite or the build is red and stays red
+| The delivery is *withheld*: nothing is merged. The report names what
+failed. *Run it again* is the one press.
+
+| a check could not run at all
+| That is the machine's failure, not the work's. It is reported as
+unjudged and never counted against a promise.
+|===
+
+== The hand-over
+
+The record is written, the work is committed, merged into the project and
+pushed. The branch goes with the merge: a repair starts from the project,
+not from a branch of history.
+
+[cols="1,3"]
+|===
+| *Failure* | *What to do*
+
+| the merge conflicts with your checkout
+| Named in git's own words, with the files. Commit or stash what is in
+the way, then run again. Nothing was changed.
+
+| merged, but the push was refused
+| The work is in the project; the platform never saw it. Push it yourself
+when the remote is reachable.
+|===
+
+== Live
+
+The run waits, and says what it is waiting on: the platform noticing the
+push, then the build step by step, then the address answering. The
+deployment is a node in the graph like any other, because everything
+judged on the running product waits for it.
+
+If the platform refuses the build, the run repairs what the platform's
+own words name — only those files — proves the repository's build passes
+locally, and pushes again. Twice. Then it stops and gives the answer
+back to you.
+
+[cols="1,3"]
+|===
+| *Failure* | *What to do*
+
+| _the platform will not build it_
+| The card says so in the platform's words, and that until the project
+builds, nothing else can be built here. Three presses: *Ask Claude to fix
+it* opens a session in that repository with the platform's words and what
+was already tried; *Ask the platform again* re-reads the build, which is
+what you press after a fix; *Roll it back* takes the work out of the
+project.
+
+| _the address never answered_
+| The platform built it, but the app did not come up. Look at the app's
+own logs; the work is in the project and the build is green.
+
+| _this repository is not deployed by the platform_
+| Nothing is waiting for. The delivery is judged on its checks alone.
+|===
+
+== On the running product
+
+A promise about a page cannot be settled by reading code. Once the
+address answers, one reviewer per criterion opens the product in a
+browser and does what the criterion describes.
+
+Which criteria those are is read from the repository: the route with the
+shortest path names the container that answers at the address, and a
+promise landing in that container's directory is a promise about the
+page. What is read rather than driven — an assessment — and what is
+settled elsewhere stay where they are.
+
+Each reviewer is held to three limits: no repository is opened to it, it
+carries only the address, and the browser refuses every other origin. A
+reviewer that never answers leaves the criterion unjudged — never a pass
+nobody saw.
+
+== The report
+
+The report answers, sentence by sentence, what you asked for and what
+happened to it. Under it: what the machine could not judge, what only you
+can certify, the promises answered after the merge, and the run's own
+account for a developer.
+
+[cols="1,2"]
+|===
+| *Button* | *What it does*
+
+| *Keep it*
+| The work is already in the project. This closes the decision, retires
+the run's number, and lets the promises stand as built. It moves nothing
+in git.
+
+| *Accept it*
+| The same press for a delivery that was never merged — an older one, or
+a repository the platform does not deploy. Here it does merge and push.
+
+| *Roll it back*
+| Reverts this delivery's merges and every delivery this space merged
+after it, newest first, and pushes. The project builds as it did before.
+Refused, with the commit named, if somebody else's commit sits on top —
+taking this out would take that with it.
+
+| *Not this*
+| The same press for a delivery that was never merged: the work stays on
+its branch, and the signed promises can run again.
+
+| *Run it again*
+| Runs the signed promises again, from the project as it stands.
+
+| *Ask Claude to fix it*
+| Opens a Claude session in that repository, with the promises, the
+address, the platform's own words and what the run already tried.
+
+| *Ask the platform again*
+| Re-reads what the platform did with the merged work. Press it after a
+fix: a card frozen at a failed build stops saying so.
+
+| *It held* / *It did not*
+| For a promise only a person can settle — installed on a clean machine,
+seen working. Your word closes it.
+
+| *Say it does not hold*
+| For a promise that is in the project and does not do what you asked.
+Available at any time, on any cut, however old. It puts that promise back
+on the board, and the ordinary *Build* repairs it.
+|===
+
+== When something is wrong later
+
+Nothing about a delivery is final. Work that is live and wrong is said to
+be wrong on the promise itself — *Say it does not hold*, in your own
+words — and that promise becomes work again. This is the same act for a
+cut from an hour ago and a cut from last month, and it is the honest one:
+the product is what it does, not what its checks said on the day.
+
+== Two things that stay true
+
+*A run leaves the project buildable, or it says exactly how it did not.*
+The door proves the build before anything starts, the gate proves it
+before anything merges, and the live phase repairs what the platform
+refuses. When it cannot, it says so in the platform's words and hands
+you the presses that change something.
+
+*What cannot be proven is never claimed.* An unjudged check is unjudged,
+an unreachable reviewer is unreachable, and a criterion nobody could
+drive is yours to certify. A green that nobody earned is the one thing
+this machine will not print.
