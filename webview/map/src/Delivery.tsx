@@ -137,9 +137,37 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   const broken = !!d.merged && d.afterMerge?.outcome === "broke";
   const account = [...(d.undelivered ?? [])];
 
+  // What happened to this work, in one paragraph, before any of the detail.
+  // A person reading the report should not have to infer from a button
+  // that the code was written, checked, merged, built and deployed.
+  const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
+  const pending = d.pending?.length ?? 0;
+  const story = !d.merged
+    ? undefined
+    : [
+        broken
+          ? "This was coded, checked and merged into the project — and the platform will not build it."
+          : d.liveAt
+            ? "This was coded, its checks were written and run, it passed the closing gate, and it was merged, built by the platform and deployed."
+            : "This was coded, its checks were written and run, it passed the closing gate, and it was merged into the project.",
+        d.liveAt && !broken ? `It is running at ${d.liveAt}.` : "",
+        kept ? `${kept} check${kept === 1 ? "" : "s"} passed.` : "",
+        pending ? `${pending} promise${pending === 1 ? " is" : "s are"} answered somewhere this run cannot reach — listed below.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
   return (
     <div data-delivery-report style={{ flex: 1, overflowY: "auto", padding: `${SP.lg}px ${SP.xl}px ${SP.xl}px` }}>
       <article data-delivery={d.id} style={{ maxWidth: "60rem" }}>
+        {story ? (
+          <p
+            data-what-happened
+            style={{ fontSize: FS.body, lineHeight: 1.6, marginTop: 0, marginBottom: SP.lg, color: broken ? C.bad : "inherit" }}
+          >
+            {story}
+          </p>
+        ) : null}
         {d.afterMerge?.outcome === "unjudged" ? (
           <div data-after-merge style={{ marginBottom: SP.lg, padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderRadius: 7 }}>
             <strong style={{ fontSize: FS.body }}>The platform could not judge this.</strong>
@@ -389,13 +417,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                 title={
                   can("accept-delivery")
                     ? d.merged
-                      ? "It stays — the work is already in the project and running. This closes the decision; nothing moves."
+                      ? "Go on to the next — this work is already in the project and running. Closes it and moves you to what is left to build."
                       : "Accept it — this merges the work into your branch and pushes it."
                     : refusalSentence("accept-delivery", push.phase)
                 }
                 onClick={() => post({ action: "accept-delivery", deliveryId: d.id })}
               >
-                {d.merged ? "It stays" : "Accept"}
+                {d.merged ? "Go on to the next" : "Accept"}
               </button>
               <button
                 data-reject-delivery={d.id}

@@ -167,14 +167,24 @@ export function nextAction(
         enabled: a.allowed("reject-delivery"),
         move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
       };
+    // Work that is coded, checked, merged, built and running is not a
+    // decision waiting to be made: it is done. The press moves the person
+    // on, and says so — offering to "keep" what is already running, with
+    // no alternative beside it, reads as a joke.
+    if (delivered.merged)
+      return {
+        where: delivered.liveAt
+          ? `built, deployed and running at ${delivered.liveAt}`
+          : "coded, checked and merged into the project",
+        label: "Go on to the next",
+        hint: "closes this one and moves to what is left to build · Take it back out is on the page",
+        enabled: a.allowed("accept-delivery"),
+        move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
+      };
     return {
-      where: delivered.merged
-        ? `${delivered.liveAt ? "live" : "in the project"} — waiting for your decision`
-        : "delivered — waiting for your decision",
-      label: delivered.merged ? "It stays" : "Accept it",
-      hint: delivered.merged
-        ? `the work is already in the project${delivered.liveAt ? ` and running at ${delivered.liveAt}` : ""} — this closes the decision · Take it back out is on the page`
-        : "merges the work into your branch and pushes it · Not this and Run again are on the page",
+      where: "delivered — waiting for your decision",
+      label: "Accept it",
+      hint: "merges the work into your branch and pushes it · Not this and Run again are on the page",
       enabled: a.allowed("accept-delivery"),
       move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
     };
