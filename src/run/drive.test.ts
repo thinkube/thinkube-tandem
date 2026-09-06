@@ -52,8 +52,10 @@ test("one session answers every criterion of its promise, each in its own words"
   );
   assert.deepEqual(ps.map((p) => p.verdict), ["green", "red"], "a verdict per criterion, from one browser");
   assert.deepEqual(ps.map((p) => p.criterionId), ["AC-1", "AC-2"]);
-  assert.equal(ps[1].ref, "https://x.test", "the proof says where to go and look");
-  assert.match(ps[1].label, /the Add button does nothing/);
+  assert.equal(ps[1].label, "adding a task shows it", "the finding is named by what it judged");
+  assert.match(ps[1].ref ?? "", /the Add button does nothing/, "and its reason is what the reviewer saw");
+  assert.match(ps[1].ref ?? "", /https:\/\/x\.test/, "with where to go and look");
+  assert.notEqual(ps[0].ref, ps[1].ref, "two findings never read as one");
 });
 
 test("a driver that never answers leaves the promise unjudged — never a pass nobody saw", async () => {

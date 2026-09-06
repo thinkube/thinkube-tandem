@@ -150,11 +150,9 @@ export interface BoundedOptions {
   /** Grace between SIGTERM and the SIGKILL backstop (ms). Default 250. */
   killGraceMs?: number;
   /**
-   * The run was stopped. A bound is not a stop: a twenty-minute suite went
-   * on running for twenty minutes after the person pressed the button,
-   * because refusing to START a command is all a flag can do. When this
-   * fires the child's whole process group is killed, exactly as the bound
-   * kills it, and the call answers at once.
+   * The run was stopped. When this fires the child's whole process group
+   * is killed, exactly as the time bound kills it, and the call answers at
+   * once — a bound alone cannot end a twenty-minute suite early.
    */
   stop?: AbortSignal;
 }

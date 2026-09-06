@@ -64,7 +64,9 @@ test("one failure behind many checks is said once, and the report is painted fro
       return {
         common: report?.querySelector("[data-common-failures]")?.textContent ?? "",
         times: text.split("Field required").length - 1,
-        notKept: [...(report?.querySelectorAll("[data-asked]") ?? [])].filter((el) => /not kept/.test(el.textContent ?? "")).length,
+        notKept: [...(report?.querySelectorAll("[data-asked]") ?? [])].filter((el) =>
+          /it does not do this/.test(el.textContent ?? ""),
+        ).length,
       };
     });
     assert.match(seen.common, /3 checks failed the same way — Field required/);

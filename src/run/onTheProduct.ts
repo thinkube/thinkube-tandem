@@ -28,11 +28,9 @@ function driverId(n: number): string {
 /**
  * The reviewers this cut will need, seeded before anything runs.
  *
- * A graph that only grows a node once its work starts cannot say what the
- * person is waiting for: from the last check to the first look it stood
- * still and ended at the delivery. These sit there from the beginning,
- * waiting on the deployment, so the shape of the whole run is visible
- * while it is still being built.
+ * They sit in the graph from the first frame, waiting on the deployment,
+ * so the shape of the whole run — including what will be judged on the
+ * product — is visible while the work is still being built.
  */
 export function seedDrivers(st: RunState, space: Space, cut: Cut, pageRoots: readonly string[]): string[] {
   const list = toDriveOf(space, cut, pageRoots);
@@ -65,11 +63,18 @@ export async function judgeOnTheProduct(a: {
   runId?: string;
   /** Injectable for tests: what actually opens the browser. */
   drive?: typeof driveAll;
+  /** Judge only these promises, by sentence — a repair re-drives what was
+   *  red, never the whole page again. */
+  only?: (promise: string) => boolean;
 }): Promise<DispatchOutcome> {
-  const list: ToDrive[] = toDriveOf(a.space, a.cut, a.pageRoots);
+  const all: ToDrive[] = toDriveOf(a.space, a.cut, a.pageRoots);
+  const list = a.only ? all.filter((c) => a.only!(c.promise)) : all;
   if (!list.length) return a.outcome;
-  const ids = list.map((_, i) => driverId(i + 1));
+  const ids = list.map((c) => driverId(all.findIndex((x) => x.promise === c.promise) + 1));
   for (const id of ids) if (!a.st.units.has(id)) seedDrivers(a.st, a.space, a.cut, a.pageRoots);
+  // A promise judged again replaces its earlier verdicts: one answer per
+  // criterion, the newest.
+  const judgedAgain = new Set(list.flatMap((c) => c.criteria.map((x) => x.id).filter(Boolean) as string[]));
   for (const id of ids) a.st.set(id, "running");
   // One directory per reviewer, named for it, beside the run's record.
   const looksIn = (id: string): string | undefined =>
@@ -101,8 +106,8 @@ export async function judgeOnTheProduct(a: {
     })();
     a.st.looked(id, shots);
   }
-  // One reviewer per promise, and its card says what it found: red when a
-  // criterion did not hold, failed when nothing came back at all.
+  // The card says what the reviewer found: failed when a criterion did
+  // not hold, and failed with its own reason when nothing came back.
   proofs.forEach((forOne, i) => {
     const red = forOne.find((p) => p.verdict === "red");
     if (forOne.every((p) => p.verdict === "unjudged"))
@@ -112,7 +117,7 @@ export async function judgeOnTheProduct(a: {
   });
   const d = a.outcome.delivery;
   if (!d) return a.outcome;
-  // A criterion that was judged is no longer the person's to certify.
+  // A judged criterion is no longer the person's to certify.
   const settled = list.flatMap((c, i) =>
     c.criteria.filter((_, j) => proofs[i]?.[j]?.verdict !== "unjudged").map((x) => x.text),
   );
@@ -120,7 +125,7 @@ export async function judgeOnTheProduct(a: {
     ...a.outcome,
     delivery: {
       ...d,
-      proofs: [...d.proofs, ...proofs.flat()],
+      proofs: [...d.proofs.filter((p) => !p.criterionId || !judgedAgain.has(p.criterionId)), ...proofs.flat()],
       ...(d.observations
         ? { observations: d.observations.filter((o) => !settled.some((c) => o.startsWith(c))) }
         : {}),

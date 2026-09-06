@@ -255,15 +255,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   /**
    * The product build, judged on its own.
    *
-   * A repository whose tests run in the platform pipeline has no whole
-   * suite that runs here — but it still builds here, and the build is the
-   * one judgement this run can make about the tree it is about to merge.
-   * Skipping it merged a tree whose own build rejected it: a check the run
-   * wrote did not type-check, every test passed because the test runner
-   * does not type-check, and the platform found it after the merge.
-   *
-   * Its answer is written in the suite's own shape, so one verdict, one
-   * repair loop and one proof row serve both.
+   * A repository whose tests run in the platform's pipeline has no whole
+   * suite that runs here, and its build is then the only judgement this
+   * run can make about the tree it is about to merge. The answer is
+   * written in the suite's own shape, so one verdict, one repair loop and
+   * one proof row serve both.
    */
   const buildAlone = async (cwd: string): Promise<{ code: number | null; output: string }> => {
     const b = await boundedExec(deps.build!, cwd);
@@ -354,10 +350,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     // The finisher is spent and the tree still does not stand: the closer
     // takes the whole delivery, with full sight and authority (§4).
     if (!verdict.green && !g.state.halted) {
-      // What the tree looked like before the last actor touched it, so the
-      // person can be told exactly what it changed — a repair that goes
-      // wider than the failure is work nobody asked for, and it was
-      // invisible until it arrived in the delivery.
+      // The tree as it stood before the last actor, so what it changed can
+      // be named on the delivery.
       const beforeCloser = (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim();
       const closed = await close({
         subject: `${tep} (the delivery)`,
@@ -422,9 +416,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
           ...(await porcelainPaths(worktree)),
         ]),
       ];
-      // What the failures actually named. A file outside that is the last
-      // actor working beyond what was asked of it: said here, and said on
-      // the delivery, so the person reads it before deciding.
+      // What the failures name. A file outside that is the last actor
+      // working beyond what was asked of it, and is carried to the person
+      // on the delivery.
       const named = new Set(
         [
           ...verdict.failures.map((f) => f.file).filter((f): f is string => !!f),

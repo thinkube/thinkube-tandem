@@ -1,15 +1,10 @@
 /**
- * The one door to the model, and the one place a test cannot walk through.
+ * The one door to the model.
  *
- * A test that reaches the real model is not a test: it is slow, it is
- * paid for, and it answers differently every time. One did — a fake
- * worker passed in the wrong argument, so the finisher and the closer
- * called the model for real — and it turned a forty-five second suite
- * into ten minutes without failing anything.
- *
- * The suite sets `TANDEM_NO_MODEL`, and every door reads it here. A test
- * that reaches for the model now stops at once and says which door it
- * came through, instead of quietly spending minutes.
+ * Every place that reaches the SDK comes through here, so a single switch
+ * closes them all: with `TANDEM_NO_MODEL` set — the suite sets it — this
+ * throws, naming the door, rather than opening a paid, slow, and
+ * differently-answering call from inside a test.
  */
 export async function theModel(door: string): Promise<{
   query: (args: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown>;

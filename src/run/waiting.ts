@@ -1,14 +1,9 @@
 /**
  * Every wait in a run goes through here.
  *
- * Stop was a flag, and a flag only stops what remembers to read it. A run
- * waiting on the platform slept its full patience whatever the person
- * pressed; a run inside a twenty-minute suite ran the suite to the end.
- * Both were the same defect written twice, and each was fixed alone.
- *
- * So there is one way to wait, it takes the run's stop signal, and it
- * answers the moment that signal fires. A wait written any other way is a
- * wait that will ignore the button again.
+ * One way to wait, taking the run's stop signal, so Stop reaches every
+ * wait rather than only the ones that remember to read a flag. It answers
+ * the moment the signal fires, and says which of the two ended it.
  */
 export interface Waited {
   /** False when the run was stopped while waiting. */
@@ -24,9 +19,8 @@ export function waitOrStop(ms: number, stop?: AbortSignal): Promise<Waited> {
       resolve({ waited });
     };
     const onStop = (): void => done(false);
-    // Not unref'd: a run that is waiting is a run that is working, and a
-    // process that exits out from under it loses the answer it was waiting
-    // for. The signal and the bound are what end it.
+    // Not unref'd: a waiting run is working, and the process must stay
+    // alive for its answer. The signal and the bound are what end it.
     const timer = setTimeout(() => done(true), ms);
     stop?.addEventListener("abort", onStop, { once: true });
   });

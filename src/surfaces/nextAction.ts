@@ -79,9 +79,8 @@ export function nextAction(
   },
 ): NextAction {
   const sentences = push.sentences.length;
-  // A set whose work has landed is no longer the thing in hand. Leaving it
-  // there offered "Build these 0", greyed, with the next thing to build
-  // sitting right under it — the press that ends a walk in a dead end.
+  // A set whose work has landed is no longer the thing in hand, so the
+  // press below is about what is left to build.
   const inHand = (push.specs ?? []).find((sp) => sp.chosen);
   const chosen = inHand && (inHand.fate === "accepted" || inHand.fate === "delivered") ? undefined : inHand;
 
@@ -167,13 +166,9 @@ export function nextAction(
         enabled: a.allowed("reject-delivery"),
         move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
       };
-    // Work that is coded, checked, merged, built and running is not a
-    // decision waiting to be made: it is done. The press moves the person
-    // on, and says so — offering to "keep" what is already running, with
-    // no alternative beside it, reads as a joke.
-    // What did not hold is the first thing said, and the press repairs it.
-    // Offering to move on over ten red checks is the report lying about
-    // the product a person can open.
+    // Work that is coded, checked, merged, built and running needs no
+    // decision: the press moves on, and says so.
+    // Promises that did not hold are repaired, never moved past.
     const broke = (delivered.proofs ?? []).filter((p) => p.verdict === "red").length;
     if (delivered.merged && broke)
       return {

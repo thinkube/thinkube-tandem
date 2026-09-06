@@ -322,10 +322,8 @@ export class RunState {
 
   halt(): number {
     this.halted = true;
-    // Everything that waits listens to this: a command already running is
-    // killed, a poll gives up on its next breath. Stop was a flag that only
-    // the places which remembered to read it obeyed, so a run in a shell
-    // command or a wait went on working after the person pressed it.
+    // Everything that waits listens to this: a running command is killed,
+    // a poll gives up on its next breath.
     this.stop.abort();
     let n = 0;
     for (const [, c] of this.aborts) {

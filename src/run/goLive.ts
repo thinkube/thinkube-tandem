@@ -40,9 +40,8 @@ export async function waitUntilLive(a: {
   /** Does the address answer? Its status, or nothing when it does not. */
   knock: (url: string) => Promise<number | undefined>;
   step: Step;
-  /** The run's stop signal. Every wait in a run takes it: a wait that
-   *  cannot hear Stop is a run that ignores the one control it always
-   *  offers, and it slept its full patience whatever the person pressed. */
+  /** The run's stop signal: the wait ends on it, not only on its own
+   *  patience. */
   stop?: AbortSignal;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait in all, in ticks of ten seconds. */

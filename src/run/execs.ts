@@ -12,9 +12,8 @@ export type HaltableExec = (cmd: string, cwd: string) => Promise<{ code: number 
 export function haltableExecs(
   halted: () => boolean,
   env: NodeJS.ProcessEnv,
-  /** The run's stop signal. A command already running is killed by it —
-   *  refusing to START one is all a flag could ever do, and a suite takes
-   *  twenty minutes. */
+  /** The run's stop signal: it kills a command that is already running,
+   *  not only the next one to start. */
   stop?: AbortSignal,
 ): { boundedExec: HaltableExec; suiteExec: HaltableExec } {
   const stopped = () => Promise.resolve({ code: 124, output: "[stopped — the run was halted]" });

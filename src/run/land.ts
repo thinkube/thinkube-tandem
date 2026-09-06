@@ -46,10 +46,9 @@ export async function landDelivery(a: {
       }
     }
   }
-  // The project may already hold everything this branch has — a run of a
-  // cut whose slices all stood, or a repair somebody pushed first. Then
-  // the merge is a no-op and so is the push: saying "merged and pushed"
-  // sends the run off to wait for a build that will never be triggered.
+  // The project may already hold everything this branch has, in which
+  // case the merge and the push both move nothing — `moved` says so, and
+  // nothing waits for a build no push will trigger.
   const already = (await git("merge-base", "--is-ancestor", a.branch, "HEAD")).code === 0;
   const merge = already ? { code: 0, out: "" } : await git("merge", "--no-ff", "--no-edit", "-m", `tandem: accept ${a.tep}`, a.branch);
   if (merge.code !== 0) {

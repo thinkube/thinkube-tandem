@@ -380,16 +380,10 @@ export function RunSection(props: {
       .catch(() => stackLayout(cards.map((c) => ({ id: c.id, w: NODE_W, h: heights.get(c.id) ?? 70 }))))
       .then((l) => {
         if (!alive) return;
-        // The graph is re-laid out whenever it changes shape — a unit
-        // finishing, the reviewers of the running product appearing at the
-        // door. The engine is free to move everything to make room, and the
-        // view keeps the pan it had, so the cards being watched slid out
-        // from under it and the canvas looked emptied.
-        //
-        // The door is the first card of the tree and the one thing every
-        // layout starts from, so it is the anchor: the world is shifted by
-        // however far the door moved, and the picture stays where the
-        // reader put it while the rest re-flows around it.
+        // A re-layout may move every card. The door is the first card of
+        // the tree and the anchor: the world shifts by however far it
+        // moved, so the picture stays where the reader put it while the
+        // rest re-flows around it.
         const was = anchor.current;
         const now = l.nodes.get("door");
         if (was && now) world.shiftBy((was.x - now.x) * world.k, (was.y - now.y) * world.k);

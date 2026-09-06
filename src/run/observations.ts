@@ -23,7 +23,7 @@ const RUNNING_PRODUCT =
 /** Why this criterion is an observation, or nothing. */
 export function observationShaped(text: string): string | undefined {
   return RUNNING_PRODUCT.test(text)
-    ? "only the running product can show it — a person certifies it on the delivery, with the delivery"
+    ? "only the running product can show it — a reviewer drives it there when the product is answering, and it is yours to certify when none could"
     : undefined;
 }
 
@@ -55,11 +55,8 @@ export function toDriveOf(
     const criteria = n.acceptance
       .filter((c) => observationShaped(c.text) || (page && c.kind !== "assessment" && !c.settledBy))
       .map((c) => ({ ...(c.id ? { id: c.id } : {}), text: c.text }));
-    // ONE reviewer per promise, not per criterion. A promise is what the
-    // person cares about; its criteria are the script the reviewer follows
-    // in a single browser session. One session per criterion opened the
-    // same product five times to check five things about it, and filled
-    // the graph with cards that all said the same promise.
+    // One reviewer per promise: its criteria are the script that reviewer
+    // follows in a single browser session.
     if (criteria.length) out.push({ promise: n.sentence, criteria, ...(ask ? { ask } : {}) });
   }
   return out;

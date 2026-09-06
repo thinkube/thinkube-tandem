@@ -271,12 +271,9 @@ export async function createAppFromTemplate(a: {
   }
   if (!fs.existsSync(dest)) return { ok: false, reason: "it was made but nothing arrived on disk" };
 
-  // The card is the repository's identity, and it is immutable — but a
-  // repository redeployed under the same name keeps the same identity, so
-  // an existing card is the right answer, not a failure. Refusing here
-  // stopped the rest of this function: the app was deployed and cloned,
-  // and its own file never learned where it is seen, so every run after
-  // that said "this repository is not deployed by the platform".
+  // Identity is immutable, and a repository redeployed under the same
+  // name keeps the one it has: an existing card is the answer here, not a
+  // refusal, so the steps below still run.
   const held = readCard(dest, a.storeRoot);
   const minted = held ? { ok: true as const, card: held } : mintCard(dest, { label: a.appName, product: a.product }, a.storeRoot);
   if (!minted.ok) return { ok: false, reason: minted.reason };

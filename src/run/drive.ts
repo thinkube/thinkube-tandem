@@ -200,23 +200,25 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
         kind: "assessment" as const,
         label,
         verdict: "unjudged" as const,
-        ref: a.at,
+        ref: `no answer came back about this, from ${a.at}`,
         ...(x.id ? { criterionId: x.id } : {}),
       };
     }
     a.log?.(`on the running product ${ord}.${i + 1}: ${answer.verdict}${answer.said ? ` — ${answer.said}` : ""}`);
+    // `ref` is where the report reads a failure's reason, so it carries
+    // what the reviewer saw, with the address after it.
     return {
       kind: "assessment" as const,
-      label: answer.said ? `${label} — ${answer.said}` : label,
+      label,
       verdict: (answer.verdict === "GREEN" ? "green" : "red") as "green" | "red",
-      ref: a.at,
+      ref: answer.said ? `${answer.said} — seen at ${a.at}` : `it did not hold, at ${a.at}`,
       ...(x.id ? { criterionId: x.id } : {}),
     };
   });
 }
 
-/** Judge every promise, a few at a time — each waits on a browser. The
- *  verdicts come back grouped as they were asked: one list per promise. */
+/** Judge every promise, a few at a time — each waits on a browser. One
+ *  list of verdicts per promise, in the order the promises were given. */
 export async function driveAll(a: DriveArgs, list: ToDrive[], ids: readonly string[] = []): Promise<Proof[][]> {
   const out: Proof[][] = [];
   const AT_ONCE = 3;

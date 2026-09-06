@@ -8,9 +8,8 @@
  * measured by the repository's own build, here, in the tree the run
  * committed from.
  *
- * A repair that reaches wider than the log would be the same defect the
- * gate's closer was bounded for: work nobody asked for, arriving in a
- * project that is already live.
+ * The bound matters here more than at the gate: whatever this writes
+ * arrives in a project that is already live.
  */
 import { close } from "./closer";
 import { RunState } from "./state";

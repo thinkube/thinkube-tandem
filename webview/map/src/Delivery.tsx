@@ -16,7 +16,7 @@ type Promise_ = SpacePush["subjects"][number]["claims"][number]["promises"][numb
 /** How a sentence fared, read from THIS delivery's verdicts on the promises made from it. */
 type Fate =
   | "done"
-  | "not kept"
+  | "in the project, and it does not do this"
   | "not judged"
   | "answered after the merge"
   | "being built"
@@ -26,7 +26,7 @@ type Verdict = { verdict: "green" | "red" | "unjudged" | "pending"; said?: strin
 
 function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: string | undefined): Fate {
   const verdicts = promises.flatMap((p) => p.checks.map((c) => judged.get(c.id)));
-  if (verdicts.some((v) => v?.verdict === "red")) return "not kept";
+  if (verdicts.some((v) => v?.verdict === "red")) return "in the project, and it does not do this";
   if (verdicts.length && verdicts.every((v) => v?.verdict === "green")) return "done";
   // Waiting on the platform, the cluster or a person is not "not judged":
   // it is an answer that comes after the merge, from a named source.
@@ -40,7 +40,7 @@ function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: strin
 
 const TONE: Record<Fate, string> = {
   done: C.ok,
-  "not kept": C.bad,
+  "in the project, and it does not do this": C.bad,
   "answered after the merge": C.quiet,
   "not judged": C.ask,
   "being built": C.live,
@@ -131,15 +131,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
 
   const seen = d.observations ?? [];
   const stuck = d.withheld ?? d.blocked;
-  // In the project, and the platform refuses it: the decision is not the
-  // ordinary one, and offering to keep work that does not build
-  // reads as keeping a failure.
+  // In the project, and the platform refuses to build it: the presses
+  // below are the two that change something.
   const broken = !!d.merged && d.afterMerge?.outcome === "broke";
   const account = [...(d.undelivered ?? [])];
 
-  // What happened to this work, in one paragraph, before any of the detail.
-  // A person reading the report should not have to infer from a button
-  // that the code was written, checked, merged, built and deployed.
+  // What happened to this work, in one paragraph, before any detail:
+  // what did not hold, where it runs, and what is still to be answered.
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
   const failed = (d.proofs ?? []).filter((p) => p.verdict === "red").length;
   const pending = d.pending?.length ?? 0;
@@ -273,7 +271,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                       a fourth child of a three-column row falls to the
                       next line and reads as a stray link. */}
                   <span style={{ display: "flex", alignItems: "baseline", gap: SP.md, whiteSpace: "nowrap" }}>
-                    <span style={{ fontSize: FS.caption, color: TONE[r.fate], fontWeight: r.fate === "done" || r.fate === "not kept" ? 600 : 400 }}>
+                    <span style={{ fontSize: FS.caption, color: TONE[r.fate], fontWeight: r.fate === "done" || r.fate === "in the project, and it does not do this" ? 600 : 400 }}>
                       {r.fate}
                     </span>
                     {r.fate === "done" && d.accepted ? (
@@ -291,7 +289,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                     ) : null}
                   </span>
                 </div>
-                {r.fate === "not kept"
+                {r.fate === "in the project, and it does not do this"
                   ? r.promises
                       .filter((p) => p.checks.some((c) => judged.get(c.id)?.verdict === "red"))
                       .map((p) => (
@@ -334,7 +332,9 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
               {seen.map((o, i) => (
                 <div key={i} style={{ padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.ask}`, borderRadius: 6, background: C.raised }}>
                   <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.5 }}>{o}</span>
-                  <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>only you can certify this — the machine cannot watch the running product</div>
+                  <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
+                    no reviewer could settle this on the running product — it is yours to certify
+                  </div>
                 </div>
               ))}
             </div>
