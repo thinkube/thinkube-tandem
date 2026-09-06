@@ -59,10 +59,15 @@ export interface DriveArgs {
 }
 
 /**
- * How many turns a driver gets to open a page, do a thing, and look. A
- * page that needs more than this is not being judged, it is being explored.
+ * How many turns a reviewer gets: what it takes to open the product and
+ * sign in, and then a working allowance for each criterion it carries —
+ * every one is a few clicks, a look, and a picture.
  */
-const TURNS = 40;
+const TURNS_TO_ARRIVE = 20;
+const TURNS_PER_CRITERION = 20;
+function turnsFor(criteria: number): number {
+  return TURNS_TO_ARRIVE + TURNS_PER_CRITERION * Math.max(1, criteria);
+}
 
 /** The chrome installed on this machine, when there is one. */
 function chromeHere(): string | undefined {
@@ -144,7 +149,7 @@ function verdictFor(
 
 
 
-async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
+async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = true): Promise<string | null> {
   const b = browserOf(a);
   const ask =
     a.ask ??
@@ -164,8 +169,8 @@ async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
             permissionMode: "bypassPermissions",
             thinking: { type: "adaptive" },
             effort: "high",
-            maxTurns: TURNS,
-            mcpServers: { browser: { command: b.command, args: b.args } },
+            maxTurns: turns,
+            ...(withBrowser ? { mcpServers: { browser: { command: b.command, args: b.args } } } : { mcpServers: {} }),
             // Only this browser. Without it the machine's own browser
             // server is inherited too, and that one carries no session and
             // is held to no origin.
@@ -173,7 +178,7 @@ async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
             // The browser and nothing else: no file, no command, no
             // network tool of its own. A driver that could read the
             // repository would judge the code again instead of the product.
-            allowedTools: ["mcp__browser"],
+            allowedTools: withBrowser ? ["mcp__browser"] : [],
             disallowedTools: [
               // The machine's own browser server, named, in case anything
               // but the flag above lets it through.
@@ -251,9 +256,36 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "2. RED <what you did and what happened instead>",
       "3. BLOCKED <what stopped you reaching it>",
     ].join("\n"),
+    turnsFor(c.criteria.length),
   );
+  // Work with no verdicts is work thrown away: a reviewer that spent its
+  // turns on the product is asked, once and without the browser, to put
+  // what it found into the answer it owes.
+  const answered = c.criteria.some((_, i) => verdictFor(reply, i + 1));
+  const finished =
+    answered || !reply?.trim()
+      ? reply
+      : await drive(
+          a,
+          [
+            "You checked these on the running product and ran out of turns",
+            "before answering. Answer now from what you found — no browser,",
+            "no further looking.",
+            "",
+            "WHAT YOU WERE JUDGING:",
+            ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
+            "",
+            "WHAT YOU WROTE WHILE YOU WERE THERE:",
+            reply.slice(-6000),
+            "",
+            "ONE LINE PER ITEM, numbered as above: GREEN, RED, or BLOCKED",
+            "when you never reached it, each with what you did and saw.",
+          ].join("\n"),
+          3,
+          false,
+        );
   return c.criteria.map((x, i) => {
-    const answer = verdictFor(reply, i + 1);
+    const answer = verdictFor(finished, i + 1);
     const label = x.text;
     if (!answer) {
       a.log?.(`on the running product ${ord}.${i + 1}: no answer came back — it stays unjudged`);

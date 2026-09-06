@@ -145,3 +145,42 @@ test("the browser server and the chrome are the ones this machine has", async ()
     "it fetches a server only where the machine has none",
   );
 });
+
+test("a reviewer gets turns for what it carries, not one budget for every promise", async () => {
+  const { ask, seen } = says("1. GREEN a\n2. GREEN b\n3. GREEN c\n4. GREEN d");
+  await driveOne(
+    { at: "https://x.test", model: "m", ask },
+    { promise: "p", criteria: [{ text: "a" }, { text: "b" }, { text: "c" }, { text: "d" }] },
+    1,
+  );
+  const four = seen[0].maxTurns as number;
+  const { ask: ask1, seen: seen1 } = says("1. GREEN a");
+  await driveOne({ at: "https://x.test", model: "m", ask: ask1 }, { promise: "p", criteria: [{ text: "a" }] }, 1);
+  assert.ok(four > (seen1[0].maxTurns as number), `four criteria get more than one: ${four} vs ${seen1[0].maxTurns}`);
+});
+
+test("a reviewer that ran out of turns is asked to answer from what it found", async () => {
+  const replies = [
+    "I opened the page, made a task, and saw the message appear.",
+    "1. GREEN the message appeared next to the title",
+  ];
+  let i = 0;
+  const seen: Record<string, unknown>[] = [];
+  const ask = async (_p: string, options: Record<string, unknown>) => {
+    seen.push(options);
+    const r = replies[i++];
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: r };
+      },
+    } as AsyncIterable<unknown>;
+  };
+  const ps = await driveOne(
+    { at: "https://x.test", model: "m", ask },
+    { promise: "p", criteria: [{ id: "AC-1", text: "the message appears" }] },
+    1,
+  );
+  assert.equal(seen.length, 2, "it is asked once more");
+  assert.deepEqual(seen[1].mcpServers, {}, "and without the browser");
+  assert.deepEqual(ps.map((p) => p.verdict), ["green"], "so the work it did is not thrown away");
+});
