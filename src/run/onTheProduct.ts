@@ -15,6 +15,7 @@
 import { Cut, Space } from "../core/schema";
 import { driveAll, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
+import { signInOnce } from "./theWayIn";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DispatchOutcome, RunState } from "./state";
@@ -83,12 +84,19 @@ export async function judgeOnTheProduct(a: {
     const dir = looksIn(id);
     if (dir) fs.mkdirSync(dir, { recursive: true });
   }
+  // The way in, made once for all of them: signed in outside the model,
+  // cut down to the product's own origin.
+  const session = a.storeDir
+    ? await signInOnce({ at: a.at, into: path.join(a.storeDir, "looks", a.runId ?? "run", "session.json") })
+    : { why: "there is nowhere to keep a session" };
+  if ("why" in session) a.log(`no signed-in session for the reviewers: ${session.why}`, "live");
   const proofs = await (a.drive ?? driveAll)(
     {
       at: a.at,
       model: a.deps.model,
       log: (l) => a.log(l, "live"),
       looksIn: (id: string) => looksIn(id),
+      ...("path" in session ? { sessionFile: session.path } : {}),
     },
     list,
     ids,

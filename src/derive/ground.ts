@@ -152,7 +152,10 @@ function buildGroundingPrompt(args: {
     `A check NEVER PERFORMS the effect on the world. When the effect itself cannot be verified by the machine — it ` +
     `needs the running product, or acts on the world ("the cluster is down", "the app answers on its URL") — it is NOT ` +
     `a check: put it in the node's "unverified" list as {"text":"the effect","why":"why the machine cannot verify it"} ` +
-    `and write the checks at the seam. After the merge a REVIEWER WITH A BROWSER opens the DEPLOYED thing at its own ` +
+    `and write the checks at the seam. A criterion driven on the running product must hold in a product ALREADY IN ` +
+    `USE: the reviewer creates what it needs and judges what it did — "the task it just added appears at the top" ` +
+    `holds anywhere, "the list shows three tasks" holds only in an empty one and is not a criterion. ` +
+    `After the merge a REVIEWER WITH A BROWSER opens the DEPLOYED thing at its own ` +
     `address and drives each criterion about a page: it can click, type, tab, press Enter and Escape, and read what ` +
     `the page shows — including controls the browser itself draws, such as a date field. So a behaviour a PERSON ` +
     `COULD PERFORM IN A BROWSER is NEVER "unverified": it is a criterion, and the reviewer settles it on the running ` +

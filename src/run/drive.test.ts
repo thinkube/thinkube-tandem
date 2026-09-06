@@ -94,3 +94,27 @@ test("the address the browser is held to is the origin, whatever path the produc
   assert.equal(originOf("https://todo.example.com/app/deep?x=1"), "https://todo.example.com");
   assert.equal(originOf("not a url"), "not a url");
 });
+
+test("a reviewer that could not get in judges nothing — never a red the work did not earn", async () => {
+  const { ask } = says("1. BLOCKED the address redirected to a sign-in page and no way in was offered");
+  const ps = await driveOne(
+    { at: "https://x.test", model: "m", ask },
+    { promise: "a task added is shown", criteria: [{ id: "AC-1", text: "adding a task shows it" }] },
+    1,
+  );
+  assert.deepEqual(ps.map((p) => p.verdict), ["unjudged"]);
+  assert.match(ps[0].ref ?? "", /nothing was judged/);
+  assert.match(ps[0].ref ?? "", /sign-in page/, "in the reviewer's own words");
+});
+
+test("the browser starts from the session it is given", async () => {
+  const { ask, seen } = says("1. GREEN it was there");
+  await driveOne(
+    { at: "https://x.test", model: "m", ask, sessionFile: "/tmp/session.json" },
+    { promise: "p", criteria: [{ text: "c" }] },
+    1,
+  );
+  const servers = seen[0].mcpServers as Record<string, { args: string[] }>;
+  assert.ok(servers.browser.args.includes("--storage-state"), servers.browser.args.join(" "));
+  assert.ok(servers.browser.args.includes("/tmp/session.json"));
+});

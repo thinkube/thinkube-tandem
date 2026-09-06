@@ -44,6 +44,10 @@ export interface DriveArgs {
    *  reviewer, kept beside the run's own record, so what it decided on can
    *  be looked at afterwards. */
   looksIn?: string | ((id: string) => string | undefined);
+  /** A signed-in session for the product's own origin, as a file the
+   *  browser starts from. Without it the reviewer meets the sign-in page
+   *  and judges nothing. */
+  sessionFile?: string;
   /** The browser the driver reaches through, as a command to run. */
   browser?: { command: string; args: string[] };
   log?: (line: string) => void;
@@ -75,6 +79,7 @@ function browserOf(a: DriveArgs): { command: string; args: string[] } {
         "--viewport-size",
         "1440,900",
         ...(typeof a.looksIn === "string" ? ["--output-dir", a.looksIn] : []),
+        ...(a.sessionFile ? ["--storage-state", a.sessionFile] : []),
       ],
     }
   );
@@ -94,12 +99,15 @@ export function originOf(at: string): string {
  * The reviewer's word for one criterion, from a reply that answers them
  * all: the last line that names that criterion by its number.
  */
-function verdictFor(reply: string | null | undefined, ord: number): { verdict: "GREEN" | "RED"; said: string } | undefined {
+function verdictFor(
+  reply: string | null | undefined,
+  ord: number,
+): { verdict: "GREEN" | "RED" | "BLOCKED"; said: string } | undefined {
   if (!reply) return undefined;
   const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, ""));
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = new RegExp(`^${ord}[).:\\s]+\\s*(GREEN|RED)\\b[:\\s—-]*(.*)$`, "i").exec(lines[i]);
-    if (m) return { verdict: m[1].toUpperCase() as "GREEN" | "RED", said: (m[2] ?? "").trim() };
+    const m = new RegExp(`^${ord}[).:\\s]+\\s*(GREEN|RED|BLOCKED)\\b[:\\s—-]*(.*)$`, "i").exec(lines[i]);
+    if (m) return { verdict: m[1].toUpperCase() as "GREEN" | "RED" | "BLOCKED", said: (m[2] ?? "").trim() };
   }
   return undefined;
 }
@@ -177,8 +185,23 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
       "",
       "Open the address once and check them in order, doing what each one",
-      "describes. If the page needs you to sign in and no way in is offered,",
-      "every one of them is RED with that as the reason.",
+      "describes. Build whatever you need through the product itself — make",
+      "a task before you open the box that needs one.",
+      "",
+      "Name everything you create so a person can recognise it later:",
+      "start every name you type with `tandem check ·`. Remove what you made",
+      "when the product offers a way; where it does not, say what you left",
+      "and why, in a last line beginning LEFT BEHIND:.",
+      "",
+      "The product is in use and holds other people's things. Judge what you",
+      "did and what you saw of it, never the state of the whole product: if a",
+      "criterion only holds in an empty product, say so rather than failing",
+      "it.",
+      "",
+      "If you cannot reach the thing at all — a sign-in page with no way",
+      "through, the address does not answer, the page never loads — you have",
+      "judged nothing. Answer BLOCKED for those items, never RED: RED means",
+      "you did the thing and the product did not do what was promised.",
       "",
       "Take a screenshot of the page for each item, at the moment you decide",
       "it — that picture is what the person will look at, so let it show the",
@@ -189,6 +212,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "Answer with ONE LINE PER ITEM at the end, numbered as above:",
       "1. GREEN <what you did and what you saw>",
       "2. RED <what you did and what happened instead>",
+      "3. BLOCKED <what stopped you reaching it>",
     ].join("\n"),
   );
   return c.criteria.map((x, i) => {
@@ -207,11 +231,18 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
     a.log?.(`on the running product ${ord}.${i + 1}: ${answer.verdict}${answer.said ? ` — ${answer.said}` : ""}`);
     // `ref` is where the report reads a failure's reason, so it carries
     // what the reviewer saw, with the address after it.
+    // Blocked is not a verdict on the work: the reviewer never reached it.
+    const verdict = answer.verdict === "GREEN" ? "green" : answer.verdict === "RED" ? "red" : "unjudged";
     return {
       kind: "assessment" as const,
       label,
-      verdict: (answer.verdict === "GREEN" ? "green" : "red") as "green" | "red",
-      ref: answer.said ? `${answer.said} — seen at ${a.at}` : `it did not hold, at ${a.at}`,
+      verdict: verdict as "green" | "red" | "unjudged",
+      ref:
+        verdict === "unjudged"
+          ? `${answer.said || "the reviewer could not reach this"} — nothing was judged, at ${a.at}`
+          : answer.said
+            ? `${answer.said} — seen at ${a.at}`
+            : `it did not hold, at ${a.at}`,
       ...(x.id ? { criterionId: x.id } : {}),
     };
   });
