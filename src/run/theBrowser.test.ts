@@ -75,3 +75,20 @@ test("the server is the one this machine has, when it has one", () => {
   const found = serverHere("/nowhere-at-all");
   assert.equal(found.command, "npx", "and only a machine with none fetches one");
 });
+
+test("the browser is isolated, because that is where the signed-in session applies", async () => {
+  const server = fakeServer("Listening on http://localhost:1\n");
+  const seen: string[][] = [];
+  await openTheBrowser({
+    origin: "https://todo.example.com",
+    sessionFile: "/tmp/session.json",
+    start: (_c, ar) => {
+      seen.push(ar);
+      return server.start();
+    },
+  });
+  const ar = seen[0];
+  assert.ok(ar.includes("--isolated"), ar.join(" "));
+  assert.ok(!ar.includes("--user-data-dir"), "a profile would ignore the session file");
+  assert.ok(ar.includes("--storage-state") && ar.includes("/tmp/session.json"), ar.join(" "));
+});

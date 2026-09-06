@@ -63,11 +63,7 @@ export async function openTheBrowser(a: {
   origin: string;
   /** Where screenshots and page snapshots are written. */
   outputDir?: string;
-  /** The profile this browser keeps between connections. A reviewer works
-   *  in rounds, and each round is a new connection: an in-memory profile
-   *  is torn down with the one before it, and the reviewer comes back to
-   *  a browser that has forgotten where it was. */
-  profileDir?: string;
+
   /** A signed-in session for that origin. */
   sessionFile?: string;
   patienceMs?: number;
@@ -80,7 +76,11 @@ export async function openTheBrowser(a: {
   const args = [
     ...server.args,
     "--headless",
-    ...(a.profileDir ? ["--user-data-dir", a.profileDir] : ["--isolated"]),
+    // Isolated, because the signed-in session is handed over as a file and
+    // the server applies it to isolated sessions only. A reviewer that
+    // starts from a profile instead arrives signed out, is redirected to
+    // the sign-on host, and is refused there by its own origin limit.
+    "--isolated",
     "--port",
     "0",
     "--allowed-origins",

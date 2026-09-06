@@ -108,12 +108,21 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
   // the product's is the one that decides whether this tree can ship.
+  if (deps.prepare) say(`${tep}: preparing the delivered tree (${deps.prepare})`);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   // Prepares the tree so the checks can run. NOT a judgement: what the
   // build says at the END is the only reading that decides anything.
-  if (deps.build && deps.build !== deps.prepare) await prepareAtGate(deps.build, worktree, boundedExec, log);
+  if (deps.build && deps.build !== deps.prepare) {
+    say(`${tep}: building the delivered tree (${deps.build})`);
+    await prepareAtGate(deps.build, worktree, boundedExec, log);
+  }
+  say(`${tep}: running ${verifs.length} check(s) against the delivered tree`);
   const acResults = await runAcVerifications(verifs, worktree, (run, cwd) => boundedExec(run, cwd));
   // Assessments: a FRESH reviewer over the DELIVERED tree, fail-soft red.
+  const toRead = space.nodes
+    .filter((n) => cut.changeIds.includes(n.id))
+    .reduce((n, x) => n + x.acceptance.filter((c) => c.kind === "assessment").length, 0);
+  if (toRead) say(`${tep}: ${toRead} criterion(a) are read by a fresh reviewer (minutes)`);
   const graded = await gradeAssessments({
     space,
     cut,
