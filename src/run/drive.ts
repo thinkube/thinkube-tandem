@@ -59,15 +59,20 @@ export interface DriveArgs {
 }
 
 /**
- * How many turns a reviewer gets: what it takes to open the product and
- * sign in, and then a working allowance for each criterion it carries —
- * every one is a few clicks, a look, and a picture.
+ * How much work a reviewer does between check-ins.
+ *
+ * Not a budget it is expected to bump into: it is how far it goes before
+ * the machine looks in and asks whether it has answered. A reviewer still
+ * working is asked to carry on, however many times that takes — a form
+ * with a hundred fields takes as long as it takes. What ends it is that
+ * another round adds nothing.
  */
-const TURNS_TO_ARRIVE = 20;
-const TURNS_PER_CRITERION = 20;
-function turnsFor(criteria: number): number {
-  return TURNS_TO_ARRIVE + TURNS_PER_CRITERION * Math.max(1, criteria);
-}
+const TURNS_PER_ROUND = 40;
+/**
+ * The backstop, and only that: a reviewer that keeps acting and never
+ * answers is not converging on anything.
+ */
+const RUNAWAY = 12;
 
 /** The chrome installed on this machine, when there is one. */
 function chromeHere(): string | undefined {
@@ -256,34 +261,56 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "2. RED <what you did and what happened instead>",
       "3. BLOCKED <what stopped you reaching it>",
     ].join("\n"),
-    turnsFor(c.criteria.length),
+    TURNS_PER_ROUND,
   );
-  // Work with no verdicts is work thrown away: a reviewer that spent its
-  // turns on the product is asked, once and without the browser, to put
-  // what it found into the answer it owes.
-  const answered = c.criteria.some((_, i) => verdictFor(reply, i + 1));
-  const finished =
-    answered || !reply?.trim()
-      ? reply
-      : await drive(
-          a,
-          [
-            "You checked these on the running product and ran out of turns",
-            "before answering. Answer now from what you found — no browser,",
-            "no further looking.",
-            "",
-            "WHAT YOU WERE JUDGING:",
-            ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
-            "",
-            "WHAT YOU WROTE WHILE YOU WERE THERE:",
-            reply.slice(-6000),
-            "",
-            "ONE LINE PER ITEM, numbered as above: GREEN, RED, or BLOCKED",
-            "when you never reached it, each with what you did and saw.",
-          ].join("\n"),
-          3,
-          false,
-        );
+  // It works until it has answered, not until a counter runs out. Asked
+  // to carry on while each round brings something new; stopped when one
+  // adds nothing, and then asked once, without the browser, to say what
+  // it found — so work already done becomes verdicts rather than silence.
+  const allAnswered = (text: string | null): boolean => c.criteria.every((_, i) => verdictFor(text, i + 1));
+  let finished = reply;
+  let last = reply ?? "";
+  for (let more = 0; !allAnswered(finished) && more < RUNAWAY; more++) {
+    a.log?.(`on the running product ${ord}: still working, no answer yet — asking it to carry on`);
+    const again = await drive(
+      a,
+      [
+        "You have not answered every item yet. What you have already done",
+        "stands — do not repeat it. Finish what is left and then give your",
+        "numbered lines: GREEN, RED, or BLOCKED for anything you could not",
+        "reach.",
+        "",
+        "WHAT YOU ARE JUDGING:",
+        ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
+        "",
+        "WHAT YOU HAVE WRITTEN SO FAR:",
+        last.slice(-6000),
+      ].join("\n"),
+      TURNS_PER_ROUND,
+    );
+    if (!again || again === last) break;
+    last = again;
+    finished = again;
+  }
+  if (!allAnswered(finished) && (finished ?? "").trim())
+    finished =
+      (await drive(
+        a,
+        [
+          "Answer now from what you found — no browser, no further looking.",
+          "",
+          "WHAT YOU WERE JUDGING:",
+          ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
+          "",
+          "WHAT YOU WROTE WHILE YOU WERE THERE:",
+          (finished ?? "").slice(-6000),
+          "",
+          "ONE LINE PER ITEM, numbered as above: GREEN, RED, or BLOCKED",
+          "when you never reached it, each with what you did and saw.",
+        ].join("\n"),
+        3,
+        false,
+      )) ?? finished;
   return c.criteria.map((x, i) => {
     const answer = verdictFor(finished, i + 1);
     const label = x.text;
