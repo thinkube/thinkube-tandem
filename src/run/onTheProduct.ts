@@ -93,7 +93,7 @@ export async function judgeOnTheProduct(a: {
   const openOne = (who: string) =>
     openTheBrowser({
       origin: originOf(a.at),
-      ...(here ? { outputDir: path.join(here, who) } : {}),
+      ...(here ? { outputDir: path.join(here, who), profileDir: path.join(here, who, "profile") } : {}),
       ...("path" in session ? { sessionFile: session.path } : {}),
       log: (l) => a.log(`${who}: ${l}`, "live"),
     });

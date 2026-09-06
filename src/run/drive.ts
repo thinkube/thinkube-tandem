@@ -63,17 +63,16 @@ export interface DriveArgs {
  * How much work a reviewer does between check-ins.
  *
  * Not a budget it is expected to bump into: it is how far it goes before
- * the machine looks in and asks whether it has answered. A reviewer still
- * working is asked to carry on, however many times that takes — a form
- * with a hundred fields takes as long as it takes. What ends it is that
- * another round adds nothing.
+ * the machine looks in and asks whether it has answered. Set high enough
+ * that an ordinary promise is judged in one round, because every check-in
+ * costs a reconnection to the browser and a fresh start on the page.
  */
-const TURNS_PER_ROUND = 40;
+const TURNS_PER_ROUND = 200;
 /**
  * The backstop, and only that: a reviewer that keeps acting and never
  * answers is not converging on anything.
  */
-const RUNAWAY = 12;
+const RUNAWAY = 6;
 
 /**
  * What a reviewer may do in the browser: open a page, look at it, act on
@@ -269,13 +268,14 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "judged nothing. Answer BLOCKED for those items, never RED: RED means",
       "you did the thing and the product did not do what was promised.",
       "",
-      "Take a screenshot of the page for each item, at the moment you decide",
-      "it — that picture is what the person will look at, so let it show the",
-      "thing you are judging. Save each one under a name that says which item",
-      "it belongs to and what it shows, in this shape:",
+      "For each item you must SAVE A PICTURE with browser_take_screenshot at",
+      "the moment you decide it. A page snapshot is not a picture: the person",
+      "reads your answer and looks at the picture, and a snapshot shows them",
+      "nothing. Name each one for the item it belongs to and what it shows:",
       "  <item number>-<three to six words, hyphenated>.png",
-      "for example `2-empty-title-message-shown.png`. Take more than one for",
-      "an item when the story needs it.",
+      "for example `2-empty-title-message-shown.png`, and name that file in",
+      "the answer line for that item. Take more than one when the story needs",
+      "it.",
       "",
       "Leave the product as you found it where you can.",
       "",
@@ -367,6 +367,8 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
     // Blocked is not a verdict on the work: the reviewer never reached it.
     const verdict = answer.verdict === "GREEN" ? "green" : answer.verdict === "RED" ? "red" : "unjudged";
     const looks = looksFor(a.looksIn, i + 1);
+    if (!looks.length && verdict !== "unjudged")
+      a.log?.(`on the running product ${ord}.${i + 1}: judged with no picture saved`);
     return {
       kind: "assessment" as const,
       label,
