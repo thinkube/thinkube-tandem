@@ -196,7 +196,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // about a check's REACH belongs here, never in a verdict: the vetoes are an
   // unkept promise and a product that does not build, and a passing check is
   // kept. Coverage sees none kept by a file's text, a bundle, or a mute runtime.
-  const findings: string[] = [...unreached];
+  // What the work noticed and left alone rides with the gate's own
+  // findings: both are things the person reads and decides about.
+  const findings: string[] = [...unreached, ...(g.noticed ?? [])];
   // What only the person can close rides under its own criterion, so the
   // report can take their answer; a criterion a reviewer settles on the
   // running product replaces it there.

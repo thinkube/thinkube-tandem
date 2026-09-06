@@ -123,6 +123,12 @@ export async function handleInbound(
   } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "ask-from-finding" && msg.text) {
+    // Into the capture box, where every ask starts: the person reads it,
+    // keeps it or does not. Nothing is recorded on their behalf.
+    const box = session.space.draft ?? "";
+    session.saveDraft(box ? `${box.replace(/\s*$/, "")}\n${msg.text}` : msg.text);
+    note = "it is in the box — read and keep it when you want it built";
   } else if (msg.action === "open-look" && msg.path) {
     // Only what this run wrote: a path from anywhere else is not the
     // surface's to open.

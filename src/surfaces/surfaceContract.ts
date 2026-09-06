@@ -113,6 +113,9 @@ interface DeliveryVM {
   undelivered?: string[];
   /** What only the person can certify, by using the delivered thing. */
   observations?: string[];
+  /** What the work noticed and did not do, because it did not stop the ask
+   *  being delivered. The person decides whether each becomes an ask. */
+  findings?: string[];
   /** Promises whose answer comes from somewhere this run cannot reach —
    *  each with where it will come from, and whether it has arrived. A
    *  person attests the ones only a person can settle. */
@@ -344,6 +347,8 @@ export type WebToHost =
   | { action: "ask-for-help"; deliveryId: string }
   /** Open one of a reviewer's screenshots in the editor. */
   | { action: "open-look"; path: string }
+  /** Put a finding in the capture box, as a sentence to keep or not. */
+  | { action: "ask-from-finding"; text: string }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }

@@ -489,6 +489,9 @@ export interface GateContext {
   sliceCommitted: Set<string>;
   checkOf: Map<string, string>;
   undelivered: string[];
+  /** What the work noticed and left alone: it did not stop the ask being
+   *  delivered, so it rides the delivery for the person to decide on. */
+  noticed?: string[];
   rulings: Ruling[];
   decisions: { unit: string; text: string }[];
   exec: Exec;

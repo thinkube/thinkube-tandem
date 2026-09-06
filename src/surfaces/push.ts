@@ -439,6 +439,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         return pending.length ? { pending } : {};
       })(),
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
+      ...(d.findings?.length ? { findings: d.findings } : {}),
       ...((): { tep?: string } => {
         const cut = session.space.cuts.find((c) => c.id === d.cutId);
         return cut?.tepId ? { tep: cut.tepId } : {};

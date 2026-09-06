@@ -48,6 +48,7 @@ import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, se
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
+import { findingsIn } from "./findings";
 import { unitCloser } from "./closeUnit";
 import { buildOracleArgs } from "./oracleArgs";
 import { runWaits } from "./waits";
@@ -218,6 +219,9 @@ export async function dispatchTep(
   for (const h of rehomed) log(`⚖ check ${h.ac} of ${h.parent} is the maintainer's (${h.maintainer}): its words name a test home that unit brings under — graded there`);
   const specBody = renderTepBody(space, cut);
   const undelivered: string[] = [];
+  /** What the work saw and did not touch, because it did not stop the ask
+   *  being delivered. Carried to the person, never fixed on their behalf. */
+  const noticed: string[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
@@ -476,6 +480,11 @@ export async function dispatchTep(
         }
         if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
         if (ok && role === "test") decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
+        // What it noticed and left alone, in its own words, for the person.
+        for (const f of findingsIn(outcome.finalText)) {
+          noticed.push(`${next.id}: ${f}`);
+          log(`👀 ${next.id}: ${f}`, next.id);
+        }
         break;
       }
 
@@ -606,7 +615,7 @@ export async function dispatchTep(
     tep, branch, baseSha, worktree, slices, space, cut, deps,
     runOne: know.runOne, suite: know.suite,
     ...(ready.parts ? { parts: ready.parts } : {}),
-    sliceProbes, sliceCommitted, checkOf, undelivered, rulings, decisions,
+    sliceProbes, sliceCommitted, checkOf, undelivered, noticed, rulings, decisions,
     exec, boundedExec, suiteExec, state: st, log, defect,
     sessionOf: (unit: string) => sessions.get(unit),
     worker,

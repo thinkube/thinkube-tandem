@@ -360,6 +360,42 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
           </div>
         ) : null}
 
+        {d.findings?.length ? (
+          <div data-findings style={{ marginBottom: SP.lg }}>
+            <div style={label}>What the work noticed, and did not do</div>
+            <div style={{ fontSize: FS.caption, color: C.quiet, marginBottom: SP.sm }}>
+              None of these stopped the work being delivered, so nothing was changed for them. Make one an ask
+              and it goes in the box with your own sentences.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: SP.sm }}>
+              {d.findings.map((f, i) => (
+                <div
+                  key={i}
+                  data-finding={i}
+                  style={{
+                    display: "flex",
+                    gap: SP.md,
+                    alignItems: "baseline",
+                    padding: `${SP.sm}px ${SP.md}px`,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 6,
+                  }}
+                >
+                  <span style={{ fontSize: FS.body, lineHeight: 1.5, flex: 1 }}>{f}</span>
+                  <button
+                    data-ask-from-finding={i}
+                    onClick={() => post({ action: "ask-from-finding", text: f })}
+                    style={{ fontSize: FS.caption, whiteSpace: "nowrap" }}
+                    title="Puts this in the capture box as a sentence you can keep."
+                  >
+                    Make this an ask
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {seen.length ? (
           <div data-found style={{ marginBottom: SP.lg }}>
             <div style={label}>Nobody could settle these — they are yours to check</div>
