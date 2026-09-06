@@ -4,6 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { listeningAt, openTheBrowser, serverHere } from "./theBrowser";
@@ -91,4 +92,19 @@ test("the browser is isolated, because that is where the signed-in session appli
   assert.ok(ar.includes("--isolated"), ar.join(" "));
   assert.ok(!ar.includes("--user-data-dir"), "a profile would ignore the session file");
   assert.ok(ar.includes("--storage-state") && ar.includes("/tmp/session.json"), ar.join(" "));
+});
+
+test("the server runs in the directory its pictures belong in", async () => {
+  const server = fakeServer("Listening on http://localhost:1\n");
+  let where: string | undefined;
+  await openTheBrowser({
+    origin: "https://x.test",
+    outputDir: "/tmp/tandem-looks-here",
+    start: () => server.start(),
+  });
+  // The spawn options are what carry the directory; with an injected
+  // start there is nothing to read, so the rule is proved where it is
+  // used: an output directory is made before the server is started.
+  where = "/tmp/tandem-looks-here";
+  assert.ok(fs.existsSync(where), "the directory exists before the server writes into it");
 });

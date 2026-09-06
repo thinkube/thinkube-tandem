@@ -91,7 +91,15 @@ export async function openTheBrowser(a: {
     ...(a.sessionFile ? ["--storage-state", a.sessionFile] : []),
     ...(chrome ? ["--executable-path", chrome] : []),
   ];
-  const child = (a.start ?? ((cmd, ar) => spawn(cmd, ar, { stdio: ["ignore", "pipe", "pipe"] })))(server.command, args);
+  // The server writes a named screenshot relative to its own working
+  // directory, and its snapshots and logs to --output-dir. Started in that
+  // same directory, both land together beside the run's record.
+  if (a.outputDir) fs.mkdirSync(a.outputDir, { recursive: true });
+  const child = (
+    a.start ??
+    ((cmd, ar) =>
+      spawn(cmd, ar, { stdio: ["ignore", "pipe", "pipe"], ...(a.outputDir ? { cwd: a.outputDir } : {}) }))
+  )(server.command, args);
   const said: string[] = [];
   let url: string | undefined;
   const read = (d: Buffer | string): void => {
