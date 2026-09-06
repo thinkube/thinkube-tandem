@@ -22,6 +22,8 @@
  * pass nobody saw, and never a red the work did not earn.
  */
 import { theModel } from "../engine/theModel";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Proof } from "../core/schema";
 import { collectText } from "../derive/round";
 
@@ -62,14 +64,39 @@ export interface DriveArgs {
  */
 const TURNS = 40;
 
+/** The chrome installed on this machine, when there is one. */
+function chromeHere(): string | undefined {
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(process.env.HOME ?? "~", ".cache", "ms-playwright");
+  let dirs: string[] = [];
+  try {
+    dirs = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort();
+  } catch {
+    return undefined;
+  }
+  for (const d of dirs.reverse())
+    for (const under of ["chrome-linux64/chrome", "chrome-linux/chrome"]) {
+      const exe = path.join(root, d, under);
+      if (fs.existsSync(exe)) return exe;
+    }
+  return undefined;
+}
+
+/** The browser server this machine has, else one fetched on the spot. */
+function browserServer(): { command: string; args: string[] } {
+  const installed = ["playwright-mcp", "mcp-server-playwright"]
+    .map((n) => path.join(process.env.HOME ?? "~", ".npm-global", "bin", n))
+    .find((p) => fs.existsSync(p));
+  return installed ? { command: installed, args: [] } : { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+}
+
 /** The browser, spoken to over the same protocol every other tool uses. */
 function browserOf(a: DriveArgs): { command: string; args: string[] } {
+  const server = browserServer();
   return (
     a.browser ?? {
-      command: "npx",
+      command: server.command,
       args: [
-        "-y",
-        "@playwright/mcp@latest",
+        ...server.args,
         "--headless",
         "--isolated",
         "--allowed-origins",
@@ -80,6 +107,9 @@ function browserOf(a: DriveArgs): { command: string; args: string[] } {
         "1440,900",
         ...(typeof a.looksIn === "string" ? ["--output-dir", a.looksIn] : []),
         ...(a.sessionFile ? ["--storage-state", a.sessionFile] : []),
+        // The chrome this machine has. Without it the server fetches a
+        // browser of its own on every reviewer.
+        ...(chromeHere() ? ["--executable-path", chromeHere()!] : []),
       ],
     }
   );

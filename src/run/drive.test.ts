@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { driveAll, driveOne, originOf } from "./drive";
 
 /** One reply, in the shape the SDK streams it. */
@@ -130,4 +132,16 @@ test("a reviewer gets the browser it was given and no other", async () => {
   assert.equal(o.strictMcpConfig, true, "the machine's own browser server is not inherited");
   assert.ok((o.disallowedTools as string[]).includes("mcp__playwright"), "and is refused by name as well");
   assert.deepEqual(Object.keys(o.mcpServers as object), ["browser"]);
+});
+
+test("the browser server and the chrome are the ones this machine has", async () => {
+  const { ask, seen } = says("1. GREEN it was there");
+  await driveOne({ at: "https://x.test", model: "m", ask }, { promise: "p", criteria: [{ text: "c" }] }, 1);
+  const b = (seen[0].mcpServers as Record<string, { command: string; args: string[] }>).browser;
+  const fetched = b.command === "npx";
+  assert.equal(
+    fetched,
+    !fs.existsSync(path.join(process.env.HOME ?? "~", ".npm-global", "bin", "playwright-mcp")),
+    "it fetches a server only where the machine has none",
+  );
 });
