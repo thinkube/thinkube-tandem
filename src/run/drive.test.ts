@@ -118,3 +118,16 @@ test("the browser starts from the session it is given", async () => {
   assert.ok(servers.browser.args.includes("--storage-state"), servers.browser.args.join(" "));
   assert.ok(servers.browser.args.includes("/tmp/session.json"));
 });
+
+test("a reviewer gets the browser it was given and no other", async () => {
+  const { ask, seen } = says("1. GREEN it was there");
+  await driveOne(
+    { at: "https://x.test", model: "m", ask, sessionFile: "/tmp/s.json" },
+    { promise: "p", criteria: [{ text: "c" }] },
+    1,
+  );
+  const o = seen[0];
+  assert.equal(o.strictMcpConfig, true, "the machine's own browser server is not inherited");
+  assert.ok((o.disallowedTools as string[]).includes("mcp__playwright"), "and is refused by name as well");
+  assert.deepEqual(Object.keys(o.mcpServers as object), ["browser"]);
+});

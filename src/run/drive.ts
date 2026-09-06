@@ -136,11 +136,18 @@ async function drive(a: DriveArgs, prompt: string): Promise<string | null> {
             effort: "high",
             maxTurns: TURNS,
             mcpServers: { browser: { command: b.command, args: b.args } },
+            // Only this browser. Without it the machine's own browser
+            // server is inherited too, and that one carries no session and
+            // is held to no origin.
+            strictMcpConfig: true,
             // The browser and nothing else: no file, no command, no
             // network tool of its own. A driver that could read the
             // repository would judge the code again instead of the product.
             allowedTools: ["mcp__browser"],
             disallowedTools: [
+              // The machine's own browser server, named, in case anything
+              // but the flag above lets it through.
+              "mcp__playwright",
               "Read",
               "Grep",
               "Glob",
