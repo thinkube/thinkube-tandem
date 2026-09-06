@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { credentialsFrom, onlyThisProduct, signInOnce } from "./theWayIn";
+import { credentialsFrom, onlyThisProduct, signInOnce, theWayInWorks } from "./theWayIn";
 
 const whole = {
   cookies: [
@@ -87,4 +87,21 @@ test("the identity is the realm user the platform signs people in as", () => {
   );
   fs.writeFileSync(path.join(home, ".env"), 'ADMIN_PASSWORD="secret"\n');
   assert.deepEqual(credentialsFrom({}, home), { username: "thinkube", password: "secret" });
+});
+
+test("a session that does not open the product is said before any reviewer starts", async () => {
+  const sentAway = await theWayInWorks({
+    at: "https://todo.thinkube.com",
+    sessionFile: "/tmp/s.json",
+    visit: async () => ({ landedAt: "https://auth.thinkube.com/realms/thinkube/protocol/openid-connect/auth" }),
+  });
+  assert.ok("why" in sentAway);
+  assert.match(sentAway.why, /sent the browser to auth\.thinkube\.com/);
+
+  const lands = await theWayInWorks({
+    at: "https://todo.thinkube.com",
+    sessionFile: "/tmp/s.json",
+    visit: async () => ({ landedAt: "https://todo.thinkube.com/" }),
+  });
+  assert.deepEqual(lands, { ok: true });
 });

@@ -134,6 +134,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     halted: () => g.state.halted,
     abortable: (ab, label) => g.state.aborts.set(`${GATE_STEP}#${label}`, ab),
     log,
+    // One reader, one sub-step: the gate's card opens the whole account
+    // and each reading is legible on its own.
+    logFor: (ord, line) => log(line, `${GATE_STEP}#reading-${ord}`),
     onRed: (label, ref) =>
       defect({
         activity: "closing gate",

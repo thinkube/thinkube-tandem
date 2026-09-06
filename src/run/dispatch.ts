@@ -256,11 +256,18 @@ export async function dispatchTep(
     stop: st.stop.signal,
     // The audit card's own account: which criteria passed, per slice, from
     // the oracle's own verdicts — replaced whole on every re-grade.
-    onGrade: (slice, results) =>
+    onGrade: (slice, results) => {
       st.gradeSlice(
         slice,
         results.map((r) => ({ ac: r.ac, pass: r.pass, ...(r.pass ? {} : { text: r.evidence }) })),
-      ),
+      );
+      // The auditor's own card carries its own account, the way a worker's
+      // does: what it graded and what each criterion said.
+      const step = `audit:${slice}`;
+      log(`${results.filter((r) => r.pass).length} of ${results.length} check(s) of ${slice} passed`, step);
+      for (const r of results)
+        if (!r.pass) log(`AC-${r.ac}: ${(r.evidence ?? "did not pass").split("\n")[0].slice(0, 300)}`, step);
+    },
   });
   const buildOracle = sliceOracleFactory(oracleArgs);
   const challengeFor = makeChallenge(oracleArgs);

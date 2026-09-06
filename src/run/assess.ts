@@ -19,6 +19,9 @@ export interface AssessArgs {
   model: string;
   workerModel?: WorkerModelConfig;
   log?: (l: string) => void;
+  /** Where one assessment's own lines go — its own sub-step, so the
+   *  gate's account is not one stream of interleaved reviewers. */
+  logFor?: (ord: number, line: string) => void;
   round?: typeof runReadRound;
   onRed?: (label: string, ref: string) => void;
   /** The reviewer never reached a verdict — the machine could not judge,
@@ -89,10 +92,12 @@ async function gradeOne(
   ord: number,
 ): Promise<{ proofs: Proof[]; observations: string[] }> {
   const mine: { proofs: Proof[]; observations: string[] } = { proofs: [], observations: [] };
+  // This assessment's own account, under its own name.
+  const said = (l: string): void => (a.logFor ? a.logFor(ord, l) : a.log?.(`assessment ${ord}: ${l}`));
   const shaped = observationShaped(c.text);
   if (shaped) {
     mine.observations.push(`${c.text} — ${shaped}`);
-    a.log?.(`assessment ${ord}: an observation, by design — it rides the delivery for the person`);
+    said(`an observation, by design — it rides the delivery for the person`);
     return mine;
   }
   const ask = a.space.asks.find((x) => n.serves.includes(x.id));
@@ -154,7 +159,7 @@ async function gradeOne(
   let verdict = verdictOf(reply);
   let last = reply ?? "";
   for (let more = 0; !verdict && more < RUNAWAY; more++) {
-    a.log?.(`assessment ${ord}: still reading, no answer yet — asking it to carry on`);
+    said(`still reading, no answer yet — asking it to carry on`);
     const again = await askReviewer(
       TURNS_PER_READ,
       "You have not answered yet. What you have read already stands. Read only what you " +
@@ -169,7 +174,7 @@ async function gradeOne(
   }
   if (verdict === "OBSERVE") {
     mine.observations.push(`${c.text} — ${(reply ?? "").split("\n").filter(Boolean).pop()?.replace(/^OBSERVE\S*\s*/i, "").slice(0, 200) ?? ""}`);
-    a.log?.(`assessment ${ord}: OBSERVE — only the running product can show it; it rides the delivery for the person`);
+    said(`OBSERVE — only the running product can show it; it rides the delivery for the person`);
     return mine;
   }
   // No verdict after re-reading is the MACHINE failing to judge, not
@@ -177,7 +182,7 @@ async function gradeOne(
   // named — never a red the work cannot answer.
   if (!verdict) {
     mine.observations.push(`${c.text} — the machine could not grade this: the reviewer never reached a verdict. Judge it yourself.`);
-    a.log?.(`assessment ${ord}: the reviewer never reached a verdict — it rides the delivery for the person, not counted against the work`);
+    said(`the reviewer never reached a verdict — it rides the delivery for the person, not counted against the work`);
     a.ungraded?.(`review-${ord}`, c.text);
     return mine;
   }
@@ -190,7 +195,7 @@ async function gradeOne(
     verdict: green ? "green" : "red",
     ...(reply ? { ref: reply.slice(0, 300) } : {}),
   });
-  a.log?.(`assessment ${ord}: ${green ? "GREEN" : "RED"}`);
+  said(`${green ? "GREEN" : "RED"}`);
   return mine;
 }
 

@@ -182,6 +182,63 @@ function playwrightFrom(): unknown {
 }
 
 /**
+ * Does that session actually open the product?
+ *
+ * A session that was written but is not applied — expired, or handed to a
+ * browser that ignores it — sends every reviewer to the sign-on host,
+ * where its own origin limit refuses it. Asked once here, before any
+ * reviewer is started, so the answer is one line rather than a wall of
+ * blocked criteria.
+ */
+export async function theWayInWorks(a: {
+  at: string;
+  sessionFile: string;
+  /** Injectable for tests: what actually opens the page. */
+  visit?: (a: { at: string; sessionFile: string }) => Promise<{ landedAt: string }>;
+}): Promise<{ ok: true } | { why: string }> {
+  try {
+    const { landedAt } = await (a.visit ?? visitWithABrowser)({ at: a.at, sessionFile: a.sessionFile });
+    const wanted = new URL(a.at).host;
+    const got = (() => {
+      try {
+        return new URL(landedAt).host;
+      } catch {
+        return landedAt;
+      }
+    })();
+    return got === wanted
+      ? { ok: true }
+      : { why: `the session does not open the product: ${a.at} sent the browser to ${got}` };
+  } catch (err) {
+    return { why: `the product could not be opened with that session: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+/** Open the address with that session and say where the browser ended up. */
+async function visitWithABrowser(a: { at: string; sessionFile: string }): Promise<{ landedAt: string }> {
+  const { chromium } = playwrightFrom() as unknown as {
+    chromium: {
+      launch: (o: { headless: boolean; executablePath?: string }) => Promise<{
+        newContext: (o: { storageState: string }) => Promise<{
+          newPage: () => Promise<Record<string, (...args: unknown[]) => Promise<unknown>> & { url: () => string }>;
+          close: () => Promise<void>;
+        }>;
+        close: () => Promise<void>;
+      }>;
+    };
+  };
+  const browser = await chromium.launch({ headless: true, ...(chromeOnThisMachine() ?? {}) });
+  try {
+    const context = await browser.newContext({ storageState: a.sessionFile });
+    const page = await context.newPage();
+    await page.goto(a.at, { waitUntil: "networkidle", timeout: 60000 });
+    return { landedAt: page.url() };
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
  * The sign-in itself: open the address, follow the platform's login form,
  * and read the browser's state back. Playwright is loaded here and only
  * here, so a machine without it says so instead of failing elsewhere.

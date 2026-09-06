@@ -15,7 +15,7 @@
 import { Cut, Space } from "../core/schema";
 import { driveAll, originOf, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
-import { signInOnce } from "./theWayIn";
+import { signInOnce, theWayInWorks } from "./theWayIn";
 import { openTheBrowser } from "./theBrowser";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -86,6 +86,13 @@ export async function judgeOnTheProduct(a: {
     ? await signInOnce({ at: a.at, into: path.join(here, "session.json") })
     : { why: "there is nowhere to keep a session" };
   if ("why" in session) a.log(`no signed-in session for the reviewers: ${session.why}`, "live");
+  // Asked once, here: a session that does not open the product sends every
+  // reviewer to the sign-on host, which their own origin limit refuses.
+  if ("path" in session) {
+    const works = await theWayInWorks({ at: a.at, sessionFile: session.path });
+    if ("why" in works) a.log(`the reviewers will be locked out — ${works.why}`, "live");
+    else a.log(`the session opens ${a.at}`, "live");
+  }
 
   // One browser each, opened when the reviewer starts and closed when it
   // is done — and one opened here first, so a machine that cannot start a
@@ -95,7 +102,7 @@ export async function judgeOnTheProduct(a: {
       origin: originOf(a.at),
       ...(here ? { outputDir: path.join(here, who) } : {}),
       ...("path" in session ? { sessionFile: session.path } : {}),
-      log: (l) => a.log(`${who}: ${l}`, "live"),
+      log: (l) => a.log(l, who),
     });
   const browser = await openOne(ids[0] ?? "on-the-product-1");
   if ("why" in browser) {
@@ -129,6 +136,9 @@ export async function judgeOnTheProduct(a: {
       model: a.deps.model,
       ...(here ? { looksIn: here } : {}),
       log: (l) => a.log(l, "live"),
+      // A reviewer's own account belongs on its own card, the way a
+      // worker's does — three of them in one stream reads as nobody's.
+      logFor: (who, l) => a.log(l, who),
       stop: a.st.stop.signal,
     },
     list,

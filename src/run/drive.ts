@@ -47,6 +47,9 @@ export interface DriveArgs {
   browserAt: string;
   /** Which reviewer this is, for its own lines in the log. */
   who?: string;
+  /** Where a reviewer's own lines go: under its own card, by its id, so
+   *  three reviewers do not interleave into one stream nobody can read. */
+  logFor?: (who: string, line: string) => void;
   /** Where the browser writes its pictures, so each verdict can carry the
    *  ones taken for it. */
   looksIn?: string;
@@ -439,7 +442,7 @@ export async function driveAll(
     const who = ids[i] ?? `${i + 1}`;
     const browser = openOne ? await openOne(who) : { url: (a as DriveArgs).browserAt, close: () => undefined };
     if ("why" in browser) {
-      a.log?.(`on the running product ${i + 1}: no browser — ${browser.why}`);
+      (a.logFor ? (l: string) => a.logFor!(who, l) : a.log)?.(`no browser — ${browser.why}`);
       return c.criteria.map((x) => ({
         kind: "assessment" as const,
         label: x.text,
@@ -450,7 +453,13 @@ export async function driveAll(
     }
     try {
       return await driveOne(
-        { ...a, browserAt: browser.url, who, ...(a.looksIn ? { looksIn: `${a.looksIn}/${who}` } : {}) },
+        {
+          ...a,
+          browserAt: browser.url,
+          who,
+          ...(a.looksIn ? { looksIn: `${a.looksIn}/${who}` } : {}),
+          ...(a.logFor ? { log: (l: string) => a.logFor!(who, l) } : {}),
+        },
         c,
         i + 1,
       );
