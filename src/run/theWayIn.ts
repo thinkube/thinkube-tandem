@@ -22,11 +22,53 @@ export interface Credentials {
   password: string;
 }
 
-/** The platform's one identity, from the environment it is kept in. */
-export function credentialsFrom(env: NodeJS.ProcessEnv = process.env): Credentials | undefined {
-  const username = env.ADMIN_USERNAME || env.POSTGRES_USER;
-  const password = env.ADMIN_PASSWORD || env.POSTGRES_PASSWORD;
+/**
+ * The platform's one identity: the realm user it signs people in as, and
+ * the admin password.
+ *
+ * The environment first; then the two files the platform keeps them in —
+ * the shell environment it loads for its own tools, and the inventory
+ * that names the realm user. The password never leaves this module.
+ */
+export function credentialsFrom(
+  env: NodeJS.ProcessEnv = process.env,
+  home = process.env.HOME ?? "~",
+): Credentials | undefined {
+  const dotEnv = readDotEnv(path.join(home, ".env"));
+  const username =
+    env.AUTH_REALM_USERNAME ||
+    dotEnv.AUTH_REALM_USERNAME ||
+    fromInventory(home, "auth_realm_username") ||
+    env.ADMIN_USERNAME ||
+    dotEnv.ADMIN_USERNAME;
+  const password = env.ADMIN_PASSWORD || dotEnv.ADMIN_PASSWORD;
   return username && password ? { username, password } : undefined;
+}
+
+/** `KEY=value` lines, quotes stripped; nothing else is interpreted. */
+function readDotEnv(file: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return out;
+  }
+  for (const line of text.split("\n")) {
+    const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (m) out[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+  return out;
+}
+
+/** One value from the platform's own inventory, when it is on this machine. */
+function fromInventory(home: string, key: string): string | undefined {
+  try {
+    const text = fs.readFileSync(path.join(home, ".ansible", "inventory", "inventory.yaml"), "utf8");
+    return new RegExp("^\\s*" + key + "\\s*:\\s*(\\S+)\\s*$", "m").exec(text)?.[1];
+  } catch {
+    return undefined;
+  }
 }
 
 /** A saved browser session, as Playwright writes and reads it. */
@@ -173,6 +215,10 @@ async function signInWithABrowser(a: { at: string; credentials: Credentials }): 
     await page.fill('input[name="password"], input#password', a.credentials.password);
     await page.click('input[type="submit"], button[type="submit"]');
     await page.waitForURL((u: unknown) => String(u).startsWith(new URL(a.at).origin), { timeout: 60000 });
+    // The product finishes its own sign-in after the redirect lands — it
+    // exchanges the code and writes the session it will use. Reading the
+    // browser before that settles saves a page with no session in it.
+    await page.waitForLoadState("networkidle", { timeout: 60000 });
     return await context.storageState();
   } finally {
     await browser.close();

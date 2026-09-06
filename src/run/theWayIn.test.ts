@@ -67,7 +67,24 @@ test("a sign-in that leaves nothing for the product is not a session", async () 
   assert.ok("why" in r && /did not set a session/.test(r.why));
 });
 
-test("the identity comes from the machine's own environment", () => {
-  assert.deepEqual(credentialsFrom({ ADMIN_USERNAME: "a", ADMIN_PASSWORD: "b" }), { username: "a", password: "b" });
-  assert.equal(credentialsFrom({}), undefined);
+test("the identity is the realm user the platform signs people in as", () => {
+  const nowhere = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-nohome-"));
+  assert.deepEqual(
+    credentialsFrom({ AUTH_REALM_USERNAME: "thinkube", ADMIN_PASSWORD: "b" }, nowhere),
+    { username: "thinkube", password: "b" },
+    "the realm user, not the machine's admin account",
+  );
+  assert.equal(credentialsFrom({}, nowhere), undefined, "no identity where the platform keeps none");
+
+  // The platform's own files answer when the environment does not: the
+  // inventory names the realm user, and the shell environment holds the
+  // password.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-home-"));
+  fs.mkdirSync(path.join(home, ".ansible", "inventory"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".ansible", "inventory", "inventory.yaml"),
+    "all:\n  vars:\n    admin_username: tkadmin\n    auth_realm_username: thinkube\n",
+  );
+  fs.writeFileSync(path.join(home, ".env"), 'ADMIN_PASSWORD="secret"\n');
+  assert.deepEqual(credentialsFrom({}, home), { username: "thinkube", password: "secret" });
 });
