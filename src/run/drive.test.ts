@@ -328,3 +328,23 @@ test("a reviewer whose browser will not start judges nothing, and says why", asy
   assert.deepEqual(proofs.flat().map((p) => p.verdict), ["unjudged"]);
   assert.match(proofs[0][0].ref ?? "", /stopped before it was ready/);
 });
+
+test("a reviewer reports what it noticed and did not judge", async () => {
+  const { ask } = says(
+    [
+      "1. GREEN the cursor was in the title",
+      "FINDING: the priority filter has no Catalan translation — it reads in English on a Catalan page",
+      "FINDING: none of the date fields say what format they want",
+    ].join("\n"),
+  );
+  const ps = await driveOne(
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
+    { promise: "p", criteria: [{ id: "AC-1", text: "the cursor is in the title" }] },
+    1,
+  );
+  assert.deepEqual(ps.map((p) => p.verdict), ["green"], "its verdicts are unaffected");
+  assert.deepEqual((ps as typeof ps & { noticed?: string[] }).noticed, [
+    "the priority filter has no Catalan translation — it reads in English on a Catalan page",
+    "none of the date fields say what format they want",
+  ]);
+});

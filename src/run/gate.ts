@@ -31,6 +31,7 @@ import { landDelivery } from "./land";
 import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
+import { findingsIn } from "./findings";
 import { forThePerson, observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
@@ -424,6 +425,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
+      // What the closer saw and left alone, in its own words.
+      for (const f of findingsIn(closed.report)) {
+        findings.push(`the closer: ${f}`);
+        log(`👀 ${tep}: ${f}`, `${GATE_STEP}#closer`);
+      }
       // Everything the closer touched, whether it committed or not.
       const touchedByCloser = [
         ...new Set([

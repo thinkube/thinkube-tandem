@@ -12,7 +12,7 @@
  * no reviewer could settle stays an observation for the person, which is
  * what it was before anything could be driven.
  */
-import { Cut, Space } from "../core/schema";
+import { Cut, Proof, Space } from "../core/schema";
 import { driveAll, originOf, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
 import { signInOnce, theWayInWorks } from "./theWayIn";
@@ -161,6 +161,9 @@ export async function judgeOnTheProduct(a: {
   });
   const d = a.outcome.delivery;
   if (!d) return a.outcome;
+  // What the reviewers saw that nobody asked about, carried to the person
+  // with the run's other findings.
+  const noticed = proofs.flatMap((forOne) => (forOne as Proof[] & { noticed?: string[] }).noticed ?? []);
   // A judged criterion is no longer the person's to certify.
   const settled = list.flatMap((c, i) =>
     c.criteria.filter((_, j) => proofs[i]?.[j]?.verdict !== "unjudged").map((x) => x.text),
@@ -170,6 +173,7 @@ export async function judgeOnTheProduct(a: {
     delivery: {
       ...d,
       proofs: [...d.proofs.filter((p) => !p.criterionId || !judgedAgain.has(p.criterionId)), ...proofs.flat()],
+      ...(noticed.length ? { findings: [...(d.findings ?? []), ...noticed] } : {}),
       ...(d.observations
         ? { observations: d.observations.filter((o) => !settled.some((c) => o.startsWith(c))) }
         : {}),
