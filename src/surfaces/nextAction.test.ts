@@ -273,3 +273,33 @@ test("no state offers a press that cannot be pressed while something is still to
     assert.notEqual(n.move.kind, "none", `"${name}" offers "${n.label}", which does nothing`);
   }
 });
+
+/**
+ * Ten checks failed on the page a person can open. Offering to move on
+ * from that is the report lying about the product.
+ */
+test("promises that did not hold are repaired, not moved past", () => {
+  const push = quiet({
+    specs: [set("s1", { chosen: true, built: true, promises: 3 })],
+    deliveries: [
+      {
+        id: "d1",
+        page: "",
+        accepted: false,
+        merged: true,
+        liveAt: "https://todo.example.com",
+        rerun: { id: "cut-1" },
+        proofs: [
+          { criterionId: "c1", verdict: "green" as const },
+          { criterionId: "c2", verdict: "red" as const, said: "the box does not take the cursor" },
+          { criterionId: "c3", verdict: "red" as const, said: "Enter does not save" },
+        ],
+      },
+    ],
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Build it again");
+  assert.equal(n.enabled, true);
+  assert.match(n.where, /2 checks did not hold/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "rerun" } });
+});

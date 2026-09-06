@@ -141,6 +141,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   // A person reading the report should not have to infer from a button
   // that the code was written, checked, merged, built and deployed.
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
+  const failed = (d.proofs ?? []).filter((p) => p.verdict === "red").length;
   const pending = d.pending?.length ?? 0;
   const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand/i.test(p.settledBy)).length;
   const story = !d.merged
@@ -152,6 +153,9 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
             ? "This was coded, its checks were written and run, it passed the closing gate, and it was merged, built by the platform and deployed."
             : "This was coded, its checks were written and run, it passed the closing gate, and it was merged into the project.",
         d.liveAt && !broken ? `It is running at ${d.liveAt}.` : "",
+        failed
+          ? `${failed} check${failed === 1 ? " did" : "s did"} not hold${d.liveAt ? " on the running product" : ""} — they are listed below, and the promises they belong to are work again.`
+          : "",
         kept ? `${kept} check${kept === 1 ? "" : "s"} passed.` : "",
         pending - onlyYou
           ? `${pending - onlyYou} check${pending - onlyYou === 1 ? " is" : "s are"} settled where the work runs — the pipeline's own tests — and are listed below.`
@@ -167,7 +171,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
         {story ? (
           <p
             data-what-happened
-            style={{ fontSize: FS.body, lineHeight: 1.6, marginTop: 0, marginBottom: SP.lg, color: broken ? C.bad : "inherit" }}
+            style={{ fontSize: FS.body, lineHeight: 1.6, marginTop: 0, marginBottom: SP.lg, color: broken || failed ? C.bad : "inherit" }}
           >
             {story}
           </p>

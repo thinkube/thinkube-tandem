@@ -171,6 +171,18 @@ export function nextAction(
     // decision waiting to be made: it is done. The press moves the person
     // on, and says so — offering to "keep" what is already running, with
     // no alternative beside it, reads as a joke.
+    // What did not hold is the first thing said, and the press repairs it.
+    // Offering to move on over ten red checks is the report lying about
+    // the product a person can open.
+    const broke = (delivered.proofs ?? []).filter((p) => p.verdict === "red").length;
+    if (delivered.merged && broke)
+      return {
+        where: `${delivered.liveAt ? `running at ${delivered.liveAt}, and ` : ""}${plural(broke, "check")} did not hold`,
+        label: "Build it again",
+        hint: "the work is in the project; this repairs what did not hold · Take it back out is on the page",
+        enabled: !!delivered.rerun && a.allowed("rerun"),
+        move: { kind: "post", action: { action: "rerun" } },
+      };
     if (delivered.merged)
       return {
         where: delivered.liveAt

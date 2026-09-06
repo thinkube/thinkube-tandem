@@ -193,7 +193,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
   );
   return c.criteria.map((x, i) => {
     const answer = verdictFor(reply, i + 1);
-    const label = `${c.promise} — ${x.text}`;
+    const label = x.text;
     if (!answer) {
       a.log?.(`on the running product ${ord}.${i + 1}: no answer came back — it stays unjudged`);
       return {
