@@ -6,6 +6,7 @@
  * developer who wants it. The decision sits at the end, where a reader
  * arrives having read what they are deciding on.
  */
+import { useState } from "react";
 import { Markdown } from "./Markdown";
 import { C, FS, SAID, label, raised, SP } from "./type";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
@@ -44,6 +45,75 @@ function Looks(props: { looks?: { path: string; said: string }[] }): JSX.Element
           {l.said || "what it saw"}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * What the work noticed and did not do: pick the ones worth building, one
+ * press puts them in the capture box, and each says when it is there.
+ */
+function Findings(props: { findings: { text: string; taken?: boolean }[]; deliveryId: string }): JSX.Element {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const open = props.findings.filter((f) => !f.taken);
+  const toggle = (text: string): void =>
+    setPicked((was: Set<string>) => {
+      const now = new Set(was);
+      if (now.has(text)) now.delete(text);
+      else now.add(text);
+      return now;
+    });
+  const chosen = open.filter((f) => picked.has(f.text));
+  return (
+    <div data-findings style={{ marginBottom: SP.lg }}>
+      <div style={label}>What the work noticed, and did not do</div>
+      <div style={{ fontSize: FS.caption, color: C.quiet, marginBottom: SP.sm }}>
+        None of these stopped the work being delivered, so nothing was changed for them.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: SP.sm }}>
+        {props.findings.map((f, i) => (
+          <label
+            key={i}
+            data-finding={i}
+            style={{
+              display: "flex",
+              gap: SP.md,
+              alignItems: "baseline",
+              padding: `${SP.sm}px ${SP.md}px`,
+              border: `1px solid ${C.border}`,
+              borderRadius: 6,
+              opacity: f.taken ? 0.6 : 1,
+              cursor: f.taken ? "default" : "pointer",
+            }}
+          >
+            {f.taken ? (
+              <span data-finding-taken style={{ fontSize: FS.caption, color: C.ok, whiteSpace: "nowrap" }}>✓ in the box</span>
+            ) : (
+              <input
+                type="checkbox"
+                data-pick-finding={i}
+                checked={picked.has(f.text)}
+                onChange={() => toggle(f.text)}
+              />
+            )}
+            <span style={{ fontSize: FS.body, lineHeight: 1.5, flex: 1 }}>{f.text}</span>
+          </label>
+        ))}
+      </div>
+      {open.length ? (
+        <button
+          data-ask-from-findings
+          disabled={!chosen.length}
+          onClick={() => {
+            post({ action: "ask-from-findings", deliveryId: props.deliveryId, items: chosen.map((f) => f.text) });
+            setPicked(new Set());
+          }}
+          style={{ marginTop: SP.sm, fontSize: FS.body, fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
+          title="Puts the selected findings in the capture box as sentences you can keep."
+        >
+          {chosen.length ? `Make asks from the ${chosen.length} selected` : "Select findings to make asks from"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -361,39 +431,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
         ) : null}
 
         {d.findings?.length ? (
-          <div data-findings style={{ marginBottom: SP.lg }}>
-            <div style={label}>What the work noticed, and did not do</div>
-            <div style={{ fontSize: FS.caption, color: C.quiet, marginBottom: SP.sm }}>
-              None of these stopped the work being delivered, so nothing was changed for them. Make one an ask
-              and it goes in the box with your own sentences.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: SP.sm }}>
-              {d.findings.map((f, i) => (
-                <div
-                  key={i}
-                  data-finding={i}
-                  style={{
-                    display: "flex",
-                    gap: SP.md,
-                    alignItems: "baseline",
-                    padding: `${SP.sm}px ${SP.md}px`,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 6,
-                  }}
-                >
-                  <span style={{ fontSize: FS.body, lineHeight: 1.5, flex: 1 }}>{f}</span>
-                  <button
-                    data-ask-from-finding={i}
-                    onClick={() => post({ action: "ask-from-finding", text: f })}
-                    style={{ fontSize: FS.caption, whiteSpace: "nowrap" }}
-                    title="Puts this in the capture box as a sentence you can keep."
-                  >
-                    Make this an ask
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Findings key={d.id} findings={d.findings} deliveryId={d.id} />
         ) : null}
 
         {seen.length ? (

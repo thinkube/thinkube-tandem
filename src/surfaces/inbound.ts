@@ -123,12 +123,30 @@ export async function handleInbound(
   } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
     const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
     note = r.ok ? undefined : r.reason;
-  } else if (msg.action === "ask-from-finding" && msg.text) {
-    // Into the capture box, where every ask starts: the person reads it,
-    // keeps it or does not. Nothing is recorded on their behalf.
-    const box = session.space.draft ?? "";
-    session.saveDraft(box ? `${box.replace(/\s*$/, "")}\n${msg.text}` : msg.text);
-    note = "it is in the box — read and keep it when you want it built";
+  } else if (msg.action === "ask-from-findings" && msg.deliveryId && msg.items?.length) {
+    // Into the capture box, where every ask starts: the person reads them,
+    // keeps them or does not. What was already taken is skipped, and the
+    // delivery remembers, so a second press never doubles a sentence.
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else {
+      const already = new Set(d.findingsAsked ?? []);
+      const fresh = msg.items.filter((t) => (d.findings ?? []).includes(t) && !already.has(t));
+      if (!fresh.length) note = "those are in the box already";
+      else {
+        const box = session.space.draft ?? "";
+        session.saveDraft([box.replace(/\s*$/, ""), ...fresh].filter(Boolean).join("\n"));
+        session.space = {
+          ...session.space,
+          deliveries: session.space.deliveries.map((x) =>
+            x.id === d.id ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...fresh] } : x,
+          ),
+        };
+        session.changed(
+          `${fresh.length} finding${fresh.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
+        );
+      }
+    }
   } else if (msg.action === "open-look" && msg.path) {
     // Only what this run wrote: a path from anywhere else is not the
     // surface's to open.

@@ -252,6 +252,9 @@ export interface Delivery {
    *  for the person to weigh at Accept; never a reason to withhold kept
    *  promises. */
   findings?: string[];
+  /** The findings the person already turned into asks, so the report can
+   *  say so and never records one twice. */
+  findingsAsked?: string[];
   /** How big this tree's modules are — largest, median, average, and how
    *  much of it explains rather than instructs. Reported, never enforced: a
    *  ceiling on file length is satisfied by deleting the explanation, which
