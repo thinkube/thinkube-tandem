@@ -87,14 +87,17 @@ export async function judgeOnTheProduct(a: {
     : { why: "there is nowhere to keep a session" };
   if ("why" in session) a.log(`no signed-in session for the reviewers: ${session.why}`, "live");
 
-  // The browser, up and answering before any reviewer starts. Without one
-  // there is nothing to judge with, and every criterion says so.
-  const browser = await openTheBrowser({
-    origin: originOf(a.at),
-    ...(here ? { outputDir: here } : {}),
-    ...("path" in session ? { sessionFile: session.path } : {}),
-    log: (l) => a.log(l, "live"),
-  });
+  // One browser each, opened when the reviewer starts and closed when it
+  // is done — and one opened here first, so a machine that cannot start a
+  // browser at all is said once rather than three times.
+  const openOne = (who: string) =>
+    openTheBrowser({
+      origin: originOf(a.at),
+      ...(here ? { outputDir: path.join(here, who) } : {}),
+      ...("path" in session ? { sessionFile: session.path } : {}),
+      log: (l) => a.log(`${who}: ${l}`, "live"),
+    });
+  const browser = await openOne(ids[0] ?? "on-the-product-1");
   if ("why" in browser) {
     a.log(`no browser for the reviewers: ${browser.why}`, "live");
     for (const id of ids) a.st.fail(id, `no browser on this machine — ${browser.why}`);
@@ -119,18 +122,19 @@ export async function judgeOnTheProduct(a: {
       },
     };
   }
+  browser.close();
   const proofs = await (a.drive ?? driveAll)(
     {
       at: a.at,
       model: a.deps.model,
-      browserAt: browser.url,
       ...(here ? { looksIn: here } : {}),
       log: (l) => a.log(l, "live"),
       stop: a.st.stop.signal,
     },
     list,
     ids,
-  ).finally(() => browser.close());
+    openOne,
+  );
   // Each reviewer's card carries the pictures its own verdicts carry.
   proofs.forEach((forOne, i) => {
     const shots = forOne.flatMap((p) => (p.looks ?? []).map((l) => l.path));

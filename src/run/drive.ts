@@ -42,8 +42,8 @@ export interface DriveArgs {
   /** Where the product answers. The only address the driver may open. */
   at: string;
   model: string;
-  /** Where the browser server is already listening. A reviewer is never
-   *  started without one: its first turn has the tools or it has nothing. */
+  /** A browser of this reviewer's own, already listening. One each: they
+   *  work at the same time, and a shared one collects everybody's tabs. */
   browserAt: string;
   /** Which reviewer this is, for its own lines in the log. */
   who?: string;
@@ -134,7 +134,13 @@ function verdictFor(
 
 
 
-async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = true): Promise<string | null> {
+async function drive(
+  a: DriveArgs,
+  prompt: string,
+  turns: number,
+  withBrowser = true,
+  session?: { id?: string },
+): Promise<string | null> {
   const ask =
     a.ask ??
     (async (p: string, options: Record<string, unknown>) => {
@@ -173,6 +179,7 @@ async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = 
             thinking: { type: "adaptive" },
             effort: "high",
             maxTurns: turns,
+            ...(session?.id ? { resume: session.id } : {}),
             ...(withBrowser ? { mcpServers: { browser: { type: "http", url: a.browserAt } } } : { mcpServers: {} }),
             // Only this browser. Without it the machine's own browser
             // server is inherited too, and that one carries no session and
@@ -206,7 +213,14 @@ async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = 
             ],
             additionalDirectories: [],
           });
-          for await (const m of stream) yield m;
+          for await (const m of stream) {
+            // The session this round belongs to, so the next one continues
+            // it rather than starting a conversation with no memory of the
+            // page it is standing on.
+            const said = m as { session_id?: string };
+            if (session && said.session_id) session.id = said.session_id;
+            yield m;
+          }
         },
       }) as AsyncIterable<unknown>,
     a.log,
@@ -219,6 +233,8 @@ async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = 
  */
 export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<Proof[]> {
   a.log?.(`on the running product ${ord}: opening ${a.at} — ${c.criteria.length} thing(s) to check`);
+  // One conversation for this reviewer, from first look to last word.
+  const session: { id?: string } = {};
   const reply = await drive(
     a,
     [
@@ -269,14 +285,19 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "3. BLOCKED <what stopped you reaching it>",
     ].join("\n"),
     TURNS_PER_ROUND,
+    true,
+    session,
   );
   // It works until it has answered, not until a counter runs out. Asked
   // to carry on while each round brings something new; stopped when one
   // adds nothing, and then asked once, without the browser, to say what
   // it found — so work already done becomes verdicts rather than silence.
   const allAnswered = (text: string | null): boolean => c.criteria.every((_, i) => verdictFor(text, i + 1));
+  const answeredCount = (text: string | null): number =>
+    c.criteria.filter((_, i) => verdictFor(text, i + 1)).length;
   let finished = reply;
   let last = reply ?? "";
+  let answered = answeredCount(finished);
   for (let more = 0; !allAnswered(finished) && more < RUNAWAY && !a.stop?.aborted; more++) {
     a.log?.(`on the running product ${ord}: still working, no answer yet — asking it to carry on`);
     const again = await drive(
@@ -294,10 +315,18 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
         last.slice(-6000),
       ].join("\n"),
       TURNS_PER_ROUND,
+      true,
+      session,
     );
-    if (!again || again === last) break;
+    // It stops when a round answers nothing new. Comparing the text itself
+    // never converged: a reviewer that repeats its work says it slightly
+    // differently every time.
+    if (!again) break;
+    const now = answeredCount(again);
     last = again;
     finished = again;
+    if (now <= answered) break;
+    answered = now;
   }
   if (!allAnswered(finished) && (finished ?? "").trim() && !a.stop?.aborted)
     finished =
@@ -317,6 +346,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
         ].join("\n"),
         3,
         false,
+        session,
       )) ?? finished;
   return c.criteria.map((x, i) => {
     const answer = verdictFor(finished, i + 1);
@@ -393,14 +423,40 @@ function stoppedProof(at: string, x: { id?: string; text: string }): Proof {
 
 /** Judge every promise, a few at a time — each waits on a browser. One
  *  list of verdicts per promise, in the order the promises were given. */
-export async function driveAll(a: DriveArgs, list: ToDrive[], ids: readonly string[] = []): Promise<Proof[][]> {
+export async function driveAll(
+  a: Omit<DriveArgs, "browserAt">,
+  list: ToDrive[],
+  ids: readonly string[] = [],
+  /** A browser of its own for one reviewer, closed when it is done. */
+  openOne?: (who: string) => Promise<{ url: string; close: () => void } | { why: string }>,
+  atOnce = 3,
+): Promise<Proof[][]> {
   const out: Proof[][] = [];
   if (a.stop?.aborted) return list.map((c) => c.criteria.map((x) => stoppedProof(a.at, x)));
-  const AT_ONCE = 3;
-  const mine = (i: number): DriveArgs => ({ ...a, ...(ids[i] ? { who: ids[i] } : {}) });
-  for (let i = 0; i < list.length; i += AT_ONCE) {
-    const batch = list.slice(i, i + AT_ONCE);
-    out.push(...(await Promise.all(batch.map((c, j) => driveOne(mine(i + j), c, i + j + 1)))));
-  }
+  const one = async (c: ToDrive, i: number): Promise<Proof[]> => {
+    const who = ids[i] ?? `${i + 1}`;
+    const browser = openOne ? await openOne(who) : { url: (a as DriveArgs).browserAt, close: () => undefined };
+    if ("why" in browser) {
+      a.log?.(`on the running product ${i + 1}: no browser — ${browser.why}`);
+      return c.criteria.map((x) => ({
+        kind: "assessment" as const,
+        label: x.text,
+        verdict: "unjudged" as const,
+        ref: `no browser to judge with: ${browser.why}`,
+        ...(x.id ? { criterionId: x.id } : {}),
+      }));
+    }
+    try {
+      return await driveOne(
+        { ...a, browserAt: browser.url, who, ...(a.looksIn ? { looksIn: `${a.looksIn}/${who}` } : {}) },
+        c,
+        i + 1,
+      );
+    } finally {
+      browser.close();
+    }
+  };
+  for (let i = 0; i < list.length; i += atOnce)
+    out.push(...(await Promise.all(list.slice(i, i + atOnce).map((c, j) => one(c, i + j)))));
   return out;
 }

@@ -80,7 +80,7 @@ test("every promise is judged, and the verdicts come back grouped as they were a
         yield { type: "result", result: replies[i++] };
       },
     }) as AsyncIterable<unknown>;
-  const proofs = await driveAll({ at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" }, [
+  const proofs = await driveAll({ at: "https://x.test", model: "m", ask }, [
     { promise: "p1", criteria: [{ text: "c1" }] },
     { promise: "p2", criteria: [{ text: "c2" }] },
     { promise: "p3", criteria: [{ text: "c3" }] },
@@ -213,7 +213,7 @@ test("Stop reaches a reviewer: the round ends and nothing is judged after it", a
   };
   // Stopped before it starts: no round is asked at all.
   stop.abort();
-  const ps = await driveAll({ at: "https://x.test", model: "m", ask, stop: stop.signal, browserAt: "http://localhost:1/mcp" }, [
+  const ps = await driveAll({ at: "https://x.test", model: "m", ask, stop: stop.signal }, [
     { promise: "p", criteria: [{ id: "AC-1", text: "c" }] },
   ]);
   assert.equal(seen.length, 0, "nothing is asked of a stopped run");
@@ -264,4 +264,67 @@ test("a reviewer may use the browser it was given, and nothing else", async () =
     assert.equal(r.behavior, "deny", `${forbidden} is refused`);
     assert.match(r.message ?? "", /not yours to use/);
   }
+});
+
+test("a reviewer keeps one conversation and one browser, and both are closed after it", async () => {
+  const seen: Record<string, unknown>[] = [];
+  const replies = ["1. GREEN one", "1. GREEN one\n2. GREEN two"];
+  let i = 0;
+  const ask = async (_p: string, options: Record<string, unknown>) => {
+    seen.push(options);
+    const r = replies[Math.min(i++, replies.length - 1)];
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "system", session_id: "sess-1" };
+        yield { type: "result", result: r };
+      },
+    } as AsyncIterable<unknown>;
+  };
+  const closed: string[] = [];
+  const proofs = await driveAll(
+    { at: "https://x.test", model: "m", ask },
+    [{ promise: "p", criteria: [{ id: "AC-1", text: "a" }, { id: "AC-2", text: "b" }] }],
+    ["on-the-product-1"],
+    async (who) => ({ url: `http://localhost:1/${who}`, close: () => closed.push(who) }),
+  );
+  assert.deepEqual(proofs.flat().map((p) => p.verdict), ["green", "green"]);
+  assert.equal(seen[0].resume, undefined, "the first round starts the conversation");
+  assert.equal(seen[1].resume, "sess-1", "and the next one continues it, rather than starting a stranger");
+  assert.deepEqual(closed, ["on-the-product-1"], "its browser is closed when it is done");
+});
+
+test("a reviewer that answers nothing new stops, however differently it says it", async () => {
+  let i = 0;
+  const replies = ["I looked around a bit.", "I looked around some more.", "I am still looking."];
+  const ask = async () =>
+    ({
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: replies[Math.min(i++, replies.length - 1)] };
+      },
+    }) as AsyncIterable<unknown>;
+  const proofs = await driveAll(
+    { at: "https://x.test", model: "m", ask },
+    [{ promise: "p", criteria: [{ id: "AC-1", text: "a" }] }],
+    ["r1"],
+    async () => ({ url: "http://localhost:1/mcp", close: () => undefined }),
+  );
+  assert.deepEqual(proofs.flat().map((p) => p.verdict), ["unjudged"]);
+  assert.ok(i < 5, `it gave up quickly rather than looping: ${i} rounds`);
+});
+
+test("a reviewer whose browser will not start judges nothing, and says why", async () => {
+  const ask = async () =>
+    ({
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: "1. GREEN" };
+      },
+    }) as AsyncIterable<unknown>;
+  const proofs = await driveAll(
+    { at: "https://x.test", model: "m", ask },
+    [{ promise: "p", criteria: [{ id: "AC-1", text: "a" }] }],
+    ["r1"],
+    async () => ({ why: "the browser server stopped before it was ready" }),
+  );
+  assert.deepEqual(proofs.flat().map((p) => p.verdict), ["unjudged"]);
+  assert.match(proofs[0][0].ref ?? "", /stopped before it was ready/);
 });
