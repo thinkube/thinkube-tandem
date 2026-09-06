@@ -42,19 +42,20 @@ export interface DriveArgs {
   /** Where the product answers. The only address the driver may open. */
   at: string;
   model: string;
-  /** Where a reviewer's screenshots are written — one directory per
-   *  reviewer, kept beside the run's own record, so what it decided on can
-   *  be looked at afterwards. */
-  looksIn?: string | ((id: string) => string | undefined);
-  /** A signed-in session for the product's own origin, as a file the
-   *  browser starts from. Without it the reviewer meets the sign-in page
-   *  and judges nothing. */
-  sessionFile?: string;
-  /** The browser the driver reaches through, as a command to run. */
-  browser?: { command: string; args: string[] };
+  /** Where the browser server is already listening. A reviewer is never
+   *  started without one: its first turn has the tools or it has nothing. */
+  browserAt: string;
+  /** Which reviewer this is, for its own lines in the log. */
+  who?: string;
+  /** Where the browser writes its pictures, so each verdict can carry the
+   *  ones taken for it. */
+  looksIn?: string;
   log?: (line: string) => void;
   /** Injectable for tests: the SDK stream, already shaped. */
   ask?: (prompt: string, options: Record<string, unknown>) => AsyncIterable<unknown> | Promise<AsyncIterable<unknown>>;
+  /** The run's stop signal: it ends the round in flight and the loop
+   *  around it, so Stop reaches a reviewer like every other actor. */
+  stop?: AbortSignal;
   abort?: AbortController;
 }
 
@@ -74,56 +75,35 @@ const TURNS_PER_ROUND = 40;
  */
 const RUNAWAY = 12;
 
-/** The chrome installed on this machine, when there is one. */
-function chromeHere(): string | undefined {
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(process.env.HOME ?? "~", ".cache", "ms-playwright");
-  let dirs: string[] = [];
-  try {
-    dirs = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort();
-  } catch {
-    return undefined;
-  }
-  for (const d of dirs.reverse())
-    for (const under of ["chrome-linux64/chrome", "chrome-linux/chrome"]) {
-      const exe = path.join(root, d, under);
-      if (fs.existsSync(exe)) return exe;
-    }
-  return undefined;
-}
-
-/** The browser server this machine has, else one fetched on the spot. */
-function browserServer(): { command: string; args: string[] } {
-  const installed = ["playwright-mcp", "mcp-server-playwright"]
-    .map((n) => path.join(process.env.HOME ?? "~", ".npm-global", "bin", n))
-    .find((p) => fs.existsSync(p));
-  return installed ? { command: installed, args: [] } : { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
-}
-
-/** The browser, spoken to over the same protocol every other tool uses. */
-function browserOf(a: DriveArgs): { command: string; args: string[] } {
-  const server = browserServer();
-  return (
-    a.browser ?? {
-      command: server.command,
-      args: [
-        ...server.args,
-        "--headless",
-        "--isolated",
-        "--allowed-origins",
-        originOf(a.at),
-        // Big enough to read afterwards: a screenshot of a phone-sized
-        // window proves nothing about the page a person opens.
-        "--viewport-size",
-        "1440,900",
-        ...(typeof a.looksIn === "string" ? ["--output-dir", a.looksIn] : []),
-        ...(a.sessionFile ? ["--storage-state", a.sessionFile] : []),
-        // The chrome this machine has. Without it the server fetches a
-        // browser of its own on every reviewer.
-        ...(chromeHere() ? ["--executable-path", chromeHere()!] : []),
-      ],
-    }
-  );
-}
+/**
+ * What a reviewer may do in the browser: open a page, look at it, act on
+ * it, and take a picture. Named one by one rather than by server, so a
+ * tool the server adds is not granted by default — and never the one that
+ * runs arbitrary code in the server's own process.
+ */
+const BROWSER_TOOLS = [
+  "mcp__browser__browser_navigate",
+  "mcp__browser__browser_navigate_back",
+  "mcp__browser__browser_snapshot",
+  "mcp__browser__browser_find",
+  "mcp__browser__browser_click",
+  "mcp__browser__browser_type",
+  "mcp__browser__browser_fill_form",
+  "mcp__browser__browser_press_key",
+  "mcp__browser__browser_hover",
+  "mcp__browser__browser_drag",
+  "mcp__browser__browser_drop",
+  "mcp__browser__browser_select_option",
+  "mcp__browser__browser_handle_dialog",
+  "mcp__browser__browser_wait_for",
+  "mcp__browser__browser_evaluate",
+  "mcp__browser__browser_take_screenshot",
+  "mcp__browser__browser_console_messages",
+  "mcp__browser__browser_network_requests",
+  "mcp__browser__browser_resize",
+  "mcp__browser__browser_tabs",
+  "mcp__browser__browser_close",
+];
 
 /** The one origin the browser will open, in the form it wants it. */
 export function originOf(at: string): string {
@@ -155,7 +135,6 @@ function verdictFor(
 
 
 async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = true): Promise<string | null> {
-  const b = browserOf(a);
   const ask =
     a.ask ??
     (async (p: string, options: Record<string, unknown>) => {
@@ -168,14 +147,33 @@ async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = 
     () =>
       ({
         [Symbol.asyncIterator]: async function* () {
+          // The round in flight ends on the run's own signal.
+          const ownAbort = a.abort ?? new AbortController();
+          if (a.stop) {
+            if (a.stop.aborted) ownAbort.abort();
+            else a.stop.addEventListener("abort", () => ownAbort.abort(), { once: true });
+          }
           const stream = await ask(prompt, {
             model: a.model,
-            ...(a.abort ? { abortController: a.abort } : {}),
+            abortController: ownAbort,
             permissionMode: "bypassPermissions",
+            // Asked about every call, so what a reviewer may do is a short
+            // list rather than the absence of a long one: a tool nobody
+            // thought of is refused because it is not named here.
+            canUseTool: async (tool: string) =>
+              (withBrowser ? BROWSER_TOOLS : ([] as string[])).includes(tool)
+                ? { behavior: "allow" as const }
+                : {
+                    behavior: "deny" as const,
+                    message:
+                      `${tool} is not yours to use. You judge the product through the browser you were given, ` +
+                      `and nothing else: no shell, no files, no other machine. If the browser cannot reach it, ` +
+                      `say BLOCKED.`,
+                  },
             thinking: { type: "adaptive" },
             effort: "high",
             maxTurns: turns,
-            ...(withBrowser ? { mcpServers: { browser: { command: b.command, args: b.args } } } : { mcpServers: {} }),
+            ...(withBrowser ? { mcpServers: { browser: { type: "http", url: a.browserAt } } } : { mcpServers: {} }),
             // Only this browser. Without it the machine's own browser
             // server is inherited too, and that one carries no session and
             // is held to no origin.
@@ -183,8 +181,13 @@ async function drive(a: DriveArgs, prompt: string, turns: number, withBrowser = 
             // The browser and nothing else: no file, no command, no
             // network tool of its own. A driver that could read the
             // repository would judge the code again instead of the product.
-            allowedTools: withBrowser ? ["mcp__browser"] : [],
+            allowedTools: withBrowser ? [...BROWSER_TOOLS] : [],
             disallowedTools: [
+              // Arbitrary code in the browser server's own process, which
+              // runs as the person: it would reach the repository, the
+              // machine and every address, whatever the limits above say.
+              "mcp__browser__browser_run_code_unsafe",
+              "mcp__browser__browser_file_upload",
               // The machine's own browser server, named, in case anything
               // but the flag above lets it through.
               "mcp__playwright",
@@ -252,7 +255,11 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "",
       "Take a screenshot of the page for each item, at the moment you decide",
       "it — that picture is what the person will look at, so let it show the",
-      "thing you are judging.",
+      "thing you are judging. Save each one under a name that says which item",
+      "it belongs to and what it shows, in this shape:",
+      "  <item number>-<three to six words, hyphenated>.png",
+      "for example `2-empty-title-message-shown.png`. Take more than one for",
+      "an item when the story needs it.",
       "",
       "Leave the product as you found it where you can.",
       "",
@@ -270,7 +277,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
   const allAnswered = (text: string | null): boolean => c.criteria.every((_, i) => verdictFor(text, i + 1));
   let finished = reply;
   let last = reply ?? "";
-  for (let more = 0; !allAnswered(finished) && more < RUNAWAY; more++) {
+  for (let more = 0; !allAnswered(finished) && more < RUNAWAY && !a.stop?.aborted; more++) {
     a.log?.(`on the running product ${ord}: still working, no answer yet — asking it to carry on`);
     const again = await drive(
       a,
@@ -292,7 +299,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
     last = again;
     finished = again;
   }
-  if (!allAnswered(finished) && (finished ?? "").trim())
+  if (!allAnswered(finished) && (finished ?? "").trim() && !a.stop?.aborted)
     finished =
       (await drive(
         a,
@@ -329,10 +336,12 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
     // what the reviewer saw, with the address after it.
     // Blocked is not a verdict on the work: the reviewer never reached it.
     const verdict = answer.verdict === "GREEN" ? "green" : answer.verdict === "RED" ? "red" : "unjudged";
+    const looks = looksFor(a.looksIn, i + 1);
     return {
       kind: "assessment" as const,
       label,
       verdict: verdict as "green" | "red" | "unjudged",
+      ...(looks.length ? { looks } : {}),
       ref:
         verdict === "unjudged"
           ? `${answer.said || "the reviewer could not reach this"} — nothing was judged, at ${a.at}`
@@ -344,15 +353,51 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
   });
 }
 
+/**
+ * The pictures a reviewer saved for one item, with what each shows.
+ *
+ * The name carries both: the item's number, then a few words. A file
+ * named any other way belongs to no item and is left where it is.
+ */
+function looksFor(dir: string | undefined, ord: number): { path: string; said: string }[] {
+  if (!dir) return [];
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return files
+    .filter((f) => new RegExp(`^${ord}[-_]`).test(f) && /\.(png|jpe?g)$/i.test(f))
+    .sort()
+    .map((f) => ({
+      path: path.join(dir, f),
+      said: f
+        .replace(/\.(png|jpe?g)$/i, "")
+        .replace(new RegExp(`^${ord}[-_]`), "")
+        .replace(/[-_]+/g, " ")
+        .trim(),
+    }));
+}
+
+/** A criterion nobody judged because the run was stopped. */
+function stoppedProof(at: string, x: { id?: string; text: string }): Proof {
+  return {
+    kind: "assessment",
+    label: x.text,
+    verdict: "unjudged",
+    ref: `the run was stopped before this was judged, at ${at}`,
+    ...(x.id ? { criterionId: x.id } : {}),
+  };
+}
+
 /** Judge every promise, a few at a time — each waits on a browser. One
  *  list of verdicts per promise, in the order the promises were given. */
 export async function driveAll(a: DriveArgs, list: ToDrive[], ids: readonly string[] = []): Promise<Proof[][]> {
   const out: Proof[][] = [];
+  if (a.stop?.aborted) return list.map((c) => c.criteria.map((x) => stoppedProof(a.at, x)));
   const AT_ONCE = 3;
-  const mine = (i: number): DriveArgs => {
-    const dir = typeof a.looksIn === "function" ? a.looksIn(ids[i] ?? `${i + 1}`) : a.looksIn;
-    return { ...a, ...(dir ? { looksIn: dir } : {}) };
-  };
+  const mine = (i: number): DriveArgs => ({ ...a, ...(ids[i] ? { who: ids[i] } : {}) });
   for (let i = 0; i < list.length; i += AT_ONCE) {
     const batch = list.slice(i, i + AT_ONCE);
     out.push(...(await Promise.all(batch.map((c, j) => driveOne(mine(i + j), c, i + j + 1)))));

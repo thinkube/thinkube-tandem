@@ -193,6 +193,9 @@ export interface Proof {
   /** The check this proof answers — the claim card reads verification
    *  state through this, not by matching label prose. */
   criterionId?: string;
+  /** What was seen when this was judged on the running product: a picture
+   *  and what it shows, in the reviewer's own words. */
+  looks?: { path: string; said: string }[];
 }
 
 /**

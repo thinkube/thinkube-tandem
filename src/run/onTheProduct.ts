@@ -13,9 +13,10 @@
  * what it was before anything could be driven.
  */
 import { Cut, Space } from "../core/schema";
-import { driveAll, ToDrive } from "./drive";
+import { driveAll, originOf, ToDrive } from "./drive";
 import { toDriveOf } from "./observations";
 import { signInOnce } from "./theWayIn";
+import { openTheBrowser } from "./theBrowser";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DispatchOutcome, RunState } from "./state";
@@ -77,43 +78,64 @@ export async function judgeOnTheProduct(a: {
   // criterion, the newest.
   const judgedAgain = new Set(list.flatMap((c) => c.criteria.map((x) => x.id).filter(Boolean) as string[]));
   for (const id of ids) a.st.set(id, "running");
-  // One directory per reviewer, named for it, beside the run's record.
-  const looksIn = (id: string): string | undefined =>
-    a.storeDir ? path.join(a.storeDir, "looks", a.runId ?? "run", id) : undefined;
-  for (const id of ids) {
-    const dir = looksIn(id);
-    if (dir) fs.mkdirSync(dir, { recursive: true });
-  }
-  // The way in, made once for all of them: signed in outside the model,
-  // cut down to the product's own origin.
-  const session = a.storeDir
-    ? await signInOnce({ at: a.at, into: path.join(a.storeDir, "looks", a.runId ?? "run", "session.json") })
+  // Where the reviewers' pictures and their way in are kept, beside the
+  // run's own record.
+  const here = a.storeDir ? path.join(a.storeDir, "looks", a.runId ?? "run") : undefined;
+  if (here) fs.mkdirSync(here, { recursive: true });
+  const session = here
+    ? await signInOnce({ at: a.at, into: path.join(here, "session.json") })
     : { why: "there is nowhere to keep a session" };
   if ("why" in session) a.log(`no signed-in session for the reviewers: ${session.why}`, "live");
+
+  // The browser, up and answering before any reviewer starts. Without one
+  // there is nothing to judge with, and every criterion says so.
+  const browser = await openTheBrowser({
+    origin: originOf(a.at),
+    ...(here ? { outputDir: here } : {}),
+    ...("path" in session ? { sessionFile: session.path } : {}),
+    log: (l) => a.log(l, "live"),
+  });
+  if ("why" in browser) {
+    a.log(`no browser for the reviewers: ${browser.why}`, "live");
+    for (const id of ids) a.st.fail(id, `no browser on this machine — ${browser.why}`);
+    const held = a.outcome.delivery;
+    if (!held) return a.outcome;
+    return {
+      ...a.outcome,
+      delivery: {
+        ...held,
+        proofs: [
+          ...held.proofs,
+          ...list.flatMap((c) =>
+            c.criteria.map((x) => ({
+              kind: "assessment" as const,
+              label: x.text,
+              verdict: "unjudged" as const,
+              ref: `no browser on this machine, so nothing was judged: ${browser.why}`,
+              ...(x.id ? { criterionId: x.id } : {}),
+            })),
+          ),
+        ],
+      },
+    };
+  }
   const proofs = await (a.drive ?? driveAll)(
     {
       at: a.at,
       model: a.deps.model,
+      browserAt: browser.url,
+      ...(here ? { looksIn: here } : {}),
       log: (l) => a.log(l, "live"),
-      looksIn: (id: string) => looksIn(id),
-      ...("path" in session ? { sessionFile: session.path } : {}),
+      stop: a.st.stop.signal,
     },
     list,
     ids,
-  );
-  // What each reviewer looked at, on its own card.
-  for (const id of ids) {
-    const dir = looksIn(id);
-    if (!dir) continue;
-    const shots = (() => {
-      try {
-        return fs.readdirSync(dir).filter((f) => /\.(png|jpe?g)$/i.test(f)).sort().map((f) => path.join(dir, f));
-      } catch {
-        return [];
-      }
-    })();
-    a.st.looked(id, shots);
-  }
+  ).finally(() => browser.close());
+  // Each reviewer's card carries the pictures its own verdicts carry.
+  proofs.forEach((forOne, i) => {
+    const shots = forOne.flatMap((p) => (p.looks ?? []).map((l) => l.path));
+    if (shots.length) a.st.looked(ids[i], shots);
+  });
   // The card says what the reviewer found: failed when a criterion did
   // not hold, and failed with its own reason when nothing came back.
   proofs.forEach((forOne, i) => {

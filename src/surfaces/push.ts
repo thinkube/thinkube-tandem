@@ -471,7 +471,12 @@ export function spacePush(session: TandemSession, message?: string): unknown {
                   ? ("pending" as const)
                   : ("red" as const);
           const said = verdict === "green" ? "" : saidPlainly(p);
-          return { criterionId: p.criterionId!, verdict, ...(said ? { said } : {}) };
+          return {
+            criterionId: p.criterionId!,
+            verdict,
+            ...(said ? { said } : {}),
+            ...(p.looks?.length ? { looks: p.looks } : {}),
+          };
         }),
       // The way back in, on every delivery that is not accepted: withheld,
       // blocked by a red check, or simply still waiting for your decision.

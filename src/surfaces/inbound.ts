@@ -126,8 +126,13 @@ export async function handleInbound(
   } else if (msg.action === "open-look" && msg.path) {
     // Only what this run wrote: a path from anywhere else is not the
     // surface's to open.
-    const looks = (session.runState?.view().units ?? []).flatMap((u) => u.looks ?? []);
-    if (!looks.includes(msg.path)) note = "that picture does not belong to this run";
+    // A picture this space produced: on a unit of the run that is loaded,
+    // or on a proof of one of its deliveries — a report outlives its run.
+    const looks = [
+      ...(session.runState?.view().units ?? []).flatMap((u) => u.looks ?? []),
+      ...session.space.deliveries.flatMap((d) => d.proofs.flatMap((p) => (p.looks ?? []).map((l) => l.path))),
+    ];
+    if (!looks.includes(msg.path)) note = "that picture does not belong to this space";
     else if (!hooks?.onOpenFile) note = "this window cannot open files";
     else await hooks.onOpenFile(msg.path);
   } else if (msg.action === "ask-for-help" && msg.deliveryId) {

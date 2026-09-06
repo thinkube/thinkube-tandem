@@ -21,20 +21,21 @@ function says(reply: string) {
 test("a driver is given a browser, one address, and no way to touch the repository", async () => {
   const { ask, seen } = says("1. GREEN typed a task, it appeared in the list");
   await driveOne(
-    { at: "https://todo.example.com/app", model: "m", ask },
+    { at: "https://todo.example.com/app", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "a task added is shown", criteria: [{ text: "the user adds a task and sees it in the list" }] },
     1,
   );
   const o = seen[0];
-  const servers = o.mcpServers as Record<string, { args: string[] }>;
-  assert.ok(servers.browser, "it gets a browser");
-  assert.ok(
-    servers.browser.args.includes("https://todo.example.com"),
-    `and only that origin: ${servers.browser.args.join(" ")}`,
-  );
+  assert.ok((o.mcpServers as Record<string, unknown>).browser, "it gets a browser");
   assert.deepEqual(o.additionalDirectories, [], "no repository is opened to it");
   for (const forbidden of ["Read", "Write", "Edit", "Bash", "WebFetch"])
     assert.ok((o.disallowedTools as string[]).includes(forbidden), `${forbidden} is refused`);
+});
+
+test("the one origin a reviewer's browser may open is the product's own", () => {
+  // The limit lives with the server that enforces it, so it is proved
+  // where it is set rather than through a reviewer's options.
+  assert.equal(originOf("https://todo.example.com/app"), "https://todo.example.com");
 });
 
 test("one session answers every criterion of its promise, each in its own words", async () => {
@@ -42,7 +43,7 @@ test("one session answers every criterion of its promise, each in its own words"
     "I opened the page.\n1. GREEN the list showed the soonest first\n2. RED the Add button does nothing — no task appears",
   );
   const ps = await driveOne(
-    { at: "https://x.test", model: "m", ask },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     {
       promise: "a task added is shown",
       criteria: [
@@ -63,7 +64,7 @@ test("one session answers every criterion of its promise, each in its own words"
 test("a driver that never answers leaves the promise unjudged — never a pass nobody saw", async () => {
   const { ask } = says("I could not reach the page.");
   const ps = await driveOne(
-    { at: "https://x.test", model: "m", ask },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
     1,
   );
@@ -79,7 +80,7 @@ test("every promise is judged, and the verdicts come back grouped as they were a
         yield { type: "result", result: replies[i++] };
       },
     }) as AsyncIterable<unknown>;
-  const proofs = await driveAll({ at: "https://x.test", model: "m", ask }, [
+  const proofs = await driveAll({ at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" }, [
     { promise: "p1", criteria: [{ text: "c1" }] },
     { promise: "p2", criteria: [{ text: "c2" }] },
     { promise: "p3", criteria: [{ text: "c3" }] },
@@ -100,7 +101,7 @@ test("the address the browser is held to is the origin, whatever path the produc
 test("a reviewer that could not get in judges nothing — never a red the work did not earn", async () => {
   const { ask } = says("1. BLOCKED the address redirected to a sign-in page and no way in was offered");
   const ps = await driveOne(
-    { at: "https://x.test", model: "m", ask },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "a task added is shown", criteria: [{ id: "AC-1", text: "adding a task shows it" }] },
     1,
   );
@@ -109,22 +110,25 @@ test("a reviewer that could not get in judges nothing — never a red the work d
   assert.match(ps[0].ref ?? "", /sign-in page/, "in the reviewer's own words");
 });
 
-test("the browser starts from the session it is given", async () => {
+test("a reviewer is connected to a browser that is already up", async () => {
   const { ask, seen } = says("1. GREEN it was there");
   await driveOne(
-    { at: "https://x.test", model: "m", ask, sessionFile: "/tmp/session.json" },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:39217/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
     1,
   );
-  const servers = seen[0].mcpServers as Record<string, { args: string[] }>;
-  assert.ok(servers.browser.args.includes("--storage-state"), servers.browser.args.join(" "));
-  assert.ok(servers.browser.args.includes("/tmp/session.json"));
+  const servers = seen[0].mcpServers as Record<string, { type: string; url: string }>;
+  assert.deepEqual(
+    servers.browser,
+    { type: "http", url: "http://localhost:39217/mcp" },
+    "an address, not a command to spawn — there is no window with no browser in it",
+  );
 });
 
 test("a reviewer gets the browser it was given and no other", async () => {
   const { ask, seen } = says("1. GREEN it was there");
   await driveOne(
-    { at: "https://x.test", model: "m", ask, sessionFile: "/tmp/s.json" },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
     1,
   );
@@ -136,7 +140,7 @@ test("a reviewer gets the browser it was given and no other", async () => {
 
 test("the browser server and the chrome are the ones this machine has", async () => {
   const { ask, seen } = says("1. GREEN it was there");
-  await driveOne({ at: "https://x.test", model: "m", ask }, { promise: "p", criteria: [{ text: "c" }] }, 1);
+  await driveOne({ at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" }, { promise: "p", criteria: [{ text: "c" }] }, 1);
   const b = (seen[0].mcpServers as Record<string, { command: string; args: string[] }>).browser;
   const fetched = b.command === "npx";
   assert.equal(
@@ -165,7 +169,7 @@ test("a reviewer still working is asked to carry on, and stops when a round adds
     } as AsyncIterable<unknown>;
   };
   const ps = await driveOne(
-    { at: "https://x.test", model: "m", ask },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ id: "AC-1", text: "the cursor is in the title" }, { id: "AC-2", text: "Enter saves" }] },
     1,
   );
@@ -188,10 +192,76 @@ test("a reviewer that never answers is asked once without the browser, from what
     } as AsyncIterable<unknown>;
   };
   const ps = await driveOne(
-    { at: "https://x.test", model: "m", ask },
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ id: "AC-1", text: "the message appears" }] },
     1,
   );
   assert.deepEqual(seen[seen.length - 1].mcpServers, {}, "the last ask has no browser");
   assert.deepEqual(ps.map((p) => p.verdict), ["green"], "so the work it did is not thrown away");
+});
+
+test("Stop reaches a reviewer: the round ends and nothing is judged after it", async () => {
+  const stop = new AbortController();
+  const seen: Record<string, unknown>[] = [];
+  const ask = async (_p: string, options: Record<string, unknown>) => {
+    seen.push(options);
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: "I am still looking around." };
+      },
+    } as AsyncIterable<unknown>;
+  };
+  // Stopped before it starts: no round is asked at all.
+  stop.abort();
+  const ps = await driveAll({ at: "https://x.test", model: "m", ask, stop: stop.signal, browserAt: "http://localhost:1/mcp" }, [
+    { promise: "p", criteria: [{ id: "AC-1", text: "c" }] },
+  ]);
+  assert.equal(seen.length, 0, "nothing is asked of a stopped run");
+  assert.deepEqual(ps.flat().map((p) => p.verdict), ["unjudged"]);
+  assert.match(ps[0][0].ref ?? "", /the run was stopped/);
+});
+
+test("the round in flight is given the run's own abort", async () => {
+  const stop = new AbortController();
+  const seen: Record<string, unknown>[] = [];
+  const ask = async (_p: string, options: Record<string, unknown>) => {
+    seen.push(options);
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: "1. GREEN done" };
+      },
+    } as AsyncIterable<unknown>;
+  };
+  await driveOne(
+    { at: "https://x.test", model: "m", ask, stop: stop.signal, browserAt: "http://localhost:1/mcp" },
+    { promise: "p", criteria: [{ text: "c" }] },
+    1,
+  );
+  const ctrl = seen[0].abortController as AbortController;
+  assert.ok(ctrl, "the round carries an abort");
+  stop.abort();
+  assert.equal(ctrl.signal.aborted, true, "and the run's Stop fires it");
+});
+
+test("a reviewer may use the browser it was given, and nothing else", async () => {
+  const { ask, seen } = says("1. GREEN it was there");
+  await driveOne(
+    { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
+    { promise: "p", criteria: [{ text: "c" }] },
+    1,
+  );
+  const may = seen[0].canUseTool as (t: string, i: unknown, o: unknown) => Promise<{ behavior: string; message?: string }>;
+  assert.equal((await may("mcp__browser__browser_click", {}, {})).behavior, "allow");
+  for (const forbidden of [
+    "mcp__browser__browser_run_code_unsafe",
+    "Monitor",
+    "Bash",
+    "Read",
+    "ToolSearch",
+    "mcp__browser__browser_something_new",
+  ]) {
+    const r = await may(forbidden, {}, {});
+    assert.equal(r.behavior, "deny", `${forbidden} is refused`);
+    assert.match(r.message ?? "", /not yours to use/);
+  }
 });

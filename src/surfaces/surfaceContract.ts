@@ -121,7 +121,13 @@ interface DeliveryVM {
   withheld?: string;
   /** This delivery's own verdicts, by criterion — what the report is
    *  painted from, never a newer or older run's. */
-  proofs?: { criterionId: string; verdict: "green" | "red" | "unjudged" | "pending"; said?: string }[];
+  proofs?: {
+    criterionId: string;
+    verdict: "green" | "red" | "unjudged" | "pending";
+    said?: string;
+    /** What was seen when it was judged on the running product. */
+    looks?: { path: string; said: string }[];
+  }[];
   rerun?: { id: string; tepId?: string };
 }
 

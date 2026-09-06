@@ -22,7 +22,31 @@ type Fate =
   | "being built"
   | "not started"
   | "landed earlier";
-type Verdict = { verdict: "green" | "red" | "unjudged" | "pending"; said?: string };
+type Verdict = {
+  verdict: "green" | "red" | "unjudged" | "pending";
+  said?: string;
+  looks?: { path: string; said: string }[];
+};
+
+/** What the reviewer saw, as links to the pictures it took. */
+function Looks(props: { looks?: { path: string; said: string }[] }): JSX.Element | null {
+  if (!props.looks?.length) return null;
+  return (
+    <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap", marginTop: SP.xs }}>
+      {props.looks.map((l) => (
+        <button
+          key={l.path}
+          data-look={l.path}
+          onClick={() => post({ action: "open-look", path: l.path })}
+          title={l.path}
+          style={{ fontSize: FS.caption, cursor: "pointer" }}
+        >
+          {l.said || "what it saw"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function fateOf(promises: Promise_[], judged: Map<string, Verdict>, stage: string | undefined): Fate {
   const verdicts = promises.flatMap((p) => p.checks.map((c) => judged.get(c.id)));
@@ -89,7 +113,10 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   // newest verdict anywhere showed one run's reds over another run's news.
   const judged = new Map<string, Verdict>(
     d.proofs
-      ? d.proofs.map((p) => [p.criterionId, { verdict: p.verdict, ...(p.said ? { said: p.said } : {}) }])
+      ? d.proofs.map((p) => [
+          p.criterionId,
+          { verdict: p.verdict, ...(p.said ? { said: p.said } : {}), ...(p.looks?.length ? { looks: p.looks } : {}) },
+        ])
       : push.subjects
           .flatMap((s) => s.claims.flatMap((c) => c.promises.flatMap((p) => p.checks)))
           .filter((c) => !!c.verdict)
@@ -289,6 +316,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                     ) : null}
                   </span>
                 </div>
+                {/* What a reviewer saw when a promise held: the pictures
+                    belong to the person whether the news is good or bad. */}
+                {r.fate === "done" ? (
+                  <Looks
+                    looks={r.promises.flatMap((p) => p.checks.flatMap((c) => judged.get(c.id)?.looks ?? []))}
+                  />
+                ) : null}
                 {r.fate === "in the project, and it does not do this"
                   ? r.promises
                       .filter((p) => p.checks.some((c) => judged.get(c.id)?.verdict === "red"))
@@ -303,6 +337,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                                 <div key={i} style={{ fontSize: FS.body, marginTop: SP.xs }}>
                                   {isCommon(v?.said) ? "the same failure as above" : v?.said ? v.said : "did not hold"}
                                   <span style={{ color: C.quiet }}> — {c.text}</span>
+                                  <Looks looks={v?.looks} />
                                 </div>
                               );
                             })}
