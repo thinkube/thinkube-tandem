@@ -141,7 +141,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
   const failed = (d.proofs ?? []).filter((p) => p.verdict === "red").length;
   const pending = d.pending?.length ?? 0;
-  const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand/i.test(p.settledBy)).length;
+  const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand|you, by using it/i.test(p.settledBy)).length;
   const story = !d.merged
     ? undefined
     : [
@@ -327,13 +327,13 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
 
         {seen.length ? (
           <div data-found style={{ marginBottom: SP.lg }}>
-            <div style={label}>What I saw when I used it</div>
+            <div style={label}>Nobody could settle these — they are yours to check</div>
             <div style={{ display: "flex", flexDirection: "column", gap: SP.md }}>
               {seen.map((o, i) => (
                 <div key={i} style={{ padding: `${SP.md}px ${SP.lg}px`, border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.ask}`, borderRadius: 6, background: C.raised }}>
                   <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.5 }}>{o}</span>
                   <div style={{ fontSize: FS.caption, color: C.quiet, marginTop: SP.xs }}>
-                    no reviewer could settle this on the running product — it is yours to certify
+                    declared at signing as something no check and no reviewer can drive
                   </div>
                 </div>
               ))}
@@ -459,7 +459,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
           {d.pending?.length ? (
             <div data-pending={d.id} style={{ fontSize: FS.body, flexBasis: "100%", marginTop: SP.sm }}>
               <strong>
-                {d.pending.every((p) => /attest|person|clean node|install|by hand/i.test(p.settledBy))
+                {d.pending.every((p) => /attest|person|clean node|install|by hand|you, by using it/i.test(p.settledBy))
                   ? "Only you can settle these:"
                   : "Answered where the work runs, not in this tree:"}
               </strong>
@@ -468,7 +468,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
                   <li key={i} style={{ marginBottom: SP.xs }}>
                     {p.text}
                     <span style={{ color: C.quiet }}> — settled by {p.settledBy}</span>
-                    {p.criterionId && /attest|person|clean node|install/i.test(p.settledBy) ? (
+                    {p.criterionId && /attest|person|clean node|install|you, by using it/i.test(p.settledBy) ? (
                       <div style={{ marginTop: SP.xs }}>
                         <button data-attest-held={p.criterionId} onClick={() => post({ action: "attest", deliveryId: d.id, criterionId: p.criterionId!, held: true })}>It held</button>{" "}
                         <button data-attest-broke={p.criterionId} onClick={() => post({ action: "attest", deliveryId: d.id, criterionId: p.criterionId!, held: false })}>It did not</button>

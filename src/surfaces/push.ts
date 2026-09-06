@@ -27,8 +27,22 @@ function boundState(
   session: TandemSession,
   askId: string,
 ): { tep?: string; stage: "signed" | "delivered" | "accepted" } {
+  // A promise serves a SUBJECT and, through `servesClaim`, one claim —
+  // and the claim is what carries the sentence it was read from. Matching
+  // the ask against `serves` finds nothing, and a sentence with no cut is
+  // judged again by every later delivery's proofs.
+  const claims = new Set(
+    (session.space.claims ?? []).filter((c) => c.fromAsk === askId).map((c) => c.id),
+  );
+  const subjects = new Set(
+    (session.space.subjects ?? []).filter((s) => (s.from ?? []).includes(askId)).map((s) => s.id),
+  );
   const mine = new Set(
-    session.space.nodes.filter((n) => n.serves.includes(askId)).map((n) => n.id),
+    session.space.nodes
+      .filter((n) =>
+        n.servesClaim ? claims.has(n.servesClaim) : n.serves.some((id) => subjects.has(id) || id === askId),
+      )
+      .map((n) => n.id),
   );
   const cut = session.space.cuts.find(
     (c) => c.signature && c.changeIds.some((id) => mine.has(id)),

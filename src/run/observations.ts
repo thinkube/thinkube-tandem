@@ -15,7 +15,7 @@
  * this misses is the grounder's to catch, and one it wrongly catches is
  * visible on the cut review before signing.
  */
-import type { Change, Cut, Space } from "../core/schema";
+import type { Change, Cut, Proof, Space } from "../core/schema";
 
 const RUNNING_PRODUCT =
   /\b(in|inside|within) the running\b|\brunning (extension|editor|app|application|product|site)\b|\bthe (user|person) (sees|watches|opens|clicks|drags|scrolls)\b|\bon (the )?screen\b|\bvisually\b|\bby hand\b|\bmanually verif/i;
@@ -74,10 +74,35 @@ export function observationsOf(space: Space, cut: Cut): string[] {
     const n: Change | undefined = byId.get(id);
     if (!n) continue;
     for (const u of n.unverified ?? []) out.push(`${u.text} — ${u.why}`);
-    for (const c of n.acceptance) {
-      const why = observationShaped(c.text);
-      if (why) out.push(`${c.text} — ${why}`);
-    }
   }
   return [...new Set(out)];
+}
+
+/**
+ * The signed criteria only the person can close, as pending proofs.
+ *
+ * A criterion carries an id, so it rides as a proof waiting on the person
+ * rather than as prose: the report puts it where the answers are given,
+ * and their word closes it. A reviewer that settles it on the running
+ * product replaces this with its own verdict.
+ */
+export function forThePerson(space: Space, cut: Cut): Proof[] {
+  const byId = new Map(space.nodes.map((n) => [n.id, n]));
+  const out: Proof[] = [];
+  for (const id of cut.changeIds) {
+    const n: Change | undefined = byId.get(id);
+    if (!n) continue;
+    for (const c of n.acceptance) {
+      const why = observationShaped(c.text);
+      if (why && c.id)
+        out.push({
+          kind: "assessment",
+          label: c.text,
+          verdict: "pending",
+          settledBy: "you, by using it",
+          criterionId: c.id,
+        });
+    }
+  }
+  return out;
 }

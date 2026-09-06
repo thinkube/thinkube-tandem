@@ -31,7 +31,7 @@ import { landDelivery } from "./land";
 import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
-import { observationsOf } from "./observations";
+import { forThePerson, observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
 import { isTestPath } from "./testHomes";
@@ -197,7 +197,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // unkept promise and a product that does not build, and a passing check is
   // kept. Coverage sees none kept by a file's text, a bundle, or a mute runtime.
   const findings: string[] = [...unreached];
-  const proofs: Proof[] = staged.concat(assessed).concat(
+  // What only the person can close rides under its own criterion, so the
+  // report can take their answer; a criterion a reviewer settles on the
+  // running product replaces it there.
+  const theirs = forThePerson(space, cut).filter((p) => !staged.some((s) => s.criterionId === p.criterionId));
+  const proofs: Proof[] = staged.concat(theirs).concat(assessed).concat(
     acResults.map((r) => {
       const probe = probeOfAc.get(r.ac);
       const criterionId = probe ? criterionByProbe.get(probe) : undefined;
