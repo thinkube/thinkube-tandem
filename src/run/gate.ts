@@ -45,7 +45,7 @@ import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
 import { treeShape } from "../gates/moduleSizes";
 import { runnerFor } from "./proved";
-import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { askTheTool } from "./settles";
 
 export type { GateContext } from "./state";
@@ -282,14 +282,47 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
    * written in the suite's own shape, so one verdict, one repair loop and
    * one proof row serve both.
    */
-  const buildAlone = async (cwd: string): Promise<{ code: number | null; output: string }> => {
-    const b = await boundedExec(deps.build!, cwd);
-    return b.code === 0
-      ? { code: 0, output: `ok 1 - the product build (${deps.build}) builds as shipped` }
-      : { code: b.code, output: `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}` };
+  // The suites the pipeline runs, run here on the delivered tree, so a
+  // standing test the work broke is a red before the merge, not after. A
+  // suite whose runner does not answer — it needs the cluster this machine
+  // is not — is left to the pipeline, never counted as a red.
+  const app = path.basename(deps.repoRoot).replace(/-/g, "_");
+  const partSuites = (() => {
+    const read = thinkubeDeclaration(worktree);
+    if (!read || !("declared" in read)) return [] as { root: string; cmd: string }[];
+    return partsDeclared(read.declared)
+      .filter((p) => p.root !== "." && p.test?.enabled && p.test.command)
+      .map((p) => ({ root: p.root, cmd: p.test!.command! }));
+  })();
+  const runSuitesLocally = async (cwd: string): Promise<{ code: number | null; output: string }> => {
+    const parts: string[] = [];
+    if (deps.build) {
+      const b = await boundedExec(deps.build, cwd);
+      parts.push(
+        b.code === 0
+          ? `ok 1 - the product build (${deps.build}) builds as shipped`
+          : `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
+      );
+    }
+    for (const p of partSuites) {
+      const at = path.join(cwd, p.root);
+      const r = await boundedExec(`TEST_DATABASE_NAME=test_${app} ${p.cmd}`, at);
+      if (r.code === 0) {
+        parts.push(`ok 1 - ${p.root} suite passes`);
+      } else if (aRunnerAnswered(r.code, r.output)) {
+        parts.push(`not ok 0 - the ${p.root} suite fails on the delivered tree\n${r.output.slice(-3000)}`);
+      } else {
+        say(`${tep}: the ${p.root} suite does not run here — the platform settles it`);
+      }
+    }
+    if (!parts.length) return { code: 0, output: "no build and no runnable suite here" };
+    const red = parts.some((l) => /^not ok/.test(l));
+    return { code: red ? 1 : 0, output: parts.join("\n") };
   };
   const judgeWith = async (cmd: string, cwd: string): Promise<{ code: number | null; output: string }> =>
-    g.suite ? judgeTree(cmd, cwd) : buildAlone(cwd);
+    g.suite ? judgeTree(cmd, cwd) : runSuitesLocally(cwd);
+  // What the gate judges the tree by: the whole suite where one runs here,
+  // else the build — beside which the declared part suites also run.
   const treeCmd = g.suite ?? deps.build;
   log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
   // judgeTree runs the product build EVERY time it judges, and folds a
@@ -326,7 +359,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   } else if (!g.suite) {
     log(
       deps.build
-        ? `${tep}: no whole-suite command runs here — the tree is judged by its own product build (${deps.build})`
+        ? `${tep}: no whole-suite command runs here — the tree is judged by its own product build${
+            partSuites.length ? ` and the ${partSuites.map((p) => p.root).join(", ")} suite(s)` : ""
+          } (${deps.build})`
         : `${tep}: no whole-suite command runs here — the standing-suite veto does not apply`,
     );
   }

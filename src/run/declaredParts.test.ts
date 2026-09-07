@@ -29,7 +29,7 @@ test("each declared one-test command is told to the door under its part's root",
       "",
     ].join("\n"),
   );
-  assert.deepEqual(declaredPartCommands(dir), { backend: { runOne: "pytest <file>" } });
+  assert.deepEqual(declaredPartCommands(dir), { backend: { runOne: "pytest <file>", suite: "x" } });
 });
 
 test("a repository with no declaration tells the door nothing", () => {

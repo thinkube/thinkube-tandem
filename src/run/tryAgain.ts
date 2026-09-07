@@ -30,8 +30,9 @@ export interface TryAgainSteps {
   repair: (a: Attempt, attempt: number) => Promise<{ green: boolean; report: string }>;
   /** The repository's own build, here. Nothing is pushed until it passes. */
   buildsHere: () => Promise<{ ok: boolean; output: string }>;
-  /** Put the repaired work in the project again. */
-  land: () => Promise<{ ok: boolean; why?: string }>;
+  /** Put the repaired work in the project again. `moved` is false when the
+   *  merge and push changed nothing — a repair that committed nothing. */
+  land: () => Promise<{ ok: boolean; why?: string; moved?: boolean }>;
   /** Wait for the platform, again. */
   waitUntilLive: () => Promise<{ live: boolean; why?: string }>;
   say: (line: string) => void;
@@ -77,6 +78,13 @@ export async function repairUntilLive(
     const landed = await steps.land();
     if (!landed.ok) {
       why = `the repair could not be put in the project: ${landed.why ?? "no reason given"}`;
+      steps.say(why);
+      break;
+    }
+    // A repair that moved nothing did not fix anything: the platform will
+    // never build again, so waiting for it is waiting for ever.
+    if (landed.moved === false) {
+      why = "the repair changed nothing — there is nothing new for the platform to build";
       steps.say(why);
       break;
     }

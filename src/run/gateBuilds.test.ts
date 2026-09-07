@@ -109,3 +109,68 @@ test("a build that fails is a red the gate answers for — never a silent hand-o
   const why = `${out.delivery?.withheld ?? ""}${out.refusals.join(" ")}`;
   assert.match(why, /build/i, "and the reason names the build");
 });
+
+/** A repo that declares a part with its own test suite, so the gate can
+ *  run it on the delivered tree the way the pipeline does. */
+function treeDeclaring(): { dir: string; base: string } {
+  const t = tree();
+  fs.mkdirSync(path.join(t.dir, "frontend"), { recursive: true });
+  fs.writeFileSync(
+    path.join(t.dir, "thinkube.yaml"),
+    [
+      "apiVersion: thinkube.io/v1",
+      "kind: ThinkubeDeployment",
+      "spec:",
+      "  containers:",
+      "    - { name: frontend, build: ./frontend, test: { enabled: true, command: './run_tests.sh', one: './run_tests.sh <file>' } }",
+      "",
+    ].join("\n"),
+  );
+  execFileSync("git", ["-C", t.dir, "add", "-A"]);
+  execFileSync("git", ["-C", t.dir, "commit", "-q", "-m", "declare"]);
+  return { dir: t.dir, base: execFileSync("git", ["-C", t.dir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() };
+}
+
+async function gateOverSuite(suite: { code: number; output: string }) {
+  const st = new RunState(() => {});
+  const { dir: worktree, base } = treeDeclaring();
+  const said: string[] = [];
+  const out = await closeGate({
+    tep: "TEP-1", branch: "tandem/TEP-1", baseSha: base, worktree, slices: [],
+    space: emptySpace(), cut: { id: "cut-1", tepId: "TEP-1", changeIds: [] },
+    deps: { repoRoot: worktree, state: st, build: "npm run build", model: "test",
+      worker: async () => ({ ok: true, finalText: "UNDELIVERED: nothing here can fix it" }) },
+    runOne: proved("npm test -- <file>", true)!,
+    sliceProbes: new Map(), sliceCommitted: new Set(), checkOf: new Map(),
+    undelivered: [], rulings: [], decisions: [],
+    exec: async (cmd: string, args: string[]) => {
+      try { return { code: 0, out: execFileSync(cmd, args, { encoding: "utf8", cwd: worktree, stdio: ["ignore", "pipe", "pipe"] }) }; }
+      catch (err) { const e = err as { status?: number; stdout?: string; stderr?: string }; return { code: e.status ?? 1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+    },
+    boundedExec: async (cmd: string) => {
+      if (cmd === "npm run build") return { code: 0, output: "built" };
+      if (/run_tests\.sh/.test(cmd)) return suite;
+      return { code: 0, output: "" };
+    },
+    suiteExec: async () => ({ code: 0, output: "" }),
+    state: st, sessionOf: () => undefined, worker: async () => ({ ok: true, finalText: "" }),
+    machineAttention: () => 0, land: async () => ({ ok: true, pushed: true, head: "deadbeef" }),
+    log: (l: string) => said.push(l), defect: () => {},
+  } as never);
+  return { out, said };
+}
+
+test("a declared part suite is run on the delivered tree — a broken standing test is red before the merge", async () => {
+  const { out } = await gateOverSuite({ code: 1, output: "Tests  1 failed | 66 passed\nFAIL HomePage.test.tsx" });
+  assert.ok(!out.delivery || out.delivery.withheld, `a tree whose part suite fails is not handed over: ${JSON.stringify(out.delivery?.withheld ?? out.refusals)}`);
+});
+
+test("a part suite whose runner cannot run here is left to the platform, not counted red", async () => {
+  // No test-runner markers: a bare environment error, which the platform's
+  // own image settles.
+  const { out, said } = await gateOverSuite({ code: 2, output: "psycopg2.OperationalError: could not connect" });
+  assert.ok(said.some((l) => /does not run here — the platform settles it/.test(l)), said.join(" · "));
+  // Whatever withholds this bare cut, it is never the suite: the words for
+  // a failed part suite never appear.
+  assert.ok(!/suite fails on the delivered tree/.test(out.delivery?.withheld ?? ""), out.delivery?.withheld);
+});

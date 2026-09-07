@@ -26,11 +26,13 @@ import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
  * `test.one` with `<file>` relative to the part's root. Declared beats
  * guessed, so a part that says how one test runs is never inferred.
  */
-export function declaredPartCommands(repoRoot: string): Record<string, { runOne: string }> {
+export function declaredPartCommands(repoRoot: string): Record<string, { runOne: string; suite?: string }> {
   const d = thinkubeDeclaration(repoRoot);
   if (!d || !("declared" in d)) return {};
-  const out: Record<string, { runOne: string }> = {};
-  for (const p of partsDeclared(d.declared)) if (p.root !== "." && p.test?.one) out[p.root] = { runOne: p.test.one };
+  const out: Record<string, { runOne: string; suite?: string }> = {};
+  for (const p of partsDeclared(d.declared))
+    if (p.root !== "." && p.test?.one)
+      out[p.root] = { runOne: p.test.one, ...(p.test.command ? { suite: p.test.command } : {}) };
   return out;
 }
 import type { DispatchDeps } from "./deps";
@@ -106,7 +108,7 @@ export async function whatWeKnow(a: {
     ...(known ? { known } : {}),
     told: {
       ...deps.told,
-      ...((): { parts?: Record<string, { runOne: string }>; runOne?: string } => {
+      ...((): { parts?: Record<string, { runOne: string; suite?: string }>; runOne?: string } => {
         const parts = declaredPartCommands(deps.repoRoot);
         if (!Object.keys(parts).length) return {};
         // Each part says how one of its tests runs, so nothing repository-

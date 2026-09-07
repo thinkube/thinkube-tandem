@@ -94,3 +94,11 @@ spec:
   );
   assert.deepEqual(namedFiles("src/lib/nothere.ts(1,1): error", dir), [], "a path that does not exist is not a file");
 });
+
+test("a repair that moves nothing stops the loop rather than waiting for a build", async () => {
+  const l = loop({ land: async () => ({ ok: true, moved: false }) });
+  const r = await repairUntilLive(l.steps);
+  assert.equal(r.live, false);
+  assert.equal(r.attempts, 1, "it does not try again on a repair that changed nothing");
+  assert.match(r.why ?? "", /changed nothing/);
+});

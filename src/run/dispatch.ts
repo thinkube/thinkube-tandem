@@ -717,8 +717,8 @@ export async function dispatchTep(
               // Every merge this delivery made is remembered: taking the
               // work back out means reverting all of them, and a repair
               // pushed after the first merge is one of them.
-              if (l.head) alsoMerged.push(l.head);
-              return l.pushed ? { ok: true } : { ok: false, ...(l.why ? { why: l.why } : {}) };
+              if (l.head && l.moved) alsoMerged.push(l.head);
+              return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
             } catch (err) {
               return { ok: false, why: err instanceof Error ? err.message : String(err) };
             }
@@ -800,8 +800,8 @@ export async function dispatchTep(
           land: async () => {
             try {
               const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
-              if (l.head) alsoMerged.push(l.head);
-              return l.pushed ? { ok: true } : { ok: false, ...(l.why ? { why: l.why } : {}) };
+              if (l.head && l.moved) alsoMerged.push(l.head);
+              return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
             } catch (err) {
               return { ok: false, why: err instanceof Error ? err.message : String(err) };
             }
