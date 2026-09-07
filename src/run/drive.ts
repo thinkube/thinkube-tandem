@@ -461,15 +461,26 @@ function stoppedProof(at: string, x: { id?: string; text: string }): Proof {
   };
 }
 
-/** Judge every promise, a few at a time — each waits on a browser. One
- *  list of verdicts per promise, in the order the promises were given. */
+/**
+ * Judge every promise, one reviewer at a time. One list of verdicts per
+ * promise, in the order the promises were given.
+ *
+ * One at a time because they all drive the same running product, which
+ * holds one set of data. Reviewers that overlap make and delete each
+ * other's items: a criterion about the whole list — nothing is high
+ * priority, there are no tasks at all — cannot be reached while another
+ * reviewer holds items in it, and a count read while another reviewer is
+ * adding can fail against a product that is doing exactly what was asked.
+ * A reviewer with the product to itself answers about the product; two
+ * reviewers at once answer about each other.
+ */
 export async function driveAll(
   a: Omit<DriveArgs, "browserAt">,
   list: ToDrive[],
   ids: readonly string[] = [],
   /** A browser of its own for one reviewer, closed when it is done. */
   openOne?: (who: string) => Promise<{ url: string; close: () => void } | { why: string }>,
-  atOnce = 3,
+  atOnce = 1,
 ): Promise<Proof[][]> {
   const out: Proof[][] = [];
   if (a.stop?.aborted) return list.map((c) => c.criteria.map((x) => stoppedProof(a.at, x)));

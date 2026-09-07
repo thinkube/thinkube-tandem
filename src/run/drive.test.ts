@@ -387,3 +387,42 @@ test("with nowhere to keep pictures, the reviewer is still told how to name one"
   );
   assert.match(asked[0], /<item number>-<three to six words, hyphenated>\.png/);
 });
+
+test("reviewers drive the product one at a time, never two at once", async () => {
+  // They share one running product holding one set of data: overlapping
+  // reviewers make and delete each other's items, which blocks a criterion
+  // about the whole list and can fail a count against a product that is
+  // doing exactly what was asked.
+  let open = 0;
+  let mostOpenAtOnce = 0;
+  const order: string[] = [];
+  const ask = async () => {
+    open++;
+    mostOpenAtOnce = Math.max(mostOpenAtOnce, open);
+    await new Promise((r) => setTimeout(r, 20));
+    open--;
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "result", result: "1. GREEN it did" };
+      },
+    } as AsyncIterable<unknown>;
+  };
+  const openOne = async (who: string): Promise<{ url: string; close: () => void }> => {
+    order.push(who);
+    return { url: "http://localhost:1/mcp", close: () => undefined };
+  };
+  const proofs = await driveAll(
+    { at: "https://x.test", model: "m", ask },
+    [
+      { promise: "p1", criteria: [{ text: "c1" }] },
+      { promise: "p2", criteria: [{ text: "c2" }] },
+      { promise: "p3", criteria: [{ text: "c3" }] },
+      { promise: "p4", criteria: [{ text: "c4" }] },
+    ],
+    ["r1", "r2", "r3", "r4"],
+    openOne,
+  );
+  assert.equal(mostOpenAtOnce, 1, "one reviewer has the product to itself");
+  assert.deepEqual(order, ["r1", "r2", "r3", "r4"], "and they go in the order the promises were given");
+  assert.equal(proofs.length, 4);
+});
