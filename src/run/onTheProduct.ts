@@ -66,6 +66,12 @@ export async function judgeOnTheProduct(a: {
   runId?: string;
   /** Injectable for tests: what actually opens the browser. */
   drive?: typeof driveAll;
+  /** Injectable for tests: what actually signs a reviewer in. */
+  signIn?: typeof signInOnce;
+  /** Injectable for tests: what actually proves the session opens it. */
+  wayInWorks?: typeof theWayInWorks;
+  /** Injectable for tests: what actually starts a browser. */
+  open?: typeof openTheBrowser;
   /** Judge only these promises, by sentence — a repair re-drives what was
    *  red, never the whole page again. */
   only?: (promise: string) => boolean;
@@ -83,8 +89,9 @@ export async function judgeOnTheProduct(a: {
   // run's own record.
   const here = a.storeDir ? path.join(a.storeDir, "looks", a.runId ?? "run") : undefined;
   if (here) fs.mkdirSync(here, { recursive: true });
+  const signIn = a.signIn ?? signInOnce;
   const session = here
-    ? await signInOnce({ at: a.at, into: path.join(here, "session.json") })
+    ? await signIn({ at: a.at, into: path.join(here, "session.json") })
     : { why: "there is nowhere to keep a session" };
   // Asked once, here: a session that does not open the product sends every
   // reviewer to the sign-on host, which their own origin limit refuses.
@@ -95,7 +102,7 @@ export async function judgeOnTheProduct(a: {
     "why" in session
       ? session.why
       : await (async () => {
-          const works = await theWayInWorks({ at: a.at, sessionFile: session.path });
+          const works = await (a.wayInWorks ?? theWayInWorks)({ at: a.at, sessionFile: session.path });
           if ("why" in works) return works.why;
           a.log(`the session opens ${a.at}`, "live");
           return undefined;
@@ -128,14 +135,27 @@ export async function judgeOnTheProduct(a: {
   // One browser each, opened when the reviewer starts and closed when it
   // is done — and one opened here first, so a machine that cannot start a
   // browser at all is said once rather than three times.
-  const openOne = (who: string) =>
-    openTheBrowser({
+  //
+  // Each reviewer signs in for itself, at the moment it starts. The
+  // platform's token lasts minutes and reviewers run a few at a time, so
+  // one session minted before any of them starts is already half spent by
+  // the time the last one opens its browser — and it cannot be renewed,
+  // because renewing means reaching the sign-on host its own origin limit
+  // refuses. Signing in per reviewer gives each the whole lifetime.
+  const openOne = async (who: string, itsOwnSession = true) => {
+    const mine =
+      itsOwnSession && here ? await signIn({ at: a.at, into: path.join(here, who, "session.json") }) : session;
+    if ("why" in mine) a.log(`no session of its own: ${mine.why}`, who);
+    return (a.open ?? openTheBrowser)({
       origin: originOf(a.at),
       ...(here ? { outputDir: path.join(here, who) } : {}),
-      ...("path" in session ? { sessionFile: session.path } : {}),
+      ...("path" in mine ? { sessionFile: mine.path } : {}),
       log: (l) => a.log(l, who),
     });
-  const browser = await openOne(ids[0] ?? "on-the-product-1");
+  };
+  // The first is opened only to prove a browser starts at all, so it does
+  // not spend a sign-in of its own.
+  const browser = await openOne(ids[0] ?? "on-the-product-1", false);
   if ("why" in browser) {
     a.log(`no browser for the reviewers: ${browser.why}`, "live");
     for (const id of ids) a.st.fail(id, `no browser on this machine — ${browser.why}`);

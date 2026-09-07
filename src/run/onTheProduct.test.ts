@@ -164,3 +164,66 @@ test("with no way in, no reviewer is started and every criterion comes back unju
   assert.match(proofs.find((p) => p.criterionId === "c1")?.ref ?? "", /no reviewer could sign in/);
   assert.equal(proofs.find((p) => !p.criterionId)?.verdict, "green", "what was already settled is untouched");
 });
+
+test("each reviewer signs in at its own start, so a queued one never inherits a spent token", async () => {
+  // Reviewers run a few at a time and the platform's token lasts minutes,
+  // so one session minted before any of them starts is already half spent
+  // when the last opens its browser — and the sign-on host it would renew
+  // at is the one its own origin limit refuses.
+  const st = new RunState(() => {});
+  const s = space([
+    promise("n1", "frontend/a.tsx", [{ id: "c1", text: "the count matches the cards" }]),
+    promise("n2", "frontend/b.tsx", [{ id: "c2", text: "the list shows the soonest first" }]),
+  ]);
+  const here = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-looks-"));
+  const signedInto: string[] = [];
+  await judgeOnTheProduct({
+    at: "https://todo.example.com",
+    st,
+    log: () => {},
+    deps: { model: "test" },
+    space: s,
+    cut: cut(["n1", "n2"]),
+    pageRoots: ["frontend"],
+    storeDir: here,
+    runId: "run-1",
+    outcome: { delivery: { id: "d1", cutId: "cut-1", branch: "b", proofs: [] } } as never,
+    signIn: (async (x: { into: string }) => {
+      signedInto.push(path.relative(path.join(here, "looks", "run-1"), x.into));
+      fs.mkdirSync(path.dirname(x.into), { recursive: true });
+      fs.writeFileSync(x.into, "{}");
+      return { path: x.into };
+    }) as never,
+    wayInWorks: (async () => ({ ok: true })) as never,
+    open: (async () => ({ url: 'http://localhost:1/mcp', said: [], close: () => undefined })) as never,
+    // Like the real driveAll: a browser per reviewer, opened as it starts.
+    drive: (async (
+      _a: unknown,
+      list: { criteria: { id?: string; text: string }[] }[],
+      driverIds: string[],
+      openOne: (who: string) => Promise<{ close: () => void } | { why: string }>,
+    ) => {
+      const out = [];
+      for (let i = 0; i < list.length; i++) {
+        const b = await openOne(driverIds[i]);
+        if ("close" in b) b.close();
+        out.push(
+          list[i].criteria.map((x) => ({
+            kind: "assessment",
+            label: x.text,
+            verdict: "green",
+            ...(x.id ? { criterionId: x.id } : {}),
+          })),
+        );
+      }
+      return out;
+    }) as never,
+  });
+  assert.deepEqual(
+    signedInto.slice(1).sort(),
+    ["on-the-product-1/session.json", "on-the-product-2/session.json"],
+    `one sign-in each, into that reviewer's own directory: ${signedInto.join(", ")}`,
+  );
+  assert.equal(signedInto[0], "session.json", "and one up front, to prove the way in works at all");
+  fs.rmSync(here, { recursive: true, force: true });
+});
