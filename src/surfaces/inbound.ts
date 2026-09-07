@@ -34,7 +34,7 @@ export interface InboundAction {
   /** open-look: which of a reviewer's screenshots to open. */
   path?: string;
 }
-import { wantsFrom } from "./askFromFinding";
+import { findingOf } from "../run/findings";
 import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
 
@@ -132,24 +132,23 @@ export async function handleInbound(
     if (!d) note = "that delivery is not here any more";
     else {
       const already = new Set(d.findingsAsked ?? []);
-      const fresh = msg.items.filter((t) => (d.findings ?? []).includes(t) && !already.has(t));
+      const held = (d.findings ?? []).map(findingOf);
+      const fresh = held.filter((f) => msg.items!.includes(f.saw) && !already.has(f.saw));
       if (!fresh.length) note = "those are in the box already";
       else {
-        push("Writing them as asks…");
-        // What goes in the box is a want, not a defect description: the
-        // observation is rewritten in the voice of the person's own
-        // sentences, and handed over unchanged when that fails.
-        const wants = await wantsFrom(fresh, session.deps.round);
+        // The ask was drafted by whoever saw the thing; the observation
+        // stands in only when no draft came with it.
+        const wants = fresh.map((f) => f.ask ?? f.saw);
         const box = session.space.draft ?? "";
         session.saveDraft([box.replace(/\s*$/, ""), ...wants].filter(Boolean).join("\n"));
         session.space = {
           ...session.space,
           deliveries: session.space.deliveries.map((x) =>
-            x.id === d.id ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...fresh] } : x,
+            x.id === d.id ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...fresh.map((f) => f.saw)] } : x,
           ),
         };
         session.changed(
-          `${fresh.length} finding${fresh.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
+          `${fresh.length} ask${fresh.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
         );
       }
     }

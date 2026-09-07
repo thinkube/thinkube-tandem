@@ -116,7 +116,7 @@ interface DeliveryVM {
   /** What the work noticed and did not do, because it did not stop the ask
    *  being delivered. The person decides whether each becomes an ask;
    *  `taken` marks the ones already put in the box. */
-  findings?: { text: string; taken?: boolean }[];
+  findings?: { text: string; ask?: string; taken?: boolean }[];
   /** Promises whose answer comes from somewhere this run cannot reach —
    *  each with where it will come from, and whether it has arrived. A
    *  person attests the ones only a person can settle. */

@@ -25,7 +25,7 @@ import { theModel } from "../engine/theModel";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Proof } from "../core/schema";
-import { findingsIn } from "./findings";
+import { Finding, findingsIn } from "./findings";
 import { collectText } from "../derive/round";
 
 /** What a driver is asked to settle: one promise, and the criteria that
@@ -234,7 +234,7 @@ async function drive(
  * Judge one criterion on the running product. The proof carries the
  * address, so a reader can go and look at the same thing the driver did.
  */
-export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<Proof[] & { noticed?: string[] }> {
+export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<Proof[] & { noticed?: Finding[] }> {
   a.log?.(`on the running product ${ord}: opening ${a.at} — ${c.criteria.length} thing(s) to check`);
   // One conversation for this reviewer, from first look to last word.
   const session: { id?: string } = {};
@@ -286,8 +286,11 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "You will see things that are not what you were asked to judge — a",
       "word that is wrong, a control that behaves oddly, something half",
       "done. Do not judge them here and do not act on them: write each one",
-      "in a line beginning `FINDING: `, one sentence saying what you saw and",
-      "where. The person reads them and decides whether they become work.",
+      "in one line —",
+      "FINDING: <what you saw and where> | ASK: <one sentence asking for",
+      "what a person would want instead, in their words>",
+      "— you are the one who saw it, so you draft the ask; the person keeps",
+      "it or does not.",
       "",
       "Answer with ONE LINE PER ITEM at the end, numbered as above:",
       "1. GREEN <what you did and what you saw>",
@@ -360,7 +363,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       )) ?? finished;
   // What it saw that nobody asked about, in its own words.
   const noticed = findingsIn(finished ?? "");
-  for (const f of noticed) a.log?.(`noticed: ${f}`);
+  for (const f of noticed) a.log?.(`noticed: ${f.saw}`);
   const proofs = c.criteria.map((x, i) => {
     const answer = verdictFor(finished, i + 1);
     const label = x.text;
@@ -395,7 +398,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
             : `it did not hold, at ${a.at}`,
       ...(x.id ? { criterionId: x.id } : {}),
     };
-  }) as Proof[] & { noticed?: string[] };
+  }) as Proof[] & { noticed?: Finding[] };
   if (noticed.length) proofs.noticed = noticed;
   return proofs;
 }

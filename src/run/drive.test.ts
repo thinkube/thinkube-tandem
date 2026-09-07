@@ -333,7 +333,7 @@ test("a reviewer reports what it noticed and did not judge", async () => {
   const { ask } = says(
     [
       "1. GREEN the cursor was in the title",
-      "FINDING: the priority filter has no Catalan translation — it reads in English on a Catalan page",
+      "FINDING: the priority filter reads in English on a Catalan page | ASK: The priority filter reads in Catalan when the page is in Catalan.",
       "FINDING: none of the date fields say what format they want",
     ].join("\n"),
   );
@@ -343,8 +343,11 @@ test("a reviewer reports what it noticed and did not judge", async () => {
     1,
   );
   assert.deepEqual(ps.map((p) => p.verdict), ["green"], "its verdicts are unaffected");
-  assert.deepEqual((ps as typeof ps & { noticed?: string[] }).noticed, [
-    "the priority filter has no Catalan translation — it reads in English on a Catalan page",
-    "none of the date fields say what format they want",
+  assert.deepEqual((ps as typeof ps & { noticed?: unknown }).noticed, [
+    {
+      saw: "the priority filter reads in English on a Catalan page",
+      ask: "The priority filter reads in Catalan when the page is in Catalan.",
+    },
+    { saw: "none of the date fields say what format they want" },
   ]);
 });

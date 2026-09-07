@@ -109,7 +109,7 @@ function Findings(props: { findings: { text: string; taken?: boolean }[]; delive
             setPicked(new Set());
           }}
           style={{ marginTop: SP.sm, fontSize: FS.body, fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
-          title="Puts the selected findings in the capture box as sentences you can keep."
+          title="Puts the drafted asks of the selected findings in the capture box, as sentences you can keep."
         >
           {chosen.length ? `Make asks from the ${chosen.length} selected` : "Select findings to make asks from"}
         </button>

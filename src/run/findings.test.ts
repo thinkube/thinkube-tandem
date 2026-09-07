@@ -3,19 +3,27 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findingsIn, THE_FINDING_RULE } from "./findings";
+import { findingOf, findingsIn, THE_FINDING_RULE } from "./findings";
 
-test("a finding is lifted from a report, in the words it was written in", () => {
+test("a finding is lifted as a pair: what was seen, and the ask drafted for it", () => {
   const said = [
     "I fixed the ordering and the checks are green.",
-    "FINDING: the Catalan translation of the priority filter is missing, in frontend/src/locales/ca.json",
+    "FINDING: the Catalan translation of the priority filter is missing, in ca.json | ASK: The priority filter reads in Catalan when the page is in Catalan.",
     "- FINDING: the due-date field accepts a date in the past without saying anything",
     "UNDELIVERED: none",
   ].join("\n");
   assert.deepEqual(findingsIn(said), [
-    "the Catalan translation of the priority filter is missing, in frontend/src/locales/ca.json",
-    "the due-date field accepts a date in the past without saying anything",
+    {
+      saw: "the Catalan translation of the priority filter is missing, in ca.json",
+      ask: "The priority filter reads in Catalan when the page is in Catalan.",
+    },
+    { saw: "the due-date field accepts a date in the past without saying anything" },
   ]);
+});
+
+test("a finding recorded before the pair existed still reads", () => {
+  assert.deepEqual(findingOf("an old plain sentence"), { saw: "an old plain sentence" });
+  assert.deepEqual(findingOf({ saw: "seen", ask: "wanted" }), { saw: "seen", ask: "wanted" });
 });
 
 test("a report of nothing noticed is not a finding", () => {
@@ -28,4 +36,5 @@ test("the rule says what to do with what is not yours: fix it only when it block
   assert.match(THE_FINDING_RULE, /does it stop this work being delivered/i);
   assert.match(THE_FINDING_RULE, /It does: it is part of the work/);
   assert.match(THE_FINDING_RULE, /It does not: leave it alone/);
+  assert.match(THE_FINDING_RULE, /ASK: <one/, "and whoever saw it drafts the ask");
 });

@@ -14,6 +14,7 @@
  */
 import { Cut, Proof, Space } from "../core/schema";
 import { driveAll, originOf, ToDrive } from "./drive";
+import { Finding } from "./findings";
 import { toDriveOf } from "./observations";
 import { signInOnce, theWayInWorks } from "./theWayIn";
 import { openTheBrowser } from "./theBrowser";
@@ -163,7 +164,7 @@ export async function judgeOnTheProduct(a: {
   if (!d) return a.outcome;
   // What the reviewers saw that nobody asked about, carried to the person
   // with the run's other findings.
-  const noticed = proofs.flatMap((forOne) => (forOne as Proof[] & { noticed?: string[] }).noticed ?? []);
+  const noticed = proofs.flatMap((forOne) => (forOne as Proof[] & { noticed?: Finding[] }).noticed ?? []);
   // A judged criterion is no longer the person's to certify.
   const settled = list.flatMap((c, i) =>
     c.criteria.filter((_, j) => proofs[i]?.[j]?.verdict !== "unjudged").map((x) => x.text),
