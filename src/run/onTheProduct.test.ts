@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pageRoots } from "./live";
 import { toDriveOf } from "./observations";
-import { seedDrivers } from "./onTheProduct";
+import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
 import { RunState } from "./state";
 import type { Change, Cut, Space } from "../core/schema";
 
@@ -120,4 +120,47 @@ test("the graph carries the reviewers from the first frame, each waiting on the 
   const what = st.units.get(ids[0])!.what ?? "";
   assert.match(what, /soonest due date/, "and it says what it will judge");
   assert.match(what, /count matches the cards/, "every criterion of the promise, in one session");
+});
+
+test("with no way in, no reviewer is started and every criterion comes back unjudged", async () => {
+  // Driving reviewers that cannot sign in spends minutes to write the same
+  // lockout on every criterion; a criterion nobody reached is unjudged,
+  // never a verdict on the work.
+  const st = new RunState(() => {});
+  const s = space([
+    promise("n1", "frontend/src/pages/Tasks.tsx", [
+      { id: "c1", text: "the list shows the soonest due date first" },
+      { id: "c2", text: "the count matches the cards" },
+    ]),
+  ]);
+  const c = cut(["n1"]);
+  const said: string[] = [];
+  let drove = false;
+  const out = await judgeOnTheProduct({
+    at: "https://todo.example.com",
+    st,
+    log: (l) => said.push(l),
+    deps: { model: "test" },
+    space: s,
+    cut: c,
+    pageRoots: ["frontend"],
+    // No store directory, so there is nowhere to keep a session and no way in.
+    outcome: {
+      delivery: { id: "d1", cutId: "cut-1", branch: "b", proofs: [{ kind: "probe", label: "built", verdict: "green" }] },
+    } as never,
+    drive: (async () => {
+      drove = true;
+      return [];
+    }) as never,
+  });
+  assert.equal(drove, false, "no browser is opened when the run already knows the reviewers are locked out");
+  assert.ok(said.some((l) => /locked out, so none was started/.test(l)), said.join(" · "));
+  const proofs = (out.delivery?.proofs ?? []) as { criterionId?: string; verdict: string; ref?: string }[];
+  assert.deepEqual(
+    proofs.filter((p) => p.criterionId).map((p) => [p.criterionId, p.verdict]),
+    [["c1", "unjudged"], ["c2", "unjudged"]],
+    "the promises stay for the person, never counted as failing",
+  );
+  assert.match(proofs.find((p) => p.criterionId === "c1")?.ref ?? "", /no reviewer could sign in/);
+  assert.equal(proofs.find((p) => !p.criterionId)?.verdict, "green", "what was already settled is untouched");
 });

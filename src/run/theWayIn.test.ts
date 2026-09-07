@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { credentialsFrom, onlyThisProduct, signInOnce, theWayInWorks } from "./theWayIn";
+import { credentialsFrom, credentialsIn, onlyThisProduct, signInOnce, theWayInWorks } from "./theWayIn";
 
 const whole = {
   cookies: [
@@ -54,7 +54,7 @@ test("no identity, no session — and it says so instead of pretending", async (
   });
   // credentialsFrom reads the machine's own environment; the test asserts
   // the shape of the refusal, whichever way that answers here.
-  if ("why" in r) assert.match(r.why, /no identity|could not sign in|did not set a session/);
+  if ("why" in r) assert.match(r.why, /no identity|could not sign in|no way back in/);
 });
 
 test("a sign-in that leaves nothing for the product is not a session", async () => {
@@ -64,7 +64,7 @@ test("a sign-in that leaves nothing for the product is not a session", async () 
     credentials: { username: "u", password: "p" },
     signIn: async () => ({ cookies: [{ name: "k", domain: "auth.thinkube.com", path: "/" }], origins: [] }),
   });
-  assert.ok("why" in r && /did not set a session/.test(r.why));
+  assert.ok("why" in r && /no way back in/.test(r.why), JSON.stringify(r));
 });
 
 test("the identity is the realm user the platform signs people in as", () => {
@@ -104,4 +104,47 @@ test("a session that does not open the product is said before any reviewer start
     visit: async () => ({ landedAt: "https://todo.thinkube.com/" }),
   });
   assert.deepEqual(lands, { ok: true });
+});
+
+test("a theme is not a session: a way back in is told apart from a preference", () => {
+  const at = "https://todo.thinkube.com";
+  const onlyATheme = {
+    cookies: [],
+    origins: [{ origin: at, localStorage: [{ name: "theme", value: "dark" }] }],
+  };
+  assert.deepEqual(credentialsIn(onlyATheme, at), [], "a display preference opens nothing");
+
+  const signedIn = {
+    cookies: [],
+    origins: [
+      {
+        origin: at,
+        localStorage: [
+          { name: "theme", value: "dark" },
+          { name: "access_token", value: "ey..." },
+          { name: "refresh_token", value: "r..." },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(credentialsIn(signedIn, at), ["stored access_token", "stored refresh_token"]);
+
+  const byCookie = { cookies: [{ name: "sid", domain: "todo.thinkube.com", path: "/" }], origins: [] };
+  assert.deepEqual(credentialsIn(byCookie, at), ["cookie sid"], "a cookie on the product's own host is a session");
+});
+
+test("a sign-in that stored only a preference is refused, not handed to the reviewers", async () => {
+  // The shape that locked every reviewer out: the storage was read after
+  // the theme was written but before the token exchange finished.
+  const r = await signInOnce({
+    at: "https://todo.thinkube.com",
+    into: path.join(os.tmpdir(), "tandem-theme-only.json"),
+    credentials: { username: "u", password: "p" },
+    signIn: async () => ({
+      cookies: [{ name: "KEYCLOAK_IDENTITY", domain: "auth.thinkube.com", path: "/" }],
+      origins: [{ origin: "https://todo.thinkube.com", localStorage: [{ name: "theme", value: "dark" }] }],
+    }),
+  });
+  assert.ok("why" in r, "a tokenless session must not be written");
+  assert.match(r.why, /no way back in/);
 });

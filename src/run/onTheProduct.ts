@@ -86,13 +86,43 @@ export async function judgeOnTheProduct(a: {
   const session = here
     ? await signInOnce({ at: a.at, into: path.join(here, "session.json") })
     : { why: "there is nowhere to keep a session" };
-  if ("why" in session) a.log(`no signed-in session for the reviewers: ${session.why}`, "live");
   // Asked once, here: a session that does not open the product sends every
   // reviewer to the sign-on host, which their own origin limit refuses.
-  if ("path" in session) {
-    const works = await theWayInWorks({ at: a.at, sessionFile: session.path });
-    if ("why" in works) a.log(`the reviewers will be locked out — ${works.why}`, "live");
-    else a.log(`the session opens ${a.at}`, "live");
+  // Knowing that, no reviewer is started: driving them anyway spends
+  // minutes to write the same lockout on every criterion, and a criterion
+  // nobody could reach is unjudged, never a verdict on the work.
+  const noWayIn =
+    "why" in session
+      ? session.why
+      : await (async () => {
+          const works = await theWayInWorks({ at: a.at, sessionFile: session.path });
+          if ("why" in works) return works.why;
+          a.log(`the session opens ${a.at}`, "live");
+          return undefined;
+        })();
+  if (noWayIn) {
+    a.log(`the reviewers are locked out, so none was started — ${noWayIn}`, "live");
+    for (const id of ids) a.st.fail(id, `no way in to the running product — ${noWayIn}`);
+    const held = a.outcome.delivery;
+    if (!held) return a.outcome;
+    return {
+      ...a.outcome,
+      delivery: {
+        ...held,
+        proofs: [
+          ...held.proofs.filter((p) => !p.criterionId || !judgedAgain.has(p.criterionId)),
+          ...list.flatMap((c) =>
+            c.criteria.map((x) => ({
+              kind: "assessment" as const,
+              label: x.text,
+              verdict: "unjudged" as const,
+              ref: `no reviewer could sign in, so nothing was judged: ${noWayIn}`,
+              ...(x.id ? { criterionId: x.id } : {}),
+            })),
+          ),
+        ],
+      },
+    };
   }
 
   // One browser each, opened when the reviewer starts and closed when it

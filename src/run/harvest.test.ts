@@ -188,3 +188,18 @@ test("a cut that touches no component leaves its promises pending, and says why"
   assert.equal(touched, false, "nothing is stamped from a validation that never ran");
   assert.match(said.join(" "), /a fact about this repository, not about the work/);
 });
+
+test("a pipeline that passed is green whatever case the platform names it in", () => {
+  // The platform answers SUCCEEDED; reading that as anything but a pass
+  // puts a repair on work that is already right.
+  for (const phase of ["SUCCEEDED", "Succeeded", "succeeded"]) {
+    const stamped = stampPending(delivered(), { settled: true, phase, stages: [] });
+    assert.equal(stamped.proofs[1].verdict, "green", `${phase} is a pass`);
+    assert.match(stamped.proofs[1].ref ?? "", /pipeline/);
+  }
+});
+
+test("a pipeline that did not pass is still red", () => {
+  const stamped = stampPending(delivered(), { settled: true, phase: "FAILED", stages: [] });
+  assert.equal(stamped.proofs[1].verdict, "red");
+});

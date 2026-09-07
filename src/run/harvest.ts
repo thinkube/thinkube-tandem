@@ -211,8 +211,11 @@ export function stampPending(delivery: Delivery, reading: PipelineReading): Deli
       return reading.unreachable ? { ...p, ref: `still pending — ${reading.unreachable}`.slice(0, 300) } : p;
     const tests = reading.stages.filter((s) => /^test-/.test(s.name));
     const failed = tests.filter((s) => s.status === "Failed" || s.status === "Error");
-    if (reading.phase === "Succeeded")
-      return { ...p, verdict: "green", ref: `settled by ${p.settledBy}: pipeline Succeeded`.slice(0, 300) };
+    // The platform names its phases in its own case, so the reading is
+    // compared in one case: a pipeline that passed must never be read as a
+    // failure, which would put a repair on work that is already right.
+    if (reading.phase?.toLowerCase() === "succeeded")
+      return { ...p, verdict: "green", ref: `settled by ${p.settledBy}: pipeline ${reading.phase}`.slice(0, 300) };
     return {
       ...p,
       verdict: "red",

@@ -133,3 +133,15 @@ test("a stopped run repairs nothing", async () => {
   await repairWhatDidNotHold(l.args);
   assert.equal(l.box.repairs, 0);
 });
+
+test("a repair that moves nothing stops the loop rather than waiting for a build", async () => {
+  let waited = false;
+  const l = loop({
+    land: async () => ({ ok: true, moved: false }),
+    waitUntilLive: async () => ((waited = true), { live: true }),
+  });
+  await repairWhatDidNotHold(l.args);
+  assert.equal(waited, false, "there is no new version to wait for");
+  assert.equal(l.box.repairs, 1, "and it does not spend the second attempt on the same tree");
+  assert.ok(l.said.some((s) => /changed nothing/.test(s)), l.said.join(" · "));
+});

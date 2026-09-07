@@ -66,8 +66,9 @@ export async function repairWhatDidNotHold(a: {
   repair: (r: OnTheProductRepair, attempt: number) => Promise<{ green: boolean; report: string }>;
   /** The repository's own build, here. Nothing is pushed until it passes. */
   buildsHere: () => Promise<{ ok: boolean; output: string }>;
-  /** Put the repair in the project. */
-  land: () => Promise<{ ok: boolean; why?: string }>;
+  /** Put the repair in the project. `moved` says whether anything new
+   *  actually went in. */
+  land: () => Promise<{ ok: boolean; why?: string; moved?: boolean }>;
   /** Wait for the platform to take it live again. */
   waitUntilLive: () => Promise<{ live: boolean; why?: string }>;
   /** Ask the reviewers again, about these promises only. */
@@ -103,6 +104,12 @@ export async function repairWhatDidNotHold(a: {
     const landed = await a.land();
     if (!landed.ok) {
       a.say(`the repair could not be put in the project: ${landed.why ?? "no reason given"}`);
+      return outcome;
+    }
+    // Nothing new in the project means nothing for the platform to build,
+    // so there is no new version to wait for and nothing to judge again.
+    if (landed.moved === false) {
+      a.say("the repair changed nothing — there is nothing new for the platform to build");
       return outcome;
     }
     const went = await a.waitUntilLive();

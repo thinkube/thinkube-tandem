@@ -87,6 +87,30 @@ function hostOf(at: string): string {
 }
 
 /**
+ * Names that carry a way back in, as opposed to a display preference.
+ */
+const CREDENTIAL = /(token|auth|session|jwt|credential|identity|bearer|api[_-]?key)/i;
+
+/**
+ * What in this state is a way back into the product, rather than a
+ * preference the page happened to save.
+ *
+ * A cookie on the product's own host is how a server keeps a session; a
+ * stored item is one only when its name says so. A theme is neither, and
+ * a session made only of a theme opens nothing.
+ */
+export function credentialsIn(state: StorageState, at: string): string[] {
+  const host = hostOf(at);
+  const out: string[] = [];
+  for (const c of state.cookies ?? []) if (c.domain.replace(/^\./, "") === host) out.push(`cookie ${c.name}`);
+  for (const o of state.origins ?? [])
+    if (hostOf(o.origin) === host)
+      for (const item of (o as { localStorage?: { name: string }[] }).localStorage ?? [])
+        if (CREDENTIAL.test(item.name)) out.push(`stored ${item.name}`);
+  return out;
+}
+
+/**
  * Keep only what belongs to the product's own host.
  *
  * A cookie for the sign-on host is a key to every other thing on the
@@ -124,8 +148,8 @@ export async function signInOnce(a: {
   try {
     const state = await (a.signIn ?? signInWithABrowser)({ at: a.at, credentials });
     const kept = onlyThisProduct(state, a.at);
-    if (!kept.cookies.length && !kept.origins.length)
-      return { why: `signing in left nothing for ${hostOf(a.at)} — the product did not set a session` };
+    if (!credentialsIn(kept, a.at).length)
+      return { why: `signing in left no way back in for ${hostOf(a.at)} — the product set no session, only preferences` };
     fs.mkdirSync(path.dirname(a.into), { recursive: true });
     fs.writeFileSync(a.into, JSON.stringify(kept, null, 2));
     return { path: a.into };
@@ -272,11 +296,17 @@ async function signInWithABrowser(a: { at: string; credentials: Credentials }): 
     await page.fill('input[name="password"], input#password', a.credentials.password);
     await page.click('input[type="submit"], button[type="submit"]');
     await page.waitForURL((u: unknown) => String(u).startsWith(new URL(a.at).origin), { timeout: 60000 });
-    // The product finishes its own sign-in after the redirect lands — it
-    // exchanges the code and writes the session it will use. Reading the
-    // browser before that settles saves a page with no session in it.
-    await page.waitForLoadState("networkidle", { timeout: 60000 });
-    return await context.storageState();
+    // The redirect lands on the callback, where the product still has to
+    // exchange the code for its session. That exchange is what is waited
+    // for — the session appearing — rather than a quiet network, which
+    // also goes quiet in the gap before the exchange starts.
+    const until = Date.now() + 60000;
+    let state = await context.storageState();
+    while (!credentialsIn(state, a.at).length && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 250));
+      state = await context.storageState();
+    }
+    return state;
   } finally {
     await browser.close();
   }
