@@ -210,7 +210,10 @@ export function nextAction(
     };
 
   const written = asksOfText(push.draft ?? "").length;
-  if (written && sentences)
+  // Lines in the box wait their turn: while things remain to build, the
+  // press stays on the build, and the box is named in that press's hint.
+  const anythingToBuild = (push.specs ?? []).some((sp) => !isClosed(sp) && sp.fate !== "not run");
+  if (written && sentences && !anythingToBuild)
     return {
       where: `${plural(written, "new line")} written, not read`,
       label: `Read these ${written}`,
@@ -281,7 +284,9 @@ export function nextAction(
     return {
       where: `${plural(sentences, "sentence")} · ${plural(toBuild.length, "thing")} to build`,
       label: "Build the first",
-      hint: `${carries} of your ${carries === 1 ? "sentence" : "sentences"} · nothing is written until you sign`,
+      hint: `${carries} of your ${carries === 1 ? "sentence" : "sentences"} · nothing is written until you sign${
+        written ? ` · ${plural(written, "line")} in the box wait to be read` : ""
+      }`,
       enabled: a.allowed("choose-set"),
       move: { kind: "post", action: { action: "choose-set", specId: first.id } },
     };

@@ -303,3 +303,28 @@ test("promises that did not hold are repaired, not moved past", () => {
   assert.match(n.where, /2 checks did not hold/);
   assert.deepEqual(n.move, { kind: "post", action: { action: "rerun" } });
 });
+
+/**
+ * Lines in the box never preempt the walk: while things remain to build,
+ * the one press builds, and the box is named in the hint.
+ */
+test("with things still to build, the press builds; the box waits in the hint", () => {
+  const push = quiet({
+    sentences: Array.from({ length: 9 }, (_, i) => ({ text: `s${i}` })) as never,
+    draft: "a finding put in the box\nanother finding",
+    specs: [set("s3", { promises: 0 })],
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Build the first");
+  assert.match(n.hint ?? "", /2 lines in the box wait to be read/);
+});
+
+test("with nothing left to build, the box leads again", () => {
+  const push = quiet({
+    sentences: [{ text: "s1" }] as never,
+    draft: "one new line",
+    specs: [set("s1", { fate: "accepted", built: true })],
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Read these 1");
+});
