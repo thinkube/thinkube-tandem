@@ -426,3 +426,27 @@ test("reviewers drive the product one at a time, never two at once", async () =>
   assert.deepEqual(order, ["r1", "r2", "r3", "r4"], "and they go in the order the promises were given");
   assert.equal(proofs.length, 4);
 });
+
+test("a reviewer alone in the product clears this machinery's leftovers, and nothing else", async () => {
+  // The rule against deleting `tandem check ·` items existed because
+  // reviewers ran side by side. Alone, every such item is a leftover of an
+  // earlier run, and leaving it makes a criterion about the whole list —
+  // nothing is high priority, there is nothing at all — unreachable.
+  const { ask, asked } = says("1. GREEN it did");
+  await driveOne(
+    { at: "https://todo.example.com", model: "m", ask, browserAt: "http://localhost:1/mcp" },
+    { promise: "p", criteria: [{ text: "with nothing in the list the heading says so" }] },
+    1,
+  );
+  const told = asked[0];
+  // The instruction is built from lines, so it is read with the breaks in it.
+  const flat = told.replace(/\s+/g, " ");
+  assert.match(flat, /Clear those away before you judge anything/, "the leftovers go before judging starts");
+  assert.ok(!/never delete them/.test(flat), "the rule that made the empty list unreachable is gone");
+  assert.match(flat, /NOT named `tandem check ·` belongs to a person\. Never delete it/, "a person's things are still untouchable");
+  assert.equal(
+    told.split("You have the product to yourself").length - 1,
+    1,
+    "and it is said once, not twice",
+  );
+});
