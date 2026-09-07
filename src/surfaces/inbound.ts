@@ -34,6 +34,7 @@ export interface InboundAction {
   /** open-look: which of a reviewer's screenshots to open. */
   path?: string;
 }
+import { wantsFrom } from "./askFromFinding";
 import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
 
@@ -134,8 +135,13 @@ export async function handleInbound(
       const fresh = msg.items.filter((t) => (d.findings ?? []).includes(t) && !already.has(t));
       if (!fresh.length) note = "those are in the box already";
       else {
+        push("Writing them as asks…");
+        // What goes in the box is a want, not a defect description: the
+        // observation is rewritten in the voice of the person's own
+        // sentences, and handed over unchanged when that fails.
+        const wants = await wantsFrom(fresh, session.deps.round);
         const box = session.space.draft ?? "";
-        session.saveDraft([box.replace(/\s*$/, ""), ...fresh].filter(Boolean).join("\n"));
+        session.saveDraft([box.replace(/\s*$/, ""), ...wants].filter(Boolean).join("\n"));
         session.space = {
           ...session.space,
           deliveries: session.space.deliveries.map((x) =>
