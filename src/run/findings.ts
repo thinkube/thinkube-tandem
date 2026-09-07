@@ -22,11 +22,6 @@ export interface Finding {
   ask?: string;
 }
 
-/** One shape whichever way a finding was recorded. */
-export function findingOf(f: string | Finding): Finding {
-  return typeof f === "string" ? { saw: f } : f;
-}
-
 /** The instruction every actor carries, in one place so they agree. */
 export const THE_FINDING_RULE = [
   "If you notice something that is not what you were asked to do, ask one",

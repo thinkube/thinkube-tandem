@@ -31,7 +31,7 @@ import { landDelivery } from "./land";
 import { criterionVerdicts, unprovenDoorPromises } from "../gates/render";
 import { aRunnerAnswered } from "./suiteCommand";
 import { imitationsDelivered } from "./probeAudit";
-import { findingsIn } from "./findings";
+import { Finding, findingsIn } from "./findings";
 import { forThePerson, observationsOf } from "./observations";
 import { provedByExecution } from "./wiring";
 import { judgingRules } from "./selfHosted";
@@ -210,8 +210,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // unkept promise and a product that does not build, and a passing check is
   // kept. Coverage sees none kept by a file's text, a bundle, or a mute runtime.
   // What the work noticed and left alone rides with the gate's own
-  // findings: both are things the person reads and decides about.
-  const findings: string[] = [...unreached, ...(g.noticed ?? [])];
+  // findings: both are things the person reads and decides about. The
+  // machine's own findings carry no drafted ask — only an actor that saw
+  // something on the product drafts one.
+  const findings: Finding[] = [...unreached.map((saw) => ({ saw })), ...(g.noticed ?? [])];
   // What only the person can close rides under its own criterion, so the
   // report can take their answer; a criterion a reviewer settles on the
   // running product replaces it there.
@@ -427,7 +429,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       });
       // What the closer saw and left alone, in its own words.
       for (const f of findingsIn(closed.report)) {
-        findings.push(`the closer: ${f}`);
+        findings.push({ ...f, saw: `the closer: ${f.saw}` });
         log(`👀 ${tep}: ${f}`, `${GATE_STEP}#closer`);
       }
       // Everything the closer touched, whether it committed or not.
@@ -454,7 +456,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       if (beyond.length) {
         const said = `the closer changed ${beyond.length} file(s) no failure named: ${beyond.slice(0, 8).join(", ")}${beyond.length > 8 ? "…" : ""}`;
         log(`⚖ ${tep}: ${said} — repair beyond what was failing is work you did not ask for`);
-        findings.push(`${said} — read these before you keep the work`);
+        findings.push({ saw: `${said} — read these before you keep the work` });
         defect({
           activity: "closing gate",
           trigger: "closer-beyond-the-failure",
@@ -496,7 +498,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     readFile: (rel) => fs.readFile(path.join(worktree, rel), "utf8"),
     isTestPath,
   })) {
-    findings.push(`${hit.where} — ${hit.detail}`);
+    findings.push({ saw: `${hit.where} — ${hit.detail}` });
     defect({ activity: "closing gate", trigger: "platform-imitation", type: "code",
       impact: "production imitates the platform — carried as a finding",
       detail: `${hit.where} ${hit.detail}`.slice(0, 500) });
@@ -511,7 +513,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       impact: "suite findings carried on the delivery — the person decides at Accept",
       detail: carried.join("\n").slice(0, 2000),
     });
-    findings.push(...verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""} — ${f.detail.split("\n")[0].slice(0, 200)}`));
+    findings.push(...verdict.failures.map((f) => ({ saw: `${f.name}${f.file ? ` (${f.file})` : ""} — ${f.detail.split("\n")[0].slice(0, 200)}` })));
     verdict = { ...verdict, green: true };
   }
   if (!verdict.green) {
@@ -598,7 +600,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // the cut's own promises still withholds, because an unkept promise is
   // the one thing this gate exists to never hand over.
   for (const r of unsettledReviews(proofs)) {
-    findings.push(r.line);
+    findings.push({ saw: r.line });
     log(`${tep}: "${r.label.slice(0, 70)}" stays red with every actor spent — it rides the delivery for the person`);
   }
   unkept = unkept.filter((x) => x.kind === "probe");

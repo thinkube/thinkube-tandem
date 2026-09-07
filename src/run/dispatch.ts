@@ -221,7 +221,7 @@ export async function dispatchTep(
   const undelivered: string[] = [];
   /** What the work saw and did not touch, because it did not stop the ask
    *  being delivered. Carried to the person, never fixed on their behalf. */
-  const noticed: string[] = [];
+  const noticed: { saw: string; ask?: string }[] = [];
   const done = new Set<string>();
   const failed = new Set<string>();
   const pending = new Set(dag.map((u) => u.id));
@@ -489,8 +489,8 @@ export async function dispatchTep(
         if (ok && role === "test") decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
         // What it noticed and left alone, in its own words, for the person.
         for (const f of findingsIn(outcome.finalText)) {
-          noticed.push(`${next.id}: ${f}`);
-          log(`👀 ${next.id}: ${f}`, next.id);
+          noticed.push({ ...f, saw: `${next.id}: ${f.saw}` });
+          log(`👀 ${next.id}: ${f.saw}`, next.id);
         }
         break;
       }

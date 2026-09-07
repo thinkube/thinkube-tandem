@@ -182,7 +182,7 @@ async function lookAndFile(s: TandemSession, url: string, delivery?: Delivery): 
     log: (l) => s.changed(l),
   });
   if (!findings.length && !driven.length) return;
-  const said = asFindings(findings);
+  const said = asFindings(findings).map((saw) => ({ saw }));
   s.space = {
     ...s.space,
     draft: draftWithFindings(s.space.draft ?? "", findings),

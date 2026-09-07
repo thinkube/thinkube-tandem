@@ -67,11 +67,11 @@ test("a withheld delivery carries what the person is being asked to weigh", () =
     proofs: [],
     reason: "2 of the cut's promises are not kept",
     observations: ["watch the run page redraw"],
-    findings: ["review-33: only one declaration of the union exists"],
+    findings: [{ saw: "review-33: only one declaration of the union exists" }],
     undelivered: ["SL-2: the docs line"],
   });
 
-  assert.deepEqual(d.findings, ["review-33: only one declaration of the union exists"], "a withheld report is still read");
+  assert.deepEqual(d.findings, [{ saw: "review-33: only one declaration of the union exists" }], "a withheld report is still read");
   assert.deepEqual(d.observations, ["watch the run page redraw"]);
   assert.deepEqual(d.undelivered, ["SL-2: the docs line"]);
   assert.equal(d.id, "delivery-TEP-1");

@@ -34,7 +34,7 @@ export async function handOver(a: {
   proofs: Proof[];
   observations: string[];
   undelivered: string[];
-  findings: string[];
+  findings: { saw: string; ask?: string }[];
   /** The shape of this tree's modules, for the report to say. */
   moduleSizes?: TreeShape;
   rulings: Delivery["rulings"];

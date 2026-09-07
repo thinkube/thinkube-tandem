@@ -251,7 +251,7 @@ export interface Delivery {
    *  opinion still red, a review nobody left could satisfy. Said by name
    *  for the person to weigh at Accept; never a reason to withhold kept
    *  promises. */
-  findings?: (string | { saw: string; ask?: string })[];
+  findings?: { saw: string; ask?: string }[];
   /** The findings the person already turned into asks, so the report can
    *  say so and never records one twice. */
   findingsAsked?: string[];

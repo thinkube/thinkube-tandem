@@ -300,7 +300,7 @@ export function renderDeliveryPage(
   if (delivery.findings?.length) {
     lines.push("");
     lines.push("## For you to weigh — the machine could not settle these");
-    for (const f of delivery.findings) lines.push(`- ⚠ ${f}`);
+    for (const f of delivery.findings) lines.push(`- ⚠ ${f.saw}`);
   }
   if (delivery.withheld) {
     lines.push("");

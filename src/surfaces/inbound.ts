@@ -34,7 +34,6 @@ export interface InboundAction {
   /** open-look: which of a reviewer's screenshots to open. */
   path?: string;
 }
-import { findingOf } from "../run/findings";
 import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
 
@@ -132,13 +131,12 @@ export async function handleInbound(
     if (!d) note = "that delivery is not here any more";
     else {
       const already = new Set(d.findingsAsked ?? []);
-      const held = (d.findings ?? []).map(findingOf);
-      const fresh = held.filter((f) => msg.items!.includes(f.saw) && !already.has(f.saw));
+      // Only a finding with a drafted ask can become one: an observation
+      // with no draft is information, not a request.
+      const fresh = (d.findings ?? []).filter((f) => f.ask && msg.items!.includes(f.saw) && !already.has(f.saw));
       if (!fresh.length) note = "those are in the box already";
       else {
-        // The ask was drafted by whoever saw the thing; the observation
-        // stands in only when no draft came with it.
-        const wants = fresh.map((f) => f.ask ?? f.saw);
+        const wants = fresh.map((f) => f.ask!);
         const box = session.space.draft ?? "";
         session.saveDraft([box.replace(/\s*$/, ""), ...wants].filter(Boolean).join("\n"));
         session.space = {

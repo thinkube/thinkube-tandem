@@ -490,8 +490,9 @@ export interface GateContext {
   checkOf: Map<string, string>;
   undelivered: string[];
   /** What the work noticed and left alone: it did not stop the ask being
-   *  delivered, so it rides the delivery for the person to decide on. */
-  noticed?: string[];
+   *  delivered, so it rides the delivery for the person to decide on,
+   *  each with the ask its finder drafted. */
+  noticed?: { saw: string; ask?: string }[];
   rulings: Ruling[];
   decisions: { unit: string; text: string }[];
   exec: Exec;

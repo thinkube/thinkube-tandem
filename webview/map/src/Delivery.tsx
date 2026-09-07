@@ -53,9 +53,11 @@ function Looks(props: { looks?: { path: string; said: string }[] }): JSX.Element
  * What the work noticed and did not do: pick the ones worth building, one
  * press puts them in the capture box, and each says when it is there.
  */
-function Findings(props: { findings: { text: string; taken?: boolean }[]; deliveryId: string }): JSX.Element {
+function Findings(props: { findings: { text: string; ask?: string; taken?: boolean }[]; deliveryId: string }): JSX.Element {
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const open = props.findings.filter((f) => !f.taken);
+  // Only a finding whose finder drafted an ask can become one; the rest
+  // are read as notes.
+  const open = props.findings.filter((f) => !f.taken && f.ask);
   const toggle = (text: string): void =>
     setPicked((was: Set<string>) => {
       const now = new Set(was);
@@ -88,13 +90,15 @@ function Findings(props: { findings: { text: string; taken?: boolean }[]; delive
           >
             {f.taken ? (
               <span data-finding-taken style={{ fontSize: FS.caption, color: C.ok, whiteSpace: "nowrap" }}>✓ in the box</span>
-            ) : (
+            ) : f.ask ? (
               <input
                 type="checkbox"
                 data-pick-finding={i}
                 checked={picked.has(f.text)}
                 onChange={() => toggle(f.text)}
               />
+            ) : (
+              <span style={{ fontSize: FS.caption, color: C.quiet, whiteSpace: "nowrap" }}>a note</span>
             )}
             <span style={{ fontSize: FS.body, lineHeight: 1.5, flex: 1 }}>{f.text}</span>
           </label>

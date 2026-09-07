@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findingOf, findingsIn, THE_FINDING_RULE } from "./findings";
+import { findingsIn, THE_FINDING_RULE } from "./findings";
 
 test("a finding is lifted as a pair: what was seen, and the ask drafted for it", () => {
   const said = [
@@ -21,10 +21,7 @@ test("a finding is lifted as a pair: what was seen, and the ask drafted for it",
   ]);
 });
 
-test("a finding recorded before the pair existed still reads", () => {
-  assert.deepEqual(findingOf("an old plain sentence"), { saw: "an old plain sentence" });
-  assert.deepEqual(findingOf({ saw: "seen", ask: "wanted" }), { saw: "seen", ask: "wanted" });
-});
+
 
 test("a report of nothing noticed is not a finding", () => {
   assert.deepEqual(findingsIn("FINDING: none"), []);

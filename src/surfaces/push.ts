@@ -12,7 +12,6 @@ import { readyToBuild } from "./buildFlow";
 import { acceptDelivery } from "../gates/sign";
 import { docsDuty } from "../core/docsDuty";
 import { promiseLabelOf } from "./runPromiseLabel";
-import { findingOf } from "../run/findings";
 import { saidPlainly } from "../gates/render";
 import { signedIdleNotice } from "./runGate";
 
@@ -442,7 +441,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
       ...(d.undelivered?.length ? { undelivered: d.undelivered } : {}),
       ...(d.findings?.length
         ? {
-            findings: d.findings.map(findingOf).map((f) => ({
+            findings: d.findings.map((f) => ({
               text: f.saw,
               ...(f.ask ? { ask: f.ask } : {}),
               ...(d.findingsAsked?.includes(f.saw) ? { taken: true } : {}),

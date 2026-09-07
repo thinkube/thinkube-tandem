@@ -42,7 +42,7 @@ export function withheldDelivery(a: {
   /** Why it stopped, in the person's terms — never internals. */
   reason: string;
   observations?: readonly string[];
-  findings?: readonly string[];
+  findings?: readonly { saw: string; ask?: string }[];
   undelivered?: readonly string[];
   rulings?: readonly Ruling[];
   decisions?: readonly { unit: string; text: string }[];
