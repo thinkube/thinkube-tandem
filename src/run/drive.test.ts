@@ -7,7 +7,9 @@ import { driveAll, driveOne, originOf } from "./drive";
 /** One reply, in the shape the SDK streams it. */
 function says(reply: string) {
   const seen: Record<string, unknown>[] = [];
-  const ask = async (_p: string, options: Record<string, unknown>) => {
+  const asked: string[] = [];
+  const ask = async (p: string, options: Record<string, unknown>) => {
+    asked.push(p);
     seen.push(options);
     return {
       [Symbol.asyncIterator]: async function* () {
@@ -15,7 +17,7 @@ function says(reply: string) {
       },
     } as AsyncIterable<unknown>;
   };
-  return { ask, seen };
+  return { ask, seen, asked };
 }
 
 test("a driver is given a browser, one address, and no way to touch the repository", async () => {
@@ -350,4 +352,38 @@ test("a reviewer reports what it noticed and did not judge", async () => {
     },
     { saw: "none of the date fields say what format they want" },
   ]);
+});
+
+test("a reviewer is told the whole path to write its pictures to", async () => {
+  // A bare name is written wherever the browser is running, which is not
+  // where the report reads pictures from; the whole path lands it there
+  // whatever the browser's working directory turns out to be.
+  const { ask, asked } = says("1. GREEN the count matched the cards");
+  await driveOne(
+    {
+      at: "https://todo.example.com",
+      model: "m",
+      ask,
+      browserAt: "http://localhost:1/mcp",
+      looksIn: "/store/looks/run-1/on-the-product-2",
+    },
+    { promise: "the count is shown", criteria: [{ text: "the heading counts the cards" }] },
+    1,
+  );
+  assert.match(
+    asked[0],
+    /\/store\/looks\/run-1\/on-the-product-2\/<item number>-<three to six words, hyphenated>\.png/,
+    "the reviewer's own directory is in the instruction",
+  );
+  assert.match(asked[0], /filename` as a WHOLE PATH/);
+});
+
+test("with nowhere to keep pictures, the reviewer is still told how to name one", async () => {
+  const { ask, asked } = says("1. GREEN it did");
+  await driveOne(
+    { at: "https://todo.example.com", model: "m", ask, browserAt: "http://localhost:1/mcp" },
+    { promise: "p", criteria: [{ text: "c" }] },
+    1,
+  );
+  assert.match(asked[0], /<item number>-<three to six words, hyphenated>\.png/);
 });

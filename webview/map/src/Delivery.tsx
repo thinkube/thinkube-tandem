@@ -100,7 +100,17 @@ function Findings(props: { findings: { text: string; ask?: string; taken?: boole
             ) : (
               <span style={{ fontSize: FS.caption, color: C.quiet, whiteSpace: "nowrap" }}>a note</span>
             )}
-            <span style={{ fontSize: FS.body, lineHeight: 1.5, flex: 1 }}>{f.text}</span>
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+              {/* What was seen, and under it the ask its finder drafted —
+                  the sentence that goes in the capture box if this is
+                  taken, so the person reads it before choosing. */}
+              <span style={{ fontSize: FS.body, lineHeight: 1.5 }}>{f.text}</span>
+              {f.ask ? (
+                <span data-finding-ask={i} style={{ fontSize: FS.caption, color: C.quiet, lineHeight: 1.5 }}>
+                  Ask: {f.ask}
+                </span>
+              ) : null}
+            </span>
           </label>
         ))}
       </div>

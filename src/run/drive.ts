@@ -286,11 +286,20 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "For each item you must SAVE A PICTURE with browser_take_screenshot at",
       "the moment you decide it. A page snapshot is not a picture: the person",
       "reads your answer and looks at the picture, and a snapshot shows them",
-      "nothing. Name each one for the item it belongs to and what it shows:",
-      "  <item number>-<three to six words, hyphenated>.png",
-      "for example `2-empty-title-message-shown.png`, and name that file in",
-      "the answer line for that item. Take more than one when the story needs",
-      "it.",
+      "nothing.",
+      "",
+      "Pass `filename` as a WHOLE PATH, starting with the directory below —",
+      "a bare name is written wherever the browser happens to be running and",
+      "is then lost to the report:",
+      a.looksIn
+        ? `  ${a.looksIn}/<item number>-<three to six words, hyphenated>.png`
+        : "  <item number>-<three to six words, hyphenated>.png",
+      a.looksIn
+        ? `for example \`${a.looksIn}/2-empty-title-message-shown.png\`.`
+        : "for example `2-empty-title-message-shown.png`.",
+      "In your answer line name only the file, not the path, like",
+      "`2-empty-title-message-shown.png`. Take more than one when the story",
+      "needs it.",
       "",
       "Leave the product as you found it where you can.",
       "",
