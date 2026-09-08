@@ -14,6 +14,7 @@ import { docsDuty } from "../core/docsDuty";
 import { promiseLabelOf } from "./runPromiseLabel";
 import { saidPlainly } from "../gates/render";
 import { signedIdleNotice } from "./runGate";
+import { runsOnFile } from "../run/record";
 
 const TITLE_CLIP = 64;
 
@@ -155,6 +156,26 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     // rides along in the spread: the same id that will land on the
     // delivery this run mints, so what is watched can be matched against
     // what is reported.
+    // Every cut this space has run stays openable: its report, its run and
+    // the pictures its reviewers took are all still on file, and a person
+    // comes back to them — to check a translation against last month's
+    // screenshot, or to take one into the documentation.
+    history: (() => {
+      const ran = new Set(runsOnFile(session.deps.storeDir).map((r) => r.cutId));
+      return session.space.cuts
+        .map((c) => {
+          const d = session.space.deliveries.find((x) => x.cutId === c.id);
+          return {
+            cutId: c.id,
+            ...(c.tepId ? { tepId: c.tepId } : {}),
+            at: d?.producedAt ?? "",
+            ...(d ? { deliveryId: d.id } : {}),
+            hasRun: ran.has(c.id),
+          };
+        })
+        .sort((a, b) => (a.at < b.at ? 1 : -1));
+    })(),
+    ...(session.lookingAtCut ? { showing: session.lookingAtCut } : {}),
     run: (() => {
       const v = session.runState?.view();
       if (!v) return undefined;

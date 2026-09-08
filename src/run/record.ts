@@ -169,11 +169,11 @@ export function slicesFinished(storeDir: string, cutId: string): string[] {
   }
 }
 
-/** The last run this space ran, or nothing if it has never run one. */
-function loadLastRun(storeDir: string): RunRecord | undefined {
+/** Every run this space has on file, newest first. */
+export function runsOnFile(storeDir: string): RunRecord[] {
   try {
     const dir = dirFor(storeDir);
-    const records = fs
+    return fs
       .readdirSync(dir)
       .filter((f) => f.endsWith(".json"))
       .map((f) => {
@@ -183,12 +183,34 @@ function loadLastRun(storeDir: string): RunRecord | undefined {
           return undefined;
         }
       })
-      .filter((r): r is RunRecord => !!r?.units);
-    if (!records.length) return undefined;
-    return records.sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+      .filter((r): r is RunRecord => !!r?.units)
+      .sort((a, b) => (a.at < b.at ? 1 : -1));
   } catch {
-    return undefined;
+    return [];
   }
+}
+
+/** The last run this space ran, or nothing if it has never run one. */
+function loadLastRun(storeDir: string): RunRecord | undefined {
+  return runsOnFile(storeDir)[0];
+}
+
+/**
+ * One named run, read back long after it ended.
+ *
+ * The page that draws a run is the page a person returns to: what the
+ * workers did, what each step logged, and the pictures its reviewers
+ * took. Reading only the newest run left every earlier cut's account
+ * unreachable the moment the next one started.
+ */
+export function readRunOf(
+  storeDir: string,
+  cutId: string,
+  onChanged: () => void,
+): { state: RunState; running: boolean; note?: string } | undefined {
+  const one = runsOnFile(storeDir).find((r) => r.cutId === cutId);
+  if (!one) return undefined;
+  return { state: RunState.from(one, onChanged), ...runSituation(one) };
 }
 
 /**

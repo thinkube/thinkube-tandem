@@ -42,7 +42,7 @@ import {
   subjectsOfAsk,
 } from "./decisions";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
-import { readRun } from "../run/record";
+import { readRun, readRunOf } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 import { builtSurfaceText } from "../gates/doors";
@@ -73,6 +73,9 @@ export class TandemSession {
    *  A watcher reads the record on every load; the driver never does,
    *  because its own state is ahead of the file. */
   driving = false;
+  /** The cut being looked back at, when it is not the newest: its report,
+   *  its run and its pictures are read from what that cut left on file. */
+  lookingAtCut?: string;
   runState: RunState | undefined;
   activity: { label: string; current: number; total: number; askId?: string } | undefined;
   runNote: string | undefined; // why the last build did not start
@@ -733,7 +736,11 @@ export class TandemSession {
       // its driver shows, for as long as it runs. Only the driver skips
       // the read — its own state is ahead of the file.
       if (!this.driving) {
-        const seen = readRun(this.deps.storeDir, () => this.deps.onChanged?.());
+        // Looking back at one cut reads that cut's own account; otherwise
+        // the newest, which is what a space with a run in flight shows.
+        const seen = this.lookingAtCut
+          ? readRunOf(this.deps.storeDir, this.lookingAtCut, () => this.deps.onChanged?.())
+          : readRun(this.deps.storeDir, () => this.deps.onChanged?.());
         if (seen) Object.assign(this, { runState: seen.state, running: seen.running, runNote: seen.note });
       }
       void this.refreshStaleness().then(() => this.deps.onChanged?.());

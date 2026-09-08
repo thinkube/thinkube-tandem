@@ -210,6 +210,11 @@ export interface SpacePush {
   /** One live progress row per ask being grounded right now. */
   grounding?: { askId: string; label: string; current: number; total: number }[];
   run?: RunView;
+  /** Every cut this space has run, newest first — each one's report, run
+   *  and pictures are still on file and can be opened again. */
+  history?: { cutId: string; tepId?: string; at: string; deliveryId?: string; hasRun: boolean }[];
+  /** The cut being looked at, when it is not the newest. */
+  showing?: string;
   /** The tail of one step's own log, and how long the whole log is. */
   runLog?: { step: string; lines: string[]; total: number; shown: number };
   questions: {
@@ -348,6 +353,9 @@ export type WebToHost =
   | { action: "ask-for-help"; deliveryId: string }
   /** Open one of a reviewer's screenshots in the editor. */
   | { action: "open-look"; path: string }
+  /** Look at one cut's account — its report, its run and its pictures.
+   *  Without a cutId, look at the newest again. */
+  | { action: "look-at-cut"; cutId?: string }
   /** Put the selected findings in the capture box, as sentences to keep
    *  or not. Ones already taken are skipped, never doubled. */
   | { action: "ask-from-findings"; deliveryId: string; items: string[] }

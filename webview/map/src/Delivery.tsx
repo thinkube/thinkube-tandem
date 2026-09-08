@@ -177,7 +177,14 @@ function RunAgain(props: { phase: SpacePush["phase"] }): JSX.Element {
 
 export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): JSX.Element {
   const { push } = props;
-  const d: Delivery_ | undefined = [...push.deliveries].reverse()[0];
+  // The cut being looked at, else the newest. A report and the pictures
+  // under it are the record of what was checked, so an earlier one stays
+  // openable rather than disappearing behind the next delivery.
+  const shown = push.showing
+    ? push.history?.find((h) => h.cutId === push.showing)?.deliveryId
+    : undefined;
+  const d: Delivery_ | undefined =
+    (shown ? push.deliveries.find((x) => x.id === shown) : undefined) ?? [...push.deliveries].reverse()[0];
   if (!d) return <div data-delivery-report style={{ padding: SP.xl, color: C.quiet }}>Nothing has been delivered yet.</div>;
 
   // Your sentences, each with the promises made from IT.

@@ -13,6 +13,7 @@ import { Compose } from "./Compose";
 import { Analysis } from "./Analysis";
 import { asksOfText } from "../../../src/derive/asks";
 import { Delivery } from "./Delivery";
+import { CutHistory } from "./History";
 import { C, FS, O, SP } from "./type";
 import { IntentGraph } from "./IntentGraph";
 import { Wills } from "./Wills";
@@ -50,6 +51,9 @@ export function App(props: {
   const [lookingAt, setLookingAt] = useState<SurfacePage | null>(props.initial?.tab ?? null);
   // Which ask has its editor open.
   const [editingAsk, setEditingAsk] = useState<string | null>(null);
+  // Which of a cut's two accounts is on screen. The person chooses once
+  // the run has ended; while it runs, the run's own page is the answer.
+  const [flowView, setFlowView] = useState<"report" | "workers" | null>(props.initial?.flowView ?? null);
   const flowWorld = useWorld();
   const working = !!push?.activity || (push?.grounding?.length ?? 0) > 0;
 
@@ -89,7 +93,8 @@ export function App(props: {
     post(n.move.action);
   };
   const moving = next.busy || (pressed !== null && !refusal);
-  const reportIsShown = flowViewFor(push) === "report";
+  const flowShows: "report" | "workers" = push.running ? "workers" : (flowView ?? flowViewFor(push));
+  const reportIsShown = flowShows === "report";
   const spinStyle = (
     <style>{`@keyframes tandemSpinKf { from { transform: rotate(0) } to { transform: rotate(360deg) } } .tandem-spin { animation: tandemSpinKf 1.1s linear infinite }`}</style>
   );
@@ -350,7 +355,8 @@ export function App(props: {
             />
           </div>
         ) : (
-          <div data-flow-page style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <div data-flow-page style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
+            <CutHistory push={push} view={flowShows} onView={setFlowView} />
             {reportIsShown ? (
               <Delivery push={push} onGoToWork={() => setLookingAt("work")} />
             ) : push.run || push.runNote ? (

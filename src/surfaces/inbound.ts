@@ -33,6 +33,8 @@ export interface InboundAction {
   into?: string;
   /** open-look: which of a reviewer's screenshots to open. */
   path?: string;
+  /** look-at-cut: whose account to open, or nothing for the newest. */
+  cutId?: string;
 }
 import { helpPrompt } from "./askForHelp";
 import type { PanelHostHooks } from "./panel";
@@ -148,6 +150,18 @@ export async function handleInbound(
         session.changed(
           `${fresh.length} ask${fresh.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
         );
+      }
+    }
+  } else if (msg.action === "look-at-cut") {
+    // A run in flight is what the page must show; looking back waits.
+    if (session.running && msg.cutId) note = "a run is in flight — what it is doing is on the page";
+    else {
+      const known = new Set(session.space.cuts.map((c) => c.id));
+      if (msg.cutId && !known.has(msg.cutId)) note = "that cut is not in this space";
+      else {
+        session.lookingAtCut = msg.cutId;
+        session.load();
+        session.changed(msg.cutId ? undefined : "showing the newest cut again");
       }
     }
   } else if (msg.action === "open-look" && msg.path) {
