@@ -118,11 +118,21 @@ export function applyModel(
 
 /** The space without anything the named sentences produced. */
 function withoutReadingOf(space: Space, askIds: ReadonlySet<string>): Space {
-  const goneClaims = new Set((space.claims ?? []).filter((c) => askIds.has(c.fromAsk)).map((c) => c.id));
+  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
+  // A claim that signed work makes true is part of that record, and stays
+  // with the promise that serves it. Deleting it leaves the promise
+  // pointing at nothing, and a promise that cannot reach its claim cannot
+  // say which sentence it served — delivered work detaches from the ask
+  // it answered the moment those sentences are read again.
+  const heldByRecord = new Set(
+    space.nodes.filter((n) => signed.has(n.id) && n.servesClaim).map((n) => n.servesClaim as string),
+  );
+  const goneClaims = new Set(
+    (space.claims ?? []).filter((c) => askIds.has(c.fromAsk) && !heldByRecord.has(c.id)).map((c) => c.id),
+  );
   const keptClaims = (space.claims ?? []).filter((c) => !goneClaims.has(c.id));
   const keptSubjectIds = new Set(keptClaims.map((c) => c.subjectId));
   const goneSubjects = new Set((space.subjects ?? []).filter((s) => !keptSubjectIds.has(s.id)).map((s) => s.id));
-  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
   const signedSpecs = new Set(space.cuts.filter((c) => c.signature && c.specId).map((c) => c.specId));
   return {
     ...space,

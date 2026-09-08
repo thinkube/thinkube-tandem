@@ -63,3 +63,34 @@ test("signed work is a record and stays through a re-reading", () => {
   assert.deepEqual(out.nodes.map((n) => n.id), ["node-me-1"]);
   assert.deepEqual(out.specs!.map((s) => s.id), ["spec-1"]);
 });
+
+test("the claim signed work serves stays with it, so delivered work still names its sentence", () => {
+  // Reading the sentences again re-minted every claim. The signed promises
+  // survived pointing at claims that no longer existed, and a promise that
+  // cannot reach its claim cannot say which sentence it answered — three
+  // cuts of accepted work came loose from their asks at once.
+  const sp = space();
+  sp.cuts = [{ id: "cut-1", changeIds: ["node-me-1"], askIds: ["ask-1"], signature: "s" }] as never;
+  const out = applyModel(
+    sp,
+    {
+      askIds: ["ask-1", "ask-2"],
+      subjects: [{ name: "the task list", from: [1], claims: [{ text: "in a sensible order", from: 1 }] }],
+    } as never,
+    "me",
+  );
+  const claims = new Set(out.claims!.map((c) => c.id));
+  assert.ok(claims.has("claim-me-1"), `the signed promise's claim is still here: ${[...claims].join(", ")}`);
+  const kept = out.nodes.find((n) => n.id === "node-me-1")!;
+  assert.ok(claims.has(kept.servesClaim!), "and the promise reaches it");
+  assert.equal(
+    out.claims!.find((c) => c.id === kept.servesClaim)!.fromAsk,
+    "ask-1",
+    "so the delivered work still names the sentence it answered",
+  );
+  assert.ok(!claims.has("claim-me-2"), "a claim no signed work serves is still re-read from scratch");
+  assert.ok(
+    out.subjects!.some((s) => s.id === "subject-me-1"),
+    "and the subject that claim belongs to stands with it",
+  );
+});
