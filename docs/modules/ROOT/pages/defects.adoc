@@ -19,6 +19,36 @@ Reading them monthly is how the methodology learns. A row that recurs is a
 process defect, not a code defect — and the fix belongs in the process,
 not in one more check.
 
+== What became of it
+
+A row is written the moment something is found and never touched again,
+so the ledger says what surfaced and not what became of it. Three
+quarters of the rows are silent about whether the thing was repaired
+before anyone saw it — which hides the number the methodology most needs:
+not how many defects there were, but how many the machine healed by
+itself.
+
+The run knows. So when a run ends it writes how it ended — and how each
+of its slices ended — beside the ledger, keyed by the same run id the
+rows already carry. Beside the ledger, not inside the space: run records
+die with the space they live in, and the whole point of the ledger is
+that it does not.
+
+Reading a row's fate then needs no new capture:
+
+* an impact that already says it was repaired — _the author repaired its
+  own work_, _closed what no other actor could_ — is **healed**;
+* an impact that says nobody could — _the closer could not finish it
+  either_ — **reached the person**;
+* otherwise the slice it was found in answers, and where there is no
+  slice, the run's own ending does;
+* a run nobody wrote down stays **not known**, which is the honest answer
+  rather than a flattering one.
+
+*Tandem: Show Defects* prints the fate beside every row and totals them
+per month. Older rows will read "not known": their runs ended before
+anything wrote the answer down.
+
 == The tool's own defects
 
 A run catches defects in the work it supervises. It cannot catch a defect

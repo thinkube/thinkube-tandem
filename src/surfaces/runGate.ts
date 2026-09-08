@@ -12,7 +12,8 @@ import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState, silentVerdict } from "../run/state";
 import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
-import { appendDefect } from "../engine/defectLog";
+import { appendDefect, ledgerRoot } from "../engine/defectLog";
+import { saveRunOutcome, slicesOf } from "../engine/runOutcome";
 import { acceptOrder } from "../engine/acceptOrder";
 import { foreignSince, landDelivery, revertDelivery } from "../run/land";
 import { execFile } from "node:child_process";
@@ -301,6 +302,22 @@ export async function executeRun(
       endedAs = state;
       s.runNote = note;
       keep();
+      // And how it ended is written beside the LEDGER, not only inside the
+      // space: a defect row says what surfaced, never what became of it,
+      // and the record that could answer dies with the space it lives in.
+      // Keyed by the run id the rows already carry, so a row can be asked
+      // long after its space is gone.
+      const view = s.runState?.view();
+      if (view?.runId)
+        saveRunOutcome(s.deps.storeDir, {
+          run: view.runId,
+          cutId,
+          ...(cut.tepId ? { tepId: cut.tepId } : {}),
+          ...(ledgerRoot(s.deps.storeDir).space ? { space: ledgerRoot(s.deps.storeDir).space! } : {}),
+          at: s.deps.now(),
+          state,
+          slices: slicesOf(view.units),
+        });
       s.changed(note);
     };
     // What the LAST run of this cut finished, read HERE — the next line

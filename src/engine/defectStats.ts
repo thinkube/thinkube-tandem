@@ -28,6 +28,9 @@ export interface DefectRow {
   impact: string;
   detail: string;
   refs?: string[];
+  /** The run that found it — what the row is joined to when asking what
+   *  became of it. */
+  run?: string;
 }
 
 // ── Canonical trigger ranking ─────────────────────────────────────────────────

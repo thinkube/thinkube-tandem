@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as nodeFs from "node:fs";
 import { chooseProject } from "./projectOps";
 import { parseDefectLog } from "../engine/defectStats";
+import { fateOf, fates, readRunOutcome } from "../engine/runOutcome";
 import type { EnabledProject } from "../core/identity";
 
 export function placeCommands(a: {
@@ -20,7 +21,7 @@ export function placeCommands(a: {
   rememberedProject: (context: vscode.ExtensionContext) => EnabledProject | undefined;
   currentAuthor: () => string | undefined;
 }): vscode.Disposable[] {
-  const { context, openProjects, openSpaceFor, rememberedProject, currentAuthor } = a;
+  const { context, openProjects, openSpaceFor } = a;
   return [
     vscode.commands.registerCommand("thinkube-tandem.switchProject", async () => {
       const picked = await chooseProject(context, openProjects);
@@ -60,11 +61,9 @@ export function placeCommands(a: {
       const storeRoot =
         config.get<string>("storeRoot", "") ||
         path.join(process.env.HOME ?? "~", "thinkube-tandem-store");
-      const project = rememberedProject(context);
-      const author = currentAuthor() ?? "";
-      const dirs = project
-        ? [path.join(storeRoot, "spaces", project.card.id, author, "defects")]
-        : [];
+      // The ledger is at the store's ROOT, shared by every space, so that
+      // deleting a space never deletes the record of what went wrong in it.
+      const dirs = [path.join(storeRoot, "defects")];
       const lines: string[] = ["# Tandem defects — find-time ledger", ""];
       let total = 0;
       for (const dir of dirs) {
@@ -77,11 +76,23 @@ export function placeCommands(a: {
         for (const f of files.sort().reverse()) {
           const { rows } = parseDefectLog(nodeFs.readFileSync(path.join(dir, f), "utf8"));
           if (!rows.length) continue;
-          lines.push(`## ${f.replace(".jsonl", "")}`, "", "| when | TEP | slice | trigger | impact | detail |", "|---|---|---|---|---|---|");
+          // What became of each row, not only that it was found: a row is
+          // written when something surfaces and never touched again, so
+          // the run it belonged to is asked how it ended.
+          const tally = fates(storeRoot, rows);
+          lines.push(
+            `## ${f.replace(".jsonl", "")}`,
+            "",
+            `${rows.length} found · ${tally.healed} healed by the run · ${tally["reached the person"]} reached the person · ${tally.unknown} not known`,
+            "",
+            "| when | TEP | slice | trigger | impact | became | detail |",
+            "|---|---|---|---|---|---|---|",
+          );
           for (const r of rows) {
             total++;
+            const became = fateOf(r, r.run ? readRunOutcome(storeRoot, r.run) : undefined);
             lines.push(
-              `| ${(r.ts ?? "").slice(0, 16)} | ${r.spec ?? ""} | ${r.slice ?? ""} | ${r.trigger ?? ""} | ${r.impact ?? ""} | ${(r.detail ?? "").replace(/\|/g, "/").slice(0, 120)} |`,
+              `| ${(r.ts ?? "").slice(0, 16)} | ${r.spec ?? ""} | ${r.slice ?? ""} | ${r.trigger ?? ""} | ${r.impact ?? ""} | ${became} | ${(r.detail ?? "").replace(/\|/g, "/").slice(0, 120)} |`,
             );
           }
           lines.push("");
