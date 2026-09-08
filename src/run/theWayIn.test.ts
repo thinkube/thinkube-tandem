@@ -148,3 +148,39 @@ test("a sign-in that stored only a preference is refused, not handed to the revi
   assert.ok("why" in r, "a tokenless session must not be written");
   assert.match(r.why, /no way back in/);
 });
+
+test("a sign-in that fails once is tried again — a cold product locks nobody out", async () => {
+  // It runs moments after the platform reports a new version live, when
+  // the product's first requests are its slowest.
+  let tried = 0;
+  const rested: number[] = [];
+  const into = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tandem-retry-")), "session.json");
+  const r = await signInOnce({
+    at: "https://todo.thinkube.com",
+    into,
+    credentials: { username: "u", password: "p" },
+    rest: async (ms) => void rested.push(ms),
+    signIn: async () => {
+      if (++tried < 3) throw new Error("page.fill: Timeout 30000ms exceeded.");
+      return { cookies: [{ name: "sid", domain: "todo.thinkube.com", path: "/" }], origins: [] };
+    },
+  });
+  assert.ok("path" in r, JSON.stringify(r));
+  assert.equal(tried, 3, "it keeps trying until the product answers");
+  assert.deepEqual(rested, [5000, 5000], "with a pause between, for the product to warm up");
+});
+
+test("a way in that never works says so, in the product's own words", async () => {
+  const r = await signInOnce({
+    at: "https://todo.thinkube.com",
+    into: path.join(os.tmpdir(), "tandem-never.json"),
+    credentials: { username: "u", password: "p" },
+    rest: async () => {},
+    signIn: async () => {
+      throw new Error("page.fill: Timeout 30000ms exceeded.");
+    },
+  });
+  assert.ok("why" in r);
+  assert.match(r.why, /Timeout 30000ms exceeded/, "the reason the product gave");
+  assert.match(r.why, /tried 3 times/, "and that it was not one unlucky attempt");
+});

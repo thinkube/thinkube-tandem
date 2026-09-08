@@ -165,6 +165,54 @@ test("with no way in, no reviewer is started and every criterion comes back unju
   assert.equal(proofs.find((p) => !p.criterionId)?.verdict, "green", "what was already settled is untouched");
 });
 
+test("a reviewer that never ran takes nothing away — what the gate proved still stands", async () => {
+  // Locked out, the run once replaced every proof for the criteria its
+  // reviewers were going to judge, so a cut whose gate proved sixteen
+  // things came back with nothing judged at all.
+  const st = new RunState(() => {});
+  const s = space([
+    promise("n1", "frontend/a.tsx", [
+      { id: "c1", text: "the count matches the cards" },
+      { id: "c2", text: "the list shows the soonest first" },
+    ]),
+  ]);
+  const out = await judgeOnTheProduct({
+    at: "https://todo.example.com",
+    st,
+    log: () => {},
+    deps: { model: "test" },
+    space: s,
+    cut: cut(["n1"]),
+    pageRoots: ["frontend"],
+    // No store directory, so there is no way in and no reviewer starts.
+    outcome: {
+      delivery: {
+        id: "d1",
+        cutId: "cut-1",
+        branch: "b",
+        proofs: [
+          { kind: "probe", label: "the count matches the cards", verdict: "green", criterionId: "c1" },
+          { kind: "probe", label: "the build", verdict: "green" },
+        ],
+      },
+    } as never,
+    drive: (async () => []) as never,
+  });
+  const proofs = (out.delivery?.proofs ?? []) as { criterionId?: string; verdict: string }[];
+  assert.equal(
+    proofs.find((p) => p.criterionId === "c1")?.verdict,
+    "green",
+    "a criterion the gate proved keeps its answer",
+  );
+  assert.equal(proofs.filter((p) => p.criterionId === "c1").length, 1, "and is not doubled by an unjudged one");
+  assert.equal(
+    proofs.find((p) => p.criterionId === "c2")?.verdict,
+    "unjudged",
+    "a criterion nobody answered says nobody reached it",
+  );
+  assert.equal(proofs.find((p) => !p.criterionId)?.verdict, "green");
+});
+
 test("each reviewer signs in at its own start, so a queued one never inherits a spent token", async () => {
   // Reviewers run a few at a time and the platform's token lasts minutes,
   // so one session minted before any of them starts is already half spent

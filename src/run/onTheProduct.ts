@@ -107,29 +107,45 @@ export async function judgeOnTheProduct(a: {
           a.log(`the session opens ${a.at}`, "live");
           return undefined;
         })();
-  if (noWayIn) {
-    a.log(`the reviewers are locked out, so none was started — ${noWayIn}`, "live");
-    for (const id of ids) a.st.fail(id, `no way in to the running product — ${noWayIn}`);
+  /**
+   * What the delivery holds when no reviewer ran.
+   *
+   * A reviewer that never started judged nothing, so it takes nothing
+   * away: every proof already on the delivery stands, and a criterion
+   * that has none gets one saying why nobody reached it. Replacing what
+   * the gate proved with "unjudged" would throw away the evidence the run
+   * did earn.
+   */
+  const nobodyJudged = (why: string) => {
     const held = a.outcome.delivery;
     if (!held) return a.outcome;
+    const answered = new Set(held.proofs.map((p) => p.criterionId).filter(Boolean));
     return {
       ...a.outcome,
       delivery: {
         ...held,
         proofs: [
-          ...held.proofs.filter((p) => !p.criterionId || !judgedAgain.has(p.criterionId)),
+          ...held.proofs,
           ...list.flatMap((c) =>
-            c.criteria.map((x) => ({
-              kind: "assessment" as const,
-              label: x.text,
-              verdict: "unjudged" as const,
-              ref: `no reviewer could sign in, so nothing was judged: ${noWayIn}`,
-              ...(x.id ? { criterionId: x.id } : {}),
-            })),
+            c.criteria
+              .filter((x) => !x.id || !answered.has(x.id))
+              .map((x) => ({
+                kind: "assessment" as const,
+                label: x.text,
+                verdict: "unjudged" as const,
+                ref: why,
+                ...(x.id ? { criterionId: x.id } : {}),
+              })),
           ),
         ],
       },
     };
+  };
+
+  if (noWayIn) {
+    a.log(`the reviewers are locked out, so none was started — ${noWayIn}`, "live");
+    for (const id of ids) a.st.fail(id, `no way in to the running product — ${noWayIn}`);
+    return nobodyJudged(`no reviewer could sign in, so nothing was judged: ${noWayIn}`);
   }
 
   // One browser each, opened when the reviewer starts and closed when it
@@ -159,26 +175,7 @@ export async function judgeOnTheProduct(a: {
   if ("why" in browser) {
     a.log(`no browser for the reviewers: ${browser.why}`, "live");
     for (const id of ids) a.st.fail(id, `no browser on this machine — ${browser.why}`);
-    const held = a.outcome.delivery;
-    if (!held) return a.outcome;
-    return {
-      ...a.outcome,
-      delivery: {
-        ...held,
-        proofs: [
-          ...held.proofs,
-          ...list.flatMap((c) =>
-            c.criteria.map((x) => ({
-              kind: "assessment" as const,
-              label: x.text,
-              verdict: "unjudged" as const,
-              ref: `no browser on this machine, so nothing was judged: ${browser.why}`,
-              ...(x.id ? { criterionId: x.id } : {}),
-            })),
-          ),
-        ],
-      },
-    };
+    return nobodyJudged(`no browser on this machine, so nothing was judged: ${browser.why}`);
   }
   browser.close();
   const proofs = await (a.drive ?? driveAll)(

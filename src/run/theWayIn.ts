@@ -71,6 +71,13 @@ function fromInventory(home: string, key: string): string | undefined {
   }
 }
 
+/** How many times the way in is tried before the reviewers are told there
+ *  is none. */
+const SIGN_IN_TRIES = 3;
+
+/** The field the platform's sign-in page is recognised by. */
+const SIGN_IN_FORM = 'input[name="username"], input#username';
+
 /** A saved browser session, as Playwright writes and reads it. */
 interface StorageState {
   cookies: { name: string; domain: string; path: string; [k: string]: unknown }[];
@@ -142,20 +149,36 @@ export async function signInOnce(a: {
   credentials?: Credentials;
   /** Injectable for tests: what actually drives the sign-in. */
   signIn?: (a: { at: string; credentials: Credentials }) => Promise<StorageState>;
+  /** How many times to try. The first try lands on a product the platform
+   *  has only just started. */
+  tries?: number;
+  /** Injectable for tests: the pause between tries. */
+  rest?: (ms: number) => Promise<void>;
 }): Promise<{ path: string } | { why: string }> {
   const credentials = a.credentials ?? credentialsFrom();
   if (!credentials) return { why: "no identity is available on this machine to sign in with" };
-  try {
-    const state = await (a.signIn ?? signInWithABrowser)({ at: a.at, credentials });
-    const kept = onlyThisProduct(state, a.at);
-    if (!credentialsIn(kept, a.at).length)
-      return { why: `signing in left no way back in for ${hostOf(a.at)} — the product set no session, only preferences` };
-    fs.mkdirSync(path.dirname(a.into), { recursive: true });
-    fs.writeFileSync(a.into, JSON.stringify(kept, null, 2));
-    return { path: a.into };
-  } catch (err) {
-    return { why: `could not sign in: ${err instanceof Error ? err.message : String(err)}` };
+  const tries = a.tries ?? SIGN_IN_TRIES;
+  const rest = a.rest ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let last = "";
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const state = await (a.signIn ?? signInWithABrowser)({ at: a.at, credentials });
+      const kept = onlyThisProduct(state, a.at);
+      if (!credentialsIn(kept, a.at).length) {
+        last = `signing in left no way back in for ${hostOf(a.at)} — the product set no session, only preferences`;
+      } else {
+        fs.mkdirSync(path.dirname(a.into), { recursive: true });
+        fs.writeFileSync(a.into, JSON.stringify(kept, null, 2));
+        return { path: a.into };
+      }
+    } catch (err) {
+      last = `could not sign in: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    // A product the platform has just started answers its first requests
+    // slowly, and one slow answer must not lock every reviewer out.
+    if (attempt < tries) await rest(5_000);
   }
+  return { why: tries > 1 ? `${last} (tried ${tries} times)` : last };
 }
 
 /**
@@ -290,6 +313,11 @@ async function signInWithABrowser(a: { at: string; credentials: Credentials }): 
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(a.at, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // The sign-in runs moments after the platform reports a new version
+    // live, against a product whose first request is cold: the page loads,
+    // asks where to sign in, and only then goes there. So the form is
+    // waited for on its own clock, well past the default a fill would use.
+    await page.waitForSelector(SIGN_IN_FORM, { timeout: 120_000 });
     // The platform's own sign-in form. Named by what a person sees, so a
     // change of theme does not break it.
     await page.fill('input[name="username"], input#username', a.credentials.username);
