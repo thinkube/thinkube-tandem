@@ -22,6 +22,23 @@ echo "▸ version bumped to ${VERSION}"
 echo "▸ compile (tsc + webview)…"
 npm run compile
 
+# The ledger records what a RUN catches, and a run cannot catch a defect in
+# the machinery that runs it — so the tool's own repairs are read from the
+# commits that made them. A commit says `Defect: <what was wrong>`; every
+# deploy harvests the ones it has not harvested yet. A commit that says
+# nothing records nothing.
+echo "▸ harvest the tool's own repairs into the ledger…"
+node -e '
+const { harvestSelfDefects } = require("./out/engine/selfDefects.js");
+const store = process.env.TANDEM_STORE || require("path").join(process.env.HOME, "thinkube-tandem-store");
+const version = require("./package.json").version;
+try {
+  const r = harvestSelfDefects({ repoRoot: process.cwd(), storeDir: store, version });
+  console.log("  " + (r.recorded ? `${r.recorded} repair(s) recorded` : "nothing new to record"));
+} catch (e) { console.log("  not recorded: " + e.message); }
+' 2>/dev/null || echo "  (skipped — no build yet)"
+
+
 # The whole suite, the walk included: every press a person makes, in
 # order, over a real session and store. Nothing ships red.
 echo "▸ the suite…"

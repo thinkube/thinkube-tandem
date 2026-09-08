@@ -532,7 +532,7 @@ export function deactivate(): void {
         spec: s.unrunCut()?.tepId ?? "run",
         activity: "run",
         trigger: "window-reload",
-        type: "gate",
+        type: "machine",
         impact: "run lost — the editor process ended",
         detail: open.slice(0, 1500),
       });

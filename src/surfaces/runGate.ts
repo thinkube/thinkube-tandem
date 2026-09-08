@@ -470,7 +470,7 @@ export async function executeRun(
       // and on the note the human reads; never a silent "nothing delivered".
       const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
       s.runState?.log(`⛔ the run crashed: ${why.split("\n")[0]}`);
-      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "crash", impact: "run stopped", detail: why.slice(0, 1500) });
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "crash", type: "machine", impact: "run stopped", detail: why.slice(0, 1500) });
       s.runNote = `The build stopped unexpectedly: ${why.split("\n")[0].slice(0, 300)}`;
       s.changed(s.runNote);
       return undefined;

@@ -105,7 +105,7 @@ export function watchForStall(a: {
         `⛔ the run has been going for ${howLong(spent)}, which is its bound, and is stopping itself. ` +
           `What never finished:\n${account}`,
       );
-      a.defect({ activity: "run", trigger: "watchdog", type: "gate", impact: "run halted — over its bound", detail: account.slice(0, 1500) });
+      a.defect({ activity: "run", trigger: "watchdog", type: "machine", impact: "run halted — over its bound", detail: account.slice(0, 1500) });
       a.st.halt();
       return;
     }
@@ -118,11 +118,11 @@ export function watchForStall(a: {
         `⏱ nothing has moved for ${howLong(silent)}. What is still open:\n${account}\n` +
           `If nothing moves for ${howLong(quiet)} more, the run stops itself and reports rather than sitting here.`,
       );
-      a.defect({ activity: "run", trigger: "watchdog", type: "gate", impact: "run silent", detail: account.slice(0, 1500) });
+      a.defect({ activity: "run", trigger: "watchdog", type: "machine", impact: "run silent", detail: account.slice(0, 1500) });
       return;
     }
     a.log(`⛔ the run has been silent for ${howLong(silent)} and is stopping itself. What never finished:\n${account}`);
-    a.defect({ activity: "run", trigger: "watchdog", type: "gate", impact: "run halted — stalled", detail: account.slice(0, 1500) });
+    a.defect({ activity: "run", trigger: "watchdog", type: "machine", impact: "run halted — stalled", detail: account.slice(0, 1500) });
     a.st.halt();
   };
   const timer = every(tick, Math.max(15_000, Math.min(60_000, Math.floor(quiet / 4))));

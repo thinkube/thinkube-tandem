@@ -153,7 +153,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       defect({
         activity: "closing gate",
         trigger: "gate-infra",
-        type: "gate",
+        type: "machine",
         impact: "the machine could not grade a review — it rides the delivery for the person",
         detail: `${label} — ${criterion}`.slice(0, 400),
       }),

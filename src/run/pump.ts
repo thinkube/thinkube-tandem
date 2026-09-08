@@ -31,6 +31,8 @@ export async function pumpUnits(a: {
     unit?: string;
     activity: string;
     trigger: string;
+    /** Which ODC class the observation belongs to, when the site knows. */
+    type?: string;
     impact: string;
     detail: string;
   }) => void;
@@ -70,6 +72,7 @@ export async function pumpUnits(a: {
             unit: u.id,
             activity: "unit execution",
             trigger: "crash",
+            type: "machine",
             impact: "unit failed",
             detail: why.slice(0, 1500),
           });

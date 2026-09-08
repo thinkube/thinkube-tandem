@@ -18,3 +18,37 @@ The rows are find-time facts: what surfaced the defect, and what it cost.
 Reading them monthly is how the methodology learns. A row that recurs is a
 process defect, not a code defect — and the fix belongs in the process,
 not in one more check.
+
+== The tool's own defects
+
+A run catches defects in the work it supervises. It cannot catch a defect
+in the machinery that runs it, so Tandem's own repairs — hundreds of them
+over a month — left almost no trace in a ledger that recorded everything
+else. The one population the methodology most needs to watch was the one
+it could not see.
+
+A repair to the tool is a commit, so the commit is where it is said. A
+line in the message names what was wrong:
+
+[source]
+----
+Defect: the platform's verdict was compared in one case, so a pipeline
+that passed was read as a failure
+----
+
+Every deploy harvests the trailers it has not harvested yet, writes one
+row per repair — `activity: tool development`, `trigger: self-repair`,
+`type: machine` — and remembers the commit it stopped at, so nothing is
+recorded twice. The row carries the commit's sha, so a monthly reading
+can go back to the change itself.
+
+Nothing is inferred. A commit that says nothing records nothing: a ledger
+read for learning is worth less than nothing when it is full of guesses.
+The completeness of this half therefore rests on the person or agent
+writing the commit saying so.
+
+`type: machine` now means what its name says. The machine's own failures
+— a gate that could not grade, a watchdog halt, a crash, a window
+reloaded mid-run — were typed by where they were caught rather than by
+whose fault they were, which left the column reading 2 when the true
+figure was around 100.
