@@ -20,6 +20,15 @@ its detail; the log tail runs beneath; *Stop* aborts every live worker.
 The closing gate's own card opens its own log the same way, on the same
 single click as every worker card.
 
+The graph is not only for watching. Every run a space has run is written
+down as it goes — its units, their order and state, each step's log, and
+the pictures its reviewers took — and stays readable afterwards. The
+*Cuts* row at the top of the page lists every cut; choose one and switch
+between its *Report* and its *Run and logs*. While a run is in flight the
+run in flight is what you see; looking back waits until it ends. See
+xref:end-to-end.adoc#_going_back_to_an_earlier_cut[Going back to an
+earlier cut].
+
 == How the machine builds
 
 * *Tests first, blind.* For each acceptance criterion a probe author

@@ -68,6 +68,17 @@ that somebody is you. Holding four kept promises hostage to a hygiene
 opinion nobody can act on serves nobody — so the machine says what it
 saw, in full, and the judgement is yours.
 
+A finding is a pair: what was seen, and beside it the ask its finder
+drafted from it — the diagnostic is what happened, the ask is what a
+person would want instead. Both are shown, so you read the sentence
+before you keep it.
+
+Findings from a reviewer of the running product arrive the same way, and
+are sorted the same way. You can *keep* one for later: it is recorded as
+wanted, no ask is made, nothing is read again, and the work you chose to
+build first keeps its place. Everything kept, from every cut, waits under
+*Kept for later* until you turn the lot into asks in one press.
+
 Two things still veto, and only two: an unkept promise, and a product
 that does not build. The second is not a matter of taste — handing over
 something that cannot ship harms whoever pulls it, whatever you decide.

@@ -131,9 +131,16 @@ there. Run it again.
 
 Every slice is graded against its own criteria, on the real state. Then
 the closing gate judges the whole delivery: the repository's suite on the
-delivered tree — or, where no suite runs locally, *the repository's own
-product build* — every assessment read by a fresh reviewer, then the
-finisher and, last, the closer.
+delivered tree — or, where no whole suite runs locally, *the repository's
+own product build* and *the test suite each declared part names*, the
+same commands the platform's pipeline runs — every assessment read by a
+fresh reviewer, then the finisher and, last, the closer.
+
+Running the parts' own suites here is what catches a standing test the
+work broke: without it the gate compiles the tree, the merge goes
+through, and the pipeline reports the breakage afterwards. A suite whose
+runner cannot answer on this machine — it needs the cluster — is left to
+the platform and never counted as a failure.
 
 The closer repairs what is failing and nothing else. Anything it changes
 that no failure named is reported to you on the delivery.
@@ -180,7 +187,13 @@ judged on the running product waits for it.
 If the platform refuses the build, the run repairs what the platform's
 own words name — only those files — proves the repository's build passes
 locally, and pushes again. Twice. Then it stops and gives the answer
-back to you.
+back to you. A repair that changes nothing ends the loop and says so:
+there is nothing new for the platform to build, so there is nothing to
+wait for.
+
+The platform's verdict is read in whatever case the platform writes it,
+and a pipeline that passed is a pass. Reading a pass as a failure would
+put a repair on work that is already right.
 
 [cols="1,3"]
 |===
@@ -205,8 +218,8 @@ own logs; the work is in the project and the build is green.
 == On the running product
 
 A promise about a page cannot be settled by reading code. Once the
-address answers, one reviewer per criterion opens the product in a
-browser and does what the criterion describes.
+address answers, one reviewer per promise opens the product in a browser
+and does what each of its criteria describes.
 
 Which criteria those are is read from the repository: the route with the
 shortest path names the container that answers at the address, and a
@@ -214,10 +227,57 @@ promise landing in that container's directory is a promise about the
 page. What is read rather than driven — an assessment — and what is
 settled elsewhere stay where they are.
 
+=== One at a time, in a product of its own
+
+Reviewers go one after another, never together. They drive one running
+product holding one set of data, so two at once make and delete each
+other's items: a criterion about the whole list — nothing is high
+priority, there is nothing at all — cannot be reached while another
+reviewer holds items in it, and a count read while another is adding can
+fail against a product doing exactly what was asked.
+
+Everything a reviewer makes is named `tandem check ·`. Alone in the
+product, anything already carrying that name is a leftover of an earlier
+run, so the reviewer clears those away before it judges anything.
+Anything *not* so named belongs to a person and is never touched; a
+criterion a person's own things block is reported rather than failed.
+
+=== The way in
+
+The product sits behind the platform's sign-on, so a reviewer's browser
+would arrive signed out. It is given a session instead, signed in once
+outside the model and handed over as a file.
+
+Two limits make that safe. The password is typed by the extension and
+never enters a prompt or a log. And the session is cut down to the
+product's own origin — the sign-on cookie is dropped — so it opens the
+product and nothing else on the platform.
+
+Each reviewer signs in for itself, as it starts. The platform's token
+lasts a fixed time; one session minted before any reviewer began would
+already be half spent by the time the last one opened its browser, and it
+cannot be renewed, because renewing means reaching the sign-on host its
+own origin limit refuses.
+
+The sign-in runs seconds after the platform reports a new version live,
+when the product's first requests are its slowest, so it waits for the
+sign-in page on its own clock and is tried three times before giving up.
+
+=== What a reviewer may do, and what it leaves
+
 Each reviewer is held to three limits: no repository is opened to it, it
-carries only the address, and the browser refuses every other origin. A
-reviewer that never answers leaves the criterion unjudged — never a pass
-nobody saw.
+carries only the address, and the browser refuses every other origin.
+
+For every criterion it decides, it saves a picture at the moment it
+decides — named for the criterion and written into that run's own
+directory, so the report can show it. The pictures are kept with the
+delivery and stay openable long after the run.
+
+A reviewer that never answers leaves the criterion unjudged — never a
+pass nobody saw. If there is no way in at all, no reviewer is started:
+driving them anyway spends minutes writing the same lockout on every
+criterion. The criteria stay unjudged, and nothing already proved is
+taken away.
 
 == The report
 
@@ -225,6 +285,9 @@ The report answers, sentence by sentence, what you asked for and what
 happened to it. Under it: what the machine could not judge, what only you
 can certify, the promises answered after the merge, and the run's own
 account for a developer.
+
+Where a criterion was judged on the running product, the pictures its
+reviewer took sit under it. Pressing one opens it in the editor.
 
 [cols="1,2"]
 |===
@@ -269,6 +332,69 @@ seen working. Your word closes it.
 Available at any time, on any cut, however old. It puts that promise back
 on the board, and the ordinary *Build* repairs it.
 |===
+
+== What the work noticed, and what you do with it
+
+A reviewer sees things nobody asked about. It has one question to answer
+about each: does this stop the work being delivered? If it does, it is
+part of the work and it is fixed. If it does not, it is written down as a
+*finding* — what was seen, and beside it the ask its finder drafted for
+it, in the words a person would use.
+
+Findings never block the decision. They are yours to sort, and there are
+two ways to take one.
+
+[cols="1,3"]
+|===
+| *Press* | *What it does*
+
+| *Keep the N selected for later*
+| Wanted, but not now. No ask is made and nothing is read again, so the
+goals you came here with keep their place at the front. What you keep
+waits under *Kept for later*.
+
+| *Put these N in the box*
+| Under *Kept for later*, which gathers everything kept from every cut.
+This puts each one's drafted ask in the capture box, together, the moment
+you decide the discoveries are what comes next.
+|===
+
+This is why keeping is a step of its own. Turning a discovery into an ask
+reads every sentence again, which is work — and it puts something you
+found by accident in front of something you chose on purpose. Kept, it
+waits until you say so.
+
+== Going back to an earlier cut
+
+A cut leaves three things behind: the report of what was delivered, the
+run that produced it with each step's log, and the pictures its reviewers
+took. All three stay on file and all three stay openable.
+
+At the top of the run page, *Cuts* lists every cut this space has run,
+newest first. Choose one and you get that cut's account. Two buttons say
+which part of it you are reading:
+
+[cols="1,3"]
+|===
+| *Button* | *What it shows*
+
+| *Report*
+| That cut's delivery report — its promises, its findings, and the
+pictures under each criterion.
+
+| *Run and logs*
+| That cut's orchestration graph, with the log of every step and every
+worker, drawn from what the run wrote as it went.
+|===
+
+While a run is in flight the run's own page is what you see, and looking
+back waits until it ends.
+
+The pictures are the reason this matters beyond curiosity. A reviewer's
+screenshot is the running product at a known commit, taken by something
+that checked the behaviour before it pressed the shutter — which is what
+a translation is compared against next release, and what a page of
+documentation is built from.
 
 == When something is wrong later
 

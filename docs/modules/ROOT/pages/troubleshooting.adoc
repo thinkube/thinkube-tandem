@@ -43,4 +43,28 @@ exemption with a reason, entered before you sign.
 |The worker is parked with a question
 |Open the rail beside the run — its parked-question box names the
 worker and is the one place in the surface to type your answer.
+
+|"the reviewers are locked out, so none was started"
+|The signed-in session did not open the product — the sign-in was tried
+three times and never got in
+|Nothing was judged on the running product and nothing already proved
+was taken away: those criteria stay unjudged. Open the address yourself
+and sign in. If that works, run again; if it does not, the product is
+what to fix.
+
+|A promise reads "not judged" though its checks passed
+|One of its criteria could not be reached on the running product — a
+reviewer answered BLOCKED
+|Read that criterion's line on the report: the reviewer says in its own
+words what stopped it. Blocked is never counted against the work.
+
+|A criterion says "judged with no picture saved"
+|The reviewer decided it but wrote no picture for it
+|The verdict stands; only the evidence is missing. The reviewer's own
+words are on the line.
+
+|An earlier cut's report or logs are wanted
+|The page shows the cut you last chose
+|Use the *Cuts* row at the top of the run page: every cut this space ran
+is there, with its report, its run and its pictures.
 |===
