@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 import { Markdown } from "./Markdown";
+import { Kept } from "./Kept";
 import { C, FS, SAID, label, raised, SP } from "./type";
 import { can, post, refusalSentence, SpacePush } from "./vscode";
 
@@ -53,11 +54,11 @@ function Looks(props: { looks?: { path: string; said: string }[] }): JSX.Element
  * What the work noticed and did not do: pick the ones worth building, one
  * press puts them in the capture box, and each says when it is there.
  */
-function Findings(props: { findings: { text: string; ask?: string; taken?: boolean }[]; deliveryId: string }): JSX.Element {
+function Findings(props: { findings: { text: string; ask?: string; taken?: boolean; kept?: boolean }[]; deliveryId: string }): JSX.Element {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // Only a finding whose finder drafted an ask can become one; the rest
   // are read as notes.
-  const open = props.findings.filter((f) => !f.taken && f.ask);
+  const open = props.findings.filter((f) => !f.taken && !f.kept && f.ask);
   const toggle = (text: string): void =>
     setPicked((was: Set<string>) => {
       const now = new Set(was);
@@ -90,6 +91,8 @@ function Findings(props: { findings: { text: string; ask?: string; taken?: boole
           >
             {f.taken ? (
               <span data-finding-taken style={{ fontSize: FS.caption, color: C.ok, whiteSpace: "nowrap" }}>✓ in the box</span>
+            ) : f.kept ? (
+              <span data-finding-kept style={{ fontSize: FS.caption, color: C.focus, whiteSpace: "nowrap" }}>kept for later</span>
             ) : f.ask ? (
               <input
                 type="checkbox"
@@ -116,16 +119,16 @@ function Findings(props: { findings: { text: string; ask?: string; taken?: boole
       </div>
       {open.length ? (
         <button
-          data-ask-from-findings
+          data-keep-findings
           disabled={!chosen.length}
           onClick={() => {
-            post({ action: "ask-from-findings", deliveryId: props.deliveryId, items: chosen.map((f) => f.text) });
+            post({ action: "keep-findings", deliveryId: props.deliveryId, items: chosen.map((f) => f.text) });
             setPicked(new Set());
           }}
           style={{ marginTop: SP.sm, fontSize: FS.body, fontWeight: 600, padding: `${SP.xs}px ${SP.md}px` }}
-          title="Puts the drafted asks of the selected findings in the capture box, as sentences you can keep."
+          title="Keeps these where you can find them, without making them asks — the work you chose to build first stays first."
         >
-          {chosen.length ? `Make asks from the ${chosen.length} selected` : "Select findings to make asks from"}
+          {chosen.length ? `Keep the ${chosen.length} selected for later` : "Select what to keep for later"}
         </button>
       ) : null}
     </div>
@@ -454,6 +457,10 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
         {d.findings?.length ? (
           <Findings key={d.id} findings={d.findings} deliveryId={d.id} />
         ) : null}
+
+        {/* Everything kept, from every cut — so a discovery made three
+            cuts ago is still in front of the person who kept it. */}
+        <Kept push={push} />
 
         {seen.length ? (
           <div data-found style={{ marginBottom: SP.lg }}>

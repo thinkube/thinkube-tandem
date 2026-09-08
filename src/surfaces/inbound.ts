@@ -152,6 +152,54 @@ export async function handleInbound(
         );
       }
     }
+  } else if (msg.action === "keep-findings" && msg.deliveryId && msg.items?.length) {
+    // Wanted, but not now. Nothing is read again and no ask is made, so a
+    // discovery never pushes itself in front of the goals a person chose
+    // to build first.
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else {
+      const settled = new Set([...(d.findingsAsked ?? []), ...(d.findingsKept ?? [])]);
+      const fresh = (d.findings ?? []).filter((f) => f.ask && msg.items!.includes(f.saw) && !settled.has(f.saw));
+      if (!fresh.length) note = "those are kept already";
+      else {
+        session.space = {
+          ...session.space,
+          deliveries: session.space.deliveries.map((x) =>
+            x.id === d.id ? { ...x, findingsKept: [...(x.findingsKept ?? []), ...fresh.map((f) => f.saw)] } : x,
+          ),
+        };
+        session.changed(
+          `${fresh.length} kept for later — they wait in What the work noticed until you ask for them`,
+        );
+      }
+    }
+  } else if (msg.action === "ask-from-kept") {
+    // The moment the person decides the discoveries are what comes next:
+    // every kept finding, from every cut, into the capture box at once.
+    const kept = session.space.deliveries.flatMap((d) => {
+      const asked = new Set(d.findingsAsked ?? []);
+      const wants = new Set(d.findingsKept ?? []);
+      return (d.findings ?? [])
+        .filter((f) => f.ask && wants.has(f.saw) && !asked.has(f.saw))
+        .map((f) => ({ deliveryId: d.id, saw: f.saw, ask: f.ask! }));
+    });
+    if (!kept.length) note = "nothing is kept for later";
+    else {
+      const box = session.space.draft ?? "";
+      session.saveDraft([box.replace(/\s*$/, ""), ...kept.map((k) => k.ask)].filter(Boolean).join("\n"));
+      const takenOf = new Map<string, string[]>();
+      for (const k of kept) takenOf.set(k.deliveryId, [...(takenOf.get(k.deliveryId) ?? []), k.saw]);
+      session.space = {
+        ...session.space,
+        deliveries: session.space.deliveries.map((x) =>
+          takenOf.has(x.id) ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...takenOf.get(x.id)!] } : x,
+        ),
+      };
+      session.changed(
+        `${kept.length} ask${kept.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
+      );
+    }
   } else if (msg.action === "look-at-cut") {
     // A run in flight is what the page must show; looking back waits.
     if (session.running && msg.cutId) note = "a run is in flight — what it is doing is on the page";

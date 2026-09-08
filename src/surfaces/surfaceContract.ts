@@ -116,7 +116,7 @@ interface DeliveryVM {
   /** What the work noticed and did not do, because it did not stop the ask
    *  being delivered. The person decides whether each becomes an ask;
    *  `taken` marks the ones already put in the box. */
-  findings?: { text: string; ask?: string; taken?: boolean }[];
+  findings?: { text: string; ask?: string; taken?: boolean; kept?: boolean }[];
   /** Promises whose answer comes from somewhere this run cannot reach —
    *  each with where it will come from, and whether it has arrived. A
    *  person attests the ones only a person can settle. */
@@ -359,6 +359,12 @@ export type WebToHost =
   /** Put the selected findings in the capture box, as sentences to keep
    *  or not. Ones already taken are skipped, never doubled. */
   | { action: "ask-from-findings"; deliveryId: string; items: string[] }
+  /** Keep these findings for later: wanted, but not part of the walk in
+   *  hand. Nothing is read again and no ask is made. */
+  | { action: "keep-findings"; deliveryId: string; items: string[] }
+  /** Put every kept finding in the capture box, from every cut — the
+   *  moment the person decides the discoveries are what comes next. */
+  | { action: "ask-from-kept" }
   | { action: "panic" }
   | { action: "rerun" }
   | { action: "think-again" }

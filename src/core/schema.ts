@@ -255,6 +255,13 @@ export interface Delivery {
   /** The findings the person already turned into asks, so the report can
    *  say so and never records one twice. */
   findingsAsked?: string[];
+  /** The findings the person wants, but not yet: kept where they can be
+   *  found, out of the walk in hand. A discovery arrives while the goals
+   *  a person started with are still being built, and turning it into an
+   *  ask there and then puts it in front of work they chose first — and
+   *  reads every sentence again to do it. Kept, it waits until they say
+   *  so. */
+  findingsKept?: string[];
   /** How big this tree's modules are — largest, median, average, and how
    *  much of it explains rather than instructs. Reported, never enforced: a
    *  ceiling on file length is satisfied by deleting the explanation, which

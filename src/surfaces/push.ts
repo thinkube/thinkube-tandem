@@ -466,6 +466,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
               text: f.saw,
               ...(f.ask ? { ask: f.ask } : {}),
               ...(d.findingsAsked?.includes(f.saw) ? { taken: true } : {}),
+              ...(d.findingsKept?.includes(f.saw) && !d.findingsAsked?.includes(f.saw) ? { kept: true } : {}),
             })),
           }
         : {}),
