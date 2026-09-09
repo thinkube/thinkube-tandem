@@ -1,4 +1,5 @@
 = Reading Tandem's pages
+:page-type: reference
 :description: What every mark and every word on Thinkube Tandem's pages means, with nothing left to a tooltip.
 
 _A page that needs explaining has failed. This is the reference for the few marks that remain, and the promise that there will never be more._

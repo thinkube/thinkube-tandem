@@ -14,11 +14,31 @@ your active project.
 Tandem never assumes which folder of a multi-root workspace you mean.
 The active repository is chosen once and remembered per workspace:
 
-* the status-bar item `Tandem: <repo>`;
+* the status-bar item `Tandem: <product> / <repo>`;
 * the `<repo> ▾` button in the map;
-* *Tandem: Switch Project / Repository* in the command palette.
+* *Tandem: Switch Repository* in the command palette.
 
-Each repository has its own session and its own space in the store.
+Each repository has its own session and its own spaces in the store.
+
+== Commands
+
+The commands the extension contributes, as the command palette lists them:
+
+[cols="1,2"]
+|===
+|Command |What it does
+
+|*Tandem: Open Thinking Space* |Pick a repository, then one of its thinking spaces; it opens in an editor tab.
+|*Tandem: New Thinking Space* |Create a thinking space for the active repository.
+|*Tandem: Delete Thinking Space* |Remove one.
+|*Tandem: Open the Space* |Open the space of the active repository.
+|*Tandem: Switch Repository* |Change the repository Tandem works on.
+|*Tandem: Activate Repository* |Enable a repository that has no card yet.
+|*Tandem: Show Defects* |Render the defect ledger as a table.
+|*Tandem: Open the Docs* |Open this documentation.
+|===
+
+The *Projects* view also carries *New Product*, *New here…*, *Set Product…*, *Mark Done / Reopen* and *Choose Repositories to Read…* on its items.
 
 == Settings
 
@@ -26,11 +46,11 @@ Each repository has its own session and its own space in the store.
 |===
 |Setting |Default |Meaning
 
-|`thinkubeTandem.storeRoot` |`~/thinkube-tandem-store` |Root of the
-store; spaces persist at `<root>/spaces/<repo>`.
+|`thinkubeTandem.storeRoot` |empty |Root of the store. Empty means `~/thinkube-tandem-store`; spaces persist at `<root>/spaces/<project id>`.
 
-|`thinkubeTandem.groundingModel` |`opus` |Model for the derivation
-rounds (judgment work).
+|`thinkubeTandem.groundingModel` |`opus` |Model for the grounding round, the judgment stage.
+
+|`thinkubeTandem.volumeModel` |`sonnet` |Cheaper model for the volume rounds: classification, naming, coverage, criteria, decisions, answers, check proposals and the repository digest.
 
 |`thinkubeTandem.workerModel` |`sonnet` |Base model for run workers —
 never inherited from the environment.
@@ -63,4 +83,8 @@ reason.
 
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
 (github.com remotes use the `gh` CLI instead).
+
+|`thinkubeTandem.controlUrl` |empty |thinkube-control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
+
+|`thinkubeTandem.controlToken` |empty |API token for thinkube-control. Empty reads it from the connected MCP server's configuration.
 |===
