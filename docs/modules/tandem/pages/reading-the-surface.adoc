@@ -1,0 +1,60 @@
+= Reading Tandem's pages
+:description: What every mark and every word on Thinkube Tandem's pages means, with nothing left to a tooltip.
+
+_A page that needs explaining has failed. This is the reference for the few marks that remain, and the promise that there will never be more._
+
+== The rule
+
+Only two marks appear anywhere: a tick and a cross. Everyone reads those the same way in every language and every culture we ship to. Anything else says what it is in words, on its own line, in the same size as the text beside it.
+
+If you ever find a symbol on a Tandem page whose meaning is not written next to it, that is a defect. Say so.
+
+== What will be true when this is done
+
+This page lists the promises of the thing you are about to build. Under each promise are the things that must become true for it to be kept. Each one says where it stands:
+
+[cols="1,3"]
+|===
+| Mark or words | What it means
+
+| ✓
+| Proved. A check ran on the real code and passed.
+
+| ✓ · proved, then the code moved
+| It passed, and the code it was proved against has changed since. It will be proved again on the next run.
+
+| ✗
+| Not proved. A check ran and did not pass.
+
+| ✗ · no longer holds
+| It was proved, and then the world said otherwise — you said so after using it, or the platform's own build of the merged work failed. The line under it says who said so, in their words.
+
+| _(no mark)_ · checked when it is built
+| Nothing has judged it yet. A machine will, when the work runs.
+
+| _(no mark)_ · judged by a reviewer at delivery
+| No machine can check this one. An independent reviewer reads the finished work once and judges it. It is never kept as a standing test.
+
+| _(no mark)_ · nothing could judge it
+| The check could not run at all — the runner was missing, the environment was not there. This is never counted against your work.
+
+| _(no mark)_ · only you can see this: …
+| The machine cannot verify it at all: it needs the running product, or it acts on the world. It is listed so that nothing is silently dropped, and the reason is written out. You confirm it by using the thing.
+|===
+
+=== Saying it does not hold
+
+Beside a promise that has been delivered, and beside each of its proved
+lines, there is *it does not hold*. Press it, say what you saw, and that
+promise becomes work again on your sentences page. Nothing is
+un-accepted and no record is edited: what you saw is newer evidence than
+the proof, and the newest evidence is what counts.
+
+The press stays off until you have written something. A repair is told
+what to fix, and "it does not work" alone cannot tell it.
+
+== Your sentences
+
+Each thing to build carries a word saying where it stands: *first*, *then* and *later* for what is still to build, in the order suggested; *accepted*, *delivered*, *building*; *not run* for work that was signed and whose run delivered nothing; and *no longer holds* for work that was delivered and then refused, by you or by the platform.
+
+A thing is dimmed and cannot be pressed only when its work has landed or is landing. Anything you can still act on stays live.
