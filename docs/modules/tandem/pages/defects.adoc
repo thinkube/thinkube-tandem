@@ -1,6 +1,9 @@
 = The defect ledger
 :page-type: reference
 
+.TL;DR
+Every defect the run catches, a containment violation, a check that never went green, a gate that could not run, a finding carried to the delivery, is one row in `defects/<YYYY-MM>.jsonl` at the store's root. Nothing about what went wrong is deleted with the space it went wrong in.
+
 Every point where the run CATCHES a defect appends one structured row to
 the ledger: a containment violation, a unit whose checks never went green,
 a gate that could not run (exit 126/127 — an infrastructure defect, not a

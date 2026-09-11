@@ -1,6 +1,9 @@
 = The run and the orchestration graph
 :page-type: concept
 
+.TL;DR
+After you sign, the run view shows one card per unit of work, titled with the promise it keeps, each with a state word: ready, running, needs you, passed, failed, never ran. Watching is optional; the delivery arrives with its proofs when the run ends.
+
 Signing starts the run; watching it is optional. The run view appears in
 the space with the *orchestration graph*: one node per execution unit,
 edges for the order the engine derived. Each card — worker, auditor and

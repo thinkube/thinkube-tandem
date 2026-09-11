@@ -1,6 +1,9 @@
 = The space — asks, changes, units
 :page-type: concept
 
+.TL;DR
+The space is the one page between you and the machine: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything you see is live state from the store; nothing is hidden in a tooltip.
+
 The space is the one surface between you and the machine. It renders in
 the sidebar (the Tandem icon), and each thinking space you open (*Tandem:
 Open the Space*) gets its own editor tab, titled with that space's name —

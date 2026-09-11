@@ -1,6 +1,9 @@
 = Configuration and settings
 :page-type: reference
 
+.TL;DR
+The *Configuration* view under the space manages Claude Code's own configuration per project or user: hooks, commands, skills, agents, MCP servers, permissions, plugins. The commands and settings Tandem itself adds are listed below.
+
 == The Configuration tree
 
 Below the space in the Tandem container, the *Configuration* view manages

@@ -1,6 +1,9 @@
 = When something goes wrong
 :page-type: how-to
 
+.TL;DR
+Find your symptom in the first column; the second says why it happens and the third what to press. If a page shows a symbol whose meaning is not written next to it, that is a defect in Tandem, not in your reading.
+
 [cols="1,1,2"]
 |===
 |Symptom |Cause |What to do

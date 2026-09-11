@@ -1,6 +1,9 @@
 = Getting started
 :page-type: how-to
 
+.TL;DR
+Click the Tandem icon in Thinkube IDE's activity bar, or run *Tandem: Open Thinking Space*, pick the repository and a space, and type sentences into the box. Then *Read these N*, *Keep these N*, *Group into things to build*, *Build the first*. Each button says what it will do before you press it.
+
 == Open the space
 
 Click the Tandem icon in the activity bar (left edge), or run

@@ -1,6 +1,9 @@
 = The whole path, end to end
 :page-type: reference
 
+.TL;DR
+From an empty box to a product running, every step in order: what happens, what you can press, how it can fail, and what to do. This is a development platform, so a finished run merges, pushes and waits for the platform to build; what comes back is the thing running, for you to keep or take back out.
+
 This page walks the path once, from an empty box to a product running,
 and says at every step: what happens, what you can press, how it can
 fail, and what to do about it.

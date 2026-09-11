@@ -1,6 +1,9 @@
 = The two gates
 :page-type: concept
 
+.TL;DR
+Two moments are yours and only yours. *Sign* freezes exactly what you saw into a TEP and starts the build; the gate refuses a cut that nothing proves. *Accept* merges a delivery whose proofs are green; findings ride along for you to weigh, observations wait for you to confirm on the running product.
+
 == Gate 1 — Sign
 
 Signing freezes a cut into a TEP. The gate refuses:

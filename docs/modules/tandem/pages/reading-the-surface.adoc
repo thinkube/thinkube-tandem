@@ -4,6 +4,9 @@
 
 _A page that needs explaining has failed. This is the reference for the few marks that remain, and the promise that there will never be more._
 
+.TL;DR
+Only two marks appear on Tandem's pages, a tick and a cross; everything else says what it is in words, on its own line. This page lists those words and what each one means.
+
 == The rule
 
 Only two marks appear anywhere: a tick and a cross. Everyone reads those the same way in every language and every culture we ship to. Anything else says what it is in words, on its own line, in the same size as the text beside it.
