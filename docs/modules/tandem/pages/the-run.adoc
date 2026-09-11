@@ -1,8 +1,14 @@
-= The run and the orchestration graph
+= How the machine builds
 :page-type: concept
 
 .TL;DR
 After you sign, the run view shows one card per unit of work, titled with the promise it keeps, each with a state word: ready, running, needs you, passed, failed, never ran. Watching is optional; the delivery arrives with its proofs when the run ends.
+
+[NOTE]
+====
+Underneath. On the page you see cards with state words and the report. This page is how the machine builds behind them: checks written blind, a coder that cannot see them, a judge that decides green.
+====
+
 
 Signing starts the run; watching it is optional. The run view appears in
 the space with the *orchestration graph*: one node per execution unit,

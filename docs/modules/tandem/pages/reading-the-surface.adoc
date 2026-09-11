@@ -1,21 +1,29 @@
-= Reading Tandem's pages
+= Every word on Tandem's pages
 :page-type: reference
-:description: What every mark and every word on Thinkube Tandem's pages means, with nothing left to a tooltip.
+:description: What every word and every mark on Thinkube Tandem's pages means, with nothing left to a tooltip.
 
-_A page that needs explaining has failed. This is the reference for the few marks that remain, and the promise that there will never be more._
+_A page that needs explaining has failed. This is the reference for the words and the two marks that remain, and the promise that there will never be more._
 
 .TL;DR
-Only two marks appear on Tandem's pages, a tick and a cross; everything else says what it is in words, on its own line. This page lists those words and what each one means.
+Only two marks appear on Tandem's pages, a tick and a cross; everything else says what it is in words, on its own line. This page lists those words, page by page, and what each one means. If you find a symbol whose meaning is not written next to it, that is a defect; say so.
 
-== The rule
+== The strip
 
-Only two marks appear anywhere: a tick and a cross. Everyone reads those the same way in every language and every culture we ship to. Anything else says what it is in words, on its own line, in the same size as the text beside it.
+The line beside the button says where you are. It reads, among others: *nothing written yet*; *N lines written, none read*; *N sentences read, not kept*; *N sentences · not grouped yet*; *N sentences · M things to build*; *<thing> — not worked out yet*; *<thing> — N promises, not started*; *working out what to build — N of M subjects done*; *building — <thing>*; *delivered — waiting for your decision*; *delivered — withheld*; *coded, checked and merged into the project*; *built, deployed and running at <address>*; *<thing> — no longer holds*; *N sentences · everything is built*.
 
-If you ever find a symbol on a Tandem page whose meaning is not written next to it, that is a defect. Say so.
+The button is the next thing you can do. Its labels: *Read these N*, *Read it again*, *Keep these N*, *Keep this reading*, *Group into things to build*, *Build the first*, *Work it out*, *Build these N*, *See the run*, *Stop*, *Run it again*, *Take it back out*, *Go on to the next*, *Accept it*, *Everything is built*. While a press is in flight it reads *Starting…* or *Working it out…*.
 
-== What will be true when this is done
+When a button is refused, the page says why in one sentence: *a run is in flight — stop it first*; *signed work is waiting to run — run it, or it stays as it is*; *a delivery is waiting for your decision*; *the reading is waiting for keep or edit*; *nothing is signed or running*; *nothing has been read yet*.
 
-This page lists the promises of the thing you are about to build. Under each promise are the things that must become true for it to be kept. Each one says where it stands:
+== Your sentences
+
+Each kept sentence carries a pencil, *say this ask differently*, and a plus, *amend this ask*. Under it: *what it is about* and *what must become true of it*, marked where you wrote them; *names nothing* when a sentence names no subject. Its state, when it has one: *approved — these words are part of the record now; nothing is built from them yet*; *built — delivered, waiting for you to accept it*; *built and accepted — it is in the project*.
+
+Each thing to build carries a word saying where it stands: *first*, *then* and *later* for what is still to build, in the order suggested; *signed*, *building*, *delivered*, *accepted*; *not run* for work that was signed and whose run delivered nothing; *no longer holds* for work that was delivered and then refused, by you or by the platform. A thing is dimmed and cannot be pressed only when its work has landed or is landing.
+
+== What it will do
+
+Under *What will be true when this is done*, each promise lists the lines that must become true. Each line says where it stands:
 
 [cols="1,3"]
 |===
@@ -46,19 +54,38 @@ This page lists the promises of the thing you are about to build. Under each pro
 | The machine cannot verify it at all: it needs the running product, or it acts on the world. It is listed so that nothing is silently dropped, and the reason is written out. You confirm it by using the thing.
 |===
 
-=== Saying it does not hold
+*N things I decided for you* lists the choices your sentences left open, each marked *assumed, you did not say this*. *Not needed* on the documentation promise records that no documentation is needed, with your reason. Beside a promise that has been delivered, and beside each of its proved lines, *Say it does not hold* opens a box; what you write makes that promise work again on your sentences. The press stays off until you have written something.
 
-Beside a promise that has been delivered, and beside each of its proved
-lines, there is *it does not hold*. Press it, say what you saw, and that
-promise becomes work again on your sentences page. Nothing is
-un-accepted and no record is edited: what you saw is newer evidence than
-the proof, and the newest evidence is what counts.
+== The run
 
-The press stays off until you have written something. A repair is told
-what to fix, and "it does not work" alone cannot tell it.
+Every card wears a state word: *ready* (waiting for what it needs before it can start), *running*, *needs you* (stopped on a question only you can answer), *passed* (finished and its checks came back green), *failed* (stopped with an error; its promise was not kept), *never ran* (the run stopped, or something this waits on failed, so this was never dispatched; it is not a failure). A card in the signed work being built now also carries the word *cut*.
 
-== Your sentences
+The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *audit — everything together*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. The header counts *N of M workers done · N of M judged on the running product · N never ran*, and when nothing is live reads *finished*, *finished, with failures* or *not running*. A card's chip reads *passed — N log lines*, *N/M checks passed*, *AC-N failed*, or *some undelivered*.
 
-Each thing to build carries a word saying where it stands: *first*, *then* and *later* for what is still to build, in the order suggested; *accepted*, *delivered*, *building*; *not run* for work that was signed and whose run delivered nothing; and *no longer holds* for work that was delivered and then refused, by you or by the platform.
+The key under the graph: *── needs what it produces · ╌╌ waits for its own probes*, the checks written before the code.
 
-A thing is dimmed and cannot be pressed only when its work has landed or is landing. Anything you can still act on stays live.
+== The report
+
+*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The report opens with one paragraph, then:
+
+* *What you asked for, and what happened*: each sentence with *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*.
+* *One failure, many checks*: when several checks failed the same way, said once.
+* *What the machine could not judge*: checks that could not run, with why; *Nothing here says the work is wrong.*
+* *Nobody could settle these — they are yours to check*: what only the running product can show, *declared at signing as something no check and no reviewer can drive*. *It held* and *It did not* record your answer.
+* *What the work noticed, and did not do*: findings, with the sentence a person would want instead; *None of these stopped the work being delivered, so nothing was changed for them.* *Keep the N selected for later* keeps them; they wait under *Kept for later* until *Put these N in the box*.
+* *Already in the project, from an earlier delivery* and *Not started*.
+* *The run's own account, for a developer*: folded; the full account with every check and its verdict.
+
+The buttons: *Go on to the next*, *Take it back out*, *Run it again*, *Think it again*, *Accept it*, *Not this*, *Ask the platform again*, *Ask Claude to fix it*.
+
+== The status bar
+
+*Tandem: <product> / <repository>* names the choice. While a space works: *<space>: N/M units*, with *— needs an answer* or *— quiet for N min*. With more than one space busy: *N spaces are busy — a worker needs an answer*.
+
+== Tandem: Show Defects
+
+A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP*, *slice*, *trigger*, *impact*, *became*, *detail*. xref:defect-ledger.adoc[The defect ledger] says what they mean.
+
+== Limits
+
+* The strings here are as the extension renders them at the version this page was written against; Tandem is still changing, and a word can move before the page does.

@@ -4,6 +4,12 @@
 .TL;DR
 Everything Tandem records lives in a separate git repository, `~/thinkube-tandem-store` by default, never in your code. Restore the store on a new machine and every space, delivery and record comes back and re-attaches to the right repository.
 
+[NOTE]
+====
+Underneath. Nothing on the page shows the store. This page is where everything the page shows is kept, and what to back up.
+====
+
+
 The store is a sidecar git repository (default `~/thinkube-tandem-store`),
 separate from your code: your thinking never pollutes the project's
 history, and the project never sees half-formed plans.

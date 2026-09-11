@@ -1,4 +1,4 @@
-= The defect ledger
+= The defect ledger, reference
 :page-type: reference
 
 .TL;DR

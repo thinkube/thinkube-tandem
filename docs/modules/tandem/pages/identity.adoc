@@ -4,6 +4,12 @@
 .TL;DR
 A space belongs to a project, and a project is one repository or one subtree of it. Tandem mints a card for it once, when you enable the project, and finds the repository again from that card; you never write one by hand.
 
+[NOTE]
+====
+Underneath. On the page you see a repository chosen in the status bar and spaces under it. This page is how Tandem knows which repository a space belongs to, and why that survives a new machine.
+====
+
+
 A thinking space belongs to a project, and a project is one repository (or
 one subtree of one). For your spaces to still be there tomorrow, Tandem
 has to be able to look at a repository and know which project it is. That

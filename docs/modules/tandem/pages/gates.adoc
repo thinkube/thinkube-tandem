@@ -4,6 +4,12 @@
 .TL;DR
 Two moments are yours and only yours. *Sign* freezes exactly what you saw into a TEP and starts the build; the gate refuses a cut that nothing proves. *Accept* merges a delivery whose proofs are green; findings ride along for you to weigh, observations wait for you to confirm on the running product.
 
+[NOTE]
+====
+Underneath. On the page you see *Build these N* and, at the end, *Go on to the next*, *Accept it* or *Not this*. This page is what those presses enforce underneath.
+====
+
+
 == Gate 1 — Sign
 
 Signing freezes a cut into a TEP. The gate refuses:

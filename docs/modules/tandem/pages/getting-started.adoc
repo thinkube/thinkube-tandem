@@ -1,86 +1,130 @@
-= Getting started
-:page-type: how-to
+= Using the space
+:page-type: tutorial
+
+_The space is the one page between you and the machine. This is the path through it, in the words the page uses, from an empty box to a change merged into your project._
 
 .TL;DR
-Click the Tandem icon in Thinkube IDE's activity bar, or run *Tandem: Open Thinking Space*, pick the repository and a space, and type sentences into the box. Then *Read these N*, *Keep these N*, *Group into things to build*, *Build the first*. Each button says what it will do before you press it.
+Open the space, write sentences in the box, and press the one button the strip offers: *Read these N*, *Keep these N*, *Group into things to build*, *Build the first*, *Build these N*. Then watch the run, read the report, and press *Go on to the next*, *Take it back out* or *Run it again*. Claude Code can put the sentences in the box for you; every button after that is yours.
 
-== Open the space
+== What you will learn
 
-Click the Tandem icon in the activity bar (left edge), or run
-*Tandem: Open the Space*. Each thinking space you open gets its own
-editor tab, titled with that space's name — the name you gave it when
-you named it, or, when you never named it, its slug read back as plain
-words (dashes and underscores become spaces, only the first letter is
-capitalised — "docs-duty-and-tabs" becomes "Docs duty and tabs").
-Opening a second thinking space opens a second tab and leaves the first
-one open, so several thinking spaces stay open at the same time.
+* Where the four pages of the space are and what each one is for.
+* What each button does before you press it, in the words the page uses.
+* How to read the run and the report.
+* What the three decisions at the end mean.
 
-When no space can be named — none is chosen, or the choice was never
-recorded — no tab opens at all: you are told why, in one plain sentence,
-instead.
+== What you need
 
-If your workspace has more than one folder, Tandem asks which repository
-you are working on — it never guesses. The choice shows in the status bar
-("Tandem: <product> / <repo>") and can be changed any time from there, from the
-`<repo> ▾` button in the map, or with *Tandem: Switch Repository*.
-Each repository gets its own spaces; *Tandem: New Thinking Space* makes
-one and *Tandem: Open Thinking Space* opens one.
+* Thinkube IDE with the Tandem icon in the activity bar.
+* A repository Tandem knows: *Tandem: Activate Repository* on one you have, or "make an app called tasks from the web app template" said to Claude, which creates one and activates it.
 
-The status bar is also the one place that says whether the machine is
-busy, across every open thinking space at once — not only the one you
-last looked at. While a space is working it names that space and how
-much of its work is done ("2/5 units"); with more than one space busy it
-counts them all. If a worker has stopped and is waiting on you, the
-status bar says so in plain words ("needs an answer") and changes color
-so it stands out. If a space has gone quiet — no change for a while — the
-status bar says how many minutes. When nothing anywhere is busy, the
-status bar goes back to naming the chosen repository, exactly as above.
+== 1. Open the space
 
-== Say what you want
+Click the Tandem icon, or run *Tandem: Open Thinking Space* from the command palette and pick the repository and a space; *Tandem: New Thinking Space* makes one. Each space opens in its own editor tab, titled with the space's name.
 
-Type into the capture box, in your own words, as many lines as you need
-(Enter sends; Shift+Enter breaks a line). What you type is classified:
+If your workspace has more than one folder, Tandem asks which repository you mean and never guesses. The status bar shows the choice, *Tandem: <product> / <repository>*, and *Tandem: Switch Repository* changes it. While a space is working, the status bar says so for every open space at once, with how much is done, and turns a warning colour with *needs an answer* when a worker is waiting on you.
 
-* an *ask* ("add a clear button to the toolbar") is grounded — the
-  machine reads the repository and comes back with changes: sentences,
-  the files they land in, and acceptance criteria;
-* a *question* ("where does the toolbar render?") gets an answer and is
-  recorded nowhere;
-* a *statement* ("we always deploy through the platform CI") becomes a
-  decision in force that every later derivation builds under.
+== 2. The four pages and the strip
 
-== Decide what the code cannot
+Across the top of the space is a strip with one button, the next thing you can do, and beside it a line saying where you are, such as *9 lines written, none read* or *building — the work you signed*. Under the strip, four page names: *the box*, *your sentences*, *what it will do*, *the run*. The strip moves you forward; the page names let you look back, and *back to now* returns.
 
-If the repository supports more than one reading of your ask, a question
-appears with a recommended answer. Press *Accept* to take the
-recommendation, or edit it first — your wording wins. The decision
-re-grounds the ask immediately and rides every later worker brief.
-Questions never block silently, and the sign gate refuses a cut whose
-asks still have open questions.
+== 3. Write in the box
 
-== Read, keep, group, build
+Type what you want, one line per thing, in your own words. The box says it as it is: *one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by reading*.
 
-The sentences page walks you through it with one button at a time: *Read
-these N* reads your sentences into subjects and claims; *Keep these N*
-records them as asks; *Group into things to build* proposes the things
-worth building, in a suggested order; *Build the first* works the first
-one out into promises with their acceptance criteria and opens the cut
-review. If the grouping is wrong, pin: *Merge into one slice* or *Split
-out*. The cut review shows what ships and what it needs first, and
-refuses to sign anything unprovable or ungrounded. Signing is also
-refused for a cut that neither lands documentation nor carries a
-recorded reason why documentation is not needed — press *Not needed* on
-the documentation promise if none applies. *Build these N* signs: it mints
-your TEP with a content-bound approval token and starts the run. Edit
-anything under the signature and the token stops matching until you sign
-again.
+[source,text]
+----
+My tasks come back in a sensible order — what is due soonest first, and high
+priority above low — instead of whatever order the database felt like.
 
-== Watch it build, then accept
+Finished tasks stop crowding the ones I still have to do.
 
-The run starts on its own; see xref:the-run.adoc[]. When the delivery
-arrives, its page names every acceptance criterion of the cut with its
-verdict — green, red, "for you to certify", or "not checked" for a
-criterion nothing judged — and every UNDELIVERED item. The pull request
-the gate opens carries that same list. *Accept* merges it on your
-forge; a delivery with a red criterion, or with an unmet documentation
-obligation, refuses to be accepted.
+I can see how many tasks I have without counting cards.
+----
+
+Claude Code can write the lines into the box for you, with Tandem's `save_draft`. It cannot press anything after that.
+
+== 4. Read, then keep
+
+*Read these N* reads your sentences and shows each one split into what it is about and what must become true of it, grouped under the things they are about. The strip says *N sentences read, not kept*. Reading costs one round and records nothing; *Read it again* re-reads after you change the words.
+
+image::tandem-01-read.png[The space after Read these 9: each sentence split into what it is about and what must become true, under three subjects]
+
+*Keep these N* records the sentences, word for word. From now on they are the record, and each one carries a pencil to say it differently and a plus to amend it. The page name *your sentences* is where they live.
+
+image::tandem-02-keep.png[The kept sentences, each with a pencil]
+
+== 5. Group into things to build
+
+*Group into things to build* turns the sentences into things worth building, in a suggested order: *first*, *then*, *later*. Each thing says which of your sentences it carries. Proposing decides nothing; the strip offers *Build the first*.
+
+image::tandem-03-group.png[The sentences became three things: first, then, later]
+
+== 6. Work the first one out
+
+*Build the first* works the first thing out. The strip says *working out what to build — N of M subjects done*, and the page *what it will do* opens by itself when the last one finishes. It shows, under the heading *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true, each with a word saying where it stands: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. A line *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace.
+
+A documentation promise is added by the machine. Press *Not needed* on it if none applies; without documentation or that press, the work cannot be signed.
+
+image::tandem-06-work-page.png[The what-it-will-do page: promises, the files they land in, and each line with where it stands]
+
+== 7. Sign
+
+*Read the cut review first* opens the whole set as one page: every promise, where it lands, what will prove it, and, at the bottom, what pressing the button does, in the page's words:
+
+----
+signs this work and mints a TEP number for it
+records the machine's own answer to N questions you have not answered
+locks the N sentences behind it: from then on they are read-only
+starts the workers on N promises — this is what spends money
+pushes a branch, which stays whether or not you accept what comes back
+nothing is merged until you accept the delivery
+----
+
+*Build these N* signs. The strip changes to *building — <the thing's name>*, and *Stop* is the only other button.
+
+image::tandem-07-cut-review.png[The cut review, with Build these 6 at the top right]
+
+== 8. Watch it build
+
+The page *the run* shows one card per piece of work, titled with the promise it keeps, with a state word: *ready*, *running*, *needs you*, *passed*, *failed*, *never ran*. The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The header counts *N of M workers done · N of M judged on the running product*. Click a card to read its log; *■ Stop* aborts every live worker.
+
+*needs you* means a worker stopped on a question only you can answer, about what you want, never about files or tools. The status bar says so, and the page offers a box and *Send*.
+
+image::tandem-09-run.png[The run page: cards with their state words and log counts]
+
+== 9. Read the report
+
+When the run ends, the strip says where it ended: *coded, checked and merged into the project*, or *delivered — waiting for your decision*, or *delivered — withheld*. Under *Cuts*, each signed piece of work is a chip; choose one and switch between *Report* and *Run and logs*.
+
+The report opens with one paragraph in plain words, for example *This was coded, its checks were written and run, it passed the closing gate, and it was merged into the project. 18 checks passed.* Then the sections:
+
+* *What you asked for, and what happened*: each of your sentences with a word: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*.
+* *Nobody could settle these — they are yours to check*: what only the running product can show. *It held* and *It did not* are how you answer.
+* *What the work noticed, and did not do*: things the machine saw and could not settle. Nothing here stopped the delivery; *Keep the N selected for later* keeps any of them, and *Put these N in the box* later turns them into sentences.
+* *Not started*: your sentences in the things not yet built.
+* *The run's own account, for a developer*: folded away, the full account with every check and its verdict.
+
+image::tandem-13-report.png[The report: five sentences done, one line yours to check, four not started, and the three buttons]
+
+== 10. Decide
+
+The buttons at the end are yours and only yours:
+
+* *Go on to the next* closes this thing and moves to what is left to build.
+* *Take it back out* reverts this delivery's merges and pushes.
+* *Run it again* starts the signed work again; nothing is signed twice and nothing you wrote changes.
+* *Think it again* withdraws the signature; the promises are derived anew and signed as new work.
+* *Accept it*, when the strip says *delivered — waiting for your decision*, merges it; *Not this* refuses it and the work stays on its branch.
+
+Beside a promise that was delivered, *Say it does not hold* is how you say what you saw; that promise becomes work again on *your sentences*.
+
+== What you have now
+
+A change in your project that started as sentences, with the record of what was promised, what was proved, and what you decided, kept in the space. The next thing to build is one press away.
+
+== Limits
+
+* A run lives in the Thinkube IDE session that started it. Close or reload that window and the run ends; *Run it again* resumes from what was committed.
+* Keeping, choosing, signing and accepting are yours; Tandem's tools refuse them to Claude Code by design.
+* Tandem is experimental and still changing; a word on the page and a word here can differ for a while after a release. xref:reading-the-surface.adoc[Every word on Tandem's pages] is the reference.

@@ -1,0 +1,98 @@
+= The defect ledger: ODC for work done with an AI
+:page-type: concept
+
+_Every defect a run catches is classified along a few independent axes and kept forever, so that the method learns from the population of its defects rather than from the story of each one. The idea is IBM's Orthogonal Defect Classification; what is new is measuring how many defects the machine healed before a person ever saw them._
+
+.TL;DR
+Run *Tandem: Show Defects*. Every row is one defect one of your runs caught: what was being done, what surfaced it, whose fault it was, what it cost, and what became of it, healed by the machine, reached you, or not known. Read the totals once a month. A kind of row that keeps coming back is a defect in the method, and the fix belongs in the method, not in one more check.
+
+== The decision
+
+Orthogonal Defect Classification was published by Chillarege and colleagues at IBM in 1992, out of a plain observation: nobody has time to root-cause every defect, but every defect can be classified in a few seconds along attributes that do not depend on each other, the type of the defect, the activity in which it was found, the trigger that made it surface, the impact it had. Classified that way, the distribution of a few hundred defects says where a process leaks, without anyone having to study any one of them. A rise in one type at one stage is a signature, and the signature names the repair.
+
+Tandem applies that to work done by a machine. Every point where a run catches something, a worker writing outside its footprint, a check that never went green, a gate that could not grade, a supervisor answering a question the brief should have answered, a self-declared deferral found in the delivered code, a finding carried to the person, appends one row to the ledger. The row is written at the moment of finding and never edited. It is written beside the store, not inside the space, so deleting a space never deletes the record of what went wrong in it.
+
+Two things ODC never had to say are added. First, a *fate*: whether the machine repaired the defect by itself, whether it reached the person, or whether nobody wrote the answer down. For a process where the machine does most of the work, the number that matters is not how many defects there were but how many never needed a person. Second, the tool's own defects: a repair to Tandem itself is a commit, and a `Defect:` line in the commit message becomes a row at the next deploy, so the population the method most needs to watch, its own failures, is in the same ledger as everything else.
+
+== The axes
+
+[cols="1,1,3",options="header"]
+|===
+| ODC attribute | Field in a row | What it holds in Tandem
+
+| Activity | `activity` | What the run was doing when the defect surfaced: `preflight`, `check authoring`, `unit execution`, `worker question`, `verify-oracle supervision`, `closing gate`, `closing`, `run`, `refresh`, `diagnosis`, `challenge`, `check repair`, `gate repair`, `clearance`, `tool development`.
+| Trigger | `trigger` | What surfaced it: `probe-audit`, `containment`, `gate-verifier`, `supervisor`, `oracle-ruling`, `author-resume`, `closer`, `stub-scan`, `gate-ac`, `gate-infra`, `suite`, `watchdog`, `crash`, `window-reload`, `self-repair`, and the preflight refusals such as `plan-check-homes` and `signature-drift`.
+| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief lacked a fact), `gate`, `machine` (Tandem's own machinery), `infrastructure`, `environment`, `decision`.
+| Qualifier | `qualifier` | `missing`, written for a deferral the honesty scan found in delivered code.
+| Stage | `stage` | Where in the pipeline it belongs: `author`, `brief`, `check`, `clearance`, `altitude`.
+| Impact | `impact` | The cost, as one sentence the catching site chose: `run refused`, `round lost`, `unit undelivered`, `the author repaired its own work`, `closed what no other actor could`, `delivery withheld`, and so on.
+| Fate | computed when read | `healed`, `reached the person`, or `not known`. Read from the impact sentence when it already says so; otherwise from the run's ending record, per slice.
+| | `space`, `spec`, `run`, `slice`, `unit`, `refs` | Where it happened: the thinking space, the signed work, the run, the slice and unit, and related identifiers such as a commit or a criterion.
+| | `detail` | The evidence, in the catching site's words, clipped at 1,200 characters.
+|===
+
+One row, as written on the reference cluster:
+
+[source,json]
+----
+{"ts":"2026-09-02T08:44:54.004Z","version":"2.0.244",
+ "space":"todo-fccc72/test/cmxela","spec":"TEP-cmxela-2","run":"TEP-cmxela-2@mtjuonka",
+ "activity":"preflight","trigger":"plan-check-homes","type":"gate","impact":"run refused",
+ "detail":"these checks are born where this repository runs no test of its own, so nothing
+  would compile or run them — refused before dispatch: SL-3: probes/todo-fccc72__SL-3_AC-1.test.mjs …
+  Its tests live under backend, frontend."}
+----
+
+The run was refused before any worker started, because the plan put the checks where nothing could run them. That is a `gate` defect found at `preflight`, and its cost was a refused run rather than a wasted one.
+
+== What a month says
+
+The ledger for September 2026 on the reference cluster holds 225 rows. By type and by trigger:
+
+[cols="1,1,2,1",options="header"]
+|===
+| Type | Rows | Trigger | Rows
+
+| contract | 83 | supervisor | 87
+| code | 72 | gate-ac | 28
+| test | 36 | author-resume | 28
+| gate | 17 | probe-audit | 22
+| none recorded | 14 | closer | 21
+| machine | 3 | stub-scan | 10
+|===
+
+Read as ODC reads it. The largest population is `contract` defects surfaced by the `supervisor`: the brief handed to a worker lacked a fact the checks required, and the supervisor supplied it mid-run. Of those 87 rows, 31 read as healed, the worker got its answer or the question flowed on as contract, and 32 read as *round lost*, a disclosure that cost a round of work. That says where the method leaks: the step that writes briefs. The `author-resume` and `closer` rows are the second story: 28 times the coder resumed to repair its own red and could not; 17 times the closer finished what no other actor could, and 4 times it could not either. The three `machine` rows understate the truth; see Limits.
+
+The fates for the month, from the rows alone:
+
+[cols="2,1",options="header"]
+|===
+| Fate | Rows
+
+| healed by the machine | 53
+| reached the person | 44
+| not known | 128
+|===
+
+Most rows are *not known* because their runs ended before Tandem began writing run-ending records; from the first run that has one, every row's fate resolves.
+
+== What it saves you
+
+* *No post-mortems.* You never reconstruct what went wrong in a run; the run wrote it down as it happened, typed.
+* *A number for trust.* "The machine healed 53 of this month's defects before you saw them, and 44 reached you" is a sentence you can say and check.
+* *A method that learns.* A row that recurs across spaces is a process defect. The fix goes into Tandem, and the next month's ledger shows whether it worked.
+* *Nothing lost with a space.* Delete the space; the rows stay.
+
+== Where it shows up
+
+* *Tandem: Show Defects* in the command palette renders the ledger as a table, with the fate beside every row and the totals per month.
+* xref:defects.adoc[The defect ledger, reference]: the file layout, the run-ending records, and the commit trailer that records a repair to the tool.
+* xref:store.adoc[The store]: the ledger lives at the store's root, in `defects/<YYYY-MM>.jsonl`.
+* xref:the-run.adoc[The run]: the points where a run catches a defect are the points that write a row.
+
+== Limits
+
+* The axes are held loosely: `activity`, `trigger`, `type` and `impact` are free strings chosen by each catching site, not a closed vocabulary, so a monthly reading counts spellings as well as kinds.
+* Fate is computed from the impact sentence or the run's ending record; a run that ended before ending records existed reads `not known`.
+* The `machine` type undercounts: failures of Tandem's own machinery were typed by where they were caught rather than by whose fault they were, so the column reads a handful where the true figure is far higher.
+* Tool repairs enter the ledger only at deploy, and only when the commit message carries a `Defect:` line; a commit that says nothing records nothing.

@@ -1,8 +1,14 @@
-= The space — asks, changes, units
+= What happens to a sentence
 :page-type: concept
 
 .TL;DR
 The space is the one page between you and the machine: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything you see is live state from the store; nothing is hidden in a tooltip.
+
+[NOTE]
+====
+Underneath. On the page you see *your sentences*, the things to build and *what it will do*. This page is what the machine does between them: the rounds that turn a sentence into promises with files and checks.
+====
+
 
 The space is the one surface between you and the machine. It renders in
 the sidebar (the Tandem icon), and each thinking space you open (*Tandem:
