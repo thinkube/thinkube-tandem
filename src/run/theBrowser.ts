@@ -31,20 +31,40 @@ export function serverHere(home = process.env.HOME ?? "~"): { command: string; a
   return installed ? { command: installed, args: [] } : { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
 }
 
-/** The chrome installed on this machine, when there is one. */
-function chromeHere(): string | undefined {
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(process.env.HOME ?? "~", ".cache", "ms-playwright");
+/**
+ * The chrome installed on this machine, when there is one.
+ *
+ * Playwright keeps its browsers under a versioned directory
+ * (`chromium-1234/chrome-linux64/chrome`) below PLAYWRIGHT_BROWSERS_PATH or
+ * its cache; a platform image may keep one build directly under that
+ * root, or install the system's own chromium. Every one of those is a
+ * chrome that can drive the running product, and the library's own guess
+ * — a headless shell that was never downloaded — is not.
+ */
+export function chromeOnThisMachine(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (p: string) => boolean = fs.existsSync,
+  list: (dir: string) => string[] = (dir) => fs.readdirSync(dir),
+): string | undefined {
+  const root = env.PLAYWRIGHT_BROWSERS_PATH || path.join(env.HOME ?? "~", ".cache", "ms-playwright");
+  const under = ["chrome-linux64/chrome", "chrome-linux/chrome"];
   let dirs: string[] = [];
   try {
-    dirs = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort();
+    dirs = list(root).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse();
   } catch {
-    return undefined;
+    dirs = [];
   }
-  for (const d of dirs.reverse())
-    for (const under of ["chrome-linux64/chrome", "chrome-linux/chrome"]) {
-      const exe = path.join(root, d, under);
-      if (fs.existsSync(exe)) return exe;
+  for (const d of dirs)
+    for (const u of under) {
+      const exe = path.join(root, d, u);
+      if (exists(exe)) return exe;
     }
+  for (const u of under) {
+    const exe = path.join(root, u);
+    if (exists(exe)) return exe;
+  }
+  for (const exe of ["/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"])
+    if (exists(exe)) return exe;
   return undefined;
 }
 
@@ -72,7 +92,7 @@ export async function openTheBrowser(a: {
   log?: (line: string) => void;
 }): Promise<TheBrowser | { why: string }> {
   const server = serverHere();
-  const chrome = chromeHere();
+  const chrome = chromeOnThisMachine();
   const args = [
     ...server.args,
     "--headless",

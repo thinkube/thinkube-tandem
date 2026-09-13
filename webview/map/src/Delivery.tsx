@@ -260,6 +260,8 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   // What happened to this work, in one paragraph, before any detail:
   // what did not hold, where it runs, and what is still to be answered.
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
+  const notJudged = (d.proofs ?? []).filter((p) => p.verdict === "unjudged");
+  const notJudgedWhy = notJudged.map((p) => p.ref).find((r) => r)?.slice(0, 200);
   const failed = (d.proofs ?? []).filter((p) => p.verdict === "red").length;
   const pending = d.pending?.length ?? 0;
   const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand|you, by using it/i.test(p.settledBy)).length;
@@ -280,6 +282,11 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
           ? `${pending - onlyYou} check${pending - onlyYou === 1 ? " is" : "s are"} settled where the work runs — the pipeline's own tests — and are listed below.`
           : "",
         onlyYou ? `${onlyYou} thing${onlyYou === 1 ? "" : "s"} only you can settle, listed below.` : "",
+        // Judged in part is said in the first paragraph, not left to a box
+        // further down: a reviewer that never started proved nothing.
+        notJudged.length
+          ? `${notJudged.length} check${notJudged.length === 1 ? " was" : "s were"} not judged${notJudgedWhy ? ` — ${notJudgedWhy}` : ""}; nothing here says whether ${notJudged.length === 1 ? "it holds" : "they hold"}.`
+          : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -290,7 +297,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
         {story ? (
           <p
             data-what-happened
-            style={{ fontSize: FS.body, lineHeight: 1.6, marginTop: 0, marginBottom: SP.lg, color: broken || failed ? C.bad : "inherit" }}
+            style={{ fontSize: FS.body, lineHeight: 1.6, marginTop: 0, marginBottom: SP.lg, color: broken || failed ? C.bad : notJudged.length ? C.ask : "inherit" }}
           >
             {story}
           </p>

@@ -14,6 +14,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { chromeOnThisMachine as chromeHere } from "./theBrowser";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 
@@ -181,25 +182,10 @@ export async function signInOnce(a: {
   return { why: tries > 1 ? `${last} (tried ${tries} times)` : last };
 }
 
-/**
- * The chrome installed on this machine, when the library's own build is
- * not the one here. Nothing when the library can find its own.
- */
+/** The chrome installed on this machine, as the launch option it becomes. */
 function chromeOnThisMachine(): { executablePath: string } | undefined {
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(process.env.HOME ?? "~", ".cache", "ms-playwright");
-  let dirs: string[] = [];
-  try {
-    dirs = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort();
-  } catch {
-    return undefined;
-  }
-  for (const d of dirs.reverse()) {
-    const exe = path.join(root, d, "chrome-linux64", "chrome");
-    if (fs.existsSync(exe)) return { executablePath: exe };
-    const alt = path.join(root, d, "chrome-linux", "chrome");
-    if (fs.existsSync(alt)) return { executablePath: alt };
-  }
-  return undefined;
+  const exe = chromeHere();
+  return exe ? { executablePath: exe } : undefined;
 }
 
 /** Where the machine keeps Playwright: this package, else beside the

@@ -108,3 +108,14 @@ test("the server runs in the directory its pictures belong in", async () => {
   where = "/tmp/tandem-looks-here";
   assert.ok(fs.existsSync(where), "the directory exists before the server writes into it");
 });
+
+test("the machine's own chrome is found under a versioned directory, directly under the root, or on the system", () => {
+  const { chromeOnThisMachine } = require("./theBrowser") as typeof import("./theBrowser");
+  const env = { PLAYWRIGHT_BROWSERS_PATH: "/pw" };
+  const at = (have: string[]) => chromeOnThisMachine(env, (p) => have.includes(p), () => ["chromium-1200", "chromium-1243", "ffmpeg-1"]);
+  assert.equal(at(["/pw/chromium-1243/chrome-linux64/chrome", "/pw/chromium-1200/chrome-linux64/chrome"]), "/pw/chromium-1243/chrome-linux64/chrome", "the newest versioned build");
+  assert.equal(at(["/pw/chrome-linux64/chrome"]), "/pw/chrome-linux64/chrome", "a build kept directly under the root");
+  assert.equal(at(["/usr/bin/chromium-browser"]), "/usr/bin/chromium-browser", "the system's own chromium");
+  assert.equal(at([]), undefined, "none: the library's own guess is not offered");
+  assert.equal(chromeOnThisMachine(env, () => true, () => { throw new Error("no such dir"); }), "/pw/chrome-linux64/chrome", "an unreadable root still tries the flat layout");
+});
