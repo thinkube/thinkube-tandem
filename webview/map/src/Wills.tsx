@@ -248,7 +248,7 @@ export function Wills(props: {
         <div data-before-build style={{ marginTop: SP.lg, paddingTop: SP.md, borderTop: `1px solid ${C.border}` }}>
           <div style={label}>Pressing Build these {total}</div>
           <ul style={{ fontSize: FS.caption, color: C.quiet, margin: 0, paddingLeft: SP.lg, lineHeight: 1.6 }}>
-            <li>signs this work and locks the {push.ready.asks} sentence{push.ready.asks === 1 ? "" : "s"} behind it — from then on they change only by amendment</li>
+            <li>signs this work and locks the {push.ready.asks} sentence{push.ready.asks === 1 ? "" : "s"} behind it — from then on {push.ready.asks === 1 ? "it changes" : "they change"} only by amendment</li>
             {push.questions.length ? (
               <li>records the machine's own answer to {push.questions.length} open question{push.questions.length === 1 ? "" : "s"} — answering first replaces it with yours</li>
             ) : null}

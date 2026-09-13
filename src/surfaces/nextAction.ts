@@ -328,7 +328,7 @@ export function nextAction(
     return {
       where: `${plural(sentences, "sentence")} · ${plural(toBuild.length, "thing")} to build`,
       label: "Build the first",
-      hint: `${carries} of your ${carries === 1 ? "sentence" : "sentences"} · nothing is written until you sign${
+      hint: `${carries} of your sentences · nothing is written until you sign${
         written ? ` · ${plural(written, "line")} in the box wait to be read` : ""
       }`,
       enabled: a.allowed("choose-set"),
