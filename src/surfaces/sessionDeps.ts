@@ -73,5 +73,5 @@ export interface SessionDeps {
   /** Start the run in a process of its own and return at once; the session
    *  then follows the record that process writes. Absent, the session
    *  drives the run itself — which is what the driver process does. */
-  runElsewhere?: (a: { fresh: boolean }) => Promise<{ ok: boolean; reason?: string }>;
+  runElsewhere?: (a: { fresh: boolean }) => Promise<{ ok: boolean; reason?: string; pid?: number }>;
 }

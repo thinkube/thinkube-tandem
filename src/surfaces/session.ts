@@ -654,8 +654,16 @@ export class TandemSession {
         return { ok: false, reason: seen.note };
       }
     }
+    // No record yet, but the driver is alive: the run is starting, and its
+    // record reaches this session through the store when it is written.
+    // Only a driver that is gone makes this a failure.
+    if (started.pid && processAlive(started.pid)) {
+      this.runNote = `The run is starting in its own process (pid ${started.pid}); what it does appears here as it writes its record.`;
+      this.changed(this.runNote);
+      return { ok: true };
+    }
     this.running = false;
-    this.runNote = "The run was started in its own process, but it has not written its record yet — see runs/driver.log in the space.";
+    this.runNote = "The run was started in its own process and that process is gone before it wrote its record — see runs/driver.log in the space.";
     this.changed(this.runNote);
     return { ok: false, reason: this.runNote };
   }
@@ -848,5 +856,15 @@ export class TandemSession {
     } catch {
       this.space = emptySpace();
     }
+  }
+}
+
+/** Is this pid a live process on this machine? */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }

@@ -46,6 +46,22 @@ test("the run is handed to the driver, and the session shows it running once the
   assert.equal(s.driving, false, "this session watches; it does not drive");
 });
 
+test("a driver alive without a record yet is a run starting, not a failure", async () => {
+  const { s } = sessionWith(async () => ({ ok: true, pid: process.pid }));
+  const r = await s.startRun("cut-1");
+  assert.deepEqual(r, { ok: true });
+  assert.equal(s.running, true);
+  assert.match(s.runNote ?? "", /is starting in its own process \(pid \d+\)/);
+});
+
+test("a driver gone before its record is a failure that says so", async () => {
+  const { s } = sessionWith(async () => ({ ok: true, pid: 999999999 }));
+  const r = await s.startRun("cut-1");
+  assert.equal(r.ok, false);
+  assert.equal(s.running, false);
+  assert.match(s.runNote ?? "", /gone before it wrote its record/);
+});
+
 test("a driver that could not start leaves the reason on the note", async () => {
   const { s } = sessionWith(async () => ({ ok: false, reason: "the run driver is not built" }));
   const r = await s.startRun("cut-1");

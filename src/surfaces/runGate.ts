@@ -342,6 +342,11 @@ export async function executeRun(
     // The heartbeat: every exec is bounded (makeExec), so the longest
     // legitimate silence is the suite's own bound — beyond it, the run
     // declares itself dead at its last named step instead of going quiet.
+    // Written before the first step, so a surface that is not driving sees
+    // the run within a second of the press. A resume can spend minutes in
+    // its first round, and a record that appears only when a unit moves
+    // left every other window reading "signed and has not run".
+    keep();
     const handed = new Set<string>();
     const pulse = setInterval(() => {
       const st = s.runState;
