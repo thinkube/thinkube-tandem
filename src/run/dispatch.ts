@@ -17,7 +17,7 @@ import { waitUntilLive } from "./goLive";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
 import { repairUntilLive } from "./tryAgain";
 import { repairAfterTheMerge } from "./repairLive";
-import { repairWhatDidNotHold } from "./repairOnTheProduct";
+import { repairWhatDidNotHold, whatDidNotHold } from "./repairOnTheProduct";
 import { landDelivery } from "./land";
 import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
 import { stampPending } from "./harvest";
@@ -687,6 +687,7 @@ export async function dispatchTep(
             evidence: `the reviewers opened ${at} and found these do not hold:\n${found.evidence}`,
             files: found.files,
             log: (l) => log(l, "live"),
+            onTheProduct: { criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)) },
           }),
         buildsHere: async () => {
           if (!deps.build) return { ok: true, output: "" };
@@ -720,6 +721,14 @@ export async function dispatchTep(
         space,
         cut,
       });
+      // The phase closes on what the reviewers left: live, or live with
+      // promises that do not hold — never "repairing" for ever.
+      const left = whatDidNotHold({ space, cut, outcome });
+      st.phase(
+        "live",
+        left ? "failed" : "done",
+        left ? `live at ${at}, and ${left.promises.length} promise(s) do not hold there` : `live at ${at}`,
+      );
       return outcome;
     };
     const at = deployedAddress(deps.repoRoot);
