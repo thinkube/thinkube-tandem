@@ -261,7 +261,7 @@ export function Delivery(props: { push: SpacePush; onGoToWork?: () => void }): J
   // what did not hold, where it runs, and what is still to be answered.
   const kept = (d.proofs ?? []).filter((p) => p.verdict === "green").length;
   const notJudged = (d.proofs ?? []).filter((p) => p.verdict === "unjudged");
-  const notJudgedWhy = notJudged.map((p) => p.ref).find((r) => r)?.slice(0, 200);
+  const notJudgedWhy = notJudged.map((p) => p.said).find((r) => r)?.slice(0, 200);
   const failed = (d.proofs ?? []).filter((p) => p.verdict === "red").length;
   const pending = d.pending?.length ?? 0;
   const onlyYou = (d.pending ?? []).filter((p) => /attest|person|clean node|install|by hand|you, by using it/i.test(p.settledBy)).length;
