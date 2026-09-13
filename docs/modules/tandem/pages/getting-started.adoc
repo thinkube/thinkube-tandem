@@ -64,7 +64,7 @@ image::tandem-03-group.png[The sentences became three things: first, then, later
 
 == 6. Work the first one out
 
-*Build the first* works the first thing out. The strip says *working out what to build — N of M subjects done*, and the page *what it will do* opens by itself when the last one finishes. It shows, under the heading *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true, each with a word saying where it stands: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. A line *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace.
+*Build the first* works the first thing out. The strip says *working out what to build — N of M subjects done*, and the page *what it will do* opens by itself when the last one finishes. It shows, under the heading *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true, each with a word saying where it stands: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. On *your sentences*, under the thing in hand, a line *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace; the work page counts how many are still open in what pressing the button records.
 
 A documentation promise is added by the machine. Press *Not needed* on it if none applies; without documentation or that press, the work cannot be signed.
 
@@ -72,16 +72,16 @@ image::tandem-06-work-page.png[The what-it-will-do page: promises, the files the
 
 == 7. Sign
 
-*Read the cut review first* opens the whole set as one page: every promise, where it lands, what will prove it, and, at the bottom, what pressing the button does, in the page's words:
+At the bottom of the work page, *Pressing Build these N* says what the button does, in the page's words:
 
 ----
-signs this work and mints a TEP number for it
-records the machine's own answer to N questions you have not answered
-locks the N sentences behind it: from then on they are read-only
-starts the workers on N promises — this is what spends money
-pushes a branch, which stays whether or not you accept what comes back
-nothing is merged until you accept the delivery
+signs this work and locks the N sentences behind it — from then on they change only by amendment
+records the machine's own answer to N open questions — answering first replaces it with yours
+starts the workers on N promises — this is what spends
+pushes a branch; nothing is merged until you accept the delivery
 ----
+
+and names the documentation page the work lands.
 
 *Build these N* signs. The strip changes to *building — <the thing's name>*, and *Stop* is the only other button.
 

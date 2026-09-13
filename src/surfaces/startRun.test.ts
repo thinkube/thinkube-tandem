@@ -36,7 +36,10 @@ test("the run is handed to the driver, and the session shows it running once the
     }, 200);
     return { ok: true };
   });
-  const r = await s.startRun("cut-1", true);
+  const pending = s.startRun("cut-1", true);
+  await new Promise((res) => setTimeout(res, 50));
+  assert.equal(s.running, true, "running from the press, before the record exists");
+  const r = await pending;
   assert.deepEqual(r, { ok: true });
   assert.deepEqual(seen, [{ fresh: true }]);
   assert.equal(s.running, true);

@@ -176,6 +176,9 @@ interface RunView {
   phases?: Record<"door" | "gate" | "delivery" | "live", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
 }
 
+/** The steps a space can be busy with. */
+export type ActivityKind = "reading" | "grouping" | "grounding" | "checking";
+
 export interface SpacePush {
   kind: "space";
   running: boolean;
@@ -196,7 +199,9 @@ export interface SpacePush {
   /** No repository chosen yet — the view renders the chooser state. */
   needsRepo?: boolean;
   /** Liveness: what the machine is doing right now, and for which ask. */
-  activity?: { label: string; current: number; total: number; askId?: string };
+  /** What the machine is doing right now. `kind` says which step, so the
+   *  strip can word it as that step: a reading is not a working-out. */
+  activity?: { label: string; current: number; total: number; askId?: string; kind?: ActivityKind };
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   /** Why the last build did not start — rendered on the flow tab. */
   runNote?: string;

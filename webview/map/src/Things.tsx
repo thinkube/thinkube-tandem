@@ -41,7 +41,7 @@ function whyPress(sp: Set, allowed: boolean, refusal: string): string {
 /** What a thing carries, said before it is built. */
 function sizeWords(sp: Set): string {
   const carries = sp.asks?.length
-    ? `${sp.asks.length} of your ${sp.asks.length === 1 ? "sentence" : "sentences"}`
+    ? `${sp.asks.length} of your sentences`
     : `${sp.subjects} subject${sp.subjects === 1 ? "" : "s"}`;
   const state = sp.promises
     ? `${sp.promises} promise${sp.promises === 1 ? "" : "s"}`
@@ -83,7 +83,12 @@ function Thinking(props: { push: SpacePush; asks: number[] }): JSX.Element | nul
 
 /** What the machine decided in the name of these sentences, folded. */
 function Decided(props: { sentences: Sentence[]; id: string }): JSX.Element | null {
-  const decided = props.sentences.flatMap((s) => s.assumptions.map((a) => ({ ...a, n: s.id })));
+  // A question raised in a subject's name reaches every sentence of that
+  // subject; here it is one decision, said once.
+  const seen = new Set<string>();
+  const decided = props.sentences
+    .flatMap((s) => s.assumptions.map((a) => ({ ...a, n: s.id })))
+    .filter((a) => !seen.has(a.question) && seen.add(a.question));
   if (!decided.length) return null;
   return (
     <details style={{ margin: `${SP.sm}px 0 0 38px` }}>

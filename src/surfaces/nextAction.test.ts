@@ -350,3 +350,30 @@ test("a set still to build comes before grouping the rest", () => {
   const n = nextAction(push, { behind: false, allowed: () => true });
   assert.equal(n.label, "Build the first");
 });
+
+test("a reading and a grouping are worded as themselves, not as the working-out", () => {
+  const reading = nextAction(
+    quiet({ activity: { label: "reading your list as one description", current: 1, total: 1, kind: "reading" } }),
+    { behind: false, allowed: () => true },
+  );
+  assert.equal(reading.label, "Reading…");
+  assert.match(reading.where, /^reading — /);
+  assert.equal(reading.hint, "costs one round · records nothing");
+  const grouping = nextAction(
+    quiet({ activity: { label: "grouping your sentences into things to build", current: 1, total: 1, kind: "grouping" } }),
+    { behind: false, allowed: () => true },
+  );
+  assert.equal(grouping.label, "Grouping…");
+  assert.match(grouping.hint, /decides nothing/);
+});
+
+test("the working-out counts the thing in hand's subjects, not the space's", () => {
+  const push = quiet({
+    subjects: [{ id: "a" }, { id: "b" }, { id: "c" }] as never,
+    cost: { subjects: 1, rounds: 1 },
+    specs: [set("s1", { chosen: true, subjects: 1 }), set("s2", { subjects: 2 })],
+    grounding: [{ label: "deriving the changes" }] as never,
+  });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.match(n.where, /0 of 1 subject worked out/);
+});

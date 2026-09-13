@@ -38,7 +38,7 @@ export async function readModel(
   texts: string[],
   askIds: string[],
 ): Promise<{ ok: boolean; reason?: string }> {
-  s.activity = { label: "reading your list as one description", current: 1, total: 1 };
+  s.activity = { label: "reading your list as one description", current: 1, total: 1, kind: "reading" };
   s.deps.onChanged?.();
   // The round's own failure lines are the diagnosis; without them a failed
   // reading is a mystery.

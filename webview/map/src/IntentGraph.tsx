@@ -112,7 +112,9 @@ export function IntentGraph(props: {
     );
 
   const cost = push.cost;
-  const total = push.subjects.length;
+  // The thing in hand is what is being worked out; its subjects are the count.
+  const inHand = push.specs?.find((sp) => sp.chosen);
+  const total = inHand ? inHand.subjects : push.subjects.length;
   const done = Math.max(0, total - cost.subjects);
   return (
     <div data-intent-graph style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>

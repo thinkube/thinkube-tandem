@@ -118,7 +118,7 @@ function Will(props: { p: Promise_; selected: boolean; onSelect: (id: string) =>
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: SP.md, flexWrap: "wrap", marginBottom: SP.sm }}>
         <span style={{ fontFamily: SAID, fontSize: FS.heading, lineHeight: 1.4 }}>{p.text}</span>
-        <span style={{ marginLeft: "auto", fontSize: FS.caption, color: C.quiet, whiteSpace: "nowrap" }}>
+        <span style={{ marginLeft: "auto", fontSize: FS.caption, color: C.quiet, textAlign: "right", overflowWrap: "anywhere", maxWidth: "100%" }}>
           {p.file || "where it lands is not known yet"}
           {p.stale ? " · the code moved since this was read" : ""}
         </span>

@@ -267,7 +267,8 @@ export function spacePush(session: TandemSession, message?: string): unknown {
             promises: promises.map((n) => ({
               id: n.id,
               text: n.sentence,
-              file: (n.grounding?.touchpoints ?? []).map((t) => t.path).join(", "),
+              // Each file once: a promise touches a file at several points.
+              file: [...new Set((n.grounding?.touchpoints ?? []).map((t) => t.path))].join(", "),
               // Verification lives on the claim card: what proves the
               // check, the newest verdict, and whether the world moved
               // since — independent of how many iterations built it.

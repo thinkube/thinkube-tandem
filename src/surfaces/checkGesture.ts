@@ -14,7 +14,7 @@ export async function proposeCheckGesture(
   const n = s.space.nodes.find((x) => x.id === changeId);
   if (!n) return { ok: false, reason: `no promise '${changeId}'` };
   const ask = s.space.asks.find((a) => n.serves.includes(a.id));
-  s.activity = { label: "writing a check for the promise", current: 1, total: 1 };
+  s.activity = { label: "writing a check for the promise", current: 1, total: 1, kind: "checking" };
   s.deps.onChanged?.();
   const p = await (s.deps.proposeCheck ?? proposeCheckRound)(s.deps.round, n, ask?.text ?? "").catch(() => undefined);
   s.activity = undefined;

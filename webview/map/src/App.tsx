@@ -55,7 +55,10 @@ export function App(props: {
   // the run has ended; while it runs, the run's own page is the answer.
   const [flowView, setFlowView] = useState<"report" | "workers" | null>(props.initial?.flowView ?? null);
   const flowWorld = useWorld();
-  const working = !!push?.activity || (push?.grounding?.length ?? 0) > 0;
+  // The working-out banner is for the working-out: a reading or a grouping
+  // is a round with its own words on the strip, and nothing opens after it.
+  const working =
+    push?.activity?.kind === "grounding" || (!push?.activity?.kind && !!push?.activity) || (push?.grounding?.length ?? 0) > 0;
 
   const auto: SurfacePage = push ? pageFor(push) : "write";
   useEffect(() => {

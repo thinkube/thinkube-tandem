@@ -45,6 +45,7 @@ import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
 import { readRun, readRunOf, requestAnswer, requestStop } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
+import type { ActivityKind } from "./surfaceContract";
 import { builtSurfaceText } from "../gates/doors";
 export type { SessionDeps } from "./sessionDeps";
 
@@ -77,7 +78,7 @@ export class TandemSession {
    *  its run and its pictures are read from what that cut left on file. */
   lookingAtCut?: string;
   runState: RunState | undefined;
-  activity: { label: string; current: number; total: number; askId?: string } | undefined;
+  activity: { label: string; current: number; total: number; askId?: string; kind?: ActivityKind } | undefined;
   runNote: string | undefined; // why the last build did not start
   openLog: { step: string; page: number } | undefined; // the log being read
   /** The reading waiting for the human, and a reading that failed, both
@@ -348,7 +349,7 @@ export class TandemSession {
    */
   async knowledge(): Promise<Knowledge> {
     if (this.deps.knowledge) return this.deps.knowledge();
-    this.activity = { label: "mapping your code, once", current: 1, total: 1 };
+    this.activity = { label: "mapping your code, once", current: 1, total: 1, kind: "grounding" };
     this.deps.onChanged?.();
     try {
       return await knowledgeOf({
@@ -393,7 +394,7 @@ export class TandemSession {
       // With several subjects in flight the aggregate belongs to whoever
       // is running the batch — it alone knows how many have finished. This
       // only speaks when it is the single subject's own stage.
-      if (rows.length === 1) this.activity = { label, current, total, askId };
+      if (rows.length === 1) this.activity = { label, current, total, askId, kind: "grounding" };
       this.deps.onChanged?.();
     };
   }
@@ -502,7 +503,7 @@ export class TandemSession {
       // One subject is one thing to build; no round is needed to say so.
       made = [{ id: mint(1), name: loose[0].name, subjectIds: [loose[0].id] }];
     } else {
-      this.activity = { label: "grouping your sentences into things to build", current: 1, total: 1 };
+      this.activity = { label: "grouping your sentences into things to build", current: 1, total: 1, kind: "grouping" };
       this.deps.onChanged?.();
       let proposed;
       try {
@@ -623,9 +624,14 @@ export class TandemSession {
       return { ok: true };
     }
     this.runNote = undefined;
+    // Running from this moment: the seconds before the driver writes its
+    // record must not read as signed work that never ran, with a button
+    // that would start it a second time.
+    this.running = true;
     this.changed("Starting the run in its own process…");
     const started = await this.deps.runElsewhere({ fresh });
     if (!started.ok) {
+      this.running = false;
       this.runNote = `The build could not start: ${started.reason ?? "no reason given"}`;
       this.changed(this.runNote);
       return started;
@@ -642,11 +648,13 @@ export class TandemSession {
         return { ok: true };
       }
       if (seen && !seen.running && seen.note) {
+        this.running = false;
         this.runNote = seen.note;
         this.changed(seen.note);
         return { ok: false, reason: seen.note };
       }
     }
+    this.running = false;
     this.runNote = "The run was started in its own process, but it has not written its record yet — see runs/driver.log in the space.";
     this.changed(this.runNote);
     return { ok: false, reason: this.runNote };

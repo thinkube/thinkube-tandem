@@ -94,12 +94,45 @@ export function nextAction(
     };
 
   const grounding = push.grounding ?? [];
+  // A step that is not the working-out is worded as itself: a reading
+  // costs a round and records nothing; a grouping proposes and decides
+  // nothing. Only the working-out ends with the work page opening.
+  if (push.activity?.kind === "reading")
+    return {
+      where: `reading — ${push.activity.label}`,
+      label: "Reading…",
+      hint: "costs one round · records nothing",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  if (push.activity?.kind === "grouping")
+    return {
+      where: `grouping — ${push.activity.label}`,
+      label: "Grouping…",
+      hint: "proposing decides nothing · you pick the thing to build",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  if (push.activity?.kind === "checking")
+    return {
+      where: `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`,
+      label: "Writing…",
+      hint: "costs one round",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
   if (push.activity || grounding.length) {
-    // The same count the page shows: what the cost still holds is not done.
-    const done = Math.max(0, push.subjects.length - push.cost.subjects);
+    // The same count the page shows: the thing in hand's subjects, of
+    // which what the cost still holds is not done.
+    const inHand = push.specs?.find((sp) => sp.chosen);
+    const total = inHand ? inHand.subjects : push.subjects.length;
+    const done = Math.max(0, total - push.cost.subjects);
     const progress = push.activity
       ? `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`
-      : `${done} of ${plural(push.subjects.length, "subject")} worked out — ${grounding
+      : `${done} of ${plural(total, "subject")} worked out — ${grounding
           .map((g) => g.label)
           .filter((l, i, all) => all.indexOf(l) === i)
           .join(" · ")}`;

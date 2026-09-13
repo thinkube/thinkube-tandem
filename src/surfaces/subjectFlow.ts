@@ -79,6 +79,7 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
         label: `thinking about ${subjectIds.length} subjects, each at its own stage`,
         current: done,
         total: subjectIds.length,
+        kind: "grounding",
       };
   };
   aggregate(0);
@@ -119,7 +120,7 @@ export async function groundSubjectFlow(s: TandemSession, subjectIds: string[]):
 
   // One pass over everything, now that every subject exists: what the set
   // still misses, and the code around it that must move too.
-  s.activity = { label: "looking for what is still missing", current: 0, total: 1 };
+  s.activity = { label: "looking for what is still missing", current: 0, total: 1, kind: "grounding" };
   s.deps.onChanged?.();
   const claims = (s.space.claims ?? []).filter((c) =>
     subjectIds.includes(c.subjectId),
