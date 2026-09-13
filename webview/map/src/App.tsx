@@ -64,8 +64,13 @@ export function App(props: {
   const tab: SurfacePage = lookingAt ?? auto;
   const regionOrder = surfaceRegions(tab);
 
+  // What the box holds right now. Typing is kept by the host without a
+  // push back — the surface already knows the words — so the strip reads
+  // the box directly until the next push carries the same words.
+  const [typed, setTyped] = useState<string | undefined>(undefined);
+  const draftNow = typed ?? push?.draft ?? "";
   // The reading is behind the words when it was read from other text.
-  const written = asksOfText(push?.draft ?? "").map((a) => a.text);
+  const written = asksOfText(draftNow).map((a) => a.text);
   const read = push?.pendingModel?.fresh ?? [];
   const behind =
     !!push?.pendingModel &&
@@ -81,10 +86,11 @@ export function App(props: {
   useEffect(() => {
     setRefusal(undefined);
     setPressed(null);
+    setTyped(undefined);
   }, [push]);
 
   if (!push) return <div style={{ padding: 24, opacity: O.dim }}>Loading the space…</div>;
-  const next: NextAction = nextAction(push, { behind, allowed: can });
+  const next: NextAction = nextAction({ ...push, draft: draftNow }, { behind, allowed: can });
   const press = (n: NextAction): void => {
     if (n.move.kind !== "post") return;
     if (n.move.action.action === "read-draft") setClassifying(true);
@@ -262,7 +268,10 @@ export function App(props: {
           canRead={can("read-draft")}
           whyNotRead={refusalSentence("read-draft", push.phase)}
           initial={push.draft}
-          onChange={(text) => post({ action: "save-draft", text })}
+          onChange={(text) => {
+            setTyped(text);
+            post({ action: "save-draft", text });
+          }}
           onRead={() => {
             setClassifying(true);
             post({ action: "read-draft" });
