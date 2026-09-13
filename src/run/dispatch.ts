@@ -661,6 +661,67 @@ export async function dispatchTep(
     st.phase("live", "done", `the platform has not seen it — ${d.notPushed}`);
     noProduct(`the platform never saw the work — ${d.notPushed}`);
   } else {
+    // What only the running product can show is judged on the running
+    // product, and a promise that does not hold there is a red like any
+    // other: repaired, landed, and judged again. The same for work the
+    // project already had — a resume is not a reason to skip the repair.
+    const judgeAndRepair = async (at: string, alsoMerged: string[]): Promise<DispatchOutcome> => {
+      const judge = (only?: (promise: string) => boolean) =>
+        judgeOnTheProduct({
+          at, st, log, deps, space, cut, outcome, pageRoots,
+          ...(deps.storeDir ? { storeDir: deps.storeDir } : {}),
+          ...(runId ? { runId } : {}),
+          ...(only ? { only } : {}),
+        });
+      outcome = await judge();
+      // A promise that does not hold on the page is a red like any
+      // other: the run repairs it rather than handing the person live
+      // work that does not do what they asked.
+      outcome = await repairWhatDidNotHold({
+        st,
+        say: (l) => log(l, "live"),
+        doing: (l) => st.phase("live", "running", l),
+        repair: (found, attempt) =>
+          repairAfterTheMerge({
+            tep, attempt, worktree, deps, st, exec, boundedExec,
+            evidence: `the reviewers opened ${at} and found these do not hold:\n${found.evidence}`,
+            files: found.files,
+            log: (l) => log(l, "live"),
+          }),
+        buildsHere: async () => {
+          if (!deps.build) return { ok: true, output: "" };
+          const b = await boundedExec(deps.build, worktree);
+          return { ok: b.code === 0, output: b.output };
+        },
+        land: async () => {
+          try {
+            const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+            if (l.head && l.moved) alsoMerged.push(l.head);
+            return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
+          } catch (err) {
+            return { ok: false, why: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        waitUntilLive: () =>
+          waitUntilLive({
+            at,
+            app: path.basename(deps.repoRoot),
+            since: new Date().toISOString(),
+            read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
+            knock,
+            stop: st.stop.signal,
+            step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
+          }),
+        judgeAgain: async (promises) => {
+          outcome = await judge((p) => promises.includes(p));
+          return outcome;
+        },
+        outcome,
+        space,
+        cut,
+      });
+      return outcome;
+    };
     const at = deployedAddress(deps.repoRoot);
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");
@@ -678,7 +739,7 @@ export async function dispatchTep(
       outcome = answering
         ? { ...outcome, delivery: { ...d, liveAt: at } }
         : outcome;
-      if (answering) outcome = await judgeOnTheProduct({ at, st, log, deps, space, cut, outcome, pageRoots, ...(deps.storeDir ? { storeDir: deps.storeDir } : {}), ...(runId ? { runId } : {}) });
+      if (answering) outcome = await judgeAndRepair(at, []);
     } else {
       st.phase("live", "running", "waiting for the platform to notice the push");
       let went = await waitUntilLive({
@@ -772,62 +833,7 @@ export async function dispatchTep(
       // What only the running product can show is judged on the running
       // product. Each criterion is its own reviewer, and each waits on the
       // deployment — so the graph says what the person is waiting for.
-      if (went.live) {
-        const judge = (only?: (promise: string) => boolean) =>
-          judgeOnTheProduct({
-            at, st, log, deps, space, cut, outcome, pageRoots,
-            ...(deps.storeDir ? { storeDir: deps.storeDir } : {}),
-            ...(runId ? { runId } : {}),
-            ...(only ? { only } : {}),
-          });
-        outcome = await judge();
-        // A promise that does not hold on the page is a red like any
-        // other: the run repairs it rather than handing the person live
-        // work that does not do what they asked.
-        outcome = await repairWhatDidNotHold({
-          st,
-          say: (l) => log(l, "live"),
-          doing: (l) => st.phase("live", "running", l),
-          repair: (found, attempt) =>
-            repairAfterTheMerge({
-              tep, attempt, worktree, deps, st, exec, boundedExec,
-              evidence: `the reviewers opened ${at} and found these do not hold:\n${found.evidence}`,
-              files: found.files,
-              log: (l) => log(l, "live"),
-            }),
-          buildsHere: async () => {
-            if (!deps.build) return { ok: true, output: "" };
-            const b = await boundedExec(deps.build, worktree);
-            return { ok: b.code === 0, output: b.output };
-          },
-          land: async () => {
-            try {
-              const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
-              if (l.head && l.moved) alsoMerged.push(l.head);
-              return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
-            } catch (err) {
-              return { ok: false, why: err instanceof Error ? err.message : String(err) };
-            }
-          },
-          waitUntilLive: () =>
-            waitUntilLive({
-              at,
-              app: path.basename(deps.repoRoot),
-              since: new Date().toISOString(),
-              read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-              knock,
-              stop: st.stop.signal,
-              step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
-            }),
-          judgeAgain: async (promises) => {
-            outcome = await judge((p) => promises.includes(p));
-            return outcome;
-          },
-          outcome,
-          space,
-          cut,
-        });
-      }
+      if (went.live) outcome = await judgeAndRepair(at, alsoMerged);
     }
   }
   return outcome;
