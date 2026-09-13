@@ -58,6 +58,8 @@ image::tandem-02-keep.png[The kept sentences, each with a pencil]
 
 *Group into things to build* turns the sentences into things worth building, in a suggested order: *first*, *then*, *later*. Each thing says which of your sentences it carries. Proposing decides nothing; the strip offers *Build the first*.
 
+Sentences read later, after the things were made, belong to nothing yet. When every thing is built the strip offers *Group the rest*, naming those sentences by number; the things already built stay as they are, and the new ones join them.
+
 image::tandem-03-group.png[The sentences became three things: first, then, later]
 
 == 6. Work the first one out

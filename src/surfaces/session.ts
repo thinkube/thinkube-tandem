@@ -8,7 +8,7 @@ import { builtIds } from "../core/contradiction";
 import { contradictOn } from "./contradicting";
 import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import * as path from "node:path";
-import { emptySpace, Space, Unit, Spec } from "../core/schema";
+import { emptySpace, Space, Unit, Spec, Subject } from "../core/schema";
 import { documentationPromise } from "../core/docsDuty";
 import { assessCurrency } from "./currency";
 import { DigestStore } from "../derive/pipeline";
@@ -486,24 +486,54 @@ export class TandemSession {
    */
   async groupIntoSpecs(): Promise<{ ok: boolean; reason?: string }> {
     if (this.running) return { ok: false, reason: "a run is in flight — stop it first" };
-    const subjects = this.space.subjects ?? [];
-    if (subjects.length < 2)
+    const existing = this.space.specs ?? [];
+    // With sets already made, only what none of them carries is grouped:
+    // the sets that exist — built, delivered, accepted — stay as they are.
+    // A subject a re-read minted for sentences a set already covers is
+    // not work again, and is left out.
+    const loose = existing.length ? this.looseSubjects() : (this.space.subjects ?? []);
+    if (existing.length && !loose.length)
+      return { ok: false, reason: "every sentence read already belongs to a thing to build" };
+    if (!existing.length && loose.length < 2)
       return { ok: false, reason: "there is nothing to group yet — read some asks first" };
-    this.activity = { label: "grouping your sentences into things to build", current: 1, total: 1 };
-    this.deps.onChanged?.();
-    let proposed;
-    try {
-      proposed = await (this.deps.proposeSpecs ?? proposeSpecs)(
-        { repoRoot: this.deps.round.repoRoot, model: this.deps.round.model },
-        this.space,
-      );
-    } finally {
-      this.activity = undefined;
+    const mint = (n: number): string => `spec-${this.spaceName}-${existing.length + n}`;
+    let made: Spec[];
+    if (loose.length === 1) {
+      // One subject is one thing to build; no round is needed to say so.
+      made = [{ id: mint(1), name: loose[0].name, subjectIds: [loose[0].id] }];
+    } else {
+      this.activity = { label: "grouping your sentences into things to build", current: 1, total: 1 };
+      this.deps.onChanged?.();
+      let proposed;
+      try {
+        const looseIds = new Set(loose.map((s) => s.id));
+        proposed = await (this.deps.proposeSpecs ?? proposeSpecs)(
+          { repoRoot: this.deps.round.repoRoot, model: this.deps.round.model },
+          { subjects: loose, claims: (this.space.claims ?? []).filter((c) => looseIds.has(c.subjectId)) },
+        );
+      } finally {
+        this.activity = undefined;
+      }
+      if (!proposed) return { ok: false, reason: "I could not see sets in these — group them yourself" };
+      made = specsFrom(proposed, mint);
     }
-    if (!proposed) return { ok: false, reason: "I could not see sets in these — group them yourself" };
-    this.space = { ...this.space, specs: specsFrom(proposed, (n) => `spec-${this.spaceName}-${n}`) };
-    this.changed(`${this.space.specs!.length} sets, each worth delivering on its own.`);
+    this.space = { ...this.space, specs: [...existing, ...made] };
+    this.changed(
+      existing.length
+        ? `${made.length} more ${made.length === 1 ? "thing" : "things"} to build, from the sentences no thing carried yet.`
+        : `${made.length} sets, each worth delivering on its own.`,
+    );
     return { ok: true };
+  }
+
+  /** Subjects no set names, that carry a sentence no set covers. */
+  private looseSubjects(): Subject[] {
+    const specs = this.space.specs ?? [];
+    const named = new Set(specs.flatMap((sp) => sp.subjectIds));
+    const covered = new Set(
+      (this.space.subjects ?? []).filter((s) => named.has(s.id)).flatMap((s) => s.from),
+    );
+    return (this.space.subjects ?? []).filter((s) => !named.has(s.id) && s.from.some((a) => !covered.has(a)));
   }
 
   /**

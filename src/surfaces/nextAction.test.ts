@@ -328,3 +328,25 @@ test("with nothing left to build, the box leads again", () => {
   const n = nextAction(push, { behind: false, allowed: () => true });
   assert.equal(n.label, "Read these 1");
 });
+
+test("sentences no set carries are grouped next, not called built", () => {
+  const push = quiet({ specs: [set("done", { built: true, fate: "accepted", promises: 6, asks: [1, 2, 3, 4, 5] })], ungrouped: [6, 7, 8, 9] });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Group the rest");
+  assert.match(n.where, /4 sentences in no thing to build/);
+  assert.match(n.hint, /sentences 6, 7, 8, 9/);
+  assert.deepEqual(n.move, { kind: "post", action: { action: "group-into-sets" } });
+});
+
+test("with every sentence in a set and every set accepted, everything is built", () => {
+  const push = quiet({ specs: [set("done", { built: true, fate: "accepted", promises: 6, asks: [1, 2, 3] })], ungrouped: [] });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Everything is built");
+  assert.equal(n.enabled, false);
+});
+
+test("a set still to build comes before grouping the rest", () => {
+  const push = quiet({ specs: [set("done", { built: true, fate: "accepted", promises: 6, asks: [1, 2] }), set("next", { asks: [3] })], ungrouped: [4] });
+  const n = nextAction(push, { behind: false, allowed: () => true });
+  assert.equal(n.label, "Build the first");
+});

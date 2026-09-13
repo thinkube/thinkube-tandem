@@ -311,6 +311,10 @@ export interface SpacePush {
      *  provider and its consumer are one piece of work. */
     repos: string[];
   }[];
+  /** The person's sentences that no thing to build carries, by their
+   *  numbers — read subjects that no set names, whose sentences no set
+   *  covers. Empty when every sentence read belongs to a set. */
+  ungrouped?: number[];
   subjects: SubjectVM[];
   cutCount: number;
   deliveries: DeliveryVM[];

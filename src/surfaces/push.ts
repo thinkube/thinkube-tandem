@@ -5,6 +5,7 @@
  * through the phase, what they may press.
  */
 import { TandemSession } from "./session";
+import type { Space } from "../core/schema";
 import { promisesOfSpec } from "../derive/specs";
 import { builtIds, contradicted, unkeptPromises } from "../core/contradiction";
 import { allowedNow, phaseOf } from "./phase";
@@ -374,6 +375,11 @@ export function spacePush(session: TandemSession, message?: string): unknown {
         ? { docsExemption: { reason: session.docsExemptionReason, at: session.deps.now() } }
         : {}),
     }),
+    // The sentences no set carries: a subject read after the sets were made
+    // — a later reading, a re-read that kept the record's own subject —
+    // belongs to nothing, and a page that counts only sets would call
+    // everything built while these wait.
+    ungrouped: ungroupedAsks(session.space),
     // The sets worth delivering on their own, with what each covers — so a
     // person choosing one can see its size before they build it.
     specs: (session.space.specs ?? []).map((sp) => {
@@ -517,3 +523,29 @@ export function spacePush(session: TandemSession, message?: string): unknown {
   };
 }
 
+/** The numbers of the sentences a subject came from. */
+function askNumbers(space: Space, subjectIds: readonly string[]): number[] {
+  return [
+    ...new Set(
+      (space.subjects ?? [])
+        .filter((sub) => subjectIds.includes(sub.id))
+        .flatMap((sub) => sub.from)
+        .map((id) => space.asks.findIndex((a) => a.id === id) + 1)
+        .filter((n) => n > 0),
+    ),
+  ].sort((a, b) => a - b);
+}
+
+/**
+ * The sentences no set carries. A subject outside every set counts only
+ * for the sentences no set covers: a re-read mints a second subject for
+ * sentences the record already holds, and those are not work again.
+ */
+export function ungroupedAsks(space: Space): number[] {
+  const specs = space.specs ?? [];
+  if (!specs.length) return [];
+  const inSets = new Set(specs.flatMap((sp) => askNumbers(space, sp.subjectIds)));
+  const named = new Set(specs.flatMap((sp) => sp.subjectIds));
+  const loose = (space.subjects ?? []).filter((s) => !named.has(s.id)).map((s) => s.id);
+  return askNumbers(space, loose).filter((n) => !inSets.has(n));
+}

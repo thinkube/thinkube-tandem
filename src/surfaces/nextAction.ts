@@ -272,6 +272,17 @@ export function nextAction(
     };
   if (!chosen) {
     const first = toBuild[0];
+    const loose = push.ungrouped ?? [];
+    // Sentences no set carries are not built, and are not nothing: they
+    // are grouped next, the way the first ones were.
+    if (!first && loose.length)
+      return {
+        where: `${plural(sentences, "sentence")} · ${plural(loose.length, "sentence")} in no thing to build`,
+        label: "Group the rest",
+        hint: `${loose.length === 1 ? "sentence" : "sentences"} ${loose.join(", ")} · the things already built stay as they are`,
+        enabled: a.allowed("group-into-sets"),
+        move: { kind: "post", action: { action: "group-into-sets" } },
+      };
     if (!first)
       return {
         where: `${plural(sentences, "sentence")} · everything is built`,
