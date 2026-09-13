@@ -80,6 +80,8 @@ export class TandemSession {
   runState: RunState | undefined;
   activity: { label: string; current: number; total: number; askId?: string; kind?: ActivityKind } | undefined;
   runNote: string | undefined; // why the last build did not start
+  /** The thing being worked out right now, by id, while it is. */
+  workingOut: string | undefined;
   openLog: { step: string; page: number } | undefined; // the log being read
   /** The reading waiting for the human, and a reading that failed, both
    *  read from the space so a reload or a second paste cannot lose them. */
@@ -556,7 +558,14 @@ export class TandemSession {
     // from a set nobody chose, which is the whole saving: the sets you do
     // not build cost nothing to have considered.
     const todo = this.ungrounded(spec);
-    if (todo.length) await groundSubjectFlow(this, todo);
+    // Named while it is worked out, so the page counts this thing's
+    // subjects and not the space's.
+    this.workingOut = spec.id;
+    try {
+      if (todo.length) await groundSubjectFlow(this, todo);
+    } finally {
+      this.workingOut = undefined;
+    }
     // Documentation is part of every delivery: when nothing in the thing
     // lands a page, the machine promises one, and "not needed" is the
     // person's move on the page, not "please document".

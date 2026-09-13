@@ -320,6 +320,9 @@ export interface SpacePush {
    *  numbers — read subjects that no set names, whose sentences no set
    *  covers. Empty when every sentence read belongs to a set. */
   ungrouped?: number[];
+  /** The thing being worked out right now, by id — the one whose subjects
+   *  the working-out counts. */
+  workingOut?: string;
   subjects: SubjectVM[];
   cutCount: number;
   deliveries: DeliveryVM[];

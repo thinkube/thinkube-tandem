@@ -376,4 +376,7 @@ test("the working-out counts the thing in hand's subjects, not the space's", () 
   });
   const n = nextAction(push, { behind: false, allowed: () => true });
   assert.match(n.where, /0 of 1 subject worked out/);
+  // While a thing is being worked out it is named as such, before it is chosen.
+  const working = nextAction({ ...push, specs: [set("s1", { subjects: 1 }), set("s2", { subjects: 2 })], workingOut: "s2" }, { behind: false, allowed: () => true });
+  assert.match(working.where, /1 of 2 subjects worked out/);
 });

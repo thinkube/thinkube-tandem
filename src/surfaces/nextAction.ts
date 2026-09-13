@@ -127,7 +127,7 @@ export function nextAction(
   if (push.activity || grounding.length) {
     // The same count the page shows: the thing in hand's subjects, of
     // which what the cost still holds is not done.
-    const inHand = push.specs?.find((sp) => sp.chosen);
+    const inHand = push.specs?.find((sp) => sp.id === push.workingOut) ?? push.specs?.find((sp) => sp.chosen);
     const total = inHand ? inHand.subjects : push.subjects.length;
     const done = Math.max(0, total - push.cost.subjects);
     const progress = push.activity

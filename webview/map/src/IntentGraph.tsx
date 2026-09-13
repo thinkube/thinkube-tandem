@@ -113,7 +113,7 @@ export function IntentGraph(props: {
 
   const cost = push.cost;
   // The thing in hand is what is being worked out; its subjects are the count.
-  const inHand = push.specs?.find((sp) => sp.chosen);
+  const inHand = push.specs?.find((sp) => sp.id === push.workingOut) ?? push.specs?.find((sp) => sp.chosen);
   const total = inHand ? inHand.subjects : push.subjects.length;
   const done = Math.max(0, total - cost.subjects);
   return (

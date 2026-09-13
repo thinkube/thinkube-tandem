@@ -381,6 +381,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     // belongs to nothing, and a page that counts only sets would call
     // everything built while these wait.
     ungrouped: ungroupedAsks(session.space),
+    ...(session.workingOut ? { workingOut: session.workingOut } : {}),
     // The sets worth delivering on their own, with what each covers — so a
     // person choosing one can see its size before they build it.
     specs: (session.space.specs ?? []).map((sp) => {
