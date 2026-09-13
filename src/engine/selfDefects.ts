@@ -133,7 +133,10 @@ export function harvestSelfDefects(a: {
   let recorded = 0;
   for (const d of found) if (appendDefect(a.storeDir, rowFor(d, a.version))) recorded++;
   const head = a.git ? headOf(a.repoRoot, a.git) : headOf(a.repoRoot);
-  if (head) {
+  // A mark that moves past a repair the ledger never received loses it for
+  // good: the next harvest starts after it. So the mark moves only when
+  // everything found landed; otherwise the same range is read again.
+  if (head && recorded === found.length) {
     try {
       fs.mkdirSync(path.dirname(mark), { recursive: true });
       fs.writeFileSync(mark, `${head}\n`, "utf8");
@@ -142,4 +145,39 @@ export function harvestSelfDefects(a: {
     }
   }
   return { recorded, ...(head ? { head } : {}) };
+}
+
+/**
+ * The repository this build came from, as the build stamped it
+ * (`out/builtFrom.json`, written by scripts/deploy.sh beside the rules it
+ * built). A packaged copy is a copy; only the stamp knows where it came from.
+ */
+function builtFromRepo(outDir: string): string | undefined {
+  try {
+    const stamp = JSON.parse(fs.readFileSync(path.join(outDir, "builtFrom.json"), "utf8")) as { gitDir?: string };
+    const root = stamp.gitDir ? path.dirname(stamp.gitDir) : undefined;
+    return root && fs.existsSync(path.join(root, ".git")) ? root : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Harvest from the running tool itself, not only at deploy.
+ *
+ * A deploy is the only moment that used to read the commits, so a repair
+ * committed without a deploy, or one whose deploy-time write failed, never
+ * reached the ledger. The tool knows the repository it was built from and
+ * can read it whenever it starts; the mark keeps this idempotent. Nothing
+ * happens where that repository is not on this machine.
+ */
+export function harvestOwnRepairs(a: { outDir: string; storeDir: string; version?: string }): { recorded: number } {
+  const repoRoot = builtFromRepo(a.outDir);
+  if (!repoRoot) return { recorded: 0 };
+  try {
+    const r = harvestSelfDefects({ repoRoot, storeDir: a.storeDir, ...(a.version ? { version: a.version } : {}) });
+    return { recorded: r.recorded };
+  } catch {
+    return { recorded: 0 };
+  }
 }

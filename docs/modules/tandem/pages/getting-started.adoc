@@ -125,6 +125,6 @@ A change in your project that started as sentences, with the record of what was 
 
 == Limits
 
-* A run lives in the Thinkube IDE session that started it. Close or reload that window and the run ends; *Run it again* resumes from what was committed.
+* A run is a process of its own: closing or reloading the window that started it does not end it, and the space shows the run wherever it is opened. *Stop* and an answer to a worker reach the run within ten seconds. Its own output is in `runs/driver.log` in the space.
 * Keeping, choosing, signing and accepting are yours; Tandem's tools refuse them to Claude Code by design.
 * Tandem is experimental and still changing; a word on the page and a word here can differ for a while after a release. xref:reading-the-surface.adoc[Every word on Tandem's pages] is the reference.

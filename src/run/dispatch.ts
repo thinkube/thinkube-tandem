@@ -30,7 +30,7 @@ import { haltableExecs } from "./execs";
 import { ownership } from "./fence";
 import { MAX_REWORK_ATTEMPTS } from "../engine/core/redispatch";
 import { formatVerifyReply } from "../engine/verifyOracle";
-import { appendDefect } from "../engine/defectLog";
+import { appendDefect, type DefectType } from "../engine/defectLog";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { defaultExec, runnerEnv, sliceOracleFactory } from "./oracle";
 import { makeChallenge, makeReauthor, makeRepair } from "./challenge";
@@ -119,7 +119,7 @@ export async function dispatchTep(
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     qualifier?: string;
     /** Which stage a repair implicates (docs/TARGET.md §4). */
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
@@ -130,7 +130,7 @@ export async function dispatchTep(
     if (deps.storeDir) appendDefect(deps.storeDir, { spec: tep, run: runId, ...entry }, now);
   };
 
-  const refuse = (trigger: string, refusal: string, type?: string): DispatchOutcome => {
+  const refuse = (trigger: string, refusal: string, type?: DefectType): DispatchOutcome => {
     if (st.phases.door.state === "running") st.phase("door", "failed", refusal);
     // Said, not only recorded. A refusal that goes to the defect ledger
     // alone leaves the run's own log ending mid-sentence, and the person
@@ -142,7 +142,8 @@ export async function dispatchTep(
 
   st.phase("door", "running", "claiming the run");
   const lock = await claimRunLock(wtRoot, wtName, runName, slices, { log });
-  if (lock.refusal) return refuse("run-lock", lock.refusal);
+  // A lock another run holds is the machine's own state, not a judgement on the work.
+  if (lock.refusal) return refuse("run-lock", lock.refusal, "machine");
   const unlock = lock.unlock;
 
   const watch = watchForStall({
@@ -697,7 +698,9 @@ export async function dispatchTep(
       // prove it builds here, push again. Twice, then stop and say so.
       let tried = { attempts: 0, spent: false };
       const alsoMerged: string[] = [];
-      if (!went.live && !st.halted) {
+      // Nothing to repair when nothing was judged: the platform said
+      // nothing about the work, and a repair after no fault changes nothing.
+      if (!went.live && !went.unjudged && !st.halted) {
         const again = await repairUntilLive({
           whyItFailed: () => whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
           repair: (found, attempt) =>
@@ -759,7 +762,7 @@ export async function dispatchTep(
               ...heads,
               afterMerge: {
                 at: new Date().toISOString(),
-                outcome: "broke",
+                outcome: went.unjudged ? "unjudged" : "broke",
                 said: "the platform",
                 ...(went.why ? { detail: went.why } : {}),
                 ...(tried.attempts ? { tried: tried.attempts } : {}),

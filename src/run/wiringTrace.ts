@@ -13,6 +13,7 @@
  * not about the work. Reported as "no", it withheld seventeen promises for
  * code that was correct.
  */
+import type { DefectType } from "../engine/defectLog";
 import type { Space } from "../core/schema";
 import { isTestPath } from "./testHomes";
 import type { WiringVerdict } from "./wiring";
@@ -37,7 +38,7 @@ export async function traceWiring(a: {
   defect: (entry: {
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;

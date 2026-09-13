@@ -13,6 +13,7 @@
  * resolves them — the store's cards, the person's git identity, and the
  * editor's own global storage — and never guessed.
  */
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { TandemSession } from "../surfaces/session";
 import { currentAuthor } from "../core/author";
@@ -23,6 +24,7 @@ import { allCards } from "../core/cards";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
+import { startRunElsewhere } from "../run/spawnDriver";
 
 /** Where the editor keeps approvals and the signing key. A session that
  *  reads anywhere else sees every signed cut as unapproved. */
@@ -48,6 +50,9 @@ export interface AttachArgs {
   storeRoot?: string;
   storageDir?: string;
   onChanged?: (message?: string) => void;
+  /** Drive runs in this process. Only the driver itself says so; every
+   *  other caller hands a run to a driver process and follows its record. */
+  driveHere?: boolean;
 }
 
 export type Attached =
@@ -67,6 +72,24 @@ export async function attach(args: AttachArgs): Promise<Attached> {
       reason: `${args.repo} is not an enabled project — no card in ${storeRoot}/cards names it`,
     };
   const dirs = thinkingSpaceDirs(storeRoot, project.card.id, args.space, author);
+  // A space that is not on disk is not attached to: a session built over a
+  // missing directory reads as an empty space with no run, which looks
+  // like a bug anywhere but here. The refusal names the spaces that exist.
+  if (!fs.existsSync(dirs.foldDir)) {
+    const known = listThinkingSpaces(storeRoot, project.card.id).map((s) => s.slug);
+    return {
+      ok: false,
+      reason:
+        `no thinking space "${args.space}" under ${project.card.label} — ` +
+        (known.length ? `it has: ${known.join(", ")}` : "it has no spaces yet"),
+    };
+  }
+  // The space is there but this identity never wrote in it: the fold still
+  // reads every author's trail, and the report says whose it is.
+  const authors = authorsOf(dirs.foldDir);
+  const foreign = authors.length && !authors.includes(author)
+    ? `${args.space} holds records by ${authors.join(", ")}; attached as ${author}, who has written nothing in it yet`
+    : undefined;
   configureDocsRoots(
     docsRootsOf(project.gitRoot, (() => { const d = thinkubeDeclaration(project.gitRoot); return d && "declared" in d ? d.declared.docsRoot : undefined; })()),
   );
@@ -96,9 +119,37 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     docsGateMode: "blocking",
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     ...(args.onChanged ? { onChanged: args.onChanged } : {}),
+    ...(args.driveHere
+      ? {}
+      : {
+          runElsewhere: async ({ fresh }: { fresh: boolean }) =>
+            startRunElsewhere({
+              driver: path.join(__dirname, "..", "run", "driver.js"),
+              repo: project.anchorDir,
+              space: args.space,
+              fresh,
+              storeRoot,
+              storageDir: args.storageDir ?? EDITOR_STORAGE,
+              storeDir: dirs.storeDir,
+            }),
+        }),
   });
   session.load();
+  if (foreign) args.onChanged?.(foreign);
   return { ok: true, session, project, storeDir: dirs.storeDir };
+}
+
+/** The authors with a trail in a space: its author subdirectories. */
+export function authorsOf(foldDir: string): string[] {
+  try {
+    return fs
+      .readdirSync(foldDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 /**

@@ -2,7 +2,8 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/mcp/server.ts"
+        "src/mcp/server.ts",
+        "src/run/driver.ts"
       ],
       "project": [
         "src/**/*.ts"

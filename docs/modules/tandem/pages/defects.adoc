@@ -80,8 +80,11 @@ read for learning is worth less than nothing when it is full of guesses.
 The completeness of this half therefore rests on the person or agent
 writing the commit saying so.
 
-`type: machine` now means what its name says. The machine's own failures
-— a gate that could not grade, a watchdog halt, a crash, a window
-reloaded mid-run — were typed by where they were caught rather than by
-whose fault they were, which left the column reading 2 when the true
-figure was around 100.
+`type: machine` means what its name says. The machine's own failures — a
+gate that could not grade, a watchdog halt, a stall, a crash, a lock
+nobody released — are typed `machine` wherever they are caught, and the
+type is a closed set the code cannot stray from: `code`, `test`,
+`contract`, `gate`, `machine`, `infrastructure`, `environment`,
+`decision`. The tool's own repairs are harvested from the commits that
+made them both at deploy and whenever the extension starts, and the
+harvest's mark moves only past repairs the ledger received.

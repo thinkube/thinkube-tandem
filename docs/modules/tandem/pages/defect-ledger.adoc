@@ -22,7 +22,7 @@ Two things ODC never had to say are added. First, a *fate*: whether the machine 
 
 | Activity | `activity` | What the run was doing when the defect surfaced: `preflight`, `check authoring`, `unit execution`, `worker question`, `verify-oracle supervision`, `closing gate`, `closing`, `run`, `refresh`, `diagnosis`, `challenge`, `check repair`, `gate repair`, `clearance`, `tool development`.
 | Trigger | `trigger` | What surfaced it: `probe-audit`, `containment`, `gate-verifier`, `supervisor`, `oracle-ruling`, `author-resume`, `closer`, `stub-scan`, `gate-ac`, `gate-infra`, `suite`, `watchdog`, `crash`, `window-reload`, `self-repair`, and the preflight refusals such as `plan-check-homes` and `signature-drift`.
-| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief lacked a fact), `gate`, `machine` (Tandem's own machinery), `infrastructure`, `environment`, `decision`.
+| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief lacked a fact), `gate`, `machine` (Tandem's own machinery, wherever the failure was caught), `infrastructure`, `environment`, `decision`. A closed set: the code cannot write another word here.
 | Qualifier | `qualifier` | `missing`, written for a deferral the honesty scan found in delivered code.
 | Stage | `stage` | Where in the pipeline it belongs: `author`, `brief`, `check`, `clearance`, `altitude`.
 | Impact | `impact` | The cost, as one sentence the catching site chose: `run refused`, `round lost`, `unit undelivered`, `the author repaired its own work`, `closed what no other actor could`, `delivery withheld`, and so on.

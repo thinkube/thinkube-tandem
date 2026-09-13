@@ -42,7 +42,7 @@ import {
   subjectsOfAsk,
 } from "./decisions";
 import { loadSpace, makeDigestStore, persistSpace } from "./sessionStore";
-import { readRun, readRunOf } from "../run/record";
+import { readRun, readRunOf, requestAnswer, requestStop } from "../run/record";
 import { repairClaimIds } from "../core/repair";
 import { SessionDeps } from "./sessionDeps";
 import { builtSurfaceText } from "../gates/doors";
@@ -582,6 +582,47 @@ export class TandemSession {
   }
 
   /**
+   * Start the run — in a process of its own when the session has one to
+   * start, here otherwise. A run that lives in the pressing process dies
+   * with its window; one started elsewhere is followed through its record,
+   * and this session waits only until that record says it is running.
+   */
+  async startRun(cutId: string, fresh = false): Promise<{ ok: boolean; reason?: string }> {
+    if (!this.deps.runElsewhere) {
+      await executeRun(this, cutId, { fresh });
+      return { ok: true };
+    }
+    this.runNote = undefined;
+    this.changed("Starting the run in its own process…");
+    const started = await this.deps.runElsewhere({ fresh });
+    if (!started.ok) {
+      this.runNote = `The build could not start: ${started.reason ?? "no reason given"}`;
+      this.changed(this.runNote);
+      return started;
+    }
+    // The driver writes its record within seconds of starting. Until it
+    // does, this session shows nothing running — so wait for it, briefly,
+    // rather than answer "started" over a page that says otherwise.
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const seen = readRunOf(this.deps.storeDir, cutId, () => this.deps.onChanged?.());
+      if (seen?.running) {
+        Object.assign(this, { runState: seen.state, running: true, runNote: seen.note });
+        this.changed(`Building ${this.space.cuts.find((c) => c.id === cutId)?.tepId ?? cutId}…`);
+        return { ok: true };
+      }
+      if (seen && !seen.running && seen.note) {
+        this.runNote = seen.note;
+        this.changed(seen.note);
+        return { ok: false, reason: seen.note };
+      }
+    }
+    this.runNote = "The run was started in its own process, but it has not written its record yet — see runs/driver.log in the space.";
+    this.changed(this.runNote);
+    return { ok: false, reason: this.runNote };
+  }
+
+  /**
    * Signed work that never delivered, if there is any: the cut is a
    * record and cannot be signed twice, so without this a run that
    * refused itself — a plan the engine would not accept, a forge that
@@ -615,19 +656,41 @@ export class TandemSession {
     const c = this.unrunCut();
     if (!c) return { ok: false, reason: "there is no signed work waiting to run" };
     if (this.running) return { ok: false, reason: "a run is already in flight" };
-    await executeRun(this, c.id, { fresh });
-    return { ok: true };
+    return this.startRun(c.id, fresh);
   }
 
-  /** Answer a parked worker — the oracle's door on the run view. */
+  /** The cut of the run this session shows: the one it is looking back
+   *  at, or the one waiting to run. */
+  private runCutId(): string | undefined {
+    return this.lookingAtCut ?? this.unrunCut()?.id;
+  }
+
+  /** Answer a parked worker — the oracle's door on the run view. A run this
+   *  session does not drive gets the answer through its record. */
   answerWorker(unitId: string, text: string): boolean {
-    const ok = this.runState?.answer(unitId, text) ?? false;
-    if (ok) this.changed(`Answered ${unitId}.`);
+    // A worker parked in this process is answered here; one parked in the
+    // driver's process is answered through the record it reads.
+    if (this.runState?.answer(unitId, text)) {
+      this.changed(`Answered ${unitId}.`);
+      return true;
+    }
+    if (this.driving) return false;
+    const cut = this.runCutId();
+    const ok = !!cut && this.running && requestAnswer(this.deps.storeDir, cut, unitId, text, this.deps.now());
+    this.changed(ok ? `Answered ${unitId} — the run reads it at its next heartbeat.` : `No worker is parked as ${unitId}.`);
     return ok;
   }
 
-  /** Stop the run: abort every live worker; the run drains and reports. */
+  /** Stop the run: abort every live worker; the run drains and reports. A
+   *  run this session does not drive is asked to stop through its record;
+   *  the process that owns it ends itself. */
   stopRun(): number {
+    if (!this.driving) {
+      const cut = this.runCutId();
+      const asked = !!cut && this.running && requestStop(this.deps.storeDir, cut, this.deps.now());
+      this.changed(asked ? "Stop asked for — the run ends at its next heartbeat." : "Nothing to stop.");
+      return asked ? 1 : 0;
+    }
     const n = this.runState?.halt() ?? 0;
     this.changed(n ? `Stopped — ${n} worker(s) aborted.` : "Nothing to stop.");
     return n;

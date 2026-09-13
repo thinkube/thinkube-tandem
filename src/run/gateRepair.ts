@@ -9,6 +9,7 @@
  * budget. Only when the budget is spent is the delivery withheld, and then
  * the record names the tests that stayed red.
  */
+import type { DefectType } from "../engine/defectLog";
 import type { RunState } from "./state";
 import type { DispatchDeps } from "./dispatch";
 import { resolveWorkerModel } from "../engine/workerModel";
@@ -36,7 +37,7 @@ export interface GateRepairArgs {
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   verdict: SuiteVerdict;
   log: (line: string, step?: string) => void;
-  defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (entry: { unit?: string; activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }
 
 /** The finisher's brief: the tree, the red tests in the runner's words, the rules. */

@@ -7,6 +7,7 @@
  * unit's failure, on the record — never the run's end — and a unit the run
  * never reached is blocked with the reason, never left as nothing.
  */
+import type { DefectType } from "../engine/defectLog";
 import { frontier, overlapWaits } from "./frontier";
 import type { SchedUnit } from "../engine/core/dag";
 import type { RunState } from "./state";
@@ -32,7 +33,7 @@ export async function pumpUnits(a: {
     activity: string;
     trigger: string;
     /** Which ODC class the observation belongs to, when the site knows. */
-    type?: string;
+    type?: DefectType;
     impact: string;
     detail: string;
   }) => void;

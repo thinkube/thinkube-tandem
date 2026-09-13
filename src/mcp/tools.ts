@@ -105,7 +105,9 @@ function deliveryReport(c: ToolCall): string {
     d.acceptedAt ? `accepted ${d.acceptedAt}` : "awaiting your accept",
     `proofs (${proofs.length}):`,
     ...proofs,
-    ...(d.findings?.length ? ["", "findings for you to weigh:", ...d.findings.map((f) => `  · ${f}`)] : []),
+    ...(d.findings?.length
+      ? ["", "findings for you to weigh:", ...d.findings.map((f) => `  · ${f.saw}${f.ask ? ` (about: ${f.ask})` : ""}`)]
+      : []),
   ].join("\n");
 }
 

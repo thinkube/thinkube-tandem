@@ -27,6 +27,7 @@
  * caller that must have a deadline can still set one; nothing sets one by
  * default.
  */
+import type { DefectType } from "../engine/defectLog";
 import type { RunState } from "./state";
 
 /** How long, in words a person reads without converting units. */
@@ -58,7 +59,7 @@ export function watchForStall(a: {
   st: RunState;
   units: () => { id: string; state: string; activity?: { text: string }; requires: string[] }[];
   log: (line: string, step?: string) => void;
-  defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (e: { activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
   quietMs?: number;
   /** A deadline, when a caller insists on one. Unset means no deadline:
    *  a run that is finishing units is working, whatever the clock says. */

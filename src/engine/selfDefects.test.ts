@@ -9,6 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -90,4 +91,31 @@ test("a repository that cannot be read records nothing and does not throw", () =
   };
   assert.deepEqual(selfDefectsSince("/nowhere", undefined, angry), []);
   assert.equal(harvestSelfDefects({ repoRoot: "/nowhere", storeDir: store, git: angry }).recorded, 0);
+});
+
+test("the mark does not move past a repair the ledger never received", () => {
+  const commits = [{ sha: "A1", at: "2026-09-08T11:11:34+00:00", subject: "fix", body: "fix\n\nDefect: it was wrong\n" }];
+  // A store whose ledger cannot be written: the path is a file.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "self-mark-"));
+  const store = path.join(dir, "not-a-dir");
+  fs.writeFileSync(store, "");
+  const r = harvestSelfDefects({ repoRoot: "/r", storeDir: store, git: gitOf(commits, "A1") });
+  assert.equal(r.recorded, 0);
+  assert.equal(fs.existsSync(harvestMarkPath(store)), false, "the same range is read again next time");
+});
+
+test("the running tool harvests from the repository its build stamped, and nothing where that is gone", () => {
+  const { harvestOwnRepairs } = require("./selfDefects") as typeof import("./selfDefects");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "built-from-"));
+  const repo = path.join(dir, "repo");
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync("git", ["-C", repo, "init", "-q"]);
+  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "fix\n\nDefect: it was wrong"]);
+  fs.mkdirSync(path.join(dir, "out"));
+  fs.writeFileSync(path.join(dir, "out", "builtFrom.json"), JSON.stringify({ gitDir: path.join(repo, ".git") }));
+  const store = path.join(dir, "store");
+  assert.equal(harvestOwnRepairs({ outDir: path.join(dir, "out"), storeDir: store, version: "t" }).recorded, 1);
+  assert.equal(harvestOwnRepairs({ outDir: path.join(dir, "out"), storeDir: store, version: "t" }).recorded, 0, "the mark makes it idempotent");
+  fs.writeFileSync(path.join(dir, "out", "builtFrom.json"), JSON.stringify({ gitDir: "/gone/.git" }));
+  assert.equal(harvestOwnRepairs({ outDir: path.join(dir, "out"), storeDir: store }).recorded, 0, "a repository not on this machine harvests nothing");
 });

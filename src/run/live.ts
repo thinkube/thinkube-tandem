@@ -7,6 +7,7 @@
  */
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlUrlOf, readPipeline, type PipelineReading } from "./harvest";
+import { controlReachedBy } from "../hostui/templateCore";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -50,6 +51,24 @@ function apiToken(home = process.env.HOME ?? "~"): string | undefined {
   }
 }
 
+/**
+ * How a run reaches control: the credential the thinkube-control MCP
+ * server was configured with, the same one every other tool outside the
+ * editor uses; the older token file only where that is absent. The address
+ * comes from the repository's own remote, or from that credential.
+ */
+async function platformAuth(
+  repoRoot: string,
+  reach: () => ReturnType<typeof controlReachedBy> = controlReachedBy,
+): Promise<{ controlUrl: string; token: string } | { reason: string }> {
+  const known = reach();
+  const controlUrl = controlUrlOf(await remoteOf(repoRoot)) ?? ("base" in known ? known.base : undefined);
+  const token = ("token" in known ? known.token : undefined) ?? apiToken();
+  if (!controlUrl) return { reason: "this repository has no platform remote, so control cannot be named" };
+  if (!token) return { reason: "reason" in known ? known.reason : "no credential for control" };
+  return { controlUrl, token };
+}
+
 function remoteOf(repoRoot: string): Promise<string> {
   return new Promise((resolve) =>
     execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"], (err, out) => resolve(err ? "" : out.trim())),
@@ -58,11 +77,10 @@ function remoteOf(repoRoot: string): Promise<string> {
 
 /** The platform's own account of what it is doing with the pushed commit. */
 export async function readLive(repoRoot: string, app: string, since: string): Promise<PipelineReading> {
-  const controlUrl = controlUrlOf(await remoteOf(repoRoot));
-  const token = apiToken();
-  if (!controlUrl || !token)
-    return { settled: false, stages: [], unreachable: "the platform cannot be asked from here" };
-  return readPipeline({ controlUrl, app, since, token });
+  const auth = await platformAuth(repoRoot);
+  if ("reason" in auth)
+    return { settled: false, stages: [], unreachable: `the platform cannot be asked from here: ${auth.reason}` };
+  return readPipeline({ controlUrl: auth.controlUrl, app, since, token: auth.token });
 }
 
 /**
@@ -73,15 +91,14 @@ export async function readLive(repoRoot: string, app: string, since: string): Pr
  * that says nothing leaves the evidence thin, and the loop says so.
  */
 export async function whyItFailed(repoRoot: string, app: string, since: string): Promise<{ evidence: string; files: string[] }> {
-  const controlUrl = controlUrlOf(await remoteOf(repoRoot));
-  const token = apiToken();
+  const auth = await platformAuth(repoRoot);
   const reading = await readLive(repoRoot, app, since);
   const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
   const parts: string[] = [];
   for (const st of broke) {
     parts.push(`── ${st.name} ── ${st.said ?? ""}`);
-    if (st.pod && reading.id && controlUrl && token) {
-      const log = await stepLog(controlUrl, reading.id, st.pod, token);
+    if (st.pod && reading.id && !("reason" in auth)) {
+      const log = await stepLog(auth.controlUrl, reading.id, st.pod, auth.token);
       if (log) parts.push(log.split("\n").slice(-120).join("\n"));
     }
   }

@@ -22,6 +22,7 @@
  *    it is recorded as a defect and the door opens at once;
  *  - a unit that finishes, fails or is halted releases its files.
  */
+import type { DefectType } from "../engine/defectLog";
 import { isTestPath } from "./testHomes";
 
 /** What the plan says a unit will do to a file. The bare path list the
@@ -49,7 +50,7 @@ export interface DoorArgs {
   sleep: (ms: number) => Promise<void>;
   log: (line: string, step?: string) => void;
   onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
-  defect: (e: { slice?: string; unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (e: { slice?: string; unit?: string; activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }
 
 /** How often a waiting unit looks at the door again. */

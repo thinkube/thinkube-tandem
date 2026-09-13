@@ -6,6 +6,7 @@
  * answers one question: does the worker possess the information its task
  * requires? A DISCLOSE is by definition a contract gap and is ledgered.
  */
+import type { DefectType } from "../engine/defectLog";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -231,7 +232,7 @@ export interface OracleFactoryArgs {
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     /** Which stage a repair implicates (docs/TARGET.md §4). */
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;

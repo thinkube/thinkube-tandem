@@ -5,6 +5,7 @@
  * checks in full, the tree, what was already tried — and is judged by the
  * same oracle as the coder it replaces (THE-LADDER §4).
  */
+import type { DefectType } from "../engine/defectLog";
 import { formatVerifyReply } from "../engine/verifyOracle";
 import { suiteFootprint } from "./suite";
 import type { VerifyWithSuite } from "./suite";
@@ -42,7 +43,7 @@ export function unitCloser(a: {
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     impact: string;
     detail: string;
   }) => void;

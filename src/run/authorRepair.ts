@@ -18,6 +18,7 @@
  * never started — this says so and the caller falls to the next rung. A
  * missing session is never a reason to skip the repair.
  */
+import type { DefectType } from "../engine/defectLog";
 import type { WorkerOutcome, RunWorkerDeps } from "./worker";
 
 export interface RedCriterion {
@@ -94,7 +95,7 @@ export async function repairByAuthors(a: {
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;

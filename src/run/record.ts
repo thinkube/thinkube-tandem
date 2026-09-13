@@ -35,6 +35,13 @@ export interface PlanRecord {
   units: { role?: string; footprint: string[]; consumes?: string[] }[];
 }
 
+/** One answer for a parked worker, written where the driver reads it. */
+export interface AnswerRequest {
+  unit: string;
+  text: string;
+  at: string;
+}
+
 export interface RunRecord {
   /** The door and the delivery, as they ended. */
   phases?: Record<"door" | "gate" | "delivery" | "live", { state: "pending" | "running" | "done" | "failed"; doing?: string; since?: number }>;
@@ -67,6 +74,9 @@ export interface RunRecord {
   /** A stop asked for by someone who is not driving. The owner reads it
    *  and ends itself; nobody else may end another process's run. */
   stopRequestedAt?: string;
+  /** Answers to parked workers, written by whoever is not driving. The
+   *  owner reads them at its heartbeat and hands each to its worker. */
+  answers?: AnswerRequest[];
   units: RunUnitView[];
   /** What was dispatched, as the door saw it. */
   plan?: PlanRecord[];
@@ -132,9 +142,26 @@ export function saveRun(
         ? { sliceChecks: Object.fromEntries([...state.sliceChecks].map(([k, v]) => [k, [...v]])) }
         : {}),
     };
-    fs.writeFileSync(path.join(dir, `${record.cutId}.json`), JSON.stringify(full, null, 2));
+    // What others wrote on the record — a stop, an answer — is theirs to
+    // keep; the driver's save must not erase a request it has not read.
+    const file = path.join(dir, `${record.cutId}.json`);
+    const asked = readAsked(file);
+    fs.writeFileSync(file, JSON.stringify({ ...asked, ...full }, null, 2));
   } catch {
     /* the run's verdicts already live on the delivery */
+  }
+}
+
+/** The requests written on a record by processes that are not driving it. */
+function readAsked(file: string): Pick<RunRecord, "stopRequestedAt" | "answers"> {
+  try {
+    const r = JSON.parse(fs.readFileSync(file, "utf8")) as RunRecord;
+    return {
+      ...(r.stopRequestedAt ? { stopRequestedAt: r.stopRequestedAt } : {}),
+      ...(r.answers?.length ? { answers: r.answers } : {}),
+    };
+  } catch {
+    return {};
   }
 }
 
@@ -300,5 +327,29 @@ export function stopWasRequested(storeDir: string, cutId: string, since: string)
     return !!r.stopRequestedAt && r.stopRequestedAt > since;
   } catch {
     return false;
+  }
+}
+
+/** Answer a parked worker from a process that is not driving the run. The
+ *  owner reads the answer at its next heartbeat and hands it to the worker. */
+export function requestAnswer(storeDir: string, cutId: string, unit: string, text: string, at: string): boolean {
+  try {
+    const file = path.join(dirFor(storeDir), `${cutId}.json`);
+    const r = JSON.parse(fs.readFileSync(file, "utf8")) as RunRecord;
+    const answers = [...(r.answers ?? []), { unit, text, at }];
+    fs.writeFileSync(file, JSON.stringify({ ...r, answers }, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The answers written since this run began, oldest first. */
+export function answersRequested(storeDir: string, cutId: string, since: string): AnswerRequest[] {
+  try {
+    const r = JSON.parse(fs.readFileSync(path.join(dirFor(storeDir), `${cutId}.json`), "utf8")) as RunRecord;
+    return (r.answers ?? []).filter((a) => a.at > since);
+  } catch {
+    return [];
   }
 }

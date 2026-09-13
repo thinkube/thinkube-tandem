@@ -14,6 +14,24 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/**
+ * Whose fault it was. A closed set, so a monthly reading can count on the
+ * words: `code`, `test` and `contract` are the work's; `gate` is a check
+ * that misjudged; `machine` is Tandem's own machinery, wherever the
+ * failure was caught — a stall, a crash, a lost process, a lock nobody
+ * released; `infrastructure` is the platform under it; `environment` is
+ * the pod the run had; `decision` is a person's call recorded as one.
+ */
+export type DefectType =
+  | "code"
+  | "test"
+  | "contract"
+  | "gate"
+  | "machine"
+  | "infrastructure"
+  | "environment"
+  | "decision";
+
 /** One find-time defect observation (ODC-style axes, loosely held in v1). */
 export interface DefectEntry {
   /** ISO timestamp — filled by {@link appendDefect} when absent. */
@@ -31,8 +49,8 @@ export interface DefectEntry {
   /** What surfaced it (ODC "trigger"): e.g. `preflight`, `gate-verifier`,
    *  `gate-infra`, `worker flag`, `post-hoc diagnosis`. */
   trigger: string;
-  /** ODC defect type, when known (e.g. the judge's fault: code/test/contract/gate). */
-  type?: string;
+  /** ODC defect type, when known. */
+  type?: DefectType;
   /** ODC qualifier (missing / incorrect / extraneous), when known. */
   qualifier?: string;
   /**

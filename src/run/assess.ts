@@ -6,6 +6,7 @@
  * RED ("could not be graded") so an unreachable assessor never fakes a
  * pass.
  */
+import type { DefectType } from "../engine/defectLog";
 import { Change, Proof, Space, Cut } from "../core/schema";
 import { RoundDeps, runReadRound } from "../derive/round";
 import { observationShaped } from "./observations";
@@ -247,7 +248,7 @@ export function logRedChecks(
     unrunnable?: boolean;
     evidence?: string;
   }[],
-  defect: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void,
+  defect: (e: { activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void,
   /** The run was stopped — by the person, or by its own bound. Nothing
    *  that was in flight is evidence about the work, and one row per
    *  interrupted check made a single stop look like dozens of defects. */
@@ -288,7 +289,7 @@ export function proposeRewording(
   defect: (e: {
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;
     detail: string;

@@ -34,6 +34,27 @@ const STUB_WEAK_RE = /\b(stub|stubbed|no-op|noop|placeholder)\b/i;
  */
 const PLACEHOLDER_API_RE = /\bplaceholder\s*[=:]/gi;
 
+/**
+ * A marker that is part of a NAME is not a confession. `TaskStatus.TODO`
+ * is an enum's own member, `TODO = "todo"` defines it, and `"TODO"` on its
+ * own is a value the code handles: none of them says the work is unfinished.
+ * The confession is the word in prose — a comment, a message — and prose
+ * does not reach the word through a dot, an underscore, or a definition.
+ */
+const NAME_POSITION_RE = /(?:[.\w]|::|->)(TODO|FIXME|XXX|HACK|UNDELIVERED)\b|\b(TODO|FIXME|XXX|HACK|UNDELIVERED)(?=\w|\s*=\s*["'\d])/;
+const QUOTED_MARKER_RE = /(["'`])(TODO|FIXME|XXX|HACK|UNDELIVERED)\1/i;
+
+/** True when the line's only confession markers sit in name position. */
+function markerIsAName(line: string): boolean {
+  const m = STUB_CONFESSION_RE.exec(line);
+  if (!m) return false;
+  // Strip the name-position and quoted uses; what is left is prose, if anything.
+  const stripped = line
+    .replace(new RegExp(NAME_POSITION_RE.source, "g"), " ")
+    .replace(new RegExp(QUOTED_MARKER_RE.source, "gi"), " ");
+  return !STUB_CONFESSION_RE.test(stripped);
+}
+
 /** Code-file extensions the stub scan reads — markers in prose/docs are not deferrals. */
 const CODE_FILE_RE =
   /\.(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|sh|bash|zsh|ps1|sql|vue|svelte)$/i;
@@ -72,7 +93,7 @@ export function scanStubMarkers(file: string, content: string): StubScanHit[] {
   const lines = (content ?? "").split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (STUB_CONFESSION_RE.test(line)) {
+    if (STUB_CONFESSION_RE.test(line) && !markerIsAName(line)) {
       hits.push({ file, line: i + 1, text: clip(line.trim(), 160), weak: false });
     } else if (STUB_WEAK_RE.test(line.replace(PLACEHOLDER_API_RE, ""))) {
       hits.push({ file, line: i + 1, text: clip(line.trim(), 160), weak: true });

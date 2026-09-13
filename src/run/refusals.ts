@@ -15,6 +15,7 @@
  * Each refusal names the PROMISE, in the person's own words — never a file,
  * a unit, or an internal of the run.
  */
+import type { DefectType } from "../engine/defectLog";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import type { SliceForDag } from "../engine/core/dag";
 import type { Change, Space } from "../core/schema";
@@ -180,7 +181,7 @@ export async function refusedBeforeDispatch(a: {
   log: (line: string) => void;
   /** The machine's own record — what the plan's shape costs is a fact
    *  about the slicing, which is the machine's, never the person's. */
-  defect?: (e: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect?: (e: { activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }): Promise<{ dag: ReturnType<typeof buildUnitDag>; refusal?: { trigger: string; refusal: string } }> {
   // A check is born where this repository already keeps its tests, beside
   // the module it drives — so it imports its subject the same way before

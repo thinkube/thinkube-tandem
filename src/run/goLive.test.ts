@@ -99,3 +99,22 @@ test("a server error is not an answer: 500 keeps it waiting", async () => {
   });
   assert.equal(r.live, false);
 });
+
+test("a platform that never answered leaves the work unjudged, in the platform's own words — not refused", async () => {
+  const w = watcher();
+  const r = await waitUntilLive({
+    at: "https://tasks.thinkube.com",
+    app: "tasks",
+    since: "2026-01-01T00:00:00Z",
+    read: async () => reading({ unreachable: "GET https://control.thinkube.com/api/v1/cicd/pipelines → 401" }),
+    knock: async () => 200,
+    step: w.step,
+    sleep: async () => {},
+    patience: 3,
+  });
+  assert.equal(r.live, false);
+  assert.equal(r.unjudged, true);
+  assert.match(r.why ?? "", /could not be asked whether it built it: GET .* → 401/);
+  assert.ok(w.said.some((l) => /the platform could not be asked: GET .* → 401/.test(l)), w.said.join(" | "));
+  assert.ok(!w.said.some((l) => /never finished building/.test(l)), "nothing was judged, so nothing failed");
+});

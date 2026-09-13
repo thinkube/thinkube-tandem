@@ -9,6 +9,7 @@
  * seconds; a conflict is routed to a repair worker with the markers as
  * evidence, before anything is dispatched.
  */
+import type { DefectType } from "../engine/defectLog";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import { defaultExec } from "./oracle";
@@ -66,7 +67,7 @@ export async function refreshRunTrees(args: {
   deps: DispatchDeps;
   exec: Exec;
   log: (line: string, step?: string) => void;
-  defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (entry: { unit?: string; activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }): Promise<RefreshResult> {
   const { repoRoot, branch, worktree, exec, log } = args;
   await exec("git", ["-C", repoRoot, "worktree", "remove", "--force", worktree], repoRoot);
@@ -151,7 +152,7 @@ export async function repairStandingTree(args: {
   exec: Exec;
   halted?: () => boolean;
   log: (line: string, step?: string) => void;
-  defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (entry: { unit?: string; activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
   /** Re-proves the build: whether the tree stands, and the compiler's words. */
   rebuild: () => Promise<{ ok: boolean; words: string }>;
 }): Promise<boolean> {
@@ -228,7 +229,7 @@ async function resolveConflicts(args: {
   deps: DispatchDeps;
   exec: Exec;
   log: (line: string, step?: string) => void;
-  defect: (entry: { unit?: string; activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (entry: { unit?: string; activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }): Promise<boolean> {
   const worker = args.deps.worker ?? runUnitWorker;
   const id = "refresh#merge";

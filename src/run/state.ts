@@ -7,6 +7,7 @@
  * a failed step is diagnosed where it failed instead of from one shared ring
  * that has already dropped the line that mattered.
  */
+import type { DefectType } from "../engine/defectLog";
 import * as path from "node:path";
 import type { Cut, Delivery, ProofAnchor, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
@@ -518,7 +519,7 @@ export interface GateContext {
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     qualifier?: string;
     /** Which stage a repair implicates (docs/TARGET.md §4). */
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";

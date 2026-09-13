@@ -12,6 +12,7 @@
  * to a check must be justified against the criterion it proves and lands as
  * a ruling on the delivery.
  */
+import type { DefectType } from "../engine/defectLog";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
@@ -106,7 +107,7 @@ export interface CloserArgs {
   log: (line: string) => void;
   say: (text: string | undefined) => void;
   onRuling: (r: { criterionId: string; unit: string; granted: boolean; reason: string }) => void;
-  defect: (entry: { activity: string; trigger: string; type?: string; impact: string; detail: string }) => void;
+  defect: (entry: { activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
   worker?: typeof runUnitWorker;
 }
 

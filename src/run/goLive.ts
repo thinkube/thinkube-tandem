@@ -46,11 +46,18 @@ export async function waitUntilLive(a: {
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait in all, in ticks of ten seconds. */
   patience?: number;
-}): Promise<{ live: boolean; why?: string }> {
+}): Promise<{ live: boolean; why?: string; unjudged?: boolean }> {
   const sleep = a.sleep ?? (async (ms: number) => void (await waitOrStop(ms, a.stop)));
   const patience = a.patience ?? 90;
   let built = false;
   let saidNoticed = false;
+  // Whether the platform ever answered a question about the build, and
+  // the last reason it did not. A wait that never got an answer is not a
+  // refusal: nothing was judged, and saying "it did not go live" sends a
+  // repair after a fault nobody found.
+  let everRead = false;
+  let lastUnreachable: string | undefined;
+  let saidUnreachable = false;
   const stopped = (): { live: false; why: string } => {
     a.step.say("the run was stopped while it waited");
     return { live: false, why: "the run was stopped" };
@@ -59,9 +66,17 @@ export async function waitUntilLive(a: {
     if (a.stop?.aborted) return stopped();
     if (!built) {
       const reading = await a.read(a.since);
-      if (reading.unreachable && !saidNoticed) {
-        a.step.doing("waiting for the platform to notice the push");
-      } else if (!reading.unreachable) {
+      if (reading.unreachable) {
+        lastUnreachable = reading.unreachable;
+        const notYet = /^no pipeline\b/.test(reading.unreachable);
+        if (notYet && !saidNoticed) a.step.doing("waiting for the platform to notice the push");
+        if (!notYet && !saidUnreachable) {
+          saidUnreachable = true;
+          a.step.say(`the platform could not be asked: ${reading.unreachable}`);
+        }
+        if (!notYet) a.step.doing(`asking the platform again — ${reading.unreachable}`);
+      } else {
+        everRead = true;
         if (!saidNoticed) {
           saidNoticed = true;
           a.step.say(`the platform is building ${a.app}`);
@@ -91,6 +106,11 @@ export async function waitUntilLive(a: {
     }
     await sleep(10_000);
     if (a.stop?.aborted) return stopped();
+  }
+  if (!built && !everRead) {
+    const why = `the platform could not be asked whether it built it: ${lastUnreachable ?? "no answer"}`;
+    a.step.say(`not judged: ${why}`);
+    return { live: false, why, unjudged: true };
   }
   const why = built
     ? `${a.at} never answered`

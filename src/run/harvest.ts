@@ -21,6 +21,7 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Delivery, Proof } from "../core/schema";
+import { controlReachedBy } from "../hostui/templateCore";
 
 /** The control API's base URL for a gitops app, from the repository's own
  *  remote: `git.<domain>` names the platform, `control.<domain>` runs the
@@ -289,11 +290,12 @@ export async function watchGitopsAfterAccept(a: {
         resolve(err ? "" : out.trim()),
       ),
     ));
-  const controlUrl = controlUrlOf(remote);
-  const token = a.token ?? apiToken();
+  const known = controlReachedBy();
+  const controlUrl = controlUrlOf(remote) ?? ("base" in known ? known.base : undefined);
+  const token = a.token ?? ("token" in known ? known.token : undefined) ?? apiToken();
   if (!controlUrl || !token) {
     a.log(
-      `the pipeline cannot be watched (${!controlUrl ? "no platform remote" : "no api token at ~/.thinkube/api-token"}) — ` +
+      `the pipeline cannot be watched (${!controlUrl ? "no platform remote" : "no credential for control — connect the thinkube-control MCP server"}) — ` +
         `its promises stay pending, and that is a fact about this pod, not about the work`,
     );
     return;

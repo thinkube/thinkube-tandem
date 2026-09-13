@@ -13,6 +13,7 @@
  * earlier process. Until the closer rung existed here, such a run fell
  * straight from red to withheld with nobody left to try.
  */
+import type { DefectType } from "../engine/defectLog";
 import type { Cut, Proof, Ruling, Space } from "../core/schema";
 import { unkeptProof } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
@@ -66,7 +67,7 @@ export async function repairUnkept(a: {
     unit?: string;
     activity: string;
     trigger: string;
-    type?: string;
+    type?: DefectType;
     qualifier?: string;
     stage?: "author" | "brief" | "check" | "clearance" | "altitude";
     impact: string;

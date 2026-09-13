@@ -70,4 +70,8 @@ export interface SessionDeps {
   /** Start the cut from nothing: the branch an earlier run left is
    *  discarded (and tagged) so every unit runs again on today's base. */
   freshStart?: boolean;
+  /** Start the run in a process of its own and return at once; the session
+   *  then follows the record that process writes. Absent, the session
+   *  drives the run itself — which is what the driver process does. */
+  runElsewhere?: (a: { fresh: boolean }) => Promise<{ ok: boolean; reason?: string }>;
 }

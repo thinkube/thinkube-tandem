@@ -6,6 +6,9 @@
  */
 import { catchUpOnMergedWork } from "./surfaces/runGate";
 import * as vscode from "vscode";
+import * as path from "node:path";
+import { startRunElsewhere } from "./run/spawnDriver";
+import { harvestOwnRepairs } from "./engine/selfDefects";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
 import { NoticeHost, notifyForSpace, SpacePanels } from "./surfaces/panels";
@@ -201,6 +204,18 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, sessionKey, message),
+    // A run is a process of its own, so reloading this window does not end
+    // it; the session follows the record the driver writes.
+    runElsewhere: async ({ fresh }) =>
+      startRunElsewhere({
+        driver: path.join(context.extensionPath, "out", "run", "driver.js"),
+        repo: project.anchorDir,
+        space: spaceSlug,
+        fresh,
+        storeRoot,
+        storageDir: context.globalStorageUri.fsPath,
+        storeDir: thinkingSpaceDirs(storeRoot, project.card.id, spaceSlug, author).storeDir,
+      }),
   });
   sessions.set(sessionKey, s);
   // What the platform did with work merged earlier — a verdict this window
@@ -223,6 +238,18 @@ async function ensureSession(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // The tool's own repairs reach the ledger from the running tool, not
+  // only at deploy: the build knows the repository it came from.
+  try {
+    const own = harvestOwnRepairs({
+      outDir: path.join(context.extensionPath, "out"),
+      storeDir: configuredStoreRoot(),
+      version: String((context.extension.packageJSON as { version?: string }).version ?? ""),
+    });
+    if (own.recorded) console.log(`thinkube-tandem: ${own.recorded} repair(s) of the tool recorded in the ledger`);
+  } catch {
+    /* the ledger never costs the editor its start */
+  }
   // The server that drives a space from outside this window is part of the
   // product, so the product keeps its own registration correct.
   registerServer(context.globalStorageUri.fsPath);
@@ -515,12 +542,12 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // A run lives in this process. When the window reloads, the run dies
-  // with it — and a death nobody wrote down looks exactly like a run that
-  // is still going. Every in-flight run says so, in its own log and in the
-  // ledger, before the process goes.
+  // A run is a process of its own and outlives this one. Only a run this
+  // process drives itself dies with it — and a death nobody wrote down
+  // looks exactly like a run that is still going, so such a run says so,
+  // in its own log and in the ledger, before the process goes.
   for (const s of sessions.values())
-    if (s.running && s.runState) {
+    if (s.driving && s.running && s.runState) {
       const open = [...s.runState.units.values()]
         .filter((u) => u.state !== "done" && u.state !== "failed" && u.state !== "blocked")
         .map((u) => `- ${u.id}: ${u.state}${u.activity ? ` — ${u.activity.text}` : ""}`)

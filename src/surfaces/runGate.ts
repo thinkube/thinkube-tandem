@@ -11,7 +11,11 @@ import { dispatchScopePlan } from "../dispatch/scopeRun";
 import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
 import { DispatchOutcome } from "../run/dispatch";
 import { RunState, silentVerdict } from "../run/state";
-import { saveRun, slicesFinished, stopWasRequested } from "../run/record";
+import { answersRequested, saveRun, slicesFinished, stopWasRequested } from "../run/record";
+
+/** How often the driver reads what others wrote on its record: a stop, an
+ *  answer. A person who answers a worker waits at most this long. */
+const PULSE_MS = 10 * 1000;
 import { appendDefect, ledgerRoot } from "../engine/defectLog";
 import { saveRunOutcome, slicesOf } from "../engine/runOutcome";
 import { acceptOrder } from "../engine/acceptOrder";
@@ -153,7 +157,7 @@ export function signCutGesture(s: TandemSession): GestureResult {
     s.cutNodeIds.clear();
     s.docsExemptionReason = undefined;
     s.changed(`${r.cut.tepId} minted — the run is starting.`);
-    void executeRun(s, r.cut.id);
+    void s.startRun(r.cut.id);
     return { ok: true };
   }
 
@@ -338,6 +342,7 @@ export async function executeRun(
     // The heartbeat: every exec is bounded (makeExec), so the longest
     // legitimate silence is the suite's own bound — beyond it, the run
     // declares itself dead at its last named step instead of going quiet.
+    const handed = new Set<string>();
     const pulse = setInterval(() => {
       const st = s.runState;
       if (!st) return;
@@ -353,6 +358,15 @@ export async function executeRun(
         clearInterval(pulse);
         return;
       }
+      // Answers written by whoever is watching: each reaches its worker
+      // once. A parked worker used to be answerable only from the window
+      // that started it; the record carries the answer across processes.
+      for (const a of answersRequested(s.deps.storeDir, cutId, startedAt)) {
+        const key = `${a.unit}@${a.at}`;
+        if (handed.has(key)) continue;
+        handed.add(key);
+        if (st.answer(a.unit, a.text)) st.log(`${a.unit}: answered from outside this run`);
+      }
       const verdict = silentVerdict({
         running: s.running,
         lastBeatMs: lastBeat,
@@ -363,10 +377,10 @@ export async function executeRun(
       });
       if (!verdict) return;
       st.log(`⛔ ${verdict}`);
-      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "silent-stall", impact: "run stopped by its heartbeat", detail: verdict });
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "silent-stall", type: "machine", impact: "run stopped by its heartbeat", detail: verdict });
       st.halt();
       settle("halted", `The build stopped: ${verdict}`);
-    }, 60 * 1000);
+    }, PULSE_MS);
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
       // The repository reading rides into every worker's brief. Cached
