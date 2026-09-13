@@ -224,3 +224,25 @@ test("a merge that moves nothing says so, so nothing waits for a build that will
   assert.equal(again.merged, true);
   assert.equal(again.moved, false, "and this one moved nothing — there is no build coming");
 });
+
+test("a sealed worktree refuses every push, whatever address the push names", async () => {
+  const { sealWorktree } = require("./land") as typeof import("./land");
+  const fs = require("node:fs") as typeof import("node:fs");
+  const os = require("node:os") as typeof import("node:os");
+  const path = require("node:path") as typeof import("node:path");
+  const hooksDirFor = (w: string): string => `${path.resolve(w)}.hooks`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-"));
+  const worktree = path.join(dir, "tree");
+  fs.mkdirSync(worktree);
+  const seen: string[][] = [];
+  await sealWorktree(dir, worktree, async (_cmd, args) => {
+    seen.push(args);
+    return { code: 0, out: "" };
+  });
+  const hook = path.join(hooksDirFor(worktree), "pre-push");
+  assert.ok(fs.existsSync(hook), "the hook is written beside the tree");
+  assert.ok(fs.statSync(hook).mode & 0o100, "and is executable");
+  assert.match(fs.readFileSync(hook, "utf8"), /never pushes[\s\S]*exit 1/);
+  assert.ok(seen.some((a) => a.includes("core.hooksPath") && a.includes(hooksDirFor(worktree))), "git is told where the hooks are, for this tree only");
+  assert.ok(seen.some((a) => a.includes("remote.origin.pushurl") && a.includes("no-push")));
+});

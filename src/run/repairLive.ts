@@ -44,9 +44,14 @@ export async function repairAfterTheMerge(a: {
     const b = await a.boundedExec(a.deps.build, a.worktree);
     return { ok: b.code === 0, output: b.output };
   };
+  // Changed since the repair began: in the working tree, or committed —
+  // a worker that commits its own change has still changed the tree.
+  const startHead = (await a.exec("git", ["-C", a.worktree, "rev-parse", "HEAD"], a.worktree)).out.trim();
   const changed = async (): Promise<boolean> => {
     const s = await a.exec("git", ["-C", a.worktree, "status", "--porcelain"], a.worktree);
-    return s.out.trim().length > 0;
+    if (s.out.trim().length > 0) return true;
+    const head = (await a.exec("git", ["-C", a.worktree, "rev-parse", "HEAD"], a.worktree)).out.trim();
+    return !!startHead && !!head && head !== startHead;
   };
   const measure = async (): Promise<{ green: boolean; score: number; evidence: string; alsoOwn: string[] }> =>
     a.onTheProduct

@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 /**
  * The hand-over is the one act that lands work.
  *
@@ -95,6 +97,23 @@ export async function landDelivery(a: {
 export async function sealWorktree(repoRoot: string, worktree: string, exec: GitExec): Promise<void> {
   await exec("git", ["-C", repoRoot, "config", "extensions.worktreeConfig", "true"], repoRoot);
   await exec("git", ["-C", worktree, "config", "--worktree", "remote.origin.pushurl", "no-push"], worktree);
+  // A push URL that is not a repository stops `git push origin`; a worker
+  // that names the credentialed fetch address instead still reaches the
+  // forge. The hook runs for every push from this tree, whatever address
+  // it names, and refuses in the brief's own words.
+  const hooks = hooksDirFor(worktree);
+  fs.mkdirSync(hooks, { recursive: true });
+  fs.writeFileSync(
+    path.join(hooks, "pre-push"),
+    "#!/bin/sh\necho \"tandem: a worker never pushes — the person's Accept merges and pushes this work\" >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
+  await exec("git", ["-C", worktree, "config", "--worktree", "core.hooksPath", hooks], worktree);
+}
+
+/** Where a worktree's own hooks live: beside it, never inside it. */
+function hooksDirFor(worktree: string): string {
+  return `${path.resolve(worktree)}.hooks`;
 }
 
 /**
