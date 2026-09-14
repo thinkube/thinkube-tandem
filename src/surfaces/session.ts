@@ -308,6 +308,20 @@ export class TandemSession {
     return (this.space.specs ?? []).find((s) => s.id === this.cutSpecId);
   }
 
+  /**
+   * The set the cut in hand was chosen from, read from the cut: every
+   * promise of the set is in hand, and no signed cut carries the set yet.
+   */
+  private specOfCut(): string | undefined {
+    if (!this.cutNodeIds.size) return undefined;
+    const signed = new Set(this.space.cuts.map((c) => c.specId).filter(Boolean));
+    return (this.space.specs ?? []).find((sp) => {
+      if (signed.has(sp.id)) return false;
+      const ids = promisesOfSpec(this.space, sp);
+      return ids.length > 0 && ids.every((id) => this.cutNodeIds.has(id));
+    })?.id;
+  }
+
   thinkingCost(): WorkCost {
     return costOfThinking(this.space, this.chosenSpec()?.subjectIds);
   }
@@ -871,6 +885,9 @@ export class TandemSession {
       });
       this.space = repairClaimIds(folded.space);
       this.cutNodeIds = new Set(folded.cut);
+      // The thing in hand is read back from the cut itself, so a window
+      // that reloads between working out and signing still holds it.
+      this.cutSpecId = this.specOfCut();
       // A run this session does not drive is read from disk every time,
       // situation and all: a surface that did not start a run shows what
       // its driver shows, for as long as it runs. Only the driver skips
