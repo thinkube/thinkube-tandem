@@ -17,7 +17,7 @@ Claude calls Tandem's `save_draft` and the lines appear in the box, one per line
 
 == The decision
 
-Working on your own with an AI coder, code arrives fast. What goes wrong is not the code.
+You ask for a car and you get a tricycle: something that satisfies the description and is not the thing. That is the problem Tandem exists for. Working on your own with an AI coder, code arrives fast, and every check can be green while the thing you asked for is not there. What goes wrong is not the code.
 
 * Nobody checks that what was built is what you asked. The coder says "done", and you read the diff or you trust it.
 * Nothing records what was promised. A week later, the reason a thing works the way it does is in a conversation that scrolled away.
