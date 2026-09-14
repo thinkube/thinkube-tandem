@@ -18,14 +18,14 @@ Tandem's decision is that your sentence is the record. You write what you want, 
 
 [mermaid]
 ....
-flowchart LR
-  A["You write sentences<br/>in the box"] --> B["The machine reads them<br/>and proposes things to build"]
-  B --> C["You pick one.<br/>It works out promises and checks"]
+flowchart TB
+  A["You write sentences in the box"] --> B["The machine reads them and proposes things to build"]
+  B --> C["You pick one; it works out promises and checks"]
   C --> D["You sign"]
-  D --> E["Workers build it on a branch.<br/>The checks are written before the code"]
-  E --> F["Merged, deployed,<br/>judged on the running product"]
-  F --> G["The report.<br/>You decide"]
-  G -. "what the work noticed" .-> A
+  D --> E["Workers build it on a branch; the checks are written before the code"]
+  E --> F["Merged, deployed, judged on the running product"]
+  F --> G["The report; you decide"]
+  G -. "what the work noticed becomes the next sentences" .-> A
 ....
 
 Two moments are yours and only yours. *Sign* freezes exactly what you saw into work to build; nothing is built before it. *Decide* on the delivery: go on, take it back out, or run it again; nothing stays without it. Between the two the machine works alone, and it is not trusted. The checks are written by a worker that never sees the code. Whether a check is green is decided by a separate judge, not by the coder's word. A worker that writes outside the files it declared has those files reverted. Everything that could not be delivered is written on the report.
