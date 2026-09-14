@@ -499,6 +499,20 @@ export class TandemSession {
       return { ok: false, reason: "every sentence read already belongs to a thing to build" };
     if (!existing.length && loose.length < 2)
       return { ok: false, reason: "there is nothing to group yet — read some asks first" };
+    if (existing.length) {
+      // The space keeps the loose subjects as they were narrowed: a
+      // sentence a set covers stays with that set and with it only, so
+      // the new things carry the new sentences and nothing built again.
+      const narrowed = new Map(loose.map((s) => [s.id, s] as const));
+      this.space = {
+        ...this.space,
+        subjects: (this.space.subjects ?? []).map((s) => narrowed.get(s.id) ?? s),
+        claims: (this.space.claims ?? []).filter((c) => {
+          const s = narrowed.get(c.subjectId);
+          return !s || s.from.includes(c.fromAsk);
+        }),
+      };
+    }
     const mint = (n: number): string => `spec-${this.spaceName}-${existing.length + n}`;
     let made: Spec[];
     if (loose.length === 1) {
@@ -529,14 +543,22 @@ export class TandemSession {
     return { ok: true };
   }
 
-  /** Subjects no set names, that carry a sentence no set covers. */
+  /**
+   * Subjects no set names, narrowed to the sentences no set covers. A
+   * re-read mints its subjects over every sentence, the built ones too;
+   * those are not work again, so a loose subject keeps only what is new,
+   * and one with nothing new is not loose at all.
+   */
   private looseSubjects(): Subject[] {
     const specs = this.space.specs ?? [];
     const named = new Set(specs.flatMap((sp) => sp.subjectIds));
     const covered = new Set(
       (this.space.subjects ?? []).filter((s) => named.has(s.id)).flatMap((s) => s.from),
     );
-    return (this.space.subjects ?? []).filter((s) => !named.has(s.id) && s.from.some((a) => !covered.has(a)));
+    return (this.space.subjects ?? [])
+      .filter((s) => !named.has(s.id))
+      .map((s) => ({ ...s, from: s.from.filter((a) => !covered.has(a)) }))
+      .filter((s) => s.from.length > 0);
   }
 
   /**

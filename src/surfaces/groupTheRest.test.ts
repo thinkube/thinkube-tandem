@@ -66,6 +66,56 @@ test("grouping again proposes sets for the loose subjects only and keeps the exi
   assert.deepEqual(specs[1].subjectIds, ["s3", "s4"]);
 });
 
+test("a loose subject minted over built sentences too is grouped for the new ones only", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "group-narrow-"));
+  const seen: { subjects: { id: string; from: string[] }[]; claims: { id: string }[] }[] = [];
+  const s = new TandemSession({
+    author: "tester",
+    round: { model: "sonnet", repoRoot: dir },
+    storeDir: dir,
+    storageDir: path.join(dir, ".local"),
+    now: () => new Date().toISOString(),
+    proposeSpecs: async (_deps: unknown, space: { subjects: { id: string; from: string[] }[]; claims: { id: string }[] }) => {
+      seen.push(space);
+      return { specs: [{ name: "the list and the count", subjectIds: ["s5", "s6"] }], loose: [] };
+    },
+  } as never);
+  s.space = {
+    ...emptySpace(),
+    asks: [
+      { id: "ask-1", text: "one", at: "t" },
+      { id: "ask-2", text: "two", at: "t" },
+      { id: "ask-3", text: "three", at: "t" },
+      { id: "ask-4", text: "four", at: "t" },
+    ],
+    subjects: [
+      { id: "s1", name: "my tasks", from: ["ask-1", "ask-2"] },
+      // A re-read read the built sentences and the new ones as one subject.
+      { id: "s5", name: "the task list", from: ["ask-1", "ask-2", "ask-3"] },
+      { id: "s6", name: "the count line", from: ["ask-4"] },
+    ],
+    claims: [
+      { id: "c1", subjectId: "s1", text: "a", fromAsk: "ask-1" },
+      { id: "c5a", subjectId: "s5", text: "a again", fromAsk: "ask-1" },
+      { id: "c5b", subjectId: "s5", text: "c", fromAsk: "ask-3" },
+      { id: "c6", subjectId: "s6", text: "d", fromAsk: "ask-4" },
+    ],
+    specs: [{ id: "spec-x-1", name: "I can see at a glance", subjectIds: ["s1"] }],
+  } as never;
+  assert.deepEqual(await s.groupIntoSpecs(), { ok: true });
+  assert.deepEqual(
+    seen[0].subjects.map((x) => [x.id, x.from]),
+    [["s5", ["ask-3"]], ["s6", ["ask-4"]]],
+    "the round sees the loose subjects narrowed to the sentences no set covers",
+  );
+  assert.deepEqual(seen[0].claims.map((c) => c.id), ["c5b", "c6"], "and only the claims on those sentences");
+  const space = s.space as { subjects: { id: string; from: string[] }[]; claims: { id: string }[]; specs: { subjectIds: string[] }[] };
+  assert.deepEqual(space.subjects.find((x) => x.id === "s5")!.from, ["ask-3"], "the space keeps the narrowed subject");
+  assert.ok(!space.claims.some((c) => c.id === "c5a"), "the claim read again on a built sentence is gone");
+  assert.deepEqual(space.specs[1].subjectIds, ["s5", "s6"]);
+  assert.deepEqual(ungroupedAsks(s.space), [], "nothing is loose once the rest is grouped");
+});
+
 test("one loose subject becomes one thing to build without a round", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "group-one-"));
   const s = new TandemSession({
