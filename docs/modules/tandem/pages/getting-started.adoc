@@ -48,11 +48,11 @@ Claude Code can write the lines into the box for you, with Tandem's `save_draft`
 
 *Read these N* reads your sentences and shows each one split into what it is about and what must become true of it, grouped under the things they are about. The strip says *N sentences read, not kept*. Reading costs one round and records nothing; *Read it again* re-reads after you change the words.
 
-image::tandem-01-read.png[The space after Read these 9: each sentence split into what it is about and what must become true, under three subjects]
+image::tandem-01-read.png[The space after Read these 9: each sentence marked with what it is about and what must become true of it, under three subjects, and Keep these 9 on the strip]
 
 *Keep these N* records the sentences, word for word. From now on they are the record, and each one carries a pencil to say it differently and a plus to amend it. The page name *your sentences* is where they live.
 
-image::tandem-02-keep.png[The kept sentences, each with a pencil]
+image::tandem-02-keep.png[The kept sentences, each with a pencil, and Group into things to build on the strip]
 
 == 5. Group into things to build
 
@@ -83,9 +83,11 @@ pushes a branch; nothing is merged until you accept the delivery
 
 and names the documentation page the work lands.
 
+image::tandem-07-sign.png[The work page of a thing with one sentence: two promises, their lines, and under Pressing Build these 2 what the button does]
+
 *Build these N* signs. The strip changes to *building — <the thing's name>*, and *Stop* is the only other button.
 
-image::tandem-07-cut-review.png[The cut review, with Build these 6 at the top right]
+image::tandem-08-signed.png[The moment after signing: the strip says building, the run page opens on the door, and Stop is the only other button]
 
 == 8. Watch it build
 
@@ -93,7 +95,7 @@ The page *the run* shows one card per piece of work, titled with the promise it 
 
 *needs you* means a worker stopped on a question only you can answer, about what you want, never about files or tools. The status bar says so, and the page offers a box and *Send*.
 
-image::tandem-09-run.png[The run page: cards with their state words and log counts]
+image::tandem-09-run.png[The run page: cards with their state words and log counts, 5 of 10 workers done]
 
 == 9. Read the report
 
@@ -107,7 +109,7 @@ The report opens with one paragraph in plain words, for example *This was coded,
 * *Not started*: your sentences in the things not yet built.
 * *The run's own account, for a developer*: folded away, the full account with every check and its verdict.
 
-image::tandem-13-report.png[The report: five sentences done, one line yours to check, four not started, and the three buttons]
+image::tandem-13-report.png[The report of the first thing: 23 checks passed, five sentences done with the check behind each, what the work noticed, and Go on to the next on the strip]
 
 == 10. Decide
 
@@ -123,7 +125,9 @@ Beside a promise that was delivered, *Say it does not hold* is how you say what 
 
 == What you have now
 
-A change in your project that started as sentences, with the record of what was promised, what was proved, and what you decided, kept in the space. The next thing to build is one press away.
+A change in your project that started as sentences, with the record of what was promised, what was proved, and what you decided, kept in the space. The next thing to build is one press away. When the last one is built, the strip says *everything is built*, every sentence reads *built and accepted — it is in the project*, and the box waits for a new line.
+
+image::tandem-14-everything-built.png[The space with everything built: three accepted things, nine sentences each built and accepted, and the strip saying so]
 
 == Limits
 

@@ -1,6 +1,6 @@
 site:
   title: Tandem Methodology (preview)
-  start_page: tandem::index.adoc
+  start_page: thinkube-docs:tandem:index.adoc
 content:
   sources:
     - url: ./..
