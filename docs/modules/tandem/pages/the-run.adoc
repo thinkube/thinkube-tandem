@@ -1,104 +1,61 @@
-= How the machine builds
+= While it builds
 :page-type: concept
 
+_What the run page shows between your signature and the report, and why the machine works in that order._
+
 .TL;DR
-After you sign, the run view shows one card per unit of work, titled with the promise it keeps, each with a state word: ready, running, needs you, passed, failed, never ran. Watching is optional; the delivery arrives with its proofs when the run ends.
+After *Build these N* the page *the run* shows one card per piece of work with a state word, and a header counting *N of M workers done · N of M judged on the running product*. You can watch, press *Stop*, or answer a card that *needs you*; otherwise the report arrives on its own when the run ends, with the work merged, deployed and judged on the running product.
 
-[NOTE]
-====
-Underneath. On the page you see cards with state words and the report. This page is how the machine builds behind them: checks written blind, a coder that cannot see them, a judge that decides green.
-====
+== The decision
 
+The machine building your thing is not trusted to grade its own work. That one decision fixes the order of everything you see on the run page.
 
-Signing starts the run; watching it is optional. The run view appears in
-the space with the *orchestration graph*: one node per execution unit,
-edges for the order the engine derived. Each card — worker, auditor and
-the closing gate alike — is titled with the promise it is keeping, in
-your own words; the worker id and the full promise sentence move to the
-card's hover text, so the title reads as what is being built rather than
-as a raw id.
+[mermaid]
+....
+flowchart TB
+  door["preparing the tree<br/>the project must build before anything is touched"]
+  door --> check["check<br/>a worker writes the checks<br/>without seeing the code"]
+  door --> code["code<br/>another worker writes the code<br/>without seeing the checks"]
+  check --> audit["audit<br/>every check of this piece,<br/>on the real state"]
+  code --> audit
+  code --> tests["tests brought under<br/>the project's own tests,<br/>after the code lands"]
+  audit --> gate["The closing gate<br/>every check again, clean;<br/>the project's own suite"]
+  tests --> gate
+  gate --> hand["handing it over<br/>merged and pushed"]
+  hand --> live["taking it live<br/>the platform builds and deploys"]
+  live --> product["on the running product<br/>one reviewer per promise,<br/>in a browser"]
+  product --> report["the report"]
+....
 
-Live state is never carried by colour alone. Every card wears a coloured
-frame *and* a short state word — ready, running, needs you, passed,
-failed, never ran — and both survive zooming out, at the point where the
-card's chips are dropped for space. A card that is part of the signed
-work being built now carries a separate gold mark saying "cut" — a
-different fact from its live state, so a card can be both in the cut and
-running at once without either mark hiding the other. Click a node for
-its detail; the log tail runs beneath; *Stop* aborts every live worker.
-The closing gate's own card opens its own log the same way, on the same
-single click as every worker card.
+* *preparing the tree* comes first because a project that does not build before the run touched anything could never ship what the run delivers. The door proves the project's own build and finds its test commands.
+* The *check* card and the *code* card for one promise are two workers that cannot see each other. The checks exist before the code, so the coder cannot write to the test, and the test cannot be bent to the code.
+* Whether a piece is green is decided by an *audit* on the real state, not by the coder saying so. A piece that is not green goes back for a bounded repair with the evidence.
+* *tests brought under* is a third worker that brings the project's existing tests under the new behaviour after the code lands, so nothing that used to pass is left broken.
+* *The closing gate* runs every check again from a clean tree, reads the delivered files for deferrals a worker confessed to, and runs the project's own suite. Nothing merges past a red gate.
+* *handing it over* merges and pushes, and *taking it live* waits for the platform to build and answer at the address. This is a development platform, so finished work is not held back for approval: what comes back to you is the thing running, to keep or take back out.
+* *on the running product* is where promises about pages are judged: one reviewer per promise opens the product in a browser, does what each line describes, and saves a picture at the moment it decides.
 
-The graph is not only for watching. Every run a space has run is written
-down as it goes — its units, their order and state, each step's log, and
-the pictures its reviewers took — and stays readable afterwards. The
-*Cuts* row at the top of the page lists every cut; choose one and switch
-between its *Report* and its *Run and logs*. While a run is in flight the
-run in flight is what you see; looking back waits until it ends. See
-xref:end-to-end.adoc#_going_back_to_an_earlier_cut[Going back to an
-earlier cut].
+== What it saves you
 
-== How the machine builds
+* *Nothing is claimed that was not proved.* A check that could not run is reported as unjudged, never as a pass. A reviewer that never answered leaves the line unjudged.
+* *Nothing outside the work is touched.* A worker that writes outside the files it declared has those files reverted, and the run says so.
+* *You are asked only about intent.* A worker's question goes to the machine first; only a choice among behaviours your sentences do not decide reaches you, as *needs you*, in your own words.
+* *A red gate withholds, never hands over.* If a promise cannot be kept after every repair, or the product does not build, the run ends *withheld*: the work stays on its branch and the report names what failed.
 
-* *Tests first, blind.* For each acceptance criterion a probe author
-  writes an executable check — in a detached snapshot of the branch where
-  the implementation-in-progress does not exist. Blinding is structural,
-  not a promise in a prompt. Finished probes persist in a durable store.
-* *Roles own paths.* Every test-shaped path a promise lands in — an
-  existing test the change tightens, a standing check that is itself the
-  deliverable — belongs to the tester,
-  who brings it under the criteria before the code exists, and records
-  every choice the contract forced (a name, a literal, a rule) as a
-  `DECISION`. The coder's footprint holds production paths only; it never
-  reads or writes a test. A plan that hands a coder a test is refused
-  before any worker starts.
-* *The coder builds against the brief*, with your ask verbatim as the
-  north star, your decisions in force attached, and the tester's
-  decisions as contract. It has a real `verify` tool: an isolated runner
-  overlays its current work with the held-out probes and returns
-  per-criterion PASS/FAIL with evidence.
-* *Green is decided by the oracle, not the worker.* A unit completes
-  only when the checks are green for its current state
-  (MANDATORY-GREEN). Not green routes a bounded rework carrying the
-  oracle's evidence.
-* *A supervisor with both sides of the wall* audits whether the brief
-  contains every fact the checks require — before the coder spends
-  anything, and again when the same failure repeats. A disclosure is by
-  definition a contract gap and is recorded in the defect ledger.
-* *Containment.* A worker that writes outside its declared footprint has
-  the stray paths reverted and the run halts, named.
-* *Parallel frontier.* Ready units run concurrently (the
-  `maxConcurrent` setting); slices commit on the branch as they finish.
-* *A worker's question goes to the machine first.* The supervisor, who
-  sees the brief, the checks and the repository, answers whatever the run
-  itself can decide and the worker resumes. Only a question about intent
-  — a choice among behaviours your asks do not decide — reaches you, in
-  your own words; you are never asked about files, names or tools.
+== Where it shows up
 
-== The delivery
+*The cards.* Each card is titled with the promise it keeps and wears a state word: *ready* (waiting for what it needs), *running*, *needs you*, *passed*, *failed*, *never ran* (the run stopped or something it waited on failed; not a failure of its own). A card in the work being built now also carries the word *cut*. Click a card to read its log; the bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*.
 
-The closing gate re-runs every probe from a clean environment, the
-honesty scan reads the delivered files for self-declared deferrals, the
-repository's own suite runs, and the branch becomes a pull request whose
-description carries every acceptance criterion of the cut with its
-verdict — including "not checked" for a criterion nothing judged — the
-tester's decisions and every UNDELIVERED line. The same complete list
-is what the delivery page shows, so the pull request and the delivery
-page never disagree about a criterion. The machine face — the
-structured verification trace — persists in the store beside the
-space.
+*The header.* *N of M workers done · N of M judged on the running product*, then *finished* or *finished, with failures*.
 
-A run ends in exactly one of three states:
+*Stop.* *■ Stop* on the header aborts every live worker; the run drains and reports what it had. A run is a process of its own, so *Stop* reaches it from any window that has the space open.
 
-delivered:: every promise kept and the product builds. Anything the
-machine could not settle rides the page as a finding for you to weigh;
-see xref:gates.adoc[].
-withheld:: a promise could not be kept after every repairer was spent,
-or the product does not build. The branch keeps the work and the record
-keeps the verdict; nothing is handed over for you to finish, and the way
-back in is offered.
-halted:: the run went quiet long enough that the watchdog ended it, and
-said which units were open and what each was waiting for.
+*Cuts.* The row at the top lists every signed piece of work the space has run. Choose one and switch between *Report* and *Run and logs*: the cards, the log of every step, and the pictures the reviewers took stay readable after the run.
 
-A withheld run is still a run and its report still names itself. The
-delivery is never silently downgraded and never silently abandoned.
+*The status bar.* While a space works: *<space>: N/M units*, with *— needs an answer* when a worker is waiting on you.
+
+== Limits
+
+* While a run is in flight, looking back at an earlier cut waits until it ends.
+* Reviewers on the running product go one after another; a product they cannot sign in to leaves those lines unjudged, and nothing already proved is taken away.
+* If the platform refuses to build the merged work, the run repairs what the platform's own words name and pushes again, twice, then hands the answer to you with *Ask Claude to fix it*, *Ask the platform again* and *Take it back out*.

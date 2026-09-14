@@ -1,150 +1,144 @@
-= Using the space
+= Your first thing built
 :page-type: tutorial
 
-_The space is the one page between you and the machine. This is the path through it, in the words the page uses, from an empty box to a change merged into your project._
+_From an empty box to a change running in your project, one screen at a time. The example is a todo app made from the web app template and nine sentences about it._
 
 .TL;DR
-Open the space, write sentences in the box, and press the one button the strip offers: *Read these N*, *Keep these N*, *Group into things to build*, *Build the first*, *Build these N*. Then watch the run, read the report, and press *Go on to the next*, *Take it back out* or *Run it again*. Claude Code can put the sentences in the box for you; every button after that is yours.
+Say to Claude Code: "Make an app called todo from the web app template, then put these lines in the box of a new thinking space: My tasks come back in a sensible order, what is due soonest first. Finished tasks stop crowding the ones I still have to do. Deleting a task asks me first." Claude creates the app and calls `save_draft`. Then you open the space and press the one button the strip offers, five times: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. When the run ends you read the report and press *Go on to the next*. What you have afterwards is the change merged, deployed and running at the app's address.
 
 == What you will learn
 
-* Where the four pages of the space are and what each one is for.
-* What each button does before you press it, in the words the page uses.
-* How to read the run and the report.
+* How to tell Tandem what you want, and how to see whether it understood you.
+* What each button does before you press it, and why it exists.
+* How to read the work page, the run and the report.
 * What the three decisions at the end mean.
 
 == What you need
 
 * Thinkube IDE with the Tandem icon in the activity bar.
-* A repository Tandem knows: *Tandem: Activate Repository* on one you have, or "make an app called tasks from the web app template" said to Claude, which creates one and activates it.
+* A repository Tandem knows: *Tandem: Activate Repository* on one you have, or "make an app called todo from the web app template" said to Claude Code, which creates one and activates it.
 
 == 1. Open the space
 
-Click the Tandem icon, or run *Tandem: Open Thinking Space* from the command palette and pick the repository and a space; *Tandem: New Thinking Space* makes one. Each space opens in its own editor tab, titled with the space's name.
+Every thinking space is one page, and you only ever look at that page. Click the Tandem icon. Under *Projects*, your repository lists its thinking spaces; *New thinking space…* makes one. Each space opens in its own editor tab, titled with the space's name.
 
-If your workspace has more than one folder, Tandem asks which repository you mean and never guesses. The status bar shows the choice, *Tandem: <product> / <repository>*, and *Tandem: Switch Repository* changes it. While a space is working, the status bar says so for every open space at once, with how much is done, and turns a warning colour with *needs an answer* when a worker is waiting on you.
+If your workspace has more than one folder, Tandem asks which repository you mean and never guesses. The status bar shows the choice as *Tandem: <product> / <repository>*.
 
-== 2. The four pages and the strip
+== 2. The strip and the four pages
 
-Across the top of the space is a strip with one button, the next thing you can do, and beside it a line saying where you are, such as *9 lines written, none read* or *building — the work you signed*. Under the strip, four page names: *the box*, *your sentences*, *what it will do*, *the run*. The strip moves you forward; the page names let you look back, and *back to now* returns.
+The strip is there so that you never have to work out what to do next. Across the top of the space is one line saying where you are, such as *9 lines written, not read*, and one button, the next thing you can do. Under the strip are the names of the four pages: *the box*, *your sentences*, *what it will do*, *the run*. The strip moves you forward; the page names let you look back, and *back to now* returns.
+
+[mermaid]
+....
+flowchart LR
+  box["the box<br/>write, read"] --> sentences["your sentences<br/>keep, group"]
+  sentences --> work["what it will do<br/>promises, sign"]
+  work --> run["the run<br/>cards, then the report"]
+  run -- "Go on to the next" --> sentences
+....
 
 == 3. Write in the box
 
-Type what you want, one line per thing, in your own words. The box says it as it is: *one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by reading*.
+The box is where your words go, and it records nothing on its own, so writing costs nothing. Type what you want, one line per thing, in the words a person would use. The line under the box says it as it is: *one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by reading*.
+
+The nine lines this page follows:
 
 [source,text]
 ----
 My tasks come back in a sensible order — what is due soonest first, and high
 priority above low — instead of whatever order the database felt like.
-
+A task that is past its due date is obvious at a glance, not grey small print.
 Finished tasks stop crowding the ones I still have to do.
-
 I can see how many tasks I have without counting cards.
+I can look at just the high priority ones when I want to.
+When I open the new-task box the cursor is already in the title, so I can just type.
+I can add a task with the keyboard alone — type a title, press Enter, done.
+If I try to save a task with no title it tells me, instead of doing nothing.
+Deleting a task asks me first, because one mis-click should not lose work.
 ----
 
-Claude Code can write the lines into the box for you, with Tandem's `save_draft`. It cannot press anything after that.
+Claude Code can write the lines for you with Tandem's `save_draft`. It cannot press anything after that.
 
-== 4. Read, then keep
+== 4. Read these 9
 
-*Read these N* reads your sentences and shows each one split into what it is about and what must become true of it, grouped under the things they are about. The strip says *N sentences read, not kept*. Reading costs one round and records nothing; *Read it again* re-reads after you change the words.
+Reading shows you how the machine understood you before anything is recorded, so a misreading costs one press, not a build. Press *Read these 9*. Under the box, *What I read in your words* lists the subjects it found, with how many claims each carries, and then every sentence with two marks in it: what it is about, highlighted, and what must become true of it, underlined. A sentence that never names its subject shows the subject in brackets and the word *names nothing*.
 
 image::tandem-01-read.png[The space after Read these 9: each sentence marked with what it is about and what must become true of it, under three subjects, and Keep these 9 on the strip]
 
-*Keep these N* records the sentences, word for word. From now on they are the record, and each one carries a pencil to say it differently and a plus to amend it. The page name *your sentences* is where they live.
+If the reading is wrong, change the words and press *Read it again*. Nothing was recorded.
+
+== 5. Keep these 9
+
+Keeping is the moment your words become the record, and the record is never edited by the machine. Press *Keep these 9*. The page *your sentences* opens with the nine sentences, each with a pencil to say it differently and a plus to amend it. Everything the machine derives from here can be thrown away and made again; these lines cannot.
 
 image::tandem-02-keep.png[The kept sentences, each with a pencil, and Group into things to build on the strip]
 
-== 5. Group into things to build
+== 6. Group into things to build
 
-*Group into things to build* turns the sentences into things worth building, in a suggested order: *first*, *then*, *later*. Each thing says which of your sentences it carries. Proposing decides nothing; the strip offers *Build the first*.
-
-Sentences read later, after the things were made, belong to nothing yet. When every thing is built the strip offers *Group the rest*, naming those sentences by number; the things already built stay as they are, and the new ones join them.
+Small things build and get judged on their own, so the machine proposes how to cut your sentences into things worth delivering separately. Press *Group into things to build*. Each thing gets a name in your register, the sentences it carries, and a word for the suggested order: *first*, *then*, *later*. Proposing decides nothing.
 
 image::tandem-03-group.png[The sentences became three things: first, then, later]
 
-== 6. Work the first one out
+== 7. Build the first
 
-*Build the first* works the first thing out. The strip says *working out what to build — N of M subjects done*, and the page *what it will do* opens by itself when the last one finishes. It shows, under the heading *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true, each with a word saying where it stands: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. On *your sentences*, under the thing in hand, a line *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace; the work page counts how many are still open in what pressing the button records.
+Working a thing out is what costs, so it happens only for the thing you pick. Press *Build the first*. The strip says *working out what to build — N of M subjects done* and the banner on the page counts the same. When the last subject is done, the page *what it will do* opens by itself.
 
-A documentation promise is added by the machine. Press *Not needed* on it if none applies; without documentation or that press, the work cannot be signed.
+It shows, under *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true. Each line says where it stands: *checked when it is built* means a check will prove it; *judged by a reviewer at delivery* means a reviewer reads the finished work once; *only you can see this* means only the running product can show it, and you confirm it.
 
 image::tandem-06-work-page.png[The what-it-will-do page: promises, the files they land in, and each line with where it stands]
 
-== 7. Sign
+On *your sentences*, under the thing in hand, *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace before you sign.
 
-At the bottom of the work page, *Pressing Build these N* says what the button does, in the page's words:
+A documentation promise is added by the machine. Press *Not needed* on it if none applies; without documentation or that press, the work cannot be signed.
 
-----
-signs this work and locks the N sentences behind it — from then on they change only by amendment
-records the machine's own answer to N open questions — answering first replaces it with yours
-starts the workers on N promises — this is what spends
-pushes a branch; nothing is merged until you accept the delivery
-----
+== 8. Sign
 
-and names the documentation page the work lands.
+Signing freezes exactly what you saw, so what runs is what you approved and nothing else. At the bottom of the work page, *Pressing Build these N* says what the button does, in the page's words: it signs this work and locks the sentences behind it, records the machine's own answers to the open questions, starts the workers, and pushes a branch; nothing is merged until you accept the delivery.
 
 image::tandem-07-sign.png[The work page of a thing with one sentence: two promises, their lines, and under Pressing Build these 2 what the button does]
 
-*Build these N* signs. The strip changes to *building — <the thing's name>*, and *Stop* is the only other button.
+Press *Build these N*. The strip changes to *building — <the thing's name>*, the run page opens on *preparing the tree*, and *Stop* is the only other button.
 
 image::tandem-08-signed.png[The moment after signing: the strip says building, the run page opens on the door, and Stop is the only other button]
 
-== 8. Watch it build
+== 9. Watch it build
 
-The page *the run* shows one card per piece of work, titled with the promise it keeps, with a state word: *ready*, *running*, *needs you*, *passed*, *failed*, *never ran*. The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The header counts *N of M workers done · N of M judged on the running product*. Click a card to read its log; *■ Stop* aborts every live worker.
-
-*needs you* means a worker stopped on a question only you can answer, about what you want, never about files or tools. The status bar says so, and the page offers a box and *Send*.
+Watching is optional; the report arrives when the run ends whether you watched or not. The page *the run* shows one card per piece of work, titled with the promise it keeps, with a state word: *ready*, *running*, *needs you*, *passed*, *failed*, *never ran*. The header counts *N of M workers done · N of M judged on the running product*. Click a card to read its log.
 
 image::tandem-09-run.png[The run page: cards with their state words and log counts, 5 of 10 workers done]
 
-== 9. Read the report
+*needs you* means a worker stopped on a question only you can answer, about what you want, never about files or tools. The status bar says so, and the page offers a box and *Send*. xref:the-run.adoc[While it builds] says what happens in each phase and why.
 
-When the run ends, the strip says where it ended: *coded, checked and merged into the project*, or *delivered — waiting for your decision*, or *delivered — withheld*. Under *Cuts*, each signed piece of work is a chip; choose one and switch between *Report* and *Run and logs*.
+== 10. Read the report
 
-The report opens with one paragraph in plain words, for example *This was coded, its checks were written and run, it passed the closing gate, and it was merged into the project. 18 checks passed.* Then the sections:
-
-* *What you asked for, and what happened*: each of your sentences with a word: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*.
-* *Nobody could settle these — they are yours to check*: what only the running product can show. *It held* and *It did not* are how you answer.
-* *What the work noticed, and did not do*: things the machine saw and could not settle. Nothing here stopped the delivery; *Keep the N selected for later* keeps any of them, and *Put these N in the box* later turns them into sentences.
-* *Not started*: your sentences in the things not yet built.
-* *The run's own account, for a developer*: folded away, the full account with every check and its verdict.
+The report answers your sentences one by one, so you never read a diff to know what happened. When the run ends the strip says where it ended, such as *built, deployed and running at <address>*. The report opens with one paragraph in plain words, then *What you asked for, and what happened*: each sentence with a word, *done* in the usual case, and under it the checks that proved it.
 
 image::tandem-13-report.png[The report of the first thing: 23 checks passed, five sentences done with the check behind each, what the work noticed, and Go on to the next on the strip]
 
-== 10. Decide
+Further down, *What the work noticed, and did not do* lists what the reviewers saw and could not settle; none of it stopped the delivery. xref:the-report.adoc[Reading the report and deciding] goes through every section and button.
 
-The buttons at the end are yours and only yours:
+== 11. Decide
+
+The buttons at the end are yours and only yours.
 
 * *Go on to the next* closes this thing and moves to what is left to build.
 * *Take it back out* reverts this delivery's merges and pushes.
-* *Run it again* starts the signed work again; nothing is signed twice and nothing you wrote changes.
-* *Think it again* withdraws the signature; the promises are derived anew and signed as new work.
-* *Accept it*, when the strip says *delivered — waiting for your decision*, merges it; *Not this* refuses it and the work stays on its branch.
+* *Run it again* starts the signed work again; nothing you wrote changes.
 
-Beside a promise that was delivered, *Say it does not hold* is how you say what you saw; that promise becomes work again on *your sentences*.
+Press *Go on to the next*. The strip offers *Build the first* for the next thing, and the path from step 7 repeats.
 
-== 11. Take up what the work noticed
+== 12. When the last one is built
 
-Under *What the work noticed, and did not do*, each finding has a box to tick and, beside what was seen, the ask its finder drafted in the words a person would use. Tick the ones you want and the button under the list turns from *Select what to keep for later* into *Keep the N selected for later*. Pressing it marks each one *kept for later* where it stands and adds a section *Kept for later* under the report, with the cut that noticed each. Nothing is read again and no sentence is made: the things you chose to build first keep their place.
-
-*Kept for later* gathers what you kept from every cut, so its button counts them all: *Put these N in the box*. Press it when the discoveries are what comes next. Each finding then reads *in the box* on its report, and the box holds one drafted ask per line, with the strip saying *N new lines written, not read*.
-
-image::tandem-15-kept-for-later.png[A report with two findings kept for later, and under it the Kept for later section gathering six from two cuts, with Put these 6 in the box]
-
-image::tandem-16-box-from-kept.png[The box with the six drafted asks, one per line, and Read these 6 on the strip]
-
-From here the path is the one you know: *Read these N*, *Keep these N*, and then *Group the rest*, since the things already built stay as they are and only the new sentences need a thing to belong to. The strip names them by number. Then *Build the first*.
-
-image::tandem-17-group-the-rest.png[After Group the rest: four new things carrying only the new sentences, above the three accepted ones]
-
-== What you have now
-
-A change in your project that started as sentences, with the record of what was promised, what was proved, and what you decided, kept in the space. The next thing to build is one press away. When the last one is built, the strip says *everything is built*, every sentence reads *built and accepted — it is in the project*, and the box waits for a new line.
+When the last thing is built, the strip says *N sentences · everything is built*, every sentence reads *built and accepted — it is in the project*, and the box waits for a new line.
 
 image::tandem-14-everything-built.png[The space with everything built: three accepted things, nine sentences each built and accepted, and the strip saying so]
 
+== What you have now
+
+A change in your project that started as sentences, running at the app's address, with the record of what was promised, what was proved, and what you decided, kept in the space. The reviewers will have noticed things nobody asked for; xref:what-the-work-noticed.adoc[Taking up what the work noticed] is how those become the next sentences.
+
 == Limits
 
-* A run is a process of its own: closing or reloading the window that started it does not end it, and the space shows the run wherever it is opened. *Stop* and an answer to a worker reach the run within ten seconds. Its own output is in `runs/driver.log` in the space.
 * Keeping, choosing, signing and accepting are yours; Tandem's tools refuse them to Claude Code by design.
-* Tandem is experimental and still changing; a word on the page and a word here can differ for a while after a release. xref:reading-the-surface.adoc[Every word on Tandem's pages] is the reference.
+* A run is a process of its own: closing or reloading the window that started it does not end it, and *Stop* reaches it from any window.
+* A page and a word on the page can differ for a while after a release; xref:words-on-the-page.adoc[The words on the page] is the reference.

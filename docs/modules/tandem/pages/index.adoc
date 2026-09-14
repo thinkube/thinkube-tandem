@@ -1,65 +1,56 @@
 = Thinkube Tandem
 :page-type: concept
 
-_An experimental intent-driven development methodology for working with Claude Code, still changing. You say what you want in your own words; the machine grounds it in the real code, builds it under checks it cannot fake, and hands you a delivery to accept or refuse._
+_An experimental intent-driven development methodology for working with Claude Code, still changing._
 
 .TL;DR
-Open the Tandem space in Thinkube IDE and type sentences: "Finished tasks stop crowding the ones I still have to do." Press *Read these N*, *Keep these N*, *Group into things to build*, then *Build the first*. Tandem works out which files each sentence lands in and what must become true, shows you exactly that, and asks you to sign it. Workers build it on a branch, other workers check it blind, and the report comes back with its proofs. You go on, take it back out, or run it again. Claude Code can put the sentences in the box for you; it cannot press anything after that.
+Say to Claude Code: "Put these three lines in the box of the tasks space: Finished tasks stop crowding the ones I still have to do. I can see how many tasks I have without counting cards. Deleting a task asks me first." Claude calls Tandem's `save_draft` and the lines appear in the box. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into your project, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
 == The decision
 
-Most of what goes wrong between an idea and a change in production is translation: the sentence becomes a ticket, the ticket becomes criteria, the criteria become code, and at each step something is lost or invented. Tandem keeps the sentence. Your words are stored verbatim and are never machine-edited; everything else, the files, the checks, the code, is derived from them, and shown to you before anything is built. Two decisions are always yours and never the machine's:
+Working on your own with an AI coder, code arrives fast. What goes wrong is not the code.
 
-. *Sign.* *Build these N* freezes exactly what you saw into signed work. Nothing is built before this.
-. *Decide on the delivery.* *Go on to the next*, *Take it back out*, *Accept it* or *Not this*. Nothing lands without this.
+* Nobody checks that what was built is what you asked. The coder says "done", and you read the diff or you trust it.
+* Nothing records what was promised. A week later, the reason a thing works the way it does is in a conversation that scrolled away.
+* Every conversation starts from nothing. What you decided last time is not in front of the coder this time.
 
-Between the two the machine works alone, and it is not trusted: the checks are written by workers that cannot see the implementation, completion is decided by a separate judge rather than by a worker's claim, files outside a worker's declared scope are reverted, and everything that could not be delivered is written on the report.
+Tandem's decision is that your sentence is the record. You write what you want, in your own words, one line per thing. The machine reads those lines, shows you how it understood them, and derives everything else from them in front of you: which files change, what must become true, which checks will prove it. Your words are never edited by the machine.
 
-Tandem is experimental. Its pages describe it as it is today, and it is still changing.
+[mermaid]
+....
+flowchart LR
+  A["You write sentences<br/>in the box"] --> B["The machine reads them<br/>and proposes things to build"]
+  B --> C["You pick one.<br/>It works out promises and checks"]
+  C --> D["You sign"]
+  D --> E["Workers build it on a branch.<br/>The checks are written before the code"]
+  E --> F["Merged, deployed,<br/>judged on the running product"]
+  F --> G["The report.<br/>You decide"]
+  G -. "what the work noticed" .-> A
+....
+
+Two moments are yours and only yours. *Sign* freezes exactly what you saw into work to build; nothing is built before it. *Decide* on the delivery: go on, take it back out, or run it again; nothing stays without it. Between the two the machine works alone, and it is not trusted. The checks are written by a worker that never sees the code. Whether a check is green is decided by a separate judge, not by the coder's word. A worker that writes outside the files it declared has those files reverted. Everything that could not be delivered is written on the report.
 
 == What it saves you
 
-* *No tickets.* You write the sentence a user would say. The promises are derived, in front of you, with the choices the machine made listed for you to replace.
-* *No reading of diffs to know whether it worked.* The report carries its proofs: which checks ran, which passed, what a reviewer judged, and what only you can confirm on the running product.
-* *No silent scope creep.* What a worker touches outside its declared scope is reverted.
-* *No merge you did not choose.* The branch waits for your decision.
-* *No post-mortems.* Every defect a run catches is one row in a ledger that outlives the space; xref:defect-ledger.adoc[the defect ledger] is how the method learns.
+* *No tickets.* You write the sentence a person would say. The promises are derived in front of you, with the choices the machine made listed for you to replace.
+* *No reading of diffs to know whether it worked.* The report carries its proofs: which checks ran, which passed, what a reviewer judged on the running product, and what only you can confirm.
+* *No silent scope creep.* What a worker touches outside its declared files is reverted.
+* *No merge you did not choose.* The work waits for your decision.
+* *No post-mortems.* Every defect a run catches is one row in a ledger that outlives the space. xref:defect-ledger.adoc[The defect ledger] is how the method learns.
 
-== Two layers of pages
+== Where it shows up
 
-*Using Tandem* is written in the words the page uses, and only those. If a word is on one of these pages, it is on a page you can click.
+The Tandem icon in Thinkube IDE opens the space: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything Tandem does is on that page.
 
-* xref:getting-started.adoc[Using the space]: the path from an empty box to a merged change, button by button.
-* xref:reading-the-surface.adoc[Every word on Tandem's pages]: what each word and mark means.
-* xref:defect-ledger.adoc[The defect ledger]: what *Tandem: Show Defects* shows and why it matters.
-* xref:configuration.adoc[Configuration and settings], xref:troubleshooting.adoc[When something goes wrong].
-
-*Underneath* is the machinery, for a developer of Tandem or a reader who wants every mechanism. These pages use the engine's own names.
-
-* xref:the-space.adoc[What happens to a sentence], xref:gates.adoc[The two gates], xref:the-run.adoc[How the machine builds], xref:end-to-end.adoc[The whole path, end to end].
-* xref:identity.adoc[Projects and identity], xref:store.adoc[The store], xref:defects.adoc[The defect ledger, reference].
-
-== The page's words and the engine's
-
-[cols="1,2",options="header"]
-|===
-| On the page | Underneath
-
-| a line in the box, *your sentences* | an *ask*: your words, kept verbatim, never machine-edited
-| a thing to build (*first*, *then*, *later*) | a *set* of *units*: changes clustered by code coupling
-| a promise on *what it will do* | a *change*: one sentence, the files it lands in, its acceptance criteria
-| a line under a promise, *checked when it is built* | an *acceptance criterion* and the *probe* that proves it, written blind
-| *only you can see this* / *Nobody could settle these* | an *observation*: a criterion only the running product can show
-| the cut review, *Build these N* | the *cut*; signing mints a *TEP* bound to what you saw
-| a card on *the run* | a *unit*: a coder, its checks, the tests brought under, or the closing *gate*
-| *needs you* | a worker parked on a question about intent; the *supervisor* answered every other kind
-| *The closing gate* | the gate: every check re-run clean, the *honesty scan* for self-declared deferrals, the repository's own suite
-| *What the work noticed, and did not do* | *findings*: what the machine saw and could not settle
-| *Report* | the *delivery*: a branch plus its proofs
-|===
+* xref:getting-started.adoc[Your first thing built]: from an empty box to a change running, screen by screen.
+* xref:what-the-work-noticed.adoc[Taking up what the work noticed]: turning what the reviewers found into the next thing to build.
+* xref:the-run.adoc[While it builds]: what the run page shows and why the machine works the way it does.
+* xref:the-report.adoc[Reading the report and deciding]: what each section and button means.
+* xref:words-on-the-page.adoc[The words on the page]: every line the strip can show and what to do about it.
+* xref:defect-ledger.adoc[The defect ledger], xref:configuration.adoc[Configuration and settings], xref:troubleshooting.adoc[When something goes wrong].
 
 == Limits
 
 * Keeping, choosing, signing and accepting are yours; Tandem's tools refuse them to Claude Code by design.
-* A run is a process of its own; closing or reloading the window that started it does not end it. *Run it again* resumes from what was committed when a run did end.
+* A run is a process of its own: closing or reloading the window that started it does not end it.
 * Tandem is still changing; a page and the product can differ for a while after a release.

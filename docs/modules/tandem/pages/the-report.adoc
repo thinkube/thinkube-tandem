@@ -1,0 +1,74 @@
+= Reading the report and deciding
+:page-type: how-to
+
+_The report answers your sentences one by one. This page is what each section says, what each button does, and which press is yours in each case._
+
+.TL;DR
+When the strip says *built, deployed and running at <address>*, read the report's first paragraph and *What you asked for, and what happened*, then press *Go on to the next*. If the product does not do what you asked, press *Say it does not hold* beside that sentence and the ordinary *Build* repairs it. If the delivery should not stay, press *Take it back out*.
+
+== Why this is one sentence
+
+The report is written so that a person can decide without reading code. Every sentence you wrote comes back with one word saying what happened to it, the checks that proved it are listed under it, and whatever the machine could not settle is on the page rather than left out. Your decision is one press, and the three presses are the whole decision.
+
+== By hand, and what is happening underneath
+
+=== The strip
+
+The strip names the ending. *built, deployed and running at <address>* is the usual one: merged, built by the platform, judged on the product. *coded, checked and merged into the project* is the same for a repository the platform does not deploy. *delivered — waiting for your decision* is a delivery that was not merged and waits for *Accept it* or *Not this*. *delivered — withheld* means a promise could not be kept or the product does not build; nothing was merged.
+
+=== The sections
+
+* *What you asked for, and what happened.* Each of your sentences with a word: *done*; *being built*; *not judged*, when a check or a reviewer could not reach it; *answered after the merge*, for a line the platform's build answered; *landed earlier*; or *in the project, and it does not do this*. Under a done sentence, its checks as chips; press one to read the evidence, and where a reviewer judged it on the running product, the picture it took.
+* *Nobody could settle these — they are yours to check.* Lines only the running product can show, declared at signing as something no check and no reviewer can drive. *It held* and *It did not* record your answer.
+* *What the machine could not judge.* Checks that could not run at all, with why. Nothing here says the work is wrong.
+* *What the work noticed, and did not do.* What the reviewers saw and could not settle, each with the ask a person would say. None of it stopped the delivery. xref:what-the-work-noticed.adoc[Taking up what the work noticed] is what to do with them.
+* *Already in the project, from an earlier delivery* and *Not started*: your other sentences and where they stand.
+* *The run's own account, for a developer.* Folded away: every check and its verdict, in full.
+
+=== The buttons
+
+[cols="1,3"]
+|===
+| Press | What it does
+
+| *Go on to the next*
+| The work is already in the project. This closes the decision and moves the strip to what is left to build. It moves nothing in git.
+
+| *Take it back out*
+| Reverts this delivery's merges, and every delivery this space merged after it, newest first, and pushes. The project builds as it did before. Refused, with the commit named, if somebody else's commit sits on top.
+
+| *Run it again*
+| Runs the signed work again, from the project as it stands. Nothing is signed twice and nothing you wrote changes.
+
+| *Think it again*
+| Withdraws the signature. The promises are derived anew and signed as new work.
+
+| *Accept it* / *Not this*
+| For a delivery that was not merged, when the strip says *delivered — waiting for your decision*. *Accept it* merges and pushes; *Not this* leaves the work on its branch.
+
+| *Say it does not hold*
+| Beside a delivered sentence, or one of its proved lines, when the product does not do it. What you write makes that promise work again on *your sentences*. It works on any cut, however old.
+
+| *It held* / *It did not*
+| Your answer for a line only you could check on the running product.
+
+| *Ask the platform again*
+| Re-reads what the platform did with the merged work. Press it after a fix, when a card is frozen at a failed build.
+
+| *Ask Claude to fix it*
+| When the platform refused to build the merged work: opens a Claude Code session in that repository with the platform's own words and what the run already tried.
+|===
+
+=== Going back to an earlier cut
+
+Every signed piece of work leaves its report, its run with every step's log, and the pictures its reviewers took. The *Cuts* row at the top of the run page lists them all, newest first; choose one and switch between *Report* and *Run and logs*.
+
+=== When something is wrong later
+
+Nothing about a delivery is final. Work that is live and wrong is said to be wrong on the sentence itself, with *Say it does not hold*, in your own words, and that sentence becomes work again. It is the same press for a cut from an hour ago and a cut from last month.
+
+== Limits
+
+* *Take it back out* is refused when somebody else's commit sits on top of the delivery; the commit is named.
+* *Accept it* is refused for a withheld delivery and while any line of the work is red; an unkept promise is never handed over.
+* A finding you do not keep stays on its report and may be reported again by a later reviewer.
