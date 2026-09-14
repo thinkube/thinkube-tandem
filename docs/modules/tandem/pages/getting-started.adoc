@@ -123,6 +123,20 @@ The buttons at the end are yours and only yours:
 
 Beside a promise that was delivered, *Say it does not hold* is how you say what you saw; that promise becomes work again on *your sentences*.
 
+== 11. Take up what the work noticed
+
+Under *What the work noticed, and did not do*, each finding has a box to tick and, beside what was seen, the ask its finder drafted in the words a person would use. Tick the ones you want and the button under the list turns from *Select what to keep for later* into *Keep the N selected for later*. Pressing it marks each one *kept for later* where it stands and adds a section *Kept for later* under the report, with the cut that noticed each. Nothing is read again and no sentence is made: the things you chose to build first keep their place.
+
+*Kept for later* gathers what you kept from every cut, so its button counts them all: *Put these N in the box*. Press it when the discoveries are what comes next. Each finding then reads *in the box* on its report, and the box holds one drafted ask per line, with the strip saying *N new lines written, not read*.
+
+image::tandem-15-kept-for-later.png[A report with two findings kept for later, and under it the Kept for later section gathering six from two cuts, with Put these 6 in the box]
+
+image::tandem-16-box-from-kept.png[The box with the six drafted asks, one per line, and Read these 6 on the strip]
+
+From here the path is the one you know: *Read these N*, *Keep these N*, and then *Group the rest*, since the things already built stay as they are and only the new sentences need a thing to belong to. The strip names them by number. Then *Build the first*.
+
+image::tandem-17-group-the-rest.png[After Group the rest: four new things carrying only the new sentences, above the three accepted ones]
+
 == What you have now
 
 A change in your project that started as sentences, with the record of what was promised, what was proved, and what you decided, kept in the space. The next thing to build is one press away. When the last one is built, the strip says *everything is built*, every sentence reads *built and accepted — it is in the project*, and the box waits for a new line.
