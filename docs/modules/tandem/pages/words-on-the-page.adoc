@@ -167,7 +167,7 @@ The bands name the kinds of card: *check*, *code*, *tests brought under*, *on th
 
 == Tandem: Show Defects
 
-A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP*, *slice*, *trigger*, *impact*, *became*, *detail*. xref:defect-ledger.adoc[The defect ledger] says what they mean.
+A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP* (the number of the signed work, as the *Cuts* row shows it), *slice* (the piece of work it was found in), *trigger*, *impact*, *became*, *detail*. xref:defect-ledger.adoc[The defect ledger] says what they mean.
 
 == Limits
 

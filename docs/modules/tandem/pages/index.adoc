@@ -4,7 +4,16 @@
 _An experimental intent-driven development methodology for working with Claude Code, still changing._
 
 .TL;DR
-Say to Claude Code: "Put these three lines in the box of the tasks space: Finished tasks stop crowding the ones I still have to do. I can see how many tasks I have without counting cards. Deleting a task asks me first." Claude calls Tandem's `save_draft` and the lines appear in the box. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into your project, deployed, judged on the running product, and a report that says what happened to each of your sentences.
+Say to Claude Code: "Put these three lines in the box of the tasks space:"
+
+[source,text]
+----
+Finished tasks stop crowding the ones I still have to do.
+I can see how many tasks I have without counting cards.
+Deleting a task asks me first.
+----
+
+Claude calls Tandem's `save_draft` and the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into your project, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
 == The decision
 
@@ -36,6 +45,7 @@ Two moments are yours and only yours. *Sign* freezes exactly what you saw into w
 * *No reading of diffs to know whether it worked.* The report carries its proofs: which checks ran, which passed, what a reviewer judged on the running product, and what only you can confirm.
 * *No silent scope creep.* What a worker touches outside its declared files is reverted.
 * *No merge you did not choose.* The work waits for your decision.
+* *No undocumented change.* Every thing carries a documentation promise, judged by a reviewer like the others; xref:from-sentence-to-promise.adoc#_documentation_is_part_of_every_thing[Documentation is part of every thing].
 * *No post-mortems.* Every defect a run catches is one row in a ledger that outlives the space. xref:defect-ledger.adoc[The defect ledger] is how the method learns.
 
 == Where it shows up
@@ -43,6 +53,7 @@ Two moments are yours and only yours. *Sign* freezes exactly what you saw into w
 The Tandem icon in Thinkube IDE opens the space: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything Tandem does is on that page.
 
 * xref:getting-started.adoc[Your first thing built]: from an empty box to a change running, screen by screen.
+* xref:from-sentence-to-promise.adoc[How a sentence becomes a promise]: what the machine reads in your words, and how that becomes promises, checks and a documentation page.
 * xref:what-the-work-noticed.adoc[Taking up what the work noticed]: turning what the reviewers found into the next thing to build.
 * xref:the-run.adoc[While it builds]: what the run page shows and why the machine works the way it does.
 * xref:the-report.adoc[Reading the report and deciding]: what each section and button means.

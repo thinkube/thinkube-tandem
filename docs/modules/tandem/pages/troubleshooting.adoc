@@ -2,72 +2,67 @@
 :page-type: how-to
 
 .TL;DR
-Find your symptom in the first column; the second says why it happens and the third what to press. If a page shows a symbol whose meaning is not written next to it, that is a defect in Tandem, not in your reading.
+Find what you see in the first column; the second says why it happens and the third what to press. If a page shows a symbol whose meaning is not written next to it, that is a defect in Tandem, not in your reading.
+
+== Why this is one sentence
+
+Every message Tandem shows says what happened in one sentence, and the page you are on offers the press that changes it. This table is for the cases where the press is not on the page you are looking at.
+
+== By hand, and what is happening underneath
 
 [cols="1,1,2"]
 |===
-|Symptom |Cause |What to do
+|What you see |Why |What to do
 
 |The sidebar shows "Which project / repository…"
-|No repository chosen yet in a multi-root workspace
-|Click *Choose repository…* — the choice is remembered per workspace.
+|Your workspace has more than one folder and no repository is chosen yet
+|Press *Choose repository…*; the choice is remembered per workspace.
 
-|"Dispatch refused: … re-sign the cut"
-|The signed content changed (an edit, a re-ground) — the approval token
-no longer matches
-|Review the cut screen and press *Sign* again. This is the gate working.
+|The strip refuses *Build these N* with "the signature does not match"
+|The promises changed after you signed them, so what would run is not what you approved
+|Open *what it will do*, read the promises again, and press *Build these N* again.
 
 |"No forge is configured"
-|The repository has no `origin` remote Tandem can open deliveries on
-|Add a remote (github.com uses the `gh` CLI; Gitea needs
-`thinkubeTandem.giteaToken`).
+|The repository has no remote Tandem can push to
+|Add a remote. github.com remotes use the `gh` CLI; Thinkube Git needs `thinkubeTandem.giteaToken`.
 
-|A red proof on the delivery
-|A probe failed against the delivered code — the truth, not a glitch
-|Read the evidence on the proof line. Ask for the fix in a new ask; the
-delivery stays refusable.
+|A line under a promise shows ✗
+|A check ran against the delivered code and did not pass. This is the truth, not a glitch
+|Press the check to read what it saw. Say what you want instead as a new line in the box; the delivery stays yours to refuse.
 
 |"⛔ containment: … — reverted, unit failed"
-|A worker wrote outside its declared footprint
-|The stray paths were reverted and the run halted. The defect row names
-the unit; re-sign to re-run.
+|A worker wrote outside the files it declared
+|The stray files were put back and the run stopped, naming the piece of work. Press *Run it again*.
 
 |"REFUSED to write the store: secret-shaped content …"
-|Your ask or a change contains something that looks like a credential
-|Remove the secret from the text; the space stays live in memory.
+|A line you wrote, or a promise, contains something that looks like a credential
+|Remove it from the text. The space stays as it is on the page.
 
-|"docs gate blocks this accept"
-|A change declared a `docs/` file that never landed
-|Deliver the documentation (a new ask). Documentation is required for
-every cut at signing; the only way past it there is a recorded
-exemption with a reason, entered before you sign.
+|*Build these N* says documentation is needed
+|Every thing carries a documentation promise, and neither its page nor *Not needed* is there
+|Press *Not needed* on the documentation promise with your reason, or let the page be built. xref:from-sentence-to-promise.adoc#_documentation_is_part_of_every_thing[Documentation is part of every thing].
 
-|A worker seems stuck
-|The worker is parked with a question
-|Open the rail beside the run — its parked-question box names the
-worker and is the one place in the surface to type your answer.
+|A card says *needs you* and nothing moves
+|A worker stopped on a question only you can answer, about what you want
+|The card offers a box and *Send*. The status bar says *needs an answer* until you do.
 
 |"the reviewers are locked out, so none was started"
-|The signed-in session did not open the product — the sign-in was tried
-three times and never got in
-|Nothing was judged on the running product and nothing already proved
-was taken away: those criteria stay unjudged. Open the address yourself
-and sign in. If that works, run again; if it does not, the product is
-what to fix.
+|The reviewers' browser could not sign in to the running product
+|The lines they would have judged stay *not judged*, and nothing already proved is taken away. Open the address yourself and sign in. If that works, press *Run it again*; if it does not, the product is what to fix.
 
-|A promise reads "not judged" though its checks passed
-|One of its criteria could not be reached on the running product — a
-reviewer answered BLOCKED
-|Read that criterion's line on the report: the reviewer says in its own
-words what stopped it. Blocked is never counted against the work.
+|A sentence reads *not judged* though its checks passed
+|One of its lines could not be reached on the running product; the reviewer said what stopped it
+|Read that line on the report. Blocked is never counted against the work.
 
-|A criterion says "judged with no picture saved"
-|The reviewer decided it but wrote no picture for it
-|The verdict stands; only the evidence is missing. The reviewer's own
-words are on the line.
+|A line says "judged with no picture saved"
+|The reviewer decided it but saved no picture
+|The verdict stands; only the picture is missing. The reviewer's own words are on the line.
 
-|An earlier cut's report or logs are wanted
+|You want an earlier cut's report or logs
 |The page shows the cut you last chose
-|Use the *Cuts* row at the top of the run page: every cut this space ran
-is there, with its report, its run and its pictures.
+|Use the *Cuts* row at the top of the run page: every cut this space ran is there, with its *Report* and its *Run and logs*.
 |===
+
+== Limits
+
+* A message quoted here is as the extension writes it at the version this page was written against; a word can move before the page does.

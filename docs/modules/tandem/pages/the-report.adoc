@@ -35,7 +35,7 @@ The strip names the ending. *built, deployed and running at <address>* is the us
 | The work is already in the project. This closes the decision and moves the strip to what is left to build. It moves nothing in git.
 
 | *Take it back out*
-| Reverts this delivery's merges, and every delivery this space merged after it, newest first, and pushes. The project builds as it did before. Refused, with the commit named, if somebody else's commit sits on top.
+| Reverts this delivery's merges, and every delivery this space merged after it, newest first, and pushes. The project builds as it did before. Refused, with the commit named, if a later commit of your own, made outside Tandem, sits on top of the delivery: taking the delivery out would take that commit with it.
 
 | *Run it again*
 | Runs the signed work again, from the project as it stands. Nothing is signed twice and nothing you wrote changes.
@@ -65,10 +65,10 @@ Every signed piece of work leaves its report, its run with every step's log, and
 
 === When something is wrong later
 
-Nothing about a delivery is final. Work that is live and wrong is said to be wrong on the sentence itself, with *Say it does not hold*, in your own words, and that sentence becomes work again. It is the same press for a cut from an hour ago and a cut from last month.
+Nothing about a delivery is final. Work that is live and wrong is said to be wrong on the sentence itself, with *Say it does not hold*, in your own words, and that sentence becomes work again. It is the same press for the latest cut and for the oldest one in the space.
 
 == Limits
 
-* *Take it back out* is refused when somebody else's commit sits on top of the delivery; the commit is named.
+* *Take it back out* is refused when a later commit of your own, made outside Tandem, sits on top of the delivery; the commit is named, and moving it aside is yours to do first.
 * *Accept it* is refused for a withheld delivery and while any line of the work is red; an unkept promise is never handed over.
 * A finding you do not keep stays on its report and may be reported again by a later reviewer.

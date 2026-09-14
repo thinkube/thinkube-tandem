@@ -2,66 +2,48 @@
 :page-type: reference
 
 .TL;DR
-Every defect the run catches, a containment violation, a check that never went green, a gate that could not run, a finding carried to the delivery, is one row in `defects/<YYYY-MM>.jsonl` at the store's root. Nothing about what went wrong is deleted with the space it went wrong in.
+Every defect a run catches is one row in `defects/<YYYY-MM>.jsonl` at the store's root. A row is written the moment the defect is found and never edited. *Tandem: Show Defects* renders the month as a table with the fate of every row. xref:defect-ledger.adoc[The defect ledger] is what the rows mean and why they are kept.
 
-Every point where the run CATCHES a defect appends one structured row to
-the ledger: a containment violation, a unit whose checks never went green,
-a gate that could not run (exit 126/127 — an infrastructure defect, not a
-code verdict), a supervisor disclosure (by definition a contract gap), a
-confession found by the honesty scan, a finding carried to the delivery.
+== The file
 
-The ledger is one file per month at the store's root —
-`defects/<YYYY-MM>.jsonl` — shared by every space, with each row naming
-the space it came from. It is not kept inside the space, so deleting a
-space never deletes the record of what went wrong in it.
+One file per month at the store's root, shared by every space; each row names the space it came from. A row is appended at the moment a run catches something: a worker writing outside its declared files, a check that never went green, a check that could not run at all, a question the run had to answer for a worker, a deferral found in the delivered code, a finding carried to the report.
 
-Run *Tandem: Show Defects* to render it as a table.
+== A row
 
-The rows are find-time facts: what surfaced the defect, and what it cost.
-Reading them monthly is how the methodology learns. A row that recurs is a
-process defect, not a code defect — and the fix belongs in the process,
-not in one more check.
+[cols="1,3",options="header"]
+|===
+| Field | Holds
 
-== What became of it
+| `ts`, `version`
+| When the row was written, and the Tandem version that wrote it.
 
-A row is written the moment something is found and never touched again,
-so the ledger says what surfaced and not what became of it. Three
-quarters of the rows are silent about whether the thing was repaired
-before anyone saw it — which hides the number the methodology most needs:
-not how many defects there were, but how many the machine healed by
-itself.
+| `space`, `spec`, `run`, `slice`, `unit`
+| Where it happened: the thinking space, the signed work (`TEP-<author>-<n>`), the run, the piece of work and the worker.
 
-The run knows. So when a run ends it writes how it ended — and how each
-of its slices ended — beside the ledger, keyed by the same run id the
-rows already carry. Beside the ledger, not inside the space: run records
-die with the space they live in, and the whole point of the ledger is
-that it does not.
+| `activity`, `trigger`, `type`, `stage`, `impact`
+| The classification; the values are listed on xref:defect-ledger.adoc#_the_axes[The axes].
 
-Reading a row's fate then needs no new capture:
+| `detail`
+| The evidence, in the words of whatever caught it.
 
-* an impact that already says it was repaired — _the author repaired its
-  own work_, _closed what no other actor could_ — is **healed**;
-* an impact that says nobody could — _the closer could not finish it
-  either_ — **reached the person**;
-* otherwise the slice it was found in answers, and where there is no
-  slice, the run's own ending does;
-* a run nobody wrote down stays **not known**, which is the honest answer
-  rather than a flattering one.
+| `refs`
+| Related identifiers: a commit, a check, a file.
+|===
 
-*Tandem: Show Defects* prints the fate beside every row and totals them
-per month. Older rows will read "not known": their runs ended before
-anything wrote the answer down.
+== The fate of a row
+
+A row says what surfaced, not what became of it. When a run ends it writes how it ended, and how each piece of work ended, beside the ledger under the run's id. Reading a row's fate then follows from the rows themselves:
+
+* an impact that says it was repaired, such as *the author repaired its own work* or *closed what no other actor could*, reads **healed**;
+* an impact that says nobody could, such as *the closer could not finish it either*, reads **reached the person**;
+* otherwise the ending of the piece of work it was found in answers, and where there is none, the run's own ending;
+* a run whose ending was never written reads **not known**.
+
+*Tandem: Show Defects* prints the fate beside every row and totals the month: *N found · N healed by the run · N reached the person · N not known*.
 
 == The tool's own defects
 
-A run catches defects in the work it supervises. It cannot catch a defect
-in the machinery that runs it, so Tandem's own repairs — hundreds of them
-over a month — left almost no trace in a ledger that recorded everything
-else. The one population the methodology most needs to watch was the one
-it could not see.
-
-A repair to the tool is a commit, so the commit is where it is said. A
-line in the message names what was wrong:
+A run cannot catch a defect in the machinery that runs it, so a repair to Tandem itself is recorded from the commit that made it. A line in the commit message names what was wrong:
 
 [source]
 ----
@@ -69,22 +51,11 @@ Defect: the platform's verdict was compared in one case, so a pipeline
 that passed was read as a failure
 ----
 
-Every deploy harvests the trailers it has not harvested yet, writes one
-row per repair — `activity: tool development`, `trigger: self-repair`,
-`type: machine` — and remembers the commit it stopped at, so nothing is
-recorded twice. The row carries the commit's sha, so a monthly reading
-can go back to the change itself.
+Every deploy, and every start of the extension, harvests the lines it has not harvested yet and writes one row per repair: `activity: tool development`, `trigger: self-repair`, `type: machine`, with the commit in `refs`. A commit that says nothing records nothing.
 
-Nothing is inferred. A commit that says nothing records nothing: a ledger
-read for learning is worth less than nothing when it is full of guesses.
-The completeness of this half therefore rests on the person or agent
-writing the commit saying so.
+`type` is a closed set the code cannot stray from: `code`, `test`, `contract`, `gate`, `machine`, `infrastructure`, `environment`, `decision`. The machine's own failures, a check that could not be graded, a stall, a crash, a lock nobody released, are typed `machine` wherever they are caught.
 
-`type: machine` means what its name says. The machine's own failures — a
-gate that could not grade, a watchdog halt, a stall, a crash, a lock
-nobody released — are typed `machine` wherever they are caught, and the
-type is a closed set the code cannot stray from: `code`, `test`,
-`contract`, `gate`, `machine`, `infrastructure`, `environment`,
-`decision`. The tool's own repairs are harvested from the commits that
-made them both at deploy and whenever the extension starts, and the
-harvest's mark moves only past repairs the ledger received.
+== Limits
+
+* `activity`, `trigger` and `impact` are free strings chosen by the site that caught the defect; a monthly reading counts spellings as well as kinds.
+* Rows from runs that ended before endings were written read *not known*.

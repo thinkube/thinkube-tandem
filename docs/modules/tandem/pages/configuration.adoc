@@ -51,41 +51,24 @@ The *Projects* view also carries *New Product*, *New here…*, *Set Product…*,
 
 |`thinkubeTandem.storeRoot` |empty |Root of the store. Empty means `~/thinkube-tandem-store`; spaces persist at `<root>/spaces/<project id>`.
 
-|`thinkubeTandem.groundingModel` |`opus` |Model for the grounding round, the judgment stage.
+|`thinkubeTandem.groundingModel` |`opus` |The model that works a thing out: its promises, the files they land in and the lines that must become true.
 
-|`thinkubeTandem.volumeModel` |`sonnet` |Cheaper model for the volume rounds: classification, naming, coverage, criteria, decisions, answers, check proposals and the repository digest.
+|`thinkubeTandem.volumeModel` |`sonnet` |The model for the reading, the grouping, the naming of things, the questions and their answers, and the reading of the repository.
 
-|`thinkubeTandem.workerModel` |`sonnet` |Base model for run workers —
-never inherited from the environment.
+|`thinkubeTandem.workerModel` |`sonnet` |The model the run's workers use; never taken from the environment.
 
-|`thinkubeTandem.workerModelByRole` |`{}` |Per-role raises, e.g.
-`{"judge": "opus"}`.
+|`thinkubeTandem.workerModelByRole` |`{}` |A different model for one kind of worker, for example `{"judge": "opus"}` for the one that decides whether a check is green.
 
-|`thinkubeTandem.maxConcurrent` |`4` |Concurrent workers on the run's
-ready frontier.
+|`thinkubeTandem.maxConcurrent` |`4` |How many workers run at the same time.
 
-|`thinkubeTandem.suiteCommand` |`npm test` |The project's test suite;
-its verdict is a delivery proof.
+|`thinkubeTandem.suiteCommand` |`npm test` |The project's own test suite. The closing gate runs it, and its verdict is on the report.
 
-|`thinkubeTandem.prepareCommand` |_(machine-derived)_ |The build step a
-single check needs before it can run (for example, compiling TypeScript
-test files). Normally you never set this: the machine reads it from the
-repository's own manifests and caches it with the repository reading.
-Set it only to override what the machine derived. The machine also
-derives, and never asks you for, the provisioning step a fresh checkout
-needs (installing dependencies): each run provisions its worktree once,
-and every verify runner shares what that produced. A run whose build
-step fails on the untouched tree is refused before any worker starts,
-with the tool's own output.
+|`thinkubeTandem.prepareCommand` |_(machine-derived)_ |The build step a single check needs before it can run, such as compiling test files. The machine reads it from the repository's own manifests; set it only to override what it read.
 
-|`thinkubeTandem.docsGateMode` |`blocking` |Governs accepting a delivery
-only: whether an unmet documentation obligation still blocks the merge.
-Documentation is required for every cut at signing regardless of this
-setting; the only way past it there is a recorded exemption with a
-reason.
+|`thinkubeTandem.docsGateMode` |`blocking` |What *Accept it* does when the page a documentation promise named did not land: `blocking` refuses, `advisory` accepts and says so. Signing always needs the documentation promise or *Not needed*; this setting changes nothing there.
 
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
-(github.com remotes use the `gh` CLI instead).
+(github.com remotes use the `gh` CLI instead); Thinkube Git is a Gitea forge.
 
 |`thinkubeTandem.controlUrl` |empty |thinkube-control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
 

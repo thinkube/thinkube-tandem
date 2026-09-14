@@ -4,7 +4,16 @@
 _From an empty box to a change running in your project, one screen at a time. The example is a todo app made from the web app template and nine sentences about it._
 
 .TL;DR
-Say to Claude Code: "Make an app called todo from the web app template, then put these lines in the box of a new thinking space: My tasks come back in a sensible order, what is due soonest first. Finished tasks stop crowding the ones I still have to do. Deleting a task asks me first." Claude creates the app and calls `save_draft`. Then you open the space and press the one button the strip offers, five times: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. When the run ends you read the report and press *Go on to the next*. What you have afterwards is the change merged, deployed and running at the app's address.
+Say to Claude Code: "Make an app called todo from the web app template, then put these lines in the box of a new thinking space:"
+
+[source,text]
+----
+My tasks come back in a sensible order, what is due soonest first.
+Finished tasks stop crowding the ones I still have to do.
+Deleting a task asks me first.
+----
+
+Claude creates the app and calls `save_draft`. Then you open the space and press the one button the strip offers, five times: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. When the run ends you read the report and press *Go on to the next*. What you have afterwards is the change merged, deployed and running at the app's address.
 
 == What you will learn
 
@@ -61,7 +70,7 @@ Claude Code can write the lines for you with Tandem's `save_draft`. It cannot pr
 
 == 4. Read these 9
 
-Reading shows you how the machine understood you before anything is recorded, so a misreading costs one press, not a build. Press *Read these 9*. Under the box, *What I read in your words* lists the subjects it found, with how many claims each carries, and then every sentence with two marks in it: what it is about, highlighted, and what must become true of it, underlined. A sentence that never names its subject shows the subject in brackets and the word *names nothing*.
+Reading shows you how the machine understood you before anything is recorded, so a misreading costs one press, not a build. The machine reads two things in each sentence and nothing else: what it is about, and what must become true of it. Press *Read these 9*. Every sentence comes back with those two parts marked: the subject highlighted, the claim underlined. Above them, *What I read in your words* lists the subjects it found, *my tasks*, *the new-task box*, *deleting a task*, with how many claims each carries. Sentences that name the same subject meet under it; that is how the nine lines become three things in step 6 without you sorting them. A sentence that never names its subject shows the subject in brackets and the word *names nothing*, so you can see that the machine guessed. xref:from-sentence-to-promise.adoc[How a sentence becomes a promise] follows one sentence all the way to its checks.
 
 image::tandem-01-read.png[The space after Read these 9: each sentence marked with what it is about and what must become true of it, under three subjects, and Keep these 9 on the strip]
 
@@ -83,13 +92,13 @@ image::tandem-03-group.png[The sentences became three things: first, then, later
 
 Working a thing out is what costs, so it happens only for the thing you pick. Press *Build the first*. The strip says *working out what to build — N of M subjects done* and the banner on the page counts the same. When the last subject is done, the page *what it will do* opens by itself.
 
-It shows, under *What will be true when this is done*, one promise per sentence, the files it lands in, and under each promise the lines that must become true. Each line says where it stands: *checked when it is built* means a check will prove it; *judged by a reviewer at delivery* means a reviewer reads the finished work once; *only you can see this* means only the running product can show it, and you confirm it.
+It shows, under *What will be true when this is done*, one promise for each claim the reading found, the files it lands in, and under each promise the lines that must become true. Each line says where it stands: *checked when it is built* means a check will prove it, and the check is written before the code by a worker that never sees the code; *judged by a reviewer at delivery* means a reviewer reads the finished work once; *only you can see this* means only the running product can show it, and you confirm it.
 
 image::tandem-06-work-page.png[The what-it-will-do page: promises, the files they land in, and each line with where it stands]
 
 On *your sentences*, under the thing in hand, *N things I decided for you* lists the choices your sentences left open, each with the answer the machine chose, for you to replace before you sign.
 
-A documentation promise is added by the machine. Press *Not needed* on it if none applies; without documentation or that press, the work cannot be signed.
+One promise is added by the machine to every thing: *The documentation says what "<the thing>" does, in the words of the person using it.* It lands a page in your project's `docs/` folder and a reviewer judges it at delivery, like the other lines. Press *Not needed* on it, with your reason, if no page applies; without the page or that press, the work cannot be signed. Documentation is not a step after the work; it is one of the promises the work keeps.
 
 == 8. Sign
 

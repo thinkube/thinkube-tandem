@@ -2,81 +2,27 @@
 :page-type: concept
 
 .TL;DR
-A space belongs to a project, and a project is one repository or one subtree of it. Tandem mints a card for it once, when you enable the project, and finds the repository again from that card; you never write one by hand.
+A thinking space belongs to a project, and a project is one repository, or one folder inside it. Tandem records the project once, when you press *Tandem: Activate Repository*, and finds it again from the repository's own remote and path. Move the repository, clone it on another machine, and its spaces are there.
 
+== The decision
 
-A thinking space belongs to a project, and a project is one repository (or
-one subtree of one). For your spaces to still be there tomorrow, Tandem
-has to be able to look at a repository and know which project it is. That
-link is the *card*.
+For your spaces to still be there tomorrow, Tandem has to look at a repository and know which project it is. That link is kept in the store, beside the spaces, and never in your repository: it is minted once when you activate the project, and it holds the project's id, its label, its product grouping, and enough to find the repository again.
 
-== What a card is
+A repository is matched back to its project from what it can always say about itself: its git remote and the path of the project inside it, empty for a whole repository or a folder such as `packages/web` for a part of one. The remote is compared by what it points at, not by how it is spelled: an SSH address and an HTTPS address of the same repository are one repository. A repository with no remote is matched by where it sits on disk and re-links itself if you move it.
 
-A card holds a project's minted id, its label, its product grouping, and
-enough to find the repository again. You never write one by hand — it is
-minted once, when you enable a project.
+== What it saves you
 
-The id is minted at that moment and never changes. The label is yours and
-you can rename it whenever you like; renaming never moves the spaces,
-because nothing is keyed by the name. Enabling the same repository twice
-is refused: identity is immutable, and a second card would split one
-project's history in two.
+* *Nothing to write by hand.* You activate a repository once; the record is the machine's.
+* *A rename costs nothing.* The label is yours to change; nothing is keyed by it, so the spaces stay put.
+* *A restore comes back whole.* The store is the thing you back up, and it carries the identity too, so every space re-attaches to its repository on a new machine.
 
-== Where the card lives, and why
+== Where it shows up
 
-The card is kept in the store, at `cards/<id>.yaml` — beside the spaces
-filed under it, not inside your repository.
+* *Tandem: Activate Repository* creates the project; activating the same repository twice is refused, so one project's history is never split in two.
+* The status bar shows *Tandem: <product> / <repository>*; *Tandem: Switch Repository* changes it.
+* A git worktree, a second checkout of a repository you already have, is not a project. Activating one is refused and points you at the repository it belongs to.
+* `.tandem/` in your repository keeps only facts about the code itself: how the project is installed, prepared, tested and built, its conventions when it declares any, and your prompt overrides. Those belong with the source.
 
-It used to live in the repository, at `.tandem/space.yaml`. That was
-wrong in a way that only showed up at the worst moment. The file was
-untracked, so it never travelled with a clone, and committing it would
-have put your private grouping and labels into a product's source. Worse:
-restore a machine and the store came back whole — every space, every
-delivery, every record — while every repository on the new machine was a
-stranger to it. Nothing was deleted. It was unreachable, which to a person
-is the same thing.
+== Limits
 
-Keeping the card in the store fixes that, because the store is the thing
-that gets backed up and restored.
-
-== How a repository is matched back to its card
-
-From what the repository itself can always say about itself:
-
-* its *git remote*, and
-* the *path of the project inside it* (empty for a whole repository, or
-  something like `packages/web` for a subtree).
-
-So a fresh clone — new machine, different directory, different everything
-— re-attaches itself to its own spaces on sight. The remote is compared by
-what it points at, not by how it is spelled: `git@github.com:you/thing.git`
-and `https://github.com/you/thing` are one repository.
-
-A repository with no remote at all is matched by where it sits on disk,
-and re-links itself if you move it.
-
-== Worktrees are not projects
-
-A git worktree — a second checkout of a repository you already have — is a
-temporary view, not a project. It reports the same remote and the same
-path as the repository it came from, so a naive match would show one
-project once per open worktree. Tandem tells them apart and gives a
-worktree no identity of its own; enabling one is refused, and points you
-at the repository it belongs to.
-
-== `.tandem/` in your repository
-
-A card left by an older version is imported into the store the first time
-that project is seen, and then removed from the working tree. You do not
-have to do anything.
-
-The `.tandem/` directory itself stays, because it holds things that really
-are the repository's own and belong with the source:
-
-setup.json:: the four facts the door proved about this repository — how to
-install it, how to prepare it, how to run one test, how to build it.
-conventions.json:: the repository's own conventions, when it declares any.
-prompts/:: your per-repository prompt overrides.
-
-Those are facts about the code, not about your grouping — so they stay
-with the code.
+* A project record left in the repository by an older version is moved into the store the first time the project is seen.
