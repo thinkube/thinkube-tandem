@@ -10,12 +10,19 @@
  */
 import type { SpacePush } from "./surfaceContract";
 import type { SurfacePage } from "./surfaceLayout";
+import { asksOfText } from "../derive/asks";
+import { isClosed } from "./nextAction";
 
 export function pageFor(push: SpacePush): SurfacePage {
   if (push.running || push.run?.parked?.length) return "flow";
   if (push.deliveries.some((d) => !d.accepted)) return "flow";
   if (push.pendingModel || push.sentences.length === 0) return "write";
   const chosen = (push.specs ?? []).some((sp) => sp.chosen);
+  // Lines in the box, with nothing left to build and nothing in hand, are
+  // the next thing to read, and the box is where they are.
+  const written = asksOfText(push.draft ?? "").length;
+  const anythingToBuild = (push.specs ?? []).some((sp) => !isClosed(sp) && sp.fate !== "not run");
+  if (written && !anythingToBuild && !chosen) return "write";
   const working = !!push.activity || (push.grounding?.length ?? 0) > 0;
   if (chosen && !working && push.cost.subjects === 0 && (push.ready.promises > 0 || push.signedIdle)) return "work";
   return "intent";

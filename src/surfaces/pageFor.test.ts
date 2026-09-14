@@ -15,6 +15,14 @@ test("sentences read, nothing chosen: your sentences", () => {
   assert.equal(pageFor(pushFor("intent")), "intent");
 });
 
+test("lines in the box with everything built: the write page, where the lines are", () => {
+  const p = pushFor("intent");
+  const built = { ...p, specs: p.specs!.map((sp) => ({ ...sp, fate: "accepted" as const })), draft: "one more\nand another" };
+  assert.equal(pageFor(built), "write");
+  assert.equal(pageFor({ ...built, draft: "" }), "intent", "with the box empty, your sentences");
+  assert.equal(pageFor({ ...p, draft: "one more" }), "intent", "with a thing still to build, the lines wait their turn");
+});
+
 test("a thing chosen and worked out: what it will do", () => {
   assert.equal(pageFor(pushFor("work")), "work");
 });
