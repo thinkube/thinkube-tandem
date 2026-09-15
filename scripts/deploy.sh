@@ -1,110 +1,132 @@
 #!/usr/bin/env bash
 #
-# Build → package → install this extension into the local code-server, one step.
+# Build, package and install this Thinkube extension into the local code-server.
 #
-# Every deploy BUMPS THE PATCH VERSION first (v1's --bump, made mandatory):
-# an identical version reinstalled looks like "nothing new" to code-server —
-# no update badge, no Reload button in the Extensions panel, and the human
-# gets zero signal that anything shipped. A version change is the signal.
+# This file is identical in every Thinkube extension repository as
+# scripts/deploy.sh. The master copy is
+# ansible/40_thinkube/core/code-server/files/extension-deploy.sh in the
+# thinkube repository, and the deploy playbook refuses to run a copy that
+# differs from it. A repository with extra steps puts them in
+# scripts/deploy-hook.sh, which is called with dependencies, pre-package and
+# post-install.
 #
-# Two more encoded constraints (from the field): the vsix MUST include
-# node_modules (the Agent SDK is a runtime dependency loaded dynamically),
-# and code-server's CLI refuses extension management when it inherits the
-# parent server's IPC env — those variables are stripped before install.
+# Usage:
+#   scripts/deploy.sh            bump the patch version, install, commit, push
+#   scripts/deploy.sh --no-bump  install the version in package.json
+#
+# Constraints encoded here:
+#   - Reinstalling the same version gives code-server nothing to notice: no
+#     update badge, no Reload button, no signal that anything shipped. Every
+#     deploy from a workstation bumps the patch version.
+#   - The vsix carries node_modules: an extension whose runtime dependencies
+#     are loaded dynamically fails without them.
+#   - code-server's CLI refuses extension management while it inherits the
+#     parent server's IPC variables, so they are stripped for the install.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-npm version patch --no-git-tag-version >/dev/null
+BUMP=1
+case "${1:-}" in
+  "") ;;
+  --no-bump) BUMP=0 ;;
+  *) echo "usage: scripts/deploy.sh [--no-bump]" >&2; exit 2 ;;
+esac
+
+CODE_SERVER=/usr/lib/code-server/bin/code-server
+EXT_ROOT="${HOME}/.local/share/code-server/extensions"
+
+if [ ! -f .nvmrc ]; then
+  echo "no .nvmrc: it names the Node major version this extension builds with" >&2
+  exit 1
+fi
+WANT="$(tr -d '[:space:]' < .nvmrc)"
+HAVE="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$HAVE" != "$WANT" ]; then
+  echo "Node ${WANT} required (.nvmrc), found ${HAVE}" >&2
+  exit 1
+fi
+if [ ! -x "$CODE_SERVER" ]; then
+  echo "code-server CLI not found at ${CODE_SERVER}" >&2
+  exit 1
+fi
+
+hook() {
+  if [ -x scripts/deploy-hook.sh ]; then
+    echo "▸ hook ${1}…"
+    scripts/deploy-hook.sh "$1"
+  fi
+}
+
+echo "▸ dependencies…"
+npm ci
+# A repository whose build needs more than the root packages installs them here.
+hook dependencies
+
+if [ "$BUMP" = 1 ]; then
+  npm version patch --no-git-tag-version >/dev/null
+fi
+
 VERSION="$(node -p "require('./package.json').version")"
-VSIX="thinkube-tandem-${VERSION}.vsix"
-echo "▸ version bumped to ${VERSION}"
+case "$VERSION" in
+  0.1.*) ;;
+  *)
+    echo "version ${VERSION}: Thinkube extensions stay on 0.1.x, patch bumps only" >&2
+    exit 1
+    ;;
+esac
+PUBLISHER="$(node -p "require('./package.json').publisher")"
+NAME="$(node -p "require('./package.json').name")"
+VSIX="${NAME}-${VERSION}.vsix"
+echo "▸ ${PUBLISHER}.${NAME} ${VERSION}"
 
-echo "▸ compile (tsc + webview)…"
-npm run compile
+echo "▸ compile…"
+npm run compile --if-present
 
-# The ledger records what a RUN catches, and a run cannot catch a defect in
-# the machinery that runs it — so the tool's own repairs are read from the
-# commits that made them. A commit says `Defect: <what was wrong>`; every
-# deploy harvests the ones it has not harvested yet. A commit that says
-# nothing records nothing.
-echo "▸ harvest the tool's own repairs into the ledger…"
-node -e '
-const { harvestSelfDefects } = require("./out/engine/selfDefects.js");
-const store = process.env.TANDEM_STORE || require("path").join(process.env.HOME, "thinkube-tandem-store");
-const version = require("./package.json").version;
-try {
-  const r = harvestSelfDefects({ repoRoot: process.cwd(), storeDir: store, version });
-  console.log("  " + (r.recorded ? `${r.recorded} repair(s) recorded` : "nothing new to record"));
-} catch (e) { console.log("  not recorded: " + e.message); }
-' 2>/dev/null || echo "  (skipped — no build yet)"
+if [ "$BUMP" = 1 ]; then
+  # The suite runs where a person deploys. The playbook installs what the
+  # repository already released.
+  echo "▸ the suite…"
+  npm run test --if-present
+fi
 
+# After the build: a hook step reads what the compile produced.
+hook pre-package
 
-# The whole suite, the walk included: every press a person makes, in
-# order, over a real session and store. Nothing ships red.
-echo "▸ the suite…"
-npm test > /dev/null 2>&1 || { echo "the suite is red — nothing ships; run npm test"; exit 1; }
-
-# The packaged extension is a COPY: git can say nothing about where it came
-# from, and the closing gate needs that answer to know whether a run judges
-# its own machinery. The build is the only place that knows, so it writes it
-# down beside the rules it built (src/run/selfHosted.ts reads this).
-echo "▸ stamp the repository this build came from…"
-node -e '
-const { execFileSync } = require("child_process"), fs = require("fs");
-const git = (a) => { try { return execFileSync("git", a, { encoding: "utf8" }).trim() || undefined; } catch { return undefined; } };
-const stamp = {
-  remote: git(["remote", "get-url", "origin"]),
-  gitDir: git(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
-  commit: git(["rev-parse", "HEAD"]),
-};
-fs.writeFileSync("out/builtFrom.json", JSON.stringify(stamp, null, 2));
-console.log("  " + (stamp.remote ?? stamp.gitDir ?? "no repository — the gate will refuse a self-hosted run"));
-'
-
-echo "▸ package ${VSIX} (with dependencies)…"
-npx vsce package -o "${VSIX}" --allow-star-activation 2>&1 | tail -2
+echo "▸ package ${VSIX}…"
+./node_modules/.bin/vsce package -o "$VSIX" --allow-star-activation 2>&1 | tail -2
 
 echo "▸ install into code-server…"
 env -u CODE_SERVER_PARENT_PID -u VSCODE_IPC_HOOK_CLI -u VSCODE_IPC_HOOK \
     -u VSCODE_CWD -u VSCODE_NLS_CONFIG -u VSCODE_HANDLES_UNCAUGHT_ERRORS \
     -u VSCODE_PROXY_URI -u VSCODE_ESM_ENTRYPOINT \
-    /usr/lib/code-server/bin/code-server --install-extension "${VSIX}" --force
+    "$CODE_SERVER" --install-extension "$VSIX" --force
+rm -f "$VSIX"
 
-# Repoint the version-stable launcher symlink BEFORE pruning: the Claude
-# process wrapper resolves through extension-current, and a prune that
-# outruns the repoint leaves it dangling — every Claude spawn then fails
-# until a reload (the 2.0.0 outage; caught by the human).
-echo "▸ repoint extension-current → v${VERSION}…"
-STORAGE="${HOME}/.local/share/code-server/User/globalStorage/thinkube.thinkube-tandem"
-mkdir -p "$STORAGE"
-ln -sfn "${HOME}/.local/share/code-server/extensions/thinkube.thinkube-tandem-${VERSION}" \
-  "$STORAGE/extension-current"
+# A hook step that repoints something at the new version runs before the
+# prune below: a prune that outruns it leaves the old path dangling.
+hook post-install
 
-# A window that has not reloaded still runs an OLDER build, and pruning it
-# out from under the live extension host ENOENTs every lazy require — which
-# kills a run in flight. Keeping two was not enough on a day of many
-# deploys: a run started on 2.0.127 died when 2.0.130 pruned it. Keep the
-# last ten, and never prune a directory a live process is reading.
-echo "▸ prune stale versions (keeping the last ten, and any version in use)…"
-EXT_ROOT="${HOME}/.local/share/code-server/extensions"
-KEEP=$(ls -d "${EXT_ROOT}"/thinkube.thinkube-tandem-* 2>/dev/null | sort -V | tail -10)
-# `|| true`: with no process inside any version, grep matches nothing and
-# exits 1, which under pipefail would end the script here — before the
-# release is recorded.
-IN_USE=$(ls -l /proc/*/cwd /proc/*/exe 2>/dev/null | grep -o "thinkube.thinkube-tandem-[0-9.]*" | sort -u || true)
+# A window that has not reloaded still runs an older build, and removing it
+# under the live extension host breaks every lazy require, which kills work in
+# flight. Keep the last ten versions, never remove one a live process is
+# reading, and remove the unversioned directory older installs left behind.
+echo "▸ remove stale copies (keeping the last ten, and any version in use)…"
+KEEP="$(ls -d "${EXT_ROOT}/${PUBLISHER}.${NAME}-"* 2>/dev/null | sort -V | tail -10 || true)"
+# `|| true`: with no process inside any version grep matches nothing and exits
+# 1, which under pipefail would end the script before the release is recorded.
+IN_USE="$(ls -l /proc/*/cwd /proc/*/exe 2>/dev/null | grep -o "${PUBLISHER}\.${NAME}-[0-9][0-9.]*" | sort -u || true)"
 for v in $IN_USE; do KEEP="${KEEP}
 ${EXT_ROOT}/${v}"; done
-for d in "${EXT_ROOT}"/thinkube.thinkube-tandem-*; do
-  [ -d "$d" ] || continue
+for d in "${EXT_ROOT}/${PUBLISHER}.${NAME}-"* "${EXT_ROOT}/${NAME}"; do
+  [ -e "$d" ] || continue
   echo "$KEEP" | grep -qx "$d" || { rm -rf "$d" && echo "  − $(basename "$d")"; }
 done
-for f in thinkube-tandem-*.vsix; do
-  [ "$f" = "$VSIX" ] || rm -f "$f"
-done
 
-echo "▸ record the release (package.json version bump)…"
-git add package.json package-lock.json 2>/dev/null || true
-git commit -q -m "deploy: v${VERSION}" || true
-git push -q || true
+if [ "$BUMP" = 1 ]; then
+  echo "▸ record the release…"
+  git add package.json package-lock.json
+  git commit -q -m "deploy: v${VERSION}"
+  git push -q origin HEAD
+fi
 
-echo "▸ done — v${VERSION} installed. The Extensions panel now shows the update; reload when prompted."
+echo "✅ ${PUBLISHER}.${NAME} ${VERSION} installed"

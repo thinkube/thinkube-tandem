@@ -2,7 +2,7 @@
   "name": "thinkube-tandem",
   "displayName": "Thinkube Tandem",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
-  "version": "2.0.345",
+  "version": "0.1.0",
   "publisher": "thinkube",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -431,12 +431,13 @@
     "compile": "tsc -p ./ && cd webview/map && npm run build",
     "pretest": "cd webview/map && npm run build",
     "test": "tsc -p tsconfig.test.json && TANDEM_NO_MODEL=1 node --test out-test/",
-    "docs": "node scripts/docs-build.mjs"
+    "docs": "node scripts/docs-build.mjs",
+    "deploy": "scripts/deploy.sh"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
+    "@types/node": "^24.0.0",
     "@types/vscode": "^1.90.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "antora": "^3.1.15",
     "asciidoctor-kroki": "^0.18.1",
     "knip": "^6.31.0",
